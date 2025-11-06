@@ -165,24 +165,7 @@ However, being as developers within the team may not have Macbooks, the followin
     ```sh
     flutter run -d chrome
     ```
-
-#### <u>Using a Web Environment on VSCode (Cross-Platform)</u>:
-1. Open the Flutter project in your IDE.
-
-2. Select "Chrome (web)", "Edge (web)", or "macOS (desktop)" as the target device in the device selector (usually at the bottom of the IDE window).
-
-3. Click the "Run" or "Debug" button
-
-### Alternative Target Platforms
-
-#### <u>Use Your Phone as an Emulator</u>:
-
-On Mac:
-1. Connect your phone to your 
-
-
-
-#### <u>Android Studio</u>:
+    
 
 
 
