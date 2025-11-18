@@ -14,6 +14,9 @@ import 'package:flutter/foundation.dart'
 ///   options: DefaultFirebaseOptions.currentPlatform,
 /// );
 /// ```
+///
+///
+
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -63,7 +66,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '226030806435',
     projectId: 'vivordo-health',
     storageBucket: 'vivordo-health.firebasestorage.app',
-    iosClientId: '226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj.apps.googleusercontent.com',
+    iosClientId:
+        '226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj.apps.googleusercontent.com',
     iosBundleId: 'com.example.vivordoHealth',
   );
 }

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'firebase_init.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await FirebaseInitializer.init();
   runApp(const MyApp());
 }
 
