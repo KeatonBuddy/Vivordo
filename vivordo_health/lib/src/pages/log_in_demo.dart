@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/src/pages/home_demo.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 
 class LoginDemo extends StatefulWidget {
@@ -72,10 +73,7 @@ class LoginDemoState extends State<LoginDemo> {
                       style: TextStyle(color: Colors.white, fontSize: 20),
                     ),
                     onPressed: () {
-                      AuthService.emailSignup(
-                        emailAddress: "random", //edit this field
-                        password: "random", //edit this field
-                      );
+                      AuthService.googleSignup(); //switch around this function to test different auth
                     },
                   ),
                 ),
