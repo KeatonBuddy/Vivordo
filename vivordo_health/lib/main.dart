@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import 'firebase_init.dart';
+import 'package:vivordo_health/firebase_options.dart';
+import 'package:vivordo_health/src/pages/log_in_demo.dart' show LoginDemo;
+import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await FirebaseInitializer.init();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
   runApp(const MyApp());
 }
 
@@ -14,7 +17,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Login Demo',
       theme: ThemeData(
         // This is the theme of your application.
         //
@@ -33,7 +36,8 @@ class MyApp extends StatelessWidget {
         // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      debugShowCheckedModeBanner: false,
+      home: LoginDemo(),
     );
   }
 }
