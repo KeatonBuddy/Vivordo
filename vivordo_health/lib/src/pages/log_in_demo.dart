@@ -73,7 +73,12 @@ class LoginDemoState extends State<LoginDemo> {
                       style: TextStyle(color: Colors.white, fontSize: 20),
                     ),
                     onPressed: () {
-                      AuthService.googleSignup(); //switch around this function to test different auth
+                      AuthService.emailSignup(
+                        emailAddress: "random", //edit this field
+                        password: "random", //edit this field,
+                        context: context,
+                        nextPage: MyHomePage(title: "My home page"),
+                      ); //switch around this function to test different auth
                     },
                   ),
                 ),

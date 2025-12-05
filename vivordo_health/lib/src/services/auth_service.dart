@@ -81,4 +81,29 @@ class AuthService {
   }
 
   //email signout
+
+  //google sign up and log in
+  static Future<void> googleAuth() async {
+    print("google signup");
+    //do we want a user with pre existing email account to be turned into a google account
+    //or should i implement validation to prevent this?
+
+    // Trigger the authentication flow
+    final GoogleSignInAccount googleUser = await GoogleSignIn.instance
+        .authenticate();
+
+    // Obtain the auth details from the request
+    final GoogleSignInAuthentication googleAuth = googleUser.authentication;
+
+    // Create a new credential
+    final credential = GoogleAuthProvider.credential(
+      idToken: googleAuth.idToken,
+    );
+
+    // Once signed in, return the UserCredential
+    final userCred = await FirebaseAuth.instance.signInWithCredential(
+      credential,
+    );
+    //add details to firestore
+  }
 }
