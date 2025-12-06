@@ -74,8 +74,9 @@ class LoginDemoState extends State<LoginDemo> {
                     ),
                     onPressed: () {
                       AuthService.emailSignup(
-                        emailAddress: "random", //edit this field
-                        password: "random", //edit this field,
+                        emailAddress:
+                            "debojeetdambusiness@gmail.com", //edit this field
+                        password: "password", //edit this field,
                         context: context,
                         nextPage: MyHomePage(title: "My home page"),
                       ); //switch around this function to test different auth

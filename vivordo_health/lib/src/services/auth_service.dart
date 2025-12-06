@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/utils/toast.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -19,6 +20,19 @@ class AuthService {
             email: emailAddress,
             password: password,
           );
+
+      print("credential");
+      print(credential);
+
+      //create firestore collection
+      if (credential.user != null) {
+        print("user is not null");
+        await UserService.createUser(credential.user as User);
+      } else {
+        throw Exception("Error creating user"); //log this to crashlytics
+      }
+
+      //navigate to next page
       await Future.delayed(const Duration(seconds: 1));
       if (context.mounted) {
         Navigator.pushReplacement(
@@ -43,7 +57,7 @@ class AuthService {
     }
   }
 
-  //email sign up
+  //email sign in
   static Future<void> emailLogin({
     required String emailAddress,
     required String password,
@@ -57,6 +71,8 @@ class AuthService {
         email: emailAddress,
         password: password,
       );
+
+      //navigate to next page
       await Future.delayed(const Duration(seconds: 1));
       if (context.mounted) {
         Navigator.pushReplacement(
