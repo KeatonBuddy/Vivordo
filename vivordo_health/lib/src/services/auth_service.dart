@@ -99,6 +99,7 @@ class AuthService {
   //email signout
 
   //google sign up and log in
+  //workds only on android and ios and not web
   static Future<void> googleAuth() async {
     print("google signup");
     //do we want a user with pre existing email account to be turned into a google account
