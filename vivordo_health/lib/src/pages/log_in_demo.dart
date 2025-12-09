@@ -79,6 +79,7 @@ class LoginDemoState extends State<LoginDemo> {
                         password: "password", //edit this field,
                         context: context,
                         nextPage: MyHomePage(title: "My home page"),
+                        displayName: "debo_the_goat",
                       ); //switch around this function to test different auth
                     },
                   ),
