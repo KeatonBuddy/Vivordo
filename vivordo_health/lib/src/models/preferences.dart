@@ -1,8 +1,8 @@
 class Preferences {
-  final String timezone;
-  final String locale;
-  final String units;
-  final bool notificationsEnabled;
+  String timezone;
+  String locale;
+  String units;
+  bool notificationsEnabled;
 
   Preferences({
     required this.timezone,

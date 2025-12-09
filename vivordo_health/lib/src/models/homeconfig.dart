@@ -1,7 +1,7 @@
 class HomeConfig {
-  final List<String> widgets;
-  final String lastSeenInsightId;
-  final String primaryGoalId;
+  List<String> widgets;
+  String lastSeenInsightId;
+  String primaryGoalId;
 
   HomeConfig({
     required this.widgets,

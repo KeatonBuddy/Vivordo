@@ -1,20 +1,19 @@
 import 'dart:core';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UserModel {
   final String uid;
-  final String? displayName;
-  final String? email;
-  final String? photoUrl;
-  final String? orgId;
-  final List<String>? roles;
-  final bool onboardingCompleted;
-  final Timestamp? onboardingCompletedAt;
-  final Map<String, dynamic>? preferences; //should we create models for these?
-  final Map<String, dynamic>? homeConfig; //create model?
+  String? displayName;
+  String? email;
+  String? photoUrl;
+  String? orgId;
+  List<String>? roles;
+  bool onboardingCompleted;
+  Timestamp? onboardingCompletedAt;
+  Map<String, dynamic>? preferences; //should we create models for these?
+  Map<String, dynamic>? homeConfig; //create model?
   final Timestamp? createdAt;
-  final Timestamp? updatedAt;
+  Timestamp? updatedAt;
 
   UserModel({
     required this.uid,
