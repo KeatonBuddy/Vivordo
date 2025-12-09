@@ -13,7 +13,7 @@ class UserService {
       createdAt: Timestamp.fromDate(authUser.metadata.creationTime as DateTime),
       updatedAt: Timestamp.fromDate(authUser.metadata.creationTime as DateTime),
     );
-    FirebaseFirestore.instance
+    await FirebaseFirestore.instance
         .collection('users')
         .doc(authUser.uid)
         .set(firestoreUser.toJson());
