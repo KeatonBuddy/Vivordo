@@ -30,7 +30,7 @@ class UserModel {
     this.preferences,
   });
 
-  factory UserModel.fromJson(Map<String, dynamic> firestoreData, String id) {
+  factory UserModel.fromMap(Map<String, dynamic> firestoreData, String id) {
     return UserModel(
       uid: id,
       displayName: firestoreData['displayName'],
@@ -47,7 +47,7 @@ class UserModel {
     );
   }
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toMap() {
     return {
       'uid': uid,
       'displayName': displayName,

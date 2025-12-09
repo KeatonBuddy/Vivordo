@@ -27,7 +27,7 @@ class QuestionnaireResponse {
     required this.updatedAt,
   });
 
-  factory QuestionnaireResponse.fromJson(Map<String, dynamic> data) {
+  factory QuestionnaireResponse.fromMap(Map<String, dynamic> data) {
     return QuestionnaireResponse(
       id: data['id'],
       userId: data['userId'],
@@ -42,7 +42,7 @@ class QuestionnaireResponse {
     );
   }
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toMap() {
     return {
       'id': id,
       'userId': userId,
@@ -63,5 +63,9 @@ class QuestionnaireResponse {
 
   void changeStressScore(Float score) {
     derivedScores["stressScore"] = score;
+  }
+
+  Future<void> toFirestore() async {
+    FirebaseFirestore.instance.collection('questionnare_response').add(toMap());
   }
 }

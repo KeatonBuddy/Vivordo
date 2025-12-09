@@ -16,6 +16,6 @@ class UserService {
     await FirebaseFirestore.instance
         .collection('users')
         .doc(authUser.uid)
-        .set(firestoreUser.toJson());
+        .set(firestoreUser.toMap());
   }
 }
