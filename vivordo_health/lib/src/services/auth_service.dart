@@ -9,6 +9,8 @@ class AuthService {
   static Future<void> emailSignup({
     required String emailAddress,
     required String password,
+    required String displayName,
+    String photoUrl = 'default photo url', //change this later
     required BuildContext context,
     required Widget nextPage,
   }) async {
@@ -20,14 +22,12 @@ class AuthService {
             email: emailAddress,
             password: password,
           );
-
-      print("credential");
-      print(credential);
-
+      final currentUser = credential.user;
       //create firestore collection
-      if (credential.user != null) {
-        print("user is not null");
-        await UserService.createUser(credential.user as User);
+      if (currentUser != null) {
+        await currentUser.updateDisplayName(displayName);
+        await currentUser.updatePhotoURL(photoUrl);
+        await UserService.createUser(currentUser);
       } else {
         throw Exception("Error creating user"); //log this to crashlytics
       }

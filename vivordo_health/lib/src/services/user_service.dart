@@ -7,6 +7,7 @@ class UserService {
     UserModel firestoreUser = UserModel(
       uid: authUser.uid,
       displayName: authUser.displayName,
+      photoUrl: authUser.photoURL,
       email: authUser.email,
       onboardingCompleted: false,
       createdAt: Timestamp.fromDate(authUser.metadata.creationTime as DateTime),
