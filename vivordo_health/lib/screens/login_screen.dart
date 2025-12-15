@@ -1,24 +1,17 @@
 import 'package:flutter/material.dart';
 
-void main() {
-  runApp(const MaterialApp(
-    debugShowCheckedModeBanner: false,
-    home: LoginScreen(),
-  ));
-}
-
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Define colors from the image
-    final Color primaryPurple = const Color(0xFF857DEA); 
+    // Colors
+    final Color primaryPurple = const Color(0xFF857DEA);
     final Color bgPurple = const Color(0xFFFBFaff);
     final Color textGrey = const Color(0xFF6B7280);
 
     return Scaffold(
-      backgroundColor: bgPurple, // Light background
+      backgroundColor: bgPurple,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -63,7 +56,7 @@ class LoginScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
+                const Text(
                   'See your Stress. Find your balance.',
                   style: TextStyle(
                     fontSize: 14,
@@ -110,7 +103,7 @@ class LoginScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      
+
                       // Reset Password Link
                       Align(
                         alignment: Alignment.centerLeft,
@@ -132,7 +125,10 @@ class LoginScreen extends StatelessWidget {
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton(
-                          onPressed: () {Navigator.pushReplacementNamed(context, '/dashboard');},
+                          onPressed: () {
+                            // Navigate to Home/Dashboard route
+                            Navigator.pushReplacementNamed(context, '/home');
+                          },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: primaryPurple,
                             shape: RoundedRectangleBorder(
@@ -151,7 +147,7 @@ class LoginScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                      
+
                       const SizedBox(height: 24),
 
                       // OR Divider
@@ -176,7 +172,7 @@ class LoginScreen extends StatelessWidget {
                         height: 50,
                         child: OutlinedButton.icon(
                           onPressed: () {},
-                          icon: Icon(Icons.fingerprint, color: Colors.black87),
+                          icon: const Icon(Icons.fingerprint, color: Colors.black87),
                           label: const Text(
                             'Use Biometric Login',
                             style: TextStyle(
@@ -195,7 +191,7 @@ class LoginScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                
+
                 // --- Footer ---
                 const SizedBox(height: 30),
                 Row(
@@ -218,7 +214,9 @@ class LoginScreen extends StatelessWidget {
                       style: TextStyle(color: textGrey),
                     ),
                     GestureDetector(
-                      onTap: () {},
+                      onTap: () {
+                        Navigator.pushNamed(context, '/signup');
+                      },
                       child: Text(
                         "Create Account",
                         style: TextStyle(
@@ -238,7 +236,6 @@ class LoginScreen extends StatelessWidget {
     );
   }
 
-  // Helper widget for input labels
   Widget _buildLabel(String text) {
     return Text(
       text,
@@ -250,7 +247,6 @@ class LoginScreen extends StatelessWidget {
     );
   }
 
-  // Helper for input decoration style
   InputDecoration _inputDecoration({
     required String hintText,
     required IconData icon,
