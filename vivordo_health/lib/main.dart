@@ -3,8 +3,9 @@ import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/src/pages/log_in_demo.dart' show LoginDemo;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_ai/firebase_ai.dart';
-import 'screens/login.dart';
-import 'screens/dashboard.dart';
+import 'screens/login_screen.dart';
+import 'screens/signup_screen.dart';
+import 'screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,11 +30,23 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Vivordo Health',
-      theme: ThemeData(primarySwatch: Colors.purple),
+      debugShowCheckedModeBanner: false,
+      // Global Theme Definition
+      theme: ThemeData(
+        primaryColor: const Color(0xFF857DEA),
+        scaffoldBackgroundColor: const Color(0xFFFBFaff),
+        colorScheme: ColorScheme.fromSwatch().copyWith(
+          primary: const Color(0xFF857DEA),
+          secondary: const Color(0xFF857DEA),
+        ),
+        useMaterial3: true,
+      ),
+      // Route Definitions
       initialRoute: '/',
       routes: {
-        '/': (context) => LoginScreen(),
-        '/dashboard': (context) => DashboardScreen(),
+        '/': (context) => const LoginScreen(),
+        '/signup': (context) => const SignupScreen(),
+        '/home': (context) => const HomeScreen(),
       },
     );
   }
