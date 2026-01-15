@@ -73,13 +73,12 @@ class LoginDemoState extends State<LoginDemo> {
                       style: TextStyle(color: Colors.white, fontSize: 20),
                     ),
                     onPressed: () {
-                      AuthService.emailSignup(
+                      AuthService.emailLogin(
                         emailAddress:
                             "debojeetdambusiness@gmail.com", //edit this field
-                        password: "password", //edit this field,
+                        password: "passsd", //edit this field,
                         context: context,
                         nextPage: MyHomePage(title: "My home page"),
-                        displayName: "debo_the_goat",
                       ); //switch around this function to test different auth
                     },
                   ),

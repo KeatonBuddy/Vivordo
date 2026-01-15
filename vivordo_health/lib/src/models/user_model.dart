@@ -10,8 +10,8 @@ class UserModel {
   List<String>? roles;
   bool onboardingCompleted;
   Timestamp? onboardingCompletedAt;
-  Map<String, dynamic>? preferences; //should we create models for these?
-  Map<String, dynamic>? homeConfig; //create model?
+  Map<String, dynamic>? preferences;
+  Map<String, dynamic>? homeConfig;
   final Timestamp? createdAt;
   Timestamp? updatedAt;
 

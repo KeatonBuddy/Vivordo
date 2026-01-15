@@ -4,13 +4,15 @@ import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/utils/toast.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+//TODO(favour): log flagged items to crashlytics
+
 class AuthService {
   //email sign in
   static Future<void> emailSignup({
     required String emailAddress,
     required String password,
     required String displayName,
-    String photoUrl = 'default photo url', //change this later
+    String photoUrl = 'default photo url', //TODO(favour): add default photo
     required BuildContext context,
     required Widget nextPage,
   }) async {
@@ -41,7 +43,7 @@ class AuthService {
         );
       }
     } on FirebaseAuthException catch (e) {
-      //basic password validation - should we make it more complicated?
+      //TODO: basic password validation - should we make it more complicated?
       if (e.code == 'weak-password') {
         const message = 'Password should be at least 6 characters';
         print(e);
@@ -81,12 +83,9 @@ class AuthService {
         );
       }
     } on FirebaseAuthException catch (e) {
-      //invalid credentials
-      print(e);
       //should i take extra steps to figure out if its specifcally wrong email or password?
       if (e.code == 'invalid-credential') {
         const message = 'Invalid email or password';
-        print(e);
         ToastMessages.authMessage(message: message);
       }
       //log any other errors here - crashlytics?
@@ -96,31 +95,5 @@ class AuthService {
     }
   }
 
-  //email signout
-
-  //google sign up and log in
-  //workds only on android and ios and not web - not tested
-  static Future<void> googleAuth() async {
-    print("google signup");
-    //do we want a user with pre existing email account to be turned into a google account
-    //or should i implement validation to prevent this?
-
-    // Trigger the authentication flow
-    final GoogleSignInAccount googleUser = await GoogleSignIn.instance
-        .authenticate();
-
-    // Obtain the auth details from the request
-    final GoogleSignInAuthentication googleAuth = googleUser.authentication;
-
-    // Create a new credential
-    final credential = GoogleAuthProvider.credential(
-      idToken: googleAuth.idToken,
-    );
-
-    // Once signed in, return the UserCredential
-    final userCred = await FirebaseAuth.instance.signInWithCredential(
-      credential,
-    );
-    //add details to firestore
-  }
+  //email signout - use await FirebaseAuth.instance.signOut();
 }
