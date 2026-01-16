@@ -73,10 +73,10 @@ class LoginDemoState extends State<LoginDemo> {
                       style: TextStyle(color: Colors.white, fontSize: 20),
                     ),
                     onPressed: () {
-                      AuthService.emailLogin(
-                        emailAddress:
-                            "debojeetdambusiness@gmail.com", //edit this field
+                      AuthService.emailSignup(
+                        emailAddress: "random@gmail.com", //edit this field
                         password: "passsd", //edit this field,
+                        displayName: "random username",
                         context: context,
                         nextPage: MyHomePage(title: "My home page"),
                       ); //switch around this function to test different auth
