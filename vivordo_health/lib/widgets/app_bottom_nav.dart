@@ -40,12 +40,16 @@ class AppBottomNav extends StatelessWidget {
             label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.flag_rounded), // Or star, or track_changes
+            icon: Icon(Icons.flag_rounded),
             label: 'Goals',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard_rounded),
             label: 'Dashboard',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.pets_rounded), 
+            label: 'Panda',
           ),
         ],
       ),

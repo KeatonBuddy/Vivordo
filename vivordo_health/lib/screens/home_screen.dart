@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'goals_screen.dart';
 import 'dashboard_screen.dart';
+import 'panda_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -615,6 +616,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _navItem(Icons.home, "Home", 0, primaryColor),
           _navItem(Icons.track_changes, "Goals", 1, primaryColor),
           _navItem(Icons.bar_chart, "Dashboard", 2, primaryColor),
+          _navItem(Icons.pets_rounded, "Panda", 3, primaryColor),
         ],
       ),
     );
@@ -640,6 +642,11 @@ class _HomeScreenState extends State<HomeScreen> {
           context,
           MaterialPageRoute(builder: (context) => const DashboardScreen()),
         );
+      } else if (label == "Panda" && !isActive) {
+        Navigator.push( // Use push so we can come back to Home
+          context,
+          MaterialPageRoute(builder: (context) => const PandaScreen()),
+      );
       } else {
         setState(() => _selectedIndex = index);
       }

@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import 'dashboard_screen.dart';
+import 'panda_screen.dart';
 
 class GoalsScreen extends StatelessWidget {
   const GoalsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final Color primaryPurple = const Color(0xFF857DEA);
-    final Color bgPurple = const Color(0xFFFBFAFF);
+    final Color primaryPurple = const Color(0xFF7B6EF6);
+    final Color bgWhite = const Color(0xFFFBFAFF);
 
     return Scaffold(
-      backgroundColor: bgPurple,
+      backgroundColor: bgWhite,
       body: Stack(
         children: [
           SingleChildScrollView(
@@ -34,6 +35,7 @@ class GoalsScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 24),
 
+                      // Habit Cards
                       HabitGoalCard(
                         title: 'Meditate 10 minutes daily',
                         subtext: 'Daily • 🔥 3 day streak',
@@ -78,7 +80,7 @@ class GoalsScreen extends StatelessWidget {
     );
   }
 
-  // ---------- HEADER ----------
+  // --- HEADER WIDGET ---
   Widget _buildHeader(Color primaryColor) {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 60, 24, 30),
@@ -94,7 +96,11 @@ class GoalsScreen extends StatelessWidget {
             children: [
               Text(
                 "My Goals",
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+                style: TextStyle(
+                  fontSize: 28, 
+                  fontWeight: FontWeight.bold, 
+                  color: Colors.white
+                ),
               ),
               SizedBox(height: 4),
               Text(
@@ -131,7 +137,6 @@ class GoalsScreen extends StatelessWidget {
     );
   }
 
-  // ---------- NAV ----------
   Widget _buildFloatingNavBar(BuildContext context, Color primaryColor) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -139,58 +144,76 @@ class GoalsScreen extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 5),
+          ),
         ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _navItem(context, Icons.home, "Home", false, primaryColor),
-          _navItem(context, Icons.track_changes, "Goals", true, primaryColor),
-          _navItem(context, Icons.bar_chart, "Dashboard", false, primaryColor),
+          _navItem(context, Icons.home, "Home", 0, primaryColor),
+          _navItem(context, Icons.track_changes, "Goals", 1, primaryColor),
+          _navItem(context, Icons.bar_chart, "Dashboard", 2, primaryColor),
+          _navItem(context, Icons.pets_rounded, "Panda", 3, primaryColor),
         ],
       ),
     );
   }
 
-  Widget _navItem(
-    BuildContext context,
-    IconData icon,
-    String label,
-    bool isActive,
-    Color primaryColor,
-  ) {
+  Widget _navItem(BuildContext context, IconData icon, String label, int index, Color primaryColor) {
+    bool isActive = index == 1; // "Goals" is active for this screen
+
     return GestureDetector(
       onTap: () {
-        if (label == "Home" && !isActive) {
+        if (label == "Home") {
           Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
-        }
-        if (label == "Dashboard" && !isActive) {
+        } else if (label == "Dashboard") {
           Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DashboardScreen()));
+        } else if (label == "Panda") {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const PandaScreen()));
         }
       },
-      child: Column(
-        children: [
-          Icon(icon, color: isActive ? primaryColor : Colors.grey),
-          Text(label, style: TextStyle(fontSize: 10, color: isActive ? primaryColor : Colors.grey)),
-        ],
-      ),
+      child: isActive
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: primaryColor,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: Colors.white, size: 20),
+                  const SizedBox(height: 2),
+                  Text(label,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: Colors.grey, size: 24),
+                const SizedBox(height: 2),
+                Text(label, style: const TextStyle(color: Colors.grey, fontSize: 10)),
+              ],
+            ),
     );
   }
 }
 
-//
-// ======================
-// HABIT GOAL CARD
-// ======================
-//
-
+// --- HABIT GOAL CARD COMPONENT ---
 class HabitGoalCard extends StatefulWidget {
   final String title;
   final String subtext;
   final double progress;
   final Color primaryColor;
-  final bool isGreenTheme;
   final Set<int> initialSelectedDays;
 
   const HabitGoalCard({
@@ -199,7 +222,6 @@ class HabitGoalCard extends StatefulWidget {
     required this.subtext,
     required this.progress,
     required this.primaryColor,
-    this.isGreenTheme = false,
     required this.initialSelectedDays,
   });
 
@@ -209,7 +231,6 @@ class HabitGoalCard extends StatefulWidget {
 
 class _HabitGoalCardState extends State<HabitGoalCard> {
   static const List<String> weekLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
   late Set<int> selectedDays;
 
   @override
@@ -218,24 +239,15 @@ class _HabitGoalCardState extends State<HabitGoalCard> {
     selectedDays = {...widget.initialSelectedDays};
   }
 
-  void toggleDay(int index) {
-    setState(() {
-      selectedDays.contains(index)
-          ? selectedDays.remove(index)
-          : selectedDays.add(index);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: widget.isGreenTheme ? const Color(0xFFECFDF5) : Colors.white,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          if (!widget.isGreenTheme)
-            BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10),
+          BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10),
         ],
       ),
       child: Column(
@@ -244,61 +256,38 @@ class _HabitGoalCardState extends State<HabitGoalCard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(widget.title,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text(widget.subtext,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                ],
-              ),
-              CircularProgressIndicator(
-                value: widget.progress,
-                strokeWidth: 6,
-                backgroundColor: widget.primaryColor.withOpacity(0.2),
-                color: widget.primaryColor,
-              ),
+              Text(widget.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Text("${(widget.progress * 100).toInt()}%", 
+                style: TextStyle(color: widget.primaryColor, fontWeight: FontWeight.bold)),
             ],
           ),
-          const SizedBox(height: 20),
-
+          const SizedBox(height: 4),
+          Text(widget.subtext, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          const SizedBox(height: 16),
+          // Week Day Selector
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: List.generate(7, (index) {
-              final bool selected = selectedDays.contains(index);
-
+              bool isSelected = selectedDays.contains(index);
               return GestureDetector(
-                onTap: () => toggleDay(index),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: selected ? widget.primaryColor : Colors.transparent,
-                        border: Border.all(
-                          color: selected
-                              ? widget.primaryColor
-                              : Colors.grey.withOpacity(0.3),
-                        ),
-                      ),
-                      child: selected
-                          ? const Icon(Icons.check, size: 16, color: Colors.white)
-                          : null,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
+                onTap: () => setState(() => isSelected ? selectedDays.remove(index) : selectedDays.add(index)),
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: isSelected ? widget.primaryColor : Colors.grey.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
                       weekLabels[index],
                       style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: selected ? widget.primaryColor : Colors.grey[600],
+                        color: isSelected ? Colors.white : Colors.grey,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ],
+                  ),
                 ),
               );
             }),
