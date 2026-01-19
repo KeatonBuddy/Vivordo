@@ -120,13 +120,11 @@ class LoginScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 24),
 
-                      // Login Button
                       SizedBox(
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton(
                           onPressed: () {
-                            // Navigate to Home/Dashboard route
                             Navigator.pushReplacementNamed(context, '/home');
                           },
                           style: ElevatedButton.styleFrom(

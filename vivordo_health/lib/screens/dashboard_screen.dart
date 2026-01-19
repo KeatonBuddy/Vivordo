@@ -1,24 +1,22 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import 'goals_screen.dart';
+import 'panda_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Shared Colors
-    final Color primaryPurple = const Color(0xFF857DEA);
+    final Color primaryPurple = const Color(0xFF7B6EF6);
     final Color bgPurple = const Color(0xFFFBFaff);
-    final Color textDark = const Color(0xFF1F2937);
 
     return Scaffold(
       backgroundColor: bgPurple,
       body: Stack(
         children: [
-          // Scrollable Body
           SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 120), // Space for nav bar
+            padding: const EdgeInsets.only(bottom: 120), 
             child: Column(
               children: [
                 _buildHeader(primaryPurple),
@@ -66,7 +64,7 @@ class DashboardScreen extends StatelessWidget {
             ),
           ),
 
-          // Floating Bottom Nav
+          // --- FLOATING NAV BAR ---
           Positioned(
             bottom: 30,
             left: 24,
@@ -78,8 +76,7 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  // --- HELPER WIDGETS ---
-
+  // --- HEADER WIDGET ---
   Widget _buildHeader(Color primaryColor) {
     return Container(
       padding: const EdgeInsets.only(top: 60, left: 24, right: 24, bottom: 24),
@@ -176,8 +173,7 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  // --- CHARTS (MOCKED VISUALLY TO MATCH SCREENSHOTS WITHOUT EXTERNAL LIB) ---
-
+  // --- CHARTS & CARDS ---
   Widget _buildHeartRateCard(Color primaryColor) {
     return _buildCardBase(
       child: Column(
@@ -202,7 +198,6 @@ class DashboardScreen extends StatelessWidget {
         children: [
           _buildChartHeader(Icons.directions_walk, "Daily Steps", "Goal: 10,000 steps", "9,540", "95% of goal", Colors.blueAccent),
           const SizedBox(height: 20),
-          // Mock Bar Chart
           SizedBox(
             height: 150,
             child: Row(
@@ -230,7 +225,6 @@ class DashboardScreen extends StatelessWidget {
         children: [
           _buildChartHeader(Icons.bedtime, "Sleep Duration", "Avg: 7.4 hours", "7.9h", "Last night", primaryColor),
           const SizedBox(height: 20),
-          // Mock Bar Chart
           SizedBox(
             height: 150,
             child: Row(
@@ -267,8 +261,8 @@ class DashboardScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: const Color(0xFF857DEA), size: 20),
-          const SizedBox(height: 12),
+          const Icon(Icons.circle, color: Color(0xFF857DEA), size: 10), 
+          const SizedBox(height: 8),
           Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 8),
           Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
@@ -372,8 +366,7 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  // --- NAVIGATION ---
-  
+  // --- PREMIUM NAVIGATION BAR ---
   Widget _buildFloatingNavBar(BuildContext context, Color primaryColor) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -391,29 +384,27 @@ class DashboardScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _navItem(context, Icons.home, "Home", false, primaryColor),
-          _navItem(context, Icons.track_changes, "Goals", false, primaryColor), 
-          _navItem(context, Icons.bar_chart, "Dashboard", true, primaryColor), // Active
+          _navItem(context, Icons.home, "Home", 0, primaryColor),
+          _navItem(context, Icons.track_changes, "Goals", 1, primaryColor), 
+          _navItem(context, Icons.bar_chart, "Dashboard", 2, primaryColor),
+          _navItem(context, Icons.pets_rounded, "Panda", 3, primaryColor),
         ],
       ),
     );
   }
 
-  Widget _navItem(BuildContext context, IconData icon, String label, bool isActive, Color primaryColor) {
+  Widget _navItem(BuildContext context, IconData icon, String label, int index, Color primaryColor) {
+    bool isActive = index == 2; // Dashboard is active
+
     return GestureDetector(
       onTap: () {
-        if (label == "Home" && !isActive) {
-           Navigator.pushReplacement(
-             context,
-             MaterialPageRoute(builder: (context) => const HomeScreen()),
-           );
-        } else if (label == "Goals" && !isActive) {
-           Navigator.pushReplacement(
-             context,
-             MaterialPageRoute(builder: (context) => const GoalsScreen()),
-           );
+        if (label == "Home") {
+           Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
+        } else if (label == "Goals") {
+           Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const GoalsScreen()));
+        } else if (label == "Panda") {
+           Navigator.push(context, MaterialPageRoute(builder: (_) => const PandaScreen()));
         }
-        // Dashboard does nothing as we are already here
       },
       child: isActive
           ? Container(
@@ -454,21 +445,17 @@ class HeartRateLinePainter extends CustomPainter {
 
     Path path = Path();
     path.moveTo(0, size.height * 0.8);
-    // Draw a smooth curve
     path.quadraticBezierTo(size.width * 0.25, size.height * 0.3, size.width * 0.5, size.height * 0.2);
     path.quadraticBezierTo(size.width * 0.75, size.height * 0.1, size.width, size.height * 0.6);
 
     canvas.drawPath(path, paint);
 
-    // Draw dots
     Paint dotPaint = Paint()..color = Colors.redAccent;
     canvas.drawCircle(Offset(0, size.height * 0.8), 4, dotPaint);
     canvas.drawCircle(Offset(size.width * 0.5, size.height * 0.2), 4, dotPaint);
     canvas.drawCircle(Offset(size.width, size.height * 0.6), 4, dotPaint);
     
-    // Labels (simplified)
     TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
-    
     _drawText(canvas, textPainter, "6am", Offset(0, size.height + 5));
     _drawText(canvas, textPainter, "12pm", Offset(size.width * 0.45, size.height + 5));
     _drawText(canvas, textPainter, "9pm", Offset(size.width - 20, size.height + 5));
