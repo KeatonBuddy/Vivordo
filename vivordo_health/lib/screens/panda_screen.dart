@@ -14,7 +14,7 @@ class _PandaScreenState extends State<PandaScreen> {
   // Theme Colors
   final Color primaryPurple = const Color(0xFF7B6EF6);
   final Color pandaBlack = const Color(0xFF2D3142);
-  final Color bgWhite = const Color(0xFFF2F2F7); // iOS style grey-white
+  final Color bgWhite = const Color(0xFFF2F2F7); 
   final Color bubbleWhite = Colors.white;
 
   @override
@@ -38,25 +38,11 @@ class _PandaScreenState extends State<PandaScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
               child: Column(
                 children: [
-                  // Timestamp
-                  Center(
-                    child: Text(
-                      "Today 10:42 AM",
-                      style: TextStyle(
-                        color: Colors.grey.shade500, 
-                        fontSize: 12, 
-                        fontWeight: FontWeight.w500
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Panda Message Row
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      _buildMiniAvatar(),
-                      const SizedBox(width: 8),
+                      _buildMiniAvatar(), 
+                      const SizedBox(width: 10),
                       Flexible(child: _buildMessageBubble()),
                     ],
                   ),
@@ -69,7 +55,6 @@ class _PandaScreenState extends State<PandaScreen> {
               ),
             ),
           ),
-          
           _buildBottomInputArea(),
         ],
       ),
@@ -102,19 +87,22 @@ class _PandaScreenState extends State<PandaScreen> {
     );
   }
 
-  // --- AVATAR ---
+  // --- AVATAR---
   Widget _buildMiniAvatar() {
     return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(color: pandaBlack, shape: BoxShape.circle),
-      child: const Center(
-        child: Icon(Icons.pets_rounded, size: 18, color: Colors.white),
+      width: 48,
+      height: 48,
+      decoration: const BoxDecoration(
+        color: Colors.transparent, 
+        shape: BoxShape.circle,
+        image: DecorationImage(
+          image: AssetImage('assets/panda_icon.png'),
+          fit: BoxFit.contain,
+        ),
       ),
     );
   }
 
-  // --- MESSAGE BUBBLE ---
   Widget _buildMessageBubble() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -143,25 +131,21 @@ class _PandaScreenState extends State<PandaScreen> {
     );
   }
 
-  // --- VERTICAL STACKED OPTIONS ---
   Widget _buildVerticalOptions() {
     return Column(
       children: [
         _optionButton("Yes, let's meditate 🧘"),
         _optionButton("Check my sleep data 🌙"),
         _optionButton("Review my goals 🎯"),
-        _optionButton("I just need to vent 🗣️"),
       ],
     );
   }
 
   Widget _optionButton(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10, left: 40), // Indented to look like replies
+      padding: const EdgeInsets.only(bottom: 10, left: 40),
       child: GestureDetector(
-        onTap: () {
-          // Add interaction logic here
-        },
+        onTap: () {},
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
@@ -184,6 +168,7 @@ class _PandaScreenState extends State<PandaScreen> {
     );
   }
 
+  // --- UPDATED INPUT AREA---
   Widget _buildBottomInputArea() {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 34),
@@ -193,14 +178,12 @@ class _PandaScreenState extends State<PandaScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.add, color: Colors.blueAccent),
-          const SizedBox(width: 12),
           Expanded(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: bgWhite,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: Colors.grey.shade300),
               ),
               child: Text(
@@ -209,8 +192,6 @@ class _PandaScreenState extends State<PandaScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Icon(Icons.mic_none_rounded, color: Colors.grey.shade400),
         ],
       ),
     );

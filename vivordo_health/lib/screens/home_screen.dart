@@ -12,11 +12,119 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final double stressScore = 42;
-  int _selectedIndex = 0; // Track active tab
+  int _selectedIndex = 0; 
+  int _selectedTimeFilter = 1; 
+  
+  String _currentMood = 'Good'; 
+
+  // --- MOOD CHECK POPUP ---
+  void _showMoodCheck(Color primaryColor) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(40),
+              topRight: Radius.circular(40),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag Handle
+              Container(
+                width: 50,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                "How are you feeling?",
+                style: TextStyle(
+                  fontSize: 22, 
+                  fontWeight: FontWeight.w800, 
+                  color: Color(0xFF2D3142),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Don't think too much, just tap.",
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+              const SizedBox(height: 32),
+              // THE EMOJI GRID
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _moodOption('Great', '🤩', const Color(0xFFFFEDD5), const Color(0xFFF97316)),
+                  _moodOption('Good', '😊', const Color(0xFFDCFCE7), const Color(0xFF22C55E)),
+                  _moodOption('Okay', '😐', const Color(0xFFF3F4F6), const Color(0xFF6B7280)),
+                  _moodOption('Down', '😔', const Color(0xFFEDE9FE), const Color(0xFF8B5CF6)),
+                  _moodOption('Awful', '😫', const Color(0xFFFEE2E2), const Color(0xFFEF4444)),
+                ],
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // --- MOOD OPTION WIDGET ---
+  Widget _moodOption(String label, String emoji, Color bgColor, Color accentColor) {
+    bool isSelected = _currentMood == label;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() => _currentMood = label);
+        Navigator.pop(context);
+      },
+      child: Column(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: isSelected ? accentColor : bgColor,
+              shape: BoxShape.circle,
+              boxShadow: isSelected 
+                ? [BoxShadow(color: accentColor.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))] 
+                : [],
+            ),
+            child: Center(
+              child: Text(
+                emoji, 
+                style: const TextStyle(fontSize: 28)
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? const Color(0xFF2D3142) : const Color(0xFF9CA3AF), 
+              fontSize: 12, 
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Colors
     final Color primaryPurple = const Color(0xFF7B6EF6);
     final Color bgWhite = const Color(0xFFFBFAFF);
     final Color cardYellow = const Color(0xFFFFFBE5);
@@ -49,7 +157,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            "Stress Trend (This Week)",
+                            _selectedTimeFilter == 0 
+                                ? "Stress Trend (Today)" 
+                                : _selectedTimeFilter == 1 
+                                    ? "Stress Trend (This Week)" 
+                                    : "Stress Trend (This Month)",
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -114,13 +226,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               icon: Icons.favorite_border,
                               iconColor: primaryPurple,
                             ),
+                            // --- UPDATED MOOD CARD ---
                             _buildStatCard(
                               title: 'Mood',
-                              value: 'Good',
+                              value: _currentMood,
                               subText: 'Check in →',
                               subTextColor: primaryPurple,
                               icon: Icons.psychology_outlined,
                               iconColor: primaryPurple,
+                              onTap: () => _showMoodCheck(primaryPurple),
                             ),
                           ],
                         ),
@@ -145,7 +259,73 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- HEADER ---
+  // --- UPDATED STAT CARD (Added onTap) ---
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    required String subText,
+    required Color subTextColor,
+    required IconData icon,
+    required Color iconColor,
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: iconColor, size: 22),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+            Text(
+              subText,
+              style: TextStyle(
+                color: subTextColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
   Widget _buildHeader(Color color) {
     return Container(
       height: 260,
@@ -198,7 +378,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- STRESS CARD ---
   Widget _buildStressCard(double score, Color bgColor, Color accentColor, Color textColor) {
     return Container(
       padding: const EdgeInsets.all(24),
@@ -301,39 +480,54 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- TIME FILTER ---
   Widget _buildTimeFilter(Color activeColor) {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          _filterButton('Daily', false, activeColor),
-          _filterButton('Weekly', true, activeColor),
-          _filterButton('Monthly', false, activeColor),
+          _filterButton('Daily', 0, activeColor),
+          _filterButton('Weekly', 1, activeColor),
+          _filterButton('Monthly', 2, activeColor),
         ],
       ),
     );
   }
 
-  Widget _filterButton(String text, bool isActive, Color activeColor) {
+  Widget _filterButton(String text, int index, Color activeColor) {
+    bool isActive = _selectedTimeFilter == index;
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: isActive ? activeColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: Text(
-            text,
-            style: TextStyle(
-              color: isActive ? Colors.white : Colors.grey,
-              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-              fontSize: 13
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedTimeFilter = index;
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive ? activeColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Center(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: isActive ? Colors.white : Colors.grey,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                fontSize: 13,
+              ),
             ),
           ),
         ),
@@ -341,7 +535,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- AI INSIGHTS ---
   Widget _buildAIInsightsCard(Color primaryColor, Color textColor) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -400,16 +593,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- GRAPH PLACEHOLDER ---
   Widget _buildGraphPlaceholder(Color color) {
     return Container(
       height: 100,
       width: double.infinity,
       decoration: BoxDecoration(
           gradient: LinearGradient(
-             begin: Alignment.topCenter,
-             end: Alignment.bottomCenter,
-             colors: [color.withOpacity(0.1), Colors.white.withOpacity(0.0)]
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [color.withOpacity(0.1), Colors.white.withOpacity(0.0)]
           )
       ),
       child: CustomPaint(
@@ -418,69 +610,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- STAT CARD ---
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required String subText,
-    required Color subTextColor,
-    required IconData icon,
-    required Color iconColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: iconColor, size: 22),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1F2937),
-            ),
-          ),
-          Text(
-            subText,
-            style: TextStyle(
-              color: subTextColor,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- GOAL CARD ---
   Widget _buildGoalCard(Color primaryColor) {
     return Container(
       width: double.infinity,
@@ -595,7 +724,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- FLOATING NAV BAR ---
   Widget _buildFloatingNavBar(Color primaryColor) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -623,104 +751,79 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _navItem(IconData icon, String label, int index, Color primaryColor) {
-  bool isActive = _selectedIndex == index;
-
-  return GestureDetector(
-    onTap: () {
-      if (label == "Home" && !isActive) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-        );
-      } else if (label == "Goals" && !isActive) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const GoalsScreen()),
-        );
-      } else if (label == "Dashboard" && !isActive) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const DashboardScreen()),
-        );
-      } else if (label == "Panda" && !isActive) {
-        Navigator.push( // Use push so we can come back to Home
-          context,
-          MaterialPageRoute(builder: (context) => const PandaScreen()),
-      );
-      } else {
-        setState(() => _selectedIndex = index);
-      }
-    },
-    child: isActive
-        ? Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            decoration: BoxDecoration(
-              color: primaryColor,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
+    bool isActive = _selectedIndex == index;
+    return GestureDetector(
+      onTap: () {
+        if (label == "Home" && !isActive) {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomeScreen()));
+        } else if (label == "Goals" && !isActive) {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const GoalsScreen()));
+        } else if (label == "Dashboard" && !isActive) {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const DashboardScreen()));
+        } else if (label == "Panda" && !isActive) {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const PandaScreen()));
+        } else {
+          setState(() => _selectedIndex = index);
+        }
+      },
+      child: isActive
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: primaryColor,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: Colors.white, size: 20),
+                  const SizedBox(height: 2),
+                  Text(label,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+            )
+          : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, color: Colors.white, size: 20),
+                Icon(icon, color: Colors.grey, size: 24),
                 const SizedBox(height: 2),
-                Text(label,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold)),
+                Text(label, style: const TextStyle(color: Colors.grey, fontSize: 10)),
               ],
             ),
-          )
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: Colors.grey, size: 24),
-              const SizedBox(height: 2),
-              Text(label, style: const TextStyle(color: Colors.grey, fontSize: 10)),
-            ],
-          ),
-  );
-}
+    );
+  }
 }
 
-// --- CHART PAINTER PLACEHOLDER ---
+// --- PAINTERS ---
+
 class ChartPainter extends CustomPainter {
   final Color color;
   ChartPainter({required this.color});
-
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke;
-
+    final paint = Paint()..color = color..strokeWidth = 3..style = PaintingStyle.stroke;
     final path = Path();
     path.moveTo(0, size.height * 0.6);
     path.lineTo(size.width * 0.25, size.height * 0.4);
     path.lineTo(size.width * 0.5, size.height * 0.5);
     path.lineTo(size.width * 0.75, size.height * 0.3);
     path.lineTo(size.width, size.height * 0.4);
-
     canvas.drawPath(path, paint);
   }
-
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// --- WEEKLY CHART PAINTER PLACEHOLDER ---
 class WeeklyChartPainter extends CustomPainter {
   final Color color;
   WeeklyChartPainter({required this.color});
-
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke;
-
+    final paint = Paint()..color = color..strokeWidth = 3..style = PaintingStyle.stroke;
     final path = Path();
     path.moveTo(0, size.height * 0.5);
     path.lineTo(size.width * 0.2, size.height * 0.3);
@@ -728,10 +831,8 @@ class WeeklyChartPainter extends CustomPainter {
     path.lineTo(size.width * 0.6, size.height * 0.2);
     path.lineTo(size.width * 0.8, size.height * 0.5);
     path.lineTo(size.width, size.height * 0.3);
-
     canvas.drawPath(path, paint);
   }
-
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
