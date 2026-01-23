@@ -14,9 +14,6 @@ import 'package:flutter/foundation.dart'
 ///   options: DefaultFirebaseOptions.currentPlatform,
 /// );
 /// ```
-///
-///
-
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -49,6 +46,16 @@ class DefaultFirebaseOptions {
     }
   }
 
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyDMAaBok2R2gj0UV2HGZO6yt8CAcnxTPKk',
+    appId: '1:226030806435:web:4ea77a3e868584a6a36616',
+    messagingSenderId: '226030806435',
+    projectId: 'vivordo-health',
+    authDomain: 'vivordo-health.firebaseapp.com',
+    storageBucket: 'vivordo-health.firebasestorage.app',
+    measurementId: 'G-2BM9R28LWD',
+  );
+
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyAzmw4Bs7i5w9vO3PF4YARWo7Mx3-zcw1Q',
     appId: '1:226030806435:android:5ea4e7a9ff8cc3a6a36616',
@@ -65,16 +72,6 @@ class DefaultFirebaseOptions {
     storageBucket: 'vivordo-health.firebasestorage.app',
     iosClientId: '226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj.apps.googleusercontent.com',
     iosBundleId: 'com.example.vivordoHealth',
-  );
-
-  static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDMAaBok2R2gj0UV2HGZO6yt8CAcnxTPKk',
-    appId: '1:226030806435:web:4ea77a3e868584a6a36616',
-    messagingSenderId: '226030806435',
-    projectId: 'vivordo-health',
-    authDomain: 'vivordo-health.firebaseapp.com',
-    storageBucket: 'vivordo-health.firebasestorage.app',
-    measurementId: 'G-2BM9R28LWD',
   );
 
 }
