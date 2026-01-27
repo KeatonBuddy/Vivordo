@@ -1,6 +1,10 @@
+<<<<<<< HEAD
 import 'dart:async';
 import 'dart:convert';
 
+=======
+import 'dart:convert';
+>>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
 import 'package:flutter/material.dart';
 import '../services/gemini_service.dart';
 
@@ -17,15 +21,19 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
 
   bool _loading = false;
 
+<<<<<<< HEAD
   // Timer/stopwatch for visible LLM execution time
   Stopwatch? _stopwatch;
   Timer? _timer;
   Duration _elapsed = Duration.zero;
 
+=======
+>>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
   String? _friendlyOutput;
   String? _jsonOutput;
   String? _error;
 
+<<<<<<< HEAD
   // ---- History ----
   final List<_RunRecord> _history = [];
   static const int _maxHistory = 10;
@@ -78,6 +86,9 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
     bool success = false;
     String? historyError;
 
+=======
+  Future<void> _runTest() async {
+>>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
     setState(() {
       _loading = true;
       _friendlyOutput = null;
@@ -85,6 +96,7 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
       _error = null;
     });
 
+<<<<<<< HEAD
     _startTimer();
 
     try {
@@ -101,11 +113,27 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
 
       if (decoded == null) {
         historyError = "Could not parse JSON (possibly code-fenced or malformed).";
+=======
+    try {
+      final sampleData = _service.getSampleData();
+
+      final raw = await _service.analyzeStressSpikes(
+        data: sampleData,
+        extraUserContext: _contextController.text,
+      );
+
+      // Try to decode JSON
+      final decoded = _tryDecodeJson(raw);
+
+      if (decoded == null) {
+        // If model returned non-JSON, show raw output as error-ish
+>>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
         setState(() {
           _friendlyOutput = "Could not parse JSON. Model returned:\n\n$raw";
           _jsonOutput = raw;
         });
       } else {
+<<<<<<< HEAD
         final prettyJson = const JsonEncoder.withIndent('  ').convert(decoded);
         final friendly = _buildFriendlySpikeMessages(decoded);
 
@@ -115,6 +143,14 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
 
         success = true;
 
+=======
+        // Prettify JSON
+        final prettyJson = const JsonEncoder.withIndent('  ').convert(decoded);
+
+        // Generate friendly message(s)
+        final friendly = _buildFriendlySpikeMessages(decoded);
+
+>>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
         setState(() {
           _friendlyOutput = friendly.isEmpty
               ? "No spikes detected in this window."
@@ -122,6 +158,7 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
           _jsonOutput = prettyJson;
         });
       }
+<<<<<<< HEAD
     } on TimeoutException {
       historyError = "Request timed out after 30 seconds.";
       setState(() {
@@ -148,10 +185,16 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
         ),
       );
 
+=======
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+>>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
       if (mounted) setState(() => _loading = false);
     }
   }
 
+<<<<<<< HEAD
   void _addHistory(_RunRecord record) {
     if (!mounted) return;
     setState(() {
@@ -285,12 +328,134 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
   void dispose() {
     _timer?.cancel();
     _stopwatch?.stop();
+=======
+Map<String, dynamic>? _tryDecodeJson(String text) {
+  try {
+    // Remove Markdown code fences if present
+    var cleaned = text.trim();
+
+    if (cleaned.startsWith('```')) {
+      cleaned = cleaned
+          .replaceFirst(RegExp(r'^```[a-zA-Z]*'), '')
+          .replaceFirst(RegExp(r'```$'), '')
+          .trim();
+    }
+
+    final obj = jsonDecode(cleaned);
+    if (obj is Map<String, dynamic>) return obj;
+    return null;
+  } catch (e) {
+    debugPrint('JSON parse error: $e');
+    return null;
+  }
+}
+
+
+List<String> _buildFriendlySpikeMessages(Map<String, dynamic> decoded) {
+  final spikes = decoded["spikes"];
+  if (spikes is! List) return [];
+
+  final messages = <String>[];
+
+  for (final spike in spikes) {
+    if (spike is! Map) continue;
+
+    final startIso = spike["start"]?.toString();
+    final endIso = spike["end"]?.toString();
+
+    final timePhrase = _formatTimeRange(startIso, endIso);
+
+    // Extract top hypothesis (if available)
+    String? hypothesisLabel;
+    String? hypothesisReason;
+
+    final hypotheses = spike["hypotheses"];
+    if (hypotheses is List && hypotheses.isNotEmpty) {
+      final h = hypotheses.first;
+      if (h is Map) {
+        hypothesisLabel = h["label"]?.toString();
+        hypothesisReason = h["reason"]?.toString();
+      }
+    }
+
+    // Extract nearby events (if available)
+    final nearbyEvents = <String>[];
+    final context = spike["context"];
+    if (context is Map) {
+      final events = context["nearby_events"];
+      if (events is List) {
+        for (final e in events) {
+          if (e is Map && e["detail"] != null) {
+            nearbyEvents.add(e["detail"].toString());
+          }
+        }
+      }
+    }
+
+    // Build relational sentence
+    final buffer = StringBuffer();
+
+    if (hypothesisLabel == "exercise") {
+      buffer.write(
+        "You had a period of elevated stress signals around $timePhrase, "
+        "which appears to be related to physical activity (exercise). "
+        "Did this feel like normal exertion or something more stressful?",
+      );
+    } else {
+      buffer.write(
+        "You had a stressful period around $timePhrase",
+      );
+
+      if (hypothesisReason != null && hypothesisReason.isNotEmpty) {
+        buffer.write(", which may be related to $hypothesisReason");
+      } else if (nearbyEvents.isNotEmpty) {
+        buffer.write(", possibly related to ${nearbyEvents.join(' or ')}");
+      }
+
+      buffer.write(". What was happening at this time?");
+    }
+
+    messages.add(buffer.toString());
+  }
+
+  return messages;
+}
+String _formatTimeRange(String? startIso, String? endIso) {
+  try {
+    if (startIso == null) return "an unknown time";
+
+    final start = DateTime.parse(startIso).toLocal();
+    final startStr = _formatTime(start);
+
+    if (endIso == null) return startStr;
+
+    final end = DateTime.parse(endIso).toLocal();
+    final endStr = _formatTime(end);
+
+    return "$startStr–$endStr";
+  } catch (_) {
+    return "an unknown time";
+  }
+}
+
+String _formatTime(DateTime dt) {
+  final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+  final minute = dt.minute.toString().padLeft(2, '0');
+  final period = dt.hour >= 12 ? 'PM' : 'AM';
+  return "$hour:$minute $period";
+}
+
+
+  @override
+  void dispose() {
+>>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
     _contextController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+<<<<<<< HEAD
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -535,6 +700,86 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
                     ),
             ),
           ],
+=======
+    final errorText = _error;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Stress Spike Test'),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              TextField(
+                controller: _contextController,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  labelText: 'Optional context (for better questions)',
+                  hintText: 'e.g., had a quiz at 9am, drank extra coffee...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _loading ? null : _runTest,
+                  child: _loading
+                      ? const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : const Text('Run Gemini on Sample Data'),
+                ),
+              ),
+
+              if (errorText != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  errorText,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ],
+
+              const SizedBox(height: 12),
+
+              // NEW: Friendly output panel
+              Expanded(
+                child: Column(
+                  children: [
+                    _Panel(
+                      title: "Friendly Output",
+                      child: SelectableText(
+                        _friendlyOutput ?? "Friendly summary will appear here.",
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _Panel(
+                      title: "JSON Output",
+                      child: SelectableText(
+                        _jsonOutput ?? "JSON output will appear here.",
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+>>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
         ),
       ),
     );
@@ -571,6 +816,7 @@ class _Panel extends StatelessWidget {
     );
   }
 }
+<<<<<<< HEAD
 
 class _RunRecord {
   _RunRecord({
@@ -589,3 +835,5 @@ class _RunRecord {
   final String? error;
   final String? contextSnippet;
 }
+=======
+>>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
