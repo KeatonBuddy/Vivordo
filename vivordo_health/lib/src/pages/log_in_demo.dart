@@ -6,7 +6,6 @@ class LoginDemo extends StatefulWidget {
   const LoginDemo({super.key});
 
   @override
-  // ignore: library_private_types_in_public_api
   LoginDemoState createState() => LoginDemoState();
 }
 
@@ -15,34 +14,32 @@ class LoginDemoState extends State<LoginDemo> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(title: Text("GeeksforGeeks")),
+      appBar: AppBar(title: const Text("Login Demo")),
       body: SingleChildScrollView(
         child: Column(
           children: <Widget>[
             Padding(
               padding: const EdgeInsets.only(top: 110.0),
               child: Center(
-                child: Container(
+                child: SizedBox(
                   width: 200,
                   height: 100,
-                  /*decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(50.0)),*/
                   child: Image.asset('assets/images/Instagram.png'),
                 ),
               ),
             ),
+
             Padding(
-              //padding: const EdgeInsets.only(left:15.0,right: 15.0,top:0,bottom: 0),
-              padding: EdgeInsets.symmetric(horizontal: 15),
+              padding: const EdgeInsets.symmetric(horizontal: 15),
               child: TextField(
                 decoration: InputDecoration(
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                   labelText: 'Phone number, email or username',
                   hintText: 'Enter valid email id as abc@gmail.com',
                 ),
               ),
             ),
+
             Padding(
               padding: const EdgeInsets.only(
                 left: 15.0,
@@ -50,67 +47,74 @@ class LoginDemoState extends State<LoginDemo> {
                 top: 15,
                 bottom: 0,
               ),
-              //padding: EdgeInsets.symmetric(horizontal: 15),
               child: TextField(
                 obscureText: true,
                 decoration: InputDecoration(
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                   labelText: 'Password',
                   hintText: 'Enter secure password',
                 ),
               ),
             ),
 
+            // --- Login button ---
             SizedBox(
               height: 65,
               width: 360,
-              child: Container(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 20.0),
-                  child: ElevatedButton(
-                    child: Text(
-                      'Log in ',
-                      style: TextStyle(color: Colors.white, fontSize: 20),
-                    ),
-                    onPressed: () {
-                      AuthService.emailSignup(
-                        emailAddress: "random@gmail.com", //edit this field
-                        password: "passsd", //edit this field,
-                        displayName: "random username",
-                        context: context,
-                        nextPage: MyHomePage(title: "My home page"),
-                      ); //switch around this function to test different auth
-                    },
+              child: Padding(
+                padding: const EdgeInsets.only(top: 20.0),
+                child: ElevatedButton(
+                  onPressed: () {
+                    AuthService.emailSignup(
+                      emailAddress: "random@gmail.com", // TODO: replace with inputs
+                      password: "passsd", // TODO: replace with inputs
+                      displayName: "random username",
+                      context: context,
+                      nextPage: MyHomePage(title: "My home page"),
+                    );
+                  },
+                  child: const Text(
+                    'Log in',
+                    style: TextStyle(color: Colors.white, fontSize: 20),
                   ),
                 ),
               ),
             ),
 
-            SizedBox(height: 50),
-            Container(
-              child: Center(
-                child: Row(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(left: 62),
-                      child: Text('Forgot your login details? '),
-                    ),
-
-                    Padding(
-                      padding: const EdgeInsets.only(left: 1.0),
-                      child: InkWell(
-                        onTap: () {
-                          print('hello');
-                        },
-                        child: Text(
-                          'Get help logging in.',
-                          style: TextStyle(fontSize: 14, color: Colors.blue),
-                        ),
-                      ),
-                    ),
-                  ],
+            // --- NEW: Stress Spike Test button ---
+            SizedBox(
+              height: 55,
+              width: 360,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 10.0),
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/stress-test');
+                  },
+                  child: const Text(
+                    'Open Stress Spike Test',
+                    style: TextStyle(fontSize: 16),
+                  ),
                 ),
               ),
+            ),
+
+            const SizedBox(height: 50),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('Forgot your login details? '),
+                InkWell(
+                  onTap: () {
+                    debugPrint('Get help logging in tapped');
+                  },
+                  child: const Text(
+                    'Get help logging in.',
+                    style: TextStyle(fontSize: 14, color: Colors.blue),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
