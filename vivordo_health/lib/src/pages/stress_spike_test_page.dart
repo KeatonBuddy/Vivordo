@@ -117,12 +117,13 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
     try {
       final sampleData = _service.getSampleData();
 
-      final raw = await _service.analyzeStressSpikes(
-        data: sampleData,
-        extraUserContext: _contextController.text,
-      );
+      final raw = await _service
+          .analyzeStressSpikes(
+            data: sampleData,
+            extraUserContext: _contextController.text,
+          )
+          .timeout(const Duration(seconds: 30));
 
-      // Try to decode JSON
       final decoded = _tryDecodeJson(raw);
 
       if (decoded == null) {
@@ -146,8 +147,6 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
 =======
         // Prettify JSON
         final prettyJson = const JsonEncoder.withIndent('  ').convert(decoded);
-
-        // Generate friendly message(s)
         final friendly = _buildFriendlySpikeMessages(decoded);
 
 >>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
@@ -187,6 +186,7 @@ class _StressSpikeTestPageState extends State<StressSpikeTestPage> {
 
 =======
     } catch (e) {
+      historyError = e.toString();
       setState(() => _error = e.toString());
     } finally {
 >>>>>>> edcdc98 (Extracted out the Gemini logic into a service, created Testing page and established connection with mock json data to test I/O)
@@ -334,117 +334,113 @@ Map<String, dynamic>? _tryDecodeJson(String text) {
     // Remove Markdown code fences if present
     var cleaned = text.trim();
 
-    if (cleaned.startsWith('```')) {
-      cleaned = cleaned
-          .replaceFirst(RegExp(r'^```[a-zA-Z]*'), '')
-          .replaceFirst(RegExp(r'```$'), '')
-          .trim();
-    }
-
-    final obj = jsonDecode(cleaned);
-    if (obj is Map<String, dynamic>) return obj;
-    return null;
-  } catch (e) {
-    debugPrint('JSON parse error: $e');
-    return null;
-  }
-}
-
-
-List<String> _buildFriendlySpikeMessages(Map<String, dynamic> decoded) {
-  final spikes = decoded["spikes"];
-  if (spikes is! List) return [];
-
-  final messages = <String>[];
-
-  for (final spike in spikes) {
-    if (spike is! Map) continue;
-
-    final startIso = spike["start"]?.toString();
-    final endIso = spike["end"]?.toString();
-
-    final timePhrase = _formatTimeRange(startIso, endIso);
-
-    // Extract top hypothesis (if available)
-    String? hypothesisLabel;
-    String? hypothesisReason;
-
-    final hypotheses = spike["hypotheses"];
-    if (hypotheses is List && hypotheses.isNotEmpty) {
-      final h = hypotheses.first;
-      if (h is Map) {
-        hypothesisLabel = h["label"]?.toString();
-        hypothesisReason = h["reason"]?.toString();
+      // Strip markdown code fences if present: ```json ... ```
+      if (cleaned.startsWith('```')) {
+        cleaned = cleaned
+            .replaceFirst(RegExp(r'^```[a-zA-Z]*'), '')
+            .replaceFirst(RegExp(r'```$'), '')
+            .trim();
       }
-    }
 
-    // Extract nearby events (if available)
-    final nearbyEvents = <String>[];
-    final context = spike["context"];
-    if (context is Map) {
-      final events = context["nearby_events"];
-      if (events is List) {
-        for (final e in events) {
-          if (e is Map && e["detail"] != null) {
-            nearbyEvents.add(e["detail"].toString());
+      final obj = jsonDecode(cleaned);
+      if (obj is Map<String, dynamic>) return obj;
+      return null;
+    } catch (e) {
+      debugPrint('JSON parse error: $e');
+      return null;
+    }
+  }
+
+  // ---- Friendly output generation ----
+  List<String> _buildFriendlySpikeMessages(Map<String, dynamic> decoded) {
+    final spikes = decoded["spikes"];
+    if (spikes is! List) return [];
+
+    final messages = <String>[];
+
+    for (final spike in spikes) {
+      if (spike is! Map) continue;
+
+      final startIso = spike["start"]?.toString();
+      final endIso = spike["end"]?.toString();
+      final timePhrase = _formatTimeRange(startIso, endIso);
+
+      // Top hypothesis
+      String? hypothesisLabel;
+      String? hypothesisReason;
+      final hypotheses = spike["hypotheses"];
+      if (hypotheses is List && hypotheses.isNotEmpty) {
+        final h = hypotheses.first;
+        if (h is Map) {
+          hypothesisLabel = h["label"]?.toString();
+          hypothesisReason = h["reason"]?.toString();
+        }
+      }
+
+      // Nearby events (fallback)
+      final nearbyEvents = <String>[];
+      final context = spike["context"];
+      if (context is Map) {
+        final events = context["nearby_events"];
+        if (events is List) {
+          for (final e in events) {
+            if (e is Map && e["detail"] != null) {
+              nearbyEvents.add(e["detail"].toString());
+            }
           }
         }
       }
-    }
 
-    // Build relational sentence
-    final buffer = StringBuffer();
+      final buffer = StringBuffer();
 
-    if (hypothesisLabel == "exercise") {
-      buffer.write(
-        "You had a period of elevated stress signals around $timePhrase, "
-        "which appears to be related to physical activity (exercise). "
-        "Did this feel like normal exertion or something more stressful?",
-      );
-    } else {
-      buffer.write(
-        "You had a stressful period around $timePhrase",
-      );
+      if (hypothesisLabel == "exercise") {
+        buffer.write(
+          "You had a peak in your stress-related signals around $timePhrase, "
+          "which looks most consistent with exercise (elevated heart rate and activity). "
+          "Did this feel like normal exertion, or did something stressful happen too?",
+        );
+      } else {
+        buffer.write("You had a stressful period with peak signals around $timePhrase");
 
-      if (hypothesisReason != null && hypothesisReason.isNotEmpty) {
-        buffer.write(", which may be related to $hypothesisReason");
-      } else if (nearbyEvents.isNotEmpty) {
-        buffer.write(", possibly related to ${nearbyEvents.join(' or ')}");
+        if (hypothesisReason != null && hypothesisReason.isNotEmpty) {
+          buffer.write(", which may be related to $hypothesisReason");
+        } else if (nearbyEvents.isNotEmpty) {
+          buffer.write(", possibly related to ${nearbyEvents.join(' or ')}");
+        }
+
+        buffer.write(". What was happening then?");
       }
 
-      buffer.write(". What was happening at this time?");
+      messages.add(buffer.toString());
     }
 
-    messages.add(buffer.toString());
+    return messages;
   }
 
-  return messages;
-}
-String _formatTimeRange(String? startIso, String? endIso) {
-  try {
-    if (startIso == null) return "an unknown time";
+  String _formatTimeRange(String? startIso, String? endIso) {
+    try {
+      if (startIso == null) return "an unknown time";
 
-    final start = DateTime.parse(startIso).toLocal();
-    final startStr = _formatTime(start);
+      final start = DateTime.parse(startIso).toLocal();
+      final startStr = _formatTime(start);
 
-    if (endIso == null) return startStr;
+      if (endIso == null) return startStr;
 
-    final end = DateTime.parse(endIso).toLocal();
-    final endStr = _formatTime(end);
+      final end = DateTime.parse(endIso).toLocal();
+      final endStr = _formatTime(end);
 
-    return "$startStr–$endStr";
-  } catch (_) {
-    return "an unknown time";
+      return "$startStr–$endStr";
+    } catch (_) {
+      return "an unknown time";
+    }
   }
-}
 
-String _formatTime(DateTime dt) {
-  final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-  final minute = dt.minute.toString().padLeft(2, '0');
-  final period = dt.hour >= 12 ? 'PM' : 'AM';
-  return "$hour:$minute $period";
-}
-
+  String _formatTime(DateTime dt) {
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    return "$hour:$minute $period";
+  }
 
   @override
   void dispose() {
@@ -725,32 +721,56 @@ String _formatTime(DateTime dt) {
               ),
               const SizedBox(height: 12),
 
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _runTest,
-                  child: _loading
-                      ? const Padding(
-                          padding: EdgeInsets.all(10),
-                          child: SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : const Text('Run Gemini on Sample Data'),
-                ),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _loading ? null : _runTest,
+                child: _loading
+                    ? const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : const Text('Run Gemini on Sample Data'),
               ),
+            ),
 
-              if (errorText != null) ...[
-                const SizedBox(height: 12),
+            const SizedBox(height: 8),
+            Row(
+              children: [
                 Text(
-                  errorText,
-                  style: const TextStyle(color: Colors.red),
+                  _loading ? "LLM Execution Time: " : "Last LLM Time: ",
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
+                Text(
+                  _formatDuration(_elapsed),
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    color: _loading ? Colors.deepPurple : Colors.black87,
+                  ),
+                ),
+                if (_loading) ...[
+                  const SizedBox(width: 10),
+                  const Text(
+                    "(running...)",
+                    style: TextStyle(color: Colors.deepPurple),
+                  ),
+                ],
               ],
+            ),
 
+            if (errorText != null) ...[
               const SizedBox(height: 12),
+              Text(
+                errorText,
+                style: const TextStyle(color: Colors.red),
+              ),
+            ],
+
+            const SizedBox(height: 12),
 
               // NEW: Friendly output panel
               Expanded(
