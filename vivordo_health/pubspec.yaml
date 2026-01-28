@@ -66,6 +66,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/panda_icon.png
+    - assets/panda_home_icon.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
