@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'profile_screen.dart'; 
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -9,12 +10,16 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final double stressScore = 42;
-  int _selectedIndex = 0;
   int _selectedTimeFilter = 1;
   String _currentMood = 'Good';
 
-  // Constants for layout
-  final double _headerHeight = 320.0;
+  static const Color primaryPurple = Color(0xFF7B6EF6);
+  static const Color bgWhite = Color(0xFFFBFAFF);
+  static const Color textDark = Color(0xFF2D3142);
+  static const Color textGrey = Color(0xFF9CA3AF);
+  static const Color successGreen = Color(0xFF4ADE80);
+  
+  final double _headerHeight = 300.0;
   final Radius _overlapRadius = const Radius.circular(32);
 
   Color _getRingColor(double score) {
@@ -23,283 +28,85 @@ class _HomeScreenState extends State<HomeScreen> {
     return const Color(0xFFFB7185);
   }
 
-  void _showMoodCheck(Color primaryColor) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(40),
-              topRight: Radius.circular(40),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 50,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              const SizedBox(height: 32),
-              const Text(
-                "How are you feeling?",
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF2D3142),
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                "Don't think too much, just tap.",
-                style: TextStyle(color: Colors.grey, fontSize: 14),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _moodOption('Great', '🤩', const Color(0xFFFFEDD5), const Color(0xFFF97316)),
-                  _moodOption('Good', '😊', const Color(0xFFDCFCE7), const Color(0xFF22C55E)),
-                  _moodOption('Okay', '😐', const Color(0xFFF3F4F6), const Color(0xFF6B7280)),
-                  _moodOption('Down', '😔', const Color(0xFFEDE9FE), const Color(0xFF8B5CF6)),
-                  _moodOption('Awful', '😫', const Color(0xFFFEE2E2), const Color(0xFFEF4444)),
-                ],
-              ),
-              const SizedBox(height: 40),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _moodOption(String label, String emoji, Color bgColor, Color accentColor) {
-    bool isSelected = _currentMood == label;
-    return GestureDetector(
-      onTap: () {
-        setState(() => _currentMood = label);
-        Navigator.pop(context);
-      },
-      child: Column(
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: isSelected ? accentColor : bgColor,
-              shape: BoxShape.circle,
-              boxShadow: isSelected
-                  ? [BoxShadow(color: accentColor.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))]
-                  : [],
-            ),
-            child: Center(
-              child: Text(emoji, style: const TextStyle(fontSize: 28)),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            label,
-            style: TextStyle(
-                color: isSelected ? const Color(0xFF2D3142) : const Color(0xFF9CA3AF),
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    const Color primaryPurple = Color(0xFF7B6EF6);
-    const Color bgWhite = Color(0xFFFBFAFF);
-    const Color textDark = Color(0xFF2D3142);
-    const Color textGrey = Color(0xFF9CA3AF);
-    const Color successGreen = Color(0xFF4ADE80);
-
     return Scaffold(
-      backgroundColor: primaryPurple, 
+      backgroundColor: primaryPurple,
       body: Stack(
         children: [
-          _buildHeader(primaryPurple),
+          _buildBackgroundHeader(),
 
-          // SCROLLABLE CONTENT (FOREGROUND)
           CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
-              SliverToBoxAdapter(
-                child: SizedBox(height: _headerHeight - 20),
-              ),
-              SliverToBoxAdapter(
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: bgWhite,
-                    borderRadius: BorderRadius.only(
-                      topLeft: _overlapRadius,
-                      topRight: _overlapRadius,
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32),
-                    child: Column(
-                      children: [
-                        _buildTimeFilter(primaryPurple),
-                        const SizedBox(height: 24),
-                        _buildAIInsightsCard(primaryPurple, textDark),
-                        const SizedBox(height: 24),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            _selectedTimeFilter == 0
-                                ? "Stress Trend (Today)"
-                                : _selectedTimeFilter == 1
-                                    ? "Stress Trend (This Week)"
-                                    : "Stress Trend (This Month)",
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: textDark,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildGraphPlaceholder(primaryPurple),
-                        const SizedBox(height: 24),
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 20,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
-                          ),
-                          child: SizedBox(
-                            height: 100,
-                            child: CustomPaint(
-                              painter: WeeklyChartPainter(color: primaryPurple),
-                              size: Size.infinite,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        GridView.count(
-                          crossAxisCount: 2,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          mainAxisSpacing: 16,
-                          crossAxisSpacing: 16,
-                          childAspectRatio: 0.85,
-                          children: [
-                            _buildStatCard(
-                              title: 'Sleep',
-                              value: '7.5h',
-                              subText: '+30 min',
-                              subTextColor: successGreen,
-                              icon: Icons.bedtime_outlined,
-                              iconColor: primaryPurple,
-                            ),
-                            _buildStatCard(
-                              title: 'Steps',
-                              value: '8,420',
-                              subText: 'Goal reached',
-                              subTextColor: successGreen,
-                              icon: Icons.show_chart_rounded,
-                              iconColor: primaryPurple,
-                            ),
-                            _buildStatCard(
-                              title: 'Heart Rate',
-                              value: '68 bpm',
-                              subText: 'Resting avg',
-                              subTextColor: textGrey,
-                              icon: Icons.favorite_border,
-                              iconColor: primaryPurple,
-                            ),
-                            _buildStatCard(
-                              title: 'Mood',
-                              value: _currentMood,
-                              subText: 'Check in →',
-                              subTextColor: primaryPurple,
-                              icon: Icons.psychology_outlined,
-                              iconColor: primaryPurple,
-                              onTap: () => _showMoodCheck(primaryPurple),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        _buildGoalCard(primaryPurple),
-                        const SizedBox(height: 120), 
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              SliverToBoxAdapter(child: SizedBox(height: _headerHeight - 20)),
+              SliverToBoxAdapter(child: _buildMainContent()),
             ],
           ),
 
-          Positioned(
-            bottom: 30,
-            left: 24,
-            right: 24,
-            child: _buildFloatingNavBar(primaryPurple),
-          ),
+          _buildTopBar(),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(Color color) {
-    return Container(
-      width: double.infinity,
-      height: _headerHeight,
-      color: color,
+  // --- UI COMPONENTS ---
+
+  Widget _buildTopBar() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
       child: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Good morning,',
-                        style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14),
-                      ),
-                      const Text(
-                        'Sarah',
-                        style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
-                      ),
-                    ],
+                  Text(
+                    'Good morning,',
+                    style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14),
                   ),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                    child: Icon(Icons.person, color: color, size: 22),
+                  const Text(
+                    'Sarah',
+                    style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 10),
+              _buildProfileButton(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileButton() {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const SettingsScreen()),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+        child: const Icon(Icons.person, color: primaryPurple, size: 22),
+      ),
+    );
+  }
+
+  Widget _buildBackgroundHeader() {
+    return Positioned.fill(
+      child: Container(
+        color: primaryPurple,
+        child: Column(
+          children: [
+            const SafeArea(child: SizedBox(height: 80)),
             _buildPandaIndicator(),
           ],
         ),
@@ -307,6 +114,126 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildMainContent() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: bgWhite,
+        borderRadius: BorderRadius.only(
+          topLeft: _overlapRadius,
+          topRight: _overlapRadius,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32),
+        child: Column(
+          children: [
+            _buildTimeFilter(),
+            const SizedBox(height: 24),
+            _buildAIInsightsCard(primaryPurple, textDark),
+            const SizedBox(height: 24),
+            _buildTrendHeader(),
+            const SizedBox(height: 16),
+            _buildGraphPlaceholder(primaryPurple),
+            const SizedBox(height: 24),
+            _buildWeeklyChartContainer(),
+            const SizedBox(height: 24),
+            _buildStatsGrid(),
+            const SizedBox(height: 24),
+            _buildGoalCard(primaryPurple),
+            const SizedBox(height: 120), 
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- HELPER WIDGETS ---
+
+  Widget _buildTrendHeader() {
+    String title = "Stress Trend (Today)";
+    if (_selectedTimeFilter == 1) title = "Stress Trend (This Week)";
+    if (_selectedTimeFilter == 2) title = "Stress Trend (This Month)";
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        title,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+      ),
+    );
+  }
+
+  Widget _buildWeeklyChartContainer() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        height: 100,
+        child: CustomPaint(
+          painter: WeeklyChartPainter(color: primaryPurple),
+          size: Size.infinite,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsGrid() {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 16,
+      crossAxisSpacing: 16,
+      childAspectRatio: 0.85,
+      children: [
+        _buildStatCard(
+          title: 'Sleep',
+          value: '7.5h',
+          subText: '+30 min',
+          subTextColor: successGreen,
+          icon: Icons.bedtime_outlined,
+          iconColor: primaryPurple,
+        ),
+        _buildStatCard(
+          title: 'Steps',
+          value: '8,420',
+          subText: 'Goal reached',
+          subTextColor: successGreen,
+          icon: Icons.show_chart_rounded,
+          iconColor: primaryPurple,
+        ),
+        _buildStatCard(
+          title: 'Heart Rate',
+          value: '68 bpm',
+          subText: 'Resting avg',
+          subTextColor: textGrey,
+          icon: Icons.favorite_border,
+          iconColor: primaryPurple,
+        ),
+        _buildStatCard(
+          title: 'Mood',
+          value: _currentMood,
+          subText: 'Check in →',
+          subTextColor: primaryPurple,
+          icon: Icons.psychology_outlined,
+          iconColor: primaryPurple,
+          onTap: () => _showMoodCheck(primaryPurple),
+        ),
+      ],
+    );
+  }
+  
   Widget _buildPandaIndicator() {
     return SizedBox(
       height: 180,
@@ -454,43 +381,50 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTimeFilter(Color activeColor) {
+  Widget _buildTimeFilter() {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          _filterButton('Daily', 0, activeColor),
-          _filterButton('Weekly', 1, activeColor),
-          _filterButton('Monthly', 2, activeColor),
+          _filterButton("Daily", 0),
+          _filterButton("Weekly", 1),
+          _filterButton("Monthly", 2),
         ],
       ),
     );
   }
 
-  Widget _filterButton(String text, int index, Color activeColor) {
+  Widget _filterButton(String text, int index) {
     bool isActive = _selectedTimeFilter == index;
+    
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => _selectedTimeFilter = index),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 300), 
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: isActive ? activeColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            color: isActive ? primaryPurple : Colors.transparent,
+            borderRadius: BorderRadius.circular(16), 
           ),
           child: Center(
             child: Text(
               text,
               style: TextStyle(
                 color: isActive ? Colors.white : Colors.grey,
+                fontSize: 12, 
                 fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                fontSize: 13,
               ),
             ),
           ),
@@ -563,42 +497,105 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildFloatingNavBar(Color primaryColor) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20)],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _navItem(Icons.home, "Home", 0, primaryColor),
-          _navItem(Icons.track_changes, "Goals", 1, primaryColor),
-          _navItem(Icons.bar_chart, "Dashboard", 2, primaryColor),
-          _navItem(Icons.pets_rounded, "Panda", 3, primaryColor),
-        ],
-      ),
+  void _showMoodCheck(Color primaryColor) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(40),
+              topRight: Radius.circular(40),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 50,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                "How are you feeling?",
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF2D3142),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Don't think too much, just tap.",
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+              const SizedBox(height: 32),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _moodOption('Great', '🤩', const Color(0xFFFFEDD5), const Color(0xFFF97316)),
+                  _moodOption('Good', '😊', const Color(0xFFDCFCE7), const Color(0xFF22C55E)),
+                  _moodOption('Okay', '😐', const Color(0xFFF3F4F6), const Color(0xFF6B7280)),
+                  _moodOption('Down', '😔', const Color(0xFFEDE9FE), const Color(0xFF8B5CF6)),
+                  _moodOption('Awful', '😫', const Color(0xFFFEE2E2), const Color(0xFFEF4444)),
+                ],
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _navItem(IconData icon, String label, int index, Color primaryColor) {
-    bool isActive = _selectedIndex == index;
+  Widget _moodOption(String label, String emoji, Color bgColor, Color accentColor) {
+    bool isSelected = _currentMood == label;
     return GestureDetector(
-      onTap: () => setState(() => _selectedIndex = index),
+      onTap: () {
+        setState(() => _currentMood = label);
+        Navigator.pop(context);
+      },
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: isActive ? primaryColor : Colors.grey, size: 24),
-          Text(label, style: TextStyle(color: isActive ? primaryColor : Colors.grey, fontSize: 10)),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: isSelected ? accentColor : bgColor,
+              shape: BoxShape.circle,
+              boxShadow: isSelected
+                  ? [BoxShadow(color: accentColor.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))]
+                  : [],
+            ),
+            child: Center(
+              child: Text(emoji, style: const TextStyle(fontSize: 28)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            label,
+            style: TextStyle(
+                color: isSelected ? const Color(0xFF2D3142) : const Color(0xFF9CA3AF),
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500),
+          ),
         ],
       ),
     );
   }
 }
 
-// --- PAINTERS ---
+// --- PAINTERS --- 
 
 class ChartPainter extends CustomPainter {
   final Color color;

@@ -74,7 +74,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               alignment: Alignment.center,
               children: [
                 Container(
-                  height: 200,
+                  height: 250,
                   width: double.infinity,
                   decoration: const BoxDecoration(
                     color: Color(0xFF7C69EF),

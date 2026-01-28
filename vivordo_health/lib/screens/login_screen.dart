@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'main_navigation.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Colors
     final Color primaryPurple = const Color(0xFF857DEA);
     final Color bgPurple = const Color(0xFFFBFaff);
     final Color textGrey = const Color(0xFF6B7280);
@@ -125,7 +125,7 @@ class LoginScreen extends StatelessWidget {
                         height: 50,
                         child: ElevatedButton(
                           onPressed: () {
-                            Navigator.pushReplacementNamed(context, '/home');
+                            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainNavigationScreen()));
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: primaryPurple,
