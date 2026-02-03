@@ -22,6 +22,64 @@ class DemoUserGenerator {
     return "High";
   }
 
+  // pick random item from a list
+  String _pick(List<String> items) => items[_rng.nextInt(items.length)];
+
+  // wording pools (more variety)
+  final List<String> _lowStressMoods = [
+    "Calm",
+    "Content",
+    "Focused",
+    "Relaxed",
+    "Okay",
+    "Motivated",
+  ];
+
+  final List<String> _highStressMoods = [
+    "Anxious",
+    "Overwhelmed",
+    "Tense",
+    "Irritable",
+    "Drained",
+    "Stressed",
+  ];
+
+  final List<String> _lowStressSummaries = [
+    "day felt steady and manageable overall.",
+    "felt productive and mentally balanced.",
+    "kept a good rhythm throughout the day.",
+    "things went smoothly and focus was solid.",
+    "energy was stable and mood stayed positive.",
+    "worked through tasks without much pressure.",
+  ];
+
+  final List<String> _highStressSummaries = [
+    "felt some pressure today but managed with short breaks.",
+    "stress peaked at times and it was hard to stay focused.",
+    "felt mentally overloaded and low on energy.",
+    "a few moments felt overwhelming but i pushed through.",
+    "felt tense most of the day and needed more downtime.",
+    "pressure built up, but i tried to reset and keep going.",
+  ];
+
+  final List<String> _lowStressKeywords = [
+    "routine",
+    "balance",
+    "focus",
+    "progress",
+    "calm",
+    "steady",
+  ];
+
+  final List<String> _highStressKeywords = [
+    "stress",
+    "fatigue",
+    "pressure",
+    "anxiety",
+    "overload",
+    "tension",
+  ];
+
   // main function that builds one demo user
   // caller only provides a userId, everything else is filled in
   DemoUserData generate(String userId) {
@@ -34,6 +92,14 @@ class DemoUserGenerator {
         _clampDouble(7 + (_rng.nextDouble() * 1.6) - 0.8, 4, 10);
 
     final stressed = stress >= 60;
+
+    // random-ish but stress-aware writing fields
+    final journalMood =
+        stressed ? _pick(_highStressMoods) : _pick(_lowStressMoods);
+    final journalEntrySummary =
+        stressed ? _pick(_highStressSummaries) : _pick(_lowStressSummaries);
+    final keyword =
+        stressed ? _pick(_highStressKeywords) : _pick(_lowStressKeywords);
 
     return DemoUserData(
       userId: userId,
@@ -58,11 +124,9 @@ class DemoUserGenerator {
       hydrationLogged: _rng.nextInt(100) < 70,
 
       goalAchieved: _rng.nextInt(100) < 45,
-      journalMood: stressed ? "Anxious" : "Okay",
-      journalEntrySummary: stressed
-          ? "felt some pressure today but managed with short breaks."
-          : "day felt steady and manageable overall.",
-      keyword: stressed ? "stress" : "routine",
+      journalMood: journalMood,
+      journalEntrySummary: journalEntrySummary,
+      keyword: keyword,
       stressed: stressed,
     );
   }

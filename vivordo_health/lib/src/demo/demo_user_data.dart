@@ -1,6 +1,6 @@
-// this file defines what a demo user "looks like"
-// it’s just a container for example data, no logic here
-// the goal is to hold all fields needed for testing, gemini, or ui demos
+//this file defines what a demo user "looks like"
+// it's just a container for example data no logic here
+// the goal is to hold all fields needed for testing, gemini, or UI demos
 
 class DemoUserData {
   final String userId;
