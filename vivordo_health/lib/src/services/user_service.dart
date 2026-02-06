@@ -23,9 +23,9 @@ class UserService {
   }
 
   //create goal
-  //update goal - with 1 get goal defoposit
-  //get goal - get with 1 autoid
-  //get all goals - query for all
+  //TODO: update goal - with 1 get goal defoposit
+  //TODO: get goal - get with 1 autoid
+  //TODO: get all goals - query for all
 
   static Future<void> createGoal({
     required User theUser,
@@ -42,7 +42,7 @@ class UserService {
     String? progressCurrentValue,
     String? progressCompletionPercent,
   }) async {
-    Map<String, dynamic>? progress = null;
+    Map<String, dynamic>? progress;
     if (progressCurrentValue != null) {
       progress = {
         "currentValue": progressCurrentValue,
@@ -68,14 +68,8 @@ class UserService {
       updatedAt: FieldValue.serverTimestamp(),
     );
 
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc()
-        .set(newGoal.toMap());
+    await FirebaseFirestore.instance.collection('goals').add(newGoal.toMap());
   }
-
-  //Map<String, dynamic> userdata = {"responses" : {"q1": 6, "q2": 5-6, "q3": Lightly active, "q4": 6, "q5": 7, "q6": 7, "q7": Few times per
-  //day, q8: Often, q9: 6, q10: 5-6 times, q11: 6, q12: 7, q13: 6-8h, q14: 6, q15: 7}};
 
   static Future<void> submitQuestionare(
     User authUser,
