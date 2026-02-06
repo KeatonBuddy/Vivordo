@@ -3,19 +3,17 @@ import 'dart:ffi';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class QuestionnaireResponse {
-  final String id;
   final String userId;
   String questionnaireType;
   String version;
-  Timestamp submittedAt;
+  FieldValue submittedAt;
   Map<String, dynamic> metadata;
   Map<String, dynamic> answers;
   Map<String, dynamic> derivedScores;
-  Timestamp createdAt;
-  Timestamp updatedAt;
+  FieldValue createdAt;
+  FieldValue updatedAt;
 
   QuestionnaireResponse({
-    required this.id,
     required this.userId,
     required this.questionnaireType,
     this.version = 'v1',
@@ -29,7 +27,6 @@ class QuestionnaireResponse {
 
   factory QuestionnaireResponse.fromMap(Map<String, dynamic> data) {
     return QuestionnaireResponse(
-      id: data['id'],
       userId: data['userId'],
       questionnaireType: data['questionnaireType'],
       version: data['version'],
@@ -44,7 +41,6 @@ class QuestionnaireResponse {
 
   Map<String, dynamic> toMap() {
     return {
-      'id': id,
       'userId': userId,
       'questionnaireType': questionnaireType,
       'version': version,
