@@ -71,24 +71,26 @@ class UserService {
     await FirebaseFirestore.instance.collection('goals').add(newGoal.toMap());
   }
 
-  static Future<void> submitQuestionare(
-    User authUser,
-    Map<String, dynamic> userdata,
-  ) async {
+  static Future<void> submitQuestionare(Map<String, dynamic> userdata) async {
+    User? authUser = FirebaseAuth.instance.currentUser;
     final metadata = Metadata.create().toMap();
 
-    QuestionnaireResponse firestoreResponse = QuestionnaireResponse(
-      userId: authUser.uid,
-      questionnaireType: "baseline",
-      submittedAt: FieldValue.serverTimestamp(),
-      metadata: metadata,
-      answers: userdata["responses"],
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    );
+    if (authUser != null) {
+      QuestionnaireResponse firestoreResponse = QuestionnaireResponse(
+        userId: authUser.uid,
+        questionnaireType: "baseline",
+        submittedAt: FieldValue.serverTimestamp(),
+        metadata: metadata,
+        answers: userdata["responses"],
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      );
 
-    await FirebaseFirestore.instance
-        .collection('questionnaire_responses')
-        .add(firestoreResponse.toMap());
+      await FirebaseFirestore.instance
+          .collection('questionnaire_responses')
+          .add(firestoreResponse.toMap());
+    } else {
+      print("Error: User is null");
+    }
   }
 }

@@ -1,5 +1,3 @@
-import 'dart:ffi';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class QuestionnaireResponse {
@@ -57,7 +55,7 @@ class QuestionnaireResponse {
     answers[questionID] = answer;
   }
 
-  void changeStressScore(Float score) {
+  void changeStressScore(double score) {
     derivedScores["stressScore"] = score;
   }
 
