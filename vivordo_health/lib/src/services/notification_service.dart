@@ -5,12 +5,10 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:vivordo_health/main.dart' show navigatorKey;
 import 'dart:io';
 
-/// Top-level function to handle background messages
-/// Must be a top-level function (not a class method)
+/// Function to handle background messages
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   print('Handling background message: ${message.messageId}');
-  // Handle background notification here if needed
 }
 
 /// Notification Service - Singleton pattern for managing FCM notifications
