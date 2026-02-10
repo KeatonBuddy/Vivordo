@@ -71,13 +71,15 @@ class UserService {
     await FirebaseFirestore.instance.collection('goals').add(newGoal.toMap());
   }
 
-  static Future<void> submitQuestionare(Map<String, dynamic> userdata) async {
-    User? authUser = FirebaseAuth.instance.currentUser;
+  static Future<void> submitQuestionare({
+    required User? user,
+    required Map<String, dynamic> userdata,
+  }) async {
     final metadata = Metadata.create().toMap();
 
-    if (authUser != null) {
+    if (user != null) {
       QuestionnaireResponse firestoreResponse = QuestionnaireResponse(
-        userId: authUser.uid,
+        userId: user.uid,
         questionnaireType: "baseline",
         submittedAt: FieldValue.serverTimestamp(),
         metadata: metadata,
@@ -90,7 +92,8 @@ class UserService {
           .collection('questionnaire_responses')
           .add(firestoreResponse.toMap());
     } else {
-      print("Error: User is null");
+      throw Exception("User unavailable");
+      //TODO: Log this
     }
   }
 }

@@ -1,4 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'screens/login_screen.dart';
@@ -8,7 +10,13 @@ import 'screens/home_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(const MyApp());
+  runApp(
+    StreamProvider<User?>.value(
+      value: FirebaseAuth.instance.authStateChanges(),
+      initialData: null,
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -32,10 +40,24 @@ class MyApp extends StatelessWidget {
       // Route Definitions
       initialRoute: '/',
       routes: {
-        '/': (context) => const LoginScreen(),
+        '/': (context) => const AuthGate(),
         '/signup': (context) => const SignupScreen(),
         '/home': (context) => const HomeScreen(),
       },
     );
+  }
+}
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = context.watch<User?>(); // ✅ global current user (reactive)
+
+    if (user == null) {
+      return const LoginScreen();
+    }
+    return const HomeScreen();
   }
 }
