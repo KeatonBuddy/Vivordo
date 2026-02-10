@@ -82,14 +82,17 @@ class NotificationService {
       );
 
       // Get and log FCM token
-      String? token = await _firebaseMessaging.getToken();
-      print('NotificationService: FCM Token: $token');
+      try {
+        String? token = await _firebaseMessaging.getToken();
+        print('NotificationService: FCM Token: $token');
 
-      // Listen for token refresh
-      _firebaseMessaging.onTokenRefresh.listen((newToken) {
-        print('NotificationService: FCM Token refreshed: $newToken');
-        // TODO: Send token to your backend server
-      });
+        // Listen for token refresh
+        _firebaseMessaging.onTokenRefresh.listen((newToken) {
+          print('NotificationService: FCM Token refreshed: $newToken');
+        });
+      } catch (e) {
+        print('NotificationService: Warning - Could not get FCM token (normal on simulator): $e');
+      }
 
       // Handle foreground messages
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
@@ -163,6 +166,15 @@ class NotificationService {
     );
   }
 
+  /// Show a notification when a new goal is created
+  Future<void> showGoalCreatedNotification(String goalTitle) async {
+    await showLocalNotification(
+      title: 'Goal Created! 🎯',
+      body: 'Successfully added: "$goalTitle". Let\'s get to work!',
+      payload: '{"screen": "goals"}',
+    );
+  }
+
   /// Show a local notification
   /// Used to display notifications when app is in foreground
   Future<void> showLocalNotification({
@@ -180,6 +192,8 @@ class NotificationService {
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      presentBanner: true,
+      presentList: true,
     );
 
     const NotificationDetails platformChannelSpecifics = NotificationDetails(

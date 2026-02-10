@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/src/services/notification_service.dart';
 
 class Goal {
   String id;
@@ -133,6 +134,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
         days: {},
       ));
     });
+    
+    // Trigger notification
+    NotificationService().showGoalCreatedNotification(title);
+
     _goalController.clear();
     Navigator.pop(context);
   }
