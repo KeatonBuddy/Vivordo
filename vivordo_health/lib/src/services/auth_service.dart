@@ -13,7 +13,7 @@ class AuthService {
     required String displayName,
     String photoUrl = 'default photo url', //TODO(favour): add default photo
     required BuildContext context,
-    required Widget nextPage,
+    required PageController pageController,
   }) async {
     try {
       //add validation for the email and password
@@ -34,23 +34,18 @@ class AuthService {
       }
 
       //navigate to next page
-      await Future.delayed(const Duration(seconds: 1));
-      if (context.mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (BuildContext context) => nextPage),
-        );
-      }
+      pageController.nextPage(
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOutCubicEmphasized, // Smoother animation
+      );
     } on FirebaseAuthException catch (e) {
       //TODO: basic password validation - should we make it more complicated?
       if (context.mounted) {
         if (e.code == 'weak-password') {
           const message = 'Password should be at least 6 characters';
-          print(e);
           SnackBars.authMessage(context: context, message: message);
         } else if (e.code == 'email-already-in-use') {
           const message = 'The account already exists for that email.';
-          print(e);
           SnackBars.authMessage(context: context, message: message);
         } else {
           SnackBars.authMessage(context: context, message: e.code);
@@ -98,7 +93,6 @@ class AuthService {
         }
       }
       //log any other errors here - crashlytics?
-      //store user information in firestore
     } catch (e) {
       print(e); //log this - crashlytics?
     }
