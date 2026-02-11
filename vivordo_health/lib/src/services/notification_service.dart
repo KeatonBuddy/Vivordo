@@ -14,7 +14,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 /// Notification Service - Singleton pattern for managing FCM notifications
 /// Handles iOS push notifications using Firebase Cloud Messaging
 class NotificationService {
-  // Singleton instance
   static final NotificationService _instance = NotificationService._internal();
 
   factory NotificationService() {
@@ -34,7 +33,6 @@ class NotificationService {
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    // Skip initialization on web platform
     if (kIsWeb) {
       print('NotificationService: Web platform detected, skipping initialization');
       _isInitialized = true;
@@ -42,7 +40,7 @@ class NotificationService {
     }
 
     try {
-      // iOS-only: Request permissions
+      // Request IOS permissions
       if (Platform.isIOS) {
         NotificationSettings settings = await _firebaseMessaging.requestPermission(
           alert: true,
@@ -135,8 +133,6 @@ class NotificationService {
     final context = navigatorKey.currentContext;
     if (context != null) {
       if (message.data['screen'] == 'home' || message.data['screen'] == 'goals') {
-        // Since main_navigation handles the tabs, we just push/pop as needed
-        // For now, let's navigate to home
         Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
       }
     }
@@ -147,7 +143,6 @@ class NotificationService {
     print('NotificationService: Local notification tapped, payload: ${response.payload}');
     
     // Parse payload if it's JSON
-    // For now, navigate to home as well
     final context = navigatorKey.currentContext;
     if (context != null) {
       Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
@@ -155,7 +150,6 @@ class NotificationService {
   }
 
   /// Show a local notification for testing purposes
-  /// Can be triggered from UI or console to verify local notifications are working
   Future<void> showTestNotification() async {
     await showLocalNotification(
       title: 'Test Notification',
@@ -199,7 +193,7 @@ class NotificationService {
     );
 
     await _localNotificationsPlugin.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000, // Unique ID based on timestamp
+      DateTime.now().millisecondsSinceEpoch ~/ 1000, 
       title,
       body,
       platformChannelSpecifics,
