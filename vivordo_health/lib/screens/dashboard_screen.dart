@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -16,13 +18,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
       backgroundColor: bgPurple,
       body: Stack(
         children: [
           SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 120), 
+            padding: const EdgeInsets.only(bottom: 120),
             child: Column(
               children: [
                 _buildHeader(),
@@ -33,12 +37,75 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const SizedBox(height: 20),
                       _buildSyncCard(),
                       const SizedBox(height: 20),
-                      _buildHeartRateCard(),
+
+                      /*
+                        DASHBOARD DATA RULE (per task):
+                        - Only pull values that exist in Firestore for the authenticated user.
+                        - Do NOT modify UI elements that do not have a real database field/collection yet.
+                        - Security is enforced by Firestore Rules (auth required + user owns their docs).
+
+                        THIS SECTION:
+                        - Pulled from Firestore (collection: metrics_daily):
+                          * Heart Rate value: restingHeartRate
+                          * Daily Steps value: stepsCount
+                          * Sleep Duration value: sleepDurationHours
+
+                        - Not pulled (no matching field/collection exists in current schema; UI left unchanged):
+                          * Screen Time (hardcoded "4.2h" in _buildGridStats)
+                          * Audio (hardcoded "65 dB" in _buildGridStats)
+
+                        Counts:
+                        - Values shown on UI (text): 5
+                        - Values pulled from Firestore: 3
+                        - Values NOT pulled (missing field/collection): 2
+                      */
+
+                      // If user is not logged in, we keep the existing UI values (no DB access possible).
+                      if (currentUser == null)
+                        Column(
+                          children: [
+                            _buildHeartRateCard(null),
+                            const SizedBox(height: 16),
+                            _buildStepsCard(null),
+                            const SizedBox(height: 16),
+                            _buildSleepCard(null),
+                          ],
+                        )
+                      else
+                        // Pull the most recent metrics document for this authenticated user.
+                        // The query is scoped by userId == auth.uid (backend rules also enforce ownership).
+                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: FirebaseFirestore.instance
+                              .collection("metrics_daily")
+                              .where("userId", isEqualTo: currentUser.uid)
+                              // We order by "date" to get latest. "date" must exist in the document.
+                              .orderBy("date", descending: true)
+                              .limit(1)
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            // If we have data, use it. If not, fall back to existing UI placeholders.
+                            Map<String, dynamic>? data;
+                            if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+                              data = snapshot.data!.docs.first.data();
+                            }
+
+                            return Column(
+                              children: [
+                                _buildHeartRateCard(data),
+                                const SizedBox(height: 16),
+                                _buildStepsCard(data),
+                                const SizedBox(height: 16),
+                                _buildSleepCard(data),
+                              ],
+                            );
+                          },
+                        ),
+
                       const SizedBox(height: 16),
-                      _buildStepsCard(),
-                      const SizedBox(height: 16),
-                      _buildSleepCard(),
-                      const SizedBox(height: 16),
+
+                      // This stays unchanged because the DB does not currently provide these fields:
+                      // - Screen Time (hardcoded UI)
+                      // - Audio (hardcoded UI)
                       _buildGridStats(),
                     ],
                   ),
@@ -118,15 +185,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // --- CHART CARDS ---
+  // NOTE: These cards keep the original UI layout.
+  // Only the displayed "value" is replaced with Firestore fields when available.
 
-  Widget _buildHeartRateCard() {
+  Widget _buildHeartRateCard(Map<String, dynamic>? data) {
+    // Pulled field (if present): metrics_daily.restingHeartRate
+    // Fallback: original placeholder value (unchanged behavior)
+    final firestoreHr = data?["restingHeartRate"];
+    final displayed = firestoreHr != null
+        ? firestoreHr.toString()
+        : (_selectedTimeFilter == 0 ? "72" : "68");
+
     return _buildCardBase(
       child: Column(
         children: [
           _buildChartHeader(
             Icons.favorite_border,
             "Heart Rate",
-            _selectedTimeFilter == 0 ? "72" : "68",
+            displayed,
             "Avg",
             Colors.redAccent,
           ),
@@ -146,15 +222,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildStepsCard() {
-    final List<double> dailyData = [0.3, 0.5, 0.2, 0.7, 0.4, 0.9, 0.6];
+  Widget _buildStepsCard(Map<String, dynamic>? data) {
+    // Pulled field (if present): metrics_daily.stepsCount
+    // Fallback: original placeholder value (unchanged behavior)
+    final firestoreSteps = data?["stepsCount"];
+    final displayed = firestoreSteps != null
+        ? firestoreSteps.toString()
+        : (_selectedTimeFilter == 0 ? "9,540" : "64,200");
+
+    final List<double> dailyData = [0.3, 0.5, 0.2, 0.7, 0.4, 0.9, 0.6]; // unchanged UI
+
     return _buildCardBase(
       child: Column(
         children: [
           _buildChartHeader(
             Icons.directions_walk,
             "Daily Steps",
-            _selectedTimeFilter == 0 ? "9,540" : "64,200",
+            displayed,
             "Total",
             Colors.blueAccent,
           ),
@@ -172,13 +256,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildSleepCard() {
-    final List<double> sleepData = [0.7, 0.65, 0.8, 0.75, 0.6, 0.9, 0.85];
-    final List<String> labels = ["M", "T", "W", "T", "F", "S", "S"];
+  Widget _buildSleepCard(Map<String, dynamic>? data) {
+    // Pulled field (if present): metrics_daily.sleepDurationHours
+    // Fallback: original placeholder value (unchanged behavior)
+    final firestoreSleep = data?["sleepDurationHours"];
+    final displayed = firestoreSleep != null ? "${firestoreSleep}h" : "7.9h";
+
+    final List<double> sleepData = [0.7, 0.65, 0.8, 0.75, 0.6, 0.9, 0.85]; // unchanged UI
+    final List<String> labels = ["M", "T", "W", "T", "F", "S", "S"]; // unchanged UI
+
     return _buildCardBase(
       child: Column(
         children: [
-          _buildChartHeader(Icons.bedtime, "Sleep Duration", "7.9h", "Last Night", primaryPurple),
+          _buildChartHeader(Icons.bedtime, "Sleep Duration", displayed, "Last Night", primaryPurple),
           const SizedBox(height: 20),
           SizedBox(
             height: 150,
@@ -223,6 +313,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildGridStats() {
+    // Not pulled from Firestore because current DB schema has no fields/collection for:
+    // - Screen Time
+    // - Audio (dB)
+    // These remain hardcoded UI placeholders until a real data source is added.
     return Row(
       children: [
         Expanded(child: _buildSmallStatCard(Icons.smartphone, "Screen Time", "4.2h", Colors.orange)),
