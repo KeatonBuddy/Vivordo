@@ -58,7 +58,6 @@ class Insights {
   factory Insights.fromMap(Map<String, dynamic> map) {
     return Insights(
       userId: map["userId"] ?? "",
-
       source: map["source"],
       title: map["title"],
       body: map["body"],

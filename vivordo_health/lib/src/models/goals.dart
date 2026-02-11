@@ -6,15 +6,15 @@ class Goals {
   String? description;
   String? category;
   String? targetMetricType;
-  String? targetValue;
+  double? targetValue;
   String? targetUnit;
   String? direction;
   String? startDate;
   String? endDate;
   String status;
-  Map<String, dynamic> progress;
-  final Timestamp createdAt;
-  Timestamp updatedAt;
+  Map<String, dynamic>? progress;
+  final FieldValue createdAt;
+  FieldValue updatedAt;
 
   Goals({
     required this.userId,
@@ -61,8 +61,8 @@ class Goals {
           ? Map<String, dynamic>.from(map["progress"])
           : {},
 
-      createdAt: map["createdAt"] as Timestamp,
-      updatedAt: map["updatedAt"] as Timestamp,
+      createdAt: map["createdAt"],
+      updatedAt: map["updatedAt"],
 
       description: map["description"],
       category: map["category"],
