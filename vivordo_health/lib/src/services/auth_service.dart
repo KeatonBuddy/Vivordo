@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
-import 'package:vivordo_health/src/utils/toast.dart';
+import 'package:vivordo_health/src/utils/snackbar.dart';
 
 //TODO(favour): log flagged items to crashlytics
 
@@ -43,16 +43,19 @@ class AuthService {
       }
     } on FirebaseAuthException catch (e) {
       //TODO: basic password validation - should we make it more complicated?
-      if (e.code == 'weak-password') {
-        const message = 'Password should be at least 6 characters';
-        print(e);
-        ToastMessages.authMessage(message: message);
-      } else if (e.code == 'email-already-in-use') {
-        const message = 'The account already exists for that email.';
-        print(e);
-        ToastMessages.authMessage(message: message);
+      if (context.mounted) {
+        if (e.code == 'weak-password') {
+          const message = 'Password should be at least 6 characters';
+          print(e);
+          SnackBars.authMessage(context: context, message: message);
+        } else if (e.code == 'email-already-in-use') {
+          const message = 'The account already exists for that email.';
+          print(e);
+          SnackBars.authMessage(context: context, message: message);
+        } else {
+          SnackBars.authMessage(context: context, message: e.code);
+        }
       }
-      //store user information in firestore
     } catch (e) {
       print(e);
     }
@@ -85,10 +88,14 @@ class AuthService {
         );
       }
     } on FirebaseAuthException catch (e) {
-      //should i take extra steps to figure out if its specifcally wrong email or password?
-      if (e.code == 'invalid-credential') {
-        const message = 'Invalid email or password';
-        ToastMessages.authMessage(message: message);
+      if (context.mounted) {
+        //should i take extra steps to figure out if its specifcally wrong email or password?
+        if (e.code == 'invalid-credential') {
+          const message = 'Invalid email or password';
+          SnackBars.authMessage(context: context, message: message);
+        } else {
+          SnackBars.authMessage(context: context, message: e.code);
+        }
       }
       //log any other errors here - crashlytics?
       //store user information in firestore
