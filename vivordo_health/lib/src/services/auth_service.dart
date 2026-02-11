@@ -2,7 +2,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/utils/toast.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 //TODO(favour): log flagged items to crashlytics
 
@@ -69,10 +68,13 @@ class AuthService {
     try {
       //add validation for the email and password
       //successful sign in
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: emailAddress,
-        password: password,
-      );
+      final userCredential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: emailAddress, password: password);
+
+      final currentUser = userCredential.user;
+      if (currentUser == null) {
+        throw Exception('Error signing in user');
+      }
 
       //navigate to next page
       await Future.delayed(const Duration(seconds: 1));
