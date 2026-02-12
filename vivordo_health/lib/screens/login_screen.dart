@@ -171,11 +171,14 @@ class LoginScreen extends StatelessWidget {
                         child: OutlinedButton.icon(
                           onPressed: () {},
                           icon: const Icon(Icons.fingerprint, color: Colors.black87),
-                          label: const Text(
-                            'Use Biometric Login',
-                            style: TextStyle(
-                              color: Colors.black87,
-                              fontWeight: FontWeight.w600,
+                          label: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'Use Biometric Login',
+                              style: TextStyle(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                           style: OutlinedButton.styleFrom(
