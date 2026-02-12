@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'main_navigation.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -325,9 +326,16 @@ class _SignupScreenState extends State<SignupScreen> {
         const Text("Your profile is being created.", style: TextStyle(color: Colors.grey)),
         const SizedBox(height: 40),
         ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(), 
+          onPressed: () {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (context) => const MainNavigationScreen(initialIndex: 0),
+              ),
+              (route) => false,
+            );
+          },
           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7C69EF)),
-          child: const Text("Return to Login", style: TextStyle(color: Colors.white)),
+          child: const Text("Continue", style: TextStyle(color: Colors.white)),
         ),
       ],
     );
