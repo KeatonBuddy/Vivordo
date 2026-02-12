@@ -72,7 +72,9 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    double progress = _currentPage == 0 ? 0.5 : (_currentPage / _totalQuestions);
+    double progress = _currentPage == 0 
+        ? 0.5 
+        : (_currentPage > _totalQuestions ? 1.0 : _currentPage / _totalQuestions);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9F7FF),
@@ -95,9 +97,18 @@ class _SignupScreenState extends State<SignupScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(_currentPage == 0 ? "Step 1 of 2" : "Question $_currentPage of 15", style: const TextStyle(color: Colors.grey)),
-                    Text(_currentPage == 0 ? "Account Setup" : "${(progress * 100).toInt()}% Complete", 
-                      style: const TextStyle(color: Color(0xFF9E8DFF), fontWeight: FontWeight.bold)),
+                    Text(
+                      _currentPage == 0 
+                        ? "Step 1 of 2" 
+                        : (_currentPage > _totalQuestions ? "Assessment Complete" : "Question $_currentPage of 15"), 
+                      style: const TextStyle(color: Colors.grey)
+                    ),
+                    Text(
+                      _currentPage == 0 
+                        ? "Account Setup" 
+                        : (_currentPage > _totalQuestions ? "100% Complete" : "${(progress * 100).toInt()}% Complete"), 
+                      style: const TextStyle(color: Color(0xFF9E8DFF), fontWeight: FontWeight.bold)
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
