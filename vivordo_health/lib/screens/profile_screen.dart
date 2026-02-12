@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'login_screen.dart';
 
@@ -9,53 +10,60 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-    String _name = "Sarah Mitchell";
-    String _email = "sarah.mitchell@email.com";
+  String _name = "Sarah Mitchell";
+  String _email = "sarah.mitchell@email.com";
 
-    void _showEditDialog(BuildContext context, String field, String currentValue) {
-      final TextEditingController controller = TextEditingController(text: currentValue);
-      showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: Text('Edit ' + field),
-            content: field == "Password"
-                ? TextField(
-                    controller: controller,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: 'New Password'),
-                  )
-                : TextField(
-                    controller: controller,
-                    decoration: InputDecoration(labelText: field),
-                  ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    if (field == "Name") {
-                      _name = controller.text;
-                    } else if (field == "Email") {
-                      _email = controller.text;
-                    }
-                    // Password change logic can be added here if needed
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('$field updated!')),
-                  );
-                },
-                child: const Text('Save'),
-              ),
-            ],
-          );
-        },
-      );
-    }
+  void _showEditDialog(
+    BuildContext context,
+    String field,
+    String currentValue,
+  ) {
+    final TextEditingController controller = TextEditingController(
+      text: currentValue,
+    );
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Edit ' + field),
+          content: field == "Password"
+              ? TextField(
+                  controller: controller,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'New Password'),
+                )
+              : TextField(
+                  controller: controller,
+                  decoration: InputDecoration(labelText: field),
+                ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  if (field == "Name") {
+                    _name = controller.text;
+                  } else if (field == "Email") {
+                    _email = controller.text;
+                  }
+                  // Password change logic can be added here if needed
+                });
+                Navigator.pop(context);
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('$field updated!')));
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // Toggle states for App Settings
   bool _appleHealthConnected = true;
   bool _pushNotifications = true;
@@ -109,7 +117,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       CircleAvatar(
                         radius: 50,
                         backgroundColor: Colors.white24,
-                        child: Icon(Icons.person_outline, size: 50, color: Colors.white),
+                        child: Icon(
+                          Icons.person_outline,
+                          size: 50,
+                          color: Colors.white,
+                        ),
                       ),
                     ],
                   ),
@@ -127,14 +139,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.person_outline,
                     title: "Account Information",
                     children: [
-                      _buildInfoTile("Name", _name, onEdit: () => _showEditDialog(context, "Name", _name)),
+                      _buildInfoTile(
+                        "Name",
+                        _name,
+                        onEdit: () => _showEditDialog(context, "Name", _name),
+                      ),
                       const Divider(),
-                      _buildInfoTile("Email", _email, onEdit: () => _showEditDialog(context, "Email", _email)),
+                      _buildInfoTile(
+                        "Email",
+                        _email,
+                        onEdit: () => _showEditDialog(context, "Email", _email),
+                      ),
                       const Divider(),
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text("Password", style: TextStyle(color: Colors.grey, fontSize: 14)),
-                        subtitle: const Text("••••••••", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
+                        title: const Text(
+                          "Password",
+                          style: TextStyle(color: Colors.grey, fontSize: 14),
+                        ),
+                        subtitle: const Text(
+                          "••••••••",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () => _showEditDialog(context, "Password", ""),
                       ),
@@ -144,7 +174,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: 24),
 
                   // Section: Connected Devices
-                  _buildSectionHeader(Icons.phone_iphone_outlined, "Connected Devices"),
+                  _buildSectionHeader(
+                    Icons.phone_iphone_outlined,
+                    "Connected Devices",
+                  ),
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -159,7 +192,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           trailing: Switch(
                             value: _appleHealthConnected,
                             activeColor: const Color(0xFF7C69EF),
-                            onChanged: (val) => setState(() => _appleHealthConnected = val),
+                            onChanged: (val) =>
+                                setState(() => _appleHealthConnected = val),
                           ),
                         ),
                         const Divider(height: 32),
@@ -184,9 +218,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: OutlinedButton(
                             onPressed: () {},
                             style: OutlinedButton.styleFrom(
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
-                            child: const Text("Add New Device", style: TextStyle(color: Colors.black87)),
+                            child: const Text(
+                              "Add New Device",
+                              style: TextStyle(color: Colors.black87),
+                            ),
                           ),
                         ),
                       ],
@@ -230,17 +269,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     height: 56,
                     child: ElevatedButton.icon(
                       onPressed: () {
+                        FirebaseAuth.instance.signOut();
                         Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute(builder: (context) => const LoginScreen()),
+                          MaterialPageRoute(
+                            builder: (context) => const LoginScreen(),
+                          ),
                           (route) => false,
                         );
                       },
                       icon: const Icon(Icons.logout, color: Colors.redAccent),
-                      label: const Text("Log Out", style: TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.bold)),
+                      label: const Text(
+                        "Log Out",
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFFEBEE),
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -259,7 +310,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(20),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.05),
+          blurRadius: 15,
+          offset: const Offset(0, 5),
+        ),
+      ],
     );
   }
 
@@ -268,12 +325,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         Icon(icon, size: 20, color: const Color(0xFF7C69EF)),
         const SizedBox(width: 8),
-        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
       ],
     );
   }
 
-  Widget _buildSectionCard({required IconData icon, required String title, required List<Widget> children}) {
+  Widget _buildSectionCard({
+    required IconData icon,
+    required String title,
+    required List<Widget> children,
+  }) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: _cardDecoration(),
@@ -284,7 +348,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Icon(icon, size: 18, color: const Color(0xFF7C69EF)),
               const SizedBox(width: 10),
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 20),
@@ -297,16 +367,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildInfoTile(String label, String value, {VoidCallback? onEdit}) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 14)),
-      subtitle: Text(value, style: const TextStyle(fontSize: 16, color: Colors.black, fontWeight: FontWeight.w500)),
-      trailing: IconButton(icon: const Icon(Icons.edit_outlined, size: 20, color: Color(0xFF7C69EF)), onPressed: onEdit),
+      title: Text(
+        label,
+        style: const TextStyle(color: Colors.grey, fontSize: 14),
+      ),
+      subtitle: Text(
+        value,
+        style: const TextStyle(
+          fontSize: 16,
+          color: Colors.black,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      trailing: IconButton(
+        icon: const Icon(
+          Icons.edit_outlined,
+          size: 20,
+          color: Color(0xFF7C69EF),
+        ),
+        onPressed: onEdit,
+      ),
     );
   }
 
-  Widget _buildDeviceTile(String name, String sub, IconData icon, Color iconColor, {Widget? trailing, Color? statusColor}) {
+  Widget _buildDeviceTile(
+    String name,
+    String sub,
+    IconData icon,
+    Color iconColor, {
+    Widget? trailing,
+    Color? statusColor,
+  }) {
     return Row(
       children: [
-        CircleAvatar(backgroundColor: iconColor.withOpacity(0.1), child: Icon(icon, color: iconColor)),
+        CircleAvatar(
+          backgroundColor: iconColor.withOpacity(0.1),
+          child: Icon(icon, color: iconColor),
+        ),
         const SizedBox(width: 15),
         Expanded(
           child: Column(
@@ -315,9 +412,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
               Row(
                 children: [
-                  if (statusColor != null) CircleAvatar(radius: 4, backgroundColor: statusColor),
+                  if (statusColor != null)
+                    CircleAvatar(radius: 4, backgroundColor: statusColor),
                   if (statusColor != null) const SizedBox(width: 5),
-                  Text(sub, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  Text(
+                    sub,
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
                 ],
               ),
             ],
@@ -328,7 +429,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSettingsToggle(String title, String sub, IconData icon, bool val, Function(bool) onChanged) {
+  Widget _buildSettingsToggle(
+    String title,
+    String sub,
+    IconData icon,
+    bool val,
+    Function(bool) onChanged,
+  ) {
     return SwitchListTile(
       value: val,
       onChanged: onChanged,
@@ -349,7 +456,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
           const SizedBox(height: 5),
-          Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF7C69EF))),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF7C69EF),
+            ),
+          ),
         ],
       ),
     );
