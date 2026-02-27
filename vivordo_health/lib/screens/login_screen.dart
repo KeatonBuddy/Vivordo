@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/src/services/auth_service.dart';
 import 'main_navigation.dart';
 
 class LoginScreen extends StatelessWidget {
@@ -9,6 +10,9 @@ class LoginScreen extends StatelessWidget {
     final Color primaryPurple = const Color(0xFF857DEA);
     final Color bgPurple = const Color(0xFFFBFaff);
     final Color textGrey = const Color(0xFF6B7280);
+
+    final emailCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
 
     return Scaffold(
       backgroundColor: bgPurple,
@@ -31,7 +35,7 @@ class LoginScreen extends StatelessWidget {
                         color: primaryPurple.withOpacity(0.3),
                         blurRadius: 15,
                         offset: const Offset(0, 10),
-                      )
+                      ),
                     ],
                   ),
                   child: Center(
@@ -58,10 +62,7 @@ class LoginScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 const Text(
                   'See your Stress. Find your balance.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.blueGrey,
-                  ),
+                  style: TextStyle(fontSize: 14, color: Colors.blueGrey),
                 ),
                 const SizedBox(height: 40),
 
@@ -85,6 +86,7 @@ class LoginScreen extends StatelessWidget {
                       _buildLabel('Email'),
                       const SizedBox(height: 8),
                       TextField(
+                        controller: emailCtrl,
                         decoration: _inputDecoration(
                           hintText: 'you@example.com',
                           icon: Icons.mail_outline,
@@ -95,6 +97,7 @@ class LoginScreen extends StatelessWidget {
                       _buildLabel('Password'),
                       const SizedBox(height: 8),
                       TextField(
+                        controller: passCtrl,
                         obscureText: true,
                         decoration: _inputDecoration(
                           hintText: '••••••••',
@@ -125,7 +128,12 @@ class LoginScreen extends StatelessWidget {
                         height: 50,
                         child: ElevatedButton(
                           onPressed: () {
-                            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainNavigationScreen()));
+                            AuthService.emailLogin(
+                              emailAddress: emailCtrl.text,
+                              password: passCtrl.text,
+                              context: context,
+                              nextPage: const MainNavigationScreen(),
+                            );
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: primaryPurple,
@@ -156,7 +164,10 @@ class LoginScreen extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Text(
                               'OR',
-                              style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                              style: TextStyle(
+                                color: Colors.grey[400],
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                           const Expanded(child: Divider()),
@@ -170,7 +181,10 @@ class LoginScreen extends StatelessWidget {
                         height: 50,
                         child: OutlinedButton.icon(
                           onPressed: () {},
-                          icon: const Icon(Icons.fingerprint, color: Colors.black87),
+                          icon: const Icon(
+                            Icons.fingerprint,
+                            color: Colors.black87,
+                          ),
                           label: const FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
