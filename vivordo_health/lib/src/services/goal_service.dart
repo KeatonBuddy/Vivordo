@@ -9,7 +9,6 @@ class GoalService {
   //TODO: get all goals - query for all
 
   static Future<void> createGoal({
-    required User theUser,
     required String userId,
     required String title,
     required String status,
@@ -33,7 +32,7 @@ class GoalService {
     }
 
     Goals newGoal = Goals(
-      userId: theUser.uid,
+      userId: userId,
       title: title,
       description: description,
       category: category,
