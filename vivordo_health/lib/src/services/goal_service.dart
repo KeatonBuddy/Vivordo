@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:vivordo_health/src/models/goals.dart';
+import 'package:vivordo_health/screens/goals_screen.dart';
+import 'package:vivordo_health/src/models/goal_model.dart';
 
 class GoalService {
   //create goal
@@ -30,7 +31,7 @@ class GoalService {
       };
     }
 
-    Goals newGoal = Goals(
+    GoalModel newGoal = GoalModel(
       userId: userId,
       title: title,
       description: description,
@@ -47,6 +48,21 @@ class GoalService {
       updatedAt: FieldValue.serverTimestamp(),
     );
 
-    await FirebaseFirestore.instance.collection('goals').add(newGoal.toMap());
+    await newGoal.toFirestore();
+  }
+
+  static Future<List<Goal>> getGoals({required String userId}) async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('goals')
+        .where('userId', isEqualTo: userId)
+        .get();
+
+    List<Goal> myGoals = [];
+    for (var doc in snapshot.docs) {
+      GoalModel curr = GoalModel.fromMap(doc.data());
+      myGoals.add(curr.toGoal(id: doc.id));
+    }
+
+    return myGoals;
   }
 }

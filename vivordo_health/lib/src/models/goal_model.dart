@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:vivordo_health/screens/goals_screen.dart';
 
-class Goals {
+class GoalModel {
   final String userId;
   String title;
   String? description;
@@ -16,7 +18,7 @@ class Goals {
   final FieldValue createdAt;
   FieldValue updatedAt;
 
-  Goals({
+  GoalModel({
     required this.userId,
     required this.title,
     required this.status,
@@ -52,8 +54,8 @@ class Goals {
     };
   }
 
-  factory Goals.fromMap(Map<String, dynamic> map) {
-    return Goals(
+  factory GoalModel.fromMap(Map<String, dynamic> map) {
+    return GoalModel(
       userId: map["userId"] ?? "",
       title: map["title"] ?? "",
       status: map["status"] ?? "",
@@ -77,5 +79,15 @@ class Goals {
 
   Future<void> toFirestore() async {
     await FirebaseFirestore.instance.collection('goals').add(toMap());
+  }
+
+  Goal toGoal({required String id}) {
+    return Goal(
+      id: id,
+      title: title,
+      subtext: "Daily", //TODO: Figure out storage of subtext in GoalModel
+      color: Color(0xFF7B6EF6),
+      days: {},
+    );
   }
 }
