@@ -3,11 +3,6 @@ import 'package:vivordo_health/screens/goals_screen.dart';
 import 'package:vivordo_health/src/models/goal_model.dart';
 
 class GoalService {
-  //create goal
-  //TODO: update goal - with 1 get goal defoposit
-  //TODO: get goal - get with 1 autoid
-  //TODO: get all goals - query for all
-
   static Future<void> createGoal({
     required String userId,
     required String title,
@@ -40,15 +35,16 @@ class GoalService {
       targetValue: targetValue,
       targetUnit: targetUnit,
       direction: direction,
-      startDate: FieldValue.serverTimestamp(),
-      endDate: endDate,
       status: status,
       progress: progress,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
     );
 
-    await newGoal.toFirestore();
+    Map<String, dynamic> map = newGoal.toMap(
+      newStartDate: FieldValue.serverTimestamp(),
+      newCreatedAt: FieldValue.serverTimestamp(),
+      newEndDate: endDate,
+    );
+    await FirebaseFirestore.instance.collection('goals').add(map);
   }
 
   static Future<List<Goal>> getGoals({required String userId}) async {

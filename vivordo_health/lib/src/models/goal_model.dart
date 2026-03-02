@@ -11,20 +11,20 @@ class GoalModel {
   double? targetValue;
   String? targetUnit;
   String? direction;
-  FieldValue? startDate;
-  FieldValue? endDate;
+  Timestamp? startDate;
+  Timestamp? endDate;
   String status;
   Map<String, dynamic>? progress;
-  final FieldValue createdAt;
-  FieldValue updatedAt;
+  final Timestamp? createdAt;
+  Timestamp? updatedAt;
 
   GoalModel({
     required this.userId,
     required this.title,
     required this.status,
     required this.progress,
-    required this.createdAt,
-    required this.updatedAt,
+    this.createdAt,
+    this.updatedAt,
     this.description,
     this.category,
     this.targetMetricType,
@@ -35,7 +35,11 @@ class GoalModel {
     this.endDate,
   });
 
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toMap({
+    FieldValue? newStartDate,
+    FieldValue? newCreatedAt,
+    FieldValue? newEndDate,
+  }) {
     return {
       "userId": userId,
       "title": title,
@@ -45,12 +49,12 @@ class GoalModel {
       "targetValue": targetValue,
       "targetUnit": targetUnit,
       "direction": direction,
-      "startDate": startDate,
-      "endDate": endDate,
+      "startDate": newStartDate ?? startDate,
+      "endDate": newEndDate ?? endDate,
       "status": status,
       "progress": progress,
-      "createdAt": createdAt,
-      "updatedAt": updatedAt,
+      "createdAt": newCreatedAt ?? createdAt,
+      "updatedAt": FieldValue.serverTimestamp(),
     };
   }
 
@@ -75,10 +79,6 @@ class GoalModel {
       startDate: map["startDate"],
       endDate: map["endDate"],
     );
-  }
-
-  Future<void> toFirestore() async {
-    await FirebaseFirestore.instance.collection('goals').add(toMap());
   }
 
   Goal toGoal({required String id}) {
