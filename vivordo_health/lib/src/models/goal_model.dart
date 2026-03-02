@@ -85,7 +85,8 @@ class GoalModel {
     return Goal(
       id: id,
       title: title,
-      subtext: "Daily", //TODO: Figure out storage of subtext in GoalModel
+      subtext:
+          "Daily", //TODO: Figure out storage of subtext in GoalModel. Is it related to status?
       color: Color(0xFF7B6EF6),
       days: {},
     );
