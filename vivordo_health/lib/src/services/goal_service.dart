@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/models/goals.dart';
 
 class GoalService {
@@ -18,7 +17,7 @@ class GoalService {
     double? targetValue,
     String? targetUnit,
     String? direction,
-    String? endDate,
+    FieldValue? endDate,
     String? progressCurrentValue,
     String? progressCompletionPercent,
   }) async {
@@ -40,7 +39,7 @@ class GoalService {
       targetValue: targetValue,
       targetUnit: targetUnit,
       direction: direction,
-      startDate: FieldValue.serverTimestamp().toString(),
+      startDate: FieldValue.serverTimestamp(),
       endDate: endDate,
       status: status,
       progress: progress,
@@ -50,9 +49,4 @@ class GoalService {
 
     await FirebaseFirestore.instance.collection('goals').add(newGoal.toMap());
   }
-
-  static Future<void> getGoals({
-    required User theUser,
-    required String userId,
-  }) async {}
 }

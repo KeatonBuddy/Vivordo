@@ -9,8 +9,8 @@ class Goals {
   double? targetValue;
   String? targetUnit;
   String? direction;
-  String? startDate;
-  String? endDate;
+  FieldValue? startDate;
+  FieldValue? endDate;
   String status;
   Map<String, dynamic>? progress;
   final FieldValue createdAt;
