@@ -132,7 +132,6 @@ class LoginScreen extends StatelessWidget {
                               emailAddress: emailCtrl.text,
                               password: passCtrl.text,
                               context: context,
-                              nextPage: const MainNavigationScreen(),
                             );
                           },
                           style: ElevatedButton.styleFrom(

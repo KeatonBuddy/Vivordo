@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'screens/login_screen.dart';
@@ -15,9 +16,7 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Initialize notification service
   await NotificationService().initialize();
@@ -38,10 +37,10 @@ void main() async {
                 .doc(user.uid)
                 .snapshots()
                 .map((doc) {
-              final data = doc.data();
-              if (data == null) return null;
-              return UserModel.fromMap(data, doc.id);
-            });
+                  final data = doc.data();
+                  if (data == null) return null;
+                  return UserModel.fromMap(data, doc.id);
+                });
           },
           initialData: null,
         ),
@@ -91,6 +90,6 @@ class AuthGate extends StatelessWidget {
     if (user == null) {
       return const LoginScreen();
     }
-    return const HomeScreen();
+    return const MainNavigationScreen();
   }
 }

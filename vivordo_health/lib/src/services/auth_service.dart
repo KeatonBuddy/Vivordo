@@ -61,7 +61,6 @@ class AuthService {
     required String emailAddress,
     required String password,
     required BuildContext context,
-    required Widget nextPage,
   }) async {
     try {
       //add validation for the email and password
@@ -72,15 +71,6 @@ class AuthService {
       final currentUser = userCredential.user;
       if (currentUser == null) {
         throw Exception('Error signing in user');
-      }
-
-      //navigate to next page
-      await Future.delayed(const Duration(seconds: 1));
-      if (context.mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (BuildContext context) => nextPage),
-        );
       }
     } on FirebaseAuthException catch (e) {
       if (context.mounted) {
