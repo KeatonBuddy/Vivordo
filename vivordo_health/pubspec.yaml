@@ -44,7 +44,6 @@ dependencies:
   fluttertoast: ^9.0.0
   google_sign_in: ^7.2.0
   cloud_firestore: ^6.1.0
-  web: ^1.1.1
   firebase_ai: ^3.6.1
   firebase_messaging: ^16.1.0
   flutter_local_notifications: ^18.0.1

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'main_navigation.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:vivordo_health/src/services/user_service.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -48,7 +50,6 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   void _nextPage() {
-    //TODO: Submit questionare
     //TODO: Consider case where user signs up but exists before questionare is completed
     if (_currentPage == 0) {
       if (_formKey.currentState!.validate()) {
@@ -70,10 +71,27 @@ class _SignupScreenState extends State<SignupScreen> {
         );
       }
     } else {
+      if (_currentPage == _totalQuestions) {
+        _submitQuestionnaire();
+      }
       _pageController.nextPage(
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeInOutCubicEmphasized, // Smoother animation
       );
+    }
+  }
+
+  Future<void> _submitQuestionnaire() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await UserService.submitQuestionare(
+          user: user,
+          userdata: _userData,
+        );
+      }
+    } catch (e) {
+      debugPrint("Error submitting questionnaire: $e");
     }
   }
 
