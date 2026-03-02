@@ -1,4 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/src/services/goal_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 
 class Goal {
@@ -6,7 +8,7 @@ class Goal {
   String title;
   String subtext;
   Color color;
-  Set<int> days; 
+  Set<int> days;
 
   Goal({
     required this.id,
@@ -43,25 +45,29 @@ class GoalsScreen extends StatefulWidget {
 class _GoalsScreenState extends State<GoalsScreen> {
   static const Color primaryPurple = Color(0xFF7B6EF6);
   static const Color bgWhite = Color(0xFFFBFAFF);
-  
+
   final TextEditingController _goalController = TextEditingController();
 
-  List<Goal> myGoals = [
-    Goal(
-      id: '1',
-      title: 'Meditate 10 minutes daily',
-      subtext: 'Daily',
-      color: primaryPurple,
-      days: {0, 1, 2},
-    ),
-    Goal(
-      id: '2',
-      title: 'Walk 10,000 steps',
-      subtext: 'Daily',
-      color: Colors.green,
-      days: {0, 1, 2, 3, 4},
-    ),
-  ];
+  List<Goal> myGoals = [];
+  String userId = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGoals();
+  }
+
+  Future<void> _loadGoals() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final goals = await GoalService.getGoals(userId: uid);
+
+    setState(() {
+      myGoals = goals;
+      userId = uid;
+    });
+  }
 
   int get bestStreak => myGoals.isEmpty
       ? 0
@@ -83,13 +89,19 @@ class _GoalsScreenState extends State<GoalsScreen> {
         title: const Text("Delete Goal?"),
         content: Text("Are you sure you want to remove '${goal.title}'?"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
           TextButton(
             onPressed: () {
               setState(() => myGoals.removeWhere((g) => g.id == goal.id));
               Navigator.pop(context);
             },
-            child: const Text("Delete", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            child: const Text(
+              "Delete",
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -111,7 +123,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text("Delete Goal", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              title: const Text(
+                "Delete Goal",
+                style: TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _confirmDelete(goal);
@@ -125,16 +143,19 @@ class _GoalsScreenState extends State<GoalsScreen> {
 
   void _addNewGoal(String title) {
     if (title.trim().isEmpty) return;
+    GoalService.createGoal(userId: userId, title: title, status: 'Daily');
     setState(() {
-      myGoals.add(Goal(
-        id: DateTime.now().toString(),
-        title: title,
-        subtext: 'Daily',
-        color: primaryPurple,
-        days: {},
-      ));
+      myGoals.add(
+        Goal(
+          id: DateTime.now().toString(),
+          title: title,
+          subtext: 'Daily',
+          color: primaryPurple,
+          days: {},
+        ),
+      );
     });
-    
+
     // Trigger notification
     NotificationService().showGoalCreatedNotification(title);
 
@@ -150,7 +171,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
       builder: (context) => Container(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          top: 24, left: 24, right: 24,
+          top: 24,
+          left: 24,
+          right: 24,
         ),
         decoration: const BoxDecoration(
           color: Colors.white,
@@ -166,7 +189,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 hintText: "Enter your goal...",
                 filled: true,
                 fillColor: Colors.grey[100],
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -177,9 +203,17 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryPurple,
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
-                child: const Text("Create Goal", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  "Create Goal",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ],
@@ -208,20 +242,37 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _buildStatCard('Active', myGoals.length.toString(), Icons.track_changes, primaryPurple),
-                      _buildStatCard('Best Streak', bestStreak.toString(), Icons.local_fire_department, Colors.orange),
-                      _buildStatCard('Achieved', '12', Icons.emoji_events, Colors.green),
+                      _buildStatCard(
+                        'Active',
+                        myGoals.length.toString(),
+                        Icons.track_changes,
+                        primaryPurple,
+                      ),
+                      _buildStatCard(
+                        'Best Streak',
+                        bestStreak.toString(),
+                        Icons.local_fire_department,
+                        Colors.orange,
+                      ),
+                      _buildStatCard(
+                        'Achieved',
+                        '12',
+                        Icons.emoji_events,
+                        Colors.green,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
-                  ...myGoals.map((goal) => Padding(
-                    padding: const EdgeInsets.only(bottom: 16.0),
-                    child: HabitGoalCard(
-                      goal: goal,
-                      onChanged: () => setState(() {}),
-                      onLongPress: () => _showDeleteMenu(goal),
+                  ...myGoals.map(
+                    (goal) => Padding(
+                      padding: const EdgeInsets.only(bottom: 16.0),
+                      child: HabitGoalCard(
+                        goal: goal,
+                        onChanged: () => setState(() {}),
+                        onLongPress: () => _showDeleteMenu(goal),
+                      ),
                     ),
-                  )),
+                  ),
                   _buildAddButton(),
                 ],
               ),
@@ -245,8 +296,18 @@ class _GoalsScreenState extends State<GoalsScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("My Goals", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white)),
-              Text("Keep the momentum going", style: TextStyle(fontSize: 14, color: Colors.white70)),
+              Text(
+                "My Goals",
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              Text(
+                "Keep the momentum going",
+                style: TextStyle(fontSize: 14, color: Colors.white70),
+              ),
             ],
           ),
           Icon(Icons.calendar_today_outlined, color: Colors.white),
@@ -255,20 +316,30 @@ class _GoalsScreenState extends State<GoalsScreen> {
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       width: 100,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10)],
+        boxShadow: [
+          BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10),
+        ],
       ),
       child: Column(
         children: [
           Icon(icon, color: color),
           const SizedBox(height: 8),
-          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
           Text(title, style: const TextStyle(fontSize: 10, color: Colors.grey)),
         ],
       ),
@@ -290,7 +361,14 @@ class _GoalsScreenState extends State<GoalsScreen> {
           children: [
             Icon(Icons.add_circle_outline, color: primaryPurple),
             SizedBox(width: 8),
-            Text("Add New Goal", style: TextStyle(color: primaryPurple, fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(
+              "Add New Goal",
+              style: TextStyle(
+                color: primaryPurple,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
           ],
         ),
       ),
@@ -305,7 +383,12 @@ class HabitGoalCard extends StatefulWidget {
   final VoidCallback onChanged;
   final VoidCallback onLongPress;
 
-  const HabitGoalCard({super.key, required this.goal, required this.onChanged, required this.onLongPress});
+  const HabitGoalCard({
+    super.key,
+    required this.goal,
+    required this.onChanged,
+    required this.onLongPress,
+  });
 
   @override
   State<HabitGoalCard> createState() => _HabitGoalCardState();
@@ -325,7 +408,9 @@ class _HabitGoalCardState extends State<HabitGoalCard> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10)],
+          boxShadow: [
+            BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -337,10 +422,21 @@ class _HabitGoalCardState extends State<HabitGoalCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(widget.goal.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(
+                        widget.goal.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
                       const SizedBox(height: 4),
-                      Text("${widget.goal.subtext} • 🔥 ${widget.goal.currentStreak} day streak",
-                          style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                      Text(
+                        "${widget.goal.subtext} • 🔥 ${widget.goal.currentStreak} day streak",
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -355,8 +451,17 @@ class _HabitGoalCardState extends State<HabitGoalCard> {
                       return Stack(
                         fit: StackFit.expand,
                         children: [
-                          CircularProgressIndicator(value: 1, strokeWidth: 4, color: widget.goal.color.withOpacity(0.1)),
-                          CircularProgressIndicator(value: value, strokeWidth: 4, strokeCap: StrokeCap.round, color: widget.goal.color),
+                          CircularProgressIndicator(
+                            value: 1,
+                            strokeWidth: 4,
+                            color: widget.goal.color.withOpacity(0.1),
+                          ),
+                          CircularProgressIndicator(
+                            value: value,
+                            strokeWidth: 4,
+                            strokeCap: StrokeCap.round,
+                            color: widget.goal.color,
+                          ),
                         ],
                       );
                     },
@@ -372,7 +477,9 @@ class _HabitGoalCardState extends State<HabitGoalCard> {
                 return GestureDetector(
                   onTap: () {
                     setState(() {
-                      isSelected ? widget.goal.days.remove(index) : widget.goal.days.add(index);
+                      isSelected
+                          ? widget.goal.days.remove(index)
+                          : widget.goal.days.add(index);
                     });
                     widget.onChanged();
                   },
@@ -381,7 +488,9 @@ class _HabitGoalCardState extends State<HabitGoalCard> {
                     width: 32,
                     height: 32,
                     decoration: BoxDecoration(
-                      color: isSelected ? widget.goal.color : Colors.grey.withOpacity(0.1),
+                      color: isSelected
+                          ? widget.goal.color
+                          : Colors.grey.withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Center(
