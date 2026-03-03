@@ -1,10 +1,12 @@
 import 'dart:core';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+
 class UserModel {
   final String uid;
   String? displayName;
   String? email;
+  String? pendingEmail;
   String? photoUrl;
   String? orgId;
   List<String>? roles;
@@ -15,10 +17,12 @@ class UserModel {
   final Timestamp? createdAt;
   Timestamp? updatedAt;
 
+
   UserModel({
     required this.uid,
     required this.displayName,
     required this.email,
+    this.pendingEmail,
     required this.onboardingCompleted,
     required this.createdAt,
     required this.updatedAt,
@@ -30,11 +34,13 @@ class UserModel {
     this.preferences,
   });
 
+
   factory UserModel.fromMap(Map<String, dynamic> firestoreData, String id) {
     return UserModel(
       uid: id,
       displayName: firestoreData['displayName'],
       email: firestoreData['email'],
+      pendingEmail: firestoreData['pendingEmail'],
       onboardingCompleted: firestoreData['onboardingCompleted'],
       createdAt: firestoreData['createdAt'],
       updatedAt: firestoreData['updatedAt'],
@@ -47,11 +53,13 @@ class UserModel {
     );
   }
 
+
   Map<String, dynamic> toMap() {
     return {
       'uid': uid,
       'displayName': displayName,
       'email': email,
+      'pendingEmail': pendingEmail,
       'onboardingCompleted': onboardingCompleted,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
@@ -64,3 +72,5 @@ class UserModel {
     };
   }
 }
+
+
