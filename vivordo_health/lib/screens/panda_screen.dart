@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import '../src/services/gemini_service.dart';
+
+// ---------------------------------------------------------------------------
+// PandaScreen
+// ---------------------------------------------------------------------------
 
 class PandaScreen extends StatefulWidget {
   const PandaScreen({super.key});
@@ -9,24 +14,161 @@ class PandaScreen extends StatefulWidget {
 }
 
 class _PandaScreenState extends State<PandaScreen> {
-  bool _isTyping = true;
-
-  // Theme Colors
+  // ---- Theme ----
   static const Color primaryPurple = Color(0xFF7B6EF6);
   static const Color pandaBlack = Color(0xFF2D3142);
   static const Color bgWhite = Color(0xFFF2F2F7);
   static const Color bubbleWhite = Colors.white;
 
+  // ---- Service ----
+  final GeminiService _service = GeminiService();
+
+  // ---- Session state ----
+  PandaSessionData? _session;
+  bool _loading = true;
+  String? _error;
+
+  // ---- Chat state ----
+  final List<_ChatTurn> _turns = [];
+  int _questionIndex = 0;
+  final Map<String, String> _answers = {};
+  bool _sessionComplete = false;
+
+  // ---- Input ----
+  final TextEditingController _otherController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  // ---- Typing indicator ----
+  bool _pandaTyping = false;
+
   @override
   void initState() {
     super.initState();
-    // Simulate thinking/typing for 2 seconds
-    Timer(const Duration(milliseconds: 2000), () {
-      if (mounted) setState(() => _isTyping = false);
+    _loadSession();
+  }
+
+  @override
+  void dispose() {
+    _otherController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // ---- Load Gemini session ----
+
+  Future<void> _loadSession() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _turns.clear();
+      _answers.clear();
+      _questionIndex = 0;
+      _sessionComplete = false;
+      _session = null;
+    });
+
+    try {
+      final session = await _service
+          .analyzePandaSession()
+          .timeout(const Duration(seconds: 90));
+
+      if (!mounted) return;
+      setState(() {
+        _session = session;
+        _loading = false;
+      });
+
+      // Show Panda's opener after a short typing delay
+      await _pandaSay(session.openerMessage);
+
+      // Then ask the first question (if any)
+      if (session.questions.isNotEmpty) {
+        await _pandaSay(session.questions.first.prompt);
+      } else {
+        _sessionComplete = true;
+      }
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = "Took too long to respond. Tap retry to try again.";
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = "Something went wrong: $e";
+      });
+    }
+  }
+
+  // ---- Chat helpers ----
+
+  /// Appends a Panda message with a typing animation delay.
+  Future<void> _pandaSay(String text, {int typingMs = 1200}) async {
+    if (!mounted) return;
+    setState(() => _pandaTyping = true);
+    _scrollToBottom();
+
+    await Future.delayed(Duration(milliseconds: typingMs));
+
+    if (!mounted) return;
+    setState(() {
+      _pandaTyping = false;
+      _turns.add(_ChatTurn.assistant(text));
+    });
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
     });
   }
 
-  // --- PRIVACY POPUP ---
+  // ---- Answer handling ----
+
+  Future<void> _answerWithOption(String option) async {
+    final session = _session;
+    if (session == null || _sessionComplete || _pandaTyping) return;
+
+    final currentQ = session.questions[_questionIndex];
+
+    // Record user turn
+    setState(() {
+      _turns.add(_ChatTurn.user(option));
+      _answers[currentQ.questionId] = option;
+      _questionIndex++;
+    });
+    _scrollToBottom();
+
+    // Advance or wrap up
+    if (_questionIndex < session.questions.length) {
+      await _pandaSay(session.questions[_questionIndex].prompt);
+    } else {
+      await _pandaSay(
+        "Thanks so much! 💜 I've noted that for you. Understanding your patterns helps me support you better.",
+        typingMs: 1000,
+      );
+      if (!mounted) return;
+      setState(() => _sessionComplete = true);
+    }
+  }
+
+  Future<void> _answerWithOtherText() async {
+    final text = _otherController.text.trim();
+    if (text.isEmpty) return;
+    _otherController.clear();
+    await _answerWithOption(text);
+  }
+
+  // ---- Privacy popup ----
+
   void _showSafetyPopup() {
     showDialog(
       context: context,
@@ -37,7 +179,10 @@ class _PandaScreenState extends State<PandaScreen> {
           children: [
             Icon(Icons.shield_outlined, color: Colors.blueAccent),
             SizedBox(width: 10),
-            Text("Privacy & Safety", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(
+              "Privacy & Safety",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         content: const Text(
@@ -49,13 +194,16 @@ class _PandaScreenState extends State<PandaScreen> {
             onPressed: () => Navigator.pop(context),
             child: const Text(
               "Got it",
-              style: TextStyle(color: primaryPurple, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                  color: primaryPurple, fontWeight: FontWeight.bold),
             ),
           ),
         ],
       ),
     );
   }
+
+  // ---- Build ----
 
   @override
   Widget build(BuildContext context) {
@@ -64,28 +212,7 @@ class _PandaScreenState extends State<PandaScreen> {
       appBar: _buildChatAppBar(),
       body: Column(
         children: [
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              child: Column(
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _buildMiniAvatar(),
-                      const SizedBox(width: 10),
-                      Flexible(child: _buildMessageBubble()),
-                    ],
-                  ),
-                  if (!_isTyping) ...[
-                    const SizedBox(height: 30),
-                    _buildVerticalOptions(),
-                  ],
-                ],
-              ),
-            ),
-          ),
+          Expanded(child: _buildChatArea()),
           _buildBottomInputArea(),
         ],
       ),
@@ -96,35 +223,430 @@ class _PandaScreenState extends State<PandaScreen> {
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0.5,
-      automaticallyImplyLeading: false, 
-      title: const Column(
+      automaticallyImplyLeading: false,
+      title: Column(
         children: [
-          Text(
+          const Text(
             "Panda",
-            style: TextStyle(color: pandaBlack, fontSize: 17, fontWeight: FontWeight.bold),
+            style: TextStyle(
+                color: pandaBlack,
+                fontSize: 17,
+                fontWeight: FontWeight.bold),
           ),
           Text(
-            "online",
-            style: TextStyle(color: Colors.green, fontSize: 12),
+            _loading ? "thinking..." : "online",
+            style: TextStyle(
+              color: _loading ? Colors.orange : Colors.green,
+              fontSize: 12,
+            ),
           ),
         ],
       ),
       centerTitle: true,
       actions: [
+        if (!_loading && _error == null)
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.grey),
+            tooltip: "Restart conversation",
+            onPressed: _loadSession,
+          ),
         IconButton(
           icon: const Icon(Icons.info_outline, color: Colors.blueAccent),
           tooltip: "Data Safety",
-          onPressed: _showSafetyPopup, 
+          onPressed: _showSafetyPopup,
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 4),
       ],
     );
   }
 
+  Widget _buildChatArea() {
+    if (_loading && _turns.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildMiniAvatar(),
+            const SizedBox(height: 20),
+            const TypingIndicator(),
+            const SizedBox(height: 14),
+            const Text(
+              "Panda is analysing your data…",
+              style: TextStyle(color: Colors.black45, fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.wifi_off_rounded, size: 48, color: Colors.black26),
+              const SizedBox(height: 16),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black54),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: _loadSession,
+                icon: const Icon(Icons.refresh),
+                label: const Text("Retry"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryPurple,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SafeArea(
+      bottom: false,
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        // turns + optional typing indicator + optional option chips
+        itemCount: _turns.length +
+            (_pandaTyping ? 1 : 0) +
+            (_shouldShowOptions ? 1 : 0) +
+            (_sessionComplete ? 1 : 0),
+        itemBuilder: (context, index) {
+          // Chat turns
+          if (index < _turns.length) {
+            final turn = _turns[index];
+            return turn.role == _ChatRole.assistant
+                ? _buildAssistantBubble(turn.text)
+                : _buildUserBubble(turn.text);
+          }
+
+          int offset = _turns.length;
+
+          // Typing indicator
+          if (_pandaTyping && index == offset) {
+            return _buildTypingBubble();
+          }
+          if (_pandaTyping) offset++;
+
+          // Option chips (shown after Panda's last question bubble settles)
+          if (_shouldShowOptions && index == offset) {
+            return _buildOptionChips();
+          }
+          if (_shouldShowOptions) offset++;
+
+          // Done card
+          if (_sessionComplete && index == offset) {
+            return _buildDoneCard();
+          }
+
+          return const SizedBox.shrink();
+        },
+      ),
+    );
+  }
+
+  bool get _shouldShowOptions {
+    if (_pandaTyping || _sessionComplete) return false;
+    final session = _session;
+    if (session == null) return false;
+    if (_questionIndex >= session.questions.length) return false;
+    final q = session.questions[_questionIndex];
+    return q.options.isNotEmpty;
+  }
+
+  // ---- Bubble widgets ----
+
+  Widget _buildAssistantBubble(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          _buildMiniAvatar(),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: bubbleWhite,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                  bottomRight: Radius.circular(20),
+                  bottomLeft: Radius.circular(4),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 5,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                text,
+                style: const TextStyle(
+                    color: Colors.black87, fontSize: 15, height: 1.45),
+              ),
+            ),
+          ),
+          const SizedBox(width: 40),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUserBubble(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          const SizedBox(width: 40),
+          Flexible(
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: primaryPurple.withOpacity(0.12),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                  bottomLeft: Radius.circular(20),
+                  bottomRight: Radius.circular(4),
+                ),
+                border: Border.all(color: primaryPurple.withOpacity(0.2)),
+              ),
+              child: Text(
+                text,
+                style: const TextStyle(
+                    color: pandaBlack, fontSize: 15, height: 1.45),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypingBubble() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          _buildMiniAvatar(),
+          const SizedBox(width: 10),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            decoration: BoxDecoration(
+              color: bubbleWhite,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+                bottomRight: Radius.circular(20),
+                bottomLeft: Radius.circular(4),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 5,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const TypingIndicator(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOptionChips() {
+    final session = _session!;
+    final q = session.questions[_questionIndex];
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 58, bottom: 16),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: q.options.map((opt) {
+          return GestureDetector(
+            onTap: () => _answerWithOption(opt),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: primaryPurple.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: primaryPurple.withOpacity(0.25)),
+              ),
+              child: Text(
+                opt,
+                style: const TextStyle(
+                  color: primaryPurple,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildDoneCard() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 16),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          decoration: BoxDecoration(
+            color: primaryPurple.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: primaryPurple.withOpacity(0.15)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "✅  Labeling complete",
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: primaryPurple,
+                    fontSize: 14),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "${_answers.length} answer${_answers.length == 1 ? '' : 's'} captured",
+                style:
+                    const TextStyle(color: Colors.black45, fontSize: 13),
+              ),
+              const SizedBox(height: 10),
+              TextButton.icon(
+                onPressed: _loadSession,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text("Start new conversation"),
+                style: TextButton.styleFrom(foregroundColor: primaryPurple),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---- Bottom input bar ----
+
+  Widget _buildBottomInputArea() {
+    final bool showInput = !_loading &&
+        _error == null &&
+        !_sessionComplete &&
+        !_pandaTyping;
+
+    // If options are shown, show a free-text "other" option
+    final bool showTextField = showInput;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 34),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border:
+            Border(top: BorderSide(color: Colors.black12, width: 0.5)),
+      ),
+      child: showTextField
+          ? Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _otherController,
+                    decoration: InputDecoration(
+                      hintText: "Type your own answer…",
+                      hintStyle: TextStyle(color: Colors.grey.shade400),
+                      filled: true,
+                      fillColor: bgWhite,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide:
+                            const BorderSide(color: primaryPurple, width: 1.5),
+                      ),
+                    ),
+                    onSubmitted: (_) => _answerWithOtherText(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _answerWithOtherText,
+                  child: Container(
+                    height: 46,
+                    width: 46,
+                    decoration: BoxDecoration(
+                      color: primaryPurple,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.send_rounded,
+                        color: Colors.white, size: 20),
+                  ),
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: bgWhite,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Text(
+                      _loading
+                          ? "Panda is thinking…"
+                          : _sessionComplete
+                              ? "Conversation complete 🎉"
+                              : "Choose an option above…",
+                      style: TextStyle(
+                          color: Colors.grey.shade500, fontSize: 15),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  // ---- Avatar ----
+
   Widget _buildMiniAvatar() {
     return Container(
-      width: 48,
-      height: 48,
+      width: 40,
+      height: 40,
       decoration: const BoxDecoration(
         color: Colors.transparent,
         shape: BoxShape.circle,
@@ -135,115 +657,39 @@ class _PandaScreenState extends State<PandaScreen> {
       ),
     );
   }
-
-  Widget _buildMessageBubble() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: bubbleWhite,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-          bottomRight: Radius.circular(20),
-          bottomLeft: Radius.circular(4),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 5,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: _isTyping
-          ? const TypingIndicator()
-          : const Text(
-              "Hi Sarah! 🌿 I noticed your stress levels are climbing. Want to take a 2-minute break with me?",
-              style: TextStyle(color: Colors.black87, fontSize: 16, height: 1.4),
-            ),
-    );
-  }
-
-  Widget _buildVerticalOptions() {
-    return Column(
-      children: [
-        _optionButton("Yes, let's meditate 🧘"),
-        _optionButton("Check my sleep data 🌙"),
-        _optionButton("Review my goals 🎯"),
-      ],
-    );
-  }
-
-  Widget _optionButton(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10, left: 40),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-          },
-          borderRadius: BorderRadius.circular(25),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-            decoration: BoxDecoration(
-              color: primaryPurple.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(25),
-              border: Border.all(color: primaryPurple.withOpacity(0.2)),
-            ),
-            child: Text(
-              text,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: primaryPurple,
-                fontWeight: FontWeight.w600,
-                fontSize: 15,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomInputArea() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 34),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.black12, width: 0.5)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: bgWhite,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Text(
-                "Choose an option above...",
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 15),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-// --- TYPING INDICATOR HELPER ---
+// ---------------------------------------------------------------------------
+// Chat data models (local to PandaScreen)
+// ---------------------------------------------------------------------------
+
+enum _ChatRole { user, assistant }
+
+class _ChatTurn {
+  _ChatTurn({required this.role, required this.text});
+
+  final _ChatRole role;
+  final String text;
+
+  factory _ChatTurn.user(String text) =>
+      _ChatTurn(role: _ChatRole.user, text: text);
+  factory _ChatTurn.assistant(String text) =>
+      _ChatTurn(role: _ChatRole.assistant, text: text);
+}
+
+// ---------------------------------------------------------------------------
+// Typing indicator (three bouncing dots)
+// ---------------------------------------------------------------------------
 
 class TypingIndicator extends StatefulWidget {
   const TypingIndicator({super.key});
+
   @override
   State<TypingIndicator> createState() => _TypingIndicatorState();
 }
 
-class _TypingIndicatorState extends State<TypingIndicator> with TickerProviderStateMixin {
+class _TypingIndicatorState extends State<TypingIndicator>
+    with TickerProviderStateMixin {
   late List<AnimationController> _controllers;
   late List<Animation<double>> _animations;
 
@@ -252,20 +698,19 @@ class _TypingIndicatorState extends State<TypingIndicator> with TickerProviderSt
     super.initState();
     _controllers = List.generate(
       3,
-      (index) => AnimationController(
+      (i) => AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 600),
       )..repeat(reverse: true),
     );
-
     _animations = _controllers
-        .map((c) => Tween<double>(begin: 0.2, end: 1.0).animate(
+        .map((c) => Tween<double>(begin: 0.25, end: 1.0).animate(
               CurvedAnimation(parent: c, curve: Curves.easeInOut),
             ))
         .toList();
 
     for (int i = 0; i < _controllers.length; i++) {
-      Timer(Duration(milliseconds: i * 200), () {
+      Timer(Duration(milliseconds: i * 180), () {
         if (mounted) _controllers[i].forward();
       });
     }
@@ -273,7 +718,7 @@ class _TypingIndicatorState extends State<TypingIndicator> with TickerProviderSt
 
   @override
   void dispose() {
-    for (var c in _controllers) {
+    for (final c in _controllers) {
       c.dispose();
     }
     super.dispose();
@@ -288,10 +733,13 @@ class _TypingIndicatorState extends State<TypingIndicator> with TickerProviderSt
         (i) => FadeTransition(
           opacity: _animations[i],
           child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            height: 6,
-            width: 6,
-            decoration: BoxDecoration(color: Colors.grey.shade400, shape: BoxShape.circle),
+            margin: const EdgeInsets.symmetric(horizontal: 2.5),
+            height: 7,
+            width: 7,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade400,
+              shape: BoxShape.circle,
+            ),
           ),
         ),
       ),

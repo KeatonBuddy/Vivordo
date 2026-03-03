@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import '../services/gemini_service.dart';
+import '../src/services/gemini_service.dart';
 
 class StressSpikeTestPage extends StatefulWidget {
   const StressSpikeTestPage({super.key});

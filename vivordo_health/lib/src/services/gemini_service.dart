@@ -4,6 +4,45 @@ import 'package:firebase_ai/firebase_ai.dart';
 import '../demo/demo_user_repository.dart';
 import '../demo/demo_user_data.dart';
 
+// ---------------------------------------------------------------------------
+// Public data class consumed by PandaScreen
+// ---------------------------------------------------------------------------
+
+class PandaSessionData {
+  PandaSessionData({
+    required this.openerMessage,
+    required this.questions,
+    required this.overallNotes,
+  });
+
+  /// The first greeting message Panda shows the user.
+  final String openerMessage;
+
+  /// Ordered list of questions Panda will ask one-by-one.
+  final List<PandaQuestion> questions;
+
+  /// Short summary/context string (for internal use / logging).
+  final String overallNotes;
+}
+
+class PandaQuestion {
+  PandaQuestion({
+    required this.questionId,
+    required this.prompt,
+    required this.options,
+  });
+
+  final String questionId;
+  final String prompt;
+
+  /// Pre-built answer chips. Always ends with "Something else 🙋" when non-empty.
+  final List<String> options;
+}
+
+// ---------------------------------------------------------------------------
+// GeminiService
+// ---------------------------------------------------------------------------
+
 class GeminiService {
   GeminiService()
       : _model = FirebaseAI.googleAI().generativeModel(
@@ -13,7 +52,7 @@ class GeminiService {
             responseSchema: _responseSchema,
             candidateCount: 1,
             temperature: 0,
-            maxOutputTokens: 1500
+            maxOutputTokens: 1500,
           ),
         );
 
@@ -33,6 +72,8 @@ class GeminiService {
     return _activeDemoUser!;
   }
 
+  // ---- Schema (shared by both test page and Panda) ----
+
   static const String _systemInstruction = '''
 You are Vivordo Stress Labeling Assistant.
 
@@ -42,8 +83,8 @@ and ask short targeted questions to collect ML labels.
 
 Constraints:
 - Do NOT provide medical diagnosis or medical instructions.
-- Use “may be related” language.
-- Ask at most 3 questions per spike; prefer multiple-choice + “Other”.
+- Use "may be related" language.
+- Ask at most 3 questions per spike; prefer multiple-choice + "Other".
 - Keep it short.
 - Be specific about time windows and what you observed.
 - If data is missing/uncertain, ask clarifying questions.
@@ -51,9 +92,6 @@ Constraints:
 Return ONLY valid JSON matching the response schema. No extra text.
 ''';
 
-  // NOTE:
-  // firebase_ai 3.6.1 Schema does NOT accept `requiredProperties` or `required`.
-  // So we enforce "include all fields" in the prompt instead.
   static final Schema _responseSchema = Schema(
     SchemaType.object,
     properties: {
@@ -151,7 +189,8 @@ Return ONLY valid JSON matching the response schema. No extra text.
     },
   );
 
-  // ---- public helpers for the test page ----
+  // ---- Public helpers for test page ----
+
   DemoUserData peekDemoUser() => getActiveDemoUser();
   DemoUserData pickNewDemoUser() => switchDemoUser();
 
@@ -162,12 +201,13 @@ Return ONLY valid JSON matching the response schema. No extra text.
     return _buildCompactPayload(raw, topK: topK);
   }
 
-  /// Uses DemoUserRepository and ONLY maps fields (no extra generator logic)
+  // ---- Sample data generator (used by both test page and Panda) ----
+
   Map<String, dynamic> getSampleData() {
     final demo = getActiveDemoUser();
 
     final day = DateTime.tryParse(demo.date) ?? DateTime.now();
-    final start = DateTime(day.year, day.month, day.day, 18, 0); // 6pm
+    final start = DateTime(day.year, day.month, day.day, 18, 0);
     final end = start.add(const Duration(hours: 24));
 
     final baselineHr = demo.restingHeartRate.toDouble();
@@ -195,7 +235,6 @@ Return ONLY valid JSON matching the response schema. No extra text.
         steps += 200;
         hr += 10;
       }
-
       if (i == 15) {
         activity = "sedentary";
         tag = "work_focus";
@@ -207,7 +246,6 @@ Return ONLY valid JSON matching the response schema. No extra text.
           hrv -= 6;
         }
       }
-
       if (i == 20) {
         activity = "sedentary";
         tag = "deadline";
@@ -215,7 +253,6 @@ Return ONLY valid JSON matching the response schema. No extra text.
         hr += extra;
         hrv -= extra / 2.0;
       }
-
       if (i == 22 && demo.exerciseSessions > 0) {
         activity = "workout";
         tag = "gym";
@@ -284,19 +321,19 @@ Return ONLY valid JSON matching the response schema. No extra text.
     };
   }
 
-Future<String> analyzeStressSpikes({
-  required Map<String, dynamic> data,
-  String? extraUserContext,
-}) async {
-  // Always work with a mutable map so we can inject context/journal
-  final Map<String, dynamic> compact = (data.containsKey("spike_candidates"))
-      ? Map<String, dynamic>.from(data)
-      : _buildCompactPayload(data, topK: 3);
+  // ---- Core LLM call (used by both test page and Panda) ----
 
-  // Inject UI context into DATA so the model treats it as "ground truth"
-  compact["user_context"] = extraUserContext?.trim() ?? "";
+  Future<String> analyzeStressSpikes({
+    required Map<String, dynamic> data,
+    String? extraUserContext,
+  }) async {
+    final Map<String, dynamic> compact = (data.containsKey("spike_candidates"))
+        ? Map<String, dynamic>.from(data)
+        : _buildCompactPayload(data, topK: 3);
 
-  final userPrompt = '''
+    compact["user_context"] = extraUserContext?.trim() ?? "";
+
+    final userPrompt = '''
 Use ONLY the spikes/events/context provided in DATA.
 Do NOT invent symptoms, injuries, diagnoses, or events.
 
@@ -319,85 +356,258 @@ DATA (JSON):
 ${jsonEncode(compact)}
 ''';
 
-  final response = await _model.generateContent([
-    Content.text(_systemInstruction),
-    Content.text(userPrompt),
-  ]);
+    final response = await _model.generateContent([
+      Content.text(_systemInstruction),
+      Content.text(userPrompt),
+    ]);
 
-  return response.text ?? '';
-}
-
-
-  // -------------------------
-  // Local preprocessing
-  // -------------------------
-Map<String, dynamic> _buildCompactPayload(Map<String, dynamic> raw, {int topK = 3}) {
-  final profile = raw["user_profile"] ?? {};
-  final window = raw["data_window"] ?? {};
-  final events = (raw["events"] as List? ?? []).cast<Map>();
-
-  final samples = (raw["samples_5min"] as List? ?? []).cast<Map>();
-  final baselineHr = (profile["resting_hr_typical"] ?? 62).toDouble();
-  final baselineHrv = (profile["hrv_rmssd_typical"] ?? 52).toDouble();
-
-  var spikeCandidates = _detectSpikes(samples, baselineHr, baselineHrv);
-
-  spikeCandidates.sort((a, b) =>
-      _severity(b, baselineHr, baselineHrv).compareTo(_severity(a, baselineHr, baselineHrv)));
-
-  if (spikeCandidates.length > topK) {
-    spikeCandidates = spikeCandidates.sublist(0, topK);
+    return response.text ?? '';
   }
 
-  for (final s in spikeCandidates) {
-    s["context"] ??= <String, dynamic>{};
-    s["context"]["nearby_events"] = _eventsNear(
-      events: events,
-      startIso: s["start"],
-      endIso: s["end"],
-      minutes: 90,
+  // ---- Panda-facing high-level method ----
+  //
+  // Returns a [PandaSessionData] ready to drive PandaScreen's chat UI.
+  // Focuses on the single highest-severity spike (topK=1) for a focused,
+  // conversational experience — unlike the test page which shows up to 3.
+
+  Future<PandaSessionData> analyzePandaSession({
+    String? extraUserContext,
+  }) async {
+    final rawSample = getSampleData();
+    final compact = _buildCompactPayload(rawSample, topK: 1);
+
+    final raw = await analyzeStressSpikes(
+      data: compact,
+      extraUserContext: extraUserContext,
     );
-    s["context"]["confidence"] =
-        (s["context"]["nearby_events"] as List).isEmpty ? 0.55 : 0.75;
+
+    return _parsePandaSession(raw, rawSample);
   }
 
-  // Pull journal from demo_user if present (since getSampleData includes it)
-  final demoUser = raw["demo_user"] as Map<String, dynamic>?;
+  // ---- Parse LLM JSON → PandaSessionData ----
 
-  final journal = demoUser == null
-      ? {
-          "mood": "unknown",
-          "summary": "",
-          "keyword": "",
-          "stressed": false,
+  PandaSessionData _parsePandaSession(
+    String raw,
+    Map<String, dynamic> rawSample,
+  ) {
+    final demo = rawSample["demo_user"] as Map<String, dynamic>?;
+    final userName = (demo?["userId"] as String? ?? "there")
+        .replaceAll(RegExp(r'[_\-]'), ' ')
+        .split(' ')
+        .first;
+
+    // Attempt JSON parse
+    Map<String, dynamic>? decoded;
+    try {
+      var cleaned = raw.trim();
+      cleaned = cleaned
+          .replaceAll(RegExp(r'^```[a-zA-Z]*\s*'), '')
+          .replaceAll(RegExp(r'\s*```$'), '')
+          .trim();
+      final s = cleaned.indexOf('{');
+      final e = cleaned.lastIndexOf('}');
+      if (s != -1 && e != -1 && e > s) {
+        cleaned = cleaned.substring(s, e + 1);
+        final obj = jsonDecode(cleaned);
+        if (obj is Map<String, dynamic>) decoded = obj;
+      }
+    } catch (_) {}
+
+    // Fallback if parse failed
+    if (decoded == null) {
+      return PandaSessionData(
+        openerMessage:
+            "Hey $userName! 🌿 I noticed your stress levels are a little elevated today. Mind if I ask you a couple of quick questions?",
+        questions: [
+          PandaQuestion(
+            questionId: "q_fallback",
+            prompt: "What best describes what was happening earlier?",
+            options: const [
+              "Work or study 📚",
+              "Exercise 🏃",
+              "Social situation 👥",
+              "Commute 🚗",
+              "Something else 🙋",
+            ],
+          ),
+        ],
+        overallNotes: "",
+      );
+    }
+
+    // Pull overall notes
+    final overallNotes =
+        (decoded["summary"]?["overall_notes"] as String? ?? "").trim();
+
+    // Pull first spike
+    final spikes = decoded["spikes"] as List?;
+    if (spikes == null || spikes.isEmpty) {
+      return PandaSessionData(
+        openerMessage:
+            "Hey $userName! 🌿 Everything looks pretty calm today. Let me know if anything felt off.",
+        questions: [],
+        overallNotes: overallNotes,
+      );
+    }
+
+    final spike = spikes.first as Map<String, dynamic>;
+
+    // Build opener
+    final startIso = spike["start"] as String?;
+    final endIso = spike["end"] as String?;
+    final timePhrase = _formatTimeRange(startIso, endIso);
+
+    String hint = "";
+    final hypotheses = spike["hypotheses"] as List?;
+    if (hypotheses != null && hypotheses.isNotEmpty) {
+      final h0 = hypotheses.first as Map?;
+      final reason = h0?["reason"] as String?;
+      if (reason != null && reason.trim().isNotEmpty) {
+        hint = " It may be related to ${reason.trim().toLowerCase()}.";
+      }
+    }
+
+    final openerMessage =
+        "Hey $userName! 🌿 I noticed a stress spike around $timePhrase.$hint I'd love to help label what was happening so I can support you better 💜";
+
+    // Build questions
+    final questions = <PandaQuestion>[];
+    final qs = spike["questions"] as List?;
+    if (qs != null) {
+      for (final q in qs) {
+        if (q is! Map) continue;
+        final qid = q["question_id"]?.toString() ?? "q_${questions.length + 1}";
+        final prompt = q["prompt"]?.toString() ?? "";
+        if (prompt.isEmpty) continue;
+
+        final opts = <String>[];
+        final optionsAny = q["options"];
+        if (optionsAny is List) {
+          for (final o in optionsAny) {
+            final t = o.toString().trim();
+            if (t.isNotEmpty) opts.add(t);
+          }
         }
-      : {
-          "mood": demoUser["journalMood"] ?? "unknown",
-          "summary": demoUser["journalEntrySummary"] ?? "",
-          "keyword": demoUser["keyword"] ?? "",
-          "stressed": demoUser["stressed"] ?? false,
-        };
 
-  return {
-    "user_profile": {
-      "timezone": profile["timezone"] ?? "America/Edmonton",
-      "age_range": profile["age_range"] ?? "adult",
-      "resting_hr_typical": baselineHr,
-      "hrv_rmssd_typical": baselineHrv,
-    },
-    "data_window": window,
+        // Ensure there's always a free-text escape hatch
+        if (opts.isNotEmpty && !opts.any((o) => o.toLowerCase().contains("other"))) {
+          opts.add("Something else 🙋");
+        }
 
-    "journal": journal,
-    "user_context": raw["user_context"] ?? "",
+        questions.add(PandaQuestion(
+          questionId: qid,
+          prompt: prompt,
+          options: opts,
+        ));
+      }
+    }
 
-    "spike_candidates": spikeCandidates,
-  };
-}
+    // Fallback question if model returned none
+    if (questions.isEmpty) {
+      questions.add(PandaQuestion(
+        questionId: "q_fallback",
+        prompt: "What best describes what was happening around $timePhrase?",
+        options: const [
+          "Work or study 📚",
+          "Exercise 🏃",
+          "Social situation 👥",
+          "Commute 🚗",
+          "Something else 🙋",
+        ],
+      ));
+    }
 
+    return PandaSessionData(
+      openerMessage: openerMessage,
+      questions: questions,
+      overallNotes: overallNotes,
+    );
+  }
 
-  double _severity(Map<String, dynamic> s, double baselineHr, double baselineHrv) {
+  // ---- Helpers ----
+
+  String _formatTimeRange(String? startIso, String? endIso) {
+    try {
+      if (startIso == null) return "earlier today";
+      final start = DateTime.parse(startIso).toLocal();
+      final s = _formatTime(start);
+      if (endIso == null) return s;
+      final end = DateTime.parse(endIso).toLocal();
+      return "$s–${_formatTime(end)}";
+    } catch (_) {
+      return "earlier today";
+    }
+  }
+
+  String _formatTime(DateTime dt) {
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    return "$hour:$minute $period";
+  }
+
+  Map<String, dynamic> _buildCompactPayload(
+    Map<String, dynamic> raw, {
+    int topK = 3,
+  }) {
+    final profile = raw["user_profile"] ?? {};
+    final window = raw["data_window"] ?? {};
+    final events = (raw["events"] as List? ?? []).cast<Map>();
+
+    final samples = (raw["samples_5min"] as List? ?? []).cast<Map>();
+    final baselineHr = (profile["resting_hr_typical"] ?? 62).toDouble();
+    final baselineHrv = (profile["hrv_rmssd_typical"] ?? 52).toDouble();
+
+    var spikeCandidates = _detectSpikes(samples, baselineHr, baselineHrv);
+
+    spikeCandidates.sort((a, b) => _severity(b, baselineHr, baselineHrv)
+        .compareTo(_severity(a, baselineHr, baselineHrv)));
+
+    if (spikeCandidates.length > topK) {
+      spikeCandidates = spikeCandidates.sublist(0, topK);
+    }
+
+    for (final s in spikeCandidates) {
+      s["context"] ??= <String, dynamic>{};
+      s["context"]["nearby_events"] = _eventsNear(
+        events: events,
+        startIso: s["start"],
+        endIso: s["end"],
+        minutes: 90,
+      );
+      s["context"]["confidence"] =
+          (s["context"]["nearby_events"] as List).isEmpty ? 0.55 : 0.75;
+    }
+
+    final demoUser = raw["demo_user"] as Map<String, dynamic>?;
+    final journal = demoUser == null
+        ? {"mood": "unknown", "summary": "", "keyword": "", "stressed": false}
+        : {
+            "mood": demoUser["journalMood"] ?? "unknown",
+            "summary": demoUser["journalEntrySummary"] ?? "",
+            "keyword": demoUser["keyword"] ?? "",
+            "stressed": demoUser["stressed"] ?? false,
+          };
+
+    return {
+      "user_profile": {
+        "timezone": profile["timezone"] ?? "America/Edmonton",
+        "age_range": profile["age_range"] ?? "adult",
+        "resting_hr_typical": baselineHr,
+        "hrv_rmssd_typical": baselineHrv,
+      },
+      "data_window": window,
+      "journal": journal,
+      "user_context": raw["user_context"] ?? "",
+      "spike_candidates": spikeCandidates,
+    };
+  }
+
+  double _severity(
+      Map<String, dynamic> s, double baselineHr, double baselineHrv) {
     final hr = (s["signals"]?["heart_rate"]?["peak"] ?? 0).toDouble();
-    final hrvMin = (s["signals"]?["hrv"]?["min"] ?? baselineHrv).toDouble();
+    final hrvMin =
+        (s["signals"]?["hrv"]?["min"] ?? baselineHrv).toDouble();
     final steps = (s["signals"]?["steps"]?["peak_window"] ?? 0).toDouble();
     final hrScore = (hr - baselineHr).clamp(0, 100);
     final hrvScore = (baselineHrv - hrvMin).clamp(0, 100);
@@ -414,7 +624,6 @@ Map<String, dynamic> _buildCompactPayload(Map<String, dynamic> raw, {int topK = 
       final hr = (s["hr"] ?? baselineHr).toDouble();
       final hrv = (s["hrv"] ?? baselineHrv).toDouble();
       final stress = (s["stress_score"] ?? 0).toDouble();
-
       final hrHigh = hr >= baselineHr + 25;
       final hrvLow = hrv <= baselineHrv - 18;
       final stressHigh = stress >= 65;
@@ -423,7 +632,6 @@ Map<String, dynamic> _buildCompactPayload(Map<String, dynamic> raw, {int topK = 
 
     final List<Map<String, dynamic>> spikes = [];
     Map<String, dynamic>? cur;
-
     double peakHr = 0, minHrv = 1e9, peakSteps = 0;
 
     for (final s in samples) {
@@ -444,13 +652,12 @@ Map<String, dynamic> _buildCompactPayload(Map<String, dynamic> raw, {int topK = 
           },
         };
         cur["end"] = t;
-
         peakHr = peakHr > hr ? peakHr : hr;
         minHrv = minHrv < hrv ? minHrv : hrv;
         peakSteps = peakSteps > steps ? peakSteps : steps;
-
         cur["signals"]["heart_rate"]["peak"] = peakHr;
-        cur["signals"]["hrv"]["min"] = (minHrv == 1e9) ? baselineHrv : minHrv;
+        cur["signals"]["hrv"]["min"] =
+            (minHrv == 1e9) ? baselineHrv : minHrv;
         cur["signals"]["steps"]["peak_window"] = peakSteps;
       } else {
         if (cur != null) {
@@ -462,7 +669,6 @@ Map<String, dynamic> _buildCompactPayload(Map<String, dynamic> raw, {int topK = 
         }
       }
     }
-
     if (cur != null) spikes.add(cur);
     return spikes;
   }
