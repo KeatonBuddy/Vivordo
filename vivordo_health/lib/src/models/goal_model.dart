@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:vivordo_health/screens/goals_screen.dart';
 
-class Goals {
+class GoalModel {
   final String userId;
   String title;
   String? description;
@@ -9,20 +11,20 @@ class Goals {
   double? targetValue;
   String? targetUnit;
   String? direction;
-  String? startDate;
-  String? endDate;
+  Timestamp? startDate;
+  Timestamp? endDate;
   String status;
   Map<String, dynamic>? progress;
-  final FieldValue createdAt;
-  FieldValue updatedAt;
+  final Timestamp? createdAt;
+  Timestamp? updatedAt;
 
-  Goals({
+  GoalModel({
     required this.userId,
     required this.title,
     required this.status,
     required this.progress,
-    required this.createdAt,
-    required this.updatedAt,
+    this.createdAt,
+    this.updatedAt,
     this.description,
     this.category,
     this.targetMetricType,
@@ -33,7 +35,11 @@ class Goals {
     this.endDate,
   });
 
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toMap({
+    FieldValue? newStartDate,
+    FieldValue? newCreatedAt,
+    FieldValue? newEndDate,
+  }) {
     return {
       "userId": userId,
       "title": title,
@@ -43,17 +49,17 @@ class Goals {
       "targetValue": targetValue,
       "targetUnit": targetUnit,
       "direction": direction,
-      "startDate": startDate,
-      "endDate": endDate,
+      "startDate": newStartDate ?? startDate,
+      "endDate": newEndDate ?? endDate,
       "status": status,
       "progress": progress,
-      "createdAt": createdAt,
-      "updatedAt": updatedAt,
+      "createdAt": newCreatedAt ?? createdAt,
+      "updatedAt": FieldValue.serverTimestamp(),
     };
   }
 
-  factory Goals.fromMap(Map<String, dynamic> map) {
-    return Goals(
+  factory GoalModel.fromMap(Map<String, dynamic> map) {
+    return GoalModel(
       userId: map["userId"] ?? "",
       title: map["title"] ?? "",
       status: map["status"] ?? "",
@@ -75,7 +81,14 @@ class Goals {
     );
   }
 
-  Future<void> toFirestore() async {
-    await FirebaseFirestore.instance.collection('goals').add(toMap());
+  Goal toGoal({required String id}) {
+    return Goal(
+      id: id,
+      title: title,
+      subtext:
+          "Daily", //TODO: Figure out storage of subtext in GoalModel. Is it related to status?
+      color: Color(0xFF7B6EF6),
+      days: {},
+    );
   }
 }
