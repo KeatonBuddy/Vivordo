@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'main_navigation.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:vivordo_health/src/services/user_service.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -47,7 +50,6 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   void _nextPage() {
-    //TODO: Submit questionare
     //TODO: Consider case where user signs up but exists before questionare is completed
     if (_currentPage == 0) {
       if (_formKey.currentState!.validate()) {
@@ -69,6 +71,9 @@ class _SignupScreenState extends State<SignupScreen> {
         );
       }
     } else {
+      if (_currentPage == _totalQuestions) {
+        _submitQuestionnaire();
+      }
       _pageController.nextPage(
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeInOutCubicEmphasized, // Smoother animation
@@ -76,11 +81,25 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
+  Future<void> _submitQuestionnaire() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await UserService.submitQuestionare(
+          user: user,
+          userdata: _userData,
+        );
+      }
+    } catch (e) {
+      debugPrint("Error submitting questionnaire: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    double progress = _currentPage == 0
-        ? 0.5
-        : (_currentPage / _totalQuestions);
+    double progress = _currentPage == 0 
+        ? 0.5 
+        : (_currentPage > _totalQuestions ? 1.0 : _currentPage / _totalQuestions);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9F7FF),
@@ -115,19 +134,16 @@ class _SignupScreenState extends State<SignupScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      _currentPage == 0
-                          ? "Step 1 of 2"
-                          : "Question $_currentPage of 15",
-                      style: const TextStyle(color: Colors.grey),
+                      _currentPage == 0 
+                        ? "Step 1 of 2" 
+                        : (_currentPage > _totalQuestions ? "Assessment Complete" : "Question $_currentPage of 15"), 
+                      style: const TextStyle(color: Colors.grey)
                     ),
                     Text(
-                      _currentPage == 0
-                          ? "Account Setup"
-                          : "${(progress * 100).toInt()}% Complete",
-                      style: const TextStyle(
-                        color: Color(0xFF9E8DFF),
-                        fontWeight: FontWeight.bold,
-                      ),
+                      _currentPage == 0 
+                        ? "Account Setup" 
+                        : (_currentPage > _totalQuestions ? "100% Complete" : "${(progress * 100).toInt()}% Complete"), 
+                      style: const TextStyle(color: Color(0xFF9E8DFF), fontWeight: FontWeight.bold)
                     ),
                   ],
                 ),
@@ -528,14 +544,16 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
         const SizedBox(height: 40),
         ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF7C69EF),
-          ),
-          child: const Text(
-            "Return to Login",
-            style: TextStyle(color: Colors.white),
-          ),
+          onPressed: () {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (context) => const MainNavigationScreen(initialIndex: 0),
+              ),
+              (route) => false,
+            );
+          },
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7C69EF)),
+          child: const Text("Continue", style: TextStyle(color: Colors.white)),
         ),
       ],
     );
