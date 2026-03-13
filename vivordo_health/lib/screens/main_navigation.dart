@@ -5,15 +5,22 @@ import 'dashboard_screen.dart';
 import 'panda_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+  final int initialIndex;
+  const MainNavigationScreen({super.key, this.initialIndex = 0});
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
   final Color primaryPurple = const Color(0xFF7B6EF6);
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex;
+  }
 
   final List<Widget> _pages = [
     const HomeScreen(),

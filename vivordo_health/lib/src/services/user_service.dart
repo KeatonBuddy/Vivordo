@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:vivordo_health/src/models/goals.dart';
 import 'package:vivordo_health/src/models/questionnaire_response.dart';
 import 'package:vivordo_health/src/models/metadata.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
@@ -23,7 +22,7 @@ class UserService {
         .set(firestoreUser.toMap());
   }
 
-
+  
   static Future<void> createGoal({
     required User theUser,
     required String userId,

@@ -1,6 +1,6 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
-import 'package:web/web.dart' as web;
 
 class Metadata {
   String? device;
@@ -11,7 +11,7 @@ class Metadata {
   Metadata.create()
     : this(
         kIsWeb ? "web" : Platform.operatingSystem,
-        kIsWeb ? web.window.navigator.language : Platform.localeName,
+        ui.PlatformDispatcher.instance.locale.toLanguageTag(),
       );
 
   Map<String, dynamic> toMap() {
