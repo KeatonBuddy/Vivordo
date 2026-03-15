@@ -21,7 +21,7 @@ class UserService {
         .set(firestoreUser.toMap());
   }
 
-  static Future<void> submitQuestionare({
+  static Future<void> submitQuestionnaire({
     required User? user,
     required Map<String, dynamic> userdata,
   }) async {
@@ -33,7 +33,7 @@ class UserService {
         questionnaireType: "baseline",
         submittedAt: FieldValue.serverTimestamp(),
         metadata: metadata,
-        answers: userdata["responses"],
+        answers: Map<String, dynamic>.from(userdata["responses"] ?? {}),
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       );
