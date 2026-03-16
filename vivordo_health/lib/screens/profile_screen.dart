@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'login_screen.dart';
+import 'package:vivordo_health/src/services/metrics_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -12,6 +13,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   String _name = "Sarah Mitchell";
   String _email = "sarah.mitchell@email.com";
+  bool _seeding = false;
 
   void _showEditDialog(
     BuildContext context,
@@ -49,7 +51,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   } else if (field == "Email") {
                     _email = controller.text;
                   }
-                  // Password change logic can be added here if needed
                 });
                 Navigator.pop(context);
                 ScaffoldMessenger.of(
@@ -64,7 +65,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // Toggle states for App Settings
   bool _appleHealthConnected = true;
   bool _pushNotifications = true;
   bool _autoSyncData = true;
@@ -148,7 +148,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildInfoTile(
                         "Email",
                         _email,
-                        onEdit: () => _showEditDialog(context, "Email", _email),
+                        onEdit: () =>
+                            _showEditDialog(context, "Email", _email),
                       ),
                       const Divider(),
                       ListTile(
@@ -166,7 +167,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _showEditDialog(context, "Password", ""),
+                        onTap: () =>
+                            _showEditDialog(context, "Password", ""),
                       ),
                     ],
                   ),
@@ -261,7 +263,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                   const SizedBox(height: 24),
 
-                  const SizedBox(height: 32),
+                  // Seed Demo Data Button (VH-62 / VH-16)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      onPressed: _seeding
+                          ? null
+                          : () async {
+                              setState(() => _seeding = true);
+                              try {
+                                await MetricsService.seedDemoData();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          '✓ 30 days of demo data seeded!'),
+                                      backgroundColor: Color(0xFF4ADE80),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Seed failed: $e'),
+                                      backgroundColor: Colors.redAccent,
+                                    ),
+                                  );
+                                }
+                              } finally {
+                                if (mounted) setState(() => _seeding = false);
+                              }
+                            },
+                      icon: _seeding
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.science_outlined,
+                              color: Color(0xFF7C69EF),
+                            ),
+                      label: Text(
+                        _seeding ? 'Seeding...' : 'Seed Demo Data (30 days)',
+                        style: const TextStyle(
+                          color: Color(0xFF7C69EF),
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFEDE9FE),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
 
                   // Logout Button
                   SizedBox(

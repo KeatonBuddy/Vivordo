@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import 'profile_screen.dart'; 
+import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'profile_screen.dart';
+import 'package:vivordo_health/src/services/metrics_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,7 +21,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static const Color textDark = Color(0xFF2D3142);
   static const Color textGrey = Color(0xFF9CA3AF);
   static const Color successGreen = Color(0xFF4ADE80);
-  
+
   final double _headerHeight = 300.0;
   final Radius _overlapRadius = const Radius.circular(32);
 
@@ -35,7 +38,6 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Stack(
         children: [
           _buildBackgroundHeader(),
-
           CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
@@ -43,7 +45,6 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverToBoxAdapter(child: _buildMainContent()),
             ],
           ),
-
           _buildTopBar(),
         ],
       ),
@@ -53,6 +54,20 @@ class _HomeScreenState extends State<HomeScreen> {
   // --- UI COMPONENTS ---
 
   Widget _buildTopBar() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    // Get first name only — use displayName if set, otherwise email prefix
+    String firstName = 'there';
+    if (user?.displayName != null && user!.displayName!.isNotEmpty) {
+      firstName = user.displayName!.split(' ').first;
+    } else if (user?.email != null) {
+      firstName = user!.email!.split('@').first;
+    }
+
+    // Greeting based on time of day
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12 ? 'Good morning,' : hour < 17 ? 'Good afternoon,' : 'Good evening,';
+
     return Positioned(
       top: 0,
       left: 0,
@@ -67,12 +82,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Good morning,',
-                    style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14),
+                    greeting,
+                    style: TextStyle(
+                        color: Colors.white.withOpacity(0.8), fontSize: 14),
                   ),
-                  const Text(
-                    'Sarah',
-                    style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
+                  Text(
+                    firstName,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
@@ -94,7 +113,8 @@ class _HomeScreenState extends State<HomeScreen> {
       },
       child: Container(
         padding: const EdgeInsets.all(10),
-        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+        decoration:
+            const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
         child: const Icon(Icons.person, color: primaryPurple, size: 22),
       ),
     );
@@ -141,7 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _buildStatsGrid(),
             const SizedBox(height: 24),
             _buildGoalCard(primaryPurple),
-            const SizedBox(height: 120), 
+            const SizedBox(height: 120),
           ],
         ),
       ),
@@ -159,7 +179,8 @@ class _HomeScreenState extends State<HomeScreen> {
       alignment: Alignment.centerLeft,
       child: Text(
         title,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
+        style: const TextStyle(
+            fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
       ),
     );
   }
@@ -233,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
-  
+
   Widget _buildPandaIndicator() {
     return SizedBox(
       height: 180,
@@ -245,7 +266,8 @@ class _HomeScreenState extends State<HomeScreen> {
             'assets/panda_home_icon.png',
             height: 200,
             fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const Icon(Icons.pets, size: 80, color: Colors.white24),
+            errorBuilder: (context, error, stackTrace) =>
+                const Icon(Icons.pets, size: 80, color: Colors.white24),
           ),
           Positioned(
             bottom: 0,
@@ -280,7 +302,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         strokeWidth: 8,
                         strokeCap: StrokeCap.round,
                         backgroundColor: Colors.white.withOpacity(0.3),
-                        valueColor: AlwaysStoppedAnimation<Color>(_getRingColor(stressScore)),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            _getRingColor(stressScore)),
                       );
                     },
                   ),
@@ -407,23 +430,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _filterButton(String text, int index) {
     bool isActive = _selectedTimeFilter == index;
-    
+
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => _selectedTimeFilter = index),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300), 
+          duration: const Duration(milliseconds: 300),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             color: isActive ? primaryPurple : Colors.transparent,
-            borderRadius: BorderRadius.circular(16), 
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Center(
             child: Text(
               text,
               style: TextStyle(
                 color: isActive ? Colors.white : Colors.grey,
-                fontSize: 12, 
+                fontSize: 12,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
               ),
             ),
@@ -439,7 +462,9 @@ class _HomeScreenState extends State<HomeScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10)],
+        boxShadow: [
+          BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10)
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -448,7 +473,11 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Icon(Icons.psychology, color: primaryColor),
               const SizedBox(width: 12),
-              Text('AI Insights', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor)),
+              Text('AI Insights',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: textColor)),
             ],
           ),
           const SizedBox(height: 12),
@@ -469,7 +498,10 @@ class _HomeScreenState extends State<HomeScreen> {
           gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [color.withOpacity(0.1), Colors.white.withOpacity(0.0)])),
+              colors: [
+            color.withOpacity(0.1),
+            Colors.white.withOpacity(0.0)
+          ])),
       child: CustomPaint(painter: ChartPainter(color: color)),
     );
   }
@@ -481,17 +513,29 @@ class _HomeScreenState extends State<HomeScreen> {
       decoration: BoxDecoration(
         color: primaryColor,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: primaryColor.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 10))],
+        boxShadow: [
+          BoxShadow(
+              color: primaryColor.withOpacity(0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 10))
+        ],
       ),
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Current Goal', style: TextStyle(color: Colors.white, fontSize: 16)),
+          Text('Current Goal',
+              style: TextStyle(color: Colors.white, fontSize: 16)),
           SizedBox(height: 8),
           Text('Meditate 10 minutes daily',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500)),
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500)),
           SizedBox(height: 20),
-          LinearProgressIndicator(value: 0.71, backgroundColor: Colors.white24, color: Colors.white),
+          LinearProgressIndicator(
+              value: 0.71,
+              backgroundColor: Colors.white24,
+              color: Colors.white),
         ],
       ),
     );
@@ -541,11 +585,16 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _moodOption('Great', '🤩', const Color(0xFFFFEDD5), const Color(0xFFF97316)),
-                  _moodOption('Good', '😊', const Color(0xFFDCFCE7), const Color(0xFF22C55E)),
-                  _moodOption('Okay', '😐', const Color(0xFFF3F4F6), const Color(0xFF6B7280)),
-                  _moodOption('Down', '😔', const Color(0xFFEDE9FE), const Color(0xFF8B5CF6)),
-                  _moodOption('Awful', '😫', const Color(0xFFFEE2E2), const Color(0xFFEF4444)),
+                  _moodOption('Great', '🤩', const Color(0xFFFFEDD5),
+                      const Color(0xFFF97316)),
+                  _moodOption('Good', '😊', const Color(0xFFDCFCE7),
+                      const Color(0xFF22C55E)),
+                  _moodOption('Okay', '😐', const Color(0xFFF3F4F6),
+                      const Color(0xFF6B7280)),
+                  _moodOption('Down', '😔', const Color(0xFFEDE9FE),
+                      const Color(0xFF8B5CF6)),
+                  _moodOption('Awful', '😫', const Color(0xFFFEE2E2),
+                      const Color(0xFFEF4444)),
                 ],
               ),
               const SizedBox(height: 40),
@@ -556,12 +605,21 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _moodOption(String label, String emoji, Color bgColor, Color accentColor) {
+  // VH-51: saves mood to Firestore on tap
+  Widget _moodOption(
+      String label, String emoji, Color bgColor, Color accentColor) {
     bool isSelected = _currentMood == label;
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
         setState(() => _currentMood = label);
         Navigator.pop(context);
+
+        // Save to Firestore
+        try {
+          await MetricsService.saveMoodCheckIn(label);
+        } catch (e) {
+          debugPrint('Mood save failed: $e');
+        }
       },
       child: Column(
         children: [
@@ -574,7 +632,12 @@ class _HomeScreenState extends State<HomeScreen> {
               color: isSelected ? accentColor : bgColor,
               shape: BoxShape.circle,
               boxShadow: isSelected
-                  ? [BoxShadow(color: accentColor.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))]
+                  ? [
+                      BoxShadow(
+                          color: accentColor.withOpacity(0.4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4))
+                    ]
                   : [],
             ),
             child: Center(
@@ -585,9 +648,12 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(
             label,
             style: TextStyle(
-                color: isSelected ? const Color(0xFF2D3142) : const Color(0xFF9CA3AF),
+                color: isSelected
+                    ? const Color(0xFF2D3142)
+                    : const Color(0xFF9CA3AF),
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500),
+                fontWeight:
+                    isSelected ? FontWeight.bold : FontWeight.w500),
           ),
         ],
       ),
@@ -595,14 +661,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// --- PAINTERS --- 
+// --- PAINTERS ---
 
 class ChartPainter extends CustomPainter {
   final Color color;
   ChartPainter({required this.color});
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color..strokeWidth = 3..style = PaintingStyle.stroke;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke;
     final path = Path();
     path.moveTo(0, size.height * 0.6);
     path.lineTo(size.width * 0.25, size.height * 0.4);
@@ -611,7 +680,9 @@ class ChartPainter extends CustomPainter {
     path.lineTo(size.width, size.height * 0.4);
     canvas.drawPath(path, paint);
   }
-  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class WeeklyChartPainter extends CustomPainter {
@@ -619,7 +690,10 @@ class WeeklyChartPainter extends CustomPainter {
   WeeklyChartPainter({required this.color});
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color..strokeWidth = 3..style = PaintingStyle.stroke;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke;
     final path = Path();
     path.moveTo(0, size.height * 0.5);
     path.lineTo(size.width * 0.2, size.height * 0.3);
@@ -629,5 +703,7 @@ class WeeklyChartPainter extends CustomPainter {
     path.lineTo(size.width, size.height * 0.3);
     canvas.drawPath(path, paint);
   }
-  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

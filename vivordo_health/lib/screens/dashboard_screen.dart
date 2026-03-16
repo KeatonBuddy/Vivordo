@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:math';
+import 'dart:ui';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -12,9 +13,40 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  int _selectedTimeFilter = 1;
+  int _selectedTimeFilter = 1; // 0=Daily, 1=Weekly, 2=Monthly
   static const Color primaryPurple = Color(0xFF7B6EF6);
   static const Color bgPurple = Color(0xFFFBFAFF);
+
+  // Returns how many days back to query based on filter
+  int get _daysBack => _selectedTimeFilter == 0 ? 1 : _selectedTimeFilter == 1 ? 7 : 30;
+
+  // Returns list of period strings (YYYY-MM-DD) for the selected range
+  List<String> get _periods {
+    final now = DateTime.now();
+    return List.generate(_daysBack, (i) {
+      final d = now.subtract(Duration(days: i));
+      return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    });
+  }
+
+  // Fetches all docs for a given metricType within the selected time range
+  Stream<QuerySnapshot<Map<String, dynamic>>> _metricStream(String metricType) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const Stream.empty();
+
+    final periods = _periods;
+    final oldest = periods.last;
+    final newest = periods.first;
+
+    return FirebaseFirestore.instance
+        .collection('metrics_daily')
+        .where('userId', isEqualTo: user.uid)
+        .where('metricType', isEqualTo: metricType)
+        .where('period', isGreaterThanOrEqualTo: oldest)
+        .where('period', isLessThanOrEqualTo: newest)
+        .orderBy('period', descending: false)
+        .snapshots();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,74 +70,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _buildSyncCard(),
                       const SizedBox(height: 20),
 
-                      /*
-                        DASHBOARD DATA RULE (per task):
-                        - Only pull values that exist in Firestore for the authenticated user.
-                        - Do NOT modify UI elements that do not have a real database field/collection yet.
-                        - Security is enforced by Firestore Rules (auth required + user owns their docs).
+                      if (currentUser == null) ...[
+                        _buildHeartRateCard(null),
+                        const SizedBox(height: 16),
+                        _buildStepsCard(null),
+                        const SizedBox(height: 16),
+                        _buildSleepCard(null),
+                        const SizedBox(height: 16),
+                        _buildMoodCard(null),
+                      ] else ...[
 
-                        THIS SECTION:
-                        - Pulled from Firestore (collection: metrics_daily):
-                          * Heart Rate value: restingHeartRate
-                          * Daily Steps value: stepsCount
-                          * Sleep Duration value: sleepDurationHours
-
-                        - Not pulled (no matching field/collection exists in current schema; UI left unchanged):
-                          * Screen Time (hardcoded "4.2h" in _buildGridStats)
-                          * Audio (hardcoded "65 dB" in _buildGridStats)
-
-                        Counts:
-                        - Values shown on UI (text): 5
-                        - Values pulled from Firestore: 3
-                        - Values NOT pulled (missing field/collection): 2
-                      */
-
-                      // If user is not logged in, we keep the existing UI values (no DB access possible).
-                      if (currentUser == null)
-                        Column(
-                          children: [
-                            _buildHeartRateCard(null),
-                            const SizedBox(height: 16),
-                            _buildStepsCard(null),
-                            const SizedBox(height: 16),
-                            _buildSleepCard(null),
-                          ],
-                        )
-                      else
-                        // Pull the most recent metrics document for this authenticated user.
-                        // The query is scoped by userId == auth.uid (backend rules also enforce ownership).
+                        // ── Heart Rate — Line chart (VH-58) ──
                         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: FirebaseFirestore.instance
-                              .collection("metrics_daily")
-                              .where("userId", isEqualTo: currentUser.uid)
-                              // We order by "date" to get latest. "date" must exist in the document.
-                              .orderBy("date", descending: true)
-                              .limit(1)
-                              .snapshots(),
+                          stream: _metricStream('heart_rate'),
                           builder: (context, snapshot) {
-                            // If we have data, use it. If not, fall back to existing UI placeholders.
-                            Map<String, dynamic>? data;
-                            if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
-                              data = snapshot.data!.docs.first.data();
-                            }
-
-                            return Column(
-                              children: [
-                                _buildHeartRateCard(data),
-                                const SizedBox(height: 16),
-                                _buildStepsCard(data),
-                                const SizedBox(height: 16),
-                                _buildSleepCard(data),
-                              ],
-                            );
+                            final docs = snapshot.data?.docs ?? [];
+                            return _buildHeartRateCard(docs);
                           },
                         ),
+                        const SizedBox(height: 16),
+
+                        // ── Steps — Bar chart (VH-58) ──
+                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _metricStream('steps'),
+                          builder: (context, snapshot) {
+                            final docs = snapshot.data?.docs ?? [];
+                            return _buildStepsCard(docs);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // ── Sleep — Area/bar chart (VH-58) ──
+                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _metricStream('sleep'),
+                          builder: (context, snapshot) {
+                            final docs = snapshot.data?.docs ?? [];
+                            return _buildSleepCard(docs);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // ── Mood — Emoji score chart (VH-58) ──
+                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _metricStream('mood'),
+                          builder: (context, snapshot) {
+                            final docs = snapshot.data?.docs ?? [];
+                            return _buildMoodCard(docs);
+                          },
+                        ),
+                      ],
 
                       const SizedBox(height: 16),
-
-                      // This stays unchanged because the DB does not currently provide these fields:
-                      // - Screen Time (hardcoded UI)
-                      // - Audio (hardcoded UI)
                       _buildGridStats(),
                     ],
                   ),
@@ -118,7 +133,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // --- HEADER SECTION ---
+  // ── HEADER ────────────────────────────────────────────────────────
 
   Widget _buildHeader() {
     return Container(
@@ -134,16 +149,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            "Health Dashboards",
+            "Health Dashboard",
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 24),
           Container(
             padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-            ),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
             child: Row(
               children: [
                 _filterButton("Daily", 0),
@@ -184,36 +196,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // --- CHART CARDS ---
-  // NOTE: These cards keep the original UI layout.
-  // Only the displayed "value" is replaced with Firestore fields when available.
+  // ── VH-58: HEART RATE — animated line chart ───────────────────────
 
-  Widget _buildHeartRateCard(Map<String, dynamic>? data) {
-    // Pulled field (if present): metrics_daily.restingHeartRate
-    // Fallback: original placeholder value (unchanged behavior)
-    final firestoreHr = data?["restingHeartRate"];
-    final displayed = firestoreHr != null
-        ? firestoreHr.toString()
-        : (_selectedTimeFilter == 0 ? "72" : "68");
+  Widget _buildHeartRateCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
+    final values = docs != null && docs.isNotEmpty
+        ? docs.map((d) => (d.data()['avg'] as num?)?.toDouble() ?? 0.0).toList()
+        : <double>[];
+
+    final avg = values.isNotEmpty
+        ? (values.reduce((a, b) => a + b) / values.length).round()
+        : (_selectedTimeFilter == 0 ? 72 : 68);
+
+    final labels = _buildXLabels(docs?.map((d) => d.data()['period'] as String? ?? '').toList() ?? []);
 
     return _buildCardBase(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildChartHeader(
-            Icons.favorite_border,
-            "Heart Rate",
-            displayed,
-            "Avg",
-            Colors.redAccent,
-          ),
-          const SizedBox(height: 20),
+          _buildChartHeader(Icons.favorite_border, "Heart Rate", "$avg bpm", "Avg", Colors.redAccent),
+          const SizedBox(height: 8),
+          _buildAxisLabels("bpm", labels),
+          const SizedBox(height: 4),
           _VisibilityAnimatedWidget(
             duration: const Duration(milliseconds: 1500),
-            builder: (context, value) {
+            builder: (context, animValue) {
               return SizedBox(
-                height: 150,
+                height: 120,
                 width: double.infinity,
-                child: CustomPaint(painter: HeartRateLinePainter(value)),
+                child: values.isEmpty
+                    ? _buildEmptyState()
+                    : CustomPaint(
+                        painter: LineChartPainter(
+                          values: values,
+                          color: Colors.redAccent,
+                          animationValue: animValue,
+                        ),
+                      ),
               );
             },
           ),
@@ -222,101 +240,235 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildStepsCard(Map<String, dynamic>? data) {
-    // Pulled field (if present): metrics_daily.stepsCount
-    // Fallback: original placeholder value (unchanged behavior)
-    final firestoreSteps = data?["stepsCount"];
-    final displayed = firestoreSteps != null
-        ? firestoreSteps.toString()
-        : (_selectedTimeFilter == 0 ? "9,540" : "64,200");
+  // ── VH-58: STEPS — bar chart ──────────────────────────────────────
 
-    final List<double> dailyData = [0.3, 0.5, 0.2, 0.7, 0.4, 0.9, 0.6]; // unchanged UI
+  Widget _buildStepsCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
+    final values = docs != null && docs.isNotEmpty
+        ? docs.map((d) => (d.data()['sum'] as num?)?.toDouble() ?? 0.0).toList()
+        : <double>[];
+
+    final total = values.isNotEmpty
+        ? values.reduce((a, b) => a + b).round()
+        : (_selectedTimeFilter == 0 ? 9540 : 64200);
+
+    final labels = _buildXLabels(docs?.map((d) => d.data()['period'] as String? ?? '').toList() ?? []);
 
     return _buildCardBase(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildChartHeader(
-            Icons.directions_walk,
-            "Daily Steps",
-            displayed,
-            "Total",
-            Colors.blueAccent,
-          ),
-          const SizedBox(height: 20),
+          _buildChartHeader(Icons.directions_walk, "Daily Steps", _formatNumber(total), "Total", Colors.blueAccent),
+          const SizedBox(height: 8),
+          _buildAxisLabels("steps", labels),
+          const SizedBox(height: 4),
           SizedBox(
-            height: 150,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: dailyData.map((h) => _buildBar(h, Colors.blueAccent)).toList(),
-            ),
+            height: 120,
+            child: values.isEmpty
+                ? _buildEmptyState()
+                : _VisibilityAnimatedWidget(
+                    builder: (context, animValue) {
+                      final maxVal = values.reduce(max);
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: values.map((v) {
+                          final h = maxVal > 0 ? (v / maxVal) * 100 * animValue : 0.0;
+                          return Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Container(
+                                width: _barWidth(values.length),
+                                height: h,
+                                decoration: BoxDecoration(
+                                  color: Colors.blueAccent.withOpacity(0.8),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSleepCard(Map<String, dynamic>? data) {
-    // Pulled field (if present): metrics_daily.sleepDurationHours
-    // Fallback: original placeholder value (unchanged behavior)
-    final firestoreSleep = data?["sleepDurationHours"];
-    final displayed = firestoreSleep != null ? "${firestoreSleep}h" : "7.9h";
+  // ── VH-58: SLEEP — area chart ─────────────────────────────────────
 
-    final List<double> sleepData = [0.7, 0.65, 0.8, 0.75, 0.6, 0.9, 0.85]; // unchanged UI
-    final List<String> labels = ["M", "T", "W", "T", "F", "S", "S"]; // unchanged UI
+  Widget _buildSleepCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
+    final values = docs != null && docs.isNotEmpty
+        ? docs.map((d) => (d.data()['avg'] as num?)?.toDouble() ?? 0.0).toList()
+        : <double>[];
+
+    final avg = values.isNotEmpty
+        ? (values.reduce((a, b) => a + b) / values.length)
+        : 7.9;
+
+    final labels = _buildXLabels(docs?.map((d) => d.data()['period'] as String? ?? '').toList() ?? []);
 
     return _buildCardBase(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildChartHeader(Icons.bedtime, "Sleep Duration", displayed, "Last Night", primaryPurple),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 150,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(
-                7,
-                (i) => _buildBar(sleepData[i], primaryPurple, label: labels[i]),
-              ),
-            ),
+          _buildChartHeader(Icons.bedtime, "Sleep Duration", "${avg.toStringAsFixed(1)}h", "Avg", primaryPurple),
+          const SizedBox(height: 8),
+          _buildAxisLabels("hours", labels),
+          const SizedBox(height: 4),
+          _VisibilityAnimatedWidget(
+            duration: const Duration(milliseconds: 1200),
+            builder: (context, animValue) {
+              return SizedBox(
+                height: 120,
+                width: double.infinity,
+                child: values.isEmpty
+                    ? _buildEmptyState()
+                    : CustomPaint(
+                        painter: AreaChartPainter(
+                          values: values,
+                          color: primaryPurple,
+                          animationValue: animValue,
+                        ),
+                      ),
+              );
+            },
           ),
         ],
       ),
     );
   }
 
-  // --- SHARED UI COMPONENTS ---
+  // ── VH-58: MOOD — dot/score chart ────────────────────────────────
 
-  Widget _buildBar(double targetHeight, Color color, {String? label}) {
-    return _VisibilityAnimatedWidget(
-      builder: (context, animationValue) {
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.end,
+  Widget _buildMoodCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
+    final entries = docs != null && docs.isNotEmpty
+        ? docs.map((d) => {
+              'score': (d.data()['avg'] as num?)?.toDouble() ?? 50.0,
+              'label': d.data()['label'] as String? ?? '',
+              'period': d.data()['period'] as String? ?? '',
+            }).toList()
+        : <Map<String, dynamic>>[];
+
+    final avgScore = entries.isNotEmpty
+        ? entries.map((e) => e['score'] as double).reduce((a, b) => a + b) / entries.length
+        : 75.0;
+
+    final moodLabel = _scoreToMoodLabel(avgScore);
+    final labels = _buildXLabels(entries.map((e) => e['period'] as String).toList());
+
+    return _buildCardBase(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildChartHeader(Icons.psychology_outlined, "Mood", moodLabel, "Avg", const Color(0xFF8B5CF6)),
+          const SizedBox(height: 8),
+          _buildAxisLabels("score", labels),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 120,
+            child: entries.isEmpty
+                ? _buildEmptyState()
+                : _VisibilityAnimatedWidget(
+                    builder: (context, animValue) {
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: entries.map((e) {
+                          final score = e['score'] as double;
+                          final emoji = _scoreToEmoji(score);
+                          final h = (score / 100) * 80 * animValue;
+                          return Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Text(emoji, style: const TextStyle(fontSize: 16)),
+                              const SizedBox(height: 4),
+                              Container(
+                                width: _barWidth(entries.length),
+                                height: h,
+                                decoration: BoxDecoration(
+                                  color: _moodColor(score).withOpacity(0.7),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── SHARED UI ─────────────────────────────────────────────────────
+
+  Widget _buildAxisLabels(String yLabel, List<String> xLabels) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(yLabel, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        Row(
+          children: xLabels
+              .map((l) => Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Text(l, style: const TextStyle(fontSize: 9, color: Colors.grey)),
+                  ))
+              .toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.bar_chart_outlined, color: Colors.grey, size: 32),
+          SizedBox(height: 8),
+          Text("No data for this period", style: TextStyle(color: Colors.grey, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardBase({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10)],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildChartHeader(IconData icon, String title, String value, String valueSub, Color color) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 10),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ]),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Container(
-              width: 25,
-              height: 100 * targetHeight * animationValue,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.8),
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
-            if (label != null) ...[
-              const SizedBox(height: 8),
-              Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            ]
+            Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            Text(valueSub, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
           ],
-        );
-      },
+        ),
+      ],
     );
   }
 
   Widget _buildGridStats() {
-    // Not pulled from Firestore because current DB schema has no fields/collection for:
-    // - Screen Time
-    // - Audio (dB)
-    // These remain hardcoded UI placeholders until a real data source is added.
     return Row(
       children: [
         Expanded(child: _buildSmallStatCard(Icons.smartphone, "Screen Time", "4.2h", Colors.orange)),
@@ -342,40 +494,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildCardBase({required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10)],
-      ),
-      child: child,
-    );
-  }
-
-  Widget _buildChartHeader(IconData icon, String title, String value, String valueSub, Color color) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(width: 10),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            Text(valueSub, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ],
-    );
-  }
-
   Widget _buildSyncCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -389,9 +507,59 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+
+  // ── HELPERS ───────────────────────────────────────────────────────
+
+  double _barWidth(int count) {
+    if (count <= 7) return 25;
+    if (count <= 14) return 16;
+    return 10;
+  }
+
+  String _formatNumber(int n) {
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
+    return n.toString();
+  }
+
+  List<String> _buildXLabels(List<String> periods) {
+    if (periods.isEmpty) return [];
+    if (periods.length == 1) return [_shortDate(periods.first)];
+    if (periods.length <= 7) return periods.map(_shortDate).toList();
+    // For monthly show only first, mid, last
+    return [_shortDate(periods.first), _shortDate(periods[periods.length ~/ 2]), _shortDate(periods.last)];
+  }
+
+  String _shortDate(String period) {
+    if (period.length < 10) return period;
+    final parts = period.split('-');
+    if (parts.length < 3) return period;
+    return '${parts[1]}/${parts[2]}';
+  }
+
+  String _scoreToMoodLabel(double score) {
+    if (score >= 85) return 'Great 🤩';
+    if (score >= 65) return 'Good 😊';
+    if (score >= 45) return 'Okay 😐';
+    if (score >= 25) return 'Down 😔';
+    return 'Awful 😫';
+  }
+
+  String _scoreToEmoji(double score) {
+    if (score >= 85) return '🤩';
+    if (score >= 65) return '😊';
+    if (score >= 45) return '😐';
+    if (score >= 25) return '😔';
+    return '😫';
+  }
+
+  Color _moodColor(double score) {
+    if (score >= 65) return Colors.green;
+    if (score >= 45) return Colors.orange;
+    return Colors.redAccent;
+  }
 }
 
-// --- HELPER CLASS FOR SCROLL ACTIVATION ---
+// ── VISIBILITY ANIMATION HELPER ───────────────────────────────────
 
 class _VisibilityAnimatedWidget extends StatefulWidget {
   final Widget Function(BuildContext, double) builder;
@@ -406,7 +574,8 @@ class _VisibilityAnimatedWidget extends StatefulWidget {
   State<_VisibilityAnimatedWidget> createState() => _VisibilityAnimatedWidgetState();
 }
 
-class _VisibilityAnimatedWidgetState extends State<_VisibilityAnimatedWidget> with SingleTickerProviderStateMixin {
+class _VisibilityAnimatedWidgetState extends State<_VisibilityAnimatedWidget>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   bool _hasBeenVisible = false;
 
@@ -445,36 +614,103 @@ class _VisibilityAnimatedWidgetState extends State<_VisibilityAnimatedWidget> wi
   }
 }
 
-// --- PAINTER FOR HEART RATE ---
+// ── CUSTOM PAINTERS ───────────────────────────────────────────────
 
-class HeartRateLinePainter extends CustomPainter {
+// VH-58: Line chart for heart rate
+class LineChartPainter extends CustomPainter {
+  final List<double> values;
+  final Color color;
   final double animationValue;
-  HeartRateLinePainter(this.animationValue);
+
+  LineChartPainter({required this.values, required this.color, required this.animationValue});
 
   @override
   void paint(Canvas canvas, Size size) {
-    Paint paint = Paint()
-      ..color = Colors.redAccent
+    if (values.isEmpty) return;
+
+    final maxVal = values.reduce(max);
+    final minVal = values.reduce(min);
+    final range = (maxVal - minVal).clamp(1.0, double.infinity);
+
+    final paint = Paint()
+      ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
+      ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round;
 
-    Path path = Path();
-    path.moveTo(0, size.height * 0.7);
-    path.lineTo(size.width * 0.2, size.height * 0.7);
-    path.lineTo(size.width * 0.25, size.height * 0.3);
-    path.lineTo(size.width * 0.35, size.height * 0.9);
-    path.lineTo(size.width * 0.45, size.height * 0.1);
-    path.lineTo(size.width * 0.55, size.height * 0.8);
-    path.lineTo(size.width * 0.6, size.height * 0.7);
-    path.lineTo(size.width, size.height * 0.7);
+    final path = Path();
+    for (int i = 0; i < values.length; i++) {
+      final x = values.length == 1 ? size.width / 2 : (i / (values.length - 1)) * size.width;
+      final y = size.height - ((values[i] - minVal) / range) * size.height * 0.85 - size.height * 0.05;
+      if (i == 0) path.moveTo(x, y);
+      else path.lineTo(x, y);
+    }
 
-    for (PathMetric measurePath in path.computeMetrics()) {
-      Path extractPath = measurePath.extractPath(0.0, measurePath.length * animationValue);
-      canvas.drawPath(extractPath, paint);
+    // Draw dots
+    final dotPaint = Paint()..color = color..style = PaintingStyle.fill;
+    for (int i = 0; i < values.length; i++) {
+      final x = values.length == 1 ? size.width / 2 : (i / (values.length - 1)) * size.width;
+      final y = size.height - ((values[i] - minVal) / range) * size.height * 0.85 - size.height * 0.05;
+      canvas.drawCircle(Offset(x, y), 3, dotPaint);
+    }
+
+    for (PathMetric m in path.computeMetrics()) {
+      canvas.drawPath(m.extractPath(0, m.length * animationValue), paint);
     }
   }
 
   @override
-  bool shouldRepaint(HeartRateLinePainter oldDelegate) => oldDelegate.animationValue != animationValue;
+  bool shouldRepaint(LineChartPainter old) => old.animationValue != animationValue;
+}
+
+// VH-58: Area chart for sleep
+class AreaChartPainter extends CustomPainter {
+  final List<double> values;
+  final Color color;
+  final double animationValue;
+
+  AreaChartPainter({required this.values, required this.color, required this.animationValue});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+
+    final maxVal = values.reduce(max).clamp(1.0, double.infinity);
+
+    final fillPaint = Paint()
+      ..color = color.withOpacity(0.15)
+      ..style = PaintingStyle.fill;
+
+    final linePaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+
+    final path = Path();
+    final fillPath = Path();
+
+    fillPath.moveTo(0, size.height);
+
+    for (int i = 0; i < values.length; i++) {
+      final x = values.length == 1 ? size.width / 2 : (i / (values.length - 1)) * size.width;
+      final y = size.height - (values[i] / maxVal) * size.height * 0.85 * animationValue;
+      if (i == 0) {
+        path.moveTo(x, y);
+        fillPath.lineTo(x, y);
+      } else {
+        path.lineTo(x, y);
+        fillPath.lineTo(x, y);
+      }
+    }
+
+    fillPath.lineTo(size.width, size.height);
+    fillPath.close();
+
+    canvas.drawPath(fillPath, fillPaint);
+    canvas.drawPath(path, linePaint);
+  }
+
+  @override
+  bool shouldRepaint(AreaChartPainter old) => old.animationValue != animationValue;
 }
