@@ -263,7 +263,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Seed Demo Data Button (VH-62 / VH-16)
+                  // Seed Demo Data Button - For Testing Purposes
                   SizedBox(
                     width: double.infinity,
                     height: 56,

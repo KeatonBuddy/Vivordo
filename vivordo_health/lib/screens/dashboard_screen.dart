@@ -78,6 +78,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         _buildSleepCard(null),
                         const SizedBox(height: 16),
                         _buildMoodCard(null),
+                        const SizedBox(height: 16),
+                        _buildStressCard(null),
+                        const SizedBox(height: 16),
+                        _buildWellnessCard(null),
                       ] else ...[
 
                         // ── Heart Rate — Line chart (VH-58) ──
@@ -118,10 +122,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             return _buildMoodCard(docs);
                           },
                         ),
+                        const SizedBox(height: 16),
+
+                        // ── Stress — line chart ──
+                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _metricStream('stress'),
+                          builder: (context, snapshot) {
+                            final docs = snapshot.data?.docs ?? [];
+                            return _buildStressCard(docs);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // ── Wellness — area chart ──
+                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _metricStream('wellness'),
+                          builder: (context, snapshot) {
+                            final docs = snapshot.data?.docs ?? [];
+                            return _buildWellnessCard(docs);
+                          },
+                        ),
                       ],
 
-                      const SizedBox(height: 16),
-                      _buildGridStats(),
+
                     ],
                   ),
                 ),
@@ -398,6 +421,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       );
                     },
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── VH-58: STRESS — line chart ───────────────────────────────────
+
+  Widget _buildStressCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
+    final values = docs != null && docs.isNotEmpty
+        ? docs.map((d) => (d.data()["avg"] as num?)?.toDouble() ?? 0.0).toList()
+        : <double>[];
+    final avg = values.isNotEmpty ? (values.reduce((a, b) => a + b) / values.length).round() : 50;
+    final labels = _buildXLabels(docs?.map((d) => d.data()["period"] as String? ?? "").toList() ?? []);
+
+    return _buildCardBase(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildChartHeader(Icons.self_improvement, "Stress", "$avg / 100", "Avg", const Color(0xFFF97316)),
+          const SizedBox(height: 8),
+          _buildAxisLabels("score", labels),
+          const SizedBox(height: 4),
+          _VisibilityAnimatedWidget(
+            duration: const Duration(milliseconds: 1500),
+            builder: (context, animValue) {
+              return SizedBox(
+                height: 120,
+                width: double.infinity,
+                child: values.isEmpty
+                    ? _buildEmptyState()
+                    : CustomPaint(painter: LineChartPainter(values: values, color: const Color(0xFFF97316), animationValue: animValue)),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── VH-58: WELLNESS — area chart ─────────────────────────────────
+
+  Widget _buildWellnessCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
+    final values = docs != null && docs.isNotEmpty
+        ? docs.map((d) => (d.data()["avg"] as num?)?.toDouble() ?? 0.0).toList()
+        : <double>[];
+    final avg = values.isNotEmpty ? (values.reduce((a, b) => a + b) / values.length).round() : 0;
+    final labels = _buildXLabels(docs?.map((d) => d.data()["period"] as String? ?? "").toList() ?? []);
+
+    return _buildCardBase(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildChartHeader(Icons.favorite, "Wellness", "$avg / 100", "Score", const Color(0xFF22C55E)),
+          const SizedBox(height: 8),
+          _buildAxisLabels("score", labels),
+          const SizedBox(height: 4),
+          _VisibilityAnimatedWidget(
+            duration: const Duration(milliseconds: 1200),
+            builder: (context, animValue) {
+              return SizedBox(
+                height: 120,
+                width: double.infinity,
+                child: values.isEmpty
+                    ? _buildEmptyState()
+                    : CustomPaint(painter: AreaChartPainter(values: values, color: const Color(0xFF22C55E), animationValue: animValue)),
+              );
+            },
           ),
         ],
       ),
