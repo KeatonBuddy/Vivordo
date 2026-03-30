@@ -40,6 +40,24 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: primaryPurple,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openPanda,
+        backgroundColor: Colors.white,
+        elevation: 4,
+        icon: Image.asset(
+          'assets/panda_icon.png',
+          height: 24,
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.pets, color: primaryPurple),
+        ),
+        label: const Text(
+          'Ask Panda',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: primaryPurple,
+          ),
+        ),
+      ),
       body: Stack(
         children: [
           _buildBackgroundHeader(),
@@ -247,128 +265,102 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildPandaIndicator() {
-    return GestureDetector(
-      onTap: _openPanda,
-      child: SizedBox(
-        height: 180,
-        width: double.infinity,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Image.asset(
-              'assets/panda_home_icon.png',
-              height: 200,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) =>
-                  const Icon(Icons.pets, size: 80, color: Colors.white24),
-            ),
-            Positioned(
-              bottom: 0,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Container(
-                    width: 70,
-                    height: 70,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.15),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: _getRingColor(stressScore).withOpacity(0.4),
-                          blurRadius: 15,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Panda image + stress ring stacked together
+          SizedBox(
+            height: 160,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                GestureDetector(
+                  onTap: _openPanda,
+                  child: Image.asset(
+                    'assets/panda_home_icon.png',
+                    height: 160,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const Icon(Icons.pets, size: 80, color: Colors.white24),
                   ),
-                  SizedBox(
-                    width: 85,
-                    height: 85,
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: 0, end: stressScore / 100),
-                      duration: const Duration(milliseconds: 1800),
-                      curve: Curves.easeOutBack,
-                      builder: (context, value, child) {
-                        return CircularProgressIndicator(
-                          value: value,
-                          strokeWidth: 8,
-                          strokeCap: StrokeCap.round,
-                          backgroundColor: Colors.white.withOpacity(0.3),
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                              _getRingColor(stressScore)),
-                        );
-                      },
-                    ),
-                  ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
+                ),
+                // Stress ring — positioned at bottom of panda
+                Positioned(
+                  bottom: 0,
+                  child: Stack(
+                    alignment: Alignment.center,
                     children: [
-                      Text(
-                        "STRESS",
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white.withOpacity(0.8),
-                          letterSpacing: 0.5,
+                      Container(
+                        width: 70,
+                        height: 70,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.15),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: _getRingColor(stressScore).withOpacity(0.4),
+                              blurRadius: 15,
+                              spreadRadius: 2,
+                            ),
+                          ],
                         ),
                       ),
-                      Text(
-                        "${stressScore.toInt()}",
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          height: 1.1,
+                      SizedBox(
+                        width: 85,
+                        height: 85,
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween<double>(begin: 0, end: stressScore / 100),
+                          duration: const Duration(milliseconds: 1800),
+                          curve: Curves.easeOutBack,
+                          builder: (context, value, child) {
+                            return CircularProgressIndicator(
+                              value: value,
+                              strokeWidth: 8,
+                              strokeCap: StrokeCap.round,
+                              backgroundColor: Colors.white.withOpacity(0.3),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  _getRingColor(stressScore)),
+                            );
+                          },
                         ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            // Chat with Panda button
-            Positioned(
-              bottom: 0,
-              right: MediaQuery.of(context).size.width * 0.12,
-              child: GestureDetector(
-                onTap: _openPanda,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.chat_bubble_outline,
-                          color: primaryPurple, size: 13),
-                      SizedBox(width: 5),
-                      Text(
-                        "Chat with Panda",
-                        style: TextStyle(
-                          color: primaryPurple,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            "STRESS",
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white.withOpacity(0.8),
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          Text(
+                            "${stressScore.toInt()}",
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              height: 1.1,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Chat with Panda button — sits cleanly below
+
+        ],
       ),
     );
   }

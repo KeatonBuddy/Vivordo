@@ -75,6 +75,7 @@ flutter:
   assets:
     - assets/panda_icon.png
     - assets/panda_home_icon.png
+    - assets/recommendations.json
 
   # To add assets to your application, add an assets section, like this:
   # assets:
