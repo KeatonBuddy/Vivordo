@@ -19,7 +19,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final int _totalQuestions = 15;
 
   // Centralized data map for future database integration
-  final Map<String, dynamic> _userData = {'responses': {}};
+  final Map<String, dynamic> _userData = {'responses': <String, dynamic>{}};
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -29,6 +29,7 @@ class _SignupScreenState extends State<SignupScreen> {
   // For show/hide password
   bool _showPassword = false;
   bool _showConfirmPassword = false;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -72,26 +73,47 @@ class _SignupScreenState extends State<SignupScreen> {
       }
     } else {
       if (_currentPage == _totalQuestions) {
-        _submitQuestionnaire();
+        _submitQuestionnaire().then((_) {
+          if (mounted) {
+            _pageController.nextPage(
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOutCubicEmphasized,
+            );
+          }
+        });
+      } else {
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOutCubicEmphasized, // Smoother animation
+        );
       }
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOutCubicEmphasized, // Smoother animation
-      );
     }
   }
 
   Future<void> _submitQuestionnaire() async {
+    setState(() => _isLoading = true);
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        await UserService.submitQuestionare(
+        await UserService.submitQuestionnaire(
           user: user,
           userdata: _userData,
         );
       }
     } catch (e) {
       debugPrint("Error submitting questionnaire: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to submit assessment: $e"),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -266,18 +288,27 @@ class _SignupScreenState extends State<SignupScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(
-                    _currentPage == 0
-                        ? "Continue to Stress Questionnaire"
-                        : "Next",
-                    style: TextStyle(
-                      color: _isCurrentQuestionAnswered()
-                          ? Colors.white
-                          : Colors.grey.shade500,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          _currentPage == 0
+                              ? "Continue to Stress Questionnaire"
+                              : "Next",
+                          style: TextStyle(
+                            color: _isCurrentQuestionAnswered()
+                                ? Colors.white
+                                : Colors.grey.shade500,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
             ),

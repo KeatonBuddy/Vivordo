@@ -83,7 +83,7 @@ class UserService {
         questionnaireType: "baseline",
         submittedAt: FieldValue.serverTimestamp(),
         metadata: metadata,
-        answers: userdata["responses"],
+        answers: Map<String, dynamic>.from(userdata["responses"] ?? {}),
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       );
