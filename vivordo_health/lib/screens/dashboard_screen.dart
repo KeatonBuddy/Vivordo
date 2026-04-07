@@ -17,6 +17,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
   static const Color primaryPurple = Color(0xFF7B6EF6);
   static const Color bgPurple = Color(0xFFFBFAFF);
 
+  // ── Cached streams ────────────────────────────────────────────────
+  // Streams are created once (or when the filter changes) rather than on
+  // every build() call. Recreating streams on every build causes the
+  // Firestore SDK to open and close listeners rapidly, which can push the
+  // WatchChangeAggregator into an unexpected state.
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _heartRateStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _stepsStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _sleepStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _moodStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _stressStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _wellnessStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshStreams();
+  }
+
+  void _refreshStreams() {
+    _heartRateStream = _metricStream('heart_rate');
+    _stepsStream     = _metricStream('steps');
+    _sleepStream     = _metricStream('sleep');
+    _moodStream      = _metricStream('mood');
+    _stressStream    = _metricStream('stress');
+    _wellnessStream  = _metricStream('wellness');
+  }
+
   // Returns how many days back to query based on filter
   int get _daysBack => _selectedTimeFilter == 0 ? 1 : _selectedTimeFilter == 1 ? 7 : 30;
 
@@ -86,8 +113,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                         // ── Heart Rate — Line chart (VH-58) ──
                         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _metricStream('heart_rate'),
+                          stream: _heartRateStream,
                           builder: (context, snapshot) {
+                            if (snapshot.hasError) return _buildStreamError('heart_rate', snapshot.error);
                             final docs = snapshot.data?.docs ?? [];
                             return _buildHeartRateCard(docs);
                           },
@@ -96,8 +124,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                         // ── Steps — Bar chart (VH-58) ──
                         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _metricStream('steps'),
+                          stream: _stepsStream,
                           builder: (context, snapshot) {
+                            if (snapshot.hasError) return _buildStreamError('steps', snapshot.error);
                             final docs = snapshot.data?.docs ?? [];
                             return _buildStepsCard(docs);
                           },
@@ -106,8 +135,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                         // ── Sleep — Area/bar chart (VH-58) ──
                         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _metricStream('sleep'),
+                          stream: _sleepStream,
                           builder: (context, snapshot) {
+                            if (snapshot.hasError) return _buildStreamError('sleep', snapshot.error);
                             final docs = snapshot.data?.docs ?? [];
                             return _buildSleepCard(docs);
                           },
@@ -116,8 +146,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                         // ── Mood — Emoji score chart (VH-58) ──
                         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _metricStream('mood'),
+                          stream: _moodStream,
                           builder: (context, snapshot) {
+                            if (snapshot.hasError) return _buildStreamError('mood', snapshot.error);
                             final docs = snapshot.data?.docs ?? [];
                             return _buildMoodCard(docs);
                           },
@@ -126,8 +157,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                         // ── Stress — line chart ──
                         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _metricStream('stress'),
+                          stream: _stressStream,
                           builder: (context, snapshot) {
+                            if (snapshot.hasError) return _buildStreamError('stress', snapshot.error);
                             final docs = snapshot.data?.docs ?? [];
                             return _buildStressCard(docs);
                           },
@@ -136,8 +168,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                         // ── Wellness — area chart ──
                         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _metricStream('wellness'),
+                          stream: _wellnessStream,
                           builder: (context, snapshot) {
+                            if (snapshot.hasError) return _buildStreamError('wellness', snapshot.error);
                             final docs = snapshot.data?.docs ?? [];
                             return _buildWellnessCard(docs);
                           },
@@ -196,7 +229,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     bool isActive = _selectedTimeFilter == index;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _selectedTimeFilter = index),
+        onTap: () => setState(() {
+          _selectedTimeFilter = index;
+          _refreshStreams(); // rebuild streams with the new date range
+        }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -522,6 +558,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Icon(Icons.bar_chart_outlined, color: Colors.grey, size: 32),
           SizedBox(height: 8),
           Text("No data for this period", style: TextStyle(color: Colors.grey, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  // Shows the actual error instead of silently showing an empty chart.
+  // Previously snapshot.hasError was never checked, so Firestore assertion
+  // failures (e.g. after seeding) appeared as "No data" with no indication
+  // of what went wrong.
+  Widget _buildStreamError(String metric, Object? error) {
+    return _buildCardBase(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
+            const SizedBox(width: 8),
+            Text('$metric — stream error', style: const TextStyle(fontWeight: FontWeight.bold)),
+          ]),
+          const SizedBox(height: 8),
+          Text(
+            error?.toString() ?? 'Unknown error',
+            style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+          ),
         ],
       ),
     );

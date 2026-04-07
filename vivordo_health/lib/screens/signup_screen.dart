@@ -17,6 +17,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
   int _currentPage = 0;
   final int _totalQuestions = 15;
+  bool _isLoading = false; // prevents double-tap triggering emailSignup twice
 
   // Centralized data map for future database integration
   final Map<String, dynamic> _userData = {'responses': {}};
@@ -49,7 +50,7 @@ class _SignupScreenState extends State<SignupScreen> {
         _userData['responses'][key] != null;
   }
 
-  void _nextPage() {
+  Future<void> _nextPage() async {
     //TODO: Consider case where user signs up but exists before questionare is completed
     if (_currentPage == 0) {
       if (_formKey.currentState!.validate()) {
@@ -62,13 +63,20 @@ class _SignupScreenState extends State<SignupScreen> {
           );
           return;
         }
-        AuthService.emailSignup(
+        // Guard against double-tap: if already loading, do nothing.
+        // Without this, tapping the button twice calls createUserWithEmailAndPassword
+        // twice with the same email — the second call returns email-already-in-use
+        // even though the email is brand new.
+        if (_isLoading) return;
+        setState(() => _isLoading = true);
+        await AuthService.emailSignup(
           emailAddress: _emailController.text,
           password: _passController.text,
           displayName: _nameController.text,
           context: context,
           pageController: _pageController,
         );
+        if (mounted) setState(() => _isLoading = false);
       }
     } else {
       if (_currentPage == _totalQuestions) {
@@ -258,7 +266,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _isCurrentQuestionAnswered() ? _nextPage : null,
+                  onPressed: (_isCurrentQuestionAnswered() && !_isLoading) ? _nextPage : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF7C69EF),
                     disabledBackgroundColor: Colors.grey.shade300,
@@ -266,18 +274,27 @@ class _SignupScreenState extends State<SignupScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(
-                    _currentPage == 0
-                        ? "Continue to Stress Questionnaire"
-                        : "Next",
-                    style: TextStyle(
-                      color: _isCurrentQuestionAnswered()
-                          ? Colors.white
-                          : Colors.grey.shade500,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          _currentPage == 0
+                              ? "Continue to Stress Questionnaire"
+                              : "Next",
+                          style: TextStyle(
+                            color: _isCurrentQuestionAnswered()
+                                ? Colors.white
+                                : Colors.grey.shade500,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
             ),

@@ -25,7 +25,13 @@ class AuthService {
       if (currentUser != null) {
         await currentUser.updateDisplayName(displayName);
         await currentUser.updatePhotoURL(photoUrl);
-        await UserService.createUser(currentUser);
+        // Firebase Auth's User object is NOT automatically refreshed after
+        // updateDisplayName — the local object still has displayName: null.
+        // reload() forces the SDK to fetch the updated profile, then we use
+        // a fresh currentUser reference so Firestore gets the correct name.
+        await currentUser.reload();
+        final refreshedUser = FirebaseAuth.instance.currentUser!;
+        await UserService.createUser(refreshedUser);
       } else {
         throw Exception("Error creating user");
       }
