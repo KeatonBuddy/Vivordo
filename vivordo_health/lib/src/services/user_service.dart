@@ -72,7 +72,7 @@ class UserService {
   }
 
 
-  static Future<void> submitQuestionare({
+  static Future<void> submitQuestionnaire({
     required User? user,
     required Map<String, dynamic> userdata,
   }) async {
