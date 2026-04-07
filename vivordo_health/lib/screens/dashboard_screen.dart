@@ -1,325 +1,320 @@
+﻿import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'dart:ui';
-import 'package:visibility_detector/visibility_detector.dart';
 
-class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+// --- DATA ---
 
-  @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
+class _WeekPoint {
+  final String day;
+  final double stress;
+  final double hrv;
+  const _WeekPoint(this.day, this.stress, this.hrv);
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
-  int _selectedTimeFilter = 1;
-  static const Color primaryPurple = Color(0xFF7B6EF6);
-  static const Color bgPurple = Color(0xFFFBFAFF);
+const _weekData = [
+  _WeekPoint('Mon', 65, 38),
+  _WeekPoint('Tue', 72, 34),
+  _WeekPoint('Wed', 58, 42),
+  _WeekPoint('Thu', 45, 48),
+  _WeekPoint('Fri', 52, 45),
+  _WeekPoint('Sat', 30, 55),
+  _WeekPoint('Sun', 42, 52),
+];
+
+// --- SCREEN ---
+
+class DashboardScreen extends StatelessWidget {
+  const DashboardScreen({super.key});
+
+  static const Color accentPurple = Color(0xFF7B6EF6);
+  static const Color greenColor = Color(0xFF34C759);
+  static const Color bgColor = Color(0xFFF2F2F7);
+  static const Color cardWhite = Colors.white;
+  static const Color textDark = Color(0xFF1C1C1E);
+  static const Color textGrey = Color(0xFF8E8E93);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgPurple,
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 120), 
-            child: Column(
-              children: [
-                _buildHeader(),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 20),
-                      _buildSyncCard(),
-                      const SizedBox(height: 20),
-                      _buildHeartRateCard(),
-                      const SizedBox(height: 16),
-                      _buildStepsCard(),
-                      const SizedBox(height: 16),
-                      _buildSleepCard(),
-                      const SizedBox(height: 16),
-                      _buildGridStats(),
-                    ],
-                  ),
+      backgroundColor: bgColor,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 48),
+              const Text(
+                'Metrics',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: textDark,
+                  letterSpacing: -0.5,
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- HEADER SECTION ---
-
-  Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.only(top: 60, left: 24, right: 24, bottom: 24),
-      decoration: const BoxDecoration(
-        color: primaryPurple,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(30),
-          bottomRight: Radius.circular(30),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Health Dashboards",
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              children: [
-                _filterButton("Daily", 0),
-                _filterButton("Weekly", 1),
-                _filterButton("Monthly", 2),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _filterButton(String text, int index) {
-    bool isActive = _selectedTimeFilter == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedTimeFilter = index),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? primaryPurple : Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Center(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: isActive ? Colors.white : Colors.grey,
-                fontSize: 12,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
               ),
-            ),
+              const SizedBox(height: 4),
+              const Text(
+                'Your weekly health trends',
+                style: TextStyle(fontSize: 14, color: textGrey),
+              ),
+              const SizedBox(height: 24),
+              _buildSummaryCards(),
+              const SizedBox(height: 20),
+              _buildChartCard(
+                title: 'Stress Levels',
+                color: accentPurple,
+                values: _weekData.map((d) => d.stress).toList(),
+                maxY: 100,
+              ),
+              const SizedBox(height: 16),
+              _buildChartCard(
+                title: 'Heart Rate Variability',
+                color: greenColor,
+                values: _weekData.map((d) => d.hrv).toList(),
+                maxY: 70,
+              ),
+              const SizedBox(height: 28),
+              const Text(
+                'PATTERNS DETECTED',
+                style: TextStyle(
+                  color: textGrey,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildPatternCard(
+                emoji: '📈',
+                title: 'Stress peaks on Tuesdays',
+                body: 'Your Tuesday meetings correlate with 30% higher stress. Consider blocking recovery time after.',
+              ),
+              const SizedBox(height: 10),
+              _buildPatternCard(
+                emoji: '😴',
+                title: 'Weekend sleep recovery',
+                body: 'You average 1.5h more sleep on weekends. Your HRV improves by 18% as a result.',
+              ),
+              const SizedBox(height: 120),
+            ],
           ),
         ),
       ),
     );
   }
 
-  // --- CHART CARDS ---
-
-  Widget _buildHeartRateCard() {
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.favorite_border,
-            "Heart Rate",
-            _selectedTimeFilter == 0 ? "72" : "68",
-            "Avg",
-            Colors.redAccent,
-          ),
-          const SizedBox(height: 20),
-          _VisibilityAnimatedWidget(
-            duration: const Duration(milliseconds: 1500),
-            builder: (context, value) {
-              return SizedBox(
-                height: 150,
-                width: double.infinity,
-                child: CustomPaint(painter: HeartRateLinePainter(value)),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStepsCard() {
-    final List<double> dailyData = [0.3, 0.5, 0.2, 0.7, 0.4, 0.9, 0.6];
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.directions_walk,
-            "Daily Steps",
-            _selectedTimeFilter == 0 ? "9,540" : "64,200",
-            "Total",
-            Colors.blueAccent,
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 150,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: dailyData.map((h) => _buildBar(h, Colors.blueAccent)).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSleepCard() {
-    final List<double> sleepData = [0.7, 0.65, 0.8, 0.75, 0.6, 0.9, 0.85];
-    final List<String> labels = ["M", "T", "W", "T", "F", "S", "S"];
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(Icons.bedtime, "Sleep Duration", "7.9h", "Last Night", primaryPurple),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 150,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(
-                7,
-                (i) => _buildBar(sleepData[i], primaryPurple, label: labels[i]),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- SHARED UI COMPONENTS ---
-
-  Widget _buildBar(double targetHeight, Color color, {String? label}) {
-    return _VisibilityAnimatedWidget(
-      builder: (context, animationValue) {
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Container(
-              width: 25,
-              height: 100 * targetHeight * animationValue,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.8),
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
-            if (label != null) ...[
-              const SizedBox(height: 8),
-              Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            ]
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildGridStats() {
+  Widget _buildSummaryCards() {
     return Row(
       children: [
-        Expanded(child: _buildSmallStatCard(Icons.smartphone, "Screen Time", "4.2h", Colors.orange)),
-        const SizedBox(width: 16),
-        Expanded(child: _buildSmallStatCard(Icons.volume_up, "Audio", "65 dB", Colors.green)),
+        Expanded(
+          child: _buildStatCard(
+            label: 'Avg Stress',
+            value: '52',
+            change: '-8%',
+            trendUp: false,
+            flat: false,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildStatCard(
+            label: 'Avg HRV',
+            value: '45ms',
+            change: '+12%',
+            trendUp: true,
+            flat: false,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildStatCard(
+            label: 'Avg Sleep',
+            value: '7.1h',
+            change: '+0.2h',
+            trendUp: true,
+            flat: true,
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildSmallStatCard(IconData icon, String title, String value, Color color) {
+  Widget _buildStatCard({
+    required String label,
+    required String value,
+    required String change,
+    required bool trendUp,
+    required bool flat,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(height: 4),
-          Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCardBase({required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10)],
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
       ),
-      child: child,
-    );
-  }
-
-  Widget _buildChartHeader(IconData icon, String title, String value, String valueSub, Color color) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(width: 10),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            Text(valueSub, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSyncCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(16)),
-      child: const Row(
+      child: Column(
         children: [
-          Icon(Icons.sync, color: Colors.green),
-          SizedBox(width: 12),
-          Text("Connected", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+          Text(
+            label.toUpperCase(),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 9,
+              color: textGrey,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: textDark,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                flat
+                    ? Icons.remove_rounded
+                    : trendUp
+                        ? Icons.trending_up_rounded
+                        : Icons.trending_down_rounded,
+                size: 13,
+                color: greenColor,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                change,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: greenColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartCard({
+    required String title,
+    required Color color,
+    required List<double> values,
+    required double maxY,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: textDark,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 160,
+            child: _AreaChart(
+              values: values,
+              maxY: maxY,
+              color: color,
+              labels: _weekData.map((d) => d.day).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPatternCard({
+    required String emoji,
+    required String title,
+    required String body,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$emoji  $title',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: textDark,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            style: const TextStyle(
+              fontSize: 12,
+              color: textGrey,
+              height: 1.5,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-// --- HELPER CLASS FOR SCROLL ACTIVATION ---
+// --- AREA CHART WIDGET ---
 
-class _VisibilityAnimatedWidget extends StatefulWidget {
-  final Widget Function(BuildContext, double) builder;
-  final Duration duration;
+class _AreaChart extends StatefulWidget {
+  final List<double> values;
+  final double maxY;
+  final Color color;
+  final List<String> labels;
 
-  const _VisibilityAnimatedWidget({
-    required this.builder,
-    this.duration = const Duration(milliseconds: 800),
+  const _AreaChart({
+    required this.values,
+    required this.maxY,
+    required this.color,
+    required this.labels,
   });
 
   @override
-  State<_VisibilityAnimatedWidget> createState() => _VisibilityAnimatedWidgetState();
+  State<_AreaChart> createState() => _AreaChartState();
 }
 
-class _VisibilityAnimatedWidgetState extends State<_VisibilityAnimatedWidget> with SingleTickerProviderStateMixin {
+class _AreaChartState extends State<_AreaChart>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  bool _hasBeenVisible = false;
+  late Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: widget.duration);
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _controller.forward();
   }
 
   @override
@@ -330,57 +325,141 @@ class _VisibilityAnimatedWidgetState extends State<_VisibilityAnimatedWidget> wi
 
   @override
   Widget build(BuildContext context) {
-    return VisibilityDetector(
-      key: UniqueKey(),
-      onVisibilityChanged: (info) {
-        if (info.visibleFraction > 0.3 && !_hasBeenVisible) {
-          if (mounted) {
-            setState(() => _hasBeenVisible = true);
-            _controller.forward();
-          }
-        }
-      },
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) => widget.builder(
-          context,
-          CurvedAnimation(parent: _controller, curve: Curves.easeOutQuart).value,
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (_, __) => CustomPaint(
+        painter: _AreaChartPainter(
+          values: widget.values,
+          maxY: widget.maxY,
+          color: widget.color,
+          labels: widget.labels,
+          progress: _animation.value,
         ),
+        size: Size.infinite,
       ),
     );
   }
 }
 
-// --- PAINTER FOR HEART RATE ---
+class _AreaChartPainter extends CustomPainter {
+  final List<double> values;
+  final double maxY;
+  final Color color;
+  final List<String> labels;
+  final double progress;
 
-class HeartRateLinePainter extends CustomPainter {
-  final double animationValue;
-  HeartRateLinePainter(this.animationValue);
+  static const double labelHeight = 22;
+  static const double leftPad = 36;
+
+  _AreaChartPainter({
+    required this.values,
+    required this.maxY,
+    required this.color,
+    required this.labels,
+    required this.progress,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    Paint paint = Paint()
-      ..color = Colors.redAccent
+    final chartH = size.height - labelHeight;
+    final chartW = size.width - leftPad;
+
+    // --- Grid lines ---
+    final gridPaint = Paint()
+      ..color = const Color(0xFFEEEEF2)
+      ..strokeWidth = 1;
+    const gridLines = 4;
+    for (int i = 0; i <= gridLines; i++) {
+      final y = chartH * i / gridLines;
+      canvas.drawLine(
+        Offset(leftPad, y),
+        Offset(size.width, y),
+        gridPaint,
+      );
+      // Y-axis label
+      final yVal = (maxY * (1 - i / gridLines)).round();
+      final tp = TextPainter(
+        text: TextSpan(
+          text: '$yVal',
+          style: TextStyle(
+            fontSize: 9,
+            color: Colors.grey.shade400,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(0, y - 5));
+    }
+
+    if (values.isEmpty) return;
+
+    // Compute pixel positions
+    final n = values.length;
+    List<Offset> pts = [];
+    for (int i = 0; i < n; i++) {
+      final x = leftPad + chartW * i / (n - 1);
+      final y = chartH * (1 - values[i] / maxY);
+      pts.add(Offset(x, y));
+    }
+
+    // Build smooth path (catmull-rom → bezier)
+    Path linePath = _smoothPath(pts);
+
+    // Animate: clip to progress
+    final pathMetrics = linePath.computeMetrics().toList();
+    if (pathMetrics.isEmpty) return;
+    final totalLen = pathMetrics.first.length;
+    final animatedLine = pathMetrics.first.extractPath(0, totalLen * progress);
+
+    // Fill path
+    final fillPath = Path.from(animatedLine)
+      ..lineTo(pts.last.dx * progress + leftPad * (1 - progress), chartH)
+      ..lineTo(leftPad, chartH)
+      ..close();
+
+    final gradientPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(0, 0),
+        Offset(0, chartH),
+        [color.withOpacity(0.28), color.withOpacity(0.0)],
+      )
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(fillPath, gradientPaint);
+
+    // Stroke
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 2.5
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(animatedLine, linePaint);
 
-    Path path = Path();
-    path.moveTo(0, size.height * 0.7);
-    path.lineTo(size.width * 0.2, size.height * 0.7);
-    path.lineTo(size.width * 0.25, size.height * 0.3);
-    path.lineTo(size.width * 0.35, size.height * 0.9);
-    path.lineTo(size.width * 0.45, size.height * 0.1);
-    path.lineTo(size.width * 0.55, size.height * 0.8);
-    path.lineTo(size.width * 0.6, size.height * 0.7);
-    path.lineTo(size.width, size.height * 0.7);
-
-    for (PathMetric measurePath in path.computeMetrics()) {
-      Path extractPath = measurePath.extractPath(0.0, measurePath.length * animationValue);
-      canvas.drawPath(extractPath, paint);
+    // X-axis labels
+    final labelStyle = TextStyle(fontSize: 10, color: Colors.grey.shade500);
+    for (int i = 0; i < n; i++) {
+      final tp = TextPainter(
+        text: TextSpan(text: labels[i], style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(
+        canvas,
+        Offset(pts[i].dx - tp.width / 2, chartH + 6),
+      );
     }
   }
 
+  Path _smoothPath(List<Offset> pts) {
+    if (pts.length < 2) return Path()..moveTo(pts[0].dx, pts[0].dy);
+    final path = Path()..moveTo(pts[0].dx, pts[0].dy);
+    for (int i = 0; i < pts.length - 1; i++) {
+      final cp1 = Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i].dy);
+      final cp2 = Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i + 1].dy);
+      path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, pts[i + 1].dx, pts[i + 1].dy);
+    }
+    return path;
+  }
+
   @override
-  bool shouldRepaint(HeartRateLinePainter oldDelegate) => oldDelegate.animationValue != animationValue;
+  bool shouldRepaint(_AreaChartPainter old) => old.progress != progress;
 }
