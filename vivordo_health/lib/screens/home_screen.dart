@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'profile_screen.dart'; 
+import 'scan_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -216,10 +217,16 @@ class _HomeScreenState extends State<HomeScreen> {
         _buildStatCard(
           title: 'Heart Rate',
           value: '68 bpm',
-          subText: 'Resting avg',
-          subTextColor: textGrey,
+          subText: 'Measure →',
+          subTextColor: primaryPurple,
           icon: Icons.favorite_border,
           iconColor: primaryPurple,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ScanScreen()),
+            );
+          },
         ),
         _buildStatCard(
           title: 'Mood',
