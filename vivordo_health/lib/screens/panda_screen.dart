@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:async';
 import '../src/services/gemini_service.dart';
 import '../src/services/recommendation_engine.dart';
+import '../src/services/insight_service.dart';
+import '../src/models/insights.dart';
 import '../src/services/panda_recommendations.dart';
 
 // =============================================================================
@@ -27,7 +30,91 @@ import '../src/services/panda_recommendations.dart';
 //
 // =============================================================================
 
-enum _DialogueState { onPath, inDepth, inDigression, free }
+enum _DialogueState {
+  awaitingEngagement, // opener shown, prompt sets visible, no Q asked yet
+  onPath,             // asking predefined labeling questions
+  inDepth,            // going deeper on current question
+  inDigression,       // user left the path (advice/support)
+  free,               // predefined path complete, open conversation
+}
+
+// =============================================================================
+// CONTEXTUAL PROMPT SETS
+// =============================================================================
+//
+// Four thematic groups shown as suggestion chips below the opener message
+// and in free-chat state. Tapping a chip injects the question as a user
+// message and runs it through the full LLM pipeline with health context.
+//
+// Each set has:
+//   • label   — short header shown above the chip row
+//   • icon    — leading icon for the group header
+//   • color   — accent color for this group's chips
+//   • prompts — the actual question strings
+// =============================================================================
+
+class _PromptSet {
+  const _PromptSet({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.prompts,
+  });
+  final String label;
+  final IconData icon;
+  final Color color;
+  final List<String> prompts;
+}
+
+const List<_PromptSet> _kPromptSets = [
+  _PromptSet(
+    label: 'Today',
+    icon: Icons.wb_sunny_outlined,
+    color: Color(0xFFFF8C69),
+    prompts: [
+      'What should I do based on my stress today?',
+      'What does my stress mean today?',
+      'How should I plan my day?',
+      'Am I at risk of burnout?',
+      'Help me plan or message people today',
+    ],
+  ),
+  _PromptSet(
+    label: 'Patterns',
+    icon: Icons.insights_rounded,
+    color: Color(0xFF7B6EF6),
+    prompts: [
+      'What patterns are you seeing in my stress?',
+      'When am I most mentally drained?',
+      "What's actually causing my stress?",
+      'When am I free vs actually available?',
+    ],
+  ),
+  _PromptSet(
+    label: 'Energy',
+    icon: Icons.bolt_rounded,
+    color: Color(0xFF0ABFBC),
+    prompts: [
+      'What does my typical day look like?',
+      'What drains me the most?',
+      'How do I act when Im overwhelmed?',
+      'What helps me recover fastest?',
+      'Who should I prioritize staying available for?',
+    ],
+  ),
+  _PromptSet(
+    label: 'Plans & People',
+    icon: Icons.people_outline_rounded,
+    color: Color(0xFF4CAF50),
+    prompts: [
+      'Set expectations for this week',
+      'Suggest a better time to connect',
+      'How should I handle plans today?',
+      'Whats the best way to reach out right now?',
+    ],
+  ),
+];
+
 
 // =============================================================================
 // PandaScreen
@@ -85,6 +172,27 @@ class _PandaScreenState extends State<PandaScreen>
   // IDs of recs already shown this session (avoids repeating the same card).
   final Set<String> _shownRecIds = {};
 
+  // ── Prompt sets ────────────────────────────────────────────────────────────
+  // Index of the currently selected prompt set tab (0-3).
+  int _activePromptSet = 0;
+  // Prompt sets are visible until the user has sent at least one free-text
+  // message (chips hide once the conversation is in full swing).
+  bool _promptSetsVisible = true;
+
+  // ── Insight service ────────────────────────────────────────────────────────
+  final InsightService _insightSvc = InsightService();
+
+  // Firestore document ID of the insight written at session end.
+  // Populated after saveSessionInsight() resolves — used by correctAnswer()
+  // so History tab edits reference the right document.
+  String? _currentInsightId;
+
+  // ── Authenticated user ─────────────────────────────────────────────────────
+  // Populated once in initState from FirebaseAuth — used for greetings and
+  // all Firestore writes (replaces the demo userId placeholder).
+  String _currentUserId = '';
+  String _currentFirstName = '';
+
   // ── Chat ───────────────────────────────────────────────────────────────────
   final List<_Turn> _turns = [];
   final Map<String, String> _answers = {};
@@ -106,6 +214,20 @@ class _PandaScreenState extends State<PandaScreen>
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 2, vsync: this);
+
+    // Resolve real Firebase user — mirrors the pattern in HomeScreen.
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _currentUserId = user.uid;
+      if (user.displayName != null && user.displayName!.isNotEmpty) {
+        _currentFirstName = user.displayName!.split(' ').first;
+      } else if (user.email != null && user.email!.isNotEmpty) {
+        _currentFirstName = user.email!.split('@').first;
+      } else {
+        _currentFirstName = 'there';
+      }
+    }
+
     // Pre-load recommendation catalog from assets/recommendations.json
     PandaRecommendations.load();
     _loadSession();
@@ -135,20 +257,25 @@ class _PandaScreenState extends State<PandaScreen>
       _questionQueue.clear();
       _qIdx = 0;
       _depthTurns = 0;
-      _state = _DialogueState.onPath;
+      _state = _DialogueState.awaitingEngagement;
       _digressionStack.clear();
       _graphNodes.clear();
       _injectedIds.clear();
       _interruptedNodeId = null;
       _sessionSlots.clear();
       _shownRecIds.clear();
+      _currentInsightId = null;
       _sessionComplete = false;
+      _activePromptSet = 0;
+      _promptSetsVisible = true;
       _session = null;
     });
 
     try {
       final session = await _svc
-          .analyzePandaSession()
+          .analyzePandaSession(
+            userName: _currentFirstName.isNotEmpty ? _currentFirstName : null,
+          )
           .timeout(const Duration(seconds: 90));
 
       if (!mounted) return;
@@ -160,15 +287,17 @@ class _PandaScreenState extends State<PandaScreen>
 
       await _pandaSay(session.openerMessage);
 
-      if (_questionQueue.isNotEmpty) {
-        await _pandaSay(_questionQueue.first.prompt);
-      } else {
+      // Labeling questions are held in reserve — we wait for the user to
+      // engage via a prompt chip or free text before asking anything.
+      // If there are no questions at all, drop straight to free chat.
+      if (_questionQueue.isEmpty) {
         setState(() {
           _sessionComplete = true;
           _state = _DialogueState.free;
         });
         _saveHistory(startedAt, success: true);
       }
+      // Otherwise state stays awaitingEngagement — prompt sets are shown.
     } on TimeoutException {
       if (!mounted) return;
       setState(() {
@@ -249,6 +378,26 @@ class _PandaScreenState extends State<PandaScreen>
       _qIdx < _questionQueue.length ? _questionQueue[_qIdx] : null;
 
   // ===========================================================================
+  // Prompt tap — injects a suggestion chip as a free-text user message.
+  // Hides the prompt sets and routes through the full dialogue pipeline.
+  // ===========================================================================
+
+  Future<void> _promptTap(String prompt) async {
+    if (_pandaTyping) return;
+    // If the user is still in the waiting state and we have labeling questions,
+    // transition to onPath so the dialogue manager knows we're active.
+    setState(() {
+      _promptSetsVisible = false;
+      if (_state == _DialogueState.awaitingEngagement &&
+          _questionQueue.isNotEmpty) {
+        _state = _DialogueState.onPath;
+      }
+      _inputCtrl.text = prompt;
+    });
+    await _submit();
+  }
+
+  // ===========================================================================
   // Chip tap  —  treated as direct answer to current question
   // ===========================================================================
 
@@ -285,7 +434,17 @@ class _PandaScreenState extends State<PandaScreen>
     if (text.isEmpty || _pandaTyping) return;
     _inputCtrl.clear();
 
-    setState(() => _turns.add(_Turn.user(text)));
+    setState(() {
+      _turns.add(_Turn.user(text));
+      // Transition out of waiting state on first free-text engagement.
+      // Prompt sets hide and we move to the predefined path if questions exist.
+      if (_state == _DialogueState.awaitingEngagement) {
+        _promptSetsVisible = false;
+        _state = _questionQueue.isNotEmpty
+            ? _DialogueState.onPath
+            : _DialogueState.free;
+      }
+    });
     _scrollBottom();
 
     final session = _session;
@@ -308,7 +467,8 @@ class _PandaScreenState extends State<PandaScreen>
             conversationHistory: history,
             spikeContext: session.rawSpikes,
             isOnPredefinedPath: _state == _DialogueState.onPath ||
-                _state == _DialogueState.inDepth,
+                _state == _DialogueState.inDepth ||
+                _state == _DialogueState.awaitingEngagement,
             isInDigression: _state == _DialogueState.inDigression,
             digressionTurnCount: _digressionStack.isEmpty
                 ? 0
@@ -361,6 +521,10 @@ class _PandaScreenState extends State<PandaScreen>
           await _pandaSay(reply.message, typingMs: 0);
           await _advanceOrComplete();
 
+        // ── First engagement after the opener ────────────────────────────────
+        // If the LLM treats the very first message as chitchat/digress but we
+        // still haven't started labeling, gently transition after responding.
+
         // ── User wants to go deeper on this topic ───────────────────────
         case PandaIntent.wantDeeperAnswer:
           setState(() {
@@ -403,6 +567,10 @@ class _PandaScreenState extends State<PandaScreen>
         // ── User left the path (advice / support / tips) ─────────────────
         case PandaIntent.digress:
           setState(() {
+            // If user digreses from the opener state, note the first Q as pending
+            if (_state == _DialogueState.awaitingEngagement) {
+              _state = _DialogueState.onPath;
+            }
             _state = _DialogueState.inDigression;
             _digressionStack.add(_DigressionFrame(
               pendingQuestionId: _currentQ?.questionId ?? '',
@@ -486,6 +654,15 @@ class _PandaScreenState extends State<PandaScreen>
             setState(() => _digressionStack.last.turnCount++);
           }
           await _pandaSay(reply.message, typingMs: 0);
+
+          // If we're still in the opener state and have labeling questions,
+          // gently surface the first one after responding to the user.
+          if (_state == _DialogueState.awaitingEngagement &&
+              _questionQueue.isNotEmpty) {
+            setState(() => _state = _DialogueState.onPath);
+            await Future.delayed(const Duration(milliseconds: 400));
+            await _pandaSay(_questionQueue[_qIdx].prompt);
+          }
           // Don't advance — stay exactly where we are
       }
     } catch (e) {
@@ -520,13 +697,24 @@ class _PandaScreenState extends State<PandaScreen>
         _saveHistory(_sessionStart ?? DateTime.now(), success: true);
 
         // Flush all accumulated slots + labeled answers to user data
-        final demo = _svc.getActiveDemoUser();
-        await _svc.appendEntitiesToUserData(
-          userId: demo.userId,
-          sessionSlots: Map<String, String>.from(_sessionSlots),
-          labeledAnswers: Map<String, String>.from(_answers),
-          sessionDate: _sessionStart ?? DateTime.now(),
-        );
+        // Persist insights to Firestore via InsightService.
+        final resolvedUserId = _currentUserId.isNotEmpty
+            ? _currentUserId
+            : _svc.getActiveDemoUser().userId;
+        try {
+          final insight = await _insightSvc.saveSessionInsight(
+            userId:         resolvedUserId,
+            sessionDate:    _sessionStart ?? DateTime.now(),
+            sessionSlots:   Map<String, String>.from(_sessionSlots),
+            labeledAnswers: Map<String, String>.from(_answers),
+          );
+          // Store the doc ID so History tab corrections can reference it.
+          if (mounted) setState(() => _currentInsightId = insight.id);
+        } catch (e) {
+          // Non-fatal — session data is already in local history.
+          // ignore: avoid_print
+          print('[PandaScreen] InsightService.saveSessionInsight failed: \$e');
+        }
       }
     }
   }
@@ -551,12 +739,13 @@ class _PandaScreenState extends State<PandaScreen>
 
   PreferredSizeWidget _buildAppBar() {
     final (String statusText, Color statusColor) = switch (_state) {
-      _DialogueState.inDigression => ('side chat', _teal),
-      _DialogueState.inDepth => ('going deeper…', _purple),
-      _ when _loading => ('analysing…', Colors.orange),
-      _ when _pandaTyping => ('typing…', Colors.orange),
-      _DialogueState.free => ('free chat', _purple),
-      _ => ('online', Colors.green),
+      _DialogueState.inDigression     => ('side chat', _teal),
+      _DialogueState.inDepth          => ('going deeper…', _purple),
+      _ when _loading                 => ('analysing…', Colors.orange),
+      _ when _pandaTyping             => ('typing…', Colors.orange),
+      _DialogueState.free             => ('free chat', _purple),
+      _DialogueState.awaitingEngagement => ('ready', Colors.green),
+      _                               => ('online', Colors.green),
     };
 
     return AppBar(
@@ -608,7 +797,10 @@ class _PandaScreenState extends State<PandaScreen>
   // ── Progress / state strip ─────────────────────────────────────────────────
 
   Widget _buildPathStrip() {
-    if (_loading || _sessionComplete) return const SizedBox.shrink();
+    if (_loading || _sessionComplete ||
+        _state == _DialogueState.awaitingEngagement) {
+      return const SizedBox.shrink();
+    }
 
     final total = _questionQueue.length;
     final done = _qIdx.clamp(0, total);
@@ -707,12 +899,23 @@ class _PandaScreenState extends State<PandaScreen>
     final showChips = !_pandaTyping &&
         !_sessionComplete &&
         _state != _DialogueState.inDigression &&
+        _state != _DialogueState.awaitingEngagement &&
         _currentQ != null &&
         _currentQ!.options.isNotEmpty;
     final showDepthHint = !_pandaTyping &&
         _state == _DialogueState.inDepth &&
         _currentQ != null;
     final showDone = _sessionComplete;
+
+    // Show prompt sets in awaitingEngagement (right after opener) and in
+    // free/done state. Hidden once the user taps a chip or types anything.
+    final showPromptSets = _promptSetsVisible &&
+        !_pandaTyping &&
+        !_loading &&
+        _turns.isNotEmpty &&
+        (_state == _DialogueState.awaitingEngagement ||
+         _state == _DialogueState.free ||
+         _sessionComplete);
 
     return SafeArea(
       bottom: false,
@@ -721,6 +924,7 @@ class _PandaScreenState extends State<PandaScreen>
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         itemCount: _turns.length +
             (_pandaTyping ? 1 : 0) +
+            (showPromptSets ? 1 : 0) +
             (showChips ? 1 : 0) +
             (showDepthHint ? 1 : 0) +
             (showDone ? 1 : 0),
@@ -734,6 +938,8 @@ class _PandaScreenState extends State<PandaScreen>
           int off = _turns.length;
           if (_pandaTyping && i == off) return _typingBubble();
           if (_pandaTyping) off++;
+          if (showPromptSets && i == off) return _promptSetsWidget();
+          if (showPromptSets) off++;
           if (showChips && i == off) return _chipRow(_currentQ!);
           if (showChips) off++;
           if (showDepthHint && i == off) return _depthHintRow();
@@ -895,6 +1101,151 @@ class _PandaScreenState extends State<PandaScreen>
     );
   }
 
+  // ===========================================================================
+  // Prompt sets widget — four labelled groups of suggestion chips
+  // ===========================================================================
+
+  Widget _promptSetsWidget() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20, top: 4),
+      child: StatefulBuilder(
+        builder: (context, setLocal) {
+          final set = _kPromptSets[_activePromptSet];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Group tab row ───────────────────────────────────────────────
+              SizedBox(
+                height: 36,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  itemCount: _kPromptSets.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, idx) {
+                    final s = _kPromptSets[idx];
+                    final active = idx == _activePromptSet;
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() => _activePromptSet = idx);
+                        setLocal(() {});
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: active
+                              ? s.color.withOpacity(0.13)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: active
+                                ? s.color.withOpacity(0.5)
+                                : Colors.black.withOpacity(0.1),
+                            width: active ? 1.4 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(s.icon,
+                                size: 13,
+                                color: active
+                                    ? s.color
+                                    : Colors.black38),
+                            const SizedBox(width: 5),
+                            Text(
+                              s.label,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: active
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: active ? s.color : Colors.black45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              // ── Prompt chips for active set ─────────────────────────────────
+              SizedBox(
+                height: 38,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  itemCount: set.prompts.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, idx) {
+                    final prompt = set.prompts[idx];
+                    return GestureDetector(
+                      onTap: () => _promptTap(prompt),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: set.color.withOpacity(0.3),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: set.color.withOpacity(0.06),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          prompt,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black.withOpacity(0.75),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              // ── Dismiss hint ────────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.only(top: 8, left: 2),
+                child: GestureDetector(
+                  onTap: () => setState(() => _promptSetsVisible = false),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.close_rounded,
+                          size: 11, color: Colors.black26),
+                      const SizedBox(width: 3),
+                      Text('dismiss',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.black26)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _chipRow(PandaQuestion q) {
     return Padding(
       padding: const EdgeInsets.only(left: 58, bottom: 16),
@@ -989,6 +1340,8 @@ class _PandaScreenState extends State<PandaScreen>
       hint = 'Ask Panda anything 💜';
     } else if (disabled) {
       hint = 'Panda is thinking…';
+    } else if (_state == _DialogueState.awaitingEngagement) {
+      hint = 'Ask about your stress, sleep, or availability…';
     } else if (_state == _DialogueState.inDigression) {
       hint = 'Keep going — Panda is all ears…';
     } else if (_state == _DialogueState.inDepth) {
@@ -1011,7 +1364,7 @@ class _PandaScreenState extends State<PandaScreen>
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              'Tap a chip above or type your own answer',
+              'Tap an option above or type your own answer',
               style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
               textAlign: TextAlign.center,
             ),
@@ -1440,14 +1793,42 @@ class _PandaScreenState extends State<PandaScreen>
     });
 
     // 2. Persist via mock service call
-    final demo = _svc.getActiveDemoUser();
-    await _svc.updateLabeledAnswer(
-      userId: demo.userId,
-      sessionDate: record.startedAt,
-      questionId: questionId,
-      oldAnswer: currentAnswer,
-      newAnswer: newAnswer,
-    );
+    final resolvedUserId = _currentUserId.isNotEmpty
+        ? _currentUserId
+        : _svc.getActiveDemoUser().userId;
+
+    // Prefer the stored Firestore doc ID for the current session.
+    // For older history records we fall back to a date-based lookup.
+    try {
+      if (_currentInsightId != null &&
+          record.startedAt == _sessionStart) {
+        // Current session — we have the doc ID directly.
+        await _insightSvc.correctAnswer(
+          userId:     resolvedUserId,
+          insightId:  _currentInsightId!,
+          questionId: questionId,
+          oldAnswer:  currentAnswer,
+          newAnswer:  newAnswer,
+        );
+      } else {
+        // Older session — find the doc by session date.
+        final insight = await _insightSvc.findBySessionDate(
+            resolvedUserId, record.startedAt);
+        if (insight?.id != null) {
+          await _insightSvc.correctAnswer(
+            userId:     resolvedUserId,
+            insightId:  insight!.id!,
+            questionId: questionId,
+            oldAnswer:  currentAnswer,
+            newAnswer:  newAnswer,
+          );
+        }
+      }
+    } catch (e) {
+      // Non-fatal — local state is already updated above.
+      // ignore: avoid_print
+      print('[PandaScreen] InsightService.correctAnswer failed: $e');
+    }
   }
 
   Widget _badge(String label, Color color) {

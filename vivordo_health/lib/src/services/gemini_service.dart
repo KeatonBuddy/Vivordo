@@ -504,13 +504,17 @@ DATA: ${jsonEncode(compact)}
   // Panda session init
   // =========================================================================
 
-  Future<PandaSessionData> analyzePandaSession(
-      {String? extraUserContext}) async {
+  Future<PandaSessionData> analyzePandaSession({
+    String? extraUserContext,
+    // Override the greeting name with the real Firebase user first name.
+    // When null, falls back to the demo userId as before.
+    String? userName,
+  }) async {
     final rawSample = getSampleData();
     final compact = _buildCompactPayload(rawSample, topK: 1);
     final raw = await analyzeStressSpikes(
         data: compact, extraUserContext: extraUserContext);
-    return _parsePandaSession(raw, rawSample);
+    return _parsePandaSession(raw, rawSample, overrideName: userName);
   }
 
   // =========================================================================
@@ -886,106 +890,214 @@ Return ONLY valid JSON. No markdown. No extra text.
   // Parse spike analysis → PandaSessionData
   // =========================================================================
 
-  PandaSessionData _parsePandaSession(
-      String raw, Map<String, dynamic> rawSample) {
-    final demo = rawSample['demo_user'] as Map<String, dynamic>?;
-    final userName = (demo?['userId'] as String? ?? 'there')
-        .replaceAll(RegExp(r'[_\-]'), ' ')
-        .split(' ')
-        .first;
+PandaSessionData _parsePandaSession(
+  String raw,
+  Map<String, dynamic> rawSample, {
+  String? overrideName,
+}) {
+  final demo = rawSample['demo_user'] as Map<String, dynamic>?;
 
-    final obj = _extractJson(raw);
+  final userName = overrideName?.isNotEmpty == true
+      ? overrideName!
+      : (demo?['userId'] as String? ?? 'there')
+          .replaceAll(RegExp(r'[_\\-]'), ' ')
+          .split(' ')
+          .first;
 
-    if (obj == null) {
-      return _fallbackSession(userName, 'earlier today', []);
-    }
+  final obj = _extractJson(raw);
 
-    final overallNotes =
-        (obj['summary']?['overall_notes'] as String? ?? '').trim();
-    final spikes = obj['spikes'] as List?;
-    final rawSpikes =
-        spikes?.whereType<Map<String, dynamic>>().toList() ?? [];
+  if (obj == null) {
+    return _fallbackSession(userName, 'earlier today', []);
+  }
 
-    if (spikes == null || spikes.isEmpty) {
-      return PandaSessionData(
-        openerMessage:
-            'Hey $userName! 🌿 Everything looks pretty calm today. '
-            'Feel free to ask me anything or just chat 💜',
-        questions: [],
-        overallNotes: overallNotes,
-        rawSpikes: rawSpikes,
-      );
-    }
+  final overallNotes =
+      (obj['summary']?['overall_notes'] as String? ?? '').trim();
 
-    final spike = spikes.first as Map<String, dynamic>;
-    final timePhrase = _formatTimeRange(
-        spike['start'] as String?, spike['end'] as String?);
+  final spikes = obj['spikes'] as List?;
+  final rawSpikes =
+      spikes?.whereType<Map<String, dynamic>>().toList() ?? [];
 
-    String hint = '';
-    final hypotheses = spike['hypotheses'] as List?;
-    if (hypotheses != null && hypotheses.isNotEmpty) {
-      final h0 = hypotheses.first as Map?;
-      final reason = h0?['reason'] as String?;
-      if (reason != null && reason.trim().isNotEmpty) {
-        hint = ' It may be related to ${reason.trim().toLowerCase()}.';
-      }
-    }
+  // ── Health signals for opener ─────────────────────────────────────
+  final sleepSummary = rawSample['sleep_summary'] as Map?;
+  final sleepQuality =
+      (sleepSummary?['sleep_quality'] as num?)?.toDouble() ?? 50;
 
-    final openerMessage =
-        'Hey $userName! 🌿 I spotted a stress spike around $timePhrase.$hint '
-        'I\'d love to understand what was going on — and feel free to ask me '
-        'anything along the way or go as deep as you want on any topic 💜';
+  final sleepHours =
+      ((sleepSummary?['total_minutes'] as num?)?.toDouble() ?? 420) / 60;
 
-    final questions = <PandaQuestion>[];
-    final qs = spike['questions'] as List?;
-    if (qs != null) {
-      for (final q in qs) {
-        if (q is! Map) continue;
-        final qid =
-            q['question_id']?.toString() ?? 'q_${questions.length + 1}';
-        final qp = q['prompt']?.toString() ?? '';
-        if (qp.isEmpty) continue;
+  final stressLevel =
+      (demo?['dailyStressLevel'] as num?)?.toDouble() ?? 50;
 
-        final opts = <String>[];
-        if (q['options'] is List) {
-          for (final o in q['options'] as List) {
-            final t = o.toString().trim();
-            if (t.isNotEmpty) opts.add(t);
-          }
-        }
-        if (opts.isNotEmpty &&
-            !opts.any((o) => o.toLowerCase().contains('other'))) {
-          opts.add('Something else 🙋');
-        }
+  final hrv = (demo?['hrv'] as num?)?.toDouble() ?? 50;
 
-        // Parse depth_prompts
-        final depths = <String>[];
-        if (q['depth_prompts'] is List) {
-          for (final d in q['depth_prompts'] as List) {
-            final t = d.toString().trim();
-            if (t.isNotEmpty) depths.add(t);
-          }
-        }
+  final journalMood = demo?['journalMood'] as String? ?? '';
+  final stressed = demo?['stressed'] as bool? ?? false;
 
-        questions.add(PandaQuestion(
-            questionId: qid,
-            prompt: qp,
-            options: opts,
-            depthPrompts: depths));
-      }
-    }
+  // ── Build opener ─────────────────────────────────────────────────
+  final openerMessage = _buildWarmOpener(
+    userName: userName,
+    stressLevel: stressLevel,
+    hrv: hrv,
+    sleepQuality: sleepQuality,
+    sleepHours: sleepHours,
+    journalMood: journalMood,
+    stressed: stressed,
+    hasSpikes: spikes != null && spikes.isNotEmpty,
+    overallNotes: overallNotes,
+  );
 
-    if (questions.isEmpty) {
-      return _fallbackSession(userName, timePhrase, rawSpikes,
-          notes: overallNotes);
-    }
-
+  // ── No spikes fallback ────────────────────────────────────────────
+  if (spikes == null || spikes.isEmpty) {
     return PandaSessionData(
       openerMessage: openerMessage,
-      questions: questions,
+      questions: [],
       overallNotes: overallNotes,
       rawSpikes: rawSpikes,
     );
+  }
+
+  // ── First spike only (topK = 1) ───────────────────────────────────
+  final spike = spikes.first as Map<String, dynamic>;
+
+  final timePhrase =
+      _formatTimeRange(spike['start'] as String?, spike['end'] as String?);
+
+  final questions = <PandaQuestion>[];
+  final qs = spike['questions'] as List?;
+
+  if (qs != null) {
+    for (final q in qs) {
+      if (q is! Map) continue;
+
+      final qid =
+          q['question_id']?.toString() ?? 'q_${questions.length + 1}';
+
+      final qp = q['prompt']?.toString() ?? '';
+      if (qp.isEmpty) continue;
+
+      final opts = <String>[];
+
+      if (q['options'] is List) {
+        for (final o in q['options'] as List) {
+          final t = o.toString().trim();
+          if (t.isNotEmpty) opts.add(t);
+        }
+      }
+
+      // Always ensure "Something else"
+      if (opts.isNotEmpty &&
+          !opts.any((o) => o.toLowerCase().contains('other'))) {
+        opts.add('Something else 🙋');
+      }
+
+      final depths = <String>[];
+      if (q['depth_prompts'] is List) {
+        for (final d in q['depth_prompts'] as List) {
+          final t = d.toString().trim();
+          if (t.isNotEmpty) depths.add(t);
+        }
+      }
+
+      questions.add(PandaQuestion(
+        questionId: qid,
+        prompt: qp,
+        options: opts,
+        depthPrompts: depths,
+      ));
+    }
+  }
+
+  // ── If no valid questions generated ───────────────────────────────
+  if (questions.isEmpty) {
+    return _fallbackSession(
+      userName,
+      timePhrase,
+      rawSpikes,
+      notes: overallNotes,
+    );
+  }
+
+  // ── Final return ─────────────────────────────────────────────────
+  return PandaSessionData(
+    openerMessage: openerMessage,
+    questions: questions,
+    overallNotes: overallNotes,
+    rawSpikes: rawSpikes,
+  );
+}
+
+  // ===========================================================================
+  // _buildWarmOpener
+  //
+  // Generates the first message Panda sends — a warm, personal greeting that
+  // references real health signals without interrogating the user about spikes.
+  // The tone mirrors the screenshot: validate → summarise state → invite them
+  // to share what they want from the conversation.
+  // ===========================================================================
+
+  String _buildWarmOpener({
+    required String userName,
+    required double stressLevel,
+    required double hrv,
+    required double sleepQuality,
+    required double sleepHours,
+    required String journalMood,
+    required bool stressed,
+    required bool hasSpikes,
+    required String overallNotes,
+  }) {
+    // ── Stress descriptor ────────────────────────────────────────────────────
+    final String stressDesc;
+    final String stressEmoji;
+    if (stressLevel < 30) {
+      stressDesc = 'low'; stressEmoji = '💚';
+    } else if (stressLevel < 55) {
+      stressDesc = 'moderate'; stressEmoji = '🌤';
+    } else if (stressLevel < 75) {
+      stressDesc = 'elevated'; stressEmoji = '🟡';
+    } else {
+      stressDesc = 'high'; stressEmoji = '🔴';
+    }
+
+    // ── HRV descriptor ───────────────────────────────────────────────────────
+    final String hrvDesc;
+    if (hrv >= 60) {
+      hrvDesc = 'strong — your nervous system is well recovered';
+    } else if (hrv >= 40) {
+      hrvDesc = 'okay — within a typical range for you';
+    } else {
+      hrvDesc = 'lower than usual — your body might need some recovery time';
+    }
+
+    // ── Sleep snippet ────────────────────────────────────────────────────────
+    final sleepSnippet = sleepQuality >= 70
+        ? 'You got ${sleepHours.toStringAsFixed(1)}h of solid sleep last night. 😴'
+        : sleepHours < 6
+            ? 'You only got ${sleepHours.toStringAsFixed(1)}h of sleep — that can amplify stress.'
+            : 'Your sleep quality was a bit low last night, worth keeping in mind.';
+
+    // ── Mood snippet ─────────────────────────────────────────────────────────
+    final moodSnippet = journalMood.isNotEmpty
+        ? 'Your journal shows youve been feeling $journalMood. '
+        : '';
+
+    // ── Spike nudge (soft, not interrogating) ────────────────────────────────
+    final spikeSnippet = hasSpikes
+        ? 'I also noticed some stress fluctuations in your data today — '
+          'happy to look into those whenever youre ready. '
+        : '';
+
+    // ── Capability invite — what can I help with? ────────────────────────────
+    const invite =
+        'What would you like to explore — your patterns, how to plan today, '
+        'or something else on your mind?';
+
+    return 'Hey $userName! $stressEmoji '
+        'Based on your data today, your stress is $stressDesc and your HRV is $hrvDesc. '
+        '$sleepSnippet '
+        '$moodSnippet'
+        '$spikeSnippet'
+        '$invite';
   }
 
   PandaSessionData _fallbackSession(
@@ -993,8 +1105,9 @@ Return ONLY valid JSON. No markdown. No extra text.
       {String notes = ''}) {
     return PandaSessionData(
       openerMessage:
-          'Hey $userName! 🌿 I noticed some stress patterns in your data. '
-          'Let me ask a quick question — and feel free to ask me anything too 💜',
+          'Hey $userName! 🌿 Ive pulled up your health data for today. '
+          'What would you like to explore — your stress patterns, how to plan your day, '
+          'or something else on your mind? 💜',
       questions: [
         PandaQuestion(
           questionId: 'q_fallback',
