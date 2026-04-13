@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:vivordo_health/src/models/goal_model.dart';
 import 'package:vivordo_health/src/models/questionnaire_response.dart';
 import 'package:vivordo_health/src/models/metadata.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
@@ -48,7 +49,7 @@ class UserService {
     }
 
 
-    Goals newGoal = Goals(
+    GoalModel newGoal = GoalModel(
       userId: theUser.uid,
       title: title,
       description: description,
@@ -57,20 +58,21 @@ class UserService {
       targetValue: targetValue,
       targetUnit: targetUnit,
       direction: direction,
-      startDate: FieldValue.serverTimestamp().toString(),
-      endDate: endDate,
       status: status,
       progress: progress,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
     );
 
 
-    await FirebaseFirestore.instance.collection('goals').add(newGoal.toMap());
+    await FirebaseFirestore.instance.collection('goals').add(
+      newGoal.toMap(
+        newStartDate: FieldValue.serverTimestamp(),
+        newCreatedAt: FieldValue.serverTimestamp(),
+      ),
+    );
   }
 
 
-  static Future<void> submitQuestionare({
+  static Future<void> submitQuestionnaire({
     required User? user,
     required Map<String, dynamic> userdata,
   }) async {
