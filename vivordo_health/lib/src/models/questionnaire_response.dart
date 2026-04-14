@@ -60,6 +60,6 @@ class QuestionnaireResponse {
   }
 
   Future<void> toFirestore() async {
-    FirebaseFirestore.instance.collection('questionnare_response').add(toMap());
+    FirebaseFirestore.instance.collection('questionnaire_responses').add(toMap());
   }
 }
