@@ -22,21 +22,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _selectedIndex = widget.initialIndex;
   }
 
-  final List<Widget> _pages = [
-    const HomeScreen(),
-    const GoalsScreen(),
-    const DashboardScreen(),
-    const PandaScreen(),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final pages = [
+      HomeScreen(onScanTap: () => setState(() => _selectedIndex = 1)),
+      const GoalsScreen(),
+      const DashboardScreen(),
+      const PandaScreen(),
+    ];
     return Scaffold(
       body: Stack(
         children: [
           IndexedStack(
             index: _selectedIndex,
-            children: _pages,
+            children: pages,
           ),
           Positioned(
             bottom: 30,
@@ -67,9 +66,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _navItem(Icons.home_rounded, "Home", 0),
-          _navItem(Icons.track_changes_rounded, "Goals", 1),
-          _navItem(Icons.dashboard_rounded, "Dash", 2),
-          _navItem(Icons.pets_rounded, "Panda", 3),
+          _navItem(Icons.fingerprint, "Scan", 1),
+          _navItem(Icons.bar_chart_rounded, "Metrics", 2),
+          _navItem(Icons.auto_awesome_rounded, "AI Chat", 3),
         ],
       ),
     );
