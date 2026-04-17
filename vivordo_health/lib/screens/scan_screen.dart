@@ -36,14 +36,37 @@ class _ScanScreenState extends State<ScanScreen> {
   Future<void> _initCamera() async {
     try {
       final cameras = await availableCameras();
-      final rearCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
+
+      // Filter to rear-facing cameras only.
+      final backCameras = cameras
+          .where((c) => c.lensDirection == CameraLensDirection.back)
+          .toList();
+
+      if (backCameras.isEmpty) {
+        setState(() => _scanState = ScanState.error);
+        return;
+      }
+
+      // Debug: logs each back camera's index and name to the console.
+      // Remove this once the correct camera is confirmed.
+      for (int i = 0; i < backCameras.length; i++) {
+        debugPrint('[PPG] backCameras[$i] name: ${backCameras[i].name}');
+      }
+
+      // On Pro iPhones the Flutter camera plugin returns back cameras in the
+      // order [wide (1x), telephoto, ultrawide (0.5x)]. The ultrawide sits
+      // physically closest to the flash, giving a stronger PPG signal, so we
+      // prefer backCameras[2] when at least 3 back cameras exist.
+      //
+      // On non-Pro iPhones there is only one back camera, so we fall back to
+      // backCameras[0] (the standard wide lens).
+      final selectedCamera = backCameras.length >= 3
+          ? backCameras[2]   // ultrawide on Pro (triple-camera) models
+          : backCameras.first; // standard lens on non-Pro models
 
       // Low resolution for faster processing
       _cameraController = CameraController(
-        rearCamera,
+        selectedCamera,
         ResolutionPreset.low,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.bgra8888, // Standard iOS format
@@ -61,13 +84,12 @@ class _ScanScreenState extends State<ScanScreen> {
 
   void _startImageStream() {
     _cameraController?.startImageStream((CameraImage image) {
-      if (_isProcessingFrame) return; // Drop frame if still processing previous
+      if (_isProcessingFrame) return;
       _isProcessingFrame = true;
 
       try {
         double redMean = _extractAverageRed(image);
         
-        // Simple finger detection: if covered with flash, it turns very red
         if (redMean > 120) {
           if (_scanState == ScanState.idle) {
              _startScan();
@@ -76,7 +98,6 @@ class _ScanScreenState extends State<ScanScreen> {
             _redValues.add(redMean);
           }
         } else {
-          // Finger removed or not covering properly
           if (_scanState == ScanState.scanning) {
             _pauseScan();
           }
@@ -92,12 +113,11 @@ class _ScanScreenState extends State<ScanScreen> {
     
     // For iOS BGRA8888, red is at index 2 of 4-byte chunk
     final bytes = image.planes[0].bytes;
-    int redThresholdIndex = 2; // R byte
+    int redThresholdIndex = 2;
 
     double redSum = 0;
     int pixelCount = 0;
     
-    // Sample every 400th byte (every 100 pixels) to be ultra fast
     for (int i = redThresholdIndex; i < bytes.length; i += 400) {
       redSum += bytes[i];
       pixelCount++;
@@ -150,7 +170,6 @@ class _ScanScreenState extends State<ScanScreen> {
 
     final durationSecs = DateTime.now().difference(_scanStartTime!).inMilliseconds / 1000.0;
     
-    // Run DSP offline
     final bpmResult = PpgAlgorithm.calculateBPM(_redValues, durationSecs);
     
     if (bpmResult > 0) {
@@ -202,7 +221,7 @@ class _ScanScreenState extends State<ScanScreen> {
       backgroundColor: const Color(0xFFFBFAFF),
       appBar: AppBar(
         title: const Text('Heart Rate Scan', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
-        backgroundColor: const Color(0xFF7B6EF6), // Primary Purple
+        backgroundColor: const Color(0xFF7B6EF6),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
       ),
@@ -217,7 +236,6 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
             const SizedBox(height: 40),
             
-            // Visualizer / Camera Preview Ring
             Center(
               child: Container(
                 width: 250,
@@ -245,9 +263,8 @@ class _ScanScreenState extends State<ScanScreen> {
                           ),
                         ),
                       if (isSuccess)
-                        Container(color: const Color(0xFF7B6EF6)), // Overlay purple if success
+                        Container(color: const Color(0xFF7B6EF6)),
                       
-                      // Progress overlay
                       if (isScanningActive)
                          Align(
                            alignment: Alignment.bottomCenter,
