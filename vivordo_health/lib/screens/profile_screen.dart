@@ -1,19 +1,79 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:vivordo_health/src/services/user_service.dart';
+import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
-  String _name = "Sarah Mitchell";
-  String _email = "sarah.mitchell@email.com";
-  bool _seeding = false;
+
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
+  bool _appleHealthConnected = true;
+  bool _pushNotifications = true;
+  bool _autoSyncData = true;
+  bool _seeding = false; // for the seed demo data button
+
+  bool _isEmailVerificationSignOut = false;
+
+  StreamSubscription<User?>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    bool isFirstEmission = true;
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (isFirstEmission) {
+        isFirstEmission = false;
+        return;
+      }
+      if (user == null && mounted) {
+        final message = _isEmailVerificationSignOut
+            ? 'Email verified! Please log in again with your new email.'
+            : 'You have been signed out.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
+        );
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+          (route) => false,
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkEmailSync();
+    }
+  }
+
+  Future<void> _checkEmailSync() async {
+    final didLogout = await UserService.syncEmailWithAuth();
+    if (didLogout) {
+      _isEmailVerificationSignOut = true;
+    }
+  }
 
   void _showEditDialog(
     BuildContext context,
@@ -32,7 +92,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ? TextField(
                   controller: controller,
                   obscureText: true,
-                  decoration: const InputDecoration(labelText: 'New Password'),
+                  decoration:
+                      const InputDecoration(labelText: 'New Password'),
                 )
               : TextField(
                   controller: controller,
@@ -44,18 +105,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
-                setState(() {
+              onPressed: () async {
+                try {
                   if (field == "Name") {
-                    _name = controller.text;
+                    await UserService.updateDisplayName(controller.text);
                   } else if (field == "Email") {
-                    _email = controller.text;
+                    await UserService.updateEmail(controller.text);
+                  } else if (field == "Password") {
+                    await UserService.updatePassword(controller.text);
                   }
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('$field updated!')));
+
+                  if (mounted) {
+                    Navigator.pop(context);
+                    final message = field == "Email"
+                        ? 'Verification email sent to ${controller.text}. Tap the link to confirm your new email.'
+                        : '$field updated successfully!';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(message)),
+                    );
+                  }
+                } on FirebaseAuthException catch (e) {
+                  String errorMessage = 'Error: ${e.message}';
+                  if (e.code == 'requires-recent-login') {
+                    errorMessage = 'For security, please log out and log back in to change your $field.';
+                  }
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(errorMessage)),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: ${e.toString()}')),
+                    );
+                  }
+                }
               },
               child: const Text('Save'),
             ),
@@ -65,470 +150,361 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  bool _appleHealthConnected = true;
-  bool _pushNotifications = true;
-  bool _autoSyncData = true;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF9F7FF),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Profile Header
-            Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  height: 250,
-                  width: double.infinity,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF7C69EF),
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(40),
-                      bottomRight: Radius.circular(40),
-                    ),
-                  ),
-                  child: SafeArea(
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 60,
-                  child: Column(
-                    children: const [
-                      Text(
-                        "Profile",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 15),
-                      CircleAvatar(
-                        radius: 50,
-                        backgroundColor: Colors.white24,
-                        child: Icon(
-                          Icons.person_outline,
-                          size: 50,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+    final authUser = context.watch<User?>();
+
+
+    // Guard: show spinner while authStateChanges listener handles navigation
+    if (authUser == null) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF7C69EF)),
+        ),
+      );
+    }
+
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(authUser.uid)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(color: Color(0xFF7C69EF)),
             ),
+          );
+        }
 
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Section: Account Information
-                  _buildSectionCard(
-                    icon: Icons.person_outline,
-                    title: "Account Information",
+
+        // Show spinner not error — this state can be hit during sign-out transition
+        if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(color: Color(0xFF7C69EF)),
+            ),
+          );
+        }
+
+
+        final userData = UserModel.fromMap(
+          snapshot.data!.data() as Map<String, dynamic>,
+          snapshot.data!.id,
+        );
+
+
+        final String? pendingEmail =
+            (snapshot.data!.data() as Map<String, dynamic>)['pendingEmail'];
+
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFF9F7FF),
+          body: SingleChildScrollView(
+            child: Column(
+              children: [
+                // --- Profile Header ---
+                Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      height: 250,
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF7C69EF),
+                        borderRadius: BorderRadius.only(
+                          bottomLeft: Radius.circular(40),
+                          bottomRight: Radius.circular(40),
+                        ),
+                      ),
+                      child: SafeArea(
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: IconButton(
+                            icon: const Icon(
+                              Icons.arrow_back,
+                              color: Colors.white,
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 60,
+                      child: Column(
+                        children: [
+                          const Text(
+                            "Profile",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 15),
+                          CircleAvatar(
+                            radius: 50,
+                            backgroundColor: Colors.white24,
+                            backgroundImage: userData.photoUrl != null
+                                ? NetworkImage(userData.photoUrl!)
+                                : null,
+                            child: userData.photoUrl == null
+                                ? const Icon(
+                                    Icons.person_outline,
+                                    size: 50,
+                                    color: Colors.white,
+                                  )
+                                : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildInfoTile(
-                        "Name",
-                        _name,
-                        onEdit: () => _showEditDialog(context, "Name", _name),
-                      ),
-                      const Divider(),
-                      _buildInfoTile(
-                        "Email",
-                        _email,
-                        onEdit: () =>
-                            _showEditDialog(context, "Email", _email),
-                      ),
-                      const Divider(),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text(
-                          "Password",
-                          style: TextStyle(color: Colors.grey, fontSize: 14),
-                        ),
-                        subtitle: const Text(
-                          "••••••••",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () =>
-                            _showEditDialog(context, "Password", ""),
-                      ),
-                    ],
-                  ),
 
-                  const SizedBox(height: 24),
 
-                  // Section: Connected Devices
-                  _buildSectionHeader(
-                    Icons.phone_iphone_outlined,
-                    "Connected Devices",
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: _cardDecoration(),
-                    child: Column(
-                      children: [
-                        _buildDeviceTile(
-                          "Apple Health",
-                          "Connected",
-                          Icons.favorite,
-                          Colors.pink,
-                          trailing: Switch(
-                            value: _appleHealthConnected,
-                            activeThumbColor: const Color(0xFF7C69EF),
-                            onChanged: (val) =>
-                                setState(() => _appleHealthConnected = val),
+                      // --- Pending Email Verification Banner ---
+                      if (pendingEmail != null) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF8E1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.amber.shade300),
                           ),
-                        ),
-                        const Divider(height: 32),
-                        _buildDeviceTile(
-                          "Apple Watch Series 9",
-                          "Connected • Synced 5 min ago",
-                          Icons.watch,
-                          Colors.black,
-                          statusColor: Colors.green,
-                        ),
-                        const Divider(height: 32),
-                        _buildDeviceTile(
-                          "iPhone 15 Pro",
-                          "Connected • Active",
-                          Icons.phone_iphone,
-                          Colors.blue,
-                          statusColor: Colors.green,
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.mail_outline,
+                                color: Colors.amber,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Verify your new email: $pendingEmail\nCheck your inbox and tap the link.',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: () {},
-                            style: OutlinedButton.styleFrom(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                      ],
+
+
+                      // --- Section: Account Information ---
+                      _buildSectionCard(
+                        icon: Icons.person_outline,
+                        title: "Account Information",
+                        children: [
+                          _buildInfoTile(
+                            "Name",
+                            userData.displayName ?? "Set your name",
+                            onEdit: () => _showEditDialog(
+                              context,
+                              "Name",
+                              userData.displayName ?? "",
+                            ),
+                          ),
+                          const Divider(),
+                          _buildInfoTile(
+                            "Email",
+                            userData.email ?? "Set your email",
+                            onEdit: () => _showEditDialog(
+                              context,
+                              "Email",
+                              userData.email ?? "",
+                            ),
+                          ),
+                          const Divider(),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text(
+                              "Password",
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 14,
                               ),
                             ),
-                            child: const Text(
-                              "Add New Device",
-                              style: TextStyle(color: Colors.black87),
+                            subtitle: const Text(
+                              "••••••••",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
                             ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () =>
+                                _showEditDialog(context, "Password", ""),
+                          ),
+                        ],
+                      ),
+
+
+                      const SizedBox(height: 24),
+
+
+                      // --- Section: Connected Devices ---
+                      _buildSectionHeader(
+                        Icons.phone_iphone_outlined,
+                        "Connected Devices",
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: _cardDecoration(),
+                        child: Column(
+                          children: [
+                            _buildDeviceTile(
+                              "Apple Health",
+                              "Connected",
+                              Icons.favorite,
+                              Colors.pink,
+                              trailing: Switch(
+                                value: _appleHealthConnected,
+                                activeColor: const Color(0xFF7C69EF),
+                                onChanged: (val) => setState(
+                                    () => _appleHealthConnected = val),
+                              ),
+                            ),
+                            const Divider(height: 32),
+                            _buildDeviceTile(
+                              "Apple Watch Series 9",
+                              "Connected • Synced 5 min ago",
+                              Icons.watch,
+                              Colors.black,
+                              statusColor: Colors.green,
+                            ),
+                            const Divider(height: 32),
+                            _buildDeviceTile(
+                              "iPhone 15 Pro",
+                              "Connected • Active",
+                              Icons.phone_iphone,
+                              Colors.blue,
+                              statusColor: Colors.green,
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                onPressed: () {},
+                                style: OutlinedButton.styleFrom(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Text(
+                                  "Add New Device",
+                                  style: TextStyle(color: Colors.black87),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+
+                      const SizedBox(height: 24),
+
+
+                      // --- Section: App Settings ---
+                      _buildSectionHeader(
+                        Icons.settings_outlined,
+                        "App Settings",
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: _cardDecoration(),
+                        child: Column(
+                          children: [
+                            _buildSettingsToggle(
+                              "Push Notifications",
+                              "Daily reminders & insights",
+                              Icons.notifications_none,
+                              _pushNotifications,
+                              (val) =>
+                                  setState(() => _pushNotifications = val),
+                            ),
+                            _buildSettingsToggle(
+                              "Auto Sync Health Data",
+                              "Sync every hour",
+                              Icons.favorite_border,
+                              _autoSyncData,
+                              (val) => setState(() => _autoSyncData = val),
+                            ),
+                          ],
+                        ),
+                      ),
+
+
+                      const SizedBox(height: 24),
+
+                      // --- Seed Demo Data Button ---
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton.icon(
+                          onPressed: _seeding
+                              ? null
+                              : () async {
+                                  setState(() => _seeding = true);
+                                  try {
+                                    await MetricsService.seedDemoData();
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('✓ 30 days of demo data seeded!'),
+                                          backgroundColor: Color(0xFF4ADE80),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Seed failed: $e'),
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                    }
+                                  } finally {
+                                    if (mounted) setState(() => _seeding = false);
+                                  }
+                                },
+                          icon: _seeding
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.science_outlined, color: Color(0xFF7C69EF)),
+                          label: Text(
+                            _seeding ? 'Seeding...' : 'Seed Demo Data (30 days)',
+                            style: const TextStyle(color: Color(0xFF7C69EF), fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFEDE9FE),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Section: App Settings
-                  _buildSectionHeader(Icons.settings_outlined, "App Settings"),
-                  const SizedBox(height: 12),
-                  Container(
-                    decoration: _cardDecoration(),
-                    child: Column(
-                      children: [
-                        _buildSettingsToggle(
-                          "Push Notifications",
-                          "Daily reminders & insights",
-                          Icons.notifications_none,
-                          _pushNotifications,
-                          (val) => setState(() => _pushNotifications = val),
-                        ),
-                        _buildSettingsToggle(
-                          "Auto Sync Health Data",
-                          "Sync every hour",
-                          Icons.favorite_border,
-                          _autoSyncData,
-                          (val) => setState(() => _autoSyncData = val),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Seed Demo Data Button - For Testing Purposes
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: _seeding
-                          ? null
-                          : () async {
-                              setState(() => _seeding = true);
-                              try {
-                                await MetricsService.seedDemoData();
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          '✓ 30 days of demo data seeded!'),
-                                      backgroundColor: Color(0xFF4ADE80),
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Seed failed: $e'),
-                                      backgroundColor: Colors.redAccent,
-                                    ),
-                                  );
-                                }
-                              } finally {
-                                if (mounted) setState(() => _seeding = false);
-                              }
-                            },
-                      icon: _seeding
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(
-                              Icons.science_outlined,
-                              color: Color(0xFF7C69EF),
-                            ),
-                      label: Text(
-                        _seeding ? 'Seeding...' : 'Seed Demo Data (30 days)',
-                        style: const TextStyle(
-                          color: Color(0xFF7C69EF),
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFEDE9FE),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 16),
+                      const SizedBox(height: 32),
 
-                  // Logout Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        FirebaseAuth.instance.signOut();
-                        Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute(
-                            builder: (context) => const LoginScreen(),
-                          ),
-                          (route) => false,
-                        );
-                      },
-                      icon: const Icon(Icons.logout, color: Colors.redAccent),
-                      label: const Text(
-                        "Log Out",
-                        style: TextStyle(
-                          color: Colors.redAccent,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFEBEE),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // --- Helper Widgets ---
-
-  BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.05),
-          blurRadius: 15,
-          offset: const Offset(0, 5),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSectionHeader(IconData icon, String title) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: const Color(0xFF7C69EF)),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSectionCard({
-    required IconData icon,
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: const Color(0xFF7C69EF)),
-              const SizedBox(width: 10),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          ...children,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoTile(String label, String value, {VoidCallback? onEdit}) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(
-        label,
-        style: const TextStyle(color: Colors.grey, fontSize: 14),
-      ),
-      subtitle: Text(
-        value,
-        style: const TextStyle(
-          fontSize: 16,
-          color: Colors.black,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      trailing: IconButton(
-        icon: const Icon(
-          Icons.edit_outlined,
-          size: 20,
-          color: Color(0xFF7C69EF),
-        ),
-        onPressed: onEdit,
-      ),
-    );
-  }
-
-  Widget _buildDeviceTile(
-    String name,
-    String sub,
-    IconData icon,
-    Color iconColor, {
-    Widget? trailing,
-    Color? statusColor,
-  }) {
-    return Row(
-      children: [
-        CircleAvatar(
-          backgroundColor: iconColor.withOpacity(0.1),
-          child: Icon(icon, color: iconColor),
-        ),
-        const SizedBox(width: 15),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-              Row(
-                children: [
-                  if (statusColor != null)
-                    CircleAvatar(radius: 4, backgroundColor: statusColor),
-                  if (statusColor != null) const SizedBox(width: 5),
-                  Text(
-                    sub,
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        ?trailing,
-      ],
-    );
-  }
-
-  Widget _buildSettingsToggle(
-    String title,
-    String sub,
-    IconData icon,
-    bool val,
-    Function(bool) onChanged,
-  ) {
-    return SwitchListTile(
-      value: val,
-      onChanged: onChanged,
-      secondary: Icon(icon, color: Colors.grey),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
-      subtitle: Text(sub, style: const TextStyle(fontSize: 12)),
-      activeThumbColor: const Color(0xFF7C69EF),
-    );
-  }
-
-  Widget _buildDataCard(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-          const SizedBox(height: 5),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF7C69EF),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
+                      // --- Logout Button ---
+                      SizedBox(

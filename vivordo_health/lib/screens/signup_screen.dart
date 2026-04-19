@@ -20,7 +20,7 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _isLoading = false; // prevents double-tap triggering emailSignup twice
 
   // Centralized data map for future database integration
-  final Map<String, dynamic> _userData = {'responses': {}};
+  final Map<String, dynamic> _userData = {'responses': <String, dynamic>{}};
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -30,6 +30,7 @@ class _SignupScreenState extends State<SignupScreen> {
   // For show/hide password
   bool _showPassword = false;
   bool _showConfirmPassword = false;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -80,26 +81,47 @@ class _SignupScreenState extends State<SignupScreen> {
       }
     } else {
       if (_currentPage == _totalQuestions) {
-        _submitQuestionnaire();
+        _submitQuestionnaire().then((_) {
+          if (mounted) {
+            _pageController.nextPage(
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOutCubicEmphasized,
+            );
+          }
+        });
+      } else {
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOutCubicEmphasized, // Smoother animation
+        );
       }
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOutCubicEmphasized, // Smoother animation
-      );
     }
   }
 
   Future<void> _submitQuestionnaire() async {
+    setState(() => _isLoading = true);
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        await UserService.submitQuestionare(
+        await UserService.submitQuestionnaire(
           user: user,
           userdata: _userData,
         );
       }
     } catch (e) {
       debugPrint("Error submitting questionnaire: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to submit assessment: $e"),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -552,28 +574,4 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
         const SizedBox(height: 20),
         const Text(
-          "Thanks for answering!",
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          "Your profile is being created.",
-          style: TextStyle(color: Colors.grey),
-        ),
-        const SizedBox(height: 40),
-        ElevatedButton(
-          onPressed: () {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(
-                builder: (context) => const MainNavigationScreen(initialIndex: 0),
-              ),
-              (route) => false,
-            );
-          },
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7C69EF)),
-          child: const Text("Continue", style: TextStyle(color: Colors.white)),
-        ),
-      ],
-    );
-  }
-}
+          "Thank

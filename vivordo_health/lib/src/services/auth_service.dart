@@ -73,22 +73,10 @@ class AuthService {
       final currentUser = userCredential.user;
       if (currentUser == null) throw Exception('Error signing in user');
 
+      // Sync email state on every login. Cleans up pendingEmail from Firestore
+      // if the user previously verified an email change.
+      await UserService.syncEmailWithAuth();
+
       return true; // success
     } on FirebaseAuthException catch (e) {
-      if (context.mounted) {
-        if (e.code == 'invalid-credential') {
-          const message = 'Invalid email or password';
-          SnackBars.authMessage(context: context, message: message);
-        } else {
-          SnackBars.authMessage(context: context, message: e.code);
-        }
-      }
-      return false; // failure
-    } catch (e) {
-      print(e);
-      return false;
-    }
-  }
-
-  //email signout - use await FirebaseAuth.instance.signOut();
-}
+      if (context.mounted) 
