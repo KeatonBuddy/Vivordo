@@ -6,6 +6,7 @@ import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
+import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -375,14 +376,51 @@ class _SettingsScreenState extends State<SettingsScreen>
                           children: [
                             _buildDeviceTile(
                               "Apple Health",
-                              "Connected",
+                              _appleHealthConnected
+                                  ? "Connected • Syncing"
+                                  : "Disconnected • Data removed",
                               Icons.favorite,
                               Colors.pink,
+                              statusColor: _appleHealthConnected
+                                  ? Colors.green
+                                  : Colors.grey,
                               trailing: Switch(
                                 value: _appleHealthConnected,
                                 activeColor: const Color(0xFF7C69EF),
-                                onChanged: (val) => setState(
-                                    () => _appleHealthConnected = val),
+                                onChanged: (val) async {
+                                  if (val) {
+                                    // Request HealthKit permissions
+                                    final granted = await HealthService()
+                                        .requestPermissions();
+                                    setState(() =>
+                                        _appleHealthConnected = granted.isNotEmpty);
+                                    if (granted.isNotEmpty && mounted) {
+                                      // Trigger a full sync immediately
+                                      HealthService()
+                                          .syncToFirestore(daysBack: 30);
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              '✓ Apple Health connected — syncing data'),
+                                          backgroundColor: Color(0xFF4ADE80),
+                                        ),
+                                      );
+                                    }
+                                  } else {
+                                    // Revoke consent + delete from Firestore
+                                    await HealthService().revokeAll();
+                                    setState(
+                                        () => _appleHealthConnected = false);
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              'Apple Health disconnected — your data has been removed'),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
                               ),
                             ),
                             const Divider(height: 32),

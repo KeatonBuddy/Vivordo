@@ -42,6 +42,38 @@ class _HomeScreenState extends State<HomeScreen> {
     return FirebaseFirestore.instance.collection('metrics_daily').doc(docId).snapshots();
   }
 
+  /// Reads stress score: prefers HRV-derived stress from HealthKit ('hrv' doc),
+  /// falls back to manual 'stress' doc from seed data.
+  Stream<double> _stressScoreStream() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Stream.value(0);
+    final today = _todayPeriod();
+    final uid = user.uid;
+
+    // Try HRV doc first — if it has stressScore field, use it
+    final hrvDoc = FirebaseFirestore.instance
+        .collection('metrics_daily')
+        .doc('${uid}_hrv_$today')
+        .snapshots()
+        .map((snap) => (snap.data()?['stressScore'] as num?)?.toDouble());
+
+    final stressDoc = FirebaseFirestore.instance
+        .collection('metrics_daily')
+        .doc('${uid}_stress_$today')
+        .snapshots()
+        .map((snap) => (snap.data()?['avg'] as num?)?.toDouble());
+
+    // Combine: return HRV-based stress if available, else manual stress
+    return hrvDoc.asyncMap((hrv) async {
+      if (hrv != null) return hrv;
+      final stressSnap = await FirebaseFirestore.instance
+          .collection('metrics_daily')
+          .doc('${uid}_stress_$today')
+          .get();
+      return (stressSnap.data()?['avg'] as num?)?.toDouble() ?? 0.0;
+    });
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStream() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
@@ -61,10 +93,10 @@ class _HomeScreenState extends State<HomeScreen> {
       return _buildScaffold(stressScore: 0, sleepVal: '--', stepsVal: '--', hrVal: '--', goalTitle: 'No goal set', goalProgress: 0);
     }
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: _todayMetric('stress'),
+    return StreamBuilder<double>(
+      stream: _stressScoreStream(),
       builder: (context, stressSnap) {
-        final stressScore = (stressSnap.data?.data()?['avg'] as num?)?.toDouble() ?? 0;
+        final stressScore = stressSnap.data ?? 0.0;
 
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _todayMetric('sleep'),

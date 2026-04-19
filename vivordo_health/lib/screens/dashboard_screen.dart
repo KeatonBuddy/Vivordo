@@ -28,6 +28,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late Stream<QuerySnapshot<Map<String, dynamic>>> _moodStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _stressStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _wellnessStream;
+  // HealthKit-sourced streams (empty when user hasn't connected Apple Health)
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _hrvStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _bloodOxygenStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _activeCaloriesStream;
 
   @override
   void initState() {
@@ -36,12 +40,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _refreshStreams() {
-    _heartRateStream = _metricStream('heart_rate');
-    _stepsStream     = _metricStream('steps');
-    _sleepStream     = _metricStream('sleep');
-    _moodStream      = _metricStream('mood');
-    _stressStream    = _metricStream('stress');
-    _wellnessStream  = _metricStream('wellness');
+    _heartRateStream      = _metricStream('heart_rate');
+    _stepsStream          = _metricStream('steps');
+    _sleepStream          = _metricStream('sleep');
+    _moodStream           = _metricStream('mood');
+    _stressStream         = _metricStream('stress');
+    _wellnessStream       = _metricStream('wellness');
+    _hrvStream            = _metricStream('hrv');
+    _bloodOxygenStream    = _metricStream('blood_oxygen');
+    _activeCaloriesStream = _metricStream('active_calories');
   }
 
   // Returns how many days back to query based on filter
@@ -173,6 +180,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             if (snapshot.hasError) return _buildStreamError('wellness', snapshot.error);
                             final docs = snapshot.data?.docs ?? [];
                             return _buildWellnessCard(docs);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // ── HRV (HealthKit) — shows when Apple Health connected ──
+                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _hrvStream,
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) return _buildStreamError('hrv', snapshot.error);
+                            final docs = snapshot.data?.docs ?? [];
+                            if (docs.isEmpty) return const SizedBox.shrink();
+                            return _buildHrvCard(docs);
+                          },
+                        ),
+
+                        // ── Blood Oxygen (HealthKit) ──
+                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _bloodOxygenStream,
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) return _buildStreamError('blood_oxygen', snapshot.error);
+                            final docs = snapshot.data?.docs ?? [];
+                            if (docs.isEmpty) return const SizedBox.shrink();
+                            return Column(children: [
+                              const SizedBox(height: 16),
+                              _buildBloodOxygenCard(docs),
+                            ]);
+                          },
+                        ),
+
+                        // ── Active Calories (HealthKit) ──
+                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _activeCaloriesStream,
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) return _buildStreamError('active_calories', snapshot.error);
+                            final docs = snapshot.data?.docs ?? [];
+                            if (docs.isEmpty) return const SizedBox.shrink();
+                            return Column(children: [
+                              const SizedBox(height: 16),
+                              _buildActiveCaloriesCard(docs),
+                            ]);
                           },
                         ),
                       ],
@@ -707,6 +754,126 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (score >= 65) return Colors.green;
     if (score >= 45) return Colors.orange;
     return Colors.redAccent;
+  }
+
+  // ── HealthKit-sourced card builders ────────────────────────────────────────
+
+  Widget _buildHrvCard(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final values = docs.map((d) => (d['avg'] as num?)?.toDouble() ?? 0.0).toList();
+    final latest = values.isNotEmpty ? values.last : 0.0;
+    final stressFromHrv = docs.isNotEmpty
+        ? (docs.last['stressScore'] as num?)?.toDouble()
+        : null;
+
+    return _buildCardBase(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildChartHeader(
+            Icons.monitor_heart_outlined,
+            'HRV',
+            '${latest.toStringAsFixed(0)} ms',
+            stressFromHrv != null
+                ? 'Stress: ${stressFromHrv.toInt()}'
+                : 'Apple Health',
+            const Color(0xFF8B5CF6),
+          ),
+          const SizedBox(height: 16),
+          if (values.isNotEmpty)
+            SizedBox(
+              height: 80,
+              child: _VisibilityAnimatedWidget(
+                builder: (context, anim) => CustomPaint(
+                  size: Size.infinite,
+                  painter: AreaChartPainter(
+                    values: values,
+                    color: const Color(0xFF8B5CF6),
+                    animationValue: anim,
+                  ),
+                ),
+              ),
+            )
+          else
+            const Center(child: Text('No HRV data yet', style: TextStyle(color: Colors.grey))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBloodOxygenCard(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final values = docs.map((d) => (d['avg'] as num?)?.toDouble() ?? 0.0).toList();
+    final latest = values.isNotEmpty ? values.last : 0.0;
+
+    return _buildCardBase(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildChartHeader(
+            Icons.water_drop_outlined,
+            'Blood Oxygen',
+            '${latest.toStringAsFixed(1)}%',
+            'SpO₂ · Apple Health',
+            const Color(0xFF06B6D4),
+          ),
+          const SizedBox(height: 16),
+          if (values.isNotEmpty)
+            SizedBox(
+              height: 80,
+              child: _VisibilityAnimatedWidget(
+                builder: (context, anim) => CustomPaint(
+                  size: Size.infinite,
+                  painter: AreaChartPainter(
+                    values: values,
+                    color: const Color(0xFF06B6D4),
+                    animationValue: anim,
+                  ),
+                ),
+              ),
+            )
+          else
+            const Center(child: Text('No SpO₂ data yet', style: TextStyle(color: Colors.grey))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveCaloriesCard(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final values = docs.map((d) => (d['sum'] ?? d['avg'] as num? ?? 0).toDouble()).toList();
+    final total = values.fold(0.0, (a, b) => a + b);
+    final latest = values.isNotEmpty ? values.last : 0.0;
+
+    return _buildCardBase(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildChartHeader(
+            Icons.local_fire_department_outlined,
+            'Active Calories',
+            '${latest.toInt()} kcal',
+            'Period: ${total.toInt()} kcal total',
+            const Color(0xFFF97316),
+          ),
+          const SizedBox(height: 16),
+          if (values.isNotEmpty)
+            SizedBox(
+              height: 80,
+              child: _VisibilityAnimatedWidget(
+                builder: (context, anim) => CustomPaint(
+                  size: Size.infinite,
+                  painter: AreaChartPainter(
+                    values: values,
+                    color: const Color(0xFFF97316),
+                    animationValue: anim,
+                  ),
+                ),
+              ),
+            )
+          else
+            const Center(
+                child: Text('No calorie data yet', style: TextStyle(color: Colors.grey))),
+        ],
+      ),
+    );
   }
 }
 

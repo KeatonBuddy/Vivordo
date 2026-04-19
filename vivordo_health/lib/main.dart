@@ -6,6 +6,7 @@ import 'package:vivordo_health/firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
@@ -80,16 +81,58 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AuthGate extends StatelessWidget {
+/// AuthGate watches the auth state and routes accordingly.
+/// When a user logs in, it also triggers a HealthKit sync for the last 30 days.
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
   @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
+  String? _lastSyncedUid;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Sync today's data whenever app comes back to foreground.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        HealthService().syncToday();
+      }
+    }
+  }
+
+  /// Full 30-day sync triggered once per login session.
+  void _triggerFullSync(String uid) {
+    if (_lastSyncedUid == uid) return;
+    _lastSyncedUid = uid;
+    HealthService().syncToFirestore(daysBack: 30);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final user = context.watch<User?>(); // ✅ global current user (reactive)
+    final user = context.watch<User?>();
 
     if (user == null) {
+      _lastSyncedUid = null; // reset so next login triggers sync
       return const LoginScreen();
     }
+
+    _triggerFullSync(user.uid);
     return const MainNavigationScreen();
   }
 }

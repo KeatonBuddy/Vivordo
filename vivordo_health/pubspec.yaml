@@ -47,6 +47,9 @@ dependencies:
   firebase_ai: ^3.6.1
   firebase_messaging: ^16.1.0
   flutter_local_notifications: ^18.0.1
+  health: ^12.2.0           # Apple HealthKit + Google Health Connect bridge
+  permission_handler: ^11.3.1 # Runtime permission requests
+  intl: ^0.20.1             # Date formatting (DateFormat)
 
 dev_dependencies:
   flutter_test:
