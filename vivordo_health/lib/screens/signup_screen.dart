@@ -418,8 +418,9 @@ class _SignupScreenState extends State<SignupScreen> {
             validator: (v) {
               if (v == null || v.isEmpty) return "Field required";
               if (label == "Email" &&
-                  !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v))
+                  !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
                 return "Invalid email";
+              }
               if (isPass && v.length < 6) return "Min 6 characters";
               return null;
             },

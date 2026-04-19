@@ -793,8 +793,11 @@ class LineChartPainter extends CustomPainter {
     for (int i = 0; i < values.length; i++) {
       final x = values.length == 1 ? size.width / 2 : (i / (values.length - 1)) * size.width;
       final y = size.height - ((values[i] - minVal) / range) * size.height * 0.85 - size.height * 0.05;
-      if (i == 0) path.moveTo(x, y);
-      else path.lineTo(x, y);
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
     }
 
     // Draw dots

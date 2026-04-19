@@ -27,7 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text('Edit ' + field),
+          title: Text('Edit $field'),
           content: field == "Password"
               ? TextField(
                   controller: controller,
@@ -193,7 +193,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           Colors.pink,
                           trailing: Switch(
                             value: _appleHealthConnected,
-                            activeColor: const Color(0xFF7C69EF),
+                            activeThumbColor: const Color(0xFF7C69EF),
                             onChanged: (val) =>
                                 setState(() => _appleHealthConnected = val),
                           ),
@@ -487,7 +487,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
-        if (trailing != null) trailing,
+        ?trailing,
       ],
     );
   }
@@ -505,7 +505,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       secondary: Icon(icon, color: Colors.grey),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
       subtitle: Text(sub, style: const TextStyle(fontSize: 12)),
-      activeColor: const Color(0xFF7C69EF),
+      activeThumbColor: const Color(0xFF7C69EF),
     );
   }
 
