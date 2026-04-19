@@ -5,7 +5,8 @@ import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onScanTap;
+  const HomeScreen({super.key, this.onScanTap});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();

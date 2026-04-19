@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'main_navigation.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
@@ -30,7 +29,6 @@ class _SignupScreenState extends State<SignupScreen> {
   // For show/hide password
   bool _showPassword = false;
   bool _showConfirmPassword = false;
-  bool _isLoading = false;
 
   @override
   void dispose() {

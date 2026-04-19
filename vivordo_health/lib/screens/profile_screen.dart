@@ -508,3 +508,189 @@ class _SettingsScreenState extends State<SettingsScreen>
 
                       // --- Logout Button ---
                       SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            _isEmailVerificationSignOut = false;
+                            await FirebaseAuth.instance.signOut();
+                          },
+                          icon: const Icon(Icons.logout, color: Colors.redAccent),
+                          label: const Text(
+                            'Log Out',
+                            style: TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFFEEEE),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 40),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ─── Helper Widgets ────────────────────────────────────────────────────────
+
+  Widget _buildSectionCard({
+    required IconData icon,
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(icon, title),
+        const SizedBox(height: 12),
+        Container(
+          decoration: _cardDecoration(),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(children: children),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoTile(
+    String label,
+    String value, {
+    VoidCallback? onEdit,
+  }) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        label,
+        style: const TextStyle(color: Colors.grey, fontSize: 14),
+      ),
+      subtitle: Text(
+        value,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+        ),
+      ),
+      trailing: onEdit != null
+          ? IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.grey),
+              onPressed: onEdit,
+            )
+          : null,
+    );
+  }
+
+  Widget _buildSectionHeader(IconData icon, String title) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: const Color(0xFF7C69EF)),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF2D3142),
+          ),
+        ),
+      ],
+    );
+  }
+
+  BoxDecoration _cardDecoration() {
+    return BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.05),
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDeviceTile(
+    String name,
+    String status,
+    IconData icon,
+    Color iconColor, {
+    Color? statusColor,
+    Widget? trailing,
+  }) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: iconColor.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: iconColor, size: 22),
+      ),
+      title: Text(
+        name,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+      ),
+      subtitle: Text(
+        status,
+        style: TextStyle(
+          fontSize: 12,
+          color: statusColor ?? Colors.grey,
+        ),
+      ),
+      trailing: trailing,
+    );
+  }
+
+  Widget _buildSettingsToggle(
+    String title,
+    String subtitle,
+    IconData icon,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: const Color(0xFFEDE9FE),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: const Color(0xFF7C69EF), size: 20),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(fontSize: 12, color: Colors.grey),
+      ),
+      trailing: Switch(
+        value: value,
+        activeColor: const Color(0xFF7C69EF),
+        onChanged: onChanged,
+      ),
+    );
+  }
+}

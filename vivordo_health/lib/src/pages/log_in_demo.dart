@@ -73,13 +73,14 @@ class LoginDemoState extends State<LoginDemo> {
                       style: TextStyle(color: Colors.white, fontSize: 20),
                     ),
                     onPressed: () {
+                      // Demo-only: uses a dummy PageController
                       AuthService.emailSignup(
-                        emailAddress: "random@gmail.com", //edit this field
-                        password: "passsd", //edit this field,
+                        emailAddress: "random@gmail.com",
+                        password: "passsd",
                         displayName: "random username",
                         context: context,
-                        nextPage: MyHomePage(title: "My home page"),
-                      ); //switch around this function to test different auth
+                        pageController: PageController(),
+                      );
                     },
                   ),
                 ),

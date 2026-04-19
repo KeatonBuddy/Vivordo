@@ -79,4 +79,15 @@ class AuthService {
 
       return true; // success
     } on FirebaseAuthException catch (e) {
-      if (context.mounted) 
+      if (context.mounted) {
+        SnackBars.authMessage(context: context, message: e.message ?? e.code);
+      }
+      return false;
+    } catch (e) {
+      if (context.mounted) {
+        SnackBars.authMessage(context: context, message: e.toString());
+      }
+      return false;
+    }
+  }
+} 
