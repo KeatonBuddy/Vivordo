@@ -538,7 +538,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       borderRadius: BorderRadius.circular(20),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.05),
+          color: Colors.black.withValues(alpha: 0.05),
           blurRadius: 15,
           offset: const Offset(0, 5),
         ),
@@ -623,7 +623,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         Icon(icon, size: 18, color: const Color(0xFF7C69EF)),
         const SizedBox(width: 8),
         Text(
-          title,
+          name,
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -634,21 +634,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.05),
-          blurRadius: 10,
-          offset: const Offset(0, 2),
-        ),
-      ],
-    );
-  }
-
-
   Widget _buildSettingsToggle(
     String title,
     String subtitle,
@@ -657,12 +642,12 @@ class _SettingsScreenState extends State<SettingsScreen>
     ValueChanged<bool> onChanged,
   ) {
     return SwitchListTile(
-      value: val,
+      value: value,
       onChanged: onChanged,
       secondary: Icon(icon, color: Colors.grey),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
-      subtitle: Text(sub, style: const TextStyle(fontSize: 12)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
       activeColor: const Color(0xFF7C69EF),
     );
   }
-}
+}          

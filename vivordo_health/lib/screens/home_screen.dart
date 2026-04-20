@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'profile_screen.dart';
+import 'package:vivordo_health/src/services/metrics_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onScanTap;

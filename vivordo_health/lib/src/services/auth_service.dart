@@ -79,6 +79,7 @@ class AuthService {
       // email change, this cleans up pendingEmail from Firestore immediately
       // so the profile screen never sees stale pending state.
       await UserService.syncEmailWithAuth();
+      return true;
 
     } on FirebaseAuthException catch (e) {
       if (context.mounted) {
@@ -89,8 +90,10 @@ class AuthService {
           SnackBars.authMessage(context: context, message: e.code);
         }
       }
+      return false;
     } catch (e) {
-      print(e);
+      debugPrint(e.toString());
+      return false;
     }
   }
 } 
