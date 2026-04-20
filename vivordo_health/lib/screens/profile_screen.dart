@@ -20,7 +20,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
-  bool _appleHealthConnected = true;
   bool _pushNotifications = true;
   bool _autoSyncData = true;
   bool _seeding = false; // for the seed demo data button
@@ -673,40 +672,6 @@ class _SettingsScreenState extends State<SettingsScreen>
           offset: const Offset(0, 2),
         ),
       ],
-    );
-  }
-
-  Widget _buildDeviceTile(
-    String name,
-    String status,
-    IconData icon,
-    Color iconColor, {
-    Color? statusColor,
-    Widget? trailing,
-  }) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: iconColor.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: iconColor, size: 22),
-      ),
-      title: Text(
-        name,
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-      ),
-      subtitle: Text(
-        status,
-        style: TextStyle(
-          fontSize: 12,
-          color: statusColor ?? Colors.grey,
-        ),
-      ),
-      trailing: trailing,
     );
   }
 

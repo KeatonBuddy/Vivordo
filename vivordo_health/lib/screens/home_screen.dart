@@ -57,12 +57,6 @@ class _HomeScreenState extends State<HomeScreen> {
         .snapshots()
         .map((snap) => (snap.data()?['stressScore'] as num?)?.toDouble());
 
-    final stressDoc = FirebaseFirestore.instance
-        .collection('metrics_daily')
-        .doc('${uid}_stress_$today')
-        .snapshots()
-        .map((snap) => (snap.data()?['avg'] as num?)?.toDouble());
-
     // Combine: return HRV-based stress if available, else manual stress
     return hrvDoc.asyncMap((hrv) async {
       if (hrv != null) return hrv;
@@ -284,7 +278,7 @@ class _HomeScreenState extends State<HomeScreen> {
         alignment: Alignment.center,
         children: [
           Image.asset('assets/panda_home_icon.png', height: 200, fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const Icon(Icons.pets, size: 80, color: Colors.white24)),
+              errorBuilder: (_, _, _) => const Icon(Icons.pets, size: 80, color: Colors.white24)),
           Positioned(
             bottom: 0,
             child: Stack(

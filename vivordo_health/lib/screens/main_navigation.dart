@@ -95,4 +95,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               fontSize: 10,
               fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
             ),
-        
+                  ),
+        ],
+      ),
+    );
+  }
+}
