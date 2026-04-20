@@ -29,7 +29,7 @@ class _SignupScreenState extends State<SignupScreen> {
   // For show/hide password
   bool _showPassword = false;
   bool _showConfirmPassword = false;
-  bool _isLoading = false;
+
 
   @override
   void dispose() {
