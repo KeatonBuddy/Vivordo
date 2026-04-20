@@ -53,7 +53,7 @@ class AuthService {
         }
       }
     } catch (e) {
-      print(e);
+      debugPrint(e.toString());
     }
   }
 

@@ -32,7 +32,7 @@ class LoginScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: primaryPurple.withOpacity(0.3),
+                        color: primaryPurple.withValues(alpha: 0.3),
                         blurRadius: 15,
                         offset: const Offset(0, 10),
                       ),
@@ -43,7 +43,7 @@ class LoginScreen extends StatelessWidget {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
@@ -74,7 +74,7 @@ class LoginScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 20,
                         offset: const Offset(0, 10),
                       ),
@@ -142,7 +142,7 @@ class LoginScreen extends StatelessWidget {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             elevation: 5,
-                            shadowColor: primaryPurple.withOpacity(0.4),
+                            shadowColor: primaryPurple.withValues(alpha: 0.4),
                           ),
                           child: const Text(
                             'Login',
@@ -228,7 +228,7 @@ class LoginScreen extends StatelessWidget {
       prefixIcon: Icon(icon, color: Colors.grey),
       contentPadding: const EdgeInsets.symmetric(vertical: 16),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.grey)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.withOpacity(0.5))),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.5))),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primaryColor, width: 2)),
     );
   }

@@ -216,7 +216,7 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(greeting, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14)),
+                Text(greeting, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14)),
                 Text(firstName, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
               ]),
               _buildProfileButton(),
@@ -293,8 +293,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 Container(
                   width: 70, height: 70,
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.15), shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: _getRingColor(stressScore).withOpacity(0.4), blurRadius: 15, spreadRadius: 2)],
+                    color: Colors.black.withValues(alpha: 0.15), shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: _getRingColor(stressScore).withValues(alpha: 0.4), blurRadius: 15, spreadRadius: 2)],
                   ),
                 ),
                 SizedBox(
@@ -305,7 +305,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     curve: Curves.easeOutBack,
                     builder: (context, value, child) => CircularProgressIndicator(
                       value: value, strokeWidth: 8, strokeCap: StrokeCap.round,
-                      backgroundColor: Colors.white.withOpacity(0.3),
+                      backgroundColor: Colors.white.withValues(alpha: 0.3),
                       valueColor: AlwaysStoppedAnimation<Color>(_getRingColor(stressScore)),
                     ),
                   ),
@@ -313,7 +313,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text("STRESS", style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white.withOpacity(0.8), letterSpacing: 0.5)),
+                    Text("STRESS", style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white.withValues(alpha: 0.8), letterSpacing: 0.5)),
                     Text(
                       stressScore > 0 ? stressScore.toInt().toString() : '--',
                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white, height: 1.1),
@@ -348,7 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
-            boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]),
+            boxShadow: [BoxShadow(color: Colors.grey.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))]),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -366,7 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10)]),
+          boxShadow: [BoxShadow(color: Colors.grey.withValues(alpha: 0.05), blurRadius: 10)]),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -383,7 +383,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       width: double.infinity, padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(color: primaryColor, borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: primaryColor.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 10))]),
+          boxShadow: [BoxShadow(color: primaryColor.withValues(alpha: 0.4), blurRadius: 20, offset: const Offset(0, 10))]),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -442,7 +442,7 @@ class _HomeScreenState extends State<HomeScreen> {
           duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic,
           width: 60, height: 60,
           decoration: BoxDecoration(color: isSelected ? accentColor : bgColor, shape: BoxShape.circle,
-              boxShadow: isSelected ? [BoxShadow(color: accentColor.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))] : []),
+              boxShadow: isSelected ? [BoxShadow(color: accentColor.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))] : []),
           child: Center(child: Text(emoji, style: const TextStyle(fontSize: 28))),
         ),
         const SizedBox(height: 12),

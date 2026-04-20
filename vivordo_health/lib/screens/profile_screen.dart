@@ -363,100 +363,41 @@ class _SettingsScreenState extends State<SettingsScreen>
                       const SizedBox(height: 24),
 
 
-                      // --- Section: Connected Devices ---
+                      // --- Section: Health Data Permissions ---
                       _buildSectionHeader(
-                        Icons.phone_iphone_outlined,
-                        "Connected Devices",
+                        Icons.health_and_safety_outlined,
+                        "Health Data Permissions",
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Choose which Apple Health metrics Vivordo can read. "
+                        "Turning off a metric immediately removes its data from our servers.",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          height: 1.4,
+                        ),
                       ),
                       const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: _cardDecoration(),
-                        child: Column(
-                          children: [
-                            _buildDeviceTile(
-                              "Apple Health",
-                              _appleHealthConnected
-                                  ? "Connected • Syncing"
-                                  : "Disconnected • Data removed",
-                              Icons.favorite,
-                              Colors.pink,
-                              statusColor: _appleHealthConnected
-                                  ? Colors.green
-                                  : Colors.grey,
-                              trailing: Switch(
-                                value: _appleHealthConnected,
-                                activeColor: const Color(0xFF7C69EF),
-                                onChanged: (val) async {
-                                  if (val) {
-                                    // Request HealthKit permissions
-                                    final granted = await HealthService()
-                                        .requestPermissions();
-                                    setState(() =>
-                                        _appleHealthConnected = granted.isNotEmpty);
-                                    if (granted.isNotEmpty && mounted) {
-                                      // Trigger a full sync immediately
-                                      HealthService()
-                                          .syncToFirestore(daysBack: 30);
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              '✓ Apple Health connected — syncing data'),
-                                          backgroundColor: Color(0xFF4ADE80),
-                                        ),
-                                      );
-                                    }
-                                  } else {
-                                    // Revoke consent + delete from Firestore
-                                    await HealthService().revokeAll();
-                                    setState(
-                                        () => _appleHealthConnected = false);
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Apple Health disconnected — your data has been removed'),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                },
-                              ),
-                            ),
-                            const Divider(height: 32),
-                            _buildDeviceTile(
-                              "Apple Watch Series 9",
-                              "Connected • Synced 5 min ago",
-                              Icons.watch,
-                              Colors.black,
-                              statusColor: Colors.green,
-                            ),
-                            const Divider(height: 32),
-                            _buildDeviceTile(
-                              "iPhone 15 Pro",
-                              "Connected • Active",
-                              Icons.phone_iphone,
-                              Colors.blue,
-                              statusColor: Colors.green,
-                            ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton(
-                                onPressed: () {},
-                                style: OutlinedButton.styleFrom(
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                      StreamBuilder<Map<String, bool>>(
+                        stream: HealthService().consentStream(),
+                        builder: (context, snap) {
+                          final consent = snap.data ?? {};
+                          return Container(
+                            decoration: _cardDecoration(),
+                            child: Column(
+                              children: [
+                                for (int i = 0; i < kHealthMetrics.length; i++) ...[
+                                  if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
+                                  _buildHealthConsentTile(
+                                    kHealthMetrics[i],
+                                    consent[kHealthMetrics[i].key] == true,
                                   ),
-                                ),
-                                child: const Text(
-                                  "Add New Device",
-                                  style: TextStyle(color: Colors.black87),
-                                ),
-                              ),
+                                ],
+                              ],
                             ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
 
 
@@ -582,6 +523,77 @@ class _SettingsScreenState extends State<SettingsScreen>
         );
       },
     );
+  }
+
+  // ─── Health consent tile ──────────────────────────────────────────────────
+
+  Widget _buildHealthConsentTile(HealthMetricDef metric, bool isEnabled) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      leading: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: isEnabled
+              ? const Color(0xFFEDE9FE)
+              : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(
+          _metricIcon(metric.key),
+          color: isEnabled ? const Color(0xFF7C69EF) : Colors.grey,
+          size: 20,
+        ),
+      ),
+      title: Text(
+        metric.label,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 15,
+          color: isEnabled ? const Color(0xFF2D3142) : Colors.grey,
+        ),
+      ),
+      subtitle: Text(
+        metric.description,
+        style: const TextStyle(fontSize: 12, color: Colors.grey),
+      ),
+      trailing: Switch(
+        value: isEnabled,
+        activeColor: const Color(0xFF7C69EF),
+        onChanged: (val) async {
+          if (val) {
+            final granted = await HealthService().enableMetric(metric.key);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(granted
+                    ? '✓ ${metric.label} connected — syncing 30 days'
+                    : '${metric.label} permission was not granted'),
+                backgroundColor: granted ? const Color(0xFF4ADE80) : Colors.orange,
+              ));
+            }
+          } else {
+            await HealthService().disableMetric(metric.key);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('${metric.label} data removed from Vivordo'),
+              ));
+            }
+          }
+        },
+      ),
+    );
+  }
+
+  IconData _metricIcon(String key) {
+    switch (key) {
+      case 'steps':          return Icons.directions_walk;
+      case 'heart_rate':     return Icons.favorite_border;
+      case 'sleep':          return Icons.bedtime_outlined;
+      case 'hrv':            return Icons.monitor_heart_outlined;
+      case 'blood_oxygen':   return Icons.water_drop_outlined;
+      case 'active_calories':return Icons.local_fire_department_outlined;
+      default:               return Icons.health_and_safety_outlined;
+    }
   }
 
   // ─── Helper Widgets ────────────────────────────────────────────────────────

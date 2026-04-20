@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:vivordo_health/src/services/health_service.dart';
 import 'dart:math';
 import 'dart:ui';
 
@@ -104,125 +105,129 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _buildSyncCard(),
                       const SizedBox(height: 20),
 
-                      if (currentUser == null) ...[
-                        _buildHeartRateCard(null),
-                        const SizedBox(height: 16),
-                        _buildStepsCard(null),
-                        const SizedBox(height: 16),
-                        _buildSleepCard(null),
-                        const SizedBox(height: 16),
-                        _buildMoodCard(null),
-                        const SizedBox(height: 16),
-                        _buildStressCard(null),
-                        const SizedBox(height: 16),
-                        _buildWellnessCard(null),
-                      ] else ...[
+                      // ── Manual metrics (always visible) ──────────────────
+                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: _stressStream,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) return _buildStreamError('stress', snapshot.error);
+                          final docs = snapshot.data?.docs ?? [];
+                          return _buildStressCard(docs.isEmpty ? null : docs);
+                        },
+                      ),
+                      const SizedBox(height: 16),
 
-                        // ── Heart Rate — Line chart (VH-58) ──
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _heartRateStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) return _buildStreamError('heart_rate', snapshot.error);
-                            final docs = snapshot.data?.docs ?? [];
-                            return _buildHeartRateCard(docs);
-                          },
-                        ),
-                        const SizedBox(height: 16),
+                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: _moodStream,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) return _buildStreamError('mood', snapshot.error);
+                          final docs = snapshot.data?.docs ?? [];
+                          return _buildMoodCard(docs.isEmpty ? null : docs);
+                        },
+                      ),
+                      const SizedBox(height: 16),
 
-                        // ── Steps — Bar chart (VH-58) ──
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _stepsStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) return _buildStreamError('steps', snapshot.error);
-                            final docs = snapshot.data?.docs ?? [];
-                            return _buildStepsCard(docs);
-                          },
-                        ),
-                        const SizedBox(height: 16),
+                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: _wellnessStream,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) return _buildStreamError('wellness', snapshot.error);
+                          final docs = snapshot.data?.docs ?? [];
+                          return _buildWellnessCard(docs.isEmpty ? null : docs);
+                        },
+                      ),
+                      const SizedBox(height: 16),
 
-                        // ── Sleep — Area/bar chart (VH-58) ──
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _sleepStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) return _buildStreamError('sleep', snapshot.error);
-                            final docs = snapshot.data?.docs ?? [];
-                            return _buildSleepCard(docs);
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // ── Mood — Emoji score chart (VH-58) ──
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _moodStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) return _buildStreamError('mood', snapshot.error);
-                            final docs = snapshot.data?.docs ?? [];
-                            return _buildMoodCard(docs);
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // ── Stress — line chart ──
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _stressStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) return _buildStreamError('stress', snapshot.error);
-                            final docs = snapshot.data?.docs ?? [];
-                            return _buildStressCard(docs);
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // ── Wellness — area chart ──
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _wellnessStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) return _buildStreamError('wellness', snapshot.error);
-                            final docs = snapshot.data?.docs ?? [];
-                            return _buildWellnessCard(docs);
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // ── HRV (HealthKit) — shows when Apple Health connected ──
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _hrvStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) return _buildStreamError('hrv', snapshot.error);
-                            final docs = snapshot.data?.docs ?? [];
-                            if (docs.isEmpty) return const SizedBox.shrink();
-                            return _buildHrvCard(docs);
-                          },
-                        ),
-
-                        // ── Blood Oxygen (HealthKit) ──
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _bloodOxygenStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) return _buildStreamError('blood_oxygen', snapshot.error);
-                            final docs = snapshot.data?.docs ?? [];
-                            if (docs.isEmpty) return const SizedBox.shrink();
-                            return Column(children: [
-                              const SizedBox(height: 16),
-                              _buildBloodOxygenCard(docs),
-                            ]);
-                          },
-                        ),
-
-                        // ── Active Calories (HealthKit) ──
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _activeCaloriesStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) return _buildStreamError('active_calories', snapshot.error);
-                            final docs = snapshot.data?.docs ?? [];
-                            if (docs.isEmpty) return const SizedBox.shrink();
-                            return Column(children: [
-                              const SizedBox(height: 16),
-                              _buildActiveCaloriesCard(docs),
-                            ]);
-                          },
-                        ),
-                      ],
+                      // ── HealthKit metrics — driven by user consent ────────────
+                      StreamBuilder<Map<String, bool>>(
+                        stream: HealthService().consentStream(),
+                        builder: (context, consentSnap) {
+                          final consent = consentSnap.data ?? {};
+                          return Column(
+                            children: [
+                              // Steps
+                              if (consent['steps'] == true) ...[
+                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                  stream: _stepsStream,
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasError) return _buildStreamError('steps', snapshot.error);
+                                    final docs = snapshot.data?.docs;
+                                    if (docs == null) return _buildAwaitingSync('Steps');
+                                    return _buildStepsCard(docs.isEmpty ? null : docs);
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              // Heart Rate
+                              if (consent['heart_rate'] == true) ...[
+                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                  stream: _heartRateStream,
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasError) return _buildStreamError('heart_rate', snapshot.error);
+                                    final docs = snapshot.data?.docs;
+                                    if (docs == null) return _buildAwaitingSync('Heart Rate');
+                                    return _buildHeartRateCard(docs.isEmpty ? null : docs);
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              // Sleep
+                              if (consent['sleep'] == true) ...[
+                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                  stream: _sleepStream,
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasError) return _buildStreamError('sleep', snapshot.error);
+                                    final docs = snapshot.data?.docs;
+                                    if (docs == null) return _buildAwaitingSync('Sleep');
+                                    return _buildSleepCard(docs.isEmpty ? null : docs);
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              // HRV
+                              if (consent['hrv'] == true) ...[
+                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                  stream: _hrvStream,
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasError) return _buildStreamError('hrv', snapshot.error);
+                                    final docs = snapshot.data?.docs;
+                                    if (docs == null) return _buildAwaitingSync('HRV');
+                                    return _buildHrvCard(docs.isEmpty ? null : docs);
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              // Blood Oxygen
+                              if (consent['blood_oxygen'] == true) ...[
+                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                  stream: _bloodOxygenStream,
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasError) return _buildStreamError('blood_oxygen', snapshot.error);
+                                    final docs = snapshot.data?.docs;
+                                    if (docs == null) return _buildAwaitingSync('Blood Oxygen');
+                                    return _buildBloodOxygenCard(docs.isEmpty ? null : docs);
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              // Active Calories
+                              if (consent['active_calories'] == true) ...[
+                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                                  stream: _activeCaloriesStream,
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasError) return _buildStreamError('active_calories', snapshot.error);
+                                    final docs = snapshot.data?.docs;
+                                    if (docs == null) return _buildAwaitingSync('Active Calories');
+                                    return _buildActiveCaloriesCard(docs.isEmpty ? null : docs);
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              // No HealthKit metrics consented yet
+                              if (!consent.values.any((v) => v))
+                                _buildConnectHealthPrompt(),
+                            ],
+                          );
+                        },
+                      ),
 
 
                     ],
@@ -386,7 +391,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 width: _barWidth(values.length),
                                 height: h,
                                 decoration: BoxDecoration(
-                                  color: Colors.blueAccent.withOpacity(0.8),
+                                  color: Colors.blueAccent.withValues(alpha: 0.8),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                               ),
@@ -494,7 +499,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 width: _barWidth(entries.length),
                                 height: h,
                                 decoration: BoxDecoration(
-                                  color: _moodColor(score).withOpacity(0.7),
+                                  color: _moodColor(score).withValues(alpha: 0.7),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                               ),
@@ -612,6 +617,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // Shows the actual error instead of silently showing an empty chart.
   // Previously snapshot.hasError was never checked, so Firestore assertion
+  // ── Awaiting-sync placeholder (consented but no data yet) ─────────────────
+  Widget _buildAwaitingSync(String label) {
+    return _buildCardBase(
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Color(0xFF7C69EF),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Waiting for Apple Health to sync data…',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Prompt shown when no HealthKit metrics consented yet ─────────────────
+  Widget _buildConnectHealthPrompt() {
+    return _buildCardBase(
+      child: Column(
+        children: [
+          const Icon(Icons.health_and_safety_outlined,
+              size: 40, color: Color(0xFF7C69EF)),
+          const SizedBox(height: 12),
+          const Text(
+            'Connect Apple Health',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Enable health metrics in Profile → Health Data Permissions '
+            'to see your real data here.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.5),
+          ),
+        ],
+      ),
+    );
+  }
+
   // failures (e.g. after seeding) appeared as "No data" with no indication
   // of what went wrong.
   Widget _buildStreamError(String metric, Object? error) {
@@ -640,7 +707,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10)],
+        boxShadow: [BoxShadow(color: Colors.grey.withValues(alpha: 0.05), blurRadius: 10)],
       ),
       child: child,
     );
@@ -662,16 +729,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Text(valueSub, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
           ],
         ),
-      ],
-    );
-  }
-
-  Widget _buildGridStats() {
-    return Row(
-      children: [
-        Expanded(child: _buildSmallStatCard(Icons.smartphone, "Screen Time", "4.2h", Colors.orange)),
-        const SizedBox(width: 16),
-        Expanded(child: _buildSmallStatCard(Icons.volume_up, "Audio", "65 dB", Colors.green)),
       ],
     );
   }
@@ -758,8 +815,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ── HealthKit-sourced card builders ────────────────────────────────────────
 
-  Widget _buildHrvCard(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    final values = docs.map((d) => (d['avg'] as num?)?.toDouble() ?? 0.0).toList();
+  Widget _buildHrvCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
+    if (docs == null) return _buildAwaitingSync('HRV');
+    final values = docs.map<double>((d) => (d['avg'] as num?)?.toDouble() ?? 0.0).toList();
     final latest = values.isNotEmpty ? values.last : 0.0;
     final stressFromHrv = docs.isNotEmpty
         ? (docs.last['stressScore'] as num?)?.toDouble()
@@ -800,8 +858,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildBloodOxygenCard(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    final values = docs.map((d) => (d['avg'] as num?)?.toDouble() ?? 0.0).toList();
+  Widget _buildBloodOxygenCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
+    if (docs == null) return _buildAwaitingSync('Blood Oxygen');
+    final values = docs.map<double>((d) => (d['avg'] as num?)?.toDouble() ?? 0.0).toList();
     final latest = values.isNotEmpty ? values.last : 0.0;
 
     return _buildCardBase(
@@ -837,8 +896,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildActiveCaloriesCard(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    final values = docs.map((d) => (d['sum'] ?? d['avg'] as num? ?? 0).toDouble()).toList();
+  Widget _buildActiveCaloriesCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
+    if (docs == null) return _buildAwaitingSync('Active Calories');
+    final values = docs.map<double>((d) => ((d['sum'] ?? d['avg']) as num? ?? 0).toDouble()).toList();
     final total = values.fold(0.0, (a, b) => a + b);
     final latest = values.isNotEmpty ? values.last : 0.0;
 
@@ -999,7 +1059,7 @@ class AreaChartPainter extends CustomPainter {
     final maxVal = values.reduce(max).clamp(1.0, double.infinity);
 
     final fillPaint = Paint()
-      ..color = color.withOpacity(0.15)
+      ..color = color.withValues(alpha: 0.15)
       ..style = PaintingStyle.fill;
 
     final linePaint = Paint()

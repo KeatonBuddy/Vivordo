@@ -336,7 +336,7 @@ class _SignupScreenState extends State<SignupScreen> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
+              BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10),
             ],
           ),
           child: Column(
@@ -572,4 +572,33 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
         const SizedBox(height: 20),
         const Text(
-          "Thank
+          "Thank You!",
+          style: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF2D3142),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          "Your profile is all set up.\nLet's get started on your health journey.",
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 16, color: Colors.grey, height: 1.5),
+        ),
+        const SizedBox(height: 40),
+        ElevatedButton(
+          onPressed: () {
+            Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF7C69EF),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+          child: const Text("Go to Dashboard", style: TextStyle(fontSize: 16)),
+        ),
+      ],
+    );
+  }
+}
