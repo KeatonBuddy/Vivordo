@@ -230,4 +230,255 @@ class _PandaScreenState extends State<PandaScreen> {
                 'AI Assistant',
                 style: TextStyle(
                   fontSize: 28,
-                  fontWeight: FontWeigh
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Personalized insights & reflection',
+                style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.75)),
+              ),
+            ],
+          ),
+          GestureDetector(
+            onTap: _showPrivacyPopup,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.shield_outlined, color: Colors.white, size: 20),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageRow(_Message msg) {
+    final isAi = msg.role == _Role.ai;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: isAi ? MainAxisAlignment.start : MainAxisAlignment.end,
+        children: [
+          if (isAi) ...[
+            _buildAvatar(isAi: true),
+            const SizedBox(width: 10),
+          ],
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+              decoration: BoxDecoration(
+                color: isAi ? Colors.white : accentPurple,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(18),
+                  topRight: const Radius.circular(18),
+                  bottomLeft: Radius.circular(isAi ? 4 : 18),
+                  bottomRight: Radius.circular(isAi ? 18 : 4),
+                ),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2)),
+                ],
+              ),
+              child: Text(
+                msg.text,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isAi ? textDark : Colors.white,
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ),
+          if (!isAi) ...[
+            const SizedBox(width: 10),
+            _buildAvatar(isAi: false),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypingRow() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildAvatar(isAi: true),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(18),
+                topRight: Radius.circular(18),
+                bottomLeft: Radius.circular(4),
+                bottomRight: Radius.circular(18),
+              ),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: const TypingIndicator(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar({required bool isAi}) {
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: isAi ? accentPurple.withOpacity(0.1) : const Color(0xFFE5E5EA),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        isAi ? Icons.auto_awesome_rounded : Icons.person_rounded,
+        size: 16,
+        color: isAi ? accentPurple : const Color(0xFF8E8E93),
+      ),
+    );
+  }
+
+  Widget _buildQuickPrompts() {
+    const prompts = [
+      "How's my stress trend this week?",
+      "When should I schedule calls?",
+      "Any burnout risk?",
+      "Suggest a message for my partner",
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: prompts.map((p) => GestureDetector(
+          onTap: () => _sendMessage(p),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: accentPurple.withOpacity(0.25)),
+            ),
+            child: Text(
+              p,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: textDark),
+            ),
+          ),
+        )).toList(),
+      ),
+    );
+  }
+
+  Widget _buildInputBar() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(16, 10, 16, MediaQuery.of(context).padding.bottom + 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFE5E5EA), width: 1)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 44,
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: TextField(
+                controller: _inputController,
+                style: const TextStyle(fontSize: 14, color: textDark),
+                decoration: const InputDecoration(
+                  hintText: 'Ask about your stress, sleep, or availability...',
+                  hintStyle: TextStyle(fontSize: 13, color: textGrey),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+                onSubmitted: _sendMessage,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: () => _sendMessage(_inputController.text),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: accentPurple,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// --- TYPING INDICATOR ---
+
+class TypingIndicator extends StatefulWidget {
+  const TypingIndicator({super.key});
+
+  @override
+  State<TypingIndicator> createState() => _TypingIndicatorState();
+}
+
+class _TypingIndicatorState extends State<TypingIndicator> with TickerProviderStateMixin {
+  late List<AnimationController> _controllers;
+  late List<Animation<double>> _animations;
+
+  @override
+  void initState() {
+    super.initState();
+    _controllers = List.generate(
+      3,
+      (i) => AnimationController(vsync: this, duration: const Duration(milliseconds: 600))
+        ..repeat(reverse: true),
+    );
+    _animations = _controllers
+        .map((c) => Tween<double>(begin: 0.2, end: 1.0).animate(CurvedAnimation(parent: c, curve: Curves.easeInOut)))
+        .toList();
+    for (int i = 0; i < _controllers.length; i++) {
+      Timer(Duration(milliseconds: i * 180), () {
+        if (mounted) _controllers[i].forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    for (var c in _controllers) c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(3, (i) => FadeTransition(
+        opacity: _animations[i],
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 2.5),
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: Colors.grey.shade400, shape: BoxShape.circle),
+        ),
+      )),
+    );
+  }
+}

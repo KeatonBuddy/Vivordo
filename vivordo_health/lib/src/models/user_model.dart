@@ -65,4 +65,12 @@ class UserModel {
       'updatedAt': updatedAt,
       'photoUrl': photoUrl,
       'orgId': orgId,
-      'roles': r
+      'roles': roles,
+      'onboardingCompletedAt': onboardingCompletedAt,
+      'homeConfig': homeConfig,
+      'preferences': preferences,
+    };
+  }
+}
+
+
