@@ -46,11 +46,6 @@ class _GoalsScreenState extends State<GoalsScreen>
     );
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loadGoals();
-  }
 
   @override
   void dispose() {
