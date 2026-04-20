@@ -3,16 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
+import 'profile_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DashboardScreen
 //
-// UI: dev branch verbatim — "Metrics" title, summary row, _buildChartCard,
-//     _buildPatternCard, _AreaChart painter with smooth bezier + gradient.
+// Uses ONE combined Firestore listener for all metrics (instead of 9 separate
+// ones) to avoid Firestore's internal watch-stream assertion errors that occur
+// when too many concurrent listeners are open at the same time.
 //
-// Data: hardcoded _weekData removed. Every chart is driven by a Firestore
-//       stream on metrics_daily. HealthKit metrics are gated by the user's
-//       per-metric consent (HealthService.consentStream).
+// Consent is a second listener on the users/ doc (already open app-wide).
+// Total listeners: 2 instead of the previous ~13.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class DashboardScreen extends StatefulWidget {
@@ -24,28 +25,21 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   static const Color accentPurple = Color(0xFF7B6EF6);
-  static const Color greenColor = Color(0xFF34C759);
-  static const Color bgColor = Color(0xFFF2F2F7);
-  static const Color cardWhite = Colors.white;
-  static const Color textDark = Color(0xFF1C1C1E);
-  static const Color textGrey = Color(0xFF8E8E93);
+  static const Color greenColor  = Color(0xFF34C759);
+  static const Color bgColor     = Color(0xFFF2F2F7);
+  static const Color cardWhite   = Colors.white;
+  static const Color textDark    = Color(0xFF1C1C1E);
+  static const Color textGrey    = Color(0xFF8E8E93);
 
-  // 0 = last 1 day, 1 = last 7 days (default), 2 = last 30 days
+  // 0 = Day, 1 = Week (default), 2 = Month
   int _filterIndex = 1;
   static const _filterLabels = ['Day', 'Week', 'Month'];
-
   int get _daysBack => _filterIndex == 0 ? 1 : _filterIndex == 1 ? 7 : 30;
 
-  // Cached streams — rebuilt when filter changes
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _stressStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _moodStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _wellnessStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _heartRateStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _stepsStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _sleepStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _hrvStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _bloodOxygenStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _calsStream;
+  // ── ONE combined stream for all metrics_daily docs in the date window ──────
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _allMetricsStream;
+  // ── Separate consent stream (reads from users/ doc) ───────────────────────
+  late Stream<Map<String, bool>> _consentStream;
 
   @override
   void initState() {
@@ -54,44 +48,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _rebuildStreams() {
-    _stressStream      = _metricStream('stress');
-    _moodStream        = _metricStream('mood');
-    _wellnessStream    = _metricStream('wellness');
-    _heartRateStream   = _metricStream('heart_rate');
-    _stepsStream       = _metricStream('steps');
-    _sleepStream       = _metricStream('sleep');
-    _hrvStream         = _metricStream('hrv');
-    _bloodOxygenStream = _metricStream('blood_oxygen');
-    _calsStream        = _metricStream('active_calories');
+    _allMetricsStream = _buildCombinedStream();
+    _consentStream    = HealthService().consentStream();
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _metricStream(String type) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return const Stream.empty();
-    final now = DateTime.now();
+  /// Single Firestore query that fetches ALL metric types for the user in the
+  /// current date window. We split by metricType in Dart — no extra listeners.
+  Stream<QuerySnapshot<Map<String, dynamic>>> _buildCombinedStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
+    final now    = DateTime.now();
     final oldest = now.subtract(Duration(days: _daysBack - 1));
-    final fmt = (DateTime d) =>
+    final fmt    = (DateTime d) =>
         '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
     return FirebaseFirestore.instance
         .collection('metrics_daily')
-        .where('userId', isEqualTo: user.uid)
-        .where('metricType', isEqualTo: type)
+        .where('userId', isEqualTo: uid)
         .where('period', isGreaterThanOrEqualTo: fmt(oldest))
         .where('period', isLessThanOrEqualTo: fmt(now))
         .orderBy('period')
         .snapshots();
   }
 
-  // ── Helpers to extract chart data from Firestore docs ──────────────────────
+  // ── Per-metric helpers ─────────────────────────────────────────────────────
 
-  List<double> _vals(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs, String field) =>
+  /// Filter docs by metricType from the combined snapshot.
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _docsFor(
+    QuerySnapshot<Map<String, dynamic>>? snap,
+    String metricType,
+  ) {
+    if (snap == null) return [];
+    return snap.docs
+        .where((d) => d['metricType'] == metricType)
+        .toList()
+      ..sort((a, b) =>
+          (a['period'] as String).compareTo(b['period'] as String));
+  }
+
+  List<double> _vals(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String field,
+  ) =>
       docs.map((d) => (d[field] as num?)?.toDouble() ?? 0.0).toList();
 
-  List<String> _dayLabels(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) =>
+  List<String> _dayLabels(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) =>
       docs.map((d) {
-        final p = d['period'] as String? ?? '';
-        if (p.length < 10) return '';
-        final dt = DateTime.tryParse(p);
+        final p  = d['period'] as String? ?? '';
+        final dt = p.length >= 10 ? DateTime.tryParse(p) : null;
         if (dt == null) return '';
         const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
         return names[dt.weekday - 1];
@@ -102,8 +107,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _trend(List<double> vals) {
     if (vals.length < 2) return '';
-    final half = vals.length ~/ 2;
-    final old = _avg(vals.sublist(0, half));
+    final half   = vals.length ~/ 2;
+    final old    = _avg(vals.sublist(0, half));
     final recent = _avg(vals.sublist(half));
     if (old == 0) return '';
     final pct = ((recent - old) / old * 100).round();
@@ -124,7 +129,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 48),
-              // ── Title (from dev — unchanged)
               const Text(
                 'Metrics',
                 style: TextStyle(
@@ -140,79 +144,110 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 style: TextStyle(fontSize: 14, color: textGrey),
               ),
               const SizedBox(height: 16),
-
-              // ── Time filter
               _buildFilter(),
               const SizedBox(height: 20),
 
-              // ── Summary row: Avg Stress · Avg HRV · Avg Sleep ─────────────
-              _buildLiveSummaryRow(),
-              const SizedBox(height: 20),
-
-              // ── Manual metrics (always visible) ───────────────────────────
-              _liveChart(stream: _stressStream, title: 'Stress Levels',
-                  color: accentPurple, field: 'avg', maxY: 100),
-              const SizedBox(height: 16),
-              _liveChart(stream: _moodStream, title: 'Mood',
-                  color: const Color(0xFFF97316), field: 'avg', maxY: 100),
-              const SizedBox(height: 16),
-              _liveChart(stream: _wellnessStream, title: 'Wellness',
-                  color: Colors.teal, field: 'avg', maxY: 100),
-              const SizedBox(height: 16),
-
-              // ── HealthKit metrics — consent-gated ─────────────────────────
+              // ── Everything driven by the two cached streams ────────────────
               StreamBuilder<Map<String, bool>>(
-                stream: HealthService().consentStream(),
-                builder: (ctx, consentSnap) {
-                  final consent = consentSnap.data ?? {};
+                stream: _consentStream,
+                builder: (_, consentSnap) {
+                  final consent     = consentSnap.data ?? {};
                   final anyConsented = consent.values.any((v) => v);
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (consent['heart_rate'] == true) ...[
-                        _liveChart(stream: _heartRateStream,
-                            title: 'Heart Rate (bpm)',
-                            color: Colors.redAccent, field: 'avg', maxY: 200),
-                        const SizedBox(height: 16),
-                      ],
-                      if (consent['steps'] == true) ...[
-                        _liveChart(stream: _stepsStream,
-                            title: 'Daily Steps',
-                            color: Colors.blueAccent, field: 'sum', maxY: 20000),
-                        const SizedBox(height: 16),
-                      ],
-                      if (consent['sleep'] == true) ...[
-                        _liveChart(stream: _sleepStream,
-                            title: 'Sleep (hours)',
-                            color: const Color(0xFF8B5CF6), field: 'avg', maxY: 12),
-                        const SizedBox(height: 16),
-                      ],
-                      if (consent['hrv'] == true) ...[
-                        _liveChart(stream: _hrvStream,
-                            title: 'HRV (ms)',
-                            color: greenColor, field: 'avg', maxY: 120),
-                        const SizedBox(height: 16),
-                      ],
-                      if (consent['blood_oxygen'] == true) ...[
-                        _liveChart(stream: _bloodOxygenStream,
-                            title: 'Blood Oxygen SpO₂ (%)',
-                            color: const Color(0xFF06B6D4), field: 'avg', maxY: 100),
-                        const SizedBox(height: 16),
-                      ],
-                      if (consent['active_calories'] == true) ...[
-                        _liveChart(stream: _calsStream,
-                            title: 'Active Calories (kcal)',
-                            color: const Color(0xFFF97316), field: 'sum', maxY: 1000),
-                        const SizedBox(height: 16),
-                      ],
-                      if (!anyConsented) _buildConnectCard(),
-                    ],
+                  return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _allMetricsStream,
+                    builder: (_, metricsSnap) {
+                      final snap = metricsSnap.data;
+
+                      // ── Summary row ────────────────────────────────────────
+                      final stressVals = _vals(_docsFor(snap, 'stress'), 'avg');
+                      final hrvVals    = _vals(_docsFor(snap, 'hrv'),    'avg');
+                      final sleepVals  = _vals(_docsFor(snap, 'sleep'),  'avg');
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Summary cards
+                          Row(
+                            children: [
+                              Expanded(child: _buildStatCard(
+                                label: 'Avg Stress',
+                                value: stressVals.isEmpty ? '--' : _avg(stressVals).toInt().toString(),
+                                change: _trend(stressVals),
+                                trendUp: false,
+                              )),
+                              const SizedBox(width: 10),
+                              Expanded(child: _buildStatCard(
+                                label: 'Avg HRV',
+                                value: hrvVals.isEmpty ? '--' : '${_avg(hrvVals).toInt()}ms',
+                                change: _trend(hrvVals),
+                                trendUp: true,
+                              )),
+                              const SizedBox(width: 10),
+                              Expanded(child: _buildStatCard(
+                                label: 'Avg Sleep',
+                                value: sleepVals.isEmpty ? '--' : '${_avg(sleepVals).toStringAsFixed(1)}h',
+                                change: _trend(sleepVals),
+                                trendUp: true,
+                              )),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+
+                          // ── Manual metrics — shown only when data exists ────
+                          _maybeChart(snap, 'stress',  'Stress Levels',          accentPurple,                'avg', 100),
+                          _maybeChart(snap, 'mood',    'Mood',                   const Color(0xFFF97316),     'avg', 100),
+                          _maybeChart(snap, 'wellness','Wellness',               Colors.teal,                 'avg', 100),
+
+                          // ── HealthKit metrics — consent-gated ───────────────
+                          // Activity
+                          if (consent['steps']              == true)
+                            _maybeChart(snap, 'steps',              'Daily Steps',                  Colors.blueAccent,           'sum',  20000),
+                          if (consent['active_calories']    == true)
+                            _maybeChart(snap, 'active_calories',    'Active Calories (kcal)',       const Color(0xFFF97316),     'sum',  1000),
+                          if (consent['exercise_time']      == true)
+                            _maybeChart(snap, 'exercise_time',      'Exercise Time (min)',          const Color(0xFFFF9500),     'sum',  120),
+                          if (consent['distance']           == true)
+                            _maybeChart(snap, 'distance',           'Distance (km)',                const Color(0xFF3B82F6),     'sum',  20),
+                          if (consent['flights_climbed']    == true)
+                            _maybeChart(snap, 'flights_climbed',    'Flights Climbed',              const Color(0xFF14B8A6),     'sum',  30),
+                          // Heart
+                          if (consent['heart_rate']         == true)
+                            _maybeChart(snap, 'heart_rate',         'Heart Rate (bpm)',             Colors.redAccent,            'avg',  200),
+                          if (consent['resting_heart_rate'] == true)
+                            _maybeChart(snap, 'resting_heart_rate', 'Resting Heart Rate (bpm)',     const Color(0xFFFF6B6B),     'avg',  120),
+                          if (consent['hrv']                == true)
+                            _maybeChart(snap, 'hrv',                'HRV (ms)',                     greenColor,                  'avg',  120),
+                          // Breathing / Vitals
+                          if (consent['blood_oxygen']       == true)
+                            _maybeChart(snap, 'blood_oxygen',       'Blood Oxygen SpO₂ (%)',        const Color(0xFF06B6D4),     'avg',  100),
+                          if (consent['respiratory_rate']   == true)
+                            _maybeChart(snap, 'respiratory_rate',   'Respiratory Rate (brpm)',      const Color(0xFF0EA5E9),     'avg',  30),
+                          // Sleep
+                          if (consent['sleep']              == true)
+                            _maybeChart(snap, 'sleep',              'Sleep (hours)',                const Color(0xFF8B5CF6),     'avg',  12),
+                          // Body
+                          if (consent['weight']             == true)
+                            _maybeChart(snap, 'weight',             'Weight (kg)',                  const Color(0xFFA78BFA),     'avg',  0),
+                          if (consent['body_fat']           == true)
+                            _maybeChart(snap, 'body_fat',           'Body Fat (%)',                 const Color(0xFFFBBF24),     'avg',  50),
+                          // Mind
+                          if (consent['mindfulness']        == true)
+                            _maybeChart(snap, 'mindfulness',        'Mindfulness (min)',            const Color(0xFF7C3AED),     'sum',  60),
+                          // Fitness
+                          if (consent['vo2max']             == true)
+                            _maybeChart(snap, 'vo2max',             'VO₂ Max (ml/kg/min)',          greenColor,                  'avg',  70),
+
+                          // ── Apple Health CTA when nothing is consented ──────
+                          if (!anyConsented) _buildConnectCard(),
+
+                          const SizedBox(height: 120),
+                        ],
+                      );
+                    },
                   );
                 },
               ),
-
-              const SizedBox(height: 120),
             ],
           ),
         ),
@@ -220,7 +255,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ── Time filter chips ──────────────────────────────────────────────────────
+  /// Returns a chart card if the metric has data, otherwise SizedBox.shrink().
+  Widget _maybeChart(
+    QuerySnapshot<Map<String, dynamic>>? snap,
+    String metricType,
+    String title,
+    Color color,
+    String field,
+    double maxY,
+  ) {
+    final docs   = _docsFor(snap, metricType);
+    final values = _vals(docs, field);
+    final labels = _dayLabels(docs);
+    if (values.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: _buildChartCard(
+        title: title,
+        color: color,
+        values: values,
+        maxY: maxY > 0
+            ? maxY
+            : (values.reduce((a, b) => a > b ? a : b) * 1.2)
+                .clamp(1, double.infinity),
+        labels: labels,
+      ),
+    );
+  }
+
+  // ── Filter chips ───────────────────────────────────────────────────────────
 
   Widget _buildFilter() {
     return Row(
@@ -237,7 +300,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               duration: const Duration(milliseconds: 250),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
               decoration: BoxDecoration(
-                color: active ? accentPurple : cardWhite,
+                color:  active ? accentPurple : cardWhite,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: active ? accentPurple : const Color(0xFFE5E5EA),
@@ -255,157 +318,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         );
       }),
-    );
-  }
-
-  // ── Live summary row (Avg Stress · Avg HRV · Avg Sleep) ───────────────────
-
-  Widget _buildLiveSummaryRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _stressStream,
-            builder: (_, s) {
-              final vals = _vals(s.data?.docs ?? [], 'avg');
-              return _buildStatCard(
-                label: 'Avg Stress',
-                value: vals.isEmpty ? '--' : _avg(vals).toInt().toString(),
-                change: _trend(vals),
-                trendUp: false,
-              );
-            },
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _hrvStream,
-            builder: (_, s) {
-              final vals = _vals(s.data?.docs ?? [], 'avg');
-              return _buildStatCard(
-                label: 'Avg HRV',
-                value: vals.isEmpty ? '--' : '${_avg(vals).toInt()}ms',
-                change: _trend(vals),
-                trendUp: true,
-              );
-            },
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _sleepStream,
-            builder: (_, s) {
-              final vals = _vals(s.data?.docs ?? [], 'avg');
-              return _buildStatCard(
-                label: 'Avg Sleep',
-                value: vals.isEmpty ? '--' : '${_avg(vals).toStringAsFixed(1)}h',
-                change: _trend(vals),
-                trendUp: true,
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Live chart — wraps _buildChartCard with a StreamBuilder ───────────────
-
-  Widget _liveChart({
-    required Stream<QuerySnapshot<Map<String, dynamic>>> stream,
-    required String title,
-    required Color color,
-    required String field,
-    required double maxY,
-  }) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: stream,
-      builder: (ctx, snap) {
-        final docs = snap.data?.docs ?? [];
-        final values = _vals(docs, field);
-        final labels = _dayLabels(docs);
-
-        if (values.isEmpty) {
-          return _buildEmptyChartCard(title: title, color: color);
-        }
-
-        return _buildChartCard(
-          title: title,
-          color: color,
-          values: values,
-          maxY: maxY > 0 ? maxY : (values.reduce((a, b) => a > b ? a : b) * 1.2).clamp(1, double.infinity),
-          labels: labels,
-        );
-      },
-    );
-  }
-
-  // ── "Connect Apple Health" placeholder ────────────────────────────────────
-
-  Widget _buildConnectCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: cardWhite,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
-      ),
-      child: const Column(
-        children: [
-          Icon(Icons.health_and_safety_outlined, size: 36, color: Color(0xFF7B6EF6)),
-          SizedBox(height: 12),
-          Text(
-            'Apple Health not connected',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: textDark),
-          ),
-          SizedBox(height: 6),
-          Text(
-            'Go to Profile → Health Data Permissions to enable metrics.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: textGrey, height: 1.5),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Empty state for a chart with no data yet ──────────────────────────────
-
-  Widget _buildEmptyChartCard({required String title, required Color color}) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-      decoration: BoxDecoration(
-        color: cardWhite,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 36,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600, color: textDark)),
-              const SizedBox(height: 4),
-              const Text('Awaiting sync from Apple Health…',
-                  style: TextStyle(fontSize: 12, color: textGrey)),
-            ],
-          ),
-        ],
-      ),
     );
   }
 
@@ -451,7 +363,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  trendUp ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+                  trendUp
+                      ? Icons.trending_up_rounded
+                      : Icons.trending_down_rounded,
                   size: 13,
                   color: greenColor,
                 ),
@@ -471,7 +385,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // _buildChartCard from dev — unchanged except labels param added
+  Widget _buildConnectCard() {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: cardWhite,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE5E5EA)),
+        ),
+        child: Column(
+          children: [
+            const Icon(Icons.health_and_safety_outlined,
+                size: 36, color: Color(0xFF7B6EF6)),
+            const SizedBox(height: 12),
+            const Text(
+              'Apple Health not connected',
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: textDark),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Tap to go to Profile → Health Data Permissions',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: textGrey, height: 1.5),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: accentPurple,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'Enable Health Data',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildChartCard({
     required String title,
     required Color color,
@@ -583,7 +550,6 @@ class _AreaChartState extends State<_AreaChart>
   }
 }
 
-// _AreaChartPainter — from dev, unchanged
 class _AreaChartPainter extends CustomPainter {
   final List<double> values;
   final double maxY;
@@ -592,7 +558,7 @@ class _AreaChartPainter extends CustomPainter {
   final double progress;
 
   static const double labelHeight = 22;
-  static const double leftPad = 36;
+  static const double leftPad     = 36;
 
   _AreaChartPainter({
     required this.values,
@@ -614,11 +580,11 @@ class _AreaChartPainter extends CustomPainter {
     const gridLines = 4;
     for (int i = 0; i <= gridLines; i++) {
       final y = chartH * i / gridLines;
-      canvas.drawLine(Offset(leftPad, y), Offset(size.width, y), gridPaint);
-      final yVal = (maxY * (1 - i / gridLines)).round();
+      canvas.drawLine(
+          Offset(leftPad, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
         text: TextSpan(
-          text: '$yVal',
+          text: '${(maxY * (1 - i / gridLines)).round()}',
           style: TextStyle(fontSize: 9, color: Colors.grey.shade400),
         ),
         textDirection: TextDirection.ltr,
@@ -629,60 +595,72 @@ class _AreaChartPainter extends CustomPainter {
     if (values.isEmpty) return;
 
     final n = values.length;
-    final List<Offset> pts = List.generate(n, (i) {
-      final x = n == 1 ? leftPad + chartW / 2 : leftPad + chartW * i / (n - 1);
-      final y = chartH * (1 - (values[i] / maxY).clamp(0, 1));
+    final pts = List.generate(n, (i) {
+      final x = n == 1
+          ? leftPad + chartW / 2
+          : leftPad + chartW * i / (n - 1);
+      final y = chartH * (1 - (values[i] / maxY).clamp(0.0, 1.0));
       return Offset(x, y);
     });
 
-    final linePath = _smoothPath(pts);
+    final linePath    = _smoothPath(pts);
     final pathMetrics = linePath.computeMetrics().toList();
     if (pathMetrics.isEmpty) return;
-    final animatedLine =
-        pathMetrics.first.extractPath(0, pathMetrics.first.length * progress);
+    final animatedLine = pathMetrics.first
+        .extractPath(0, pathMetrics.first.length * progress);
 
     // Gradient fill
     final fillPath = Path.from(animatedLine)
       ..lineTo(pts.last.dx, chartH)
       ..lineTo(leftPad, chartH)
       ..close();
-    final gradientPaint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset.zero,
-        Offset(0, chartH),
-        [color.withValues(alpha: 0.28), color.withValues(alpha: 0.0)],
-      )
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(fillPath, gradientPaint);
+    canvas.drawPath(
+      fillPath,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset.zero,
+          Offset(0, chartH),
+          [color.withValues(alpha: 0.28), color.withValues(alpha: 0.0)],
+        )
+        ..style = PaintingStyle.fill,
+    );
 
     // Stroke
-    final linePaint = Paint()
-      ..color = color
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(animatedLine, linePaint);
+    canvas.drawPath(
+      animatedLine,
+      Paint()
+        ..color = color
+        ..strokeWidth = 2.5
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
 
     // X-axis labels
     if (labels.length == n) {
-      final labelStyle = TextStyle(fontSize: 10, color: Colors.grey.shade500);
+      final labelStyle =
+          TextStyle(fontSize: 10, color: Colors.grey.shade500);
       for (int i = 0; i < n; i++) {
         final tp = TextPainter(
           text: TextSpan(text: labels[i], style: labelStyle),
           textDirection: TextDirection.ltr,
         )..layout();
-        tp.paint(canvas, Offset(pts[i].dx - tp.width / 2, chartH + 6));
+        tp.paint(canvas,
+            Offset(pts[i].dx - tp.width / 2, chartH + 6));
       }
     }
   }
 
   Path _smoothPath(List<Offset> pts) {
-    if (pts.length == 1) return Path()..moveTo(pts[0].dx, pts[0].dy);
+    if (pts.length == 1) {
+      return Path()..moveTo(pts[0].dx, pts[0].dy);
+    }
     final path = Path()..moveTo(pts[0].dx, pts[0].dy);
     for (int i = 0; i < pts.length - 1; i++) {
-      final cp1 = Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i].dy);
-      final cp2 = Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i + 1].dy);
+      final cp1 =
+          Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i].dy);
+      final cp2 =
+          Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i + 1].dy);
       path.cubicTo(
           cp1.dx, cp1.dy, cp2.dx, cp2.dy, pts[i + 1].dx, pts[i + 1].dy);
     }
@@ -690,5 +668,6 @@ class _AreaChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_AreaChartPainter old) => old.progress != progress;
+  bool shouldRepaint(_AreaChartPainter old) =>
+      old.progress != progress || old.values != values;
 }

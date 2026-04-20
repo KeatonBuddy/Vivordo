@@ -14,7 +14,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final double stressScore = 42;
   String _currentMood = 'Good';
   bool _messageCopied = false;
 
@@ -199,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildHeader(),
               const SizedBox(height: 24),
-              _buildStressCard(),
+              _buildStressCard(stressScore),
               const SizedBox(height: 28),
               _buildSectionTitle('QUICK ACTIONS'),
               const SizedBox(height: 12),
@@ -299,7 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildStressCard() {
+  Widget _buildStressCard(double stressScore) {
     final statusColor = _getStressColor(stressScore);
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),

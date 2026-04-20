@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,7 +7,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
-import 'package:vivordo_health/src/models/user_model.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/home_screen.dart';
@@ -23,30 +22,15 @@ void main() async {
   await NotificationService().initialize();
 
   runApp(
-    MultiProvider(
-      providers: [
-        StreamProvider<User?>(
-          create: (_) => FirebaseAuth.instance.authStateChanges(),
-          initialData: null,
-        ),
-        StreamProvider<UserModel?>(
-          create: (context) {
-            final user = context.read<User?>();
-            if (user == null) return Stream.value(null);
-            return FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .snapshots()
-                .map((doc) {
-                  final data = doc.data();
-                  if (data == null) return null;
-                  return UserModel.fromMap(data, doc.id);
-                });
-          },
-          initialData: null,
-        ),
-      ],
-      child: MyApp(),
+    // Only one provider: the auth state stream.
+    // UserModel data is loaded per-screen (profile) or via HealthService
+    // (consent). A second StreamProvider<UserModel?> reading User? at creation
+    // time always got null (initialData) and created a broken/wasted Firestore
+    // listener — removed to reduce concurrent listener count.
+    StreamProvider<User?>(
+      create: (_) => FirebaseAuth.instance.authStateChanges(),
+      initialData: null,
+      child: const MyApp(),
     ),
   );
 }
@@ -60,7 +44,6 @@ class MyApp extends StatelessWidget {
       navigatorKey: navigatorKey,
       title: 'Vivordo Health',
       debugShowCheckedModeBanner: false,
-      // Global Theme Definition
       theme: ThemeData(
         primaryColor: const Color(0xFF857DEA),
         scaffoldBackgroundColor: const Color(0xFFFBFaff),
@@ -70,7 +53,6 @@ class MyApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      // Route Definitions
       initialRoute: '/',
       routes: {
         '/': (context) => const AuthGate(),
@@ -82,7 +64,8 @@ class MyApp extends StatelessWidget {
 }
 
 /// AuthGate watches the auth state and routes accordingly.
-/// When a user logs in, it also triggers a HealthKit sync for the last 30 days.
+/// On login it triggers a full 30-day HealthKit sync.
+/// While logged in it syncs today's data every 3 minutes.
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
@@ -92,25 +75,32 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   String? _lastSyncedUid;
+  Timer? _syncTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Sync HealthKit data every 3 minutes while the app is open.
+    _syncTimer = Timer.periodic(const Duration(minutes: 3), (_) {
+      if (FirebaseAuth.instance.currentUser != null) {
+        HealthService().syncToday();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _syncTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  /// Sync today's data whenever app comes back to foreground.
+  /// Sync today's data whenever the app comes back to the foreground.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid != null) {
+      if (FirebaseAuth.instance.currentUser != null) {
         HealthService().syncToday();
       }
     }
@@ -128,7 +118,9 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     final user = context.watch<User?>();
 
     if (user == null) {
-      _lastSyncedUid = null; // reset so next login triggers sync
+      _lastSyncedUid = null;
+      // Clear the cached consent broadcast so the next login gets a fresh stream
+      HealthService().clearConsentCache();
       return const LoginScreen();
     }
 

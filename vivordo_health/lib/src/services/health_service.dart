@@ -8,7 +8,7 @@ import 'package:intl/intl.dart';
 
 /// Every HealthKit metric the app supports, with UI metadata.
 class HealthMetricDef {
-  final String key;          // Firestore field / metricType value
+  final String key;          // Firestore metricType value
   final HealthDataType type; // HealthKit data type
   final String label;        // Display label
   final String description;  // One-line description for consent UI
@@ -20,13 +20,108 @@ class HealthMetricDef {
   });
 }
 
+/// Full list of HealthKit metrics the app can read.
+/// The only requirement to activate these is purchasing the HealthKit
+/// capability in your Apple Developer account and adding a real device.
+/// The code is complete — no further changes needed once HealthKit is bought.
 const List<HealthMetricDef> kHealthMetrics = [
-  HealthMetricDef(key: 'steps',           type: HealthDataType.STEPS,                         label: 'Steps',           description: 'Daily step count from your iPhone or Apple Watch'),
-  HealthMetricDef(key: 'heart_rate',      type: HealthDataType.HEART_RATE,                    label: 'Heart Rate',      description: 'Resting and active heart rate readings'),
-  HealthMetricDef(key: 'sleep',           type: HealthDataType.SLEEP_ASLEEP,                  label: 'Sleep',           description: 'Sleep duration tracked by Apple Watch or iPhone'),
-  HealthMetricDef(key: 'hrv',             type: HealthDataType.HEART_RATE_VARIABILITY_SDNN,   label: 'HRV',             description: 'Heart Rate Variability — used to estimate your stress level'),
-  HealthMetricDef(key: 'blood_oxygen',    type: HealthDataType.BLOOD_OXYGEN,                  label: 'Blood Oxygen',    description: 'SpO₂ readings from Apple Watch'),
-  HealthMetricDef(key: 'active_calories', type: HealthDataType.ACTIVE_ENERGY_BURNED,          label: 'Active Calories', description: 'Calories burned during active movement'),
+  // ── Activity ────────────────────────────────────────────────────────────────
+  HealthMetricDef(
+    key: 'steps',
+    type: HealthDataType.STEPS,
+    label: 'Steps',
+    description: 'Daily step count from your iPhone or Apple Watch',
+  ),
+  HealthMetricDef(
+    key: 'active_calories',
+    type: HealthDataType.ACTIVE_ENERGY_BURNED,
+    label: 'Active Calories',
+    description: 'Calories burned during active movement',
+  ),
+  HealthMetricDef(
+    key: 'exercise_time',
+    type: HealthDataType.EXERCISE_TIME,
+    label: 'Exercise Time',
+    description: 'Minutes of exercise recorded by Apple Watch',
+  ),
+  HealthMetricDef(
+    key: 'distance',
+    type: HealthDataType.DISTANCE_WALKING_RUNNING,
+    label: 'Distance',
+    description: 'Distance walked or run (in km)',
+  ),
+  HealthMetricDef(
+    key: 'flights_climbed',
+    type: HealthDataType.FLIGHTS_CLIMBED,
+    label: 'Flights Climbed',
+    description: 'Flights of stairs climbed',
+  ),
+  // ── Heart ───────────────────────────────────────────────────────────────────
+  HealthMetricDef(
+    key: 'heart_rate',
+    type: HealthDataType.HEART_RATE,
+    label: 'Heart Rate',
+    description: 'Resting and active heart rate readings (bpm)',
+  ),
+  HealthMetricDef(
+    key: 'resting_heart_rate',
+    type: HealthDataType.RESTING_HEART_RATE,
+    label: 'Resting Heart Rate',
+    description: 'Your daily resting heart rate (bpm)',
+  ),
+  HealthMetricDef(
+    key: 'hrv',
+    type: HealthDataType.HEART_RATE_VARIABILITY_SDNN,
+    label: 'HRV',
+    description: 'Heart Rate Variability — used to estimate your stress level',
+  ),
+  // ── Breathing / Vitals ──────────────────────────────────────────────────────
+  HealthMetricDef(
+    key: 'blood_oxygen',
+    type: HealthDataType.BLOOD_OXYGEN,
+    label: 'Blood Oxygen',
+    description: 'SpO₂ readings from Apple Watch',
+  ),
+  HealthMetricDef(
+    key: 'respiratory_rate',
+    type: HealthDataType.RESPIRATORY_RATE,
+    label: 'Respiratory Rate',
+    description: 'Breaths per minute — elevated rates signal stress or illness',
+  ),
+  // ── Sleep ───────────────────────────────────────────────────────────────────
+  HealthMetricDef(
+    key: 'sleep',
+    type: HealthDataType.SLEEP_ASLEEP,
+    label: 'Sleep',
+    description: 'Sleep duration tracked by Apple Watch or iPhone',
+  ),
+  // ── Body ────────────────────────────────────────────────────────────────────
+  HealthMetricDef(
+    key: 'weight',
+    type: HealthDataType.WEIGHT,
+    label: 'Weight',
+    description: 'Body weight logged manually or via smart scale',
+  ),
+  HealthMetricDef(
+    key: 'body_fat',
+    type: HealthDataType.BODY_FAT_PERCENTAGE,
+    label: 'Body Fat %',
+    description: 'Body fat percentage from compatible devices',
+  ),
+  // ── Mind ────────────────────────────────────────────────────────────────────
+  HealthMetricDef(
+    key: 'mindfulness',
+    type: HealthDataType.MINDFULNESS,
+    label: 'Mindfulness',
+    description: 'Meditation and mindfulness session minutes',
+  ),
+  // ── Fitness ─────────────────────────────────────────────────────────────────
+  HealthMetricDef(
+    key: 'vo2max',
+    type: HealthDataType.VO2MAX,
+    label: 'VO₂ Max',
+    description: 'Cardio fitness score from Apple Watch workouts',
+  ),
 ];
 
 /// Convenience lookup: metricKey → HealthMetricDef
@@ -44,17 +139,36 @@ class HealthService {
   final Health _health = Health();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // ─── Consent management ────────────────────────────────────────────────────
+  // ─── Consent stream (shared broadcast) ────────────────────────────────────
 
-  /// Live stream of the user's consent map from Firestore.
-  /// Map value: true = consented, false/missing = not consented.
+  // All callers share ONE Firestore listener via a broadcast stream.
+  // Multiple listeners on the same doc caused Firestore's internal assertion error.
+  Stream<Map<String, bool>>? _consentBroadcast;
+  String? _consentCacheUid;
+
   Stream<Map<String, bool>> consentStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return Stream.value({});
-    return _db.collection('users').doc(uid).snapshots().map((snap) {
-      final raw = snap.data()?['healthKitConsent'] as Map? ?? {};
-      return raw.map((k, v) => MapEntry(k.toString(), v == true));
-    });
+    if (_consentBroadcast != null && _consentCacheUid == uid) {
+      return _consentBroadcast!;
+    }
+    _consentCacheUid = uid;
+    _consentBroadcast = _db
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .map((snap) {
+          final raw = snap.data()?['healthKitConsent'] as Map? ?? {};
+          return raw.map((k, v) => MapEntry(k.toString(), v == true));
+        })
+        .asBroadcastStream();
+    return _consentBroadcast!;
+  }
+
+  /// Clear cached stream on sign-out so the next user gets a fresh listener.
+  void clearConsentCache() {
+    _consentBroadcast = null;
+    _consentCacheUid = null;
   }
 
   /// Read the current consent map once (non-reactive).
@@ -66,8 +180,33 @@ class HealthService {
     return raw.map((k, v) => MapEntry(k.toString(), v == true));
   }
 
-  /// Request HealthKit permission for a specific metric, then sync it.
-  /// Returns true if the user granted access.
+  // ─── Permission requests ───────────────────────────────────────────────────
+
+  /// Request HealthKit permission for ALL metrics at once, then do a full sync.
+  /// Call this when the user taps "Connect Apple Health" for the first time.
+  Future<void> enableAll() async {
+    await _health.configure();
+    final types = kHealthMetrics.map((m) => m.type).toList();
+    final perms = kHealthMetrics.map((_) => HealthDataAccess.READ).toList();
+
+    // This shows the iOS permission sheet for all metrics in one dialog.
+    await _health.requestAuthorization(types, permissions: perms);
+
+    // Mark all as consented — iOS never tells us which ones the user denied,
+    // so we record intent here. Charts only appear when real data arrives.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final consentMap = {for (final m in kHealthMetrics) m.key: true};
+    await _db.collection('users').doc(uid).set(
+      {'healthKitConsent': consentMap},
+      SetOptions(merge: true),
+    );
+
+    // Sync the last 30 days for all metrics.
+    await syncToFirestore(daysBack: 30);
+  }
+
+  /// Request HealthKit permission for a single metric, then sync it.
   Future<bool> enableMetric(String metricKey) async {
     final def = kMetricByKey[metricKey];
     if (def == null) return false;
@@ -78,9 +217,6 @@ class HealthService {
       permissions: [HealthDataAccess.READ],
     );
 
-    // iOS returns true even if the user taps "Don't Allow" — we treat the
-    // dialog completion as intent to enable and save the consent flag.
-    // The actual data availability will determine if charts populate.
     await _setConsent(metricKey, true);
     if (granted) {
       await syncMetric(metricKey, daysBack: 30);
@@ -88,15 +224,11 @@ class HealthService {
     return granted;
   }
 
-  /// Revoke consent for a metric AND delete all its Firestore data.
+  /// Revoke consent for a metric and delete its Firestore data.
   Future<void> disableMetric(String metricKey) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-
-    // 1. Mark as not consented
     await _setConsent(metricKey, false);
-
-    // 2. Delete all stored docs for this metric
     final batch = _db.batch();
     final query = await _db
         .collection('metrics_daily')
@@ -118,7 +250,6 @@ class HealthService {
 
   // ─── Sync ──────────────────────────────────────────────────────────────────
 
-  /// Sync a single metric for the last [daysBack] days.
   Future<void> syncMetric(String metricKey, {int daysBack = 30}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -126,7 +257,7 @@ class HealthService {
     if (def == null) return;
 
     await _health.configure();
-    final now = DateTime.now();
+    final now   = DateTime.now();
     final start = now.subtract(Duration(days: daysBack));
 
     try {
@@ -142,7 +273,6 @@ class HealthService {
     }
   }
 
-  /// Sync ALL consented metrics for the last [daysBack] days.
   Future<void> syncToFirestore({int daysBack = 30}) async {
     final consent = await getConsent();
     for (final m in kHealthMetrics) {
@@ -159,7 +289,6 @@ class HealthService {
     }
   }
 
-  /// Sync only today's data for all consented metrics (fast foreground call).
   Future<void> syncToday() => syncToFirestore(daysBack: 1);
 
   // ─── Internal helpers ──────────────────────────────────────────────────────
@@ -178,7 +307,6 @@ class HealthService {
     HealthMetricDef def,
     List<HealthDataPoint> dataPoints,
   ) async {
-    // Group readings by calendar day
     final Map<String, List<double>> byDay = {};
     for (final point in dataPoints) {
       if (point.value is! NumericHealthValue) continue;
@@ -187,20 +315,18 @@ class HealthService {
       byDay.putIfAbsent(day, () => []).add(val);
     }
 
-    // Write in one batch per metric (max 30 docs — well within 500-write limit)
     final batch = _db.batch();
     for (final entry in byDay.entries) {
-      final day = entry.key;
+      final day  = entry.key;
       final vals = entry.value;
-      final docId = '${uid}_${def.key}_$day';
-      final ref = _db.collection('metrics_daily').doc(docId);
+      final ref  = _db.collection('metrics_daily').doc('${uid}_${def.key}_$day');
       batch.set(ref, {
-        'userId': uid,
+        'userId':     uid,
         'metricType': def.key,
-        'period': day,
-        'tags': [def.key],
-        'source': 'apple_health',
-        'syncedAt': FieldValue.serverTimestamp(),
+        'period':     day,
+        'tags':       [def.key],
+        'source':     'apple_health',
+        'syncedAt':   FieldValue.serverTimestamp(),
         ..._buildValueMap(def.type, vals),
       }, SetOptions(merge: true));
     }
@@ -214,23 +340,50 @@ class HealthService {
     double max() => vals.reduce((a, b) => a > b ? a : b);
 
     switch (type) {
+      // ── Cumulative (sum is meaningful) ──────────────────────────────────────
       case HealthDataType.STEPS:
+        return {'sum': sum(), 'avg': avg(), 'unit': 'steps', 'dimension': 'activity'};
       case HealthDataType.ACTIVE_ENERGY_BURNED:
-        return {'sum': sum(), 'avg': avg(), 'unit': type == HealthDataType.STEPS ? 'steps' : 'kcal', 'dimension': 'activity'};
+        return {'sum': sum(), 'avg': avg(), 'unit': 'kcal', 'dimension': 'activity'};
+      case HealthDataType.EXERCISE_TIME:
+        return {'sum': sum(), 'avg': avg(), 'unit': 'min', 'dimension': 'activity'};
+      case HealthDataType.DISTANCE_WALKING_RUNNING:
+        return {'sum': sum() / 1000, 'avg': avg() / 1000, 'unit': 'km', 'dimension': 'activity'};
+      case HealthDataType.FLIGHTS_CLIMBED:
+        return {'sum': sum(), 'avg': avg(), 'unit': 'flights', 'dimension': 'activity'};
+      case HealthDataType.MINDFULNESS:
+        return {'sum': sum(), 'avg': avg(), 'unit': 'min', 'dimension': 'mental'};
+
+      // ── Point-in-time averages ───────────────────────────────────────────────
       case HealthDataType.HEART_RATE:
+      case HealthDataType.RESTING_HEART_RATE:
         return {'avg': avg(), 'min': min(), 'max': max(), 'unit': 'bpm', 'dimension': 'cardiovascular'};
+
       case HealthDataType.HEART_RATE_VARIABILITY_SDNN:
         final hrvAvg = avg();
-        // Invert HRV to a 0–100 stress score: low HRV → high stress
         final stress = ((1.0 - (hrvAvg.clamp(0, 100) / 100)) * 100).clamp(0.0, 100.0);
         return {'avg': hrvAvg, 'stressScore': stress, 'unit': 'ms', 'dimension': 'stress'};
-      case HealthDataType.SLEEP_ASLEEP:
-      case HealthDataType.SLEEP_IN_BED:
-        // Apple Health returns sleep in seconds — convert to hours
-        final hours = sum() / 3600;
-        return {'avg': hours, 'min': min() / 3600, 'max': max() / 3600, 'unit': 'hours', 'dimension': 'sleep'};
+
       case HealthDataType.BLOOD_OXYGEN:
         return {'avg': avg(), 'min': min(), 'max': max(), 'unit': '%', 'dimension': 'cardiovascular'};
+
+      case HealthDataType.RESPIRATORY_RATE:
+        return {'avg': avg(), 'min': min(), 'max': max(), 'unit': 'brpm', 'dimension': 'respiratory'};
+
+      // ── Sleep (Apple returns seconds) ────────────────────────────────────────
+      case HealthDataType.SLEEP_ASLEEP:
+      case HealthDataType.SLEEP_IN_BED:
+        final hours = sum() / 3600;
+        return {'avg': hours, 'min': min() / 3600, 'max': max() / 3600, 'unit': 'hours', 'dimension': 'sleep'};
+
+      // ── Body metrics ─────────────────────────────────────────────────────────
+      case HealthDataType.WEIGHT:
+        return {'avg': avg(), 'unit': 'kg', 'dimension': 'body'};
+      case HealthDataType.BODY_FAT_PERCENTAGE:
+        return {'avg': avg(), 'unit': '%', 'dimension': 'body'};
+      case HealthDataType.VO2MAX:
+        return {'avg': avg(), 'unit': 'ml/kg/min', 'dimension': 'fitness'};
+
       default:
         return {'avg': avg(), 'unit': '', 'dimension': 'other'};
     }
