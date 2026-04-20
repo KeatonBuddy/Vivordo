@@ -1,816 +1,320 @@
+﻿import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'dart:ui';
-import 'dart:math';
-import 'package:visibility_detector/visibility_detector.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:vivordo_health/src/services/health_service.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DashboardScreen
-//
-// UI structure: taken verbatim from dev branch.
-// Data: hardcoded values replaced with real Firestore streams (metrics_daily).
-// HealthKit metrics (steps, heart_rate, sleep, hrv, blood_oxygen,
-// active_calories) are gated behind the user's per-metric consent stored in
-// Firestore via HealthService. Manual metrics (stress, mood, wellness) are
-// always visible.
-// ─────────────────────────────────────────────────────────────────────────────
+// --- DATA ---
 
-class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
-
-  @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
+class _WeekPoint {
+  final String day;
+  final double stress;
+  final double hrv;
+  const _WeekPoint(this.day, this.stress, this.hrv);
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
-  int _selectedTimeFilter = 1; // 0 = Daily, 1 = Weekly, 2 = Monthly
-  static const Color primaryPurple = Color(0xFF7B6EF6);
-  static const Color bgPurple = Color(0xFFFBFAFF);
+const _weekData = [
+  _WeekPoint('Mon', 65, 38),
+  _WeekPoint('Tue', 72, 34),
+  _WeekPoint('Wed', 58, 42),
+  _WeekPoint('Thu', 45, 48),
+  _WeekPoint('Fri', 52, 45),
+  _WeekPoint('Sat', 30, 55),
+  _WeekPoint('Sun', 42, 52),
+];
 
-  // ── Cached streams — rebuilt when filter changes ───────────────────────────
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _heartRateStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _stepsStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _sleepStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _stressStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _moodStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _wellnessStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _hrvStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _bloodOxygenStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _activeCaloriesStream;
+// --- SCREEN ---
 
-  @override
-  void initState() {
-    super.initState();
-    _refreshStreams();
-  }
+class DashboardScreen extends StatelessWidget {
+  const DashboardScreen({super.key});
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
-  int get _daysBack =>
-      _selectedTimeFilter == 0 ? 1 : _selectedTimeFilter == 1 ? 7 : 30;
-
-  List<String> get _periods {
-    final now = DateTime.now();
-    return List.generate(_daysBack, (i) {
-      final d = now.subtract(Duration(days: i));
-      return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-    });
-  }
-
-  void _refreshStreams() {
-    _heartRateStream = _metricStream('heart_rate');
-    _stepsStream = _metricStream('steps');
-    _sleepStream = _metricStream('sleep');
-    _stressStream = _metricStream('stress');
-    _moodStream = _metricStream('mood');
-    _wellnessStream = _metricStream('wellness');
-    _hrvStream = _metricStream('hrv');
-    _bloodOxygenStream = _metricStream('blood_oxygen');
-    _activeCaloriesStream = _metricStream('active_calories');
-  }
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> _metricStream(String metricType) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return const Stream.empty();
-    final periods = _periods;
-    return FirebaseFirestore.instance
-        .collection('metrics_daily')
-        .where('userId', isEqualTo: user.uid)
-        .where('metricType', isEqualTo: metricType)
-        .where('period', isGreaterThanOrEqualTo: periods.last)
-        .where('period', isLessThanOrEqualTo: periods.first)
-        .orderBy('period', descending: false)
-        .snapshots();
-  }
-
-  // ── Build ──────────────────────────────────────────────────────────────────
+  static const Color accentPurple = Color(0xFF7B6EF6);
+  static const Color greenColor = Color(0xFF34C759);
+  static const Color bgColor = Color(0xFFF2F2F7);
+  static const Color cardWhite = Colors.white;
+  static const Color textDark = Color(0xFF1C1C1E);
+  static const Color textGrey = Color(0xFF8E8E93);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgPurple,
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 120),
-            child: Column(
-              children: [
-                _buildHeader(),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 20),
-                      _buildSyncCard(),
-                      const SizedBox(height: 20),
-
-                      // ── Manual metrics (always shown) ─────────────────────
-                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                        stream: _stressStream,
-                        builder: (ctx, snap) => _buildStressCard(snap.data?.docs),
-                      ),
-                      const SizedBox(height: 16),
-
-                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                        stream: _moodStream,
-                        builder: (ctx, snap) => _buildMoodCard(snap.data?.docs),
-                      ),
-                      const SizedBox(height: 16),
-
-                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                        stream: _wellnessStream,
-                        builder: (ctx, snap) => _buildWellnessCard(snap.data?.docs),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // ── HealthKit metrics — gated by consent ──────────────
-                      StreamBuilder<Map<String, bool>>(
-                        stream: HealthService().consentStream(),
-                        builder: (ctx, consentSnap) {
-                          final consent = consentSnap.data ?? {};
-                          final anyConsented = consent.values.any((v) => v);
-
-                          return Column(
-                            children: [
-                              if (consent['heart_rate'] == true) ...[
-                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                                  stream: _heartRateStream,
-                                  builder: (ctx, snap) =>
-                                      _buildHeartRateCard(snap.data?.docs),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                              if (consent['steps'] == true) ...[
-                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                                  stream: _stepsStream,
-                                  builder: (ctx, snap) =>
-                                      _buildStepsCard(snap.data?.docs),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                              if (consent['sleep'] == true) ...[
-                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                                  stream: _sleepStream,
-                                  builder: (ctx, snap) =>
-                                      _buildSleepCard(snap.data?.docs),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                              if (consent['hrv'] == true) ...[
-                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                                  stream: _hrvStream,
-                                  builder: (ctx, snap) =>
-                                      _buildHrvCard(snap.data?.docs),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                              if (consent['blood_oxygen'] == true) ...[
-                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                                  stream: _bloodOxygenStream,
-                                  builder: (ctx, snap) =>
-                                      _buildBloodOxygenCard(snap.data?.docs),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                              if (consent['active_calories'] == true) ...[
-                                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                                  stream: _activeCaloriesStream,
-                                  builder: (ctx, snap) =>
-                                      _buildActiveCaloriesCard(snap.data?.docs),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                              if (!anyConsented) _buildConnectHealthPrompt(),
-                            ],
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Header (from dev — unchanged) ─────────────────────────────────────────
-
-  Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.only(top: 60, left: 24, right: 24, bottom: 24),
-      decoration: const BoxDecoration(
-        color: primaryPurple,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(30),
-          bottomRight: Radius.circular(30),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Health Dashboard',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              children: [
-                _filterButton('Daily', 0),
-                _filterButton('Weekly', 1),
-                _filterButton('Monthly', 2),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _filterButton(String text, int index) {
-    final isActive = _selectedTimeFilter == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() {
-          _selectedTimeFilter = index;
-          _refreshStreams();
-        }),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? primaryPurple : Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Center(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: isActive ? Colors.white : Colors.grey,
-                fontSize: 12,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Sync card (from dev — shows HealthKit connection state) ───────────────
-
-  Widget _buildSyncCard() {
-    return StreamBuilder<Map<String, bool>>(
-      stream: HealthService().consentStream(),
-      builder: (ctx, snap) {
-        final anyConnected = snap.data?.values.any((v) => v) ?? false;
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: anyConnected ? Colors.green[50] : Colors.orange[50],
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
+      backgroundColor: bgColor,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                anyConnected ? Icons.sync : Icons.sync_disabled,
-                color: anyConnected ? Colors.green : Colors.orange,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                anyConnected ? 'Apple Health Connected' : 'Apple Health Not Connected',
+              const SizedBox(height: 48),
+              const Text(
+                'Metrics',
                 style: TextStyle(
-                  color: anyConnected ? Colors.green : Colors.orange,
+                  fontSize: 28,
                   fontWeight: FontWeight.bold,
+                  color: textDark,
+                  letterSpacing: -0.5,
                 ),
               ),
+              const SizedBox(height: 4),
+              const Text(
+                'Your weekly health trends',
+                style: TextStyle(fontSize: 14, color: textGrey),
+              ),
+              const SizedBox(height: 24),
+              _buildSummaryCards(),
+              const SizedBox(height: 20),
+              _buildChartCard(
+                title: 'Stress Levels',
+                color: accentPurple,
+                values: _weekData.map((d) => d.stress).toList(),
+                maxY: 100,
+              ),
+              const SizedBox(height: 16),
+              _buildChartCard(
+                title: 'Heart Rate Variability',
+                color: greenColor,
+                values: _weekData.map((d) => d.hrv).toList(),
+                maxY: 70,
+              ),
+              const SizedBox(height: 28),
+              const Text(
+                'PATTERNS DETECTED',
+                style: TextStyle(
+                  color: textGrey,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildPatternCard(
+                emoji: '📈',
+                title: 'Stress peaks on Tuesdays',
+                body: 'Your Tuesday meetings correlate with 30% higher stress. Consider blocking recovery time after.',
+              ),
+              const SizedBox(height: 10),
+              _buildPatternCard(
+                emoji: '😴',
+                title: 'Weekend sleep recovery',
+                body: 'You average 1.5h more sleep on weekends. Your HRV improves by 18% as a result.',
+              ),
+              const SizedBox(height: 120),
             ],
           ),
-        );
-      },
-    );
-  }
-
-  // ── HealthKit card — prompt when nothing consented ────────────────────────
-
-  Widget _buildConnectHealthPrompt() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: primaryPurple.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: primaryPurple.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.health_and_safety_outlined, color: primaryPurple),
-          ),
-          const SizedBox(width: 16),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Connect Apple Health',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                SizedBox(height: 4),
-                Text('Enable metrics in Profile → Health Data Permissions',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Manual metric cards ────────────────────────────────────────────────────
-
-  Widget _buildStressCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
-    final values = _extractValues(docs, 'avg');
-    final latest = values.isNotEmpty ? values.last : 0.0;
-    final label = latest < 30 ? 'Low' : latest < 60 ? 'Moderate' : 'High';
-
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.psychology_outlined,
-            'Stress',
-            '${latest.toInt()}',
-            label,
-            const Color(0xFF7B6EF6),
-          ),
-          const SizedBox(height: 20),
-          if (values.isNotEmpty)
-            _VisibilityAnimatedWidget(
-              duration: const Duration(milliseconds: 1200),
-              builder: (ctx, anim) => SizedBox(
-                height: 150,
-                width: double.infinity,
-                child: CustomPaint(
-                  painter: AreaChartPainter(
-                    values: values,
-                    color: const Color(0xFF7B6EF6),
-                    animationValue: anim,
-                  ),
-                ),
-              ),
-            )
-          else
-            _buildEmptyHint('No stress data — check in via mood'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMoodCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
-    final values = _extractValues(docs, 'avg');
-    final latest = values.isNotEmpty ? values.last : 0.0;
-    final emoji = latest >= 80 ? '🤩' : latest >= 60 ? '😊' : latest >= 40 ? '😐' : latest >= 20 ? '😔' : '--';
-
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.mood,
-            'Mood',
-            emoji,
-            '${latest.toInt()} / 100',
-            Colors.orange,
-          ),
-          const SizedBox(height: 20),
-          if (values.isNotEmpty)
-            SizedBox(
-              height: 150,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: _normalizedBars(values, Colors.orange),
-              ),
-            )
-          else
-            _buildEmptyHint('No mood data — check in via home'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWellnessCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
-    final values = _extractValues(docs, 'avg');
-    final latest = values.isNotEmpty ? values.last : 0.0;
-
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.spa_outlined,
-            'Wellness',
-            '${latest.toInt()}',
-            '/ 100',
-            Colors.teal,
-          ),
-          const SizedBox(height: 20),
-          if (values.isNotEmpty)
-            SizedBox(
-              height: 150,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: _normalizedBars(values, Colors.teal),
-              ),
-            )
-          else
-            _buildEmptyHint('No wellness data yet'),
-        ],
-      ),
-    );
-  }
-
-  // ── HealthKit card builders ────────────────────────────────────────────────
-
-  Widget _buildHeartRateCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
-    final values = _extractValues(docs, 'avg');
-    final avg = values.isNotEmpty
-        ? (values.reduce((a, b) => a + b) / values.length).round()
-        : 0;
-
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.favorite_border,
-            'Heart Rate',
-            avg > 0 ? '$avg bpm' : '--',
-            'Avg · Apple Health',
-            Colors.redAccent,
-          ),
-          const SizedBox(height: 20),
-          _VisibilityAnimatedWidget(
-            duration: const Duration(milliseconds: 1500),
-            builder: (ctx, anim) => SizedBox(
-              height: 150,
-              width: double.infinity,
-              child: values.isNotEmpty
-                  ? CustomPaint(
-                      painter: LineChartPainter(
-                        values: values,
-                        color: Colors.redAccent,
-                        animationValue: anim,
-                      ),
-                    )
-                  : CustomPaint(painter: HeartRateLinePainter(anim)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStepsCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
-    final values = _extractValues(docs, 'sum');
-    final total = values.fold(0.0, (a, b) => a + b).toInt();
-    final latest = values.isNotEmpty ? values.last.toInt() : 0;
-    final display = _selectedTimeFilter == 0
-        ? (latest >= 1000 ? '${(latest / 1000).toStringAsFixed(1)}k' : '$latest')
-        : (total >= 1000 ? '${(total / 1000).toStringAsFixed(1)}k' : '$total');
-
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.directions_walk,
-            'Daily Steps',
-            values.isNotEmpty ? display : '--',
-            _selectedTimeFilter == 0 ? 'Today' : 'Total',
-            Colors.blueAccent,
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 150,
-            child: values.isNotEmpty
-                ? Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: _normalizedBars(values, Colors.blueAccent),
-                  )
-                : _buildEmptyHint('Awaiting Apple Health sync…'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSleepCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
-    final values = _extractValues(docs, 'avg');
-    final latest = values.isNotEmpty ? values.last : 0.0;
-    final labels = _buildPeriodLabels(docs);
-
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.bedtime,
-            'Sleep Duration',
-            values.isNotEmpty ? '${latest.toStringAsFixed(1)}h' : '--',
-            'Last Night · Apple Health',
-            primaryPurple,
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 150,
-            child: values.isNotEmpty
-                ? Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: List.generate(
-                      values.length,
-                      (i) => _buildBar(
-                        values[i] / (values.reduce(max).clamp(0.1, double.infinity)),
-                        primaryPurple,
-                        label: labels.length > i ? labels[i] : '',
-                      ),
-                    ),
-                  )
-                : _buildEmptyHint('Awaiting Apple Health sync…'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHrvCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
-    final values = _extractValues(docs, 'avg');
-    final latest = values.isNotEmpty ? values.last : 0.0;
-    final stressScore = docs != null && docs.isNotEmpty
-        ? (docs.last['stressScore'] as num?)?.toInt()
-        : null;
-
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.monitor_heart_outlined,
-            'HRV',
-            values.isNotEmpty ? '${latest.toStringAsFixed(0)} ms' : '--',
-            stressScore != null ? 'Stress: $stressScore' : 'Apple Health',
-            const Color(0xFF8B5CF6),
-          ),
-          const SizedBox(height: 20),
-          if (values.isNotEmpty)
-            _VisibilityAnimatedWidget(
-              duration: const Duration(milliseconds: 1200),
-              builder: (ctx, anim) => SizedBox(
-                height: 150,
-                width: double.infinity,
-                child: CustomPaint(
-                  painter: AreaChartPainter(
-                    values: values,
-                    color: const Color(0xFF8B5CF6),
-                    animationValue: anim,
-                  ),
-                ),
-              ),
-            )
-          else
-            _buildEmptyHint('Awaiting Apple Health sync…'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBloodOxygenCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
-    final values = _extractValues(docs, 'avg');
-    final latest = values.isNotEmpty ? values.last : 0.0;
-
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.water_drop_outlined,
-            'Blood Oxygen',
-            values.isNotEmpty ? '${latest.toStringAsFixed(1)}%' : '--',
-            'SpO₂ · Apple Health',
-            const Color(0xFF06B6D4),
-          ),
-          const SizedBox(height: 20),
-          if (values.isNotEmpty)
-            _VisibilityAnimatedWidget(
-              duration: const Duration(milliseconds: 1200),
-              builder: (ctx, anim) => SizedBox(
-                height: 150,
-                width: double.infinity,
-                child: CustomPaint(
-                  painter: AreaChartPainter(
-                    values: values,
-                    color: const Color(0xFF06B6D4),
-                    animationValue: anim,
-                  ),
-                ),
-              ),
-            )
-          else
-            _buildEmptyHint('Awaiting Apple Health sync…'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActiveCaloriesCard(List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
-    final values = _extractValues(docs, 'sum');
-    final total = values.fold(0.0, (a, b) => a + b);
-    final latest = values.isNotEmpty ? values.last : 0.0;
-
-    return _buildCardBase(
-      child: Column(
-        children: [
-          _buildChartHeader(
-            Icons.local_fire_department_outlined,
-            'Active Calories',
-            values.isNotEmpty ? '${latest.toInt()} kcal' : '--',
-            _selectedTimeFilter == 0 ? 'Today' : '${total.toInt()} kcal total',
-            const Color(0xFFF97316),
-          ),
-          const SizedBox(height: 20),
-          if (values.isNotEmpty)
-            _VisibilityAnimatedWidget(
-              duration: const Duration(milliseconds: 1200),
-              builder: (ctx, anim) => SizedBox(
-                height: 150,
-                width: double.infinity,
-                child: CustomPaint(
-                  painter: AreaChartPainter(
-                    values: values,
-                    color: const Color(0xFFF97316),
-                    animationValue: anim,
-                  ),
-                ),
-              ),
-            )
-          else
-            _buildEmptyHint('Awaiting Apple Health sync…'),
-        ],
-      ),
-    );
-  }
-
-  // ── Shared UI helpers (from dev — kept exactly) ───────────────────────────
-
-  Widget _buildBar(double normalizedHeight, Color color, {String? label}) {
-    return _VisibilityAnimatedWidget(
-      builder: (ctx, anim) => Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Container(
-            width: 25,
-            height: 100 * normalizedHeight * anim,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.8),
-              borderRadius: BorderRadius.circular(6),
-            ),
-          ),
-          if (label != null) ...[
-            const SizedBox(height: 8),
-            Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCardBase({required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(color: Colors.grey.withValues(alpha: 0.05), blurRadius: 10),
-        ],
-      ),
-      child: child,
-    );
-  }
-
-  Widget _buildChartHeader(
-    IconData icon,
-    String title,
-    String value,
-    String valueSub,
-    Color color,
-  ) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(width: 10),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-          ],
         ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(value,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            Text(valueSub,
-                style: TextStyle(
-                    fontSize: 10, color: color, fontWeight: FontWeight.w600)),
-          ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryCards() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildStatCard(
+            label: 'Avg Stress',
+            value: '52',
+            change: '-8%',
+            trendUp: false,
+            flat: false,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildStatCard(
+            label: 'Avg HRV',
+            value: '45ms',
+            change: '+12%',
+            trendUp: true,
+            flat: false,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildStatCard(
+            label: 'Avg Sleep',
+            value: '7.1h',
+            change: '+0.2h',
+            trendUp: true,
+            flat: true,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildEmptyHint(String message) {
-    return SizedBox(
-      height: 60,
-      child: Center(
-        child: Text(message,
-            style: const TextStyle(color: Colors.grey, fontSize: 13)),
+  Widget _buildStatCard({
+    required String label,
+    required String value,
+    required String change,
+    required bool trendUp,
+    required bool flat,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label.toUpperCase(),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 9,
+              color: textGrey,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: textDark,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                flat
+                    ? Icons.remove_rounded
+                    : trendUp
+                        ? Icons.trending_up_rounded
+                        : Icons.trending_down_rounded,
+                size: 13,
+                color: greenColor,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                change,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: greenColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  // ── Data helpers ──────────────────────────────────────────────────────────
-
-  List<double> _extractValues(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs,
-    String field,
-  ) {
-    if (docs == null || docs.isEmpty) return [];
-    return docs
-        .map((d) => (d.data()[field] as num?)?.toDouble() ?? 0.0)
-        .toList();
+  Widget _buildChartCard({
+    required String title,
+    required Color color,
+    required List<double> values,
+    required double maxY,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: textDark,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 160,
+            child: _AreaChart(
+              values: values,
+              maxY: maxY,
+              color: color,
+              labels: _weekData.map((d) => d.day).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  List<Widget> _normalizedBars(List<double> values, Color color) {
-    final maxVal = values.reduce(max).clamp(0.001, double.infinity);
-    return values
-        .map((v) => _buildBar(v / maxVal, color))
-        .toList();
-  }
-
-  List<String> _buildPeriodLabels(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>>? docs) {
-    if (docs == null) return [];
-    return docs.map((d) {
-      final period = d.data()['period'] as String? ?? '';
-      if (period.length >= 10) {
-        final month = period.substring(5, 7);
-        final day = period.substring(8, 10);
-        return '$month/$day';
-      }
-      return '';
-    }).toList();
+  Widget _buildPatternCard({
+    required String emoji,
+    required String title,
+    required String body,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$emoji  $title',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: textDark,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            style: const TextStyle(
+              fontSize: 12,
+              color: textGrey,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers from dev branch — kept verbatim
-// ─────────────────────────────────────────────────────────────────────────────
+// --- AREA CHART WIDGET ---
 
-class _VisibilityAnimatedWidget extends StatefulWidget {
-  final Widget Function(BuildContext, double) builder;
-  final Duration duration;
+class _AreaChart extends StatefulWidget {
+  final List<double> values;
+  final double maxY;
+  final Color color;
+  final List<String> labels;
 
-  const _VisibilityAnimatedWidget({
-    required this.builder,
-    this.duration = const Duration(milliseconds: 800),
+  const _AreaChart({
+    required this.values,
+    required this.maxY,
+    required this.color,
+    required this.labels,
   });
 
   @override
-  State<_VisibilityAnimatedWidget> createState() =>
-      _VisibilityAnimatedWidgetState();
+  State<_AreaChart> createState() => _AreaChartState();
 }
 
-class _VisibilityAnimatedWidgetState extends State<_VisibilityAnimatedWidget>
+class _AreaChartState extends State<_AreaChart>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  bool _hasBeenVisible = false;
+  late Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
-    _controller =
-        AnimationController(vsync: this, duration: widget.duration);
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _controller.forward();
   }
 
   @override
@@ -821,170 +325,141 @@ class _VisibilityAnimatedWidgetState extends State<_VisibilityAnimatedWidget>
 
   @override
   Widget build(BuildContext context) {
-    return VisibilityDetector(
-      key: UniqueKey(),
-      onVisibilityChanged: (info) {
-        if (info.visibleFraction > 0.3 && !_hasBeenVisible) {
-          if (mounted) {
-            setState(() => _hasBeenVisible = true);
-            _controller.forward();
-          }
-        }
-      },
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (ctx, _) => widget.builder(
-          ctx,
-          CurvedAnimation(parent: _controller, curve: Curves.easeOutQuart).value,
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (_, __) => CustomPaint(
+        painter: _AreaChartPainter(
+          values: widget.values,
+          maxY: widget.maxY,
+          color: widget.color,
+          labels: widget.labels,
+          progress: _animation.value,
         ),
+        size: Size.infinite,
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Painters
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// ECG-style heartbeat line — from dev, shown as fallback when no real data
-class HeartRateLinePainter extends CustomPainter {
-  final double animationValue;
-  HeartRateLinePainter(this.animationValue);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.redAccent
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-
-    final path = Path();
-    path.moveTo(0, size.height * 0.7);
-    path.lineTo(size.width * 0.20, size.height * 0.7);
-    path.lineTo(size.width * 0.25, size.height * 0.3);
-    path.lineTo(size.width * 0.35, size.height * 0.9);
-    path.lineTo(size.width * 0.45, size.height * 0.1);
-    path.lineTo(size.width * 0.55, size.height * 0.8);
-    path.lineTo(size.width * 0.60, size.height * 0.7);
-    path.lineTo(size.width, size.height * 0.7);
-
-    for (final m in path.computeMetrics()) {
-      canvas.drawPath(m.extractPath(0, m.length * animationValue), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(HeartRateLinePainter old) =>
-      old.animationValue != animationValue;
-}
-
-/// Real data line chart — used when Firestore data is available
-class LineChartPainter extends CustomPainter {
+class _AreaChartPainter extends CustomPainter {
   final List<double> values;
+  final double maxY;
   final Color color;
-  final double animationValue;
+  final List<String> labels;
+  final double progress;
 
-  LineChartPainter({
+  static const double labelHeight = 22;
+  static const double leftPad = 36;
+
+  _AreaChartPainter({
     required this.values,
+    required this.maxY,
     required this.color,
-    required this.animationValue,
+    required this.labels,
+    required this.progress,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (values.isEmpty) return;
+    final chartH = size.height - labelHeight;
+    final chartW = size.width - leftPad;
 
-    final maxVal = values.reduce(max);
-    final minVal = values.reduce(min);
-    final range = (maxVal - minVal).clamp(1.0, double.infinity);
-
-    final linePaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round;
-
-    final dotPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final path = Path();
-    for (int i = 0; i < values.length; i++) {
-      final x = values.length == 1
-          ? size.width / 2
-          : (i / (values.length - 1)) * size.width;
-      final y = size.height -
-          ((values[i] - minVal) / range) * size.height * 0.85 -
-          size.height * 0.05;
-      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
-      canvas.drawCircle(Offset(x, y), 3, dotPaint);
+    // --- Grid lines ---
+    final gridPaint = Paint()
+      ..color = const Color(0xFFEEEEF2)
+      ..strokeWidth = 1;
+    const gridLines = 4;
+    for (int i = 0; i <= gridLines; i++) {
+      final y = chartH * i / gridLines;
+      canvas.drawLine(
+        Offset(leftPad, y),
+        Offset(size.width, y),
+        gridPaint,
+      );
+      // Y-axis label
+      final yVal = (maxY * (1 - i / gridLines)).round();
+      final tp = TextPainter(
+        text: TextSpan(
+          text: '$yVal',
+          style: TextStyle(
+            fontSize: 9,
+            color: Colors.grey.shade400,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(0, y - 5));
     }
 
-    for (final m in path.computeMetrics()) {
-      canvas.drawPath(m.extractPath(0, m.length * animationValue), linePaint);
+    if (values.isEmpty) return;
+
+    // Compute pixel positions
+    final n = values.length;
+    List<Offset> pts = [];
+    for (int i = 0; i < n; i++) {
+      final x = leftPad + chartW * i / (n - 1);
+      final y = chartH * (1 - values[i] / maxY);
+      pts.add(Offset(x, y));
+    }
+
+    // Build smooth path (catmull-rom → bezier)
+    Path linePath = _smoothPath(pts);
+
+    // Animate: clip to progress
+    final pathMetrics = linePath.computeMetrics().toList();
+    if (pathMetrics.isEmpty) return;
+    final totalLen = pathMetrics.first.length;
+    final animatedLine = pathMetrics.first.extractPath(0, totalLen * progress);
+
+    // Fill path
+    final fillPath = Path.from(animatedLine)
+      ..lineTo(pts.last.dx * progress + leftPad * (1 - progress), chartH)
+      ..lineTo(leftPad, chartH)
+      ..close();
+
+    final gradientPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(0, 0),
+        Offset(0, chartH),
+        [color.withOpacity(0.28), color.withOpacity(0.0)],
+      )
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(fillPath, gradientPaint);
+
+    // Stroke
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(animatedLine, linePaint);
+
+    // X-axis labels
+    final labelStyle = TextStyle(fontSize: 10, color: Colors.grey.shade500);
+    for (int i = 0; i < n; i++) {
+      final tp = TextPainter(
+        text: TextSpan(text: labels[i], style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(
+        canvas,
+        Offset(pts[i].dx - tp.width / 2, chartH + 6),
+      );
     }
   }
 
-  @override
-  bool shouldRepaint(LineChartPainter old) =>
-      old.animationValue != animationValue;
-}
-
-/// Filled area chart — for sleep, HRV, SpO₂, calories, stress
-class AreaChartPainter extends CustomPainter {
-  final List<double> values;
-  final Color color;
-  final double animationValue;
-
-  AreaChartPainter({
-    required this.values,
-    required this.color,
-    required this.animationValue,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (values.isEmpty) return;
-
-    final maxVal = values.reduce(max).clamp(1.0, double.infinity);
-
-    final fillPaint = Paint()
-      ..color = color.withValues(alpha: 0.15)
-      ..style = PaintingStyle.fill;
-
-    final linePaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round;
-
-    final linePath = Path();
-    final fillPath = Path()..moveTo(0, size.height);
-
-    for (int i = 0; i < values.length; i++) {
-      final x = values.length == 1
-          ? size.width / 2
-          : (i / (values.length - 1)) * size.width;
-      final y = size.height -
-          (values[i] / maxVal) * size.height * 0.85 * animationValue;
-      if (i == 0) {
-        linePath.moveTo(x, y);
-        fillPath.lineTo(x, y);
-      } else {
-        linePath.lineTo(x, y);
-        fillPath.lineTo(x, y);
-      }
+  Path _smoothPath(List<Offset> pts) {
+    if (pts.length < 2) return Path()..moveTo(pts[0].dx, pts[0].dy);
+    final path = Path()..moveTo(pts[0].dx, pts[0].dy);
+    for (int i = 0; i < pts.length - 1; i++) {
+      final cp1 = Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i].dy);
+      final cp2 = Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i + 1].dy);
+      path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, pts[i + 1].dx, pts[i + 1].dy);
     }
-
-    fillPath.lineTo(size.width, size.height);
-    fillPath.close();
-
-    canvas.drawPath(fillPath, fillPaint);
-    canvas.drawPath(linePath, linePaint);
+    return path;
   }
 
   @override
-  bool shouldRepaint(AreaChartPainter old) =>
-      old.animationValue != animationValue;
+  bool shouldRepaint(_AreaChartPainter old) => old.progress != progress;
 }

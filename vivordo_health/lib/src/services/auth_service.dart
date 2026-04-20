@@ -36,6 +36,7 @@ class AuthService {
         throw Exception("Error creating user");
       }
 
+
       pageController.nextPage(
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeInOutCubicEmphasized,
@@ -71,23 +72,25 @@ class AuthService {
           );
 
       final currentUser = userCredential.user;
-      if (currentUser == null) throw Exception('Error signing in user');
-
-      // Sync email state on every login. Cleans up pendingEmail from Firestore
-      // if the user previously verified an email change.
+      if (currentUser == null) {
+        throw Exception('Error signing in user');
+      }
+      // Sync email state on every login. If the user previously verified an
+      // email change, this cleans up pendingEmail from Firestore immediately
+      // so the profile screen never sees stale pending state.
       await UserService.syncEmailWithAuth();
 
-      return true; // success
     } on FirebaseAuthException catch (e) {
       if (context.mounted) {
-        SnackBars.authMessage(context: context, message: e.message ?? e.code);
+        if (e.code == 'invalid-credential') {
+          const message = 'Invalid email or password';
+          SnackBars.authMessage(context: context, message: message);
+        } else {
+          SnackBars.authMessage(context: context, message: e.code);
+        }
       }
-      return false;
     } catch (e) {
-      if (context.mounted) {
-        SnackBars.authMessage(context: context, message: e.toString());
-      }
-      return false;
+      print(e);
     }
   }
 } 

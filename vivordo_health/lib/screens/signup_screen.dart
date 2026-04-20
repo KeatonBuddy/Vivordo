@@ -29,6 +29,7 @@ class _SignupScreenState extends State<SignupScreen> {
   // For show/hide password
   bool _showPassword = false;
   bool _showConfirmPassword = false;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -299,8 +300,8 @@ class _SignupScreenState extends State<SignupScreen> {
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(
-                            strokeWidth: 2,
                             color: Colors.white,
+                            strokeWidth: 2,
                           ),
                         )
                       : Text(

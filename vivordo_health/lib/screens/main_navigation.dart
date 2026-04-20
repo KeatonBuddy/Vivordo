@@ -33,10 +33,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          IndexedStack(
-            index: _selectedIndex,
-            children: pages,
-          ),
+          IndexedStack(index: _selectedIndex, children: pages),
           Positioned(
             bottom: 30,
             left: 24,
@@ -59,7 +56,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 20,
             offset: const Offset(0, 5),
-          )
+          ),
         ],
       ),
       child: Row(
@@ -82,11 +79,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            color: isActive ? primaryPurple : Colors.grey,
-            size: 26,
-          ),
+          Icon(icon, color: isActive ? primaryPurple : Colors.grey, size: 26),
           const SizedBox(height: 4),
           Text(
             label,
@@ -95,7 +88,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               fontSize: 10,
               fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
             ),
-                  ),
+          ),
         ],
       ),
     );

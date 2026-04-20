@@ -5,9 +5,10 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
-import 'package:vivordo_health/src/services/metrics_service.dart';
-import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+
+
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -20,19 +21,24 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
+  bool _appleHealthConnected = true;
   bool _pushNotifications = true;
   bool _autoSyncData = true;
-  bool _seeding = false; // for the seed demo data button
+
 
   bool _isEmailVerificationSignOut = false;
 
+
   StreamSubscription<User?>? _authSubscription;
+
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+
+    // Skip the first emission — it just reflects current login state, not a change
     bool isFirstEmission = true;
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
       if (isFirstEmission) {
@@ -43,8 +49,13 @@ class _SettingsScreenState extends State<SettingsScreen>
         final message = _isEmailVerificationSignOut
             ? 'Email verified! Please log in again with your new email.'
             : 'You have been signed out.';
+
+
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 4),
+          ),
         );
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -52,7 +63,13 @@ class _SettingsScreenState extends State<SettingsScreen>
         );
       }
     });
+
+
+    // NOTE: We do NOT call _checkEmailSync() here anymore.
+    // Cleanup of pendingEmail now happens in AuthService.emailLogin,
+    // so by the time the user reaches this screen it is already clean.
   }
+
 
   @override
   void dispose() {
@@ -61,19 +78,25 @@ class _SettingsScreenState extends State<SettingsScreen>
     super.dispose();
   }
 
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Only check when the user returns to the app — this handles the case
+    // where they tap the verification link while the app is already open
     if (state == AppLifecycleState.resumed) {
       _checkEmailSync();
     }
   }
+
 
   Future<void> _checkEmailSync() async {
     final didLogout = await UserService.syncEmailWithAuth();
     if (didLogout) {
       _isEmailVerificationSignOut = true;
     }
+    // Navigation handled by authStateChanges listener
   }
+
 
   void _showEditDialog(
     BuildContext context,
@@ -115,11 +138,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                     await UserService.updatePassword(controller.text);
                   }
 
+
                   if (mounted) {
                     Navigator.pop(context);
+
+
                     final message = field == "Email"
                         ? 'Verification email sent to ${controller.text}. Tap the link to confirm your new email.'
                         : '$field updated successfully!';
+
+
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text(message)),
                     );
@@ -127,7 +155,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 } on FirebaseAuthException catch (e) {
                   String errorMessage = 'Error: ${e.message}';
                   if (e.code == 'requires-recent-login') {
-                    errorMessage = 'For security, please log out and log back in to change your $field.';
+                    errorMessage =
+                        'For security, please log out and log back in to change your $field.';
                   }
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -362,41 +391,63 @@ class _SettingsScreenState extends State<SettingsScreen>
                       const SizedBox(height: 24),
 
 
-                      // --- Section: Health Data Permissions ---
+                      // --- Section: Connected Devices ---
                       _buildSectionHeader(
-                        Icons.health_and_safety_outlined,
-                        "Health Data Permissions",
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Choose which Apple Health metrics Vivordo can read. "
-                        "Turning off a metric immediately removes its data from our servers.",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                          height: 1.4,
-                        ),
+                        Icons.phone_iphone_outlined,
+                        "Connected Devices",
                       ),
                       const SizedBox(height: 12),
-                      StreamBuilder<Map<String, bool>>(
-                        stream: HealthService().consentStream(),
-                        builder: (context, snap) {
-                          final consent = snap.data ?? {};
-                          return Container(
-                            decoration: _cardDecoration(),
-                            child: Column(
-                              children: [
-                                for (int i = 0; i < kHealthMetrics.length; i++) ...[
-                                  if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
-                                  _buildHealthConsentTile(
-                                    kHealthMetrics[i],
-                                    consent[kHealthMetrics[i].key] == true,
-                                  ),
-                                ],
-                              ],
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: _cardDecoration(),
+                        child: Column(
+                          children: [
+                            _buildDeviceTile(
+                              "Apple Health",
+                              "Connected",
+                              Icons.favorite,
+                              Colors.pink,
+                              trailing: Switch(
+                                value: _appleHealthConnected,
+                                activeColor: const Color(0xFF7C69EF),
+                                onChanged: (val) => setState(
+                                    () => _appleHealthConnected = val),
+                              ),
                             ),
-                          );
-                        },
+                            const Divider(height: 32),
+                            _buildDeviceTile(
+                              "Apple Watch Series 9",
+                              "Connected • Synced 5 min ago",
+                              Icons.watch,
+                              Colors.black,
+                              statusColor: Colors.green,
+                            ),
+                            const Divider(height: 32),
+                            _buildDeviceTile(
+                              "iPhone 15 Pro",
+                              "Connected • Active",
+                              Icons.phone_iphone,
+                              Colors.blue,
+                              statusColor: Colors.green,
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                onPressed: () {},
+                                style: OutlinedButton.styleFrom(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Text(
+                                  "Add New Device",
+                                  style: TextStyle(color: Colors.black87),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
 
 
@@ -433,56 +484,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
 
 
-                      const SizedBox(height: 24),
-
-                      // --- Seed Demo Data Button ---
-                      SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: ElevatedButton.icon(
-                          onPressed: _seeding
-                              ? null
-                              : () async {
-                                  setState(() => _seeding = true);
-                                  try {
-                                    await MetricsService.seedDemoData();
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('✓ 30 days of demo data seeded!'),
-                                          backgroundColor: Color(0xFF4ADE80),
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Seed failed: $e'),
-                                          backgroundColor: Colors.redAccent,
-                                        ),
-                                      );
-                                    }
-                                  } finally {
-                                    if (mounted) setState(() => _seeding = false);
-                                  }
-                                },
-                          icon: _seeding
-                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.science_outlined, color: Color(0xFF7C69EF)),
-                          label: Text(
-                            _seeding ? 'Seeding...' : 'Seed Demo Data (30 days)',
-                            style: const TextStyle(color: Color(0xFF7C69EF), fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFEDE9FE),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                        ),
-                      ),
-
                       const SizedBox(height: 32),
+
 
                       // --- Logout Button ---
                       SizedBox(
@@ -490,12 +493,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                         height: 56,
                         child: ElevatedButton.icon(
                           onPressed: () async {
-                            _isEmailVerificationSignOut = false;
                             await FirebaseAuth.instance.signOut();
+                            // Navigation handled by authStateChanges listener
                           },
-                          icon: const Icon(Icons.logout, color: Colors.redAccent),
+                          icon: const Icon(
+                            Icons.logout,
+                            color: Colors.redAccent,
+                          ),
                           label: const Text(
-                            'Log Out',
+                            "Log Out",
                             style: TextStyle(
                               color: Colors.redAccent,
                               fontSize: 16,
@@ -503,7 +509,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             ),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFEEEE),
+                            backgroundColor: const Color(0xFFFFEBEE),
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -511,8 +517,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                           ),
                         ),
                       ),
-
-                      const SizedBox(height: 40),
                     ],
                   ),
                 ),
@@ -524,78 +528,38 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  // ─── Health consent tile ──────────────────────────────────────────────────
 
-  Widget _buildHealthConsentTile(HealthMetricDef metric, bool isEnabled) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      leading: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: isEnabled
-              ? const Color(0xFFEDE9FE)
-              : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(10),
+  // --- Helper Widgets ---
+
+
+  BoxDecoration _cardDecoration() {
+    return BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.05),
+          blurRadius: 15,
+          offset: const Offset(0, 5),
         ),
-        child: Icon(
-          _metricIcon(metric.key),
-          color: isEnabled ? const Color(0xFF7C69EF) : Colors.grey,
-          size: 20,
-        ),
-      ),
-      title: Text(
-        metric.label,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 15,
-          color: isEnabled ? const Color(0xFF2D3142) : Colors.grey,
-        ),
-      ),
-      subtitle: Text(
-        metric.description,
-        style: const TextStyle(fontSize: 12, color: Colors.grey),
-      ),
-      trailing: Switch(
-        value: isEnabled,
-        activeColor: const Color(0xFF7C69EF),
-        onChanged: (val) async {
-          if (val) {
-            final granted = await HealthService().enableMetric(metric.key);
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(granted
-                    ? '✓ ${metric.label} connected — syncing 30 days'
-                    : '${metric.label} permission was not granted'),
-                backgroundColor: granted ? const Color(0xFF4ADE80) : Colors.orange,
-              ));
-            }
-          } else {
-            await HealthService().disableMetric(metric.key);
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('${metric.label} data removed from Vivordo'),
-              ));
-            }
-          }
-        },
-      ),
+      ],
     );
   }
 
-  IconData _metricIcon(String key) {
-    switch (key) {
-      case 'steps':          return Icons.directions_walk;
-      case 'heart_rate':     return Icons.favorite_border;
-      case 'sleep':          return Icons.bedtime_outlined;
-      case 'hrv':            return Icons.monitor_heart_outlined;
-      case 'blood_oxygen':   return Icons.water_drop_outlined;
-      case 'active_calories':return Icons.local_fire_department_outlined;
-      default:               return Icons.health_and_safety_outlined;
-    }
+
+  Widget _buildSectionHeader(IconData icon, String title) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: const Color(0xFF7C69EF)),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
   }
 
-  // ─── Helper Widgets ────────────────────────────────────────────────────────
 
   Widget _buildSectionCard({
     required IconData icon,
@@ -615,6 +579,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       ],
     );
   }
+
 
   Widget _buildInfoTile(
     String label,
@@ -644,7 +609,15 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _buildSectionHeader(IconData icon, String title) {
+
+  Widget _buildDeviceTile(
+    String name,
+    String sub,
+    IconData icon,
+    Color iconColor, {
+    Widget? trailing,
+    Color? statusColor,
+  }) {
     return Row(
       children: [
         Icon(icon, size: 18, color: const Color(0xFF7C69EF)),
@@ -675,6 +648,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+
   Widget _buildSettingsToggle(
     String title,
     String subtitle,
@@ -682,30 +656,13 @@ class _SettingsScreenState extends State<SettingsScreen>
     bool value,
     ValueChanged<bool> onChanged,
   ) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: const Color(0xFFEDE9FE),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: const Color(0xFF7C69EF), size: 20),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: const TextStyle(fontSize: 12, color: Colors.grey),
-      ),
-      trailing: Switch(
-        value: value,
-        activeColor: const Color(0xFF7C69EF),
-        onChanged: onChanged,
-      ),
+    return SwitchListTile(
+      value: val,
+      onChanged: onChanged,
+      secondary: Icon(icon, color: Colors.grey),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+      subtitle: Text(sub, style: const TextStyle(fontSize: 12)),
+      activeColor: const Color(0xFF7C69EF),
     );
   }
 }
