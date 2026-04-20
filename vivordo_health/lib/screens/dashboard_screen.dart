@@ -272,6 +272,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.only(bottom: 16),
       child: _buildChartCard(
         title: title,
+        icon: _metricIcon(metricType),
         color: color,
         values: values,
         maxY: maxY > 0
@@ -281,6 +282,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
         labels: labels,
       ),
     );
+  }
+
+  IconData _metricIcon(String key) {
+    switch (key) {
+      case 'steps':              return Icons.directions_walk_rounded;
+      case 'active_calories':    return Icons.local_fire_department_rounded;
+      case 'exercise_time':      return Icons.fitness_center_rounded;
+      case 'distance':           return Icons.straighten_rounded;
+      case 'flights_climbed':    return Icons.stairs_rounded;
+      case 'heart_rate':         return Icons.favorite_rounded;
+      case 'resting_heart_rate': return Icons.favorite_border_rounded;
+      case 'hrv':                return Icons.show_chart_rounded;
+      case 'blood_oxygen':       return Icons.air_rounded;
+      case 'respiratory_rate':   return Icons.wind_power_rounded;
+      case 'sleep':              return Icons.bedtime_rounded;
+      case 'weight':             return Icons.monitor_weight_rounded;
+      case 'body_fat':           return Icons.percent_rounded;
+      case 'mindfulness':        return Icons.self_improvement_rounded;
+      case 'vo2max':             return Icons.speed_rounded;
+      case 'stress':             return Icons.psychology_rounded;
+      case 'mood':               return Icons.mood_rounded;
+      case 'wellness':           return Icons.spa_rounded;
+      default:                   return Icons.monitor_heart_outlined;
+    }
   }
 
   // ── Filter chips ───────────────────────────────────────────────────────────
@@ -445,7 +470,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required List<double> values,
     required double maxY,
     required List<String> labels,
+    IconData? icon,
   }) {
+    // Compute a quick summary value for the subtitle
+    final avg = values.isEmpty ? 0.0 : values.reduce((a, b) => a + b) / values.length;
+    final latest = values.isNotEmpty ? values.last : 0.0;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
       decoration: BoxDecoration(
@@ -456,15 +486,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: textDark,
-            ),
+          Row(
+            children: [
+              if (icon != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, size: 16, color: color),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: textDark,
+                  ),
+                ),
+              ),
+              // Latest value badge
+              Text(
+                latest == latest.roundToDouble()
+                    ? latest.toInt().toString()
+                    : latest.toStringAsFixed(1),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
+          if (values.length > 1) ...[
+            const SizedBox(height: 2),
+            Padding(
+              padding: EdgeInsets.only(left: icon != null ? 42 : 0),
+              child: Text(
+                'avg ${avg == avg.roundToDouble() ? avg.toInt() : avg.toStringAsFixed(1)}',
+                style: const TextStyle(fontSize: 11, color: textGrey),
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
           SizedBox(
             height: 160,
             child: _AreaChart(

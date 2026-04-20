@@ -21,11 +21,14 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
-  bool _appleHealthConnected = true;
   bool _pushNotifications = true;
   bool _autoSyncData = true;
 
   bool _isEmailVerificationSignOut = false;
+
+  // Loading states for HealthKit actions
+  bool _isConnectingAll = false;           // "Connect Apple Health" button
+  String? _togglingMetric;                 // key of metric currently being toggled
 
   StreamSubscription<User?>? _authSubscription;
 
@@ -501,39 +504,63 @@ class _SettingsScreenState extends State<SettingsScreen>
                               const SizedBox(height: 14),
                               SizedBox(
                                 width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  onPressed: () async {
-                                    await HealthService().enableAll();
-                                  },
-                                  icon: const Icon(
-                                    Icons.health_and_safety_outlined,
-                                    size: 18,
-                                  ),
-                                  label: const Text(
-                                    "Connect Apple Health",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                  ),
+                                child: ElevatedButton(
+                                  onPressed: _isConnectingAll
+                                      ? null
+                                      : () async {
+                                          setState(() => _isConnectingAll = true);
+                                          try {
+                                            await HealthService().enableAll();
+                                          } catch (e) {
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(content: Text('Could not connect: $e')),
+                                              );
+                                            }
+                                          } finally {
+                                            if (mounted) setState(() => _isConnectingAll = false);
+                                          }
+                                        },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF7C69EF),
                                     foregroundColor: Colors.white,
+                                    disabledBackgroundColor: const Color(0xFFB8B0F8),
                                     elevation: 0,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 12),
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
                                   ),
+                                  child: _isConnectingAll
+                                      ? const SizedBox(
+                                          height: 18,
+                                          width: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.health_and_safety_outlined, size: 18),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              "Connect Apple Health",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                 ),
                               ),
                               const SizedBox(height: 6),
                               const Text(
                                 "Grants read-only access to all health metrics at once",
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    fontSize: 11, color: Colors.grey),
+                                style: TextStyle(fontSize: 11, color: Colors.grey),
                               ),
                             ],
                           ],
@@ -554,39 +581,68 @@ class _SettingsScreenState extends State<SettingsScreen>
                         child: Column(
                           children: kHealthMetrics.map((metric) {
                             final enabled = consent[metric.key] == true;
+                            final isToggling = _togglingMetric == metric.key;
                             return Column(
                               children: [
                                 SwitchListTile(
                                   value: enabled,
                                   activeColor: const Color(0xFF7C69EF),
-                                  onChanged: (val) async {
-                                    if (val) {
-                                      await HealthService()
-                                          .enableMetric(metric.key);
-                                    } else {
-                                      await HealthService()
-                                          .disableMetric(metric.key);
-                                    }
-                                  },
+                                  // null disables the toggle while it's loading
+                                  onChanged: isToggling
+                                      ? null
+                                      : (val) async {
+                                          setState(() => _togglingMetric = metric.key);
+                                          try {
+                                            if (val) {
+                                              await HealthService().enableMetric(metric.key);
+                                            } else {
+                                              await HealthService().disableMetric(metric.key);
+                                            }
+                                          } catch (e) {
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(content: Text('Error: $e')),
+                                              );
+                                            }
+                                          } finally {
+                                            if (mounted) setState(() => _togglingMetric = null);
+                                          }
+                                        },
                                   title: Text(
                                     metric.label,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 14,
+                                      color: isToggling ? Colors.grey : const Color(0xFF2D3142),
                                     ),
                                   ),
                                   subtitle: Text(
-                                    metric.description,
-                                    style: const TextStyle(
-                                        fontSize: 12, color: Colors.grey),
+                                    isToggling
+                                        ? (enabled ? 'Removing access…' : 'Requesting access…')
+                                        : metric.description,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isToggling
+                                          ? const Color(0xFF7C69EF)
+                                          : Colors.grey,
+                                    ),
                                   ),
-                                  secondary: Icon(
-                                    _metricIcon(metric.key),
-                                    color: enabled
-                                        ? const Color(0xFF7C69EF)
-                                        : Colors.grey,
-                                    size: 20,
-                                  ),
+                                  secondary: isToggling
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Color(0xFF7C69EF),
+                                          ),
+                                        )
+                                      : Icon(
+                                          _metricIcon(metric.key),
+                                          color: enabled
+                                              ? const Color(0xFF7C69EF)
+                                              : Colors.grey,
+                                          size: 20,
+                                        ),
                                 ),
                                 if (metric != kHealthMetrics.last)
                                   const Divider(height: 1, indent: 56),
