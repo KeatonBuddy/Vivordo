@@ -650,4 +650,4 @@ class _SettingsScreenState extends State<SettingsScreen>
       activeColor: const Color(0xFF7C69EF),
     );
   }
-}          
+}
