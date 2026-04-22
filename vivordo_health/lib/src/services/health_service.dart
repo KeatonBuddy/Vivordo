@@ -115,6 +115,16 @@ const List<HealthMetricDef> kHealthMetrics = [
     label: 'Mindfulness',
     description: 'Meditation and mindfulness session minutes',
   ),
+  // ── Fitness ─────────────────────────────────────────────────────────────────
+  // TODO: uncomment once HealthDataType.VO2MAX is confirmed available in this
+  // version of the health package. Gave 'undefined_enum_constant' on 12.2.1 —
+  // may need a newer package version or Apple Developer HealthKit capability.
+  // HealthMetricDef(
+  //   key: 'vo2max',
+  //   type: HealthDataType.VO2MAX,
+  //   label: 'VO₂ Max',
+  //   description: 'Cardio fitness score from Apple Watch workouts',
+  // ),
 ];
 
 /// Convenience lookup: metricKey → HealthMetricDef
@@ -374,6 +384,8 @@ class HealthService {
         return {'avg': avg(), 'unit': 'kg', 'dimension': 'body'};
       case HealthDataType.BODY_FAT_PERCENTAGE:
         return {'avg': avg(), 'unit': '%', 'dimension': 'body'};
+      // case HealthDataType.VO2MAX:
+      //   return {'avg': avg(), 'unit': 'ml/kg/min', 'dimension': 'fitness'};
 
       default:
         return {'avg': avg(), 'unit': '', 'dimension': 'other'};
