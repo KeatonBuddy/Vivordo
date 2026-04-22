@@ -462,7 +462,9 @@ class _TypingIndicatorState extends State<TypingIndicator> with TickerProviderSt
 
   @override
   void dispose() {
-    for (var c in _controllers) c.dispose();
+    for (var c in _controllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 

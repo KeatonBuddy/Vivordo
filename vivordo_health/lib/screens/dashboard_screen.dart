@@ -59,7 +59,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (uid == null) return const Stream.empty();
     final now    = DateTime.now();
     final oldest = now.subtract(Duration(days: _daysBack - 1));
-    final fmt    = (DateTime d) =>
+    String fmt(DateTime d) =>
         '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
     return FirebaseFirestore.instance
         .collection('metrics_daily')

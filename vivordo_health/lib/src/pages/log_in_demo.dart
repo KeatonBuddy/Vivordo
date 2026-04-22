@@ -22,7 +22,7 @@ class LoginDemoState extends State<LoginDemo> {
             Padding(
               padding: const EdgeInsets.only(top: 110.0),
               child: Center(
-                child: Container(
+                child: SizedBox(
                   width: 200,
                   height: 100,
                   /*decoration: BoxDecoration(
@@ -118,4 +118,4 @@ class LoginDemoState extends State<LoginDemo> {
       ),
     );
   }
-}
+}

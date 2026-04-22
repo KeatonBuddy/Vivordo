@@ -586,7 +586,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               children: [
                                 SwitchListTile(
                                   value: enabled,
-                                  activeColor: const Color(0xFF7C69EF),
+                                  activeThumbColor: const Color(0xFF7C69EF),
                                   // null disables the toggle while it's loading
                                   onChanged: isToggling
                                       ? null
@@ -816,7 +816,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     String sub,
     IconData icon,
     Color iconColor, {
-    Widget? trailing,
     Color? statusColor,
   }) {
     return Row(
@@ -848,7 +847,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       secondary: Icon(icon, color: Colors.grey),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
-      activeColor: const Color(0xFF7C69EF),
+      activeThumbColor: const Color(0xFF7C69EF),
     );
   }
 
