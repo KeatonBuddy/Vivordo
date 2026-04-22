@@ -115,13 +115,6 @@ const List<HealthMetricDef> kHealthMetrics = [
     label: 'Mindfulness',
     description: 'Meditation and mindfulness session minutes',
   ),
-  // ── Fitness ─────────────────────────────────────────────────────────────────
-  HealthMetricDef(
-    key: 'vo2max',
-    type: HealthDataType.VO2MAX,
-    label: 'VO₂ Max',
-    description: 'Cardio fitness score from Apple Watch workouts',
-  ),
 ];
 
 /// Convenience lookup: metricKey → HealthMetricDef
@@ -381,8 +374,6 @@ class HealthService {
         return {'avg': avg(), 'unit': 'kg', 'dimension': 'body'};
       case HealthDataType.BODY_FAT_PERCENTAGE:
         return {'avg': avg(), 'unit': '%', 'dimension': 'body'};
-      case HealthDataType.VO2MAX:
-        return {'avg': avg(), 'unit': 'ml/kg/min', 'dimension': 'fitness'};
 
       default:
         return {'avg': avg(), 'unit': '', 'dimension': 'other'};
