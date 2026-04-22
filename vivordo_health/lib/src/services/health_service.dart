@@ -232,16 +232,26 @@ class HealthService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     await _setConsent(metricKey, false);
-    final batch = _db.batch();
     final query = await _db
         .collection('metrics_daily')
         .where('userId', isEqualTo: uid)
         .where('metricType', isEqualTo: metricKey)
         .get();
-    for (final doc in query.docs) {
-      batch.delete(doc.reference);
+    if (query.docs.isEmpty) return;
+
+    // Firestore batches are capped at 500 ops — chunk to stay under the limit.
+    const chunkSize = 400;
+    for (int i = 0; i < query.docs.length; i += chunkSize) {
+      final chunk = query.docs.sublist(
+        i,
+        (i + chunkSize).clamp(0, query.docs.length),
+      );
+      final batch = _db.batch();
+      for (final doc in chunk) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
     }
-    if (query.docs.isNotEmpty) await batch.commit();
   }
 
   /// Revoke ALL metrics and delete all HealthKit data from Firestore.
@@ -271,8 +281,9 @@ class HealthService {
       );
       if (dataPoints.isEmpty) return;
       await _writeDataPoints(uid, def, dataPoints);
-    } catch (e) {
-      debugPrint('HealthService.syncMetric($metricKey): $e');
+    } catch (e, st) {
+      debugPrint('HealthService.syncMetric($metricKey): $e\n$st');
+      rethrow; // Surface Firestore/permissions errors to the caller
     }
   }
 
@@ -280,15 +291,24 @@ class HealthService {
     final consent = await getConsent();
     for (final m in kHealthMetrics) {
       if (consent[m.key] == true) {
-        await syncMetric(m.key, daysBack: daysBack);
+        try {
+          await syncMetric(m.key, daysBack: daysBack);
+        } catch (e) {
+          // One metric failing (e.g. permissions) shouldn't stop the others.
+          debugPrint('HealthService.syncToFirestore — skipped ${m.key}: $e');
+        }
       }
     }
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      await _db.collection('users').doc(uid).set(
-        {'lastHealthKitSync': FieldValue.serverTimestamp()},
-        SetOptions(merge: true),
-      );
+      try {
+        await _db.collection('users').doc(uid).set(
+          {'lastHealthKitSync': FieldValue.serverTimestamp()},
+          SetOptions(merge: true),
+        );
+      } catch (e) {
+        debugPrint('HealthService.syncToFirestore — could not update lastSync: $e');
+      }
     }
   }
 
