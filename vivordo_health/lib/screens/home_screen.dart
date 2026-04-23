@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'profile_screen.dart';
+import 'package:vivordo_health/src/services/metrics_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
@@ -12,7 +14,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final double stressScore = 42;
   String _currentMood = 'Good';
   bool _messageCopied = false;
 
@@ -50,8 +51,142 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'High Stress';
   }
 
+  String _todayPeriod() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _todayMetric(String metricType) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const Stream.empty();
+    final docId = '${user.uid}_${metricType}_${_todayPeriod()}';
+    return FirebaseFirestore.instance.collection('metrics_daily').doc(docId).snapshots();
+  }
+
+  /// Reads stress score: prefers HRV-derived stress from HealthKit ('hrv' doc),
+  /// falls back to manual 'stress' doc from seed data.
+  Stream<double> _stressScoreStream() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Stream.value(0);
+    final today = _todayPeriod();
+    final uid = user.uid;
+
+    // Try HRV doc first — if it has stressScore field, use it
+    final hrvDoc = FirebaseFirestore.instance
+        .collection('metrics_daily')
+        .doc('${uid}_hrv_$today')
+        .snapshots()
+        .map((snap) => (snap.data()?['stressScore'] as num?)?.toDouble());
+
+    // Combine: return HRV-based stress if available, else manual stress
+    return hrvDoc.asyncMap((hrv) async {
+      if (hrv != null) return hrv;
+      final stressSnap = await FirebaseFirestore.instance
+          .collection('metrics_daily')
+          .doc('${uid}_stress_$today')
+          .get();
+      return (stressSnap.data()?['avg'] as num?)?.toDouble() ?? 0.0;
+    });
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStream() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const Stream.empty();
+    return FirebaseFirestore.instance
+        .collection('goals')
+        .where('userId', isEqualTo: user.uid)
+        .where('status', isEqualTo: 'active')
+        .limit(1)
+        .snapshots();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return _buildScaffold(stressScore: 0, sleepVal: '--', stepsVal: '--', hrVal: '--', goalTitle: 'No goal set', goalProgress: 0);
+    }
+
+    return StreamBuilder<double>(
+      stream: _stressScoreStream(),
+      builder: (context, stressSnap) {
+        final stressScore = stressSnap.data ?? 0.0;
+
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: _todayMetric('sleep'),
+          builder: (context, sleepSnap) {
+            final sleepData = sleepSnap.data?.data();
+            final sleepVal = sleepData != null
+                ? '${(sleepData['avg'] as num?)?.toStringAsFixed(1) ?? '--'}h'
+                : '--';
+
+            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: _todayMetric('steps'),
+              builder: (context, stepsSnap) {
+                final stepsData = stepsSnap.data?.data();
+                final steps = (stepsData?['sum'] as num?)?.toInt();
+                final stepsVal = steps != null
+                    ? (steps >= 1000 ? '${(steps / 1000).toStringAsFixed(1)}k' : steps.toString())
+                    : '--';
+
+                return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: _todayMetric('heart_rate'),
+                  builder: (context, hrSnap) {
+                    final hrData = hrSnap.data?.data();
+                    final hrVal = hrData != null
+                        ? '${(hrData['avg'] as num?)?.round() ?? '--'} bpm'
+                        : '--';
+
+                    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                      stream: _todayMetric('mood'),
+                      builder: (context, moodSnap) {
+                        final moodData = moodSnap.data?.data();
+                        if (moodData != null && _currentMood == '--') {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) setState(() => _currentMood = moodData['label'] as String? ?? '--');
+                          });
+                        }
+
+                        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _goalsStream(),
+                          builder: (context, goalSnap) {
+                            final goalDocs = goalSnap.data?.docs ?? [];
+                            final goalData = goalDocs.isNotEmpty ? goalDocs.first.data() : null;
+                            final goalTitle = goalData?['title'] as String? ?? 'No active goal';
+                            final rawPercent = (goalData?['progress']?['completionPercent'] as num?)?.toDouble() ?? 0;
+                            final goalProgress = (rawPercent / 100).clamp(0.0, 1.0);
+
+                            return _buildScaffold(
+                              stressScore: stressScore,
+                              sleepVal: sleepVal,
+                              stepsVal: stepsVal,
+                              hrVal: hrVal,
+                              goalTitle: goalTitle,
+                              goalProgress: goalProgress,
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildScaffold({
+    required double stressScore,
+    required String sleepVal,
+    required String stepsVal,
+    required String hrVal,
+    required String goalTitle,
+    required double goalProgress,
+  }) {
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(
@@ -63,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildHeader(),
               const SizedBox(height: 24),
-              _buildStressCard(),
+              _buildStressCard(stressScore),
               const SizedBox(height: 28),
               _buildSectionTitle('QUICK ACTIONS'),
               const SizedBox(height: 12),
@@ -163,7 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildStressCard() {
+  Widget _buildStressCard(double stressScore) {
     final statusColor = _getStressColor(stressScore);
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
@@ -703,9 +838,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _moodOption(String label, String emoji, Color bgColor, Color accentColor) {
     bool isSelected = _currentMood == label;
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
         setState(() => _currentMood = label);
         Navigator.pop(context);
+        try { await MetricsService.saveMoodCheckIn(label); } catch (e) { debugPrint('Mood save failed: $e'); }
       },
       child: Column(
         children: [

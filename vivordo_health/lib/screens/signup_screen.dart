@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'main_navigation.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
@@ -17,6 +16,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
   int _currentPage = 0;
   final int _totalQuestions = 15;
+  bool _isLoading = false; // prevents double-tap triggering emailSignup twice
 
   // Centralized data map for future database integration
   final Map<String, dynamic> _userData = {'responses': <String, dynamic>{}};
@@ -29,7 +29,7 @@ class _SignupScreenState extends State<SignupScreen> {
   // For show/hide password
   bool _showPassword = false;
   bool _showConfirmPassword = false;
-  bool _isLoading = false;
+
 
   @override
   void dispose() {
@@ -50,7 +50,7 @@ class _SignupScreenState extends State<SignupScreen> {
         _userData['responses'][key] != null;
   }
 
-  void _nextPage() {
+  Future<void> _nextPage() async {
     //TODO: Consider case where user signs up but exists before questionare is completed
     if (_currentPage == 0) {
       if (_formKey.currentState!.validate()) {
@@ -63,13 +63,20 @@ class _SignupScreenState extends State<SignupScreen> {
           );
           return;
         }
-        AuthService.emailSignup(
+        // Guard against double-tap: if already loading, do nothing.
+        // Without this, tapping the button twice calls createUserWithEmailAndPassword
+        // twice with the same email — the second call returns email-already-in-use
+        // even though the email is brand new.
+        if (_isLoading) return;
+        setState(() => _isLoading = true);
+        await AuthService.emailSignup(
           emailAddress: _emailController.text,
           password: _passController.text,
           displayName: _nameController.text,
           context: context,
           pageController: _pageController,
         );
+        if (mounted) setState(() => _isLoading = false);
       }
     } else {
       if (_currentPage == _totalQuestions) {
@@ -280,7 +287,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _isCurrentQuestionAnswered() ? _nextPage : null,
+                  onPressed: (_isCurrentQuestionAnswered() && !_isLoading) ? _nextPage : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF7C69EF),
                     disabledBackgroundColor: Colors.grey.shade300,
@@ -330,7 +337,7 @@ class _SignupScreenState extends State<SignupScreen> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
+              BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10),
             ],
           ),
           child: Column(
@@ -432,8 +439,9 @@ class _SignupScreenState extends State<SignupScreen> {
             validator: (v) {
               if (v == null || v.isEmpty) return "Field required";
               if (label == "Email" &&
-                  !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v))
+                  !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
                 return "Invalid email";
+              }
               if (isPass && v.length < 6) return "Min 6 characters";
               return null;
             },
@@ -565,26 +573,31 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
         const SizedBox(height: 20),
         const Text(
-          "Thanks for answering!",
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          "Thank You!",
+          style: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF2D3142),
+          ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 16),
         const Text(
-          "Your profile is being created.",
-          style: TextStyle(color: Colors.grey),
+          "Your profile is all set up.\nLet's get started on your health journey.",
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 16, color: Colors.grey, height: 1.5),
         ),
         const SizedBox(height: 40),
         ElevatedButton(
           onPressed: () {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(
-                builder: (context) => const MainNavigationScreen(initialIndex: 0),
-              ),
-              (route) => false,
-            );
+            Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
           },
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7C69EF)),
-          child: const Text("Continue", style: TextStyle(color: Colors.white)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF7C69EF),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+          child: const Text("Go to Dashboard", style: TextStyle(fontSize: 16)),
         ),
       ],
     );

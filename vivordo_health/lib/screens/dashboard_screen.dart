@@ -1,36 +1,121 @@
-﻿import 'dart:ui' as ui;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:vivordo_health/src/services/health_service.dart';
+import 'profile_screen.dart';
 
-// --- DATA ---
+// ─────────────────────────────────────────────────────────────────────────────
+// DashboardScreen
+//
+// Uses ONE combined Firestore listener for all metrics (instead of 9 separate
+// ones) to avoid Firestore's internal watch-stream assertion errors that occur
+// when too many concurrent listeners are open at the same time.
+//
+// Consent is a second listener on the users/ doc (already open app-wide).
+// Total listeners: 2 instead of the previous ~13.
+// ─────────────────────────────────────────────────────────────────────────────
 
-class _WeekPoint {
-  final String day;
-  final double stress;
-  final double hrv;
-  const _WeekPoint(this.day, this.stress, this.hrv);
-}
-
-const _weekData = [
-  _WeekPoint('Mon', 65, 38),
-  _WeekPoint('Tue', 72, 34),
-  _WeekPoint('Wed', 58, 42),
-  _WeekPoint('Thu', 45, 48),
-  _WeekPoint('Fri', 52, 45),
-  _WeekPoint('Sat', 30, 55),
-  _WeekPoint('Sun', 42, 52),
-];
-
-// --- SCREEN ---
-
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
   static const Color accentPurple = Color(0xFF7B6EF6);
-  static const Color greenColor = Color(0xFF34C759);
-  static const Color bgColor = Color(0xFFF2F2F7);
-  static const Color cardWhite = Colors.white;
-  static const Color textDark = Color(0xFF1C1C1E);
-  static const Color textGrey = Color(0xFF8E8E93);
+  static const Color greenColor  = Color(0xFF34C759);
+  static const Color bgColor     = Color(0xFFF2F2F7);
+  static const Color cardWhite   = Colors.white;
+  static const Color textDark    = Color(0xFF1C1C1E);
+  static const Color textGrey    = Color(0xFF8E8E93);
+
+  // 0 = Day, 1 = Week (default), 2 = Month
+  int _filterIndex = 1;
+  static const _filterLabels = ['Day', 'Week', 'Month'];
+  int get _daysBack => _filterIndex == 0 ? 1 : _filterIndex == 1 ? 7 : 30;
+
+  // ── ONE combined stream for all metrics_daily docs in the date window ──────
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _allMetricsStream;
+  // ── Separate consent stream (reads from users/ doc) ───────────────────────
+  late Stream<Map<String, bool>> _consentStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuildStreams();
+  }
+
+  void _rebuildStreams() {
+    _allMetricsStream = _buildCombinedStream();
+    _consentStream    = HealthService().consentStream();
+  }
+
+  /// Single Firestore query that fetches ALL metric types for the user in the
+  /// current date window. We split by metricType in Dart — no extra listeners.
+  Stream<QuerySnapshot<Map<String, dynamic>>> _buildCombinedStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
+    final now    = DateTime.now();
+    final oldest = now.subtract(Duration(days: _daysBack - 1));
+    String fmt(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    return FirebaseFirestore.instance
+        .collection('metrics_daily')
+        .where('userId', isEqualTo: uid)
+        .where('period', isGreaterThanOrEqualTo: fmt(oldest))
+        .where('period', isLessThanOrEqualTo: fmt(now))
+        .orderBy('period')
+        .snapshots();
+  }
+
+  // ── Per-metric helpers ─────────────────────────────────────────────────────
+
+  /// Filter docs by metricType from the combined snapshot.
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _docsFor(
+    QuerySnapshot<Map<String, dynamic>>? snap,
+    String metricType,
+  ) {
+    if (snap == null) return [];
+    return snap.docs
+        .where((d) => d['metricType'] == metricType)
+        .toList()
+      ..sort((a, b) =>
+          (a['period'] as String).compareTo(b['period'] as String));
+  }
+
+  List<double> _vals(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String field,
+  ) =>
+      docs.map((d) => (d[field] as num?)?.toDouble() ?? 0.0).toList();
+
+  List<String> _dayLabels(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) =>
+      docs.map((d) {
+        final p  = d['period'] as String? ?? '';
+        final dt = p.length >= 10 ? DateTime.tryParse(p) : null;
+        if (dt == null) return '';
+        const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        return names[dt.weekday - 1];
+      }).toList();
+
+  double _avg(List<double> vals) =>
+      vals.isEmpty ? 0 : vals.reduce((a, b) => a + b) / vals.length;
+
+  String _trend(List<double> vals) {
+    if (vals.length < 2) return '';
+    final half   = vals.length ~/ 2;
+    final old    = _avg(vals.sublist(0, half));
+    final recent = _avg(vals.sublist(half));
+    if (old == 0) return '';
+    final pct = ((recent - old) / old * 100).round();
+    return pct >= 0 ? '+$pct%' : '$pct%';
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -55,48 +140,114 @@ class DashboardScreen extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Your weekly health trends',
+                'Your health trends',
                 style: TextStyle(fontSize: 14, color: textGrey),
               ),
-              const SizedBox(height: 24),
-              _buildSummaryCards(),
-              const SizedBox(height: 20),
-              _buildChartCard(
-                title: 'Stress Levels',
-                color: accentPurple,
-                values: _weekData.map((d) => d.stress).toList(),
-                maxY: 100,
-              ),
               const SizedBox(height: 16),
-              _buildChartCard(
-                title: 'Heart Rate Variability',
-                color: greenColor,
-                values: _weekData.map((d) => d.hrv).toList(),
-                maxY: 70,
+              _buildFilter(),
+              const SizedBox(height: 20),
+
+              // ── Everything driven by the two cached streams ────────────────
+              StreamBuilder<Map<String, bool>>(
+                stream: _consentStream,
+                builder: (_, consentSnap) {
+                  final consent     = consentSnap.data ?? {};
+                  final anyConsented = consent.values.any((v) => v);
+
+                  return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _allMetricsStream,
+                    builder: (_, metricsSnap) {
+                      final snap = metricsSnap.data;
+
+                      // ── Summary row ────────────────────────────────────────
+                      final stressVals = _vals(_docsFor(snap, 'stress'), 'avg');
+                      final hrvVals    = _vals(_docsFor(snap, 'hrv'),    'avg');
+                      final sleepVals  = _vals(_docsFor(snap, 'sleep'),  'avg');
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Summary cards
+                          Row(
+                            children: [
+                              Expanded(child: _buildStatCard(
+                                label: 'Avg Stress',
+                                value: stressVals.isEmpty ? '--' : _avg(stressVals).toInt().toString(),
+                                change: _trend(stressVals),
+                                trendUp: false,
+                              )),
+                              const SizedBox(width: 10),
+                              Expanded(child: _buildStatCard(
+                                label: 'Avg HRV',
+                                value: hrvVals.isEmpty ? '--' : '${_avg(hrvVals).toInt()}ms',
+                                change: _trend(hrvVals),
+                                trendUp: true,
+                              )),
+                              const SizedBox(width: 10),
+                              Expanded(child: _buildStatCard(
+                                label: 'Avg Sleep',
+                                value: sleepVals.isEmpty ? '--' : '${_avg(sleepVals).toStringAsFixed(1)}h',
+                                change: _trend(sleepVals),
+                                trendUp: true,
+                              )),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+
+                          // ── Manual metrics — shown only when data exists ────
+                          _maybeChart(snap, 'stress',  'Stress Levels',          accentPurple,                'avg', 100),
+                          _maybeChart(snap, 'mood',    'Mood',                   const Color(0xFFF97316),     'avg', 100),
+                          _maybeChart(snap, 'wellness','Wellness',               Colors.teal,                 'avg', 100),
+
+                          // ── HealthKit metrics — consent-gated ───────────────
+                          // Activity
+                          if (consent['steps']              == true)
+                            _maybeChart(snap, 'steps',              'Daily Steps',                  Colors.blueAccent,           'sum',  20000),
+                          if (consent['active_calories']    == true)
+                            _maybeChart(snap, 'active_calories',    'Active Calories (kcal)',       const Color(0xFFF97316),     'sum',  1000),
+                          if (consent['exercise_time']      == true)
+                            _maybeChart(snap, 'exercise_time',      'Exercise Time (min)',          const Color(0xFFFF9500),     'sum',  120),
+                          if (consent['distance']           == true)
+                            _maybeChart(snap, 'distance',           'Distance (km)',                const Color(0xFF3B82F6),     'sum',  20),
+                          if (consent['flights_climbed']    == true)
+                            _maybeChart(snap, 'flights_climbed',    'Flights Climbed',              const Color(0xFF14B8A6),     'sum',  30),
+                          // Heart
+                          if (consent['heart_rate']         == true)
+                            _maybeChart(snap, 'heart_rate',         'Heart Rate (bpm)',             Colors.redAccent,            'avg',  200),
+                          if (consent['resting_heart_rate'] == true)
+                            _maybeChart(snap, 'resting_heart_rate', 'Resting Heart Rate (bpm)',     const Color(0xFFFF6B6B),     'avg',  120),
+                          if (consent['hrv']                == true)
+                            _maybeChart(snap, 'hrv',                'HRV (ms)',                     greenColor,                  'avg',  120),
+                          // Breathing / Vitals
+                          if (consent['blood_oxygen']       == true)
+                            _maybeChart(snap, 'blood_oxygen',       'Blood Oxygen SpO₂ (%)',        const Color(0xFF06B6D4),     'avg',  100),
+                          if (consent['respiratory_rate']   == true)
+                            _maybeChart(snap, 'respiratory_rate',   'Respiratory Rate (brpm)',      const Color(0xFF0EA5E9),     'avg',  30),
+                          // Sleep
+                          if (consent['sleep']              == true)
+                            _maybeChart(snap, 'sleep',              'Sleep (hours)',                const Color(0xFF8B5CF6),     'avg',  12),
+                          // Body
+                          if (consent['weight']             == true)
+                            _maybeChart(snap, 'weight',             'Weight (kg)',                  const Color(0xFFA78BFA),     'avg',  0),
+                          if (consent['body_fat']           == true)
+                            _maybeChart(snap, 'body_fat',           'Body Fat (%)',                 const Color(0xFFFBBF24),     'avg',  50),
+                          // Mind
+                          if (consent['mindfulness']        == true)
+                            _maybeChart(snap, 'mindfulness',        'Mindfulness (min)',            const Color(0xFF7C3AED),     'sum',  60),
+                          // Fitness
+                          if (consent['vo2max']             == true)
+                            _maybeChart(snap, 'vo2max',             'VO₂ Max (ml/kg/min)',          greenColor,                  'avg',  70),
+
+                          // ── Apple Health CTA when nothing is consented ──────
+                          if (!anyConsented) _buildConnectCard(),
+
+                          const SizedBox(height: 120),
+                        ],
+                      );
+                    },
+                  );
+                },
               ),
-              const SizedBox(height: 28),
-              const Text(
-                'PATTERNS DETECTED',
-                style: TextStyle(
-                  color: textGrey,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.0,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildPatternCard(
-                emoji: '📈',
-                title: 'Stress peaks on Tuesdays',
-                body: 'Your Tuesday meetings correlate with 30% higher stress. Consider blocking recovery time after.',
-              ),
-              const SizedBox(height: 10),
-              _buildPatternCard(
-                emoji: '😴',
-                title: 'Weekend sleep recovery',
-                body: 'You average 1.5h more sleep on weekends. Your HRV improves by 18% as a result.',
-              ),
-              const SizedBox(height: 120),
             ],
           ),
         ),
@@ -104,48 +255,104 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildSummaryCards() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatCard(
-            label: 'Avg Stress',
-            value: '52',
-            change: '-8%',
-            trendUp: false,
-            flat: false,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildStatCard(
-            label: 'Avg HRV',
-            value: '45ms',
-            change: '+12%',
-            trendUp: true,
-            flat: false,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildStatCard(
-            label: 'Avg Sleep',
-            value: '7.1h',
-            change: '+0.2h',
-            trendUp: true,
-            flat: true,
-          ),
-        ),
-      ],
+  /// Returns a chart card if the metric has data, otherwise SizedBox.shrink().
+  Widget _maybeChart(
+    QuerySnapshot<Map<String, dynamic>>? snap,
+    String metricType,
+    String title,
+    Color color,
+    String field,
+    double maxY,
+  ) {
+    final docs   = _docsFor(snap, metricType);
+    final values = _vals(docs, field);
+    final labels = _dayLabels(docs);
+    if (values.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: _buildChartCard(
+        title: title,
+        icon: _metricIcon(metricType),
+        color: color,
+        values: values,
+        maxY: maxY > 0
+            ? maxY
+            : (values.reduce((a, b) => a > b ? a : b) * 1.2)
+                .clamp(1, double.infinity),
+        labels: labels,
+      ),
     );
   }
+
+  IconData _metricIcon(String key) {
+    switch (key) {
+      case 'steps':              return Icons.directions_walk_rounded;
+      case 'active_calories':    return Icons.local_fire_department_rounded;
+      case 'exercise_time':      return Icons.fitness_center_rounded;
+      case 'distance':           return Icons.straighten_rounded;
+      case 'flights_climbed':    return Icons.stairs_rounded;
+      case 'heart_rate':         return Icons.favorite_rounded;
+      case 'resting_heart_rate': return Icons.favorite_border_rounded;
+      case 'hrv':                return Icons.show_chart_rounded;
+      case 'blood_oxygen':       return Icons.air_rounded;
+      case 'respiratory_rate':   return Icons.wind_power_rounded;
+      case 'sleep':              return Icons.bedtime_rounded;
+      case 'weight':             return Icons.monitor_weight_rounded;
+      case 'body_fat':           return Icons.percent_rounded;
+      case 'mindfulness':        return Icons.self_improvement_rounded;
+      case 'vo2max':             return Icons.speed_rounded;
+      case 'stress':             return Icons.psychology_rounded;
+      case 'mood':               return Icons.mood_rounded;
+      case 'wellness':           return Icons.spa_rounded;
+      default:                   return Icons.monitor_heart_outlined;
+    }
+  }
+
+  // ── Filter chips ───────────────────────────────────────────────────────────
+
+  Widget _buildFilter() {
+    return Row(
+      children: List.generate(_filterLabels.length, (i) {
+        final active = _filterIndex == i;
+        return Padding(
+          padding: EdgeInsets.only(right: i < _filterLabels.length - 1 ? 8 : 0),
+          child: GestureDetector(
+            onTap: () => setState(() {
+              _filterIndex = i;
+              _rebuildStreams();
+            }),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              decoration: BoxDecoration(
+                color:  active ? accentPurple : cardWhite,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: active ? accentPurple : const Color(0xFFE5E5EA),
+                ),
+              ),
+              child: Text(
+                _filterLabels[i],
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: active ? Colors.white : textGrey,
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  // ── Shared UI widgets (from dev — unchanged) ──────────────────────────────
 
   Widget _buildStatCard({
     required String label,
     required String value,
     required String change,
     required bool trendUp,
-    required bool flat,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
@@ -176,30 +383,83 @@ class DashboardScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                flat
-                    ? Icons.remove_rounded
-                    : trendUp
-                        ? Icons.trending_up_rounded
-                        : Icons.trending_down_rounded,
-                size: 13,
-                color: greenColor,
-              ),
-              const SizedBox(width: 3),
-              Text(
-                change,
-                style: const TextStyle(
-                  fontSize: 10,
+          if (change.isNotEmpty)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  trendUp
+                      ? Icons.trending_up_rounded
+                      : Icons.trending_down_rounded,
+                  size: 13,
                   color: greenColor,
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  change,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: greenColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConnectCard() {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: cardWhite,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE5E5EA)),
+        ),
+        child: Column(
+          children: [
+            const Icon(Icons.health_and_safety_outlined,
+                size: 36, color: Color(0xFF7B6EF6)),
+            const SizedBox(height: 12),
+            const Text(
+              'Apple Health not connected',
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: textDark),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Tap to go to Profile → Health Data Permissions',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: textGrey, height: 1.5),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: accentPurple,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'Enable Health Data',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -209,7 +469,13 @@ class DashboardScreen extends StatelessWidget {
     required Color color,
     required List<double> values,
     required double maxY,
+    required List<String> labels,
+    IconData? icon,
   }) {
+    // Compute a quick summary value for the subtitle
+    final avg = values.isEmpty ? 0.0 : values.reduce((a, b) => a + b) / values.length;
+    final latest = values.isNotEmpty ? values.last : 0.0;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
       decoration: BoxDecoration(
@@ -220,60 +486,60 @@ class DashboardScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: textDark,
-            ),
+          Row(
+            children: [
+              if (icon != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, size: 16, color: color),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: textDark,
+                  ),
+                ),
+              ),
+              // Latest value badge
+              Text(
+                latest == latest.roundToDouble()
+                    ? latest.toInt().toString()
+                    : latest.toStringAsFixed(1),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
+          if (values.length > 1) ...[
+            const SizedBox(height: 2),
+            Padding(
+              padding: EdgeInsets.only(left: icon != null ? 42 : 0),
+              child: Text(
+                'avg ${avg == avg.roundToDouble() ? avg.toInt() : avg.toStringAsFixed(1)}',
+                style: const TextStyle(fontSize: 11, color: textGrey),
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
           SizedBox(
             height: 160,
             child: _AreaChart(
               values: values,
               maxY: maxY,
               color: color,
-              labels: _weekData.map((d) => d.day).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPatternCard({
-    required String emoji,
-    required String title,
-    required String body,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cardWhite,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '$emoji  $title',
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: textDark,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            body,
-            style: const TextStyle(
-              fontSize: 12,
-              color: textGrey,
-              height: 1.5,
+              labels: labels,
             ),
           ),
         ],
@@ -282,7 +548,9 @@ class DashboardScreen extends StatelessWidget {
   }
 }
 
-// --- AREA CHART WIDGET ---
+// ─────────────────────────────────────────────────────────────────────────────
+// _AreaChart — from dev, unchanged
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _AreaChart extends StatefulWidget {
   final List<double> values;
@@ -313,8 +581,17 @@ class _AreaChartState extends State<_AreaChart>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _animation =
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
     _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(_AreaChart old) {
+    super.didUpdateWidget(old);
+    if (old.values != widget.values) {
+      _controller.forward(from: 0);
+    }
   }
 
   @override
@@ -349,7 +626,7 @@ class _AreaChartPainter extends CustomPainter {
   final double progress;
 
   static const double labelHeight = 22;
-  static const double leftPad = 36;
+  static const double leftPad     = 36;
 
   _AreaChartPainter({
     required this.values,
@@ -364,7 +641,7 @@ class _AreaChartPainter extends CustomPainter {
     final chartH = size.height - labelHeight;
     final chartW = size.width - leftPad;
 
-    // --- Grid lines ---
+    // Grid lines
     final gridPaint = Paint()
       ..color = const Color(0xFFEEEEF2)
       ..strokeWidth = 1;
@@ -372,19 +649,11 @@ class _AreaChartPainter extends CustomPainter {
     for (int i = 0; i <= gridLines; i++) {
       final y = chartH * i / gridLines;
       canvas.drawLine(
-        Offset(leftPad, y),
-        Offset(size.width, y),
-        gridPaint,
-      );
-      // Y-axis label
-      final yVal = (maxY * (1 - i / gridLines)).round();
+          Offset(leftPad, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
         text: TextSpan(
-          text: '$yVal',
-          style: TextStyle(
-            fontSize: 9,
-            color: Colors.grey.shade400,
-          ),
+          text: '${(maxY * (1 - i / gridLines)).round()}',
+          style: TextStyle(fontSize: 9, color: Colors.grey.shade400),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -393,73 +662,80 @@ class _AreaChartPainter extends CustomPainter {
 
     if (values.isEmpty) return;
 
-    // Compute pixel positions
     final n = values.length;
-    List<Offset> pts = [];
-    for (int i = 0; i < n; i++) {
-      final x = leftPad + chartW * i / (n - 1);
-      final y = chartH * (1 - values[i] / maxY);
-      pts.add(Offset(x, y));
-    }
+    final pts = List.generate(n, (i) {
+      final x = n == 1
+          ? leftPad + chartW / 2
+          : leftPad + chartW * i / (n - 1);
+      final y = chartH * (1 - (values[i] / maxY).clamp(0.0, 1.0));
+      return Offset(x, y);
+    });
 
-    // Build smooth path (catmull-rom → bezier)
-    Path linePath = _smoothPath(pts);
-
-    // Animate: clip to progress
+    final linePath    = _smoothPath(pts);
     final pathMetrics = linePath.computeMetrics().toList();
     if (pathMetrics.isEmpty) return;
-    final totalLen = pathMetrics.first.length;
-    final animatedLine = pathMetrics.first.extractPath(0, totalLen * progress);
+    final animatedLine = pathMetrics.first
+        .extractPath(0, pathMetrics.first.length * progress);
 
-    // Fill path
+    // Gradient fill
     final fillPath = Path.from(animatedLine)
-      ..lineTo(pts.last.dx * progress + leftPad * (1 - progress), chartH)
+      ..lineTo(pts.last.dx, chartH)
       ..lineTo(leftPad, chartH)
       ..close();
-
-    final gradientPaint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(0, 0),
-        Offset(0, chartH),
-        [color.withOpacity(0.28), color.withOpacity(0.0)],
-      )
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(fillPath, gradientPaint);
+    canvas.drawPath(
+      fillPath,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset.zero,
+          Offset(0, chartH),
+          [color.withValues(alpha: 0.28), color.withValues(alpha: 0.0)],
+        )
+        ..style = PaintingStyle.fill,
+    );
 
     // Stroke
-    final linePaint = Paint()
-      ..color = color
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(animatedLine, linePaint);
+    canvas.drawPath(
+      animatedLine,
+      Paint()
+        ..color = color
+        ..strokeWidth = 2.5
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
 
     // X-axis labels
-    final labelStyle = TextStyle(fontSize: 10, color: Colors.grey.shade500);
-    for (int i = 0; i < n; i++) {
-      final tp = TextPainter(
-        text: TextSpan(text: labels[i], style: labelStyle),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(
-        canvas,
-        Offset(pts[i].dx - tp.width / 2, chartH + 6),
-      );
+    if (labels.length == n) {
+      final labelStyle =
+          TextStyle(fontSize: 10, color: Colors.grey.shade500);
+      for (int i = 0; i < n; i++) {
+        final tp = TextPainter(
+          text: TextSpan(text: labels[i], style: labelStyle),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas,
+            Offset(pts[i].dx - tp.width / 2, chartH + 6));
+      }
     }
   }
 
   Path _smoothPath(List<Offset> pts) {
-    if (pts.length < 2) return Path()..moveTo(pts[0].dx, pts[0].dy);
+    if (pts.length == 1) {
+      return Path()..moveTo(pts[0].dx, pts[0].dy);
+    }
     final path = Path()..moveTo(pts[0].dx, pts[0].dy);
     for (int i = 0; i < pts.length - 1; i++) {
-      final cp1 = Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i].dy);
-      final cp2 = Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i + 1].dy);
-      path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, pts[i + 1].dx, pts[i + 1].dy);
+      final cp1 =
+          Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i].dy);
+      final cp2 =
+          Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i + 1].dy);
+      path.cubicTo(
+          cp1.dx, cp1.dy, cp2.dx, cp2.dy, pts[i + 1].dx, pts[i + 1].dy);
     }
     return path;
   }
 
   @override
-  bool shouldRepaint(_AreaChartPainter old) => old.progress != progress;
+  bool shouldRepaint(_AreaChartPainter old) =>
+      old.progress != progress || old.values != values;
 }

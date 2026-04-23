@@ -46,6 +46,7 @@ class _GoalsScreenState extends State<GoalsScreen>
     );
   }
 
+
   @override
   void dispose() {
     _pulseController.dispose();

@@ -50,5 +50,10 @@
 		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
+	<!-- HealthKit usage descriptions (required by Apple for App Store review) -->
+	<key>NSHealthShareUsageDescription</key>
+	<string>Vivordo Health reads your steps, heart rate, sleep, and HRV to display personalized health insights. You control which data types are shared.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Vivordo Health may write workout summaries back to Apple Health.</string>
 </dict>
 </plist>
