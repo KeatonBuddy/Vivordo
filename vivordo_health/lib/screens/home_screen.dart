@@ -17,6 +17,14 @@ class _HomeScreenState extends State<HomeScreen> {
   String _currentMood = 'Good';
   bool _messageCopied = false;
 
+  // Cached streams — created once in initState to avoid duplicate Firestore listeners
+  late Stream<double> _stressStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _sleepStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _stepsStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _hrStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _moodStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
+
   static const Color bgColor = Color(0xFFF2F2F7);
   static const Color cardWhite = Colors.white;
   static const Color accentPurple = Color(0xFF7B6EF6);
@@ -24,6 +32,28 @@ class _HomeScreenState extends State<HomeScreen> {
   static const Color textGrey = Color(0xFF8E8E93);
   static const Color greenColor = Color(0xFF34C759);
   static const Color orangeColor = Color(0xFFFF9500);
+
+  @override
+  void initState() {
+    super.initState();
+    _stressStream = _stressScoreStream();
+    final today = _todayPeriod();
+    final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid;
+    _sleepStream = uid != null
+        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_sleep_$today').snapshots()
+        : const Stream.empty();
+    _stepsStream = uid != null
+        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_steps_$today').snapshots()
+        : const Stream.empty();
+    _hrStream = uid != null
+        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_heart_rate_$today').snapshots()
+        : const Stream.empty();
+    _moodStream = uid != null
+        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_mood_$today').snapshots()
+        : const Stream.empty();
+    _goalsStreamCached = _goalsStream();
+  }
 
   String _getGreeting() {
     final hour = DateTime.now().hour;
@@ -109,12 +139,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return StreamBuilder<double>(
-      stream: _stressScoreStream(),
+      stream: _stressStream,
       builder: (context, stressSnap) {
         final stressScore = stressSnap.data ?? 0.0;
 
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: _todayMetric('sleep'),
+          stream: _sleepStream,
           builder: (context, sleepSnap) {
             final sleepData = sleepSnap.data?.data();
             final sleepVal = sleepData != null
@@ -122,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 : '--';
 
             return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: _todayMetric('steps'),
+              stream: _stepsStream,
               builder: (context, stepsSnap) {
                 final stepsData = stepsSnap.data?.data();
                 final steps = (stepsData?['sum'] as num?)?.toInt();
@@ -131,7 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     : '--';
 
                 return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                  stream: _todayMetric('heart_rate'),
+                  stream: _hrStream,
                   builder: (context, hrSnap) {
                     final hrData = hrSnap.data?.data();
                     final hrVal = hrData != null
@@ -139,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         : '--';
 
                     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                      stream: _todayMetric('mood'),
+                      stream: _moodStream,
                       builder: (context, moodSnap) {
                         final moodData = moodSnap.data?.data();
                         if (moodData != null && _currentMood == '--') {
@@ -149,7 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         }
 
                         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _goalsStream(),
+                          stream: _goalsStreamCached,
                           builder: (context, goalSnap) {
                             final goalDocs = goalSnap.data?.docs ?? [];
                             final goalData = goalDocs.isNotEmpty ? goalDocs.first.data() : null;
