@@ -24,16 +24,30 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      HomeScreen(onScanTap: () => setState(() => _selectedIndex = 1)),
-      const ScanScreen(),
-      const DashboardScreen(),
-      const PandaScreen(),
-    ];
+    // Build only the active page to avoid eagerly initialising the camera
+    // (ScanScreen) when the user hasn't navigated to it yet.
+    Widget activePage;
+    switch (_selectedIndex) {
+      case 0:
+        activePage = HomeScreen(onScanTap: () => setState(() => _selectedIndex = 1));
+        break;
+      case 1:
+        activePage = const ScanScreen();
+        break;
+      case 2:
+        activePage = const DashboardScreen();
+        break;
+      case 3:
+        activePage = const PandaScreen();
+        break;
+      default:
+        activePage = HomeScreen(onScanTap: () => setState(() => _selectedIndex = 1));
+    }
+
     return Scaffold(
       body: Stack(
         children: [
-          IndexedStack(index: _selectedIndex, children: pages),
+          activePage,
           Positioned(
             bottom: 30,
             left: 24,

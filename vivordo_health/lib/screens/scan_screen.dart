@@ -53,16 +53,11 @@ class _ScanScreenState extends State<ScanScreen> {
         debugPrint('[PPG] backCameras[$i] name: ${backCameras[i].name}');
       }
 
-      // On Pro iPhones the Flutter camera plugin returns back cameras in the
-      // order [wide (1x), telephoto, ultrawide (0.5x)]. The ultrawide sits
-      // physically closest to the flash, giving a stronger PPG signal, so we
-      // prefer backCameras[2] when at least 3 back cameras exist.
-      //
-      // On non-Pro iPhones there is only one back camera, so we fall back to
-      // backCameras[0] (the standard wide lens).
-      final selectedCamera = backCameras.length >= 3
-          ? backCameras[2]   // ultrawide on Pro (triple-camera) models
-          : backCameras.first; // standard lens on non-Pro models
+      // Always use the first back camera (wide-angle lens, index 0).
+      // The wide-angle lens is the only rear camera that supports torch
+      // mode on iOS. The ultrawide and telephoto lenses will crash with
+      // an AVFoundation abort if you try to enable the torch on them.
+      final selectedCamera = backCameras.first;
 
       // Low resolution for faster processing
       _cameraController = CameraController(
@@ -73,7 +68,11 @@ class _ScanScreenState extends State<ScanScreen> {
       );
 
       await _cameraController!.initialize();
-      await _cameraController!.setFlashMode(FlashMode.torch);
+      try {
+        await _cameraController!.setFlashMode(FlashMode.torch);
+      } catch (e) {
+        debugPrint('[PPG] Could not enable torch: $e');
+      }
       
       setState(() => _scanState = ScanState.idle);
       _startImageStream();
