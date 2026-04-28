@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
-import 'goals_screen.dart';
+import 'scan_screen.dart';
 import 'dashboard_screen.dart';
 import 'panda_screen.dart';
 
@@ -26,7 +26,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget build(BuildContext context) {
     final pages = [
       HomeScreen(onScanTap: () => setState(() => _selectedIndex = 1)),
-      const GoalsScreen(),
+      const ScanScreen(),
       const DashboardScreen(),
       const PandaScreen(),
     ];

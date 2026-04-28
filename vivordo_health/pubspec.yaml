@@ -50,7 +50,7 @@ dependencies:
   health: ^12.2.0           # Apple HealthKit + Google Health Connect bridge
   permission_handler: ^11.3.1 # Runtime permission requests
   intl: ^0.20.1             # Date formatting (DateFormat)
-
+  camera: ^0.10.5+9          # For accessing the device camera
 dev_dependencies:
   flutter_test:
     sdk: flutter
