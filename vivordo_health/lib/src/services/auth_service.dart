@@ -25,7 +25,13 @@ class AuthService {
       if (currentUser != null) {
         await currentUser.updateDisplayName(displayName);
         await currentUser.updatePhotoURL(photoUrl);
-        await UserService.createUser(currentUser);
+        // Firebase Auth's User object is NOT automatically refreshed after
+        // updateDisplayName — the local object still has displayName: null.
+        // reload() forces the SDK to fetch the updated profile, then we use
+        // a fresh currentUser reference so Firestore gets the correct name.
+        await currentUser.reload();
+        final refreshedUser = FirebaseAuth.instance.currentUser!;
+        await UserService.createUser(refreshedUser);
       } else {
         throw Exception("Error creating user");
       }
@@ -48,19 +54,22 @@ class AuthService {
         }
       }
     } catch (e) {
-      print(e);
+      debugPrint(e.toString());
     }
   }
 
-  //email sign in
-  static Future<void> emailLogin({
+  // email sign in — returns true on success, false on failure
+  static Future<bool> emailLogin({
     required String emailAddress,
     required String password,
     required BuildContext context,
   }) async {
     try {
       final userCredential = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(email: emailAddress, password: password);
+          .signInWithEmailAndPassword(
+            email: emailAddress,
+            password: password,
+          );
 
       final currentUser = userCredential.user;
       if (currentUser == null) {
@@ -70,6 +79,7 @@ class AuthService {
       // email change, this cleans up pendingEmail from Firestore immediately
       // so the profile screen never sees stale pending state.
       await UserService.syncEmailWithAuth();
+      return true;
 
     } on FirebaseAuthException catch (e) {
       if (context.mounted) {
@@ -80,10 +90,10 @@ class AuthService {
           SnackBars.authMessage(context: context, message: e.code);
         }
       }
+      return false;
     } catch (e) {
-      print(e);
+      debugPrint(e.toString());
+      return false;
     }
   }
-
-  //email signout - use await FirebaseAuth.instance.signOut();
-}
+} 

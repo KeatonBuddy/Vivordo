@@ -32,7 +32,7 @@ class LoginScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: primaryPurple.withOpacity(0.3),
+                        color: primaryPurple.withValues(alpha: 0.3),
                         blurRadius: 15,
                         offset: const Offset(0, 10),
                       ),
@@ -43,7 +43,7 @@ class LoginScreen extends StatelessWidget {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
@@ -74,7 +74,7 @@ class LoginScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 20,
                         offset: const Offset(0, 10),
                       ),
@@ -107,7 +107,6 @@ class LoginScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
 
-                      // Reset Password Link
                       Align(
                         alignment: Alignment.centerLeft,
                         child: InkWell(
@@ -127,12 +126,15 @@ class LoginScreen extends StatelessWidget {
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton(
-                          onPressed: () {
-                            AuthService.emailLogin(
+                          onPressed: () async {
+                            final success = await AuthService.emailLogin(
                               emailAddress: emailCtrl.text,
                               password: passCtrl.text,
                               context: context,
                             );
+                            if (success && context.mounted) {
+                              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainNavigationScreen()));
+                            }
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: primaryPurple,
@@ -140,7 +142,7 @@ class LoginScreen extends StatelessWidget {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             elevation: 5,
-                            shadowColor: primaryPurple.withOpacity(0.4),
+                            shadowColor: primaryPurple.withValues(alpha: 0.4),
                           ),
                           child: const Text(
                             'Login',
@@ -155,50 +157,31 @@ class LoginScreen extends StatelessWidget {
 
                       const SizedBox(height: 24),
 
-                      // OR Divider
                       Row(
                         children: [
                           const Expanded(child: Divider()),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Text(
-                              'OR',
-                              style: TextStyle(
-                                color: Colors.grey[400],
-                                fontSize: 12,
-                              ),
-                            ),
+                            child: Text('OR', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
                           ),
                           const Expanded(child: Divider()),
                         ],
                       ),
                       const SizedBox(height: 24),
 
-                      // Biometric Button
                       SizedBox(
                         width: double.infinity,
                         height: 50,
                         child: OutlinedButton.icon(
                           onPressed: () {},
-                          icon: const Icon(
-                            Icons.fingerprint,
-                            color: Colors.black87,
-                          ),
+                          icon: const Icon(Icons.fingerprint, color: Colors.black87),
                           label: const FittedBox(
                             fit: BoxFit.scaleDown,
-                            child: Text(
-                              'Use Biometric Login',
-                              style: TextStyle(
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                            child: Text('Use Biometric Login', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w600)),
                           ),
                           style: OutlinedButton.styleFrom(
                             side: BorderSide(color: Colors.grey.shade300),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                         ),
                       ),
@@ -206,38 +189,23 @@ class LoginScreen extends StatelessWidget {
                   ),
                 ),
 
-                // --- Footer ---
                 const SizedBox(height: 30),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.lock, size: 14, color: Colors.amber[700]),
                     const SizedBox(width: 6),
-                    Text(
-                      'All data is encrypted and securely stored.',
-                      style: TextStyle(color: textGrey, fontSize: 12),
-                    ),
+                    Text('All data is encrypted and securely stored.', style: TextStyle(color: textGrey, fontSize: 12)),
                   ],
                 ),
                 const SizedBox(height: 10),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      "Don't have an account? ",
-                      style: TextStyle(color: textGrey),
-                    ),
+                    Text("Don't have an account? ", style: TextStyle(color: textGrey)),
                     GestureDetector(
-                      onTap: () {
-                        Navigator.pushNamed(context, '/signup');
-                      },
-                      child: Text(
-                        "Create Account",
-                        style: TextStyle(
-                          color: primaryPurple,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      onTap: () => Navigator.pushNamed(context, '/signup'),
+                      child: Text("Create Account", style: TextStyle(color: primaryPurple, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
@@ -251,37 +219,17 @@ class LoginScreen extends StatelessWidget {
   }
 
   Widget _buildLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: Colors.black87,
-      ),
-    );
+    return Text(text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87));
   }
 
-  InputDecoration _inputDecoration({
-    required String hintText,
-    required IconData icon,
-    required Color primaryColor,
-  }) {
+  InputDecoration _inputDecoration({required String hintText, required IconData icon, required Color primaryColor}) {
     return InputDecoration(
       hintText: hintText,
       prefixIcon: Icon(icon, color: Colors.grey),
       contentPadding: const EdgeInsets.symmetric(vertical: 16),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.grey),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.withOpacity(0.5)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: primaryColor, width: 2),
-      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.grey)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.5))),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primaryColor, width: 2)),
     );
   }
 }

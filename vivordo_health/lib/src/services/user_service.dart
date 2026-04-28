@@ -1,10 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:vivordo_health/src/models/goal_model.dart';
 import 'package:vivordo_health/src/models/questionnaire_response.dart';
 import 'package:vivordo_health/src/models/metadata.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
-import 'package:vivordo_health/src/models/goal_model.dart';
-
 
 
 class UserService {
@@ -36,7 +35,7 @@ class UserService {
     double? targetValue,
     String? targetUnit,
     String? direction,
-    FieldValue? endDate,
+    String? endDate,
     String? progressCurrentValue,
     String? progressCompletionPercent,
   }) async {
@@ -64,11 +63,12 @@ class UserService {
     );
 
 
-    await FirebaseFirestore.instance.collection('goals').add(newGoal.toMap(
-          newStartDate: FieldValue.serverTimestamp(),
-          newCreatedAt: FieldValue.serverTimestamp(),
-          newEndDate: endDate,
-        ));
+    await FirebaseFirestore.instance.collection('goals').add(
+      newGoal.toMap(
+        newStartDate: FieldValue.serverTimestamp(),
+        newCreatedAt: FieldValue.serverTimestamp(),
+      ),
+    );
   }
 
 

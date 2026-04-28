@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:vivordo_health/screens/goals_screen.dart';
+import 'package:vivordo_health/src/models/goal.dart';
 
 class GoalModel {
   final String userId;

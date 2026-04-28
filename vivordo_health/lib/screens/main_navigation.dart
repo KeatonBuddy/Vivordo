@@ -22,22 +22,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _selectedIndex = widget.initialIndex;
   }
 
-  final List<Widget> _pages = [
-    const HomeScreen(),
-    const GoalsScreen(),
-    const DashboardScreen(),
-    const PandaScreen(),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final pages = [
+      HomeScreen(onScanTap: () => setState(() => _selectedIndex = 1)),
+      const GoalsScreen(),
+      const DashboardScreen(),
+      const PandaScreen(),
+    ];
     return Scaffold(
       body: Stack(
         children: [
-          IndexedStack(
-            index: _selectedIndex,
-            children: _pages,
-          ),
+          IndexedStack(index: _selectedIndex, children: pages),
           Positioned(
             bottom: 30,
             left: 24,
@@ -57,19 +53,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 20,
             offset: const Offset(0, 5),
-          )
+          ),
         ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _navItem(Icons.home_rounded, "Home", 0),
-          _navItem(Icons.track_changes_rounded, "Goals", 1),
-          _navItem(Icons.dashboard_rounded, "Dash", 2),
-          _navItem(Icons.pets_rounded, "Panda", 3),
+          _navItem(Icons.fingerprint, "Scan", 1),
+          _navItem(Icons.bar_chart_rounded, "Metrics", 2),
+          _navItem(Icons.auto_awesome_rounded, "AI Chat", 3),
         ],
       ),
     );
@@ -83,11 +79,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            color: isActive ? primaryPurple : Colors.grey,
-            size: 26,
-          ),
+          Icon(icon, color: isActive ? primaryPurple : Colors.grey, size: 26),
           const SizedBox(height: 4),
           Text(
             label,
