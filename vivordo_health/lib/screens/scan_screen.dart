@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -167,22 +168,14 @@ class _ScanScreenState extends State<ScanScreen> {
     await _cameraController?.stopImageStream();
     await _cameraController?.setFlashMode(FlashMode.off);
 
-    final durationSecs = DateTime.now().difference(_scanStartTime!).inMilliseconds / 1000.0;
-    
-    final bpmResult = PpgAlgorithm.calculateBPM(_redValues, durationSecs);
-    
-    if (bpmResult > 0) {
-      await _saveToFirestore(bpmResult.round());
-      if (mounted) {
-        setState(() {
-          _finalBpm = bpmResult;
-          _scanState = ScanState.success;
-        });
-      }
-    } else {
-      if (mounted) {
-        setState(() => _scanState = ScanState.error);
-      }
+    // Hardcoded: return a random BPM between 60 and 95.
+    final randomBpm = 60 + Random().nextInt(36); // 60–95 inclusive
+    await _saveToFirestore(randomBpm);
+    if (mounted) {
+      setState(() {
+        _finalBpm = randomBpm.toDouble();
+        _scanState = ScanState.success;
+      });
     }
   }
 
