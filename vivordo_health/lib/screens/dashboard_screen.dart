@@ -102,6 +102,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return names[dt.weekday - 1];
       }).toList();
 
+  /// Month view: only label Mondays to avoid x-axis crowding.
+  List<String> _monthLabels(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) =>
+      docs.map((d) {
+        final p  = d['period'] as String? ?? '';
+        final dt = p.length >= 10 ? DateTime.tryParse(p) : null;
+        if (dt == null || dt.weekday != DateTime.monday) return '';
+        return '${dt.day}/${dt.month}';
+      }).toList();
+
   double _avg(List<double> vals) =>
       vals.isEmpty ? 0 : vals.reduce((a, b) => a + b) / vals.length;
 
@@ -167,32 +178,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Summary cards
-                          Row(
-                            children: [
-                              Expanded(child: _buildStatCard(
-                                label: 'Avg Stress',
-                                value: stressVals.isEmpty ? '--' : _avg(stressVals).toInt().toString(),
-                                change: _trend(stressVals),
-                                trendUp: false,
-                              )),
-                              const SizedBox(width: 10),
-                              Expanded(child: _buildStatCard(
-                                label: 'Avg HRV',
-                                value: hrvVals.isEmpty ? '--' : '${_avg(hrvVals).toInt()}ms',
-                                change: _trend(hrvVals),
-                                trendUp: true,
-                              )),
-                              const SizedBox(width: 10),
-                              Expanded(child: _buildStatCard(
-                                label: 'Avg Sleep',
-                                value: sleepVals.isEmpty ? '--' : '${_avg(sleepVals).toStringAsFixed(1)}h',
-                                change: _trend(sleepVals),
-                                trendUp: true,
-                              )),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
+                          // Summary cards — only shown when a watch/Health is connected
+                          if (anyConsented) ...[                          
+                            Row(
+                              children: [
+                                Expanded(child: _buildStatCard(
+                                  label: 'Avg Stress',
+                                  value: stressVals.isEmpty ? '--' : _avg(stressVals).toInt().toString(),
+                                  change: _trend(stressVals),
+                                  trendUp: false,
+                                )),
+                                const SizedBox(width: 10),
+                                Expanded(child: _buildStatCard(
+                                  label: 'Avg HRV',
+                                  value: hrvVals.isEmpty ? '--' : '${_avg(hrvVals).toInt()}ms',
+                                  change: _trend(hrvVals),
+                                  trendUp: true,
+                                )),
+                                const SizedBox(width: 10),
+                                Expanded(child: _buildStatCard(
+                                  label: 'Avg Sleep',
+                                  value: sleepVals.isEmpty ? '--' : '${_avg(sleepVals).toStringAsFixed(1)}h',
+                                  change: _trend(sleepVals),
+                                  trendUp: true,
+                                )),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                          ],
 
                           // ── Manual metrics — shown only when data exists ────
                           _maybeChart(snap, 'stress',  'Stress Levels',          accentPurple,                'avg', 100),
@@ -266,7 +279,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ) {
     final docs   = _docsFor(snap, metricType);
     final values = _vals(docs, field);
-    final labels = _dayLabels(docs);
+    final labels = _filterIndex == 2 ? _monthLabels(docs) : _dayLabels(docs);
     if (values.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -641,10 +654,10 @@ class _AreaChartPainter extends CustomPainter {
     final chartH = size.height - labelHeight;
     final chartW = size.width - leftPad;
 
-    // Grid lines
+    // Grid lines — light translucent for a modern look
     final gridPaint = Paint()
-      ..color = const Color(0xFFEEEEF2)
-      ..strokeWidth = 1;
+      ..color = Colors.black.withOpacity(0.06)
+      ..strokeWidth = 0.8;
     const gridLines = 4;
     for (int i = 0; i <= gridLines; i++) {
       final y = chartH * i / gridLines;
@@ -704,11 +717,12 @@ class _AreaChartPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round,
     );
 
-    // X-axis labels
+    // X-axis labels — skip empty strings (used for month view non-Monday points)
     if (labels.length == n) {
       final labelStyle =
           TextStyle(fontSize: 10, color: Colors.grey.shade500);
       for (int i = 0; i < n; i++) {
+        if (labels[i].isEmpty) continue;
         final tp = TextPainter(
           text: TextSpan(text: labels[i], style: labelStyle),
           textDirection: TextDirection.ltr,

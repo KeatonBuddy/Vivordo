@@ -258,470 +258,350 @@ class _SettingsScreenState extends State<SettingsScreen>
 
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF9F7FF),
-          body: SingleChildScrollView(
-            child: Column(
-              children: [
-                // --- Profile Header ---
-                Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      height: 250,
-                      width: double.infinity,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF7C69EF),
-                        borderRadius: BorderRadius.only(
-                          bottomLeft: Radius.circular(40),
-                          bottomRight: Radius.circular(40),
-                        ),
-                      ),
-                      child: SafeArea(
-                        child: Align(
-                          alignment: Alignment.topLeft,
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back,
-                              color: Colors.white,
-                            ),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 60,
-                      child: Column(
-                        children: [
-                          const Text(
-                            "Profile",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 15),
-                          CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Colors.white24,
-                            backgroundImage: userData.photoUrl != null
-                                ? NetworkImage(userData.photoUrl!)
-                                : null,
-                            child: userData.photoUrl == null
-                                ? const Icon(
-                                    Icons.person_outline,
-                                    size: 50,
-                                    color: Colors.white,
-                                  )
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-
-
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          backgroundColor: const Color(0xFFF2F2F7),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Top bar ────────────────────────────────────────────────
+                  const SizedBox(height: 48),
+                  Row(
                     children: [
-
-
-                      // --- Pending Email Verification Banner ---
-                      if (pendingEmail != null) ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 38,
+                          height: 38,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFF8E1),
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.amber.shade300),
+                            border: Border.all(color: const Color(0xFFE5E5EA)),
                           ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.mail_outline,
-                                color: Colors.amber,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'Verify your new email: $pendingEmail\nCheck your inbox and tap the link.',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                          child: const Icon(Icons.arrow_back_ios_new_rounded, size: 16, color: Color(0xFF1C1C1E)),
                         ),
-                        const SizedBox(height: 16),
-                      ],
-
-
-                      // --- Section: Account Information ---
-                      _buildSectionCard(
-                        icon: Icons.person_outline,
-                        title: "Account Information",
-                        children: [
-                          _buildInfoTile(
-                            "Name",
-                            userData.displayName ?? "Set your name",
-                            onEdit: () => _showEditDialog(
-                              context,
-                              "Name",
-                              userData.displayName ?? "",
-                            ),
-                          ),
-                          const Divider(),
-                          _buildInfoTile(
-                            "Email",
-                            userData.email ?? "Set your email",
-                            onEdit: () => _showEditDialog(
-                              context,
-                              "Email",
-                              userData.email ?? "",
-                            ),
-                          ),
-                          const Divider(),
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text(
-                              "Password",
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Profile',
                               style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 14,
-                              ),
-                            ),
-                            subtitle: const Text(
-                              "••••••••",
-                              style: TextStyle(
-                                fontSize: 16,
+                                fontSize: 28,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.black,
+                                color: Color(0xFF1C1C1E),
+                                letterSpacing: -0.5,
                               ),
                             ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () =>
-                                _showEditDialog(context, "Password", ""),
-                          ),
-                        ],
-                      ),
-
-
-                      const SizedBox(height: 24),
-
-
-                      // --- Section: Connected Devices ---
-                      _buildSectionHeader(
-                        Icons.phone_iphone_outlined,
-                        "Connected Devices",
-                      ),
-                      const SizedBox(height: 12),
-                      // Connected Devices — reads consent from _userDocStream snapshot,
-                      // no extra Firestore listener needed.
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: _cardDecoration(),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: anyConsented
-                                        ? const Color(0xFFFFE4EC)
-                                        : Colors.grey.shade100,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.favorite,
-                                    size: 18,
-                                    color: anyConsented
-                                        ? Colors.pinkAccent
-                                        : Colors.grey,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        "Apple Health",
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF2D3142),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        anyConsented
-                                            ? "Connected — syncing data"
-                                            : "Not connected",
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: anyConsented
-                                              ? Colors.green
-                                              : Colors.grey,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: anyConsented
-                                        ? const Color(0xFFE6F4EA)
-                                        : Colors.grey.shade100,
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    anyConsented ? "Active" : "Off",
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: anyConsented
-                                          ? Colors.green
-                                          : Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            // "Connect Apple Health" button — only visible when not connected
-                            if (!anyConsented) ...[
-                              const SizedBox(height: 14),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: _isConnectingAll
-                                      ? null
-                                      : () async {
-                                          setState(() => _isConnectingAll = true);
-                                          try {
-                                            await HealthService().enableAll();
-                                          } catch (e) {
-                                            if (mounted) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Could not connect: $e')),
-                                              );
-                                            }
-                                          } finally {
-                                            if (mounted) setState(() => _isConnectingAll = false);
-                                          }
-                                        },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF7C69EF),
-                                    foregroundColor: Colors.white,
-                                    disabledBackgroundColor: const Color(0xFFB8B0F8),
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                  ),
-                                  child: _isConnectingAll
-                                      ? const SizedBox(
-                                          height: 18,
-                                          width: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : const Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(Icons.health_and_safety_outlined, size: 18),
-                                            SizedBox(width: 8),
-                                            Text(
-                                              "Connect Apple Health",
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              const Text(
-                                "Grants read-only access to all health metrics at once",
-                                textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 11, color: Colors.grey),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // --- Section: Health Data Permissions ---
-                      _buildSectionHeader(
-                        Icons.health_and_safety_outlined,
-                        "Health Data Permissions",
-                      ),
-                      const SizedBox(height: 12),
-                      // Reads from _userDocStream snapshot — no extra listener.
-                      Container(
-                        decoration: _cardDecoration(),
-                        child: Column(
-                          children: kHealthMetrics.map((metric) {
-                            final enabled = consent[metric.key] == true;
-                            final isToggling = _togglingMetric == metric.key;
-                            return Column(
-                              children: [
-                                SwitchListTile(
-                                  value: enabled,
-                                  activeThumbColor: const Color(0xFF7C69EF),
-                                  // null disables the toggle while it's loading
-                                  onChanged: isToggling
-                                      ? null
-                                      : (val) async {
-                                          setState(() => _togglingMetric = metric.key);
-                                          try {
-                                            if (val) {
-                                              await HealthService().enableMetric(metric.key);
-                                            } else {
-                                              await HealthService().disableMetric(metric.key);
-                                            }
-                                          } catch (e) {
-                                            if (mounted) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Error: $e')),
-                                              );
-                                            }
-                                          } finally {
-                                            if (mounted) setState(() => _togglingMetric = null);
-                                          }
-                                        },
-                                  title: Text(
-                                    metric.label,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                      color: isToggling ? Colors.grey : const Color(0xFF2D3142),
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    isToggling
-                                        ? (enabled ? 'Removing access…' : 'Requesting access…')
-                                        : metric.description,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: isToggling
-                                          ? const Color(0xFF7C69EF)
-                                          : Colors.grey,
-                                    ),
-                                  ),
-                                  secondary: isToggling
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Color(0xFF7C69EF),
-                                          ),
-                                        )
-                                      : Icon(
-                                          _metricIcon(metric.key),
-                                          color: enabled
-                                              ? const Color(0xFF7C69EF)
-                                              : Colors.grey,
-                                          size: 20,
-                                        ),
-                                ),
-                                if (metric != kHealthMetrics.last)
-                                  const Divider(height: 1, indent: 56),
-                              ],
-                            );
-                          }).toList(),
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-
-                      // --- Section: App Settings ---
-                      _buildSectionHeader(
-                        Icons.settings_outlined,
-                        "App Settings",
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        decoration: _cardDecoration(),
-                        child: Column(
-                          children: [
-                            _buildSettingsToggle(
-                              "Push Notifications",
-                              "Daily reminders & insights",
-                              Icons.notifications_none,
-                              _pushNotifications,
-                              (val) =>
-                                  setState(() => _pushNotifications = val),
-                            ),
-                            _buildSettingsToggle(
-                              "Auto Sync Health Data",
-                              "Syncs every 3 minutes in background",
-                              Icons.favorite_border,
-                              _autoSyncData,
-                              (val) => setState(() => _autoSyncData = val),
+                            const SizedBox(height: 2),
+                            Text(
+                              userData.email ?? '',
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
                             ),
                           ],
                         ),
                       ),
-
-
-                      const SizedBox(height: 32),
-
-
-                      // --- Logout Button ---
-                      SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            await FirebaseAuth.instance.signOut();
-                            // Navigation handled by authStateChanges listener
-                          },
-                          icon: const Icon(
-                            Icons.logout,
-                            color: Colors.redAccent,
-                          ),
-                          label: const Text(
-                            "Log Out",
-                            style: TextStyle(
-                              color: Colors.redAccent,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFEBEE),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
+                      // Avatar
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF7B6EF6).withOpacity(0.12),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFF7B6EF6).withOpacity(0.25), width: 2),
                         ),
+                        child: userData.photoUrl != null
+                            ? ClipOval(child: Image.network(userData.photoUrl!, fit: BoxFit.cover))
+                            : const Icon(Icons.person_outline_rounded, size: 26, color: Color(0xFF7B6EF6)),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 24),
+
+                  // ── Pending Email Banner ───────────────────────────────────
+                  if (pendingEmail != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.amber.shade300),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.mail_outline, color: Colors.amber, size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Verify your new email: $pendingEmail\nCheck your inbox and tap the link.',
+                              style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // ── Account Information ────────────────────────────────────
+                  _buildSectionLabel('Account'),
+                  _buildCard(
+                    children: [
+                      _buildInfoRow(
+                        Icons.person_outline_rounded,
+                        'Name',
+                        userData.displayName ?? 'Set your name',
+                        onTap: () => _showEditDialog(context, 'Name', userData.displayName ?? ''),
+                      ),
+                      _buildDivider(),
+                      _buildInfoRow(
+                        Icons.mail_outline_rounded,
+                        'Email',
+                        userData.email ?? 'Set your email',
+                        onTap: () => _showEditDialog(context, 'Email', userData.email ?? ''),
+                      ),
+                      _buildDivider(),
+                      _buildInfoRow(
+                        Icons.lock_outline_rounded,
+                        'Password',
+                        '••••••••',
+                        onTap: () => _showEditDialog(context, 'Password', ''),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── Connected Devices ──────────────────────────────────────
+                  _buildSectionLabel('Connected Devices'),
+                  _buildCard(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: anyConsented
+                                    ? const Color(0xFFFFE4EC)
+                                    : const Color(0xFFF2F2F7),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.favorite_rounded,
+                                size: 18,
+                                color: anyConsented ? Colors.pinkAccent : const Color(0xFF8E8E93),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Apple Health',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF1C1C1E),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    anyConsented ? 'Connected — syncing data' : 'Not connected',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: anyConsented ? const Color(0xFF34C759) : const Color(0xFF8E8E93),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: anyConsented
+                                    ? const Color(0xFFE9FAF0)
+                                    : const Color(0xFFF2F2F7),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                anyConsented ? 'Active' : 'Off',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: anyConsented ? const Color(0xFF34C759) : const Color(0xFF8E8E93),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (!anyConsented) ...[
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _isConnectingAll
+                                ? null
+                                : () async {
+                                    setState(() => _isConnectingAll = true);
+                                    try {
+                                      await HealthService().enableAll();
+                                    } catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Could not connect: $e')),
+                                        );
+                                      }
+                                    } finally {
+                                      if (mounted) setState(() => _isConnectingAll = false);
+                                    }
+                                  },
+                            icon: _isConnectingAll
+                                ? const SizedBox(
+                                    width: 16, height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.health_and_safety_outlined, size: 18),
+                            label: Text(_isConnectingAll ? 'Connecting…' : 'Connect Apple Health'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF7B6EF6),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Grants read-only access to all health metrics',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 11, color: Color(0xFF8E8E93)),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── Health Data Permissions ────────────────────────────────
+                  _buildSectionLabel('Health Data Permissions'),
+                  _buildCard(
+                    children: kHealthMetrics.map((metric) {
+                      final enabled    = consent[metric.key] == true;
+                      final isToggling = _togglingMetric == metric.key;
+                      return Column(
+                        children: [
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            value: enabled,
+                            activeColor: const Color(0xFF7B6EF6),
+                            onChanged: isToggling
+                                ? null
+                                : (val) async {
+                                    setState(() => _togglingMetric = metric.key);
+                                    try {
+                                      if (val) {
+                                        await HealthService().enableMetric(metric.key);
+                                      } else {
+                                        await HealthService().disableMetric(metric.key);
+                                      }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Error: $e')),
+                                        );
+                                      }
+                                    } finally {
+                                      if (mounted) setState(() => _togglingMetric = null);
+                                    }
+                                  },
+                            title: Text(
+                              metric.label,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: isToggling ? const Color(0xFF8E8E93) : const Color(0xFF1C1C1E),
+                              ),
+                            ),
+                            subtitle: Text(
+                              isToggling
+                                  ? (enabled ? 'Removing access…' : 'Requesting access…')
+                                  : metric.description,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isToggling ? const Color(0xFF7B6EF6) : const Color(0xFF8E8E93),
+                              ),
+                            ),
+                            secondary: isToggling
+                                ? const SizedBox(
+                                    width: 20, height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7B6EF6)),
+                                  )
+                                : Icon(
+                                    _metricIcon(metric.key),
+                                    color: enabled ? const Color(0xFF7B6EF6) : const Color(0xFF8E8E93),
+                                    size: 20,
+                                  ),
+                          ),
+                          if (metric != kHealthMetrics.last)
+                            const Divider(height: 1, indent: 44, endIndent: 0),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── App Settings ───────────────────────────────────────────
+                  _buildSectionLabel('App Settings'),
+                  _buildCard(
+                    children: [
+                      _buildToggleRow(
+                        Icons.notifications_none_rounded,
+                        'Push Notifications',
+                        'Daily reminders & insights',
+                        _pushNotifications,
+                        (val) => setState(() => _pushNotifications = val),
+                      ),
+                      _buildDivider(),
+                      _buildToggleRow(
+                        Icons.sync_rounded,
+                        'Auto Sync Health Data',
+                        'Syncs every 3 minutes in background',
+                        _autoSyncData,
+                        (val) => setState(() => _autoSyncData = val),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── Log Out ────────────────────────────────────────────────
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: () async => FirebaseAuth.instance.signOut(),
+                      icon: const Icon(Icons.logout_rounded, size: 18, color: Color(0xFFFF3B30)),
+                      label: const Text('Log Out'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFE5E5),
+                        foregroundColor: const Color(0xFFFF3B30),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 120),
+                ],
+              ),
             ),
           ),
         );
@@ -730,124 +610,102 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
 
-  // --- Helper Widgets ---
+  // ── Helper Widgets ─────────────────────────────────────────────────────────
 
-
-  BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.05),
-          blurRadius: 15,
-          offset: const Offset(0, 5),
-        ),
-      ],
-    );
-  }
-
-
-  Widget _buildSectionHeader(IconData icon, String title) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: const Color(0xFF7C69EF)),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-      ],
-    );
-  }
-
-
-  Widget _buildSectionCard({
-    required IconData icon,
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader(icon, title),
-        const SizedBox(height: 12),
-        Container(
-          decoration: _cardDecoration(),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(children: children),
-        ),
-      ],
-    );
-  }
-
-
-  Widget _buildInfoTile(
-    String label,
-    String value, {
-    VoidCallback? onEdit,
-  }) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(
-        label,
-        style: const TextStyle(color: Colors.grey, fontSize: 14),
-      ),
-      subtitle: Text(
-        value,
+  Widget _buildSectionLabel(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(
+        title.toUpperCase(),
         style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          color: Colors.black,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF8E8E93),
+          letterSpacing: 0.8,
         ),
       ),
-      trailing: onEdit != null
-          ? IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.grey),
-              onPressed: onEdit,
-            )
-          : null,
     );
   }
 
+  Widget _buildCard({required List<Widget> children}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: Column(children: children),
+    );
+  }
 
-  Widget _buildDeviceTile(
-    String name,
-    String sub,
-    IconData icon,
-    Color iconColor, {
-    Color? statusColor,
-  }) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: const Color(0xFF7C69EF)),
-        const SizedBox(width: 8),
-        Text(
-          name,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2D3142),
-          ),
+  Widget _buildDivider() =>
+      const Divider(height: 1, color: Color(0xFFF2F2F7));
+
+  Widget _buildInfoRow(IconData icon, String label, String value, {VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: const Color(0xFF7B6EF6)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF8E8E93), fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 2),
+                  Text(value,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF1C1C1E))),
+                ],
+              ),
+            ),
+            if (onTap != null)
+              const Icon(Icons.chevron_right_rounded, size: 20, color: Color(0xFFC7C7CC)),
+          ],
         ),
-      ],
+      ),
     );
   }
 
-  Widget _buildSettingsToggle(
-    String title,
-    String subtitle,
-    IconData icon,
-    bool value,
-    ValueChanged<bool> onChanged,
-  ) {
-    return SwitchListTile(
-      value: value,
-      onChanged: onChanged,
-      secondary: Icon(icon, color: Colors.grey),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
-      activeThumbColor: const Color(0xFF7C69EF),
+  Widget _buildToggleRow(IconData icon, String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF7B6EF6).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: const Color(0xFF7B6EF6)),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1C1C1E))),
+                Text(subtitle,
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: const Color(0xFF7B6EF6),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
+      ),
     );
   }
 

@@ -6,14 +6,13 @@ import 'package:vivordo_health/src/utils/snackbar.dart';
 //TODO(favour): log flagged items to crashlytics
 
 class AuthService {
-  //email sign up
-  static Future<void> emailSignup({
+  //email sign up — returns true on success
+  static Future<bool> emailSignup({
     required String emailAddress,
     required String password,
     required String displayName,
     String photoUrl = 'default photo url', //TODO(favour): add default photo
     required BuildContext context,
-    required PageController pageController,
   }) async {
     try {
       final credential = await FirebaseAuth.instance
@@ -35,12 +34,7 @@ class AuthService {
       } else {
         throw Exception("Error creating user");
       }
-
-
-      pageController.nextPage(
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOutCubicEmphasized,
-      );
+      return true;
     } on FirebaseAuthException catch (e) {
       if (context.mounted) {
         if (e.code == 'weak-password') {
@@ -55,6 +49,29 @@ class AuthService {
       }
     } catch (e) {
       debugPrint(e.toString());
+    }
+    return false;
+  }
+
+  // send password reset email — returns true on success
+  static Future<bool> sendPasswordReset({
+    required String emailAddress,
+    required BuildContext context,
+  }) async {
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: emailAddress.trim());
+      return true;
+    } on FirebaseAuthException catch (e) {
+      if (context.mounted) {
+        final msg = e.code == 'user-not-found'
+            ? 'No account found for that email.'
+            : e.message ?? 'Failed to send reset email.';
+        SnackBars.authMessage(context: context, message: msg);
+      }
+      return false;
+    } catch (e) {
+      debugPrint(e.toString());
+      return false;
     }
   }
 
