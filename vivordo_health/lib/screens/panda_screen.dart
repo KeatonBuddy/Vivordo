@@ -218,36 +218,83 @@ class _PandaScreenState extends State<PandaScreen> {
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 16, 20),
+      padding: const EdgeInsets.fromLTRB(20, 16, 16, 20),
       color: Colors.transparent,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          // Panda avatar with online dot
+          Stack(
+            clipBehavior: Clip.none,
             children: [
-              const Text(
-                'AI Assistant',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  letterSpacing: -0.5,
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.22),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withOpacity(0.35), width: 1.5),
+                ),
+                child: const Center(
+                  child: Text('🐼', style: TextStyle(fontSize: 24)),
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                'Personalized insights & reflection',
-                style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.75)),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 13,
+                  height: 13,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF34C759),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFF7B6EF6), width: 2),
+                  ),
+                ),
               ),
             ],
           ),
+          const SizedBox(width: 14),
+          // Title + status
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Panda',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Container(
+                      width: 6, height: 6,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF34C759),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Online · Your health AI',
+                      style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.8)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Privacy button
           GestureDetector(
             onTap: _showPrivacyPopup,
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withOpacity(0.18),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.shield_outlined, color: Colors.white, size: 20),
@@ -335,92 +382,141 @@ class _PandaScreenState extends State<PandaScreen> {
   }
 
   Widget _buildAvatar({required bool isAi}) {
+    if (isAi) {
+      return Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: accentPurple.withOpacity(0.12),
+          shape: BoxShape.circle,
+          border: Border.all(color: accentPurple.withOpacity(0.2)),
+        ),
+        child: const Center(
+          child: Text('🐼', style: TextStyle(fontSize: 16)),
+        ),
+      );
+    }
     return Container(
-      width: 30,
-      height: 30,
-      decoration: BoxDecoration(
-        color: isAi ? accentPurple.withOpacity(0.1) : const Color(0xFFE5E5EA),
+      width: 32,
+      height: 32,
+      decoration: const BoxDecoration(
+        color: Color(0xFFE5E5EA),
         shape: BoxShape.circle,
       ),
-      child: Icon(
-        isAi ? Icons.auto_awesome_rounded : Icons.person_rounded,
-        size: 16,
-        color: isAi ? accentPurple : const Color(0xFF8E8E93),
-      ),
+      child: const Icon(Icons.person_rounded, size: 17, color: Color(0xFF8E8E93)),
     );
   }
 
   Widget _buildQuickPrompts() {
     const prompts = [
-      "How's my stress trend this week?",
-      "When should I schedule calls?",
-      "Any burnout risk?",
-      "Suggest a message for my partner",
+      ('📉', "How's my stress trend this week?"),
+      ('📅', 'When should I schedule calls?'),
+      ('🔥', 'Any burnout risk?'),
+      ('💬', 'Suggest a message for my partner'),
     ];
     return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 4),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: prompts.map((p) => GestureDetector(
-          onTap: () => _sendMessage(p),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: accentPurple.withOpacity(0.25)),
-            ),
-            child: Text(
-              p,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: textDark),
-            ),
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'SUGGESTED',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                color: textGrey, letterSpacing: 0.8),
           ),
-        )).toList(),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: prompts.map(((String, String) p) => GestureDetector(
+              onTap: () => _sendMessage(p.$2),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE5E5EA)),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.04),
+                        blurRadius: 6, offset: const Offset(0, 2))
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(p.$1, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(width: 6),
+                    Text(
+                      p.$2,
+                      style: const TextStyle(fontSize: 12,
+                          fontWeight: FontWeight.w500, color: textDark),
+                    ),
+                  ],
+                ),
+              ),
+            )).toList(),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildInputBar() {
     return Container(
-      padding: EdgeInsets.fromLTRB(16, 10, 16, MediaQuery.of(context).padding.bottom + 12),
-      decoration: const BoxDecoration(
+      padding: EdgeInsets.fromLTRB(16, 10, 16, MediaQuery.of(context).padding.bottom + 10),
+      decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFE5E5EA), width: 1)),
+        border: const Border(top: BorderSide(color: Color(0xFFE5E5EA), width: 1)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.04),
+              blurRadius: 12, offset: const Offset(0, -4))
+        ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
             child: Container(
-              height: 44,
+              constraints: const BoxConstraints(minHeight: 44, maxHeight: 120),
               decoration: BoxDecoration(
                 color: bgColor,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: const Color(0xFFE5E5EA)),
               ),
               child: TextField(
                 controller: _inputController,
                 style: const TextStyle(fontSize: 14, color: textDark),
+                maxLines: null,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(
-                  hintText: 'Ask about your stress, sleep, or availability...',
+                  hintText: 'Ask Panda anything...',
                   hintStyle: TextStyle(fontSize: 13, color: textGrey),
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
                 onSubmitted: _sendMessage,
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           GestureDetector(
             onTap: () => _sendMessage(_inputController.text),
             child: Container(
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: accentPurple,
-                borderRadius: BorderRadius.circular(14),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF9B8FF8), Color(0xFF7B6EF6)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(color: accentPurple.withOpacity(0.35),
+                      blurRadius: 8, offset: const Offset(0, 3))
+                ],
               ),
-              child: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+              child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 20),
             ),
           ),
         ],
@@ -478,7 +574,7 @@ class _TypingIndicatorState extends State<TypingIndicator> with TickerProviderSt
           margin: const EdgeInsets.symmetric(horizontal: 2.5),
           width: 7,
           height: 7,
-          decoration: BoxDecoration(color: Colors.grey.shade400, shape: BoxShape.circle),
+          decoration: BoxDecoration(color: const Color(0xFF7B6EF6).withOpacity(0.45 + i * 0.18), shape: BoxShape.circle),
         ),
       )),
     );
