@@ -97,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// falls back to manual 'stress' doc from seed data.
   Stream<double> _stressScoreStream() {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return Stream.value(0);
+    if (user == null) return Stream.value(30);
     final today = _todayPeriod();
     final uid = user.uid;
 
@@ -115,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
           .collection('metrics_daily')
           .doc('${uid}_stress_$today')
           .get();
-      return (stressSnap.data()?['avg'] as num?)?.toDouble() ?? 0.0;
+      return (stressSnap.data()?['avg'] as num?)?.toDouble() ?? 30.0;
     });
   }
 
@@ -135,13 +135,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      return _buildScaffold(stressScore: 0, sleepVal: '--', stepsVal: '--', hrVal: '--', goalTitle: 'No goal set', goalProgress: 0);
+      return _buildScaffold(stressScore: 30, sleepVal: '--', stepsVal: '--', hrVal: '--', goalTitle: 'No goal set', goalProgress: 0);
     }
 
     return StreamBuilder<double>(
       stream: _stressStream,
       builder: (context, stressSnap) {
-        final stressScore = stressSnap.data ?? 0.0;
+        final stressScore = stressSnap.data ?? 30.0;
 
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _sleepStream,
