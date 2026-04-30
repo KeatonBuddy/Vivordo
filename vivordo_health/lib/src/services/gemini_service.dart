@@ -510,7 +510,7 @@ DATA: ${jsonEncode(compact)}
     // When null, falls back to the demo userId as before.
     String? userName,
   }) async {
-    final rawSample = getSampleData();
+    final rawSample = getSampleData();   // REPLACE with real data when pipeline ready
     final compact = _buildCompactPayload(rawSample, topK: 1);
     final raw = await analyzeStressSpikes(
         data: compact, extraUserContext: extraUserContext);
