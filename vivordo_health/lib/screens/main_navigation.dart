@@ -1,36 +1,53 @@
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
-import 'goals_screen.dart';
+import 'scan_screen.dart';
 import 'dashboard_screen.dart';
 import 'panda_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+  final int initialIndex;
+  const MainNavigationScreen({super.key, this.initialIndex = 0});
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
   final Color primaryPurple = const Color(0xFF7B6EF6);
 
-  final List<Widget> _pages = [
-    const HomeScreen(),
-    const GoalsScreen(),
-    const DashboardScreen(),
-    const PandaScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex;
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Build only the active page to avoid eagerly initialising the camera
+    // (ScanScreen) when the user hasn't navigated to it yet.
+    Widget activePage;
+    switch (_selectedIndex) {
+      case 0:
+        activePage = HomeScreen(onScanTap: () => setState(() => _selectedIndex = 1));
+        break;
+      case 1:
+        activePage = const ScanScreen();
+        break;
+      case 2:
+        activePage = const DashboardScreen();
+        break;
+      case 3:
+        activePage = const PandaScreen();
+        break;
+      default:
+        activePage = HomeScreen(onScanTap: () => setState(() => _selectedIndex = 1));
+    }
+
     return Scaffold(
       body: Stack(
         children: [
-          IndexedStack(
-            index: _selectedIndex,
-            children: _pages,
-          ),
+          activePage,
           Positioned(
             bottom: 30,
             left: 24,
@@ -50,19 +67,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 20,
             offset: const Offset(0, 5),
-          )
+          ),
         ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _navItem(Icons.home_rounded, "Home", 0),
-          _navItem(Icons.track_changes_rounded, "Goals", 1),
-          _navItem(Icons.dashboard_rounded, "Dash", 2),
-          _navItem(Icons.pets_rounded, "Panda", 3),
+          _navItem(Icons.fingerprint, "Scan", 1),
+          _navItem(Icons.bar_chart_rounded, "Metrics", 2),
+          _navItem(Icons.auto_awesome_rounded, "AI Chat", 3),
         ],
       ),
     );
@@ -76,11 +93,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            color: isActive ? primaryPurple : Colors.grey,
-            size: 26,
-          ),
+          Icon(icon, color: isActive ? primaryPurple : Colors.grey, size: 26),
           const SizedBox(height: 4),
           Text(
             label,

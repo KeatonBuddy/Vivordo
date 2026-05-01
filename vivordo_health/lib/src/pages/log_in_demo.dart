@@ -61,21 +61,24 @@ class LoginDemoState extends State<LoginDemo> {
             SizedBox(
               height: 65,
               width: 360,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 20.0),
-                child: ElevatedButton(
-                  onPressed: () {
-                    AuthService.emailSignup(
-                      emailAddress: "random@gmail.com", // TODO: replace with inputs
-                      password: "passsd", // TODO: replace with inputs
-                      displayName: "random username",
-                      context: context,
-                      nextPage: MyHomePage(title: "My home page"),
-                    );
-                  },
-                  child: const Text(
-                    'Log in',
-                    style: TextStyle(color: Colors.white, fontSize: 20),
+              child: Container(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 20.0),
+                  child: ElevatedButton(
+                    child: Text(
+                      'Log in ',
+                      style: TextStyle(color: Colors.white, fontSize: 20),
+                    ),
+                    onPressed: () {
+                      // Demo-only: uses a dummy PageController
+                      AuthService.emailSignup(
+                        emailAddress: "random@gmail.com",
+                        password: "passsd",
+                        displayName: "random username",
+                        context: context,
+                        pageController: PageController(),
+                      );
+                    },
                   ),
                 ),
               ),

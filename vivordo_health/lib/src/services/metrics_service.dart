@@ -15,16 +15,25 @@ class MetricsService {
     if (user == null) throw Exception('No user logged in');
 
     final repo = DemoUserRepository();
-    final batch = _db.batch();
     final now = DateTime.now();
 
+    // Pre-generate all 30 days of data so each day's metrics stay internally
+    // consistent (same demo object → stress correlates with wellness, etc.)
+    final periods = <String>[];
+    final demos = <dynamic>[];
     for (int i = 0; i < 30; i++) {
       final day = now.subtract(Duration(days: i));
-      final period = _formatDate(day);
-      final demo = repo.getRandomDemoUser();
+      periods.add(_formatDate(day));
+      demos.add(repo.getRandomDemoUser());
+    }
 
-      // stress
-      _addMetric(batch, user.uid, 'stress', period, {
+  
+
+    // ── stress ────────────────────────────────────────────────────────
+    final stressBatch = _db.batch();
+    for (int i = 0; i < 30; i++) {
+      final demo = demos[i];
+      _addMetric(stressBatch, user.uid, 'stress', periods[i], {
         'avg': demo.dailyStressLevel.toDouble(),
         'min': (demo.dailyStressLevel - demo.stressVariability / 2).clamp(0, 100),
         'max': (demo.dailyStressLevel + demo.stressVariability / 2).clamp(0, 100),
@@ -32,9 +41,14 @@ class MetricsService {
         'dimension': 'stress',
         'source': 'demo',
       });
+    }
+    await stressBatch.commit();
 
-      // heart_rate
-      _addMetric(batch, user.uid, 'heart_rate', period, {
+    // ── heart_rate ────────────────────────────────────────────────────
+    final hrBatch = _db.batch();
+    for (int i = 0; i < 30; i++) {
+      final demo = demos[i];
+      _addMetric(hrBatch, user.uid, 'heart_rate', periods[i], {
         'avg': demo.restingHeartRate.toDouble(),
         'min': (demo.restingHeartRate - 5).toDouble(),
         'max': (demo.restingHeartRate + 12).toDouble(),
@@ -42,18 +56,28 @@ class MetricsService {
         'dimension': 'cardiovascular',
         'source': 'demo',
       });
+    }
+    await hrBatch.commit();
 
-      // steps
-      _addMetric(batch, user.uid, 'steps', period, {
+    // ── steps ─────────────────────────────────────────────────────────
+    final stepsBatch = _db.batch();
+    for (int i = 0; i < 30; i++) {
+      final demo = demos[i];
+      _addMetric(stepsBatch, user.uid, 'steps', periods[i], {
         'sum': demo.stepsCount.toDouble(),
         'avg': (demo.stepsCount / 24).roundToDouble(),
         'unit': 'count',
         'dimension': 'activity',
         'source': 'demo',
       });
+    }
+    await stepsBatch.commit();
 
-      // sleep
-      _addMetric(batch, user.uid, 'sleep', period, {
+    // ── sleep ─────────────────────────────────────────────────────────
+    final sleepBatch = _db.batch();
+    for (int i = 0; i < 30; i++) {
+      final demo = demos[i];
+      _addMetric(sleepBatch, user.uid, 'sleep', periods[i], {
         'avg': demo.sleepDurationHours,
         'min': (demo.sleepDurationHours - 0.5).clamp(0, 12),
         'max': (demo.sleepDurationHours + 0.3).clamp(0, 12),
@@ -61,30 +85,39 @@ class MetricsService {
         'dimension': 'sleep',
         'source': 'demo',
       });
+    }
+    await sleepBatch.commit();
 
-      // mood  (VH-51 compatible format)
-      _addMetric(batch, user.uid, 'mood', period, {
+    // ── mood  (VH-51 compatible format) ───────────────────────────────
+    final moodBatch = _db.batch();
+    for (int i = 0; i < 30; i++) {
+      final demo = demos[i];
+      _addMetric(moodBatch, user.uid, 'mood', periods[i], {
         'avg': _moodToScore(demo.journalMood),
         'label': demo.journalMood,
         'unit': 'score',
         'dimension': 'mood',
         'source': 'demo',
       });
+    }
+    await moodBatch.commit();
 
-      // wellness score  (VH-16)
+    // ── wellness score  (VH-16) ───────────────────────────────────────
+    final wellnessBatch = _db.batch();
+    for (int i = 0; i < 30; i++) {
+      final demo = demos[i];
       final wellness = ((100 - demo.dailyStressLevel) * 0.4 +
               demo.sleepQualityScore * 0.3 +
               (demo.stepsCount / 10000 * 100).clamp(0, 100) * 0.3)
           .roundToDouble();
-      _addMetric(batch, user.uid, 'wellness', period, {
+      _addMetric(wellnessBatch, user.uid, 'wellness', periods[i], {
         'avg': wellness,
         'unit': 'score',
         'dimension': 'wellness',
         'source': 'demo',
       });
     }
-
-    await batch.commit();
+    await wellnessBatch.commit();
   }
 
   // ─── VH-51 ───────────────────────────────────────────────────────

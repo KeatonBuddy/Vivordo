@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'package:firebase_ai/firebase_ai.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 // ignore: avoid_web_libraries_in_flutter
@@ -1377,8 +1380,8 @@ class _PandaScreenState extends State<PandaScreen>
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 34),
-      decoration: const BoxDecoration(
+      padding: EdgeInsets.fromLTRB(16, 10, 16, MediaQuery.of(context).padding.bottom + 10),
+      decoration: BoxDecoration(
         color: Colors.white,
         border:
             Border(top: BorderSide(color: Colors.black12, width: 0.5)),
@@ -2155,6 +2158,7 @@ class _ConvNode {
 
 class TypingIndicator extends StatefulWidget {
   const TypingIndicator({super.key});
+
   @override
   State<TypingIndicator> createState() => _TypingIndicatorState();
 }
@@ -2210,3 +2214,4 @@ class _TypingIndicatorState extends State<TypingIndicator>
     );
   }
 }
+
