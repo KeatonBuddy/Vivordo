@@ -824,6 +824,7 @@ class _PandaScreenState extends State<PandaScreen>
       _buildPathStrip(),
       Expanded(child: _buildChatArea()),
       _buildInputArea(),
+      SizedBox(height: MediaQuery.of(context).padding.bottom + 100),
     ]);
   }
 
