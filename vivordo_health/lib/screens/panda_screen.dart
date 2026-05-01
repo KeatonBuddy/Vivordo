@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 // ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import '../src/services/gemini_service.dart';
 import '../src/services/recommendation_engine.dart';
@@ -2042,7 +2042,10 @@ class _PandaScreenState extends State<PandaScreen>
   }
 
   Future<void> _launchUrl(String url) async {
-    html.window.open(url, '_blank');
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Widget _avatar() => Container(

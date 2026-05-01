@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
+import 'panda_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
