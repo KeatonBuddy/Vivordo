@@ -157,7 +157,7 @@ class _DialStackFrame {
 class GeminiService {
   GeminiService()
       : _spikeModel = FirebaseAI.googleAI().generativeModel(
-          model: 'gemini-2.5-flash-lite',
+          model: 'gemini-3-flash-preview',
           generationConfig: GenerationConfig(
             responseMimeType: 'application/json',
             responseSchema: _spikeSchema,
@@ -167,7 +167,7 @@ class GeminiService {
           ),
         ),
         _dialogueModel = FirebaseAI.googleAI().generativeModel(
-          model: 'gemini-2.5-flash-lite',
+          model: 'gemini-3-flash-preview',
           generationConfig: GenerationConfig(
             responseMimeType: 'application/json',
             responseSchema: _turnSchema,
