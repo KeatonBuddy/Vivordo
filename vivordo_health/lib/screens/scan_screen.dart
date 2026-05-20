@@ -30,6 +30,8 @@ class _ScanScreenState extends State<ScanScreen>
   final int _scanDurationSeconds = 15;
   double _progress = 0.0;
   double _finalBpm = 0.0;
+  String _errorTitle = 'Camera unavailable';
+  String _errorBody = 'Please allow camera access in Settings\nand try again.';
 
   // ── Animations ────────────────────────────────────────────────────────────
   late AnimationController _pulseController;
@@ -75,7 +77,11 @@ class _ScanScreenState extends State<ScanScreen>
           .toList();
 
       if (backCameras.isEmpty) {
-        setState(() => _scanState = ScanState.error);
+        setState(() {
+          _errorTitle = 'Camera unavailable';
+          _errorBody = 'No rear camera was found on this device.';
+          _scanState = ScanState.error;
+        });
         return;
       }
 
@@ -98,7 +104,14 @@ class _ScanScreenState extends State<ScanScreen>
       setState(() => _scanState = ScanState.idle);
       _startImageStream();
     } catch (e) {
-      setState(() => _scanState = ScanState.error);
+      debugPrint('[PPG] Camera init failed: $e');
+      if (mounted) {
+        setState(() {
+          _errorTitle = 'Camera unavailable';
+          _errorBody = 'Please allow camera access in Settings\nand try again.';
+          _scanState = ScanState.error;
+        });
+      }
     }
   }
 
@@ -224,7 +237,13 @@ class _ScanScreenState extends State<ScanScreen>
         });
       }
     } else {
-      if (mounted) setState(() => _scanState = ScanState.error);
+      if (mounted) {
+        setState(() {
+          _errorTitle = 'Poor signal detected';
+          _errorBody = 'Try again with your fingertip fully covering the camera and flash. Keep your hand still and use light, steady pressure.';
+          _scanState = ScanState.error;
+        });
+      }
     }
   }
 
@@ -330,6 +349,8 @@ class _ScanScreenState extends State<ScanScreen>
       _finalBpm = 0.0;
       _redValues.clear();
       _fingerDetectedFrames = 0;
+      _errorTitle = 'Camera unavailable';
+      _errorBody = 'Please allow camera access in Settings\nand try again.';
     });
     _startImageStream();
   }
@@ -858,16 +879,16 @@ class _ScanScreenState extends State<ScanScreen>
           ),
         ),
         const SizedBox(height: 32),
-        const Text(
-          'Camera unavailable',
+        Text(
+          _errorTitle,
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textDark),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textDark),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Please allow camera access in Settings\nand try again.',
+        Text(
+          _errorBody,
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: textGrey, height: 1.6),
+          style: const TextStyle(fontSize: 14, color: textGrey, height: 1.6),
         ),
         const SizedBox(height: 32),
         SizedBox(
@@ -876,7 +897,11 @@ class _ScanScreenState extends State<ScanScreen>
           child: ElevatedButton(
             onPressed: () {
               setState(() => _scanState = ScanState.initializing);
-              _initCamera();
+              if (_cameraController != null && _cameraController!.value.isInitialized) {
+                _reset();
+              } else {
+                _initCamera();
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: accentPurple,
