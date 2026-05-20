@@ -22,6 +22,9 @@ class _ScanScreenState extends State<ScanScreen>
   ScanState _scanState = ScanState.initializing;
   final List<double> _redValues = [];
   bool _isProcessingFrame = false;
+  int _fingerDetectedFrames = 0;
+  static const double _fingerRedThreshold = 140.0;
+  static const int _requiredFingerFrames = 10;
   DateTime? _scanStartTime;
   Timer? _scanTimer;
   final int _scanDurationSeconds = 15;
@@ -102,20 +105,37 @@ class _ScanScreenState extends State<ScanScreen>
   // ── Image stream / PPG ────────────────────────────────────────────────────
 
   void _startImageStream() {
-    _cameraController?.startImageStream((CameraImage image) {
-      if (_isProcessingFrame) return;
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized || controller.value.isStreamingImages) {
+      return;
+    }
+
+    controller.startImageStream((CameraImage image) {
+      if (!mounted || _isProcessingFrame) return;
       _isProcessingFrame = true;
       try {
         final redMean = _extractAverageRed(image);
-        if (redMean > 120) {
-          if (_scanState == ScanState.idle) _startScan();
-          if (_scanState == ScanState.scanning) _redValues.add(redMean);
+        final fingerDetected = redMean > _fingerRedThreshold;
+
+        if (fingerDetected) {
+          _fingerDetectedFrames++;
+
+          if (_scanState == ScanState.idle && _fingerDetectedFrames >= _requiredFingerFrames) {
+            _startScan();
+          }
+
+          if (_scanState == ScanState.scanning) {
+            _redValues.add(redMean);
+          }
         } else {
+          _fingerDetectedFrames = 0;
           if (_scanState == ScanState.scanning) _pauseScan();
         }
       } finally {
         _isProcessingFrame = false;
       }
+    }).catchError((e) {
+      debugPrint('[PPG] Failed to start image stream: $e');
     });
   }
 
@@ -136,6 +156,7 @@ class _ScanScreenState extends State<ScanScreen>
     setState(() {
       _scanState = ScanState.scanning;
       _redValues.clear();
+      _fingerDetectedFrames = 0;
       _scanStartTime = DateTime.now();
       _progress = 0.0;
     });
@@ -170,15 +191,29 @@ class _ScanScreenState extends State<ScanScreen>
     if (!mounted) return;
     setState(() => _scanState = ScanState.processing);
     _spinController.stop();
-    await _cameraController?.stopImageStream();
-    await _cameraController?.setFlashMode(FlashMode.off);
+    final controller = _cameraController;
+    if (controller != null && controller.value.isInitialized) {
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream().catchError((_) {});
+      }
+      await controller.setFlashMode(FlashMode.off).catchError((_) {});
+    }
 
     final durationSecs =
         DateTime.now().difference(_scanStartTime!).inMilliseconds / 1000.0;
 
+    if (_redValues.isNotEmpty) {
+      final minRed = _redValues.reduce(min);
+      final maxRed = _redValues.reduce(max);
+      final avgRed = _redValues.reduce((a, b) => a + b) / _redValues.length;
+      debugPrint('[PPG] samples=${_redValues.length}, duration=$durationSecs, minRed=$minRed, maxRed=$maxRed, avgRed=$avgRed');
+    }
+
     //final bpmResult = (60 + Random().nextInt(41)).toDouble(); <-- demo
-    final bpmResult = PpgAlgorithm.calculateBPM(_redValues, durationSecs); //with result
-    //PpgAlgorithm.calculateBPM(_redValues, durationSecs); // still runs but result unused
+    final algorithmBpm = PpgAlgorithm.calculateBPM(_redValues, durationSecs);
+    final peakBpm = _calculatePeakIntervalBpm(_redValues, durationSecs);
+    final bpmResult = peakBpm > 0 ? peakBpm : (algorithmBpm > 55 ? algorithmBpm : 0.0);
+    debugPrint('[PPG] algorithmBpm=$algorithmBpm, peakBpm=$peakBpm, finalBpm=$bpmResult');
 
     if (bpmResult > 0) {
       await _saveToFirestore(bpmResult.round());
@@ -191,8 +226,75 @@ class _ScanScreenState extends State<ScanScreen>
     } else {
       if (mounted) setState(() => _scanState = ScanState.error);
     }
-    
-    _saveToFirestore(bpmResult.round());
+  }
+
+  double _calculatePeakIntervalBpm(List<double> values, double durationSecs) {
+    if (values.length < 100 || durationSecs <= 0) return 0.0;
+
+    final sampleRate = values.length / durationSecs;
+    if (sampleRate <= 0) return 0.0;
+
+    final mean = values.reduce((a, b) => a + b) / values.length;
+    final variance = values
+            .map((v) => (v - mean) * (v - mean))
+            .reduce((a, b) => a + b) /
+        values.length;
+    final sd = sqrt(variance);
+    if (sd < 0.5) return 0.0;
+
+    // Light smoothing helps remove frame-to-frame camera noise while preserving pulse waves.
+    final smoothed = <double>[];
+    for (int i = 0; i < values.length; i++) {
+      final start = max(0, i - 2);
+      final end = min(values.length - 1, i + 2);
+      double sum = 0;
+      int count = 0;
+      for (int j = start; j <= end; j++) {
+        sum += values[j] - mean;
+        count++;
+      }
+      smoothed.add(sum / count);
+    }
+
+    final threshold = 0.04 * sd;
+    final minGap = (sampleRate * 60.0 / 140.0).round();
+    final maxGap = (sampleRate * 60.0 / 45.0).round();
+
+    final peaks = <int>[];
+    int lastPeak = -9999;
+
+    for (int i = 1; i < smoothed.length - 1; i++) {
+      final isLocalMax = smoothed[i] > smoothed[i - 1] && smoothed[i] >= smoothed[i + 1];
+      final isTallEnough = smoothed[i] > threshold;
+      final isFarEnough = i - lastPeak >= minGap;
+
+      if (isLocalMax && isTallEnough && isFarEnough) {
+        peaks.add(i);
+        lastPeak = i;
+      }
+    }
+
+    final intervals = <double>[];
+    for (int i = 1; i < peaks.length; i++) {
+      final gap = peaks[i] - peaks[i - 1];
+      if (gap >= minGap && gap <= maxGap) {
+        intervals.add(gap / sampleRate);
+      }
+    }
+
+    if (intervals.length < 2) {
+      debugPrint('[PPG] peak detector rejected: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, minGap=$minGap, maxGap=$maxGap');
+      return 0.0;
+    }
+
+    intervals.sort();
+    final medianInterval = intervals[intervals.length ~/ 2];
+    final bpm = 60.0 / medianInterval;
+
+    debugPrint('[PPG] peak detector: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, bpm=$bpm');
+
+    if (bpm < 45 || bpm > 160) return 0.0;
+    return bpm;
   }
 
   Future<void> _saveToFirestore(int bpm) async {
@@ -216,12 +318,18 @@ class _ScanScreenState extends State<ScanScreen>
     _scanTimer?.cancel();
     _spinController.stop();
     _pulseController.repeat(reverse: true);
-    await _cameraController?.setFlashMode(FlashMode.torch).catchError((_) {});
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) {
+      await _initCamera();
+      return;
+    }
+    await controller.setFlashMode(FlashMode.torch).catchError((_) {});
     setState(() {
       _scanState = ScanState.idle;
       _progress = 0.0;
       _finalBpm = 0.0;
       _redValues.clear();
+      _fingerDetectedFrames = 0;
     });
     _startImageStream();
   }
@@ -231,8 +339,11 @@ class _ScanScreenState extends State<ScanScreen>
     _pulseController.dispose();
     _spinController.dispose();
     _scanTimer?.cancel();
-    _cameraController?.setFlashMode(FlashMode.off);
-    _cameraController?.dispose();
+
+    final controller = _cameraController;
+    _cameraController = null;
+    controller?.dispose();
+
     super.dispose();
   }
 
@@ -261,7 +372,7 @@ class _ScanScreenState extends State<ScanScreen>
               ),
               const SizedBox(height: 4),
               const Text(
-                '60-second physiological assessment',
+                '15-second physiological assessment',
                 style: TextStyle(fontSize: 14, color: textGrey),
               ),
               const SizedBox(height: 40),
