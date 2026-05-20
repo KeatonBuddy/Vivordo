@@ -175,9 +175,10 @@ class _ScanScreenState extends State<ScanScreen>
 
     final durationSecs =
         DateTime.now().difference(_scanStartTime!).inMilliseconds / 1000.0;
-    // DEMO BPM between 60–100
-    final bpmResult = (60 + Random().nextInt(41)).toDouble();
-    PpgAlgorithm.calculateBPM(_redValues, durationSecs); // still runs but result unused
+
+    //final bpmResult = (60 + Random().nextInt(41)).toDouble(); <-- demo
+    final bpmResult = PpgAlgorithm.calculateBPM(_redValues, durationSecs); //with result
+    //PpgAlgorithm.calculateBPM(_redValues, durationSecs); // still runs but result unused
 
     if (bpmResult > 0) {
       await _saveToFirestore(bpmResult.round());
@@ -190,6 +191,8 @@ class _ScanScreenState extends State<ScanScreen>
     } else {
       if (mounted) setState(() => _scanState = ScanState.error);
     }
+    
+    _saveToFirestore(bpmResult.round());
   }
 
   Future<void> _saveToFirestore(int bpm) async {
