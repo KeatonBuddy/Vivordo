@@ -80,23 +80,90 @@ class UserService {
 
 
     if (user != null) {
+      final answers = Map<String, dynamic>.from(userdata["responses"] ?? {});
+      
       QuestionnaireResponse firestoreResponse = QuestionnaireResponse(
         userId: user.uid,
         questionnaireType: "baseline",
         submittedAt: FieldValue.serverTimestamp(),
         metadata: metadata,
-        answers: Map<String, dynamic>.from(userdata["responses"] ?? {}),
+        answers: answers,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       );
 
-
       await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
           .collection('questionnaire_responses')
           .add(firestoreResponse.toMap());
+
+      final preferences = _derivePreferences(answers);
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('preferences')
+          .doc('onboarding')
+          .set({
+            'preferences': preferences,
+            'onboardingCompleted': true,
+            'onboardingCompletedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+            'onboardingCompleted': true,
+            'onboardingCompletedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
     } else {
       throw Exception("User unavailable");
     }
+  }
+
+
+  static Map<String, dynamic> _derivePreferences(Map<String, dynamic> answers) {
+    double? slider(String key) {
+      final v = answers[key];
+      if (v == null) return null;
+      return (v as num).toDouble();
+    }
+
+    String? choice(String key) => answers[key] as String?;
+
+    double stressSum = 0;
+    int count = 0;
+    for (final key in ['q2', 'q4', 'q6', 'q8']) {
+      final v = slider(key);
+      if (v == null) continue;
+      stressSum += (key == 'q4') ? (11 - v) : v;
+      count++;
+    }
+
+    String? stressRisk;
+    if (count > 0) {
+      final avg = stressSum / count;
+      if (avg <= 4)        stressRisk = 'low';
+      else if (avg <= 6.5) stressRisk = 'moderate';
+      else                 stressRisk = 'high';
+    }
+
+    return {
+      'workSetup':          choice('q1'),
+      'mentalDrainScore':   slider('q2'),
+      'dailyHoursWorked':   choice('q3'),
+      'disconnectScore':    slider('q4'),
+      'skipsMeals':         choice('q5'),
+      'afterHoursPressure': slider('q6'),
+      'typicalSleepNight':  choice('q7'),
+      'deadlineAnxiety':    slider('q8'),
+      'perceivedWorkload':  choice('q9'),
+      'stressRiskTier':     stressRisk,
+      'onboardingVersion':  'v1',
+    };
   }
 
 
