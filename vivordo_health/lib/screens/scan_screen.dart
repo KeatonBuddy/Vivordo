@@ -718,6 +718,22 @@ class _ScanScreenState extends State<ScanScreen>
         : bpm < 80
             ? const Color(0xFFFF9500)
             : redColor;
+    final qualityScore = PpgAlgorithm.calculateQuality(
+        _redValues,
+        _scanDurationSeconds.toDouble(),
+      );
+
+    final qualityLabel = qualityScore >= 0.7
+        ? 'Good'
+        : qualityScore >= 0.4
+        ? 'Fair'
+        : 'Weak';
+
+    final qualityColor = qualityScore >= 0.7
+        ? greenColor
+        : qualityScore >= 0.4
+        ? const Color(0xFFFF9500)
+        : redColor;
 
     return Column(
       children: [
@@ -797,7 +813,7 @@ class _ScanScreenState extends State<ScanScreen>
           children: [
             Expanded(child: _buildMetricCard(Icons.favorite_rounded, 'Heart Rate', '$bpm bpm', redColor)),
             const SizedBox(width: 10),
-            Expanded(child: _buildMetricCard(Icons.show_chart_rounded, 'Quality', 'Good', greenColor)),
+            Expanded(child: _buildMetricCard(Icons.show_chart_rounded, 'Signal', qualityLabel, qualityColor)),
             const SizedBox(width: 10),
             Expanded(child: _buildMetricCard(Icons.psychology_outlined, 'Strain', stressLabel, stressColor)),
           ],
@@ -977,7 +993,7 @@ class _ScanScreenState extends State<ScanScreen>
     );
   }
 
-  Widget _buildTipRow(IconData icon, String text) {
+  /*Widget _buildTipRow(IconData icon, String text) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -986,7 +1002,22 @@ class _ScanScreenState extends State<ScanScreen>
         Text(text, style: const TextStyle(fontSize: 13, color: textGrey)),
       ],
     );
-  }
+  }*/
+  Widget _buildTipRow(IconData icon, String text) {
+  return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 16, color: accentPurple),
+      const SizedBox(width: 8),
+      Expanded(
+        child: Text(
+          text,
+          style: const TextStyle(fontSize: 13, color: textGrey),
+        ),
+      ),
+    ],
+  );
+}
 
   Widget _buildMetricCard(IconData icon, String label, String value, Color color) {
     return Container(
