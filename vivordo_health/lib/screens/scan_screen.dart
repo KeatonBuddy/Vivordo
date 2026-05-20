@@ -875,7 +875,13 @@ class _ScanScreenState extends State<ScanScreen>
               color: redColor.withOpacity(0.08),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.camera_outlined, size: 52, color: redColor),
+            child: Icon(
+              _errorTitle == 'Poor signal detected'
+                  ? Icons.fingerprint
+                  : Icons.camera_outlined,
+              size: 52,
+              color: redColor,
+            ),
           ),
         ),
         const SizedBox(height: 32),
