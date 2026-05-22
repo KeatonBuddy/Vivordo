@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:firebase_ai/firebase_ai.dart';
+import 'package:flutter/foundation.dart';
 
 import '../demo/demo_user_repository.dart';
 import '../demo/demo_user_data.dart';
@@ -157,7 +158,9 @@ class _DialStackFrame {
 class GeminiService {
   GeminiService()
       : _spikeModel = FirebaseAI.googleAI().generativeModel(
-          model: 'gemini-3-flash-preview',
+          // gemini-2.0-flash: stable GA release, consistent with production
+          // model policy. Structured-output + temp=0 → deterministic spike JSON.
+          model: 'gemini-2.0-flash',
           generationConfig: GenerationConfig(
             responseMimeType: 'application/json',
             responseSchema: _spikeSchema,
@@ -167,12 +170,13 @@ class GeminiService {
           ),
         ),
         _dialogueModel = FirebaseAI.googleAI().generativeModel(
-          model: 'gemini-3-flash-preview',
+          // gemini-2.0-flash: same stable GA model; fast enough for
+          // interactive dialogue turns. temp=0.5 for natural variability.
+          model: 'gemini-2.0-flash',
           generationConfig: GenerationConfig(
             responseMimeType: 'application/json',
             responseSchema: _turnSchema,
             candidateCount: 1,
-            // 0.5 gives natural variability without going off-rails
             temperature: 0.5,
             maxOutputTokens: 800,
           ),
@@ -224,7 +228,6 @@ RULES:
 - VARY the phrasing each call — never reuse the same wording.
 - Generate 2–3 depth_prompts per question (open-ended follow-ups if user wants more).
 - Keep question prompts ≤ 90 chars. overall_notes ≤ 140 chars.
-- Return ONLY valid JSON. No markdown, no extra text.
 ''';
 
   static final Schema _spikeSchema = Schema(
@@ -487,7 +490,6 @@ encourage the user to elaborate further if they want to go deeper).
 Vary the question phrasing — do not reuse wording from previous calls.
 (Hint: _variability_seed = ${compact["_variability_seed"]})
 
-Return ONLY valid JSON. No markdown. No backticks.
 Include every schema key (use "", 0, [] for unknowns).
 
 DATA: ${jsonEncode(compact)}
@@ -497,6 +499,11 @@ DATA: ${jsonEncode(compact)}
       Content.text(_spikeSystemPrompt),
       Content.text(userPrompt),
     ]);
+    if (kDebugMode) {
+      final usage = response.usageMetadata;
+      debugPrint('[Gemini][spike] tokens — in: ${usage?.promptTokenCount}, '
+          'out: ${usage?.candidatesTokenCount}');
+    }
     return response.text ?? '';
   }
 
@@ -548,7 +555,12 @@ DATA: ${jsonEncode(compact)}
     // All slots filled so far this session (for context)
     Map<String, String>? accumulatedSlots,
   }) async {
-    final historyText = conversationHistory
+    // Cap history to the 10 most recent turns to bound per-call token cost.
+    final cappedHistory = conversationHistory.length > 10
+        ? conversationHistory.sublist(conversationHistory.length - 10)
+        : conversationHistory;
+
+    final historyText = cappedHistory
         .map((t) =>
             "${t['role'] == 'user' ? 'User' : 'Panda'}: ${t['text']}")
         .join('\n');
@@ -558,9 +570,7 @@ DATA: ${jsonEncode(compact)}
     if (isInDigression) {
       pathCtx.writeln('STATE: IN_DIGRESSION');
       pathCtx.writeln(
-          'The user left the predefined path. Digression topic: "${digressionTopic ?? "unknown"}"');
-      pathCtx.writeln(
-          'Digression depth: $digressionTurnCount turn(s).');
+          'Digression topic: "${digressionTopic ?? "unknown"}", depth: $digressionTurnCount turn(s).');
       pathCtx.writeln(
           'If the user seems satisfied / wrapping up, set intent = "digression_complete".');
     } else if (isOnPredefinedPath && pendingQuestionPrompt != null) {
@@ -572,81 +582,59 @@ DATA: ${jsonEncode(compact)}
     }
 
     final slotsCtx = (accumulatedSlots != null && accumulatedSlots.isNotEmpty)
-        ? 'SLOTS FILLED SO FAR: ${jsonEncode(accumulatedSlots)}'
-        : 'SLOTS FILLED SO FAR: none yet';
+        ? 'SLOTS SO FAR: ${jsonEncode(accumulatedSlots)}'
+        : 'SLOTS SO FAR: none';
+
+    // Inject only the minimal spike summary — spike_id, window, top hypothesis.
+    // Full raw JSON is withheld to keep prompt tokens bounded.
+    final trimmedSpikes = _trimSpikeContext(spikeContext);
 
     final prompt = '''
-You are Panda 🐼, a warm and emotionally intelligent wellness companion
-inside the Vivordo health app.
-
-You run a HYBRID conversation:
-  • PREDEFINED PATH: structured labeling Qs (Panda drives)
-  • UNDEFINED PATH:  open support, advice, tips (user drives, depth unlimited)
-When the user digreses, you handle it fully and the app resumes the path.
+You are Panda 🐼, a warm, empathetic wellness companion in Vivordo.
 
 $pathCtx
-
-HEALTH SPIKE DATA:
-${jsonEncode(spikeContext)}
+SPIKE CONTEXT: ${jsonEncode(trimmedSpikes)}
 
 $slotsCtx
 
-CONVERSATION SO FAR:
+CONVERSATION:
 $historyText
 
-USER JUST SAID: "$userMessage"
+USER: "$userMessage"
 
-━━━ YOUR TASKS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASKS:
 
-1. CLASSIFY INTENT (pick exactly one):
-   "answer_label"         — user answered the current structured question
-   "want_deeper_answer"   — user wants to elaborate / go deeper on same topic
-   "digress"              — user left the path (advice / tips / support / vent)
-   "digression_complete"  — user signals done with digression, ready to continue
-   "new_stressor"         — user mentioned a NEW health event not yet covered
-   "recommend"            — user explicitly asked for a recommendation: playlist,
-                            exercise routine, breathing technique, sleep tip, etc.
-   "chitchat"             — casual small-talk unrelated to health
-   "skip"                 — user explicitly wants to skip the current question
+1. INTENT (pick one): "answer_label" | "want_deeper_answer" | "digress" |
+   "digression_complete" | "new_stressor" | "recommend" | "chitchat" | "skip"
 
-2. WRITE message (2–4 sentences):
-   CRITICAL RULES — violations are serious:
-   • NEVER ask the next predefined question — the app does that automatically.
-   • If user asks for advice / tips / strategies: DELIVER THEM NOW in this
-     message with concrete examples. NEVER say "I can help with that" without
-     immediately doing it. E.g. if user asks for breathing tips, give 2–3
-     specific techniques right here.
-   • If intent == "recommend": write a warm 1-sentence intro like
-     "Here are a few things that might help 💜" — the app shows the cards.
-   • If user wants to go deeper: ask one open probing follow-up (depth_follow_up).
-   • If in a digression and depth ≥ 3: gently and warmly signal you're wrapping
-     up so you can continue the check-in. Don't be abrupt.
-   • Tone: warm, peer-like, empathetic. NOT clinical.
-   • Do NOT diagnose. Use "may be related to" language.
+2. MESSAGE (2–4 sentences):
+   • Never ask the next predefined question — the app handles that automatically.
+   • Deliver advice immediately with concrete examples — never just promise it.
+   • intent=="recommend": one warm intro sentence; the app shows the rec cards.
+   • intent=="want_deeper_answer": include one probing follow-up question.
+   • Digression depth ≥ 3: warmly begin wrapping up the side conversation.
+   • Tone: warm, peer-like. Never clinical. No diagnoses; use "may be related to".
 
-3. DEPTH_FOLLOW_UP (only when intent == "want_deeper_answer"):
-   One concise open-ended question to keep the user elaborating.
+3. DEPTH_FOLLOW_UP: one open-ended probe (intent=="want_deeper_answer" only).
 
-4. INJECTED_QUESTION (only when intent == "new_stressor"):
-   Generate a short targeted question about what the user just mentioned.
-   3–5 chip options + always end with "Something else 🙋".
+4. INJECTED_QUESTION: targeted Q + 3–5 chip options + "Something else 🙋"
+   (intent=="new_stressor" only).
 
-5. REC_HINT (only when intent == "recommend"):
-   Comma-separated keywords describing what the user is looking for.
-   Examples: "music, sleep", "breathing, anxiety", "exercise, stress relief"
-   Keep it short — the app handles matching to actual content.
+5. REC_HINT: comma-separated keywords for the rec engine
+   (intent=="recommend" only). E.g. "music, sleep", "breathing, anxiety".
 
-6. SLOT FILLING — extract ALL wellness entities from the user's message:
-   stressor, emotion, intensity (low/medium/high), physical_symptom,
-   activity, location, time_context, coping_strategy, sleep_quality,
-   social_context, other.
-   Leave as "" for anything not mentioned. These are used to enrich user data.
-
-Return ONLY valid JSON. No markdown. No extra text.
+6. FILLED_SLOTS: stressor, emotion, intensity (low/medium/high),
+   physical_symptom, activity, location, time_context, coping_strategy,
+   sleep_quality, social_context, other. Use "" for anything not mentioned.
 ''';
 
     final response =
         await _dialogueModel.generateContent([Content.text(prompt)]);
+    if (kDebugMode) {
+      final usage = response.usageMetadata;
+      debugPrint('[Gemini][dialogue] tokens — in: ${usage?.promptTokenCount}, '
+          'out: ${usage?.candidatesTokenCount}');
+    }
     return _parseTurnReply(response.text ?? '');
   }
 
@@ -1133,6 +1121,27 @@ PandaSessionData _parsePandaSession(
   // =========================================================================
   // Utility
   // =========================================================================
+
+  /// Strips spike objects down to the three fields the dialogue model needs:
+  /// spike_id, time window, and the top hypothesis label. Keeps per-turn
+  /// prompt size bounded regardless of how many signals were recorded.
+  List<Map<String, dynamic>> _trimSpikeContext(
+      List<Map<String, dynamic>> spikes) {
+    return spikes.map((s) {
+      final hypotheses = s['hypotheses'] as List? ?? [];
+      final topLabel = hypotheses.isNotEmpty
+          ? (hypotheses.first as Map<String, dynamic>)['label']
+                  ?.toString() ??
+              ''
+          : '';
+      return {
+        'spike_id': s['spike_id'] ?? '',
+        'start': s['start'] ?? '',
+        'end': s['end'] ?? '',
+        'top_hypothesis': topLabel,
+      };
+    }).toList();
+  }
 
   String _formatTimeRange(String? startIso, String? endIso) {
     try {
