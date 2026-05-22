@@ -335,18 +335,39 @@ class _ScanScreenState extends State<ScanScreen>
           'source': 'camera_ppg',
         });
 
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
+        final heartRateDoc = await FirebaseFirestore.instance
             .collection('metrics_daily')
-            .doc(dayKey)
-            .set({
-          'date': dayKey,
-          'heartRate': bpm,
-          'signalQuality': signalQuality,
-          'heartRateUpdatedAt': FieldValue.serverTimestamp(),
+            .add({
+          'userId': user.uid,
+          'avg': bpm.toDouble(),
+          'sum': bpm.toDouble(),
+          'dimension': 'vitals',
+          'metricType': 'heart_rate',
+          'period': dayKey,
           'source': 'camera_ppg',
-        }, SetOptions(merge: true));
+          'syncedAt': FieldValue.serverTimestamp(),
+          'tags': ['heart_rate', 'ppg'],
+          'unit': 'bpm',
+        });
+
+        debugPrint('metrics_daily heart_rate doc created: ${heartRateDoc.id}');
+
+        final signalQualityDoc = await FirebaseFirestore.instance
+            .collection('metrics_daily')
+            .add({
+          'userId': user.uid,
+          'avg': signalQuality,
+          'sum': signalQuality,
+          'dimension': 'vitals',
+          'metricType': 'signal_quality',
+          'period': dayKey,
+          'source': 'camera_ppg',
+          'syncedAt': FieldValue.serverTimestamp(),
+          'tags': ['signal_quality', 'ppg'],
+          'unit': 'score',
+        });
+
+        debugPrint('metrics_daily signal_quality doc created: ${signalQualityDoc.id}');
       }
     } catch (e) {
       debugPrint('Failed to save to Firestore: $e');
