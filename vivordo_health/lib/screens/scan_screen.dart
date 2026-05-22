@@ -226,10 +226,11 @@ class _ScanScreenState extends State<ScanScreen>
     final algorithmBpm = PpgAlgorithm.calculateBPM(_redValues, durationSecs);
     final peakBpm = _calculatePeakIntervalBpm(_redValues, durationSecs);
     final bpmResult = peakBpm > 0 ? peakBpm : (algorithmBpm > 55 ? algorithmBpm : 0.0);
-    debugPrint('[PPG] algorithmBpm=$algorithmBpm, peakBpm=$peakBpm, finalBpm=$bpmResult');
+    final qualityScore = PpgAlgorithm.calculateQuality(_redValues, durationSecs);
+    debugPrint('[PPG] algorithmBpm=$algorithmBpm, peakBpm=$peakBpm, finalBpm=$bpmResult, qualityScore=$qualityScore');
 
     if (bpmResult > 0) {
-      await _saveToFirestore(bpmResult.round());
+      await _saveToFirestore(bpmResult.round(), qualityScore);
       if (mounted) {
         setState(() {
           _finalBpm = bpmResult;
@@ -316,17 +317,36 @@ class _ScanScreenState extends State<ScanScreen>
     return bpm;
   }
 
-  Future<void> _saveToFirestore(int bpm) async {
+  Future<void> _saveToFirestore(int bpm, double signalQuality) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
+        final now = DateTime.now();
+        final dayKey = '${now.year.toString().padLeft(4, '0')}-'
+            '${now.month.toString().padLeft(2, '0')}-'
+            '${now.day.toString().padLeft(2, '0')}';
+
         await FirebaseFirestore.instance.collection('heart_rate_scans').add({
           'userId': user.uid,
           'bpm': bpm,
+          'signalQuality': signalQuality,
           'timestamp': FieldValue.serverTimestamp(),
           'durationSeconds': _scanDurationSeconds,
           'source': 'camera_ppg',
         });
+
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('metrics_daily')
+            .doc(dayKey)
+            .set({
+          'date': dayKey,
+          'heartRate': bpm,
+          'signalQuality': signalQuality,
+          'heartRateUpdatedAt': FieldValue.serverTimestamp(),
+          'source': 'camera_ppg',
+        }, SetOptions(merge: true));
       }
     } catch (e) {
       debugPrint('Failed to save to Firestore: $e');
@@ -719,9 +739,9 @@ class _ScanScreenState extends State<ScanScreen>
             ? const Color(0xFFFF9500)
             : redColor;
     final qualityScore = PpgAlgorithm.calculateQuality(
-        _redValues,
-        _scanDurationSeconds.toDouble(),
-      );
+      _redValues,
+      _scanDurationSeconds.toDouble(),
+    );
 
     final qualityLabel = qualityScore >= 0.7
         ? 'Good'
@@ -813,7 +833,7 @@ class _ScanScreenState extends State<ScanScreen>
           children: [
             Expanded(child: _buildMetricCard(Icons.favorite_rounded, 'Heart Rate', '$bpm bpm', redColor)),
             const SizedBox(width: 10),
-            Expanded(child: _buildMetricCard(Icons.show_chart_rounded, 'Signal', qualityLabel, qualityColor)),
+            Expanded(child: _buildMetricCard(Icons.show_chart_rounded, 'Signal Quality', qualityLabel, qualityColor)),
             const SizedBox(width: 10),
             Expanded(child: _buildMetricCard(Icons.psychology_outlined, 'Strain', stressLabel, stressColor)),
           ],
