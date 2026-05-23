@@ -175,12 +175,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       final stressVals = _vals(_docsFor(snap, 'stress'), 'avg');
                       final hrvVals    = _vals(_docsFor(snap, 'hrv'),    'avg');
                       final sleepVals  = _vals(_docsFor(snap, 'sleep'),  'avg');
+                      final moodVals   = _vals(_docsFor(snap, 'mood'),   'avg');
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Summary cards — only shown when a watch/Health is connected
-                            if (anyConsented || stressVals.isNotEmpty || hrvVals.isNotEmpty || sleepVals.isNotEmpty) ...[
+                            if (anyConsented || stressVals.isNotEmpty || hrvVals.isNotEmpty || sleepVals.isNotEmpty || moodVals.isNotEmpty) ...[
+
                             Row(
                               children: [
                                 Expanded(child: _buildStatCard(
