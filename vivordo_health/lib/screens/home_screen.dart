@@ -796,6 +796,7 @@ class _HomeScreenState extends State<HomeScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -806,9 +807,10 @@ class _HomeScreenState extends State<HomeScreen> {
               topRight: Radius.circular(40),
             ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
               Container(
                 width: 44,
                 height: 5,
@@ -842,15 +844,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
               ),
               const SizedBox(height: 32),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _moodOption('Great', '🤩', const Color(0xFFFFEDD5), const Color(0xFFF97316)),
-                  _moodOption('Good', '😊', const Color(0xFFDCFCE7), const Color(0xFF22C55E)),
-                  _moodOption('Okay', '😐', const Color(0xFFF3F4F6), const Color(0xFF6B7280)),
-                  _moodOption('Down', '😔', const Color(0xFFEDE9FE), accentPurple),
-                  _moodOption('Awful', '😫', const Color(0xFFFEE2E2), const Color(0xFFEF4444)),
-                ],
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _moodOption('Great', '🤩', const Color(0xFFFFEDD5), const Color(0xFFF97316)),
+                    _moodOption('Good', '😊', const Color(0xFFDCFCE7), const Color(0xFF22C55E)),
+                    _moodOption('Okay', '😐', const Color(0xFFF3F4F6), const Color(0xFF6B7280)),
+                    _moodOption('Down', '😔', const Color(0xFFEDE9FE), accentPurple),
+                    _moodOption('Awful', '😫', const Color(0xFFFEE2E2), const Color(0xFFEF4444)),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
               Padding(
@@ -868,6 +873,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 28),
             ],
           ),
+        ),
         );
       },
     );

@@ -17,7 +17,8 @@ import 'profile_screen.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final VoidCallback? onScanTap;
+  const DashboardScreen({super.key, this.onScanTap});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -179,7 +180,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Summary cards — only shown when a watch/Health is connected
-                          if (anyConsented) ...[                          
+                            if (anyConsented || stressVals.isNotEmpty || hrvVals.isNotEmpty || sleepVals.isNotEmpty) ...[
                             Row(
                               children: [
                                 Expanded(child: _buildStatCard(
@@ -252,7 +253,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             _maybeChart(snap, 'vo2max',             'VO₂ Max (ml/kg/min)',          greenColor,                  'avg',  70),
 
                           // ── Apple Health CTA when nothing is consented ──────
-                          if (!anyConsented) _buildConnectCard(),
+                          if (snap == null || snap.docs.isEmpty)
+                            _buildEmptyState()
+                          else if (!anyConsented) 
+                            _buildConnectCard(),
 
                           const SizedBox(height: 120),
                         ],
@@ -418,6 +422,76 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ],
             ),
+        ],
+      ),
+    );
+  }
+  Widget _buildEmptyState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.bar_chart_rounded, size: 48, color: Color(0xFFE5E5EA)),
+          const SizedBox(height: 16),
+          const Text(
+            'No data for this period',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: textDark,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Complete a scan, log your mood, or connect Apple Health to see your metrics here.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: textGrey, height: 1.5),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => widget.onScanTap?.call(),
+                    
+                  icon: const Icon(Icons.fingerprint, size: 16),
+                  label: const Text('Take a Scan'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: accentPurple,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  ),
+                  icon: const Icon(Icons.health_and_safety_outlined, size: 16),
+                  label: const Text('Connect Health'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accentPurple,
+                    side: const BorderSide(color: accentPurple),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -684,6 +758,16 @@ class _AreaChartPainter extends CustomPainter {
       return Offset(x, y);
     });
 
+     // Single data point — draw a dot instead of a line
+    if (pts.length == 1) {
+      canvas.drawCircle(
+        pts.first,
+        6,
+        Paint()..color = color,
+      );
+      return;
+    }
+
     final linePath    = _smoothPath(pts);
     final pathMetrics = linePath.computeMetrics().toList();
     if (pathMetrics.isEmpty) return;
@@ -705,6 +789,16 @@ class _AreaChartPainter extends CustomPainter {
         )
         ..style = PaintingStyle.fill,
     );
+
+    // Single data point — draw a dot instead of a line
+    if (values.length == 1) {
+      canvas.drawCircle(
+        pts.first,
+        6,
+        Paint()..color = color,
+      );
+      return;
+    }
 
     // Stroke
     canvas.drawPath(

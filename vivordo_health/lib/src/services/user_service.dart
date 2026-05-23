@@ -80,6 +80,7 @@ class UserService {
 
 
     if (user != null) {
+      try {
       final answers = Map<String, dynamic>.from(userdata["responses"] ?? {});
       
       QuestionnaireResponse firestoreResponse = QuestionnaireResponse(
@@ -114,11 +115,15 @@ class UserService {
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .update({
+          .set({
             'onboardingCompleted': true,
             'onboardingCompletedAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
-          });
+            'preferences': preferences,
+          }, SetOptions(merge: true));
+    } catch (e) {
+        rethrow;
+      }
     } else {
       throw Exception("User unavailable");
     }
