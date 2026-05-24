@@ -19,11 +19,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _messageCopied = false;
 
   // Cached streams — created once in initState to avoid duplicate Firestore listeners
-  late Stream<double> _stressStream;
+  late Stream<double?> _stressStream;
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _sleepStream;
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _stepsStream;
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _hrStream;
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _moodStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _wellnessStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
 
   static const Color bgColor = Color(0xFFF2F2F7);
@@ -47,11 +48,18 @@ class _HomeScreenState extends State<HomeScreen> {
     _stepsStream = uid != null
         ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_steps_$today').snapshots()
         : const Stream.empty();
+    // NOTE: HR tile reads from metrics_daily/{uid}_heart_rate_today.
+    // Scan results are saved to heart_rate_scans collection (not metrics_daily),
+    // so a completed scan does NOT update this tile yet.
+    // This will be fixed in VH-SCAN-3 when scan results are written to metrics_daily.
     _hrStream = uid != null
         ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_heart_rate_$today').snapshots()
         : const Stream.empty();
     _moodStream = uid != null
         ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_mood_$today').snapshots()
+        : const Stream.empty();
+    _wellnessStream = uid != null
+        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_wellness_$today').snapshots()
         : const Stream.empty();
     _goalsStreamCached = _goalsStream();
   }
@@ -96,9 +104,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Reads stress score: prefers HRV-derived stress from HealthKit ('hrv' doc),
   /// falls back to manual 'stress' doc from seed data.
-  Stream<double> _stressScoreStream() {
+  Stream<double?> _stressScoreStream() {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return Stream.value(30);
+    if (user == null) return Stream.value(null);
     final today = _todayPeriod();
     final uid = user.uid;
 
@@ -116,10 +124,10 @@ class _HomeScreenState extends State<HomeScreen> {
           .collection('metrics_daily')
           .doc('${uid}_stress_$today')
           .get();
-      return (stressSnap.data()?['avg'] as num?)?.toDouble() ?? 30.0;
+      return (stressSnap.data()?['avg'] as num?)?.toDouble();
     });
   }
-
+  
   Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStream() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
@@ -143,13 +151,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      return _buildScaffold(stressScore: 30, sleepVal: '--', stepsVal: '--', hrVal: '--', goalTitle: 'No goal set', goalProgress: 0);
+      return _buildScaffold(stressScore: null, stressLoading: false, sleepVal: '--', stepsVal: '--', hrVal: '--', moodVal: '--', wellnessVal: '--', goalTitle: 'No goal set', goalProgress: 0);
     }
 
-    return StreamBuilder<double>(
+    return StreamBuilder<double?>(
       stream: _stressStream,
       builder: (context, stressSnap) {
-        final stressScore = stressSnap.data ?? 30.0;
+        final bool stressLoading = !stressSnap.hasData && stressSnap.connectionState == ConnectionState.waiting;
+        final double? stressScore = stressSnap.data;
 
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _sleepStream,
@@ -185,6 +194,17 @@ class _HomeScreenState extends State<HomeScreen> {
                             if (mounted) setState(() => _currentMood = moodData['label'] as String? ?? '--');
                           });
                         }
+                        final moodVal = moodData != null
+                            ? (moodData['label'] as String? ?? '--')
+                            : '--';
+
+                        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                          stream: _wellnessStream,
+                          builder: (context, wellnessSnap) {
+                            final wellnessData = wellnessSnap.data?.data();
+                            final wellnessVal = wellnessData != null
+                                ? '${(wellnessData['avg'] as num?)?.round() ?? '--'}'
+                                : '--';
 
                         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                           stream: _goalsStreamCached,
@@ -197,12 +217,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
                             return _buildScaffold(
                               stressScore: stressScore,
+                              stressLoading: stressLoading,
                               sleepVal: sleepVal,
                               stepsVal: stepsVal,
                               hrVal: hrVal,
+                              moodVal: moodVal,
+                              wellnessVal: wellnessVal,
                               goalTitle: goalTitle,
                               goalProgress: goalProgress,
-                            );
+                           );
+                          },
+                        );
                           },
                         );
                       },
@@ -218,10 +243,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildScaffold({
-    required double stressScore,
+    required double? stressScore,
+    required bool stressLoading,
     required String sleepVal,
     required String stepsVal,
     required String hrVal,
+    required String moodVal,
+    required String wellnessVal,
     required String goalTitle,
     required double goalProgress,
   }) {
@@ -236,7 +264,19 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildHeader(),
               const SizedBox(height: 24),
-              _buildStressCard(stressScore),
+              _buildStressCard(stressScore, loading: stressLoading),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: _buildMetricTile('Sleep', sleepVal, Icons.bedtime_rounded, accentPurple)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _buildMetricTile('Steps', stepsVal, Icons.directions_walk_rounded, greenColor)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _buildMetricTile('Heart Rate', hrVal, Icons.favorite_rounded, const Color(0xFFFF3B30))),
+                  const SizedBox(width: 10),
+                  Expanded(child: _buildMetricTile('Mood', moodVal, Icons.mood_rounded, const Color(0xFFF97316))),
+                ],
+              ),
               const SizedBox(height: 28),
               _buildSectionTitle('QUICK ACTIONS'),
               const SizedBox(height: 12),
@@ -336,8 +376,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildStressCard(double stressScore) {
-    final statusColor = _getStressColor(stressScore);
+    Widget _buildStressCard(double? stressScore, {bool loading = false}) {
+    final statusColor = stressScore == null ? const Color(0xFF8E8E93) : _getStressColor(stressScore);
+    final stressLabel = stressScore == null ? 'No data yet' : _getStressLabel(stressScore);
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: Container(
@@ -399,23 +440,32 @@ class _HomeScreenState extends State<HomeScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0, end: stressScore),
-                        duration: const Duration(milliseconds: 1200),
-                        curve: Curves.easeOutCubic,
-                        builder: (_, value, __) => Text(
-                          value.toInt().toString(),
-                          style: const TextStyle(
-                            fontSize: 56,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            height: 1.0,
-                            letterSpacing: -2,
-                          ),
-                        ),
-                      ),
+                      loading
+                          ? Container(
+                              width: 80,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            )
+                          : TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0, end: stressScore ?? 0),
+                              duration: const Duration(milliseconds: 1200),
+                              curve: Curves.easeOutCubic,
+                              builder: (_, value, __) => Text(
+                                stressScore == null ? '--' : value.toInt().toString(),
+                                style: TextStyle(
+                                  fontSize: stressScore == null ? 30 : 56,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  height: 1.0,
+                                  letterSpacing: -2,
+                                ),
+                              ),
+                            ),
                       const Padding(
-                        padding: EdgeInsets.only(bottom: 8, left: 4),
+                        padding: EdgeInsets.only(left: 4),
                         child: Text(
                           '/100',
                           style: TextStyle(
@@ -440,7 +490,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(width: 7),
                       Text(
-                        _getStressLabel(stressScore),
+                        stressLabel,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13,
@@ -453,7 +503,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: stressScore / 100),
+                      tween: Tween(begin: 0, end: (stressScore ?? 0) / 100),
                       duration: const Duration(milliseconds: 1400),
                       curve: Curves.easeOutCubic,
                       builder: (_, value, __) => LinearProgressIndicator(
@@ -469,6 +519,56 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+  
+Widget _buildMetricTile(String label, String value, IconData icon, Color color) {
+    final bool isEmpty = value == '--';
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0x0F000000),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: isEmpty ? const Color(0xFFC7C7CC) : color, size: 20),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: isEmpty ? const Color(0xFFC7C7CC) : textDark,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 10, color: textGrey),
+          ),
+          if (isEmpty) ...[
+            const SizedBox(height: 4),
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              ),
+              child: const Text(
+                'Connect Health →',
+                style: TextStyle(fontSize: 10, color: textGrey),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
