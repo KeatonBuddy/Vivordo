@@ -272,7 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 10),
                   Expanded(child: _buildMetricTile('Steps', stepsVal, Icons.directions_walk_rounded, greenColor)),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildMetricTile('Heart Rate', hrVal, Icons.favorite_rounded, const Color(0xFFFF3B30))),
+                  Expanded(child: _buildMetricTile('Heart Rate', hrVal, Icons.favorite_rounded, const Color(0xFFFF3B30), showConnectHint: false)),
                   const SizedBox(width: 10),
                   Expanded(child: _buildMetricTile('Mood', moodVal, Icons.mood_rounded, const Color(0xFFF97316))),
                 ],
@@ -523,7 +523,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
   
-Widget _buildMetricTile(String label, String value, IconData icon, Color color) {
+  Widget _buildMetricTile(String label, String value, IconData icon, Color color, {bool showConnectHint = true}) {
     final bool isEmpty = value == '--';
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
@@ -555,7 +555,7 @@ Widget _buildMetricTile(String label, String value, IconData icon, Color color) 
             label,
             style: const TextStyle(fontSize: 10, color: textGrey),
           ),
-          if (isEmpty) ...[
+          if (isEmpty && showConnectHint) ...[
             const SizedBox(height: 4),
             GestureDetector(
               onTap: () => Navigator.push(
