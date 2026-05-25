@@ -30,6 +30,7 @@ class _ScanScreenState extends State<ScanScreen>
   final int _scanDurationSeconds = 15;
   double _progress = 0.0;
   double _finalBpm = 0.0;
+  bool _hasTorch = true;
   String _errorTitle = 'Camera unavailable';
   String _errorBody = 'Please allow camera access in Settings\nand try again.';
 
@@ -95,13 +96,19 @@ class _ScanScreenState extends State<ScanScreen>
       );
 
       await _cameraController!.initialize();
+      bool hasTorch = true;
       try {
         await _cameraController!.setFlashMode(FlashMode.torch);
+        hasTorch = _cameraController!.value.flashMode == FlashMode.torch;
       } catch (e) {
+        hasTorch = false;
         debugPrint('[PPG] Could not enable torch: $e');
       }
 
-      setState(() => _scanState = ScanState.idle);
+      setState(() {
+        _hasTorch = hasTorch;
+        _scanState = ScanState.idle;
+      });
       _startImageStream();
     } catch (e) {
       debugPrint('[PPG] Camera init failed: $e');
@@ -225,7 +232,10 @@ class _ScanScreenState extends State<ScanScreen>
     //final bpmResult = (60 + Random().nextInt(41)).toDouble(); <-- demo
     final algorithmBpm = PpgAlgorithm.calculateBPM(_redValues, durationSecs);
     final peakBpm = _calculatePeakIntervalBpm(_redValues, durationSecs);
-    final bpmResult = peakBpm > 0 ? peakBpm : (algorithmBpm > 55 ? algorithmBpm : 0.0);
+    final minAcceptableBpm = _hasTorch ? 55.0 : 45.0;
+    final bpmResult = peakBpm > 0
+        ? peakBpm
+        : (algorithmBpm > minAcceptableBpm ? algorithmBpm : 0.0);
     final qualityScore = PpgAlgorithm.calculateQuality(_redValues, durationSecs);
     debugPrint('[PPG] algorithmBpm=$algorithmBpm, peakBpm=$peakBpm, finalBpm=$bpmResult, qualityScore=$qualityScore');
 
@@ -383,8 +393,16 @@ class _ScanScreenState extends State<ScanScreen>
       await _initCamera();
       return;
     }
-    await controller.setFlashMode(FlashMode.torch).catchError((_) {});
+    bool hasTorch = _hasTorch;
+    try {
+      await controller.setFlashMode(FlashMode.torch);
+      hasTorch = controller.value.flashMode == FlashMode.torch;
+    } catch (e) {
+      hasTorch = false;
+      debugPrint('[PPG] Could not enable torch during reset: $e');
+    }
     setState(() {
+      _hasTorch = hasTorch;
       _scanState = ScanState.idle;
       _progress = 0.0;
       _finalBpm = 0.0;
@@ -438,6 +456,10 @@ class _ScanScreenState extends State<ScanScreen>
                 style: TextStyle(fontSize: 14, color: textGrey),
               ),
               const SizedBox(height: 40),
+              if (!_hasTorch && _scanState != ScanState.initializing) ...[
+                _buildNoTorchWarning(),
+                const SizedBox(height: 16),
+              ],
               if (_scanState == ScanState.initializing) _buildInitializing(),
               if (_scanState == ScanState.idle)         _buildIdle(),
               if (_scanState == ScanState.scanning)     _buildScanning(),
@@ -453,6 +475,40 @@ class _ScanScreenState extends State<ScanScreen>
   }
 
   // ── State widgets ─────────────────────────────────────────────────────────
+
+  Widget _buildNoTorchWarning() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF9500).withOpacity(0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFF9500).withOpacity(0.35)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            color: Color(0xFFFF9500),
+            size: 20,
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'No flash detected — scan quality may be lower. Use a bright, steady light source and press firmly.',
+              style: TextStyle(
+                fontSize: 13,
+                color: textDark,
+                height: 1.4,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildInitializing() {
     return Column(
@@ -584,8 +640,14 @@ class _ScanScreenState extends State<ScanScreen>
                 ],
               ),
               const SizedBox(height: 16),
-              _buildStep('1', Icons.wb_sunny_outlined,
-                  'Enable torch', 'The flash turns on automatically to illuminate your fingertip.'),
+              _buildStep(
+                '1',
+                Icons.wb_sunny_outlined,
+                _hasTorch ? 'Enable torch' : 'Find bright light',
+                _hasTorch
+                    ? 'The flash turns on automatically to illuminate your fingertip.'
+                    : 'Find a bright light source and press your fingertip firmly over the lens.',
+              ),
               const SizedBox(height: 14),
               _buildStep('2', Icons.touch_app_outlined,
                   'Cover the lens', 'Gently press your fingertip over the rear camera and flash — no need to press hard.'),
