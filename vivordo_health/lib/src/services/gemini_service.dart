@@ -158,9 +158,9 @@ class _DialStackFrame {
 class GeminiService {
   GeminiService()
       : _spikeModel = FirebaseAI.googleAI().generativeModel(
-          // gemini-2.0-flash: stable GA release, consistent with production
-          // model policy. Structured-output + temp=0 → deterministic spike JSON.
-          model: 'gemini-2.0-flash',
+          // gemini-2.5-flash: stable GA release, consistent with ai_service.dart
+          // and production model policy. Structured-output + temp=0 → deterministic spike JSON.
+          model: 'gemini-2.5-flash',
           generationConfig: GenerationConfig(
             responseMimeType: 'application/json',
             responseSchema: _spikeSchema,
@@ -170,9 +170,9 @@ class GeminiService {
           ),
         ),
         _dialogueModel = FirebaseAI.googleAI().generativeModel(
-          // gemini-2.0-flash: same stable GA model; fast enough for
+          // gemini-2.5-flash: same stable GA model; fast enough for
           // interactive dialogue turns. temp=0.5 for natural variability.
-          model: 'gemini-2.0-flash',
+          model: 'gemini-2.5-flash',
           generationConfig: GenerationConfig(
             responseMimeType: 'application/json',
             responseSchema: _turnSchema,
