@@ -176,37 +176,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       final hrvVals    = _vals(_docsFor(snap, 'hrv'),    'avg');
                       final sleepVals  = _vals(_docsFor(snap, 'sleep'),  'avg');
                       final moodVals   = _vals(_docsFor(snap, 'mood'),   'avg');
+                      final wellnessVals = _vals(_docsFor(snap, 'wellness'), 'avg');
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Summary cards — only shown when a watch/Health is connected
-                            if (anyConsented || stressVals.isNotEmpty || hrvVals.isNotEmpty || sleepVals.isNotEmpty || moodVals.isNotEmpty) ...[
-
+                            if (anyConsented || stressVals.isNotEmpty || hrvVals.isNotEmpty || sleepVals.isNotEmpty || moodVals.isNotEmpty || wellnessVals.isNotEmpty) ...[
                             Row(
                               children: [
                                 Expanded(child: _buildStatCard(
                                   label: 'Avg Stress',
                                   value: stressVals.isEmpty ? '--' : _avg(stressVals).toInt().toString(),
                                   change: _trend(stressVals),
-                                  trendUp: false,
+                                  trendUp: !_trend(stressVals).startsWith('+'),
                                 )),
                                 const SizedBox(width: 10),
                                 Expanded(child: _buildStatCard(
                                   label: 'Avg HRV',
                                   value: hrvVals.isEmpty ? '--' : '${_avg(hrvVals).toInt()}ms',
                                   change: _trend(hrvVals),
-                                  trendUp: true,
-                                )),
+                                  trendUp: _trend(hrvVals).startsWith('+'),                                )),
                                 const SizedBox(width: 10),
                                 Expanded(child: _buildStatCard(
                                   label: 'Avg Sleep',
                                   value: sleepVals.isEmpty ? '--' : '${_avg(sleepVals).toStringAsFixed(1)}h',
                                   change: _trend(sleepVals),
-                                  trendUp: true,
+                                  trendUp: _trend(sleepVals).startsWith('+'),
                                 )),
                               ],
                             ),
+                            const SizedBox(height: 10),
+                            _buildWellnessCard(wellnessVals),
                             const SizedBox(height: 20),
                           ],
 
@@ -407,18 +408,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  trendUp
+                  change.startsWith('+')
                       ? Icons.trending_up_rounded
                       : Icons.trending_down_rounded,
                   size: 13,
-                  color: greenColor,
+                  color: trendUp ? greenColor : const Color(0xFFFF3B30),
                 ),
                 const SizedBox(width: 3),
                 Text(
                   change,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
-                    color: greenColor,
+                    color: trendUp ? greenColor : const Color(0xFFFF3B30),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -428,6 +429,119 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+
+  Widget _buildWellnessCard(List<double> vals) {
+    final avg = vals.isEmpty ? null : _avg(vals);
+    final trend = _trend(vals);
+
+    Color labelColor;
+    String labelText;
+    if (avg == null) {
+      labelColor = textGrey;
+      labelText = 'No data yet';
+    } else if (avg >= 70) {
+      labelColor = greenColor;
+      labelText = 'Good';
+    } else if (avg >= 50) {
+      labelColor = const Color(0xFFFF9500);
+      labelText = 'Fair';
+    } else {
+      labelColor = const Color(0xFFFF3B30);
+      labelText = 'Needs attention';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: labelColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.spa_rounded, size: 18, color: labelColor),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'WELLNESS SCORE',
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: textGrey,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      avg == null ? '--' : avg.toInt().toString(),
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: labelColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        labelText,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: labelColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (trend.isNotEmpty)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  trend.startsWith('+')
+                      ? Icons.trending_up_rounded
+                      : Icons.trending_down_rounded,
+                  size: 16,
+                  color: trend.startsWith('+') ? greenColor : const Color(0xFFFF3B30),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  trend,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: trend.startsWith('+') ? greenColor : const Color(0xFFFF3B30),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+  
   Widget _buildEmptyState() {
     return Container(
       width: double.infinity,

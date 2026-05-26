@@ -151,7 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      return _buildScaffold(stressScore: null, stressLoading: false, sleepVal: '--', stepsVal: '--', hrVal: '--', moodVal: '--', wellnessVal: '--', goalTitle: 'No goal set', goalProgress: 0);
+      return _buildScaffold(stressScore: null, stressLoading: false, sleepVal: '--', sleepLoading: false, stepsVal: '--', stepsLoading: false, hrVal: '--', hrLoading: false, moodVal: '--', moodLoading: false, wellnessVal: '--', goalTitle: 'No goal set', goalProgress: 0);
     }
 
     return StreamBuilder<double?>(
@@ -167,7 +167,8 @@ class _HomeScreenState extends State<HomeScreen> {
             final sleepVal = sleepData != null
                 ? '${(sleepData['avg'] as num?)?.toStringAsFixed(1) ?? '--'}h'
                 : '--';
-
+            final bool sleepLoading = !sleepSnap.hasData && sleepSnap.connectionState == ConnectionState.waiting;
+            
             return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
               stream: _stepsStream,
               builder: (context, stepsSnap) {
@@ -176,6 +177,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 final stepsVal = steps != null
                     ? (steps >= 1000 ? '${(steps / 1000).toStringAsFixed(1)}k' : steps.toString())
                     : '--';
+                final bool stepsLoading = !stepsSnap.hasData && stepsSnap.connectionState == ConnectionState.waiting;
 
                 return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                   stream: _hrStream,
@@ -184,6 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     final hrVal = hrData != null
                         ? '${(hrData['avg'] as num?)?.round() ?? '--'} bpm'
                         : '--';
+                    final bool hrLoading = !hrSnap.hasData && hrSnap.connectionState == ConnectionState.waiting;
 
                     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                       stream: _moodStream,
@@ -197,6 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         final moodVal = moodData != null
                             ? (moodData['label'] as String? ?? '--')
                             : '--';
+                        final bool moodLoading = !moodSnap.hasData && moodSnap.connectionState == ConnectionState.waiting;
 
                         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                           stream: _wellnessStream,
@@ -219,13 +223,17 @@ class _HomeScreenState extends State<HomeScreen> {
                               stressScore: stressScore,
                               stressLoading: stressLoading,
                               sleepVal: sleepVal,
+                              sleepLoading: sleepLoading,
                               stepsVal: stepsVal,
+                              stepsLoading: stepsLoading,
                               hrVal: hrVal,
+                              hrLoading: hrLoading,
                               moodVal: moodVal,
+                              moodLoading: moodLoading,
                               wellnessVal: wellnessVal,
                               goalTitle: goalTitle,
                               goalProgress: goalProgress,
-                           );
+                            );
                           },
                         );
                           },
@@ -246,13 +254,18 @@ class _HomeScreenState extends State<HomeScreen> {
     required double? stressScore,
     required bool stressLoading,
     required String sleepVal,
+    required bool sleepLoading,
     required String stepsVal,
+    required bool stepsLoading,
     required String hrVal,
+    required bool hrLoading,
     required String moodVal,
+    required bool moodLoading,
     required String wellnessVal,
     required String goalTitle,
     required double goalProgress,
   }) {
+
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(
@@ -268,13 +281,13 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: _buildMetricTile('Sleep', sleepVal, Icons.bedtime_rounded, accentPurple)),
+                  Expanded(child: _buildMetricTile('Sleep', sleepVal, Icons.bedtime_rounded, accentPurple, loading: sleepLoading)),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildMetricTile('Steps', stepsVal, Icons.directions_walk_rounded, greenColor)),
+                  Expanded(child: _buildMetricTile('Steps', stepsVal, Icons.directions_walk_rounded, greenColor, loading: stepsLoading)),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildMetricTile('Heart Rate', hrVal, Icons.favorite_rounded, const Color(0xFFFF3B30), showConnectHint: false)),
+                  Expanded(child: _buildMetricTile('Heart Rate', hrVal, Icons.favorite_rounded, const Color(0xFFFF3B30), showConnectHint: false, loading: hrLoading)),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildMetricTile('Mood', moodVal, Icons.mood_rounded, const Color(0xFFF97316))),
+                  Expanded(child: _buildMetricTile('Mood', moodVal, Icons.mood_rounded, const Color(0xFFF97316), loading: moodLoading)),
                 ],
               ),
               const SizedBox(height: 28),
@@ -523,7 +536,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
   
-  Widget _buildMetricTile(String label, String value, IconData icon, Color color, {bool showConnectHint = true}) {
+  Widget _buildMetricTile(String label, String value, IconData icon, Color color, {bool showConnectHint = true, bool loading = false}) {
     final bool isEmpty = value == '--';
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
@@ -542,14 +555,23 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Icon(icon, color: isEmpty ? const Color(0xFFC7C7CC) : color, size: 20),
           const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: isEmpty ? const Color(0xFFC7C7CC) : textDark,
-            ),
-          ),
+          loading
+              ? Container(
+                  width: 36,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5E5EA),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                )
+              : Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: isEmpty ? const Color(0xFFC7C7CC) : textDark,
+                  ),
+                ),
           const SizedBox(height: 2),
           Text(
             label,
