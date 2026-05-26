@@ -297,21 +297,31 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 28),
               _buildSectionTitle("TODAY'S INSIGHTS"),
               const SizedBox(height: 12),
-              _buildInsightCard(
-                icon: Icons.nightlight_round,
-                iconColor: accentPurple,
-                iconBg: Color(0x1F7B6EF6),
-                title: 'Great sleep last night',
-                subtitle: '7h 42min - your HRV is up 12% vs. yesterday',
-              ),
-              const SizedBox(height: 10),
-              _buildInsightCard(
-                icon: Icons.psychology_outlined,
-                iconColor: orangeColor,
-                iconBg: Color(0x1FFF9500),
-                title: 'Low cognitive load after 9:30 PM',
-                subtitle: 'Good window for a 20-min call with someone you care about',
-              ),
+              if (sleepVal != '--')
+                _buildInsightCard(
+                  icon: Icons.nightlight_round,
+                  iconColor: accentPurple,
+                  iconBg: const Color(0x1F7B6EF6),
+                  title: _getSleepInsightTitle(sleepVal),
+                  subtitle: _getSleepInsightSubtitle(sleepVal, hrVal),
+                ),
+              if (sleepVal != '--') const SizedBox(height: 10),
+              if (hrVal != '--')
+                _buildInsightCard(
+                  icon: Icons.favorite_rounded,
+                  iconColor: const Color(0xFFFF3B30),
+                  iconBg: const Color(0x1FFF3B30),
+                  title: _getHRVInsightTitle(hrVal),
+                  subtitle: _getHRVInsightSubtitle(hrVal),
+                ),
+              if (sleepVal == '--' && hrVal == '--')
+                _buildInsightCard(
+                  icon: Icons.info_outline_rounded,
+                  iconColor: textGrey,
+                  iconBg: const Color(0x1F8E8E93),
+                  title: 'No insights yet',
+                  subtitle: 'Connect Apple Health or complete a scan to see your daily insights.',
+                ),
               const SizedBox(height: 28),
               _buildSectionTitle('REACHABLE WINDOWS'),
               const SizedBox(height: 12),
@@ -914,6 +924,34 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+String _getSleepInsightTitle(String sleepVal) {
+    final hours = double.tryParse(sleepVal.replaceAll('h', '')) ?? 0;
+    if (hours >= 8) return 'Excellent sleep last night';
+    if (hours >= 7) return 'Good sleep last night';
+    if (hours >= 6) return 'Moderate sleep last night';
+    return 'Low sleep last night';
+  }
+
+  String _getSleepInsightSubtitle(String sleepVal, String hrVal) {
+    return '$sleepVal of sleep recorded';
+  }
+
+  String _getHRVInsightTitle(String hrVal) {
+    final bpm = int.tryParse(hrVal.replaceAll(' bpm', '')) ?? 0;
+    if (bpm < 60) return 'Resting heart rate looks calm';
+    if (bpm < 80) return 'Heart rate in normal range';
+    if (bpm < 100) return 'Heart rate slightly elevated';
+    return 'Heart rate elevated today';
+  }
+
+  String _getHRVInsightSubtitle(String hrVal) {
+    final bpm = int.tryParse(hrVal.replaceAll(' bpm', '')) ?? 0;
+    if (bpm < 60) return 'Your heart rate of $hrVal suggests good recovery today.';
+    if (bpm < 80) return 'Your heart rate of $hrVal is within a healthy range.';
+    if (bpm < 100) return 'Your heart rate of $hrVal is a bit higher than usual. Consider a rest day.';
+    return 'Your heart rate of $hrVal is elevated. Try some breathing exercises.';
+  }
+  
   void _showMoodCheck() {
     showModalBottomSheet(
       context: context,
