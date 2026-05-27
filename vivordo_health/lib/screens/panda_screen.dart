@@ -293,6 +293,7 @@ class _PandaScreenState extends State<PandaScreen>
       final session = await _svc
           .analyzePandaSession(
             userName: _currentFirstName.isNotEmpty ? _currentFirstName : null,
+            userId: _currentUserId.isNotEmpty ? _currentUserId : null,
           )
           .timeout(const Duration(seconds: 90));
 
@@ -740,9 +741,7 @@ class _PandaScreenState extends State<PandaScreen>
   }
 
   Future<void> _persistCompletedSession() async {
-    final resolvedUserId = _currentUserId.isNotEmpty
-        ? _currentUserId
-        : _svc.getActiveDemoUser().userId;
+    final resolvedUserId = _currentUserId;
     final labeledAnswers = {..._spikeAnswers, ..._categoryInsights};
     try {
       final insight = await _insightSvc.saveSessionInsight(
@@ -1867,9 +1866,7 @@ class _PandaScreenState extends State<PandaScreen>
     final newAnswer = controller.text.trim();
     if (newAnswer.isEmpty || newAnswer == currentAnswer) return;
 
-    final resolvedUserId = _currentUserId.isNotEmpty
-        ? _currentUserId
-        : _svc.getActiveDemoUser().userId;
+    final resolvedUserId = _currentUserId;
 
     try {
       await _insightSvc.correctAnswer(

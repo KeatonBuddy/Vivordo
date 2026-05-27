@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
 
@@ -513,16 +514,179 @@ DATA: ${jsonEncode(compact)}
 
   Future<PandaSessionData> analyzePandaSession({
     String? extraUserContext,
-    // Override the greeting name with the real Firebase user first name.
-    // When null, falls back to the demo userId as before.
     String? userName,
+    // Real logged-in user's UID. When provided, metrics_daily is queried.
+    // When null/empty, falls back to the demo path (test pages only).
+    String? userId,
   }) async {
-    final rawSample = getSampleData();   // REPLACE with real data when pipeline ready
+    if (userId != null && userId.isNotEmpty) {
+      // ── Production path: real metrics_daily data ──────────────────────
+      final payload = await _fetchRealUserPayload(userId);
+      if (payload == null) {
+        return _emptyStateSession(userName ?? 'there');
+      }
+      final compact = _buildCompactPayload(payload, topK: 1);
+      final raw = await analyzeStressSpikes(
+          data: compact, extraUserContext: extraUserContext);
+      return _parsePandaSession(raw, payload, overrideName: userName);
+    }
+
+    // ── Demo / test path — only reachable from test pages ────────────────
+    final rawSample = getSampleData();
     final compact = _buildCompactPayload(rawSample, topK: 1);
     final raw = await analyzeStressSpikes(
         data: compact, extraUserContext: extraUserContext);
     return _parsePandaSession(raw, rawSample, overrideName: userName);
   }
+
+  // =========================================================================
+  // Real user data fetch — queries metrics_daily for the last 7 days.
+  //
+  // Returns a map shaped identically to getSampleData() so _buildCompactPayload()
+  // and _parsePandaSession() work without changes.
+  // Returns null when the user has no data yet (graceful empty state).
+  // =========================================================================
+
+  Future<Map<String, dynamic>?> _fetchRealUserPayload(String userId) async {
+    final db = FirebaseFirestore.instance;
+    final now = DateTime.now();
+    const metricTypes = ['heart_rate', 'stress', 'steps', 'sleep', 'mood'];
+
+    // Build a flat ordered list of (dateStr, metricType) → doc fetch.
+    // Direct doc-ID lookups need no composite index and match MetricsService's
+    // naming convention: {userId}_{metricType}_{YYYY-MM-DD}.
+    final tags = <(String, String)>[];
+    final fetches = <Future<DocumentSnapshot<Map<String, dynamic>>>>[];
+    for (int daysBack = 0; daysBack < 7; daysBack++) {
+      final day = now.subtract(Duration(days: daysBack));
+      final dateStr = _fmtDate(day);
+      for (final metric in metricTypes) {
+        tags.add((dateStr, metric));
+        fetches.add(db
+            .collection('metrics_daily')
+            .doc('${userId}_${metric}_$dateStr')
+            .get());
+      }
+    }
+
+    final snaps = await Future.wait(fetches);
+
+    // Organise: dateStr → metricType → doc data
+    final dailyData = <String, Map<String, Map<String, dynamic>>>{};
+    for (int i = 0; i < tags.length; i++) {
+      final snap = snaps[i];
+      if (!snap.exists) continue;
+      final data = snap.data();
+      if (data == null) continue;
+      final (dateStr, metric) = tags[i];
+      dailyData.putIfAbsent(dateStr, () => {})[metric] = data;
+    }
+
+    if (dailyData.isEmpty) return null; // no data yet → caller shows empty state
+
+    // 7-day average resting HR as the baseline for spike detection.
+    final hrValues = dailyData.values
+        .map((d) => (d['heart_rate']?['avg'] as num?)?.toDouble())
+        .whereType<double>()
+        .toList();
+    final baselineHr = hrValues.isEmpty
+        ? 65.0
+        : hrValues.reduce((a, b) => a + b) / hrValues.length;
+
+    // Most recent day drives the opener message.
+    final sortedDates = dailyData.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
+    final latestDate = sortedDates.first;
+    final latestData = dailyData[latestDate]!;
+
+    final todayStress =
+        (latestData['stress']?['avg'] as num?)?.toDouble() ?? 50.0;
+    final todaySleepHrs =
+        (latestData['sleep']?['avg'] as num?)?.toDouble() ?? 7.0;
+    final todayMood = latestData['mood']?['label'] as String? ?? '';
+
+    // Approximate sleep quality from duration.
+    final sleepQuality = todaySleepHrs >= 8
+        ? 80.0
+        : todaySleepHrs >= 7
+            ? 65.0
+            : todaySleepHrs >= 6
+                ? 45.0
+                : 25.0;
+
+    // One synthetic sample per day (oldest → newest) for _detectSpikes().
+    // We use the daily HR max and avg stress so spike detection fires on
+    // genuinely elevated days. HRV uses a fixed default (not in metrics_daily).
+    final samplesChronological = sortedDates.reversed.map((dateStr) {
+      final d = dailyData[dateStr]!;
+      final hrMax = (d['heart_rate']?['max'] as num?)?.toDouble() ??
+          (d['heart_rate']?['avg'] as num?)?.toDouble() ??
+          baselineHr;
+      final stress = (d['stress']?['avg'] as num?)?.toDouble() ?? 50.0;
+      final stepsPerHour = (d['steps']?['avg'] as num?)?.toDouble() ?? 200.0;
+      return <String, dynamic>{
+        't': '${dateStr}T12:00:00',
+        'hr': hrMax.round(),
+        'hrv': 52, // HRV not tracked in metrics_daily yet
+        'steps': stepsPerHour.round(),
+        'stress_score': stress.round(),
+        'activity': stress > 65 ? 'work_focus' : 'sedentary',
+        'tag': '',
+      };
+    }).toList();
+
+    final windowStart =
+        DateTime.parse('${sortedDates.last}T00:00:00');
+    final windowEnd = DateTime.parse('${latestDate}T23:59:59');
+
+    return {
+      'user_profile': {
+        'timezone': 'UTC',
+        'age_range': 'adult',
+        'resting_hr_typical': baselineHr,
+        'hrv_rmssd_typical': 52.0,
+      },
+      'data_window': {
+        'start': windowStart.toIso8601String(),
+        'end': windowEnd.toIso8601String(),
+      },
+      'samples_5min': samplesChronological,
+      'events': <Map<String, dynamic>>[],
+      'sleep_summary': {
+        'total_minutes': (todaySleepHrs * 60).round(),
+        'sleep_quality': sleepQuality,
+      },
+      // 'demo_user' key is intentionally reused — _parsePandaSession() and
+      // _buildCompactPayload() read from it; field names match exactly.
+      'demo_user': {
+        'userId': userId,
+        'dailyStressLevel': todayStress,
+        'hrv': 52.0,
+        'journalMood': todayMood,
+        'stressed': todayStress > 60,
+        'journalEntrySummary': '',
+        'keyword': '',
+      },
+    };
+  }
+
+  // Returns a graceful empty-state session when the user has no metrics yet.
+  PandaSessionData _emptyStateSession(String name) {
+    return PandaSessionData(
+      openerMessage:
+          'Hey $name! 👋 I don\'t have any health data to analyze yet. '
+          'Once you start tracking your metrics, I\'ll be able to surface '
+          'personalized stress insights here. For now, feel free to chat with '
+          'me about anything on your mind 💜',
+      questions: [],
+      overallNotes: '',
+      rawSpikes: [],
+    );
+  }
+
+  static String _fmtDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
 
   // =========================================================================
   // Dialogue turn  —  the core of the hybrid dialogue manager
