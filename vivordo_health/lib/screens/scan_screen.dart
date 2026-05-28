@@ -31,6 +31,7 @@ class _ScanScreenState extends State<ScanScreen>
   double _progress = 0.0;
   double _finalBpm = 0.0;
   bool _hasTorch = true;
+  bool _isFirstScan = false;
   String _errorTitle = 'Camera unavailable';
   String _errorBody = 'Please allow camera access in Settings\nand try again.';
 
@@ -65,7 +66,34 @@ class _ScanScreenState extends State<ScanScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
+    _checkFirstScanStatus();
     _initCamera();
+  }
+
+  Future<void> _checkFirstScanStatus() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        debugPrint('[PPG] First scan check skipped: no signed-in user');
+        return;
+      }
+
+      final previousScans = await FirebaseFirestore.instance
+          .collection('heart_rate_scans')
+          .where('userId', isEqualTo: user.uid)
+          .limit(1)
+          .get();
+
+      final isFirstScan = previousScans.docs.isEmpty;
+      debugPrint('[PPG] isFirstScan=$isFirstScan');
+
+      if (!mounted) return;
+      setState(() {
+        _isFirstScan = isFirstScan;
+      });
+    } catch (e) {
+      debugPrint('[PPG] Failed to check first scan status: $e');
+    }
   }
 
   // ── Camera init ───────────────────────────────────────────────────────────
@@ -340,6 +368,7 @@ class _ScanScreenState extends State<ScanScreen>
           'userId': user.uid,
           'bpm': bpm,
           'signalQuality': signalQuality,
+          'isFirstScan': _isFirstScan,
           'timestamp': FieldValue.serverTimestamp(),
           'durationSeconds': _scanDurationSeconds,
           'source': 'camera_ppg',
@@ -356,7 +385,9 @@ class _ScanScreenState extends State<ScanScreen>
           'period': dayKey,
           'source': 'camera_ppg',
           'syncedAt': FieldValue.serverTimestamp(),
-          'tags': ['heart_rate', 'ppg'],
+          'tags': _isFirstScan
+              ? ['heart_rate', 'ppg', 'first_scan']
+              : ['heart_rate', 'ppg'],
           'unit': 'bpm',
         });
 
@@ -373,11 +404,18 @@ class _ScanScreenState extends State<ScanScreen>
           'period': dayKey,
           'source': 'camera_ppg',
           'syncedAt': FieldValue.serverTimestamp(),
-          'tags': ['signal_quality', 'ppg'],
+          'tags': _isFirstScan
+              ? ['signal_quality', 'ppg', 'first_scan']
+              : ['signal_quality', 'ppg'],
           'unit': 'score',
         });
 
         debugPrint('metrics_daily signal_quality doc created: ${signalQualityDoc.id}');
+        if (_isFirstScan && mounted) {
+          setState(() {
+            _isFirstScan = false;
+          });
+        }
       }
     } catch (e) {
       debugPrint('Failed to save to Firestore: $e');
