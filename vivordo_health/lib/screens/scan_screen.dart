@@ -32,6 +32,7 @@ class _ScanScreenState extends State<ScanScreen>
   double _finalBpm = 0.0;
   bool _hasTorch = true;
   bool _isFirstScan = false;
+  bool _showTutorial = false;
   String _errorTitle = 'Camera unavailable';
   String _errorBody = 'Please allow camera access in Settings\nand try again.';
 
@@ -39,6 +40,9 @@ class _ScanScreenState extends State<ScanScreen>
   late AnimationController _pulseController;
   late AnimationController _spinController;
   late Animation<double> _pulseAnimation;
+  final PageController _tutorialPageController = PageController();
+  int _tutorialPageIndex = 0;
+  bool _dismissedFirstScanTutorial = false;
 
   static const Color accentPurple = Color(0xFF7B6EF6);
   static const Color bgColor     = Color(0xFFF2F2F7);
@@ -85,11 +89,16 @@ class _ScanScreenState extends State<ScanScreen>
           .get();
 
       final isFirstScan = previousScans.docs.isEmpty;
+      /* TODO: Remove after testing.
+      final isFirstScan = true;
+      final isFirstScan = previousScans.docs.isEmpty; */
       debugPrint('[PPG] isFirstScan=$isFirstScan');
 
       if (!mounted) return;
       setState(() {
         _isFirstScan = isFirstScan;
+        _showTutorial = isFirstScan;
+        _dismissedFirstScanTutorial = !isFirstScan;
       });
     } catch (e) {
       debugPrint('[PPG] Failed to check first scan status: $e');
@@ -414,6 +423,8 @@ class _ScanScreenState extends State<ScanScreen>
         if (_isFirstScan && mounted) {
           setState(() {
             _isFirstScan = false;
+            _showTutorial = false;
+            _dismissedFirstScanTutorial = true;
           });
         }
       }
@@ -456,6 +467,7 @@ class _ScanScreenState extends State<ScanScreen>
   void dispose() {
     _pulseController.dispose();
     _spinController.dispose();
+    _tutorialPageController.dispose();
     _scanTimer?.cancel();
 
     final controller = _cameraController;
@@ -479,14 +491,42 @@ class _ScanScreenState extends State<ScanScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 48),
-              const Text(
-                'Stress Scan',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: textDark,
-                  letterSpacing: -0.5,
-                ),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Stress Scan',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Show tutorial',
+                  onPressed: () {
+                      setState(() {
+                        _showTutorial = true;
+                        _dismissedFirstScanTutorial = false;
+                        _tutorialPageIndex = 0;
+                      });
+
+                      if (_tutorialPageController.hasClients) {
+                        _tutorialPageController.animateToPage(
+                          0,
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                        );
+                      }
+                    },
+                    icon: const Icon(
+                      Icons.help_outline_rounded,
+                      color: accentPurple,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 4),
               const Text(
@@ -497,6 +537,10 @@ class _ScanScreenState extends State<ScanScreen>
               if (!_hasTorch && _scanState != ScanState.initializing) ...[
                 _buildNoTorchWarning(),
                 const SizedBox(height: 16),
+              ],
+              if (_showTutorial && _scanState == ScanState.idle) ...[
+                _buildFirstScanTutorial(),
+                const SizedBox(height: 20),
               ],
               if (_scanState == ScanState.initializing) _buildInitializing(),
               if (_scanState == ScanState.idle)         _buildIdle(),
@@ -542,6 +586,197 @@ class _ScanScreenState extends State<ScanScreen>
                 fontWeight: FontWeight.w500,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFirstScanTutorial() {
+    final tutorialSlides = [
+      {
+        'icon': Icons.camera_alt_outlined,
+        'title': 'Use the rear camera',
+        'body': _hasTorch
+            ? 'Place your fingertip so it fully covers both the rear camera and flash.'
+            : 'Place your fingertip so it fully covers the rear camera lens.',
+      },
+      {
+        'icon': Icons.touch_app_outlined,
+        'title': 'Use light, steady pressure',
+        'body': 'Press firmly enough to cover the lens, but avoid squeezing too hard. Too much pressure can weaken the pulse signal.',
+      },
+      {
+        'icon': Icons.back_hand_outlined,
+        'title': 'Cup with your other hand',
+        'body': 'Use your other hand to gently shield the rear camera area. This helps block outside light and keeps your finger steady for a cleaner reading.',
+      },
+      {
+        'icon': Icons.pan_tool_alt_outlined,
+        'title': 'Hold still for 15 seconds',
+        'body': 'Keep your phone and hand steady. The scan starts automatically once your finger is detected.',
+      },
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: accentPurple.withOpacity(0.22)),
+        boxShadow: [
+          BoxShadow(
+            color: accentPurple.withOpacity(0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.school_outlined, size: 17, color: accentPurple),
+              SizedBox(width: 7),
+              Text(
+                'First scan tutorial',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: accentPurple,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 180,
+            child: PageView.builder(
+              controller: _tutorialPageController,
+              itemCount: tutorialSlides.length,
+              onPageChanged: (index) {
+                setState(() {
+                  _tutorialPageIndex = index;
+                });
+              },
+              itemBuilder: (context, index) {
+                final slide = tutorialSlides[index];
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: accentPurple.withOpacity(0.10),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          slide['icon'] as IconData,
+                          color: accentPurple,
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        slide['title'] as String,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        slide['body'] as String,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: textGrey,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(tutorialSlides.length, (index) {
+              final isActive = index == _tutorialPageIndex;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: isActive ? 18 : 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: isActive ? accentPurple : accentPurple.withOpacity(0.22),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    setState(() {
+                      _showTutorial = false;
+                      _dismissedFirstScanTutorial = true;
+                    });
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: textDark,
+                    side: const BorderSide(color: Color(0xFFE5E5EA)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text('Skip'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (_tutorialPageIndex < tutorialSlides.length - 1) {
+                      _tutorialPageController.nextPage(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOut,
+                      );
+                    } else {
+                      setState(() {
+                        _showTutorial = false;
+                        _dismissedFirstScanTutorial = true;
+                      });
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: accentPurple,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    _tutorialPageIndex == tutorialSlides.length - 1
+                        ? 'Got it'
+                        : 'Next',
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
