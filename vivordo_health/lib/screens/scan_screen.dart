@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../src/utils/ppg_algorithm.dart';
+import '../src/services/user_service.dart';
 
 enum ScanState { initializing, idle, scanning, processing, success, error }
 
@@ -103,6 +104,21 @@ class _ScanScreenState extends State<ScanScreen>
     } catch (e) {
       debugPrint('[PPG] Failed to check first scan status: $e');
     }
+  }
+
+  Future<void> _dismissScannerTutorial() async {
+    try {
+      await UserService.setScannerTutorialSeen(true);
+    } catch (e) {
+      debugPrint('[Tutorial] Failed to save scannerTutorialSeen: $e');
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _showTutorial = false;
+      _dismissedFirstScanTutorial = true;
+      _isFirstScan = false;
+    });
   }
 
   // ── Camera init ───────────────────────────────────────────────────────────
@@ -729,12 +745,7 @@ class _ScanScreenState extends State<ScanScreen>
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () {
-                    setState(() {
-                      _showTutorial = false;
-                      _dismissedFirstScanTutorial = true;
-                    });
-                  },
+                  onPressed: _dismissScannerTutorial,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: textDark,
                     side: const BorderSide(color: Color(0xFFE5E5EA)),
@@ -755,10 +766,7 @@ class _ScanScreenState extends State<ScanScreen>
                         curve: Curves.easeOut,
                       );
                     } else {
-                      setState(() {
-                        _showTutorial = false;
-                        _dismissedFirstScanTutorial = true;
-                      });
+                      _dismissScannerTutorial();
                     }
                   },
                   style: ElevatedButton.styleFrom(
