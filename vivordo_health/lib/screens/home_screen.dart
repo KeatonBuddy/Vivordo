@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
 import 'panda_screen.dart';
+import 'package:vivordo_health/src/services/calendar_service.dart';
+import 'package:googleapis/calendar/v3.dart' as gcal;
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
@@ -16,7 +18,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String _currentMood = 'Good';
-  bool _messageCopied = false;
+  // _messageCopied removed — smart message card replaced with calendar
 
   // Cached streams — created once in initState to avoid duplicate Firestore listeners
   late Stream<double?> _stressStream;
@@ -327,10 +329,10 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 12),
               _buildReachableWindows(),
               const SizedBox(height: 28),
-              _buildSectionTitle('SMART MESSAGE'),
+              _buildSectionTitle('TODAY\'S SCHEDULE'),
               const SizedBox(height: 12),
-              _buildSmartMessageCard(),
-              const SizedBox(height: 120),
+              _buildCalendarCard(),
+              const SizedBox(height: 160),
             ],
           ),
         ),
@@ -830,99 +832,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSmartMessageCard() {
-    const message =
-        "Hey, today's been manageable, want to FaceTime around 9:30?";
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: cardWhite,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 15,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Color(0x1A7B6EF6),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.auto_awesome_rounded,
-                    color: accentPurple, size: 18),
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                'AI-Generated',
-                style: TextStyle(
-                  color: accentPurple,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            '"Hey, today\'s been manageable, want to FaceTime around 9:30?"',
-            style: TextStyle(
-              color: textDark,
-              fontSize: 15,
-              height: 1.5,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          const SizedBox(height: 16),
-          GestureDetector(
-            onTap: () async {
-              await Clipboard.setData(const ClipboardData(text: message));
-              setState(() => _messageCopied = true);
-              Future.delayed(const Duration(seconds: 2), () {
-                if (mounted) setState(() => _messageCopied = false);
-              });
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: _messageCopied ? greenColor : accentPurple,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    _messageCopied ? Icons.check_rounded : Icons.copy_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _messageCopied ? 'Copied!' : 'Copy & Send',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+ 
 
 String _getSleepInsightTitle(String sleepVal) {
     final hours = double.tryParse(sleepVal.replaceAll('h', '')) ?? 0;
@@ -952,6 +862,85 @@ String _getSleepInsightTitle(String sleepVal) {
     return 'Your heart rate of $hrVal is elevated. Try some breathing exercises.';
   }
   
+
+Widget _buildCalendarCard() {
+    return const _WeeklyCalendar();
+  }
+
+  String _formatCalendarDate(DateTime dt) {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${days[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day}';
+  }
+
+  String _formatHour(int hour) {
+    if (hour == 12) return '12 PM';
+    if (hour > 12) return '${hour - 12} PM';
+    return '$hour AM';
+  }
+
+  List<Map<String, dynamic>> _getTodayEvents(DateTime now) {
+    // Seed events based on day of week so they feel consistent
+    final day = now.weekday;
+    final events = <Map<String, dynamic>>[];
+
+    // Monday
+    if (day == 1) {
+      events.addAll([
+        {'hour': 9,  'title': 'Team Standup',        'subtitle': '15 min · Google Meet',     'color': accentPurple,              'icon': Icons.groups_rounded},
+        {'hour': 11, 'title': 'Product Review',       'subtitle': '1 hr · Conference Room A', 'color': const Color(0xFF007AFF),   'icon': Icons.slideshow_rounded},
+        {'hour': 13, 'title': 'Lunch with Sarah',     'subtitle': 'The Kitchen, Floor 2',     'color': greenColor,                'icon': Icons.restaurant_rounded},
+        {'hour': 15, 'title': 'Sprint Planning',      'subtitle': '2 hrs · Zoom',             'color': const Color(0xFFFF9500),   'icon': Icons.task_rounded},
+      ]);
+    }
+    // Tuesday
+    else if (day == 2) {
+      events.addAll([
+        {'hour': 9,  'title': '1:1 with Manager',     'subtitle': '30 min · Office',          'color': accentPurple,              'icon': Icons.person_rounded},
+        {'hour': 10, 'title': 'Design Review',         'subtitle': '1 hr · Figma call',        'color': const Color(0xFFFF3B30),   'icon': Icons.design_services_rounded},
+        {'hour': 14, 'title': 'Client Call — Acme',   'subtitle': '45 min · Zoom',            'color': const Color(0xFF007AFF),   'icon': Icons.business_rounded},
+        {'hour': 16, 'title': 'Focus Time',            'subtitle': 'Blocked — deep work',      'color': greenColor,                'icon': Icons.do_not_disturb_on_rounded},
+      ]);
+    }
+    // Wednesday
+    else if (day == 3) {
+      events.addAll([
+        {'hour': 9,  'title': 'All Hands Meeting',    'subtitle': '1 hr · Main Hall',         'color': const Color(0xFFFF9500),   'icon': Icons.groups_rounded},
+        {'hour': 11, 'title': '🎂 Alex\'s Birthday',  'subtitle': 'Team celebration at 3PM',  'color': const Color(0xFFFF3B30),   'icon': Icons.cake_rounded},
+        {'hour': 13, 'title': 'Lunch & Learn',        'subtitle': 'AI in Healthcare — Cafeteria', 'color': accentPurple,          'icon': Icons.school_rounded},
+        {'hour': 15, 'title': 'Code Review',          'subtitle': '1 hr · PR #142',           'color': greenColor,                'icon': Icons.code_rounded},
+      ]);
+    }
+    // Thursday
+    else if (day == 4) {
+      events.addAll([
+        {'hour': 9,  'title': 'Team Standup',         'subtitle': '15 min · Google Meet',     'color': accentPurple,              'icon': Icons.groups_rounded},
+        {'hour': 10, 'title': 'Investor Update',      'subtitle': '1 hr · Board Room',        'color': const Color(0xFF007AFF),   'icon': Icons.trending_up_rounded},
+        {'hour': 12, 'title': 'Working Lunch',        'subtitle': 'Q3 roadmap discussion',    'color': greenColor,                'icon': Icons.restaurant_rounded},
+        {'hour': 14, 'title': 'User Research',        'subtitle': '2 hrs · User interviews',  'color': const Color(0xFFFF9500),   'icon': Icons.people_rounded},
+        {'hour': 16, 'title': 'Retrospective',        'subtitle': '1 hr · Zoom',              'color': const Color(0xFFFF3B30),   'icon': Icons.refresh_rounded},
+      ]);
+    }
+    // Friday
+    else if (day == 5) {
+      events.addAll([
+        {'hour': 9,  'title': 'Team Standup',         'subtitle': '15 min · Google Meet',     'color': accentPurple,              'icon': Icons.groups_rounded},
+        {'hour': 11, 'title': 'Demo Day',             'subtitle': '2 hrs · All teams',        'color': const Color(0xFFFF9500),   'icon': Icons.slideshow_rounded},
+        {'hour': 14, 'title': 'Friday Wind Down',     'subtitle': 'Optional — team social',   'color': greenColor,                'icon': Icons.celebration_rounded},
+      ]);
+    }
+    // Weekend
+    else {
+      events.addAll([
+        {'hour': 10, 'title': 'Morning Run',          'subtitle': '5km · Riverside Trail',    'color': greenColor,                'icon': Icons.directions_run_rounded},
+        {'hour': 12, 'title': 'Brunch with Family',   'subtitle': 'Home',                     'color': const Color(0xFFFF9500),   'icon': Icons.home_rounded},
+        {'hour': 15, 'title': 'Personal Project',     'subtitle': 'Focus time',               'color': accentPurple,              'icon': Icons.lightbulb_rounded},
+      ]);
+    }
+
+    return events;
+  }
+
   void _showMoodCheck() {
     showModalBottomSheet(
       context: context,
@@ -1084,4 +1073,488 @@ String _getSleepInsightTitle(String sleepVal) {
       ),
     );
   }
+}
+
+class _WeeklyCalendar extends StatefulWidget {
+  const _WeeklyCalendar();
+  @override
+  State<_WeeklyCalendar> createState() => _WeeklyCalendarState();
+}
+
+class _WeeklyCalendarState extends State<_WeeklyCalendar> {
+  int _weekOffset = 0;
+  final ScrollController _scrollController = ScrollController();
+  List<gcal.Event> _googleEvents = [];
+  bool _isConnected = false;
+  bool _isLoading = false;
+
+  static const double _cellH = 52;
+  static const double _timeColW = 52;
+  static const Color _accentPurple = Color(0xFF7B6EF6);
+  static const Color _textDark = Color(0xFF1C1C1E);
+  static const Color _textGrey = Color(0xFF8E8E93);
+  static const Color _border = Color(0xFFE5E5EA);
+
+  static const _days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  static const _months = [
+    'January','February','March','April','May','June',
+    'July','August','September','October','November','December'
+  ];
+  static const _hours = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
+
+  
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final now = DateTime.now();
+      final scrollTo = (now.hour * _cellH) - _cellH;
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(
+          scrollTo.clamp(0, _scrollController.position.maxScrollExtent),
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _connectGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      final dates = _getWeekDates();
+      final events = await CalendarService.getWeekEvents(dates.first);
+      setState(() {
+        _googleEvents = events;
+        _isConnected = true;
+      });
+    } catch (e) {
+      debugPrint('Calendar error: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  List<DateTime> _getWeekDates() {
+    final now = DateTime.now();
+    final monday = now.subtract(Duration(days: now.weekday - 1))
+        .add(Duration(days: _weekOffset * 7));
+    return List.generate(7, (i) =>
+        DateTime(monday.year, monday.month, monday.day + i));
+  }
+
+  String _fmt12(int h) {
+    if (h == 0) return '12 AM';
+    if (h == 12) return '12 PM';
+    if (h > 12) return '${h - 12} PM';
+    return '$h AM';
+  }
+
+  String _monthLabel(List<DateTime> dates) {
+    final start = dates.first;
+    final end = dates.last;
+    if (start.month == end.month) {
+      return '${_months[start.month - 1]} ${start.year}';
+    }
+    return '${_months[start.month - 1]} – ${_months[end.month - 1]} ${start.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dates = _getWeekDates();
+    final now = DateTime.now();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0x0F000000),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: _border, width: 0.5)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today_rounded, size: 16, color: _accentPurple),
+                  const SizedBox(width: 8),
+                  Text(
+                    _monthLabel(dates),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: _textDark,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (!_isConnected)
+                    GestureDetector(
+                      onTap: _isLoading ? null : _connectGoogle,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1a73e8),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                'Connect Google',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  _navBtn(Icons.chevron_left_rounded, () {
+                    setState(() => _weekOffset--);
+                    if (_isConnected) _connectGoogle();
+                  }),
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    onTap: () => setState(() => _weekOffset = 0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: _border),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Today',
+                        style: TextStyle(fontSize: 12, color: _textDark),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  _navBtn(Icons.chevron_right_rounded, () {
+                    setState(() => _weekOffset++);
+                    if (_isConnected) _connectGoogle();
+                  }),
+                ],
+              ),
+            ),
+
+            // Day headers
+            Row(
+              children: [
+                SizedBox(width: _timeColW),
+                ...dates.map((d) {
+                  final isToday = _weekOffset == 0 &&
+                      d.day == now.day &&
+                      d.month == now.month &&
+                      d.year == now.year;
+                  return Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: _border, width: 0.5),
+                          right: BorderSide(color: _border, width: 0.5),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            _days[d.weekday % 7],
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: _textGrey,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: isToday
+                                  ? const Color(0xFF1a73e8)
+                                  : Colors.transparent,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${d.day}',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: isToday ? Colors.white : _textDark,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+
+            // Body
+            if (!_isConnected)
+              Container(
+                height: 200,
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.calendar_month_rounded, size: 48, color: Color(0xFFE5E5EA)),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'No calendar connected',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _textDark),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Tap "Connect Google Calendar" above\nto see your events here.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: _textGrey, height: 1.5),
+                    ),
+                    const SizedBox(height: 20),
+                    GestureDetector(
+                      onTap: _isLoading ? null : _connectGoogle,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1a73e8),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 14, height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.calendar_month_rounded, size: 14, color: Colors.white),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Connect Google Calendar',
+                                    style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              SizedBox(
+                height: 400,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Time column
+                    SizedBox(
+                      width: _timeColW,
+                      child: Column(
+                        children: _hours.map((h) => SizedBox(
+                          height: _cellH,
+                          child: Align(
+                            alignment: Alignment.topRight,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 8, top: 4),
+                              child: Text(
+                                _fmt12(h),
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: _textGrey,
+                                ),
+                              ),
+                            ),
+                          ),
+                        )).toList(),
+                      ),
+                    ),
+
+                    // Day columns
+                    ...dates.map((d) {
+                      final dow = d.weekday % 7;
+                      final isToday = _weekOffset == 0 &&
+                          d.day == now.day &&
+                          d.month == now.month &&
+                          d.year == now.year;
+                      const dayEvents = <_CalEvent>[];
+                      final googleDayEvents = _isConnected
+                          ? _googleEvents.where((e) {
+                              final start = e.start?.dateTime?.toLocal();
+                              return start != null &&
+                                  start.day == d.day &&
+                                  start.month == d.month;
+                            }).toList()
+                          : <gcal.Event>[];
+
+                      return Expanded(
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              right: BorderSide(color: _border, width: 0.5),
+                            ),
+                          ),
+                          child: Stack(
+                            children: [
+                              // Hour cells
+                              Column(
+                                children: _hours.map((h) => Container(
+                                  height: _cellH,
+                                  decoration: const BoxDecoration(
+                                    border: Border(
+                                      bottom: BorderSide(color: _border, width: 0.5),
+                                    ),
+                                  ),
+                                )).toList(),
+                              ),
+
+              
+
+                              // Google Calendar events
+                              ...googleDayEvents.map((ev) {
+                                final start = ev.start?.dateTime?.toLocal();
+                                final end = ev.end?.dateTime?.toLocal();
+                                if (start == null) return const SizedBox.shrink();
+                                final startH = start.hour + start.minute / 60.0;
+                                final endH = end != null
+                                    ? end.hour + end.minute / 60.0
+                                    : startH + 1;
+                                final top = startH * _cellH;
+                                final height = ((endH - startH) * _cellH - 2)
+                                    .clamp(18.0, double.infinity);
+                                return Positioned(
+                                  top: top,
+                                  left: 2,
+                                  right: 2,
+                                  height: height,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 5, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFe8f0fe),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: const Border(
+                                        left: BorderSide(
+                                          color: Color(0xFF1a73e8),
+                                          width: 3,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      ev.summary ?? 'Event',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1557b0),
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                );
+                              }),
+
+                              // Now line
+                              if (isToday)
+                                Positioned(
+                                  top: (now.hour + now.minute / 60) * _cellH,
+                                  left: 0,
+                                  right: 0,
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFFea4335),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Container(
+                                          height: 2,
+                                          color: const Color(0xFFea4335),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          border: Border.all(color: _border),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, size: 16, color: _textDark),
+      ),
+    );
+  }
+}
+
+class _CalEvent {
+  final int dow;
+  final int h;
+  final int m;
+  final double dur;
+  final String title;
+  final String sub;
+  final Color color;
+  final Color bg;
+  const _CalEvent({
+    required this.dow,
+    required this.h,
+    required this.m,
+    required this.dur,
+    required this.title,
+    required this.sub,
+    required this.color,
+    required this.bg,
+  });
 }
