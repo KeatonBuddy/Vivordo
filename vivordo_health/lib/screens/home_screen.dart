@@ -1195,15 +1195,19 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
                 children: [
                   const Icon(Icons.calendar_today_rounded, size: 16, color: _accentPurple),
                   const SizedBox(width: 8),
-                  Text(
-                    _monthLabel(dates),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _textDark,
+                  Expanded(
+                    child: Text(
+                      _monthLabel(dates),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: _textDark,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   if (!_isConnected)
                     GestureDetector(
                       onTap: _isLoading ? null : _connectGoogle,
@@ -1232,7 +1236,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
                               ),
                       ),
                     ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   _navBtn(Icons.chevron_left_rounded, () {
                     setState(() => _weekOffset--);
                     if (_isConnected) _connectGoogle();
@@ -1321,51 +1325,54 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
             // Body
             if (!_isConnected)
               Container(
-                height: 200,
+                height: 220,
                 alignment: Alignment.center,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.calendar_month_rounded, size: 48, color: Color(0xFFE5E5EA)),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'No calendar connected',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _textDark),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Tap "Connect Google Calendar" above\nto see your events here.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12, color: _textGrey, height: 1.5),
-                    ),
-                    const SizedBox(height: 20),
-                    GestureDetector(
-                      onTap: _isLoading ? null : _connectGoogle,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1a73e8),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 14, height: 14,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.calendar_month_rounded, size: 14, color: Colors.white),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Connect Google Calendar',
-                                    style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
+                child: SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.calendar_month_rounded, size: 48, color: Color(0xFFE5E5EA)),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No calendar connected',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _textDark),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Tap "Connect Google Calendar" above\nto see your events here.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: _textGrey, height: 1.5),
+                      ),
+                      const SizedBox(height: 20),
+                      GestureDetector(
+                        onTap: _isLoading ? null : _connectGoogle,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1a73e8),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 14, height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.calendar_month_rounded, size: 14, color: Colors.white),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Connect Google Calendar',
+                                      style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               )
             else
@@ -1527,12 +1534,12 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(4),
+        padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           border: Border.all(color: _border),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Icon(icon, size: 16, color: _textDark),
+        child: Icon(icon, size: 15, color: _textDark),
       ),
     );
   }
