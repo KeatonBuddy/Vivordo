@@ -118,6 +118,7 @@ class _ScanScreenState extends State<ScanScreen>
       _showTutorial = false;
       _dismissedFirstScanTutorial = true;
       _isFirstScan = false;
+      _fingerDetectedFrames = 0;
     });
   }
 
@@ -184,7 +185,10 @@ class _ScanScreenState extends State<ScanScreen>
     }
 
     controller.startImageStream((CameraImage image) {
-      if (!mounted || _isProcessingFrame) return;
+      if (!mounted || _isProcessingFrame || _showTutorial) {
+        _fingerDetectedFrames = 0;
+        return;
+      }
       _isProcessingFrame = true;
       try {
         final redMean = _extractAverageRed(image);
@@ -225,6 +229,7 @@ class _ScanScreenState extends State<ScanScreen>
   }
 
   void _startScan() {
+    if (_showTutorial) return;
     if (!mounted) return;
     setState(() {
       _scanState = ScanState.scanning;
@@ -523,10 +528,18 @@ class _ScanScreenState extends State<ScanScreen>
                   IconButton(
                     tooltip: 'Show tutorial',
                   onPressed: () {
+                      _scanTimer?.cancel();
+                      _spinController.stop();
                       setState(() {
                         _showTutorial = true;
                         _dismissedFirstScanTutorial = false;
                         _tutorialPageIndex = 0;
+                        _fingerDetectedFrames = 0;
+                        if (_scanState == ScanState.scanning) {
+                          _scanState = ScanState.idle;
+                          _progress = 0.0;
+                          _redValues.clear();
+                        }
                       });
 
                       if (_tutorialPageController.hasClients) {
