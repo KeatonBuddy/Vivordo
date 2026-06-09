@@ -1360,6 +1360,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
   @override
   void initState() {
     super.initState();
+    _loadExistingGoogleCalendar();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final now = DateTime.now();
       final scrollTo = (now.hour * _cellH) - _cellH;
@@ -1369,6 +1370,41 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
         );
       }
     });
+  }
+
+  Future<void> _loadExistingGoogleCalendar() async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final signedIn = await CalendarService.isSignedIn();
+      if (!signedIn) {
+        if (!mounted) return;
+        setState(() {
+          _isConnected = false;
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final dates = _getWeekDates();
+      final weekStart = dates.first;
+      final events = await CalendarService.getWeekEvents(weekStart);
+
+      if (!mounted) return;
+      setState(() {
+        _googleEvents = events;
+        _isConnected = true;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Calendar silent load error: $e');
+      if (!mounted) return;
+      setState(() {
+        _isConnected = false;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -1381,7 +1417,8 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
     setState(() => _isLoading = true);
     try {
       final dates = _getWeekDates();
-      final events = await CalendarService.getWeekEvents(dates.first);
+      final weekStart = dates.first;
+      final events = await CalendarService.connectAndGetWeekEvents(weekStart);
       setState(() {
         _googleEvents = events;
         _isConnected = true;
@@ -1664,7 +1701,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
                   const SizedBox(width: 4),
                   _navBtn(Icons.chevron_left_rounded, () {
                     setState(() => _weekOffset--);
-                    if (_isConnected) _connectGoogle();
+                    if (_isConnected) _loadExistingGoogleCalendar();
                   }),
                   const SizedBox(width: 4),
                   GestureDetector(
@@ -1684,7 +1721,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
                   const SizedBox(width: 4),
                   _navBtn(Icons.chevron_right_rounded, () {
                     setState(() => _weekOffset++);
-                    if (_isConnected) _connectGoogle();
+                    if (_isConnected) _loadExistingGoogleCalendar();
                   }),
                 ],
               ),
