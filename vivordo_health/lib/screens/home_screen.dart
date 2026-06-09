@@ -24,7 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late Stream<double?> _stressStream;
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _sleepStream;
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _stepsStream;
-  late Stream<DocumentSnapshot<Map<String, dynamic>>> _hrStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _hrStream;
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _moodStream;
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _wellnessStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
@@ -50,12 +50,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _stepsStream = uid != null
         ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_steps_$today').snapshots()
         : const Stream.empty();
-    // NOTE: HR tile reads from metrics_daily/{uid}_heart_rate_today.
-    // Scan results are saved to heart_rate_scans collection (not metrics_daily),
-    // so a completed scan does NOT update this tile yet.
-    // This will be fixed in VH-SCAN-3 when scan results are written to metrics_daily.
+    // Show the most recent completed scanner result on the Home heart-rate tile.
     _hrStream = uid != null
-        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_heart_rate_$today').snapshots()
+        ? FirebaseFirestore.instance
+            .collection('heart_rate_scans')
+            .where('userId', isEqualTo: uid)
+            .snapshots()
         : const Stream.empty();
     _moodStream = uid != null
         ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_mood_$today').snapshots()
@@ -102,6 +102,35 @@ class _HomeScreenState extends State<HomeScreen> {
     if (user == null) return const Stream.empty();
     final docId = '${user.uid}_${metricType}_${_todayPeriod()}';
     return FirebaseFirestore.instance.collection('metrics_daily').doc(docId).snapshots();
+  }
+
+  Timestamp? _scanTimestamp(Map<String, dynamic> data) {
+    final value = data['createdAt'] ?? data['updatedAt'] ?? data['timestamp'] ?? data['completedAt'] ?? data['scannedAt'];
+    return value is Timestamp ? value : null;
+  }
+
+  double? _scanHeartRate(Map<String, dynamic> data) {
+    final value = data['bpm'] ?? data['heartRate'] ?? data['heart_rate'] ?? data['avg'];
+    return value is num ? value.toDouble() : null;
+  }
+
+  String _latestScanHeartRateValue(QuerySnapshot<Map<String, dynamic>>? snap) {
+    final docs = snap?.docs ?? [];
+    if (docs.isEmpty) return '--';
+
+    final sortedDocs = [...docs]
+      ..sort((a, b) {
+        final aTime = _scanTimestamp(a.data())?.millisecondsSinceEpoch ?? 0;
+        final bTime = _scanTimestamp(b.data())?.millisecondsSinceEpoch ?? 0;
+        return bTime.compareTo(aTime);
+      });
+
+    for (final doc in sortedDocs) {
+      final bpm = _scanHeartRate(doc.data());
+      if (bpm != null) return '${bpm.round()} bpm';
+    }
+
+    return '--';
   }
 
   /// Reads stress score: prefers HRV-derived stress from HealthKit ('hrv' doc),
@@ -181,13 +210,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     : '--';
                 final bool stepsLoading = !stepsSnap.hasData && stepsSnap.connectionState == ConnectionState.waiting;
 
-                return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   stream: _hrStream,
                   builder: (context, hrSnap) {
-                    final hrData = hrSnap.data?.data();
-                    final hrVal = hrData != null
-                        ? '${(hrData['avg'] as num?)?.round() ?? '--'} bpm'
-                        : '--';
+                    final hrVal = _latestScanHeartRateValue(hrSnap.data);
                     final bool hrLoading = !hrSnap.hasData && hrSnap.connectionState == ConnectionState.waiting;
 
                     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
