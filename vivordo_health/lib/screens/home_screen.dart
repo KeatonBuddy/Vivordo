@@ -177,6 +177,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<List<gcal.Event>> _loadReachableWindowEvents(DateTime todayStart) async {
+    final signedIn = await CalendarService.isSignedIn();
+    if (!signedIn) return [];
+    return CalendarService.getWeekEvents(todayStart);
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -351,7 +357,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   subtitle: 'Connect Apple Health or complete a scan to see your daily insights.',
                 ),
               const SizedBox(height: 28),
-              _buildSectionTitle('REACHABLE WINDOWS'),
+              _buildSectionTitle('TODAY\'S REACHABLE WINDOWS'),
               const SizedBox(height: 12),
               _buildReachableWindows(),
               const SizedBox(height: 28),
@@ -654,7 +660,7 @@ class _HomeScreenState extends State<HomeScreen> {
             iconColor: accentPurple,
             iconBg: Color(0x1F7B6EF6),
             title: 'Quick Scan',
-            subtitle: '60-sec stress check',
+            subtitle: '15-sec stress check',
             onTap: () => widget.onScanTap?.call(),
           ),
         ),
@@ -792,22 +798,163 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildReachableWindows() {
-    final windows = [
-      {'time': '12:30 - 1:00 PM', 'label': 'Low stress', 'color': greenColor},
-      {'time': '6:00 - 7:30 PM', 'label': 'Post-workout calm', 'color': accentPurple},
-      {'time': '9:30 - 10:30 PM', 'label': 'Moderate - winding down', 'color': orangeColor},
-    ];
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
 
-    return Column(
-      children: windows.map((w) {
-        final color = w['color'] as Color;
+    return FutureBuilder<List<gcal.Event>>(
+      future: _loadReachableWindowEvents(todayStart),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: cardWhite,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFE5E5EA)),
+            ),
+            child: const Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    color: accentPurple,
+                  ),
+                ),
+                SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    'Analyzing your calendar for cognitive load windows…',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: textDark,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final events = (snapshot.data ?? const <gcal.Event>[])
+            .where((event) {
+              final start = event.start?.dateTime?.toLocal();
+              return start != null &&
+                  start.year == now.year &&
+                  start.month == now.month &&
+                  start.day == now.day;
+            })
+            .toList()
+          ..sort((a, b) {
+            final aStart = a.start?.dateTime?.toLocal() ?? todayStart;
+            final bStart = b.start?.dateTime?.toLocal() ?? todayStart;
+            return aStart.compareTo(bStart);
+          });
+
+        final workStart = DateTime(now.year, now.month, now.day, 9);
+        final workEnd = DateTime(now.year, now.month, now.day, 17);
+
+        DateTime clampStart(DateTime value) =>
+            value.isBefore(workStart) ? workStart : value;
+        DateTime clampEnd(DateTime value) =>
+            value.isAfter(workEnd) ? workEnd : value;
+
+        String formatTime(DateTime value) {
+          final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+          final minute = value.minute.toString().padLeft(2, '0');
+          final suffix = value.hour >= 12 ? 'PM' : 'AM';
+          return '$hour:$minute $suffix';
+        }
+
+        String formatRange(DateTime start, DateTime end) =>
+            '${formatTime(start)} - ${formatTime(end)}';
+
+        String durationLabel(Duration duration) {
+          final minutes = duration.inMinutes;
+          if (minutes >= 60) {
+            final hours = minutes ~/ 60;
+            final remainder = minutes % 60;
+            return remainder == 0 ? '${hours}h' : '${hours}h ${remainder}m';
+          }
+          return '${minutes}m';
+        }
+
+        final highLoadWindows = events
+            .map((event) {
+              final start = event.start?.dateTime?.toLocal();
+              final end = event.end?.dateTime?.toLocal();
+              if (start == null || end == null) return null;
+
+              final clippedStart = clampStart(start);
+              final clippedEnd = clampEnd(end);
+              if (!clippedEnd.isAfter(clippedStart)) return null;
+
+              return {
+                'time': formatRange(clippedStart, clippedEnd),
+                'label': event.summary?.trim().isNotEmpty == true
+                    ? event.summary!.trim()
+                    : 'Calendar event',
+                'duration': clippedEnd.difference(clippedStart),
+              };
+            })
+            .whereType<Map<String, dynamic>>()
+            .toList()
+          ..sort((a, b) => (b['duration'] as Duration)
+              .compareTo(a['duration'] as Duration));
+
+        final lowLoadWindows = <Map<String, dynamic>>[];
+        var cursor = workStart;
+
+        for (final event in events) {
+          final start = event.start?.dateTime?.toLocal();
+          final end = event.end?.dateTime?.toLocal();
+          if (start == null || end == null) continue;
+
+          final clippedStart = clampStart(start);
+          final clippedEnd = clampEnd(end);
+
+          if (clippedStart.isAfter(cursor)) {
+            final gap = clippedStart.difference(cursor);
+            if (gap.inMinutes >= 30) {
+              lowLoadWindows.add({
+                'time': formatRange(cursor, clippedStart),
+                'label': '${durationLabel(gap)} open',
+                'duration': gap,
+              });
+            }
+          }
+
+          if (clippedEnd.isAfter(cursor)) {
+            cursor = clippedEnd;
+          }
+        }
+
+        if (cursor.isBefore(workEnd)) {
+          final gap = workEnd.difference(cursor);
+          if (gap.inMinutes >= 30) {
+            lowLoadWindows.add({
+              'time': formatRange(cursor, workEnd),
+              'label': '${durationLabel(gap)} open',
+              'duration': gap,
+            });
+          }
+        }
+
+        highLoadWindows.sort((a, b) => (b['duration'] as Duration)
+            .compareTo(a['duration'] as Duration));
+        lowLoadWindows.sort((a, b) => (b['duration'] as Duration)
+            .compareTo(a['duration'] as Duration));
+
         return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: cardWhite,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFE5E5EA)),
+            boxShadow: const [
               BoxShadow(
                 color: Color(0x0A000000),
                 blurRadius: 10,
@@ -815,46 +962,126 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                ),
+              _buildCognitiveLoadSection(
+                title: 'Here are your times of high cognitive load',
+                icon: Icons.psychology_alt_rounded,
+                color: orangeColor,
+                emptyText: 'No busy calendar blocks found today.',
+                windows: highLoadWindows.take(2).toList(),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  w['time'] as String,
-                  style: const TextStyle(
-                    color: textDark,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  w['label'] as String,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              const SizedBox(height: 18),
+              _buildCognitiveLoadSection(
+                title: 'Here are your times with the lowest cognitive load',
+                icon: Icons.self_improvement_rounded,
+                color: greenColor,
+                emptyText: 'No open 30+ minute windows found today.',
+                windows: lowLoadWindows.take(2).toList(),
               ),
             ],
           ),
         );
-      }).toList(),
+      },
+    );
+  }
+
+  Widget _buildCognitiveLoadSection({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required String emptyText,
+    required List<Map<String, dynamic>> windows,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 18, color: color),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: textDark,
+                  height: 1.25,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (windows.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F7FA),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              emptyText,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: textGrey,
+              ),
+            ),
+          )
+        else
+          ...windows.map((window) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7F7FA),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          window['time'] as String,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          window['label'] as String,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: textGrey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: color, size: 20),
+                ],
+              ),
+            );
+          }),
+      ],
     );
   }
 
