@@ -163,8 +163,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               StreamBuilder<Map<String, bool>>(
                 stream: _consentStream,
                 builder: (_, consentSnap) {
+                  final consentLoaded = consentSnap.hasData;
                   final consent     = consentSnap.data ?? {};
-                  final anyConsented = consent.values.any((v) => v);
+                  final anyConsented = consentLoaded && consent.values.any((v) => v);
 
                   return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     stream: _allMetricsStream,
@@ -258,7 +259,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           // ── Apple Health CTA when nothing is consented ──────
                           if (snap == null || snap.docs.isEmpty)
                             _buildEmptyState()
-                          else if (!anyConsented) 
+                          else if (consentLoaded && !anyConsented)
                             _buildConnectCard(),
 
                           const SizedBox(height: 120),
