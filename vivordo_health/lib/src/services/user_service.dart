@@ -129,21 +129,30 @@ class UserService {
             'onboardingCompletedAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
           });
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set({
-            'onboardingCompleted': true,
-            'onboardingCompletedAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-            'preferences': preferences,
-          }, SetOptions(merge: true));
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'onboardingCompleted': true,
+        'onboardingCompletedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'preferences.timezone': preferences['timezone'],
+        'preferences.locale': preferences['locale'],
+        'preferences.units': preferences['units'],
+        'preferences.notificationsEnabled': preferences['notificationsEnabled'],
+      }, SetOptions(merge: true));
     } catch (e) {
         rethrow;
       }
     } else {
       throw Exception('User unavailable');
     }
+  }
+
+  static Map<String, dynamic> _derivePreferences(Map<String, dynamic> answers) {
+    return {
+      'timezone': answers['timezone'] ?? 'America/Edmonton',
+      'locale': answers['locale'] ?? 'en_CA',
+      'units': answers['units'] ?? 'metric',
+      'notificationsEnabled': answers['notificationsEnabled'] == true,
+    };
   }
 
   static Future<void> updateDisplayName(String newName) async {
