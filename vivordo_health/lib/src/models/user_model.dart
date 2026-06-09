@@ -1,5 +1,6 @@
 import 'dart:core';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'preferences.dart';
 
 
 class UserModel {
@@ -34,6 +35,14 @@ class UserModel {
     this.preferences,
   });
 
+  bool get scannerTutorialSeen =>
+      preferences?[Preferences.scannerTutorialSeenKey] == true;
+
+  set scannerTutorialSeen(bool value) {
+    preferences ??= <String, dynamic>{};
+    preferences![Preferences.scannerTutorialSeenKey] = value;
+  }
+
 
   factory UserModel.fromMap(Map<String, dynamic> firestoreData, String id) {
     return UserModel(
@@ -41,12 +50,14 @@ class UserModel {
       displayName: firestoreData['displayName'],
       email: firestoreData['email'],
       pendingEmail: firestoreData['pendingEmail'],
-      onboardingCompleted: firestoreData['onboardingCompleted'],
+      onboardingCompleted: firestoreData['onboardingCompleted'] == true,
       createdAt: firestoreData['createdAt'],
       updatedAt: firestoreData['updatedAt'],
       photoUrl: firestoreData['photoUrl'],
       orgId: firestoreData['orgId'],
-      roles: firestoreData['roles'],
+      roles: (firestoreData['roles'] as List<dynamic>?)
+          ?.map((role) => role.toString())
+          .toList(),
       onboardingCompletedAt: firestoreData['onboardingCompletedAt'],
       homeConfig: firestoreData['homeConfig'],
       preferences: firestoreData['preferences'],
@@ -72,5 +83,3 @@ class UserModel {
     };
   }
 }
-
-
