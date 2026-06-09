@@ -192,10 +192,11 @@ class _ScanScreenState extends State<ScanScreen>
     }
   }
 
-  Future<void> _saveToFirestore(int bpm) async {
+   Future<void> _saveToFirestore(int bpm) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
+        // Save to heart_rate_scans for history
         await FirebaseFirestore.instance.collection('heart_rate_scans').add({
           'userId': user.uid,
           'bpm': bpm,
@@ -203,6 +204,30 @@ class _ScanScreenState extends State<ScanScreen>
           'durationSeconds': _scanDurationSeconds,
           'source': 'camera_ppg',
         });
+
+        // Also write to metrics_daily so the HR tile on the home screen updates
+        final now = DateTime.now();
+        final period = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+        final docId = '${user.uid}_heart_rate_$period';
+
+        await FirebaseFirestore.instance
+            .collection('metrics_daily')
+            .doc(docId)
+            .set({
+              'userId': user.uid,
+              'metricType': 'heart_rate',
+              'period': period,
+              'avg': bpm.toDouble(),
+              'min': bpm.toDouble(),
+              'max': bpm.toDouble(),
+              'unit': 'bpm',
+              'dimension': 'cardiovascular',
+              'source': 'camera_ppg',
+              'tags': ['heart_rate', 'scan'],
+              'computedAt': FieldValue.serverTimestamp(),
+              'createdAt': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
       }
     } catch (e) {
       debugPrint('Failed to save to Firestore: $e');

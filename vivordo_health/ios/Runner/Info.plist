@@ -22,18 +22,29 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Vivordo Health uses the camera and flash to measure your heart rate via PPG (photoplethysmography). Place your finger over the lens to scan.</string>
 	<key>NSHealthClinicalHealthRecordsShareUsageDescription</key>
 	<string>Vivordo Health uses background delivery to keep your health data up to date. This allows the app to securely receive updates in the background and ensure your insights and trends are always current.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Vivordo Health reads your steps, heart rate, sleep, and HRV to display personalized health insights. You control which data types are shared.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Vivordo Health may write workout summaries back to Apple Health.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Vivordo Health uses the camera and flash to measure your heart rate via PPG (photoplethysmography). Place your finger over the lens to scan.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>
