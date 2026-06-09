@@ -35,7 +35,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         activePage = const ScanScreen();
         break;
       case 2:
-        activePage = const DashboardScreen();
+        activePage = DashboardScreen(onScanTap: () => setState(() => _selectedIndex = 1));
         break;
       case 3:
         activePage = const PandaScreen();

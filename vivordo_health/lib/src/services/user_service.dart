@@ -97,6 +97,9 @@ class UserService {
     final metadata = Metadata.create().toMap();
 
     if (user != null) {
+      try {
+      final answers = Map<String, dynamic>.from(userdata["responses"] ?? {});
+      
       QuestionnaireResponse firestoreResponse = QuestionnaireResponse(
         userId: user.uid,
         questionnaireType: 'baseline',
@@ -108,8 +111,36 @@ class UserService {
       );
 
       await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
           .collection('questionnaire_responses')
           .add(firestoreResponse.toMap());
+
+      final preferences = _derivePreferences(answers);
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('preferences')
+          .doc('onboarding')
+          .set({
+            'preferences': preferences,
+            'onboardingCompleted': true,
+            'onboardingCompletedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({
+            'onboardingCompleted': true,
+            'onboardingCompletedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+            'preferences': preferences,
+          }, SetOptions(merge: true));
+    } catch (e) {
+        rethrow;
+      }
     } else {
       throw Exception('User unavailable');
     }
