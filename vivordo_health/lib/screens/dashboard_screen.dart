@@ -179,11 +179,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       final moodVals   = _vals(_docsFor(snap, 'mood'),   'avg');
                       final wellnessVals = _vals(_docsFor(snap, 'wellness'), 'avg');
 
+                      bool hasMetricData(String metricType) =>
+                          _docsFor(snap, metricType).isNotEmpty;
+
+                      bool showHealthMetric(String metricType) =>
+                          consent[metricType] == true || hasMetricData(metricType);
+
+                      final hasAnyHealthData = [
+                        'steps',
+                        'active_calories',
+                        'exercise_time',
+                        'distance',
+                        'flights_climbed',
+                        'heart_rate',
+                        'resting_heart_rate',
+                        'hrv',
+                        'blood_oxygen',
+                        'respiratory_rate',
+                        'sleep',
+                        'weight',
+                        'body_fat',
+                        'mindfulness',
+                        'vo2max',
+                      ].any(hasMetricData);
+
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (!consentLoaded && !hasAnyHealthData) ...[
+                            _buildHealthConsentLoadingCard(),
+                            const SizedBox(height: 16),
+                          ],
+
                           // Summary cards — only shown when a watch/Health is connected
-                            if (anyConsented || stressVals.isNotEmpty || hrvVals.isNotEmpty || sleepVals.isNotEmpty || moodVals.isNotEmpty || wellnessVals.isNotEmpty) ...[
+                          if (anyConsented || stressVals.isNotEmpty || hrvVals.isNotEmpty || sleepVals.isNotEmpty || moodVals.isNotEmpty || wellnessVals.isNotEmpty) ...[
                             Row(
                               children: [
                                 Expanded(child: _buildStatCard(
@@ -219,47 +248,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                           // ── HealthKit metrics — consent-gated ───────────────
                           // Activity
-                          if (consent['steps']              == true)
+                          if (showHealthMetric('steps'))
                             _maybeChart(snap, 'steps',              'Daily Steps',                  Colors.blueAccent,           'sum',  20000),
-                          if (consent['active_calories']    == true)
+                          if (showHealthMetric('active_calories'))
                             _maybeChart(snap, 'active_calories',    'Active Calories (kcal)',       const Color(0xFFF97316),     'sum',  1000),
-                          if (consent['exercise_time']      == true)
+                          if (showHealthMetric('exercise_time'))
                             _maybeChart(snap, 'exercise_time',      'Exercise Time (min)',          const Color(0xFFFF9500),     'sum',  120),
-                          if (consent['distance']           == true)
+                          if (showHealthMetric('distance'))
                             _maybeChart(snap, 'distance',           'Distance (km)',                const Color(0xFF3B82F6),     'sum',  20),
-                          if (consent['flights_climbed']    == true)
+                          if (showHealthMetric('flights_climbed'))
                             _maybeChart(snap, 'flights_climbed',    'Flights Climbed',              const Color(0xFF14B8A6),     'sum',  30),
                           // Heart
-                          if (consent['heart_rate']         == true)
+                          if (showHealthMetric('heart_rate'))
                             _maybeChart(snap, 'heart_rate',         'Heart Rate (bpm)',             Colors.redAccent,            'avg',  200),
-                          if (consent['resting_heart_rate'] == true)
+                          if (showHealthMetric('resting_heart_rate'))
                             _maybeChart(snap, 'resting_heart_rate', 'Resting Heart Rate (bpm)',     const Color(0xFFFF6B6B),     'avg',  120),
-                          if (consent['hrv']                == true)
+                          if (showHealthMetric('hrv'))
                             _maybeChart(snap, 'hrv',                'HRV (ms)',                     greenColor,                  'avg',  120),
                           // Breathing / Vitals
-                          if (consent['blood_oxygen']       == true)
+                          if (showHealthMetric('blood_oxygen'))
                             _maybeChart(snap, 'blood_oxygen',       'Blood Oxygen SpO₂ (%)',        const Color(0xFF06B6D4),     'avg',  100),
-                          if (consent['respiratory_rate']   == true)
+                          if (showHealthMetric('respiratory_rate'))
                             _maybeChart(snap, 'respiratory_rate',   'Respiratory Rate (brpm)',      const Color(0xFF0EA5E9),     'avg',  30),
                           // Sleep
-                          if (consent['sleep']              == true)
+                          if (showHealthMetric('sleep'))
                             _maybeChart(snap, 'sleep',              'Sleep (hours)',                const Color(0xFF8B5CF6),     'avg',  12),
                           // Body
-                          if (consent['weight']             == true)
+                          if (showHealthMetric('weight'))
                             _maybeChart(snap, 'weight',             'Weight (kg)',                  const Color(0xFFA78BFA),     'avg',  0),
-                          if (consent['body_fat']           == true)
+                          if (showHealthMetric('body_fat'))
                             _maybeChart(snap, 'body_fat',           'Body Fat (%)',                 const Color(0xFFFBBF24),     'avg',  50),
                           // Mind
-                          if (consent['mindfulness']        == true)
+                          if (showHealthMetric('mindfulness'))
                             _maybeChart(snap, 'mindfulness',        'Mindfulness (min)',            const Color(0xFF7C3AED),     'sum',  60),
                           // Fitness
-                          if (consent['vo2max']             == true)
+                          if (showHealthMetric('vo2max'))
                             _maybeChart(snap, 'vo2max',             'VO₂ Max (ml/kg/min)',          greenColor,                  'avg',  70),
 
                           // ── Apple Health CTA when nothing is consented ──────
                           if (snap == null || snap.docs.isEmpty)
                             _buildEmptyState()
-                          else if (consentLoaded && !anyConsented)
+                          else if (consentLoaded && !anyConsented && !hasAnyHealthData)
                             _buildConnectCard(),
 
                           const SizedBox(height: 120),
@@ -608,6 +637,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHealthConsentLoadingCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: const Row(
+        children: [
+          SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: accentPurple,
+            ),
+          ),
+          SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Checking Apple Health permissions',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: textDark,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Loading your connected health data…',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: textGrey,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
