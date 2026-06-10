@@ -572,23 +572,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 20),
           Row(
             children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => widget.onScanTap?.call(),
-                    
-                  icon: const Icon(Icons.fingerprint, size: 16),
-                  label: const Text('Take a Scan'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: accentPurple,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
+             
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => Navigator.push(

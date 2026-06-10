@@ -231,20 +231,20 @@ class _SignupScreenState extends State<SignupScreen> {
                 _buildMultipleChoiceQuestion(
                   q: 'q1',
                   emoji: '🏢',
-                  title: 'How would you describe your work setup?',
+                  title: 'How do you typically work day-to-day?',
                   options: ['Full-time office', 'Fully remote', 'Hybrid', 'Frequent travel', 'Varies a lot'],
                 ),
                 _buildSliderQuestion(
                   q: 'q2',
                   emoji: '🧠',
-                  title: 'By end of day, how mentally drained do you feel?',
+                  title: 'How mentally drained do you feel at the end of a typical workday?',
                   lowLabel: 'Barely drained', highLabel: 'Completely exhausted',
                 ),
                 _buildMultipleChoiceQuestion(
                   q: 'q3',
                   emoji: '⏰',
                   title: 'How many hours do you typically work per day?',
-                  options: ['Under 7h', '7–9h', '9–11h', '11h+', 'It varies wildly'],
+                  options: ['Under 7h', '7–9h', '9–11h', '11h+', 'It varies'],
                 ),
                 _buildSliderQuestion(
                   q: 'q4',
@@ -255,7 +255,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 _buildMultipleChoiceQuestion(
                   q: 'q5',
                   emoji: '🍽️',
-                  title: 'How often do you skip meals or eat at your desk?',
+                  title: 'How often do you skip meals to focus on work?',
                   options: ['Never', 'Rarely', 'Sometimes', 'Often', 'Almost every day'],
                 ),
                 _buildSliderQuestion(

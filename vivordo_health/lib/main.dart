@@ -46,6 +46,7 @@ class MyApp extends StatelessWidget {
       title: 'Vivordo Health',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        fontFamily: 'DMSans',
         primaryColor: const Color(0xFF857DEA),
         scaffoldBackgroundColor: const Color(0xFFFBFaff),
         colorScheme: ColorScheme.fromSwatch().copyWith(

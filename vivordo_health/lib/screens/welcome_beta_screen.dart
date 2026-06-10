@@ -140,7 +140,7 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
                     iconColor: accentPurple,
                     title: 'Spotted a bug? Tell us!',
                     body:
-                        'If anything looks off, crashes, or doesn\'t work as expected, please let us know. You can reach us at support@vivordo.com or through the Profile page.',
+                        'If anything looks off, crashes, or doesn\'t work as expected, please let us know. You can reach us at contact@vivordo.com or through the Profile page.',
                   ),
                   const SizedBox(height: 32),
 
@@ -199,7 +199,7 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'Thank you for being part of the journey 💜',
+                    'Thank you for being part of the journey',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 12, color: textGrey),
                   ),

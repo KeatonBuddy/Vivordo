@@ -57,7 +57,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Day',
     icon: Icons.wb_sunny_outlined,
-    color: Color(0xFFFF8C69),
+    color: Color(0xFF7B6EF6),
     categoryMessage:
         "Here's what I can help you with for today — pick what feels most useful 👇",
     prompts: [
@@ -84,8 +84,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Energy',
     icon: Icons.bolt_rounded,
-    color: Color(0xFF0ABFBC),
-    categoryMessage:
+    color: Color(0xFF7B6EF6),    categoryMessage:
         "Let's look at what's shaping your energy and recovery — choose a question 👇",
     prompts: [
       "What does my typical day look like?",
@@ -98,8 +97,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'Plans & People',
     icon: Icons.people_outline_rounded,
-    color: Color(0xFF4CAF50),
-    categoryMessage:
+    color: Color(0xFF7B6EF6),    categoryMessage:
         "I can help you navigate plans and people based on how you're doing — what do you need? 👇",
     prompts: [
       "Set expectations for this week",
@@ -789,7 +787,7 @@ class _PandaScreenState extends State<PandaScreen>
       elevation: 0.5,
       automaticallyImplyLeading: false,
       title: Column(children: [
-        const Text('Panda',
+        const Text('AI Assistant',
             style: TextStyle(
                 color: _ink, fontSize: 17, fontWeight: FontWeight.bold)),
         Text(statusText, style: TextStyle(color: statusColor, fontSize: 12)),
@@ -886,11 +884,24 @@ class _PandaScreenState extends State<PandaScreen>
     if (_loading && _turns.isEmpty) {
       return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          _avatar(),
-          const SizedBox(height: 20),
-          const TypingIndicator(),
+          Image.asset(
+            'assets/vivordo_logo.png',
+            width: 380,
+            height: 300,
+            fit: BoxFit.contain,
+          ),
+          Transform.translate(
+            offset: const Offset(0, -40),
+            child: const SizedBox(
+              width: 200,
+              child: LinearProgressIndicator(
+                backgroundColor: Color(0xFFE5E5EA),
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7B6EF6)),
+              ),
+            ),
+          ),
           const SizedBox(height: 14),
-          const Text('Panda is analysing your data…',
+          const Text('Analysing your data…',
               style: TextStyle(color: Colors.black45, fontSize: 14)),
         ]),
       );
@@ -1531,9 +1542,11 @@ class _PandaScreenState extends State<PandaScreen>
     final hasSlots = slots != null && !slots.isEmpty;
     final hasAnswers = labeledAnswers.isNotEmpty;
 
-    return Container(
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.black.withOpacity(0.07)),
         boxShadow: [
@@ -1775,6 +1788,7 @@ class _PandaScreenState extends State<PandaScreen>
             ],
           ],
         ),
+      ),
       ),
     );
   }
@@ -2049,15 +2063,11 @@ class _PandaScreenState extends State<PandaScreen>
     }
   }
 
-  Widget _avatar() => Container(
-        width: 40,
-        height: 40,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          image: DecorationImage(
-              image: AssetImage('assets/panda_icon.png'),
-              fit: BoxFit.contain),
-        ),
+  Widget _avatar() => Image.asset(
+        'assets/vivordo_logo.png',
+        width: 380,
+        height: 300,
+        fit: BoxFit.contain,
       );
 }
 
