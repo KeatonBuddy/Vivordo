@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../demo/demo_user_repository.dart';
+import 'stress_score_service.dart';
 
 class MetricsService {
   static final _db = FirebaseFirestore.instance;
@@ -144,6 +145,9 @@ class MetricsService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true)); // merge so we don't overwrite if already exists
+
+    // Recompute BaaS stress score now that mood data has changed
+    StressScoreService.computeAndSave(uid: user.uid, force: true).catchError((_) {});
   }
 
   // ─── HELPERS ──────────────────────────────────────────────────────

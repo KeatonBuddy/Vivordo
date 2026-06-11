@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
+import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'panda_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -17,6 +18,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _currentMood = 'Good';
   bool _messageCopied = false;
+
 
   // Cached streams — created once in initState to avoid duplicate Firestore listeners
   late Stream<double> _stressStream;
@@ -38,6 +40,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _stressStream = _stressScoreStream();
+    // Fire-and-forget: compute BaaS stress score on every home screen load
+    StressScoreService.computeAndSave().catchError((_) {});
     final today = _todayPeriod();
     final user = FirebaseAuth.instance.currentUser;
     final uid = user?.uid;
@@ -94,29 +98,36 @@ class _HomeScreenState extends State<HomeScreen> {
     return FirebaseFirestore.instance.collection('metrics_daily').doc(docId).snapshots();
   }
 
-  /// Reads stress score: prefers HRV-derived stress from HealthKit ('hrv' doc),
-  /// falls back to manual 'stress' doc from seed data.
+  /// Reads stress score with priority:
+  ///   1. BaaS API result in stress doc (source == 'baas_api')
+  ///   2. HRV-derived stress from HealthKit (simple formula fallback)
+  ///   3. Any value in stress doc (demo/seed data)
+  ///   4. Default 30
   Stream<double> _stressScoreStream() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return Stream.value(30);
     final today = _todayPeriod();
     final uid = user.uid;
 
-    // Try HRV doc first — if it has stressScore field, use it
-    final hrvDoc = FirebaseFirestore.instance
+    return FirebaseFirestore.instance
         .collection('metrics_daily')
-        .doc('${uid}_hrv_$today')
+        .doc('${uid}_stress_$today')
         .snapshots()
-        .map((snap) => (snap.data()?['stressScore'] as num?)?.toDouble());
-
-    // Combine: return HRV-based stress if available, else manual stress
-    return hrvDoc.asyncMap((hrv) async {
-      if (hrv != null) return hrv;
-      final stressSnap = await FirebaseFirestore.instance
+        .asyncMap((snap) async {
+      final data = snap.data();
+      // Prefer BaaS-computed score
+      if (data != null && data['source'] == 'baas_api') {
+        return (data['avg'] as num?)?.toDouble() ?? 30.0;
+      }
+      // Fall back to HRV-derived stress (HealthKit)
+      final hrvSnap = await FirebaseFirestore.instance
           .collection('metrics_daily')
-          .doc('${uid}_stress_$today')
+          .doc('${uid}_hrv_$today')
           .get();
-      return (stressSnap.data()?['avg'] as num?)?.toDouble() ?? 30.0;
+      final hrvDerived = (hrvSnap.data()?['stressScore'] as num?)?.toDouble();
+      if (hrvDerived != null) return hrvDerived;
+      // Last resort: whatever is in the stress doc (demo/seed)
+      return (data?['avg'] as num?)?.toDouble() ?? 30.0;
     });
   }
 

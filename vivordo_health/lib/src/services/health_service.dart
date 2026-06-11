@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'package:intl/intl.dart';
+import 'stress_score_service.dart';
 
 // ─── Metric definitions ──────────────────────────────────────────────────────
 
@@ -309,6 +310,8 @@ class HealthService {
       } catch (e) {
         debugPrint('HealthService.syncToFirestore — could not update lastSync: $e');
       }
+      // Recompute BaaS stress score now that fresh HealthKit data is in Firestore
+      StressScoreService.computeAndSave(uid: uid, force: true).catchError((_) {});
     }
   }
 
