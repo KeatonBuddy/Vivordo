@@ -6,7 +6,7 @@ import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
+import 'package:vivordo_health/src/services/metrics_service.dart';
 
 
 
@@ -314,7 +314,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           shape: BoxShape.circle,
                           border: Border.all(color: const Color(0xFF7B6EF6).withOpacity(0.25), width: 2),
                         ),
-                        child: userData.photoUrl != null
+                        child: userData.photoUrl != null && userData.photoUrl!.startsWith('http')
                             ? ClipOval(child: Image.network(userData.photoUrl!, fit: BoxFit.cover))
                             : const Icon(Icons.person_outline_rounded, size: 26, color: Color(0xFF7B6EF6)),
                       ),
@@ -581,7 +581,57 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ],
                   ),
                   const SizedBox(height: 24),
-
+// ── Developer Tools ────────────────────────────────────────
+                  _buildSectionLabel('Developer Tools'),
+                  _buildCard(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              try {
+                                await MetricsService.seedDemoData();
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Demo data loaded successfully!'),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            icon: const Icon(Icons.data_object_rounded, size: 18),
+                            label: const Text('Load Demo Data'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF7B6EF6),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
                   // ── Log Out ────────────────────────────────────────────────
                   SizedBox(
                     width: double.infinity,
@@ -628,15 +678,18 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Widget _buildCard({required List<Widget> children}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE5E5EA)),
+        ),
+        child: Column(children: children),
       ),
-      child: Column(children: children),
     );
   }
 

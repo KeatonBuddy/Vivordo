@@ -300,6 +300,14 @@ class HealthService {
         }
       }
     }
+
+    // Compute and write wellness score for each day in the window
+    try {
+      await _computeAndWriteWellness(uid: FirebaseAuth.instance.currentUser?.uid, daysBack: daysBack);
+    } catch (e) {
+      debugPrint('HealthService.syncToFirestore — wellness compute failed: $e');
+    }
+
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       try {
@@ -416,4 +424,70 @@ class HealthService {
   }
 
   String _formatDate(DateTime dt) => DateFormat('yyyy-MM-dd').format(dt);
+
+
+  Future<void> _computeAndWriteWellness({String? uid, int daysBack = 30}) async {
+    if (uid == null) return;
+    final now = DateTime.now();
+    final batch = _db.batch();
+
+    for (int i = 0; i < daysBack; i++) {
+      final day = now.subtract(Duration(days: i));
+      final period = _formatDate(day);
+
+      // Read stress, sleep, steps for this day
+      final stressSnap = await _db.collection('metrics_daily').doc('${uid}_stress_$period').get();
+      final sleepSnap  = await _db.collection('metrics_daily').doc('${uid}_sleep_$period').get();
+      final stepsSnap  = await _db.collection('metrics_daily').doc('${uid}_steps_$period').get();
+      final hrvSnap    = await _db.collection('metrics_daily').doc('${uid}_hrv_$period').get();
+
+      final stress = (stressSnap.data()?['avg'] as num?)?.toDouble();
+      final sleep  = (sleepSnap.data()?['avg']  as num?)?.toDouble();
+      final steps  = (stepsSnap.data()?['sum']  as num?)?.toDouble();
+      final hrv    = (hrvSnap.data()?['avg']    as num?)?.toDouble();
+
+      // Need at least one signal to compute wellness
+      if (stress == null && sleep == null && steps == null && hrv == null) continue;
+
+      // Weighted composite: stress inverted (lower stress = better wellness)
+      double wellness = 0;
+      int weight = 0;
+
+      if (stress != null) { wellness += (100 - stress) * 0.35; weight += 35; }
+      if (sleep  != null) {
+        final sleepScore = ((sleep / 8.0) * 100).clamp(0.0, 100.0);
+        wellness += sleepScore * 0.30;
+        weight += 30;
+      }
+      if (steps  != null) {
+        final stepsScore = ((steps / 10000.0) * 100).clamp(0.0, 100.0);
+        wellness += stepsScore * 0.20;
+        weight += 20;
+      }
+      if (hrv    != null) {
+        final hrvScore = ((hrv / 100.0) * 100).clamp(0.0, 100.0);
+        wellness += hrvScore * 0.15;
+        weight += 15;
+      }
+
+      // Normalise to 0–100 based on available signals
+      final finalWellness = weight > 0 ? (wellness / weight * 100).clamp(0.0, 100.0) : 0.0;
+
+      final ref = _db.collection('metrics_daily').doc('${uid}_wellness_$period');
+      batch.set(ref, {
+        'userId':     uid,
+        'metricType': 'wellness',
+        'period':     period,
+        'avg':        finalWellness,
+        'unit':       'score',
+        'dimension':  'wellness',
+        'source':     'computed',
+        'tags':       ['wellness'],
+        'computedAt': FieldValue.serverTimestamp(),
+        'updatedAt':  FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+
+    await batch.commit();
+  }
 }

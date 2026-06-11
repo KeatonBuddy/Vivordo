@@ -1,14 +1,18 @@
 class Preferences {
+  static const String scannerTutorialSeenKey = 'scannerTutorialSeen';
+
   String timezone;
   String locale;
   String units;
   bool notificationsEnabled;
+  bool scannerTutorialSeen;
 
   Preferences({
     required this.timezone,
     required this.locale,
     required this.units,
     required this.notificationsEnabled,
+    required this.scannerTutorialSeen,
   });
 
   factory Preferences.fromMap(Map<String, dynamic> data) {
@@ -17,6 +21,7 @@ class Preferences {
       locale: data['locale'],
       units: data['units'],
       notificationsEnabled: data['notificationsEnabled'],
+      scannerTutorialSeen: data[scannerTutorialSeenKey] == true,
     );
   }
 
@@ -26,6 +31,7 @@ class Preferences {
       "locale": locale,
       "units": units,
       "notificationEnabled": notificationsEnabled,
+      scannerTutorialSeenKey: scannerTutorialSeen,
     };
   }
 }
