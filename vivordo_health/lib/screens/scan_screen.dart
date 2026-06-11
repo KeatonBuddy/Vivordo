@@ -988,29 +988,50 @@ class _ScanScreenState extends State<ScanScreen>
         const SizedBox(height: 32),
         Center(
           child: SizedBox(
-            width: 160,
-            height: 160,
+            width: 190,
+            height: 190,
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // Track ring
+                ClipOval(
+                  child: Container(
+                    width: 168,
+                    height: 168,
+                    color: Colors.black,
+                    child: _cameraController != null &&
+                            _cameraController!.value.isInitialized
+                        ? FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: _cameraController!.value.previewSize?.height ?? 168,
+                              height: _cameraController!.value.previewSize?.width ?? 168,
+                              child: CameraPreview(_cameraController!),
+                            ),
+                          )
+                        : const Center(
+                            child: Icon(
+                              Icons.videocam_off_outlined,
+                              color: Colors.white70,
+                              size: 34,
+                            ),
+                          ),
+                  ),
+                ),
                 SizedBox(
-                  width: 160,
-                  height: 160,
+                  width: 190,
+                  height: 190,
                   child: CircularProgressIndicator(
                     value: _progress,
                     strokeWidth: 6,
                     backgroundColor: accentPurple.withOpacity(0.15),
-                    valueColor:
-                        const AlwaysStoppedAnimation<Color>(accentPurple),
+                    valueColor: const AlwaysStoppedAnimation<Color>(accentPurple),
                   ),
                 ),
-                // Rotating ring
                 RotationTransition(
                   turns: _spinController,
                   child: SizedBox(
-                    width: 136,
-                    height: 136,
+                    width: 176,
+                    height: 176,
                     child: CircularProgressIndicator(
                       strokeWidth: 3,
                       backgroundColor: Colors.transparent,
@@ -1020,36 +1041,18 @@ class _ScanScreenState extends State<ScanScreen>
                     ),
                   ),
                 ),
-                // Heart pulse icon
-                AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (_, __) => Opacity(
-                    opacity: 0.5 + 0.5 * _pulseController.value,
-                    child: const Icon(
-                      Icons.favorite_rounded,
-                      size: 42,
-                      color: accentPurple,
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
         ),
         const SizedBox(height: 32),
         Text(
-          '$secondsLeft',
+          '$secondsLeft seconds remaining',
           style: const TextStyle(
-            fontSize: 48,
-            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
             color: textDark,
-            height: 1.0,
           ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'seconds remaining',
-          style: TextStyle(fontSize: 14, color: textGrey),
         ),
         const SizedBox(height: 24),
         ClipRRect(
