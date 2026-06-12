@@ -114,6 +114,82 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return '${dt.day}/${dt.month}';
       }).toList();
 
+  // ── Mood entry helpers ─────────────────────────────────────────────────────
+  List<Map<String, dynamic>> _moodEntryPoints(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final points = <Map<String, dynamic>>[];
+
+    for (final doc in docs) {
+      final data = doc.data();
+      final period = data['period'] as String? ?? '';
+      final entries = data['entries'];
+
+      if (entries is List && entries.isNotEmpty) {
+        for (final entry in entries) {
+          if (entry is! Map) continue;
+          final score = entry['score'];
+          if (score is! num) continue;
+
+          final timestamp = entry['timestamp'];
+          final dateTime = timestamp is Timestamp
+              ? timestamp.toDate()
+              : DateTime.tryParse(period) ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+          points.add({
+            'score': score.toDouble(),
+            'dateTime': dateTime,
+            'period': period,
+          });
+        }
+      } else {
+        final avg = data['avg'];
+        if (avg is num) {
+          points.add({
+            'score': avg.toDouble(),
+            'dateTime': DateTime.tryParse(period) ?? DateTime.fromMillisecondsSinceEpoch(0),
+            'period': period,
+          });
+        }
+      }
+    }
+
+    points.sort((a, b) =>
+        (a['dateTime'] as DateTime).compareTo(b['dateTime'] as DateTime));
+    return points;
+  }
+
+  List<double> _moodEntryValues(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) =>
+      _moodEntryPoints(docs)
+          .map((point) => point['score'] as double)
+          .toList();
+
+  List<String> _moodEntryLabels(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final points = _moodEntryPoints(docs);
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    return points.map((point) {
+      final dateTime = point['dateTime'] as DateTime;
+
+      if (_filterIndex == 0) {
+        final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
+        final minute = dateTime.minute.toString().padLeft(2, '0');
+        final suffix = dateTime.hour >= 12 ? 'PM' : 'AM';
+        return '$hour:$minute $suffix';
+      }
+
+      if (_filterIndex == 2 && dateTime.weekday != DateTime.monday) {
+        return '';
+      }
+
+      return dayNames[dateTime.weekday - 1];
+    }).toList();
+  }
+
   double _avg(List<double> vals) =>
       vals.isEmpty ? 0 : vals.reduce((a, b) => a + b) / vals.length;
 
@@ -256,8 +332,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             _maybeChart(snap, 'exercise_time',      'Exercise Time (min)',          const Color(0xFFFF9500),     'sum',  120),
                           if (showHealthMetric('distance'))
                             _maybeChart(snap, 'distance',           'Distance (km)',                const Color(0xFF3B82F6),     'sum',  20),
-                          if (showHealthMetric('flights_climbed'))
-                            _maybeChart(snap, 'flights_climbed',    'Flights Climbed',              const Color(0xFF14B8A6),     'sum',  30),
                           // Heart
                           if (showHealthMetric('heart_rate'))
                             _maybeChart(snap, 'heart_rate',         'Heart Rate (bpm)',             Colors.redAccent,            'avg',  200),
@@ -314,9 +388,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String field,
     double maxY,
   ) {
-    final docs   = _docsFor(snap, metricType);
-    final values = _vals(docs, field);
-    final labels = _filterIndex == 2 ? _monthLabels(docs) : _dayLabels(docs);
+    final docs = _docsFor(snap, metricType);
+    final values = metricType == 'mood'
+        ? _moodEntryValues(docs)
+        : _vals(docs, field);
+    final labels = metricType == 'mood'
+        ? _moodEntryLabels(docs)
+        : _filterIndex == 2
+            ? _monthLabels(docs)
+            : _dayLabels(docs);
     if (values.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
