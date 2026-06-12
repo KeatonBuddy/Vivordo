@@ -146,6 +146,16 @@ class UserService {
     }
   }
 
+  static Map<String, dynamic> _derivePreferences(Map<String, dynamic> answers) {
+    return {
+      'timezone':             answers['timezone']             ?? 'UTC',
+      'locale':               answers['locale']               ?? 'en',
+      'units':                answers['units']                ?? 'metric',
+      'notificationsEnabled': answers['notificationsEnabled'] ?? true,
+      Preferences.scannerTutorialSeenKey: false,
+    };
+  }
+
   static Future<void> updateDisplayName(String newName) async {
     User? user = FirebaseAuth.instance.currentUser;
     if (user != null) {

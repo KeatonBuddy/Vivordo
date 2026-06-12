@@ -63,12 +63,14 @@ class StressScoreService {
     if (!force) {
       try {
         final snap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
             .collection('metrics_daily')
-            .doc('${uid}_stress_$today')
+            .doc(today)
             .get();
-        final data = snap.data();
-        if (data?['source'] == 'baas_api') {
-          final computedAt = (data?['computedAt'] as Timestamp?)?.toDate();
+        final stressData = snap.data()?['stress'] as Map?;
+        if (stressData?['source'] == 'baas_api') {
+          final computedAt = (stressData?['computedAt'] as Timestamp?)?.toDate();
           if (computedAt != null &&
               DateTime.now().difference(computedAt).inMinutes < 30) {
             debugPrint('StressScoreService: score is fresh '
@@ -204,29 +206,25 @@ class StressScoreService {
     // BaaS builds rolling 14-day baselines, so more history = stronger z-scores.
     // Run in parallel with the user profile fetch.
     final results = await Future.wait([
-      db.collection('metrics_daily').where('userId', isEqualTo: uid).get(),
+      db.collection('users').doc(uid).collection('metrics_daily').get(),
       db.collection('users').doc(uid).get(),
     ]);
 
     final metricsSnap = results[0] as QuerySnapshot<Map<String, dynamic>>;
     final userSnap    = results[1] as DocumentSnapshot<Map<String, dynamic>>;
 
-    // Build lookup: '{date}_{metricType}' → doc data
+    // Build lookup: date → full day doc (only days with at least one input metric).
     final docsMap = <String, Map<String, dynamic>>{};
-    final dateSet = <String>{};
 
     for (final doc in metricsSnap.docs) {
-      final data       = doc.data();
-      final period     = data['period']     as String?;
-      final metricType = data['metricType'] as String?;
-      if (period == null || metricType == null) continue;
-      if (!_inputMetrics.contains(metricType)) continue;
-      docsMap['${period}_$metricType'] = data;
-      dateSet.add(period);
+      final data = doc.data();
+      // Skip days that only have output data (stress, wellness) and no inputs.
+      if (!_inputMetrics.any((m) => data.containsKey(m))) continue;
+      docsMap[doc.id] = data;
     }
 
-    // Sort oldest → newest so BaaS receives chronological samples
-    final dates = dateSet.toList()..sort();
+    // Sort oldest → newest so BaaS receives chronological samples.
+    final dates = docsMap.keys.toList()..sort();
     debugPrint('StressScoreService._buildPayload: '
         '${dates.length} day(s) of history for $uid');
 
@@ -241,38 +239,40 @@ class StressScoreService {
     final samples = <Map<String, dynamic>>[];
 
     for (final date in dates) {
-      _addPointSample(samples, docsMap['${date}_heart_rate'],
+      final day = docsMap[date]!;
+
+      _addPointSample(samples, day['heart_rate'] as Map?,
           metricType: 'heart_rate', date: date, timeUtc: '12:00', unit: 'bpm');
 
-      _addPointSample(samples, docsMap['${date}_hrv'],
+      _addPointSample(samples, day['hrv'] as Map?,
           metricType: 'hrv', date: date, timeUtc: '06:00', unit: 'ms');
 
-      _addPointSample(samples, docsMap['${date}_resting_heart_rate'],
+      _addPointSample(samples, day['resting_heart_rate'] as Map?,
           metricType: 'resting_heart_rate', date: date, timeUtc: '04:00', unit: 'bpm');
 
-      _addPointSample(samples, docsMap['${date}_blood_oxygen'],
+      _addPointSample(samples, day['blood_oxygen'] as Map?,
           metricType: 'blood_oxygen', date: date, timeUtc: '07:00', unit: '%');
 
-      _addPointSample(samples, docsMap['${date}_respiratory_rate'],
+      _addPointSample(samples, day['respiratory_rate'] as Map?,
           metricType: 'respiratory_rate', date: date, timeUtc: '05:00', unit: 'brpm');
 
-      final sleepDoc   = docsMap['${date}_sleep'];
-      final sleepHours = (sleepDoc?['avg'] as num?)?.toDouble();
+      final sleepMap   = day['sleep'] as Map?;
+      final sleepHours = (sleepMap?['avg'] as num?)?.toDouble();
       if (sleepHours != null && sleepHours > 0) {
         samples.add({
           'metric_type':      'sleep',
           'timestamp':        '${date}T23:00:00+00:00',
           'value':            sleepHours,
           'unit':             'hours',
-          'source':           sleepDoc?['source'] ?? 'apple_health',
+          'source':           sleepMap?['source'] ?? 'apple_health',
           'duration_seconds': sleepHours * 3600,
         });
       }
 
       // Distribute daily step total across active hours so the BaaS can
       // classify sedentary vs. active windows for the activity score.
-      final stepsDoc   = docsMap['${date}_steps'];
-      final stepsTotal = (stepsDoc?['sum'] as num?)?.toDouble();
+      final stepsMap   = day['steps'] as Map?;
+      final stepsTotal = (stepsMap?['sum'] as num?)?.toDouble();
       if (stepsTotal != null && stepsTotal > 0) {
         const fractions = {
           6: 0.03, 7: 0.05, 8: 0.08, 9: 0.05, 10: 0.04, 11: 0.03,
@@ -286,7 +286,7 @@ class StressScoreService {
             'timestamp':        '${date}T${e.key.toString().padLeft(2, '0')}:00:00+00:00',
             'value':            (stepsTotal * e.value).roundToDouble(),
             'unit':             'steps',
-            'source':           stepsDoc?['source'] ?? 'apple_health',
+            'source':           stepsMap?['source'] ?? 'apple_health',
             'duration_seconds': 3600,
           });
         }
@@ -298,18 +298,19 @@ class StressScoreService {
     final dailyContext = <Map<String, dynamic>>[];
 
     for (final date in dates) {
-      final moodDoc  = docsMap['${date}_mood'];
-      final sleepDoc = docsMap['${date}_sleep'];
-      final stepsDoc = docsMap['${date}_steps'];
+      final day      = docsMap[date]!;
+      final moodMap  = day['mood']  as Map?;
+      final sleepMap = day['sleep'] as Map?;
+      final stepsMap = day['steps'] as Map?;
 
-      if (moodDoc == null && sleepDoc == null) continue;
+      if (moodMap == null && sleepMap == null) continue;
 
-      final journalMood = moodDoc?['label'] as String?;
-      final moodScore   = (moodDoc?['avg']  as num?)?.toDouble();
+      final journalMood = moodMap?['label'] as String?;
+      final moodScore   = (moodMap?['avg']  as num?)?.toDouble();
       final selfStress  = moodScore != null
           ? (100.0 - moodScore).clamp(0.0, 100.0) : null;
-      final sleepHours  = (sleepDoc?['avg'] as num?)?.toDouble();
-      final stepsTotal  = (stepsDoc?['sum'] as num?)?.toDouble();
+      final sleepHours  = (sleepMap?['avg'] as num?)?.toDouble();
+      final stepsTotal  = (stepsMap?['sum'] as num?)?.toDouble();
 
       final ctx = <String, dynamic>{
         'date':              date,
@@ -392,28 +393,24 @@ class StressScoreService {
     if (score == null) return;
 
     await FirebaseFirestore.instance
-        .collection('metrics_daily')
-        .doc('${uid}_stress_$today')
+        .collection('users').doc(uid).collection('metrics_daily').doc(today)
         .set({
-      'userId':            uid,
-      'metricType':        'stress',
-      'period':            today,
-      'avg':               score,
-      'min':               score,
-      'max':               score,
-      'unit':              'score',
-      'dimension':         'stress',
-      'source':            'baas_api',
-      'tags':              ['stress', 'baas'],
-      // Richer BaaS fields for explainability
-      'label':             lean?['band'],
-      'confidence':        lean?['confidence'],
-      'coverage_pct':      lean?['coverage_pct'],
-      'algorithm_version': lean?['algorithm_version'],
-      'justification':     lean?['justification'],
-      'top_drivers':       lean?['top_drivers'],
-      'computedAt':        FieldValue.serverTimestamp(),
-      'updatedAt':         FieldValue.serverTimestamp(),
+      'stress': {
+        'avg':               score,
+        'min':               score,
+        'max':               score,
+        'unit':              'score',
+        'label':             lean?['band'],
+        'confidence':        lean?['confidence'],
+        'coverage_pct':      lean?['coverage_pct'],
+        'algorithm_version': lean?['algorithm_version'],
+        'justification':     lean?['justification'],
+        'top_drivers':       lean?['top_drivers'],
+        'source':            'baas_api',
+        'computedAt':        FieldValue.serverTimestamp(),
+      },
+      'date':      today,
+      'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
@@ -422,7 +419,7 @@ class StressScoreService {
   /// Adds one point-in-time sample to [samples] using the `avg` field of [doc].
   static void _addPointSample(
     List<Map<String, dynamic>> samples,
-    Map<String, dynamic>? doc, {
+    Map? doc, {
     required String metricType,
     required String date,
     required String timeUtc,  // "HH:MM"

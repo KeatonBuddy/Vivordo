@@ -129,22 +129,18 @@ class MetricsService {
     if (user == null) return;
 
     final period = _formatDate(DateTime.now());
-    final docId = '${user.uid}_mood_$period';
 
-    await _db.collection('metrics_daily').doc(docId).set({
-      'userId': user.uid,
-      'metricType': 'mood',
-      'period': period,
-      'avg': _moodToScore(moodLabel),
-      'label': moodLabel,
-      'unit': 'score',
-      'dimension': 'mood',
-      'source': 'user_checkin',
-      'tags': ['mood', 'checkin'],
-      'computedAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
+    await _db.collection('users').doc(user.uid).collection('metrics_daily').doc(period).set({
+      'mood': {
+        'avg':    _moodToScore(moodLabel),
+        'label':  moodLabel,
+        'unit':   'score',
+        'source': 'user_checkin',
+        'syncedAt': FieldValue.serverTimestamp(),
+      },
+      'date':      period,
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true)); // merge so we don't overwrite if already exists
+    }, SetOptions(merge: true));
 
     // Recompute BaaS stress score now that mood data has changed
     StressScoreService.computeAndSave(uid: user.uid, force: true).catchError((_) {});
@@ -159,19 +155,14 @@ class MetricsService {
     String period,
     Map<String, dynamic> values,
   ) {
-    // Document ID follows design spec: userId_metricType_period
-    final docId = '${userId}_${metricType}_$period';
-    final ref = _db.collection('metrics_daily').doc(docId);
-
+    final ref = _db.collection('users').doc(userId).collection('metrics_daily').doc(period);
     batch.set(ref, {
-      'userId': userId,
-      'metricType': metricType,
-      'period': period,
-      'tags': [metricType],
-      'computedAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
+      metricType: {
+        ...values,
+        'syncedAt': FieldValue.serverTimestamp(),
+      },
+      'date':      period,
       'updatedAt': FieldValue.serverTimestamp(),
-      ...values,
     }, SetOptions(merge: true));
   }
 

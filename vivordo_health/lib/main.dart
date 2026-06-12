@@ -11,6 +11,7 @@ import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/home_screen.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 
 // Global navigator key for notification navigation
@@ -19,10 +20,13 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await FirebaseAppCheck.instance.activate(
-  appleProvider: AppleProvider.debug,
-  //providerApple: const AppleProvider(), // for simulator/debug
-     );
+  // App Check: debug provider on Apple, skipped on web (no reCAPTCHA key required for dev).
+  if (!kIsWeb) {
+    await FirebaseAppCheck.instance.activate(
+      // ignore: deprecated_member_use
+      appleProvider: AppleProvider.debug,
+    );
+  }
   
 
   // Initialize notification service
