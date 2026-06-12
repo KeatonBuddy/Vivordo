@@ -11,7 +11,7 @@ import '../src/services/recommendation_engine.dart';
 import '../src/services/insight_service.dart';
 import '../src/models/insights.dart';
 import '../src/services/panda_recommendations.dart';
-
+import 'package:flutter_svg/flutter_svg.dart';
 // =============================================================================
 // DIALOGUE FLOW
 // =============================================================================
@@ -778,7 +778,7 @@ class _PandaScreenState extends State<PandaScreen>
       _DialogueState.inDepth      => ('going deeper…', _purple),
       _ when _loading             => ('analysing…', Colors.orange),
       _ when _pandaTyping         => ('typing…', Colors.orange),
-      _DialogueState.free         => ('free chat', _purple),
+      _DialogueState.free         => ('', _purple),
       _                           => ('online', Colors.green),
     };
 
@@ -967,9 +967,12 @@ class _PandaScreenState extends State<PandaScreen>
         itemBuilder: (context, i) {
           if (i < _turns.length) {
             final t = _turns[i];
+            final isLastAssistant = t.role == _Role.assistant &&
+                !_turns.sublist(i + 1).any((x) => x.role == _Role.assistant);
             return t.role == _Role.user
                 ? _userBubble(t.text)
                 : _assistantBubble(t.text,
+                    showAvatar: isLastAssistant,
                     kind: t.kind,
                     recs: t.recs,
                     categoryOptions: t.categoryOptions,
@@ -997,6 +1000,7 @@ class _PandaScreenState extends State<PandaScreen>
   // ===========================================================================
 
   Widget _assistantBubble(String text, {
+    bool showAvatar = false,
     _TurnKind kind = _TurnKind.normal,
     List<PandaRec> recs = const [],
     List<String> categoryOptions = const [],
@@ -1039,10 +1043,9 @@ class _PandaScreenState extends State<PandaScreen>
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-              _avatar(),
-              const SizedBox(width: 10),
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+            const SizedBox(width: 10),
               Flexible(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -1225,7 +1228,7 @@ class _PandaScreenState extends State<PandaScreen>
           Padding(
             padding: const EdgeInsets.only(left: 2, bottom: 8),
             child: Text(
-              'Explore with Panda',
+              'Explore with AI Assistant',
               style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -1380,7 +1383,7 @@ class _PandaScreenState extends State<PandaScreen>
 
     String hint;
     if (_sessionComplete) {
-      hint = 'Ask Panda anything 💜';
+      hint = 'Ask AI Assistant anything';
     } else if (disabled) {
       hint = 'Panda is thinking…';
     } else if (_state == _DialogueState.inDigression) {
@@ -1388,7 +1391,7 @@ class _PandaScreenState extends State<PandaScreen>
     } else if (_state == _DialogueState.inDepth) {
       hint = 'Tell me more, or type "done" to move on…';
     } else {
-      hint = 'Answer or ask Panda anything…';
+      hint = 'Answer or ask AI Assistant anything…';
     }
 
     return Container(
@@ -2063,11 +2066,10 @@ class _PandaScreenState extends State<PandaScreen>
     }
   }
 
-  Widget _avatar() => Image.asset(
-        'assets/vivordo_logo.png',
-        width: 380,
-        height: 300,
-        fit: BoxFit.contain,
+  Widget _avatar() => SvgPicture.asset(
+        'assets/vivordo_robot.svg',
+        width: 80,
+        height: 80,
       );
 }
 
