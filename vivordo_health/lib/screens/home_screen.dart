@@ -1164,6 +1164,178 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
     return '${_months[start.month - 1]} – ${_months[end.month - 1]} ${start.year}';
   }
 
+  String _formatEventDateTime(DateTime? dateTime) {
+    if (dateTime == null) return 'Unknown time';
+    final local = dateTime.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
+    return '${_days[local.weekday % 7]}, ${_months[local.month - 1]} ${local.day} at $hour:$minute $suffix';
+  }
+
+  String _formatEventTimeRange(gcal.Event event) {
+    final start = event.start?.dateTime?.toLocal();
+    final end = event.end?.dateTime?.toLocal();
+    if (start == null) return 'Unknown time';
+
+    final startHour = start.hour % 12 == 0 ? 12 : start.hour % 12;
+    final startMinute = start.minute.toString().padLeft(2, '0');
+    final startSuffix = start.hour >= 12 ? 'PM' : 'AM';
+
+    if (end == null) {
+      return '${_formatEventDateTime(start)}';
+    }
+
+    final endHour = end.hour % 12 == 0 ? 12 : end.hour % 12;
+    final endMinute = end.minute.toString().padLeft(2, '0');
+    final endSuffix = end.hour >= 12 ? 'PM' : 'AM';
+
+    return '${_days[start.weekday % 7]}, ${_months[start.month - 1]} ${start.day}, '
+        '$startHour:$startMinute $startSuffix – $endHour:$endMinute $endSuffix';
+  }
+
+  void _showEventDetails(gcal.Event event) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        final title = event.summary ?? 'Untitled event';
+        final location = event.location;
+        final description = event.description;
+        final attendees = event.attendees ?? const <gcal.EventAttendee>[];
+
+        return Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x26000000),
+                blurRadius: 24,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE5E5EA),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8F0FE),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.event_rounded,
+                          color: Color(0xFF1A73E8),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: _textDark,
+                                height: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _formatEventTimeRange(event),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: _textGrey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (location != null && location.trim().isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    _EventDetailRow(
+                      icon: Icons.place_rounded,
+                      label: 'Location',
+                      value: location,
+                    ),
+                  ],
+                  if (description != null && description.trim().isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _EventDetailRow(
+                      icon: Icons.notes_rounded,
+                      label: 'Description',
+                      value: description,
+                    ),
+                  ],
+                  if (attendees.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _EventDetailRow(
+                      icon: Icons.people_rounded,
+                      label: 'Attendees',
+                      value: attendees
+                          .map((attendee) => attendee.displayName ?? attendee.email ?? 'Guest')
+                          .take(6)
+                          .join(', '),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accentPurple,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        'Done',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final dates = _getWeekDates();
@@ -1195,15 +1367,19 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
                 children: [
                   const Icon(Icons.calendar_today_rounded, size: 16, color: _accentPurple),
                   const SizedBox(width: 8),
-                  Text(
-                    _monthLabel(dates),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _textDark,
+                  Expanded(
+                    child: Text(
+                      _monthLabel(dates),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: _textDark,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   if (!_isConnected)
                     GestureDetector(
                       onTap: _isLoading ? null : _connectGoogle,
@@ -1232,7 +1408,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
                               ),
                       ),
                     ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   _navBtn(Icons.chevron_left_rounded, () {
                     setState(() => _weekOffset--);
                     if (_isConnected) _connectGoogle();
@@ -1321,51 +1497,54 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
             // Body
             if (!_isConnected)
               Container(
-                height: 200,
+                height: 220,
                 alignment: Alignment.center,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.calendar_month_rounded, size: 48, color: Color(0xFFE5E5EA)),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'No calendar connected',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _textDark),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Tap "Connect Google Calendar" above\nto see your events here.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12, color: _textGrey, height: 1.5),
-                    ),
-                    const SizedBox(height: 20),
-                    GestureDetector(
-                      onTap: _isLoading ? null : _connectGoogle,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1a73e8),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 14, height: 14,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.calendar_month_rounded, size: 14, color: Colors.white),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Connect Google Calendar',
-                                    style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
+                child: SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.calendar_month_rounded, size: 48, color: Color(0xFFE5E5EA)),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No calendar connected',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _textDark),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Tap "Connect Google Calendar" above\nto see your events here.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: _textGrey, height: 1.5),
+                      ),
+                      const SizedBox(height: 20),
+                      GestureDetector(
+                        onTap: _isLoading ? null : _connectGoogle,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1a73e8),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 14, height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.calendar_month_rounded, size: 14, color: Colors.white),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Connect Google Calendar',
+                                      style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               )
             else
@@ -1456,28 +1635,35 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
                                   left: 2,
                                   right: 2,
                                   height: height,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 5, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFe8f0fe),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
                                       borderRadius: BorderRadius.circular(4),
-                                      border: const Border(
-                                        left: BorderSide(
-                                          color: Color(0xFF1a73e8),
-                                          width: 3,
+                                      onTap: () => _showEventDetails(ev),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFe8f0fe),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: const Border(
+                                            left: BorderSide(
+                                              color: Color(0xFF1a73e8),
+                                              width: 3,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          ev.summary ?? 'Event',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF1557b0),
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                    ),
-                                    child: Text(
-                                      ev.summary ?? 'Event',
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF1557b0),
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 );
@@ -1527,12 +1713,12 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(4),
+        padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           border: Border.all(color: _border),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Icon(icon, size: 16, color: _textDark),
+        child: Icon(icon, size: 15, color: _textDark),
       ),
     );
   }
@@ -1557,4 +1743,53 @@ class _CalEvent {
     required this.color,
     required this.bg,
   });
+}
+
+class _EventDetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _EventDetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: const Color(0xFF8E8E93)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF8E8E93),
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF1C1C1E),
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
