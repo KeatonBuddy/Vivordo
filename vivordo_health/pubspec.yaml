@@ -52,6 +52,8 @@ dependencies:
   permission_handler: ^11.3.1 # Runtime permission requests
   intl: ^0.20.1             # Date formatting (DateFormat)
   camera: ^0.10.5+9          # For accessing the device camera
+  firebase_remote_config: ^6.0.0
+  cloud_functions: ^6.0.6
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -79,6 +81,7 @@ flutter:
     - assets/panda_icon.png
     - assets/panda_home_icon.png
     - assets/finalLogo.png
+    - assets/recommendations.json
 
   # To add assets to your application, add an assets section, like this:
   # assets:

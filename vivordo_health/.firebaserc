@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "vivordo-health"
-  }
+    "default": "vivordo-health",
+    "staging": "vivordo-health"
+  },
+  "targets": {},
+  "etags": {}
 }
