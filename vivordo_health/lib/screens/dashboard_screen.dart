@@ -53,8 +53,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _consentStream    = HealthService().consentStream();
   }
 
-  /// Single Firestore query that fetches all daily docs in the date window from
-  /// the user's subcollection. Each doc holds all metrics for that day.
+  /// Single Firestore query that fetches ALL metric types for the user in the
+  /// current date window. We split by metricType in Dart — no extra listeners.
   Stream<QuerySnapshot<Map<String, dynamic>>> _buildCombinedStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -63,57 +63,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String fmt(DateTime d) =>
         '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
     return FirebaseFirestore.instance
-        .collection('users').doc(uid).collection('metrics_daily')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: fmt(oldest))
-        .where(FieldPath.documentId, isLessThanOrEqualTo: fmt(now))
-        .orderBy(FieldPath.documentId)
+        .collection('metrics_daily')
+        .where('userId', isEqualTo: uid)
+        .where('period', isGreaterThanOrEqualTo: fmt(oldest))
+        .where('period', isLessThanOrEqualTo: fmt(now))
+        .orderBy('period')
         .snapshots();
   }
 
   // ── Per-metric helpers ─────────────────────────────────────────────────────
 
-  /// Extract [field] values for [metricType] from docs that contain that metric.
-  List<double> _metricVals(
+  /// Filter docs by metricType from the combined snapshot.
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _docsFor(
     QuerySnapshot<Map<String, dynamic>>? snap,
     String metricType,
-    String field,
   ) {
     if (snap == null) return [];
     return snap.docs
-        .where((d) => d.data().containsKey(metricType))
-        .map((d) => ((d.data()[metricType] as Map?)?[field] as num?)?.toDouble() ?? 0.0)
-        .toList();
+        .where((d) => d['metricType'] == metricType)
+        .toList()
+      ..sort((a, b) =>
+          (a['period'] as String).compareTo(b['period'] as String));
   }
 
+  List<double> _vals(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String field,
+  ) =>
+      docs.map((d) => (d[field] as num?)?.toDouble() ?? 0.0).toList();
+
   List<String> _dayLabels(
-    QuerySnapshot<Map<String, dynamic>>? snap,
-    String metricType,
-  ) {
-    if (snap == null) return [];
-    return snap.docs
-        .where((d) => d.data().containsKey(metricType))
-        .map((d) {
-          final dt = DateTime.tryParse(d.id);
-          if (dt == null) return '';
-          const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-          return names[dt.weekday - 1];
-        }).toList();
-  }
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) =>
+      docs.map((d) {
+        final p  = d['period'] as String? ?? '';
+        final dt = p.length >= 10 ? DateTime.tryParse(p) : null;
+        if (dt == null) return '';
+        const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        return names[dt.weekday - 1];
+      }).toList();
 
   /// Month view: only label Mondays to avoid x-axis crowding.
   List<String> _monthLabels(
-    QuerySnapshot<Map<String, dynamic>>? snap,
-    String metricType,
-  ) {
-    if (snap == null) return [];
-    return snap.docs
-        .where((d) => d.data().containsKey(metricType))
-        .map((d) {
-          final dt = DateTime.tryParse(d.id);
-          if (dt == null || dt.weekday != DateTime.monday) return '';
-          return '${dt.day}/${dt.month}';
-        }).toList();
-  }
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) =>
+      docs.map((d) {
+        final p  = d['period'] as String? ?? '';
+        final dt = p.length >= 10 ? DateTime.tryParse(p) : null;
+        if (dt == null || dt.weekday != DateTime.monday) return '';
+        return '${dt.day}/${dt.month}';
+      }).toList();
 
   double _avg(List<double> vals) =>
       vals.isEmpty ? 0 : vals.reduce((a, b) => a + b) / vals.length;
@@ -173,11 +172,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       final snap = metricsSnap.data;
 
                       // ── Summary row ────────────────────────────────────────
-                      final stressVals   = _metricVals(snap, 'stress',   'avg');
-                      final hrvVals      = _metricVals(snap, 'hrv',      'avg');
-                      final sleepVals    = _metricVals(snap, 'sleep',    'avg');
-                      final moodVals     = _metricVals(snap, 'mood',     'avg');
-                      final wellnessVals = _metricVals(snap, 'wellness', 'avg');
+                      final stressVals = _vals(_docsFor(snap, 'stress'), 'avg');
+                      final hrvVals    = _vals(_docsFor(snap, 'hrv'),    'avg');
+                      final sleepVals  = _vals(_docsFor(snap, 'sleep'),  'avg');
+                      final moodVals   = _vals(_docsFor(snap, 'mood'),   'avg');
+                      final wellnessVals = _vals(_docsFor(snap, 'wellness'), 'avg');
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -285,10 +284,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String field,
     double maxY,
   ) {
-    final values = _metricVals(snap, metricType, field);
-    final labels = _filterIndex == 2
-        ? _monthLabels(snap, metricType)
-        : _dayLabels(snap, metricType);
+    final docs   = _docsFor(snap, metricType);
+    final values = _vals(docs, field);
+    final labels = _filterIndex == 2 ? _monthLabels(docs) : _dayLabels(docs);
     if (values.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),

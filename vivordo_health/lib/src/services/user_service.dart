@@ -3,8 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/models/goal_model.dart';
 import 'package:vivordo_health/src/models/questionnaire_response.dart';
 import 'package:vivordo_health/src/models/metadata.dart';
-import 'package:vivordo_health/src/models/preferences.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
+
 
 class UserService {
   static Future<void> createUser(User authUser) async {
@@ -23,28 +23,7 @@ class UserService {
         .set(firestoreUser.toMap());
   }
 
-  static Future<void> setScannerTutorialSeen(bool value) async {
-    User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw Exception('User unavailable');
-    }
-
-    final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
-    print('[Tutorial] Updating user doc: ${user.uid}');
-
-    await userDocRef.update({
-      'preferences.${Preferences.scannerTutorialSeenKey}': value,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-
-    final doc = await userDocRef.get();
-    final preferences = doc.data()?['preferences'] as Map<String, dynamic>?;
-    print(
-      '[Tutorial] Firestore scannerTutorialSeen = '
-      '${preferences?[Preferences.scannerTutorialSeenKey]}',
-    );
-  }
-
+  
   static Future<void> createGoal({
     required User theUser,
     required String userId,
@@ -63,11 +42,12 @@ class UserService {
     Map<String, dynamic>? progress;
     if (progressCurrentValue != null) {
       progress = {
-        'currentValue': progressCurrentValue,
-        'completionPercent': progressCompletionPercent,
-        'lastUpdated': FieldValue.serverTimestamp(),
+        "currentValue": progressCurrentValue,
+        "completionPercent": progressCompletionPercent,
+        "lastUpdated": FieldValue.serverTimestamp(),
       };
     }
+
 
     GoalModel newGoal = GoalModel(
       userId: theUser.uid,
@@ -82,6 +62,7 @@ class UserService {
       progress: progress,
     );
 
+
     await FirebaseFirestore.instance.collection('goals').add(
       newGoal.toMap(
         newStartDate: FieldValue.serverTimestamp(),
@@ -90,11 +71,13 @@ class UserService {
     );
   }
 
+
   static Future<void> submitQuestionnaire({
     required User? user,
     required Map<String, dynamic> userdata,
   }) async {
     final metadata = Metadata.create().toMap();
+
 
     if (user != null) {
       try {
@@ -102,10 +85,10 @@ class UserService {
       
       QuestionnaireResponse firestoreResponse = QuestionnaireResponse(
         userId: user.uid,
-        questionnaireType: 'baseline',
+        questionnaireType: "baseline",
         submittedAt: FieldValue.serverTimestamp(),
         metadata: metadata,
-        answers: Map<String, dynamic>.from(userdata['responses'] ?? {}),
+        answers: answers,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       );
@@ -142,42 +125,83 @@ class UserService {
         rethrow;
       }
     } else {
-      throw Exception('User unavailable');
+      throw Exception("User unavailable");
     }
   }
 
+
   static Map<String, dynamic> _derivePreferences(Map<String, dynamic> answers) {
+    double? slider(String key) {
+      final v = answers[key];
+      if (v == null) return null;
+      return (v as num).toDouble();
+    }
+
+    String? choice(String key) => answers[key] as String?;
+
+    double stressSum = 0;
+    int count = 0;
+    for (final key in ['q2', 'q4', 'q6', 'q8']) {
+      final v = slider(key);
+      if (v == null) continue;
+      stressSum += (key == 'q4') ? (11 - v) : v;
+      count++;
+    }
+
+    String? stressRisk;
+    if (count > 0) {
+      final avg = stressSum / count;
+      if (avg <= 4)        stressRisk = 'low';
+      else if (avg <= 6.5) stressRisk = 'moderate';
+      else                 stressRisk = 'high';
+    }
+
     return {
-      'timezone':             answers['timezone']             ?? 'UTC',
-      'locale':               answers['locale']               ?? 'en',
-      'units':                answers['units']                ?? 'metric',
-      'notificationsEnabled': answers['notificationsEnabled'] ?? true,
-      Preferences.scannerTutorialSeenKey: false,
+      'workSetup':          choice('q1'),
+      'mentalDrainScore':   slider('q2'),
+      'dailyHoursWorked':   choice('q3'),
+      'disconnectScore':    slider('q4'),
+      'skipsMeals':         choice('q5'),
+      'afterHoursPressure': slider('q6'),
+      'typicalSleepNight':  choice('q7'),
+      'deadlineAnxiety':    slider('q8'),
+      'perceivedWorkload':  choice('q9'),
+      'stressRiskTier':     stressRisk,
+      'onboardingVersion':  'v1',
     };
   }
+
 
   static Future<void> updateDisplayName(String newName) async {
     User? user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       await user.updateDisplayName(newName);
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-        'displayName': newName,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+            'displayName': newName,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
     }
   }
+
 
   static Future<void> updateEmail(String newEmail) async {
     User? user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       await user.verifyBeforeUpdateEmail(newEmail);
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-        'pendingEmail': newEmail,
-        'pendingEmailRequestedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+            'pendingEmail': newEmail,
+            'pendingEmailRequestedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
     }
   }
+
 
   static Future<void> updatePassword(String newPassword) async {
     User? user = FirebaseAuth.instance.currentUser;
@@ -189,6 +213,7 @@ class UserService {
           .update({'updatedAt': FieldValue.serverTimestamp()});
     }
   }
+
 
   /// Syncs Firebase Auth email with Firestore.
   ///
@@ -202,19 +227,25 @@ class UserService {
     User? user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
 
+
     await user.reload();
     user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
 
+
     final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
     final docSnap = await docRef.get();
     if (!docSnap.exists) return false;
+
 
     final data = docSnap.data()!;
     final String? firestoreEmail = data['email'];
     final String? pendingEmail = data['pendingEmail'];
     final Timestamp? requestedAt = data['pendingEmailRequestedAt'] as Timestamp?;
 
+
+    // Auth email already matches Firestore — fully in sync.
+    // Clean up any leftover pending fields and stop. Never logout.
     if (user.email == firestoreEmail) {
       if (pendingEmail != null) {
         await docRef.update({
@@ -226,6 +257,8 @@ class UserService {
       return false;
     }
 
+
+    // No pending request — emails drifted without one, just sync silently. Never logout.
     if (pendingEmail == null) {
       if (user.email != null) {
         await docRef.update({
@@ -236,8 +269,11 @@ class UserService {
       return false;
     }
 
+
+    // Pending request exists — check if it has expired (3 days, matching Firebase link expiry)
     final bool isExpired = requestedAt != null &&
         DateTime.now().difference(requestedAt.toDate()).inDays >= 3;
+
 
     if (isExpired) {
       await docRef.update({
@@ -248,6 +284,9 @@ class UserService {
       return false;
     }
 
+
+    // The one true "just verified" state:
+    // Auth email matches pending AND Firestore is still on the old email
     if (user.email == pendingEmail && user.email != firestoreEmail) {
       await docRef.update({
         'email': user.email,
@@ -258,6 +297,7 @@ class UserService {
       await FirebaseAuth.instance.signOut();
       return true;
     }
+
 
     return false;
   }

@@ -389,29 +389,4 @@ class PpgAlgorithm {
     while (p < n) p <<= 1;
     return p;
   }
-
-static double calculateQuality(List<double> rawRed, double elapsedSeconds) {
-  if (rawRed.length < 100 || elapsedSeconds <= 0) return 0.0;
-
-  final sampleRate = rawRed.length / elapsedSeconds;
-  if (sampleRate <= 0) return 0.0;
-
-  final mean = rawRed.reduce((a, b) => a + b) / rawRed.length;
-  final centered = rawRed.map((v) => v - mean).toList();
-
-  final variance =
-      centered.map((v) => v * v).reduce((a, b) => a + b) / centered.length;
-  final sd = math.sqrt(variance);
-  if (sd <= 0) return 0.0;
-
-  final spread = rawRed.reduce(math.max) - rawRed.reduce(math.min);
-  final strengthScore = (spread / 45.0).clamp(0.0, 1.0);
-
-  final snrScore = (sd / 8.0).clamp(0.0, 1.0);
-
-  final qualityScore = 0.45 * strengthScore + 0.55 * snrScore;
-
-  return qualityScore.clamp(0.0, 1.0);
-}
-  
 }

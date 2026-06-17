@@ -1,9 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
-import 'package:vivordo_health/src/services/stress_score_service.dart';
+import 'panda_screen.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 
@@ -19,8 +20,13 @@ class _HomeScreenState extends State<HomeScreen> {
   String _currentMood = 'Good';
   // _messageCopied removed — smart message card replaced with calendar
 
-  // Single stream for today's unified metrics doc
-  late Stream<DocumentSnapshot<Map<String, dynamic>>> _todayStream;
+  // Cached streams — created once in initState to avoid duplicate Firestore listeners
+  late Stream<double?> _stressStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _sleepStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _stepsStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _hrStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _moodStream;
+  late Stream<DocumentSnapshot<Map<String, dynamic>>> _wellnessStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
 
   static const Color bgColor = Color(0xFFF2F2F7);
@@ -34,14 +40,28 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Fire-and-forget: compute BaaS stress score on every home screen load
-    StressScoreService.computeAndSave().catchError((_) {});
+    _stressStream = _stressScoreStream();
     final today = _todayPeriod();
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    _todayStream = uid != null
-        ? FirebaseFirestore.instance
-            .collection('users').doc(uid).collection('metrics_daily').doc(today)
-            .snapshots()
+    final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid;
+    _sleepStream = uid != null
+        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_sleep_$today').snapshots()
+        : const Stream.empty();
+    _stepsStream = uid != null
+        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_steps_$today').snapshots()
+        : const Stream.empty();
+    // NOTE: HR tile reads from metrics_daily/{uid}_heart_rate_today.
+    // Scan results are saved to heart_rate_scans collection (not metrics_daily),
+    // so a completed scan does NOT update this tile yet.
+    // This will be fixed in VH-SCAN-3 when scan results are written to metrics_daily.
+    _hrStream = uid != null
+        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_heart_rate_$today').snapshots()
+        : const Stream.empty();
+    _moodStream = uid != null
+        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_mood_$today').snapshots()
+        : const Stream.empty();
+    _wellnessStream = uid != null
+        ? FirebaseFirestore.instance.collection('metrics_daily').doc('${uid}_wellness_$today').snapshots()
         : const Stream.empty();
     _goalsStreamCached = _goalsStream();
   }
@@ -77,6 +97,39 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _todayMetric(String metricType) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const Stream.empty();
+    final docId = '${user.uid}_${metricType}_${_todayPeriod()}';
+    return FirebaseFirestore.instance.collection('metrics_daily').doc(docId).snapshots();
+  }
+
+  /// Reads stress score: prefers HRV-derived stress from HealthKit ('hrv' doc),
+  /// falls back to manual 'stress' doc from seed data.
+  Stream<double?> _stressScoreStream() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Stream.value(null);
+    final today = _todayPeriod();
+    final uid = user.uid;
+
+    // Try HRV doc first — if it has stressScore field, use it
+    final hrvDoc = FirebaseFirestore.instance
+        .collection('metrics_daily')
+        .doc('${uid}_hrv_$today')
+        .snapshots()
+        .map((snap) => (snap.data()?['stressScore'] as num?)?.toDouble());
+
+    // Combine: return HRV-based stress if available, else manual stress
+    return hrvDoc.asyncMap((hrv) async {
+      if (hrv != null) return hrv;
+      final stressSnap = await FirebaseFirestore.instance
+          .collection('metrics_daily')
+          .doc('${uid}_stress_$today')
+          .get();
+      return (stressSnap.data()?['avg'] as num?)?.toDouble();
+    });
+  }
+  
   Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStream() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
@@ -88,77 +141,110 @@ class _HomeScreenState extends State<HomeScreen> {
         .snapshots();
   }
 
+  void _openPanda() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const PandaScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (FirebaseAuth.instance.currentUser == null) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
       return _buildScaffold(stressScore: null, stressLoading: false, sleepVal: '--', sleepLoading: false, stepsVal: '--', stepsLoading: false, hrVal: '--', hrLoading: false, moodVal: '--', moodLoading: false, wellnessVal: '--', goalTitle: 'No goal set', goalProgress: 0);
     }
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: _todayStream,
-      builder: (context, todaySnap) {
-        final bool loading = !todaySnap.hasData && todaySnap.connectionState == ConnectionState.waiting;
-        final data = todaySnap.data?.data();
+    return StreamBuilder<double?>(
+      stream: _stressStream,
+      builder: (context, stressSnap) {
+        final bool stressLoading = !stressSnap.hasData && stressSnap.connectionState == ConnectionState.waiting;
+        final double? stressScore = stressSnap.data;
 
-        final stressMap    = data?['stress']     as Map?;
-        final hrvMap       = data?['hrv']         as Map?;
-        final sleepMap     = data?['sleep']       as Map?;
-        final stepsMap     = data?['steps']       as Map?;
-        final hrMap        = data?['heart_rate']  as Map?;
-        final moodMap      = data?['mood']        as Map?;
-        final wellnessMap  = data?['wellness']    as Map?;
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: _sleepStream,
+          builder: (context, sleepSnap) {
+            final sleepData = sleepSnap.data?.data();
+            final sleepVal = sleepData != null
+                ? '${(sleepData['avg'] as num?)?.toStringAsFixed(1) ?? '--'}h'
+                : '--';
+            final bool sleepLoading = !sleepSnap.hasData && sleepSnap.connectionState == ConnectionState.waiting;
+            
+            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: _stepsStream,
+              builder: (context, stepsSnap) {
+                final stepsData = stepsSnap.data?.data();
+                final steps = (stepsData?['sum'] as num?)?.toInt();
+                final stepsVal = steps != null
+                    ? (steps >= 1000 ? '${(steps / 1000).toStringAsFixed(1)}k' : steps.toString())
+                    : '--';
+                final bool stepsLoading = !stepsSnap.hasData && stepsSnap.connectionState == ConnectionState.waiting;
 
-        // Stress: prefer BaaS result, fall back to HRV-derived score
-        final double? stressScore = (stressMap?['avg'] as num?)?.toDouble()
-            ?? (hrvMap?['stressScore'] as num?)?.toDouble();
+                return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: _hrStream,
+                  builder: (context, hrSnap) {
+                    final hrData = hrSnap.data?.data();
+                    final hrVal = hrData != null
+                        ? '${(hrData['avg'] as num?)?.round() ?? '--'} bpm'
+                        : '--';
+                    final bool hrLoading = !hrSnap.hasData && hrSnap.connectionState == ConnectionState.waiting;
 
-        final sleepVal = sleepMap != null
-            ? '${(sleepMap['avg'] as num?)?.toStringAsFixed(1) ?? '--'}h'
-            : '--';
+                    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                      stream: _moodStream,
+                      builder: (context, moodSnap) {
+                        final moodData = moodSnap.data?.data();
+                        if (moodData != null && _currentMood == '--') {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) setState(() => _currentMood = moodData['label'] as String? ?? '--');
+                          });
+                        }
+                        final moodVal = moodData != null
+                            ? (moodData['label'] as String? ?? '--')
+                            : '--';
+                        final bool moodLoading = !moodSnap.hasData && moodSnap.connectionState == ConnectionState.waiting;
 
-        final steps = (stepsMap?['sum'] as num?)?.toInt();
-        final stepsVal = steps != null
-            ? (steps >= 1000 ? '${(steps / 1000).toStringAsFixed(1)}k' : steps.toString())
-            : '--';
+                        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                          stream: _wellnessStream,
+                          builder: (context, wellnessSnap) {
+                            final wellnessData = wellnessSnap.data?.data();
+                            final wellnessVal = wellnessData != null
+                                ? '${(wellnessData['avg'] as num?)?.round() ?? '--'}'
+                                : '--';
 
-        final hrVal = hrMap != null
-            ? '${(hrMap['avg'] as num?)?.round() ?? '--'} bpm'
-            : '--';
+                        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _goalsStreamCached,
+                          builder: (context, goalSnap) {
+                            final goalDocs = goalSnap.data?.docs ?? [];
+                            final goalData = goalDocs.isNotEmpty ? goalDocs.first.data() : null;
+                            final goalTitle = goalData?['title'] as String? ?? 'No active goal';
+                            final rawPercent = (goalData?['progress']?['completionPercent'] as num?)?.toDouble() ?? 0;
+                            final goalProgress = (rawPercent / 100).clamp(0.0, 1.0);
 
-        if (moodMap != null && _currentMood == 'Good') {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _currentMood = moodMap['label'] as String? ?? 'Good');
-          });
-        }
-        final moodVal = moodMap != null ? (moodMap['label'] as String? ?? '--') : '--';
-
-        final wellnessVal = wellnessMap != null
-            ? '${(wellnessMap['avg'] as num?)?.round() ?? '--'}'
-            : '--';
-
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _goalsStreamCached,
-          builder: (context, goalSnap) {
-            final goalDocs = goalSnap.data?.docs ?? [];
-            final goalData = goalDocs.isNotEmpty ? goalDocs.first.data() : null;
-            final goalTitle = goalData?['title'] as String? ?? 'No active goal';
-            final rawPercent = (goalData?['progress']?['completionPercent'] as num?)?.toDouble() ?? 0;
-            final goalProgress = (rawPercent / 100).clamp(0.0, 1.0);
-
-            return _buildScaffold(
-              stressScore: stressScore,
-              stressLoading: loading,
-              sleepVal: sleepVal,
-              sleepLoading: loading,
-              stepsVal: stepsVal,
-              stepsLoading: loading,
-              hrVal: hrVal,
-              hrLoading: loading,
-              moodVal: moodVal,
-              moodLoading: loading,
-              wellnessVal: wellnessVal,
-              goalTitle: goalTitle,
-              goalProgress: goalProgress,
+                            return _buildScaffold(
+                              stressScore: stressScore,
+                              stressLoading: stressLoading,
+                              sleepVal: sleepVal,
+                              sleepLoading: sleepLoading,
+                              stepsVal: stepsVal,
+                              stepsLoading: stepsLoading,
+                              hrVal: hrVal,
+                              hrLoading: hrLoading,
+                              moodVal: moodVal,
+                              moodLoading: moodLoading,
+                              wellnessVal: wellnessVal,
+                              goalTitle: goalTitle,
+                              goalProgress: goalProgress,
+                            );
+                          },
+                        );
+                          },
+                        );
+                      },
+                    );
+                  },
+                );
+              },
             );
           },
         );
@@ -781,8 +867,20 @@ Widget _buildCalendarCard() {
     return const _WeeklyCalendar();
   }
 
-  // ignore: unused_element
+  String _formatCalendarDate(DateTime dt) {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${days[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day}';
+  }
+
+  String _formatHour(int hour) {
+    if (hour == 12) return '12 PM';
+    if (hour > 12) return '${hour - 12} PM';
+    return '$hour AM';
+  }
+
   List<Map<String, dynamic>> _getTodayEvents(DateTime now) {
+    // Seed events based on day of week so they feel consistent
     final day = now.weekday;
     final events = <Map<String, dynamic>>[];
 
@@ -1482,10 +1580,12 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
 
                     // Day columns
                     ...dates.map((d) {
+                      final dow = d.weekday % 7;
                       final isToday = _weekOffset == 0 &&
                           d.day == now.day &&
                           d.month == now.month &&
                           d.year == now.year;
+                      const dayEvents = <_CalEvent>[];
                       final googleDayEvents = _isConnected
                           ? _googleEvents.where((e) {
                               final start = e.start?.dateTime?.toLocal();
@@ -1622,6 +1722,27 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
       ),
     );
   }
+}
+
+class _CalEvent {
+  final int dow;
+  final int h;
+  final int m;
+  final double dur;
+  final String title;
+  final String sub;
+  final Color color;
+  final Color bg;
+  const _CalEvent({
+    required this.dow,
+    required this.h,
+    required this.m,
+    required this.dur,
+    required this.title,
+    required this.sub,
+    required this.color,
+    required this.bg,
+  });
 }
 
 class _EventDetailRow extends StatelessWidget {

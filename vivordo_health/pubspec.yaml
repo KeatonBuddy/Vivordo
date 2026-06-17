@@ -33,7 +33,6 @@ dependencies:
   provider: ^6.0.0 # Simple solution for state management
   http: ^1.1.0
   url_launcher: ^6.2.0
-  firebase_app_check: ^0.4.4+1
   flutter_svg: ^2.0.10
 
 
@@ -85,6 +84,11 @@ flutter:
     - assets/panda_icon.png
     - assets/panda_home_icon.png
     - assets/finalLogo.png
+    - assets/vivordo_logo.png
+    - assets/recommendations.json
+    - assets/vivordo_robot.svg
+
+
 
   # To add assets to your application, add an assets section, like this:
   # assets:
