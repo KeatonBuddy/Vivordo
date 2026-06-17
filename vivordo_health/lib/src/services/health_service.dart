@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'package:intl/intl.dart';
+import 'stress_score_service.dart';
 
 // ─── Metric definitions ──────────────────────────────────────────────────────
 
@@ -227,15 +228,16 @@ class HealthService {
     return granted;
   }
 
-  /// Revoke consent for a metric and delete its Firestore data.
+  /// Revoke consent for a metric and remove its data from every daily doc.
   Future<void> disableMetric(String metricKey) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     await _setConsent(metricKey, false);
+
     final query = await _db
+        .collection('users')
+        .doc(uid)
         .collection('metrics_daily')
-        .where('userId', isEqualTo: uid)
-        .where('metricType', isEqualTo: metricKey)
         .get();
     if (query.docs.isEmpty) return;
 
@@ -248,7 +250,7 @@ class HealthService {
       );
       final batch = _db.batch();
       for (final doc in chunk) {
-        batch.delete(doc.reference);
+        batch.update(doc.reference, {metricKey: FieldValue.delete()});
       }
       await batch.commit();
     }
@@ -317,6 +319,8 @@ class HealthService {
       } catch (e) {
         debugPrint('HealthService.syncToFirestore — could not update lastSync: $e');
       }
+      // Recompute BaaS stress score now that fresh HealthKit data is in Firestore
+      StressScoreService.computeAndSave(uid: uid, force: true).catchError((_) {});
     }
   }
 
@@ -350,15 +354,15 @@ class HealthService {
     for (final entry in byDay.entries) {
       final day  = entry.key;
       final vals = entry.value;
-      final ref  = _db.collection('metrics_daily').doc('${uid}_${def.key}_$day');
+      final ref  = _db.collection('users').doc(uid).collection('metrics_daily').doc(day);
       batch.set(ref, {
-        'userId':     uid,
-        'metricType': def.key,
-        'period':     day,
-        'tags':       [def.key],
-        'source':     'apple_health',
-        'syncedAt':   FieldValue.serverTimestamp(),
-        ..._buildValueMap(def.type, vals),
+        def.key: {
+          ..._buildValueMap(def.type, vals),
+          'source':   'apple_health',
+          'syncedAt': FieldValue.serverTimestamp(),
+        },
+        'date':      day,
+        'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }
     await batch.commit();
@@ -429,24 +433,24 @@ class HealthService {
     final batch = _db.batch();
 
     for (int i = 0; i < daysBack; i++) {
-      final day = now.subtract(Duration(days: i));
+      final day    = now.subtract(Duration(days: i));
       final period = _formatDate(day);
 
-      // Read stress, sleep, steps for this day
-      final stressSnap = await _db.collection('metrics_daily').doc('${uid}_stress_$period').get();
-      final sleepSnap  = await _db.collection('metrics_daily').doc('${uid}_sleep_$period').get();
-      final stepsSnap  = await _db.collection('metrics_daily').doc('${uid}_steps_$period').get();
-      final hrvSnap    = await _db.collection('metrics_daily').doc('${uid}_hrv_$period').get();
+      final snap = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('metrics_daily')
+          .doc(period)
+          .get();
+      final data = snap.data();
 
-      final stress = (stressSnap.data()?['avg'] as num?)?.toDouble();
-      final sleep  = (sleepSnap.data()?['avg']  as num?)?.toDouble();
-      final steps  = (stepsSnap.data()?['sum']  as num?)?.toDouble();
-      final hrv    = (hrvSnap.data()?['avg']    as num?)?.toDouble();
+      final stress = (data?['stress']?['avg'] as num?)?.toDouble();
+      final sleep  = (data?['sleep']?['avg']  as num?)?.toDouble();
+      final steps  = (data?['steps']?['sum']  as num?)?.toDouble();
+      final hrv    = (data?['hrv']?['avg']    as num?)?.toDouble();
 
-      // Need at least one signal to compute wellness
       if (stress == null && sleep == null && steps == null && hrv == null) continue;
 
-      // Weighted composite: stress inverted (lower stress = better wellness)
       double wellness = 0;
       int weight = 0;
 
@@ -467,21 +471,18 @@ class HealthService {
         weight += 15;
       }
 
-      // Normalise to 0–100 based on available signals
       final finalWellness = weight > 0 ? (wellness / weight * 100).clamp(0.0, 100.0) : 0.0;
 
-      final ref = _db.collection('metrics_daily').doc('${uid}_wellness_$period');
+      final ref = _db.collection('users').doc(uid).collection('metrics_daily').doc(period);
       batch.set(ref, {
-        'userId':     uid,
-        'metricType': 'wellness',
-        'period':     period,
-        'avg':        finalWellness,
-        'unit':       'score',
-        'dimension':  'wellness',
-        'source':     'computed',
-        'tags':       ['wellness'],
-        'computedAt': FieldValue.serverTimestamp(),
-        'updatedAt':  FieldValue.serverTimestamp(),
+        'wellness': {
+          'avg':        finalWellness,
+          'unit':       'score',
+          'source':     'computed',
+          'computedAt': FieldValue.serverTimestamp(),
+        },
+        'date':      period,
+        'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }
 

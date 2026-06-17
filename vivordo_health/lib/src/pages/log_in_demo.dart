@@ -76,7 +76,6 @@ class LoginDemoState extends State<LoginDemo> {
                         password: "passsd",
                         displayName: "random username",
                         context: context,
-                        pageController: PageController(),
                       );
                     },
                   ),
