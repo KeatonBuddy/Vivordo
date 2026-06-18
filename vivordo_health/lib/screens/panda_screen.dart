@@ -11,7 +11,7 @@ import '../src/services/recommendation_engine.dart';
 import '../src/services/insight_service.dart';
 import '../src/models/insights.dart';
 import '../src/services/panda_recommendations.dart';
-
+import 'package:flutter_svg/flutter_svg.dart';
 // =============================================================================
 // DIALOGUE FLOW
 // =============================================================================
@@ -57,7 +57,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Day',
     icon: Icons.wb_sunny_outlined,
-    color: Color(0xFFFF8C69),
+    color: Color(0xFF7B6EF6),
     categoryMessage:
         "Here's what I can help you with for today — pick what feels most useful 👇",
     prompts: [
@@ -84,8 +84,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Energy',
     icon: Icons.bolt_rounded,
-    color: Color(0xFF0ABFBC),
-    categoryMessage:
+    color: Color(0xFF7B6EF6),    categoryMessage:
         "Let's look at what's shaping your energy and recovery — choose a question 👇",
     prompts: [
       "What does my typical day look like?",
@@ -98,8 +97,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'Plans & People',
     icon: Icons.people_outline_rounded,
-    color: Color(0xFF4CAF50),
-    categoryMessage:
+    color: Color(0xFF7B6EF6),    categoryMessage:
         "I can help you navigate plans and people based on how you're doing — what do you need? 👇",
     prompts: [
       "Set expectations for this week",
@@ -780,7 +778,7 @@ class _PandaScreenState extends State<PandaScreen>
       _DialogueState.inDepth      => ('going deeper…', _purple),
       _ when _loading             => ('analysing…', Colors.orange),
       _ when _pandaTyping         => ('typing…', Colors.orange),
-      _DialogueState.free         => ('free chat', _purple),
+      _DialogueState.free         => ('', _purple),
       _                           => ('online', Colors.green),
     };
 
@@ -789,7 +787,7 @@ class _PandaScreenState extends State<PandaScreen>
       elevation: 0.5,
       automaticallyImplyLeading: false,
       title: Column(children: [
-        const Text('Panda',
+        const Text('AI Assistant',
             style: TextStyle(
                 color: _ink, fontSize: 17, fontWeight: FontWeight.bold)),
         Text(statusText, style: TextStyle(color: statusColor, fontSize: 12)),
@@ -886,11 +884,24 @@ class _PandaScreenState extends State<PandaScreen>
     if (_loading && _turns.isEmpty) {
       return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          _avatar(),
-          const SizedBox(height: 20),
-          const TypingIndicator(),
+          Image.asset(
+            'assets/vivordo_logo.png',
+            width: 380,
+            height: 300,
+            fit: BoxFit.contain,
+          ),
+          Transform.translate(
+            offset: const Offset(0, -40),
+            child: const SizedBox(
+              width: 200,
+              child: LinearProgressIndicator(
+                backgroundColor: Color(0xFFE5E5EA),
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7B6EF6)),
+              ),
+            ),
+          ),
           const SizedBox(height: 14),
-          const Text('Panda is analysing your data…',
+          const Text('Analysing your data…',
               style: TextStyle(color: Colors.black45, fontSize: 14)),
         ]),
       );
@@ -956,9 +967,12 @@ class _PandaScreenState extends State<PandaScreen>
         itemBuilder: (context, i) {
           if (i < _turns.length) {
             final t = _turns[i];
+            final isLastAssistant = t.role == _Role.assistant &&
+                !_turns.sublist(i + 1).any((x) => x.role == _Role.assistant);
             return t.role == _Role.user
                 ? _userBubble(t.text)
                 : _assistantBubble(t.text,
+                    showAvatar: isLastAssistant,
                     kind: t.kind,
                     recs: t.recs,
                     categoryOptions: t.categoryOptions,
@@ -986,6 +1000,7 @@ class _PandaScreenState extends State<PandaScreen>
   // ===========================================================================
 
   Widget _assistantBubble(String text, {
+    bool showAvatar = false,
     _TurnKind kind = _TurnKind.normal,
     List<PandaRec> recs = const [],
     List<String> categoryOptions = const [],
@@ -1028,10 +1043,9 @@ class _PandaScreenState extends State<PandaScreen>
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-              _avatar(),
-              const SizedBox(width: 10),
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+            const SizedBox(width: 10),
               Flexible(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -1214,7 +1228,7 @@ class _PandaScreenState extends State<PandaScreen>
           Padding(
             padding: const EdgeInsets.only(left: 2, bottom: 8),
             child: Text(
-              'Explore with Panda',
+              'Explore with AI Assistant',
               style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -1369,7 +1383,7 @@ class _PandaScreenState extends State<PandaScreen>
 
     String hint;
     if (_sessionComplete) {
-      hint = 'Ask Panda anything 💜';
+      hint = 'Ask AI Assistant anything';
     } else if (disabled) {
       hint = 'Panda is thinking…';
     } else if (_state == _DialogueState.inDigression) {
@@ -1377,7 +1391,7 @@ class _PandaScreenState extends State<PandaScreen>
     } else if (_state == _DialogueState.inDepth) {
       hint = 'Tell me more, or type "done" to move on…';
     } else {
-      hint = 'Answer or ask Panda anything…';
+      hint = 'Answer or ask AI Assistant anything…';
     }
 
     return Container(
@@ -1531,9 +1545,11 @@ class _PandaScreenState extends State<PandaScreen>
     final hasSlots = slots != null && !slots.isEmpty;
     final hasAnswers = labeledAnswers.isNotEmpty;
 
-    return Container(
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.black.withOpacity(0.07)),
         boxShadow: [
@@ -1775,6 +1791,7 @@ class _PandaScreenState extends State<PandaScreen>
             ],
           ],
         ),
+      ),
       ),
     );
   }
@@ -2049,15 +2066,10 @@ class _PandaScreenState extends State<PandaScreen>
     }
   }
 
-  Widget _avatar() => Container(
-        width: 40,
-        height: 40,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          image: DecorationImage(
-              image: AssetImage('assets/panda_icon.png'),
-              fit: BoxFit.contain),
-        ),
+  Widget _avatar() => SvgPicture.asset(
+        'assets/vivordo_robot.svg',
+        width: 80,
+        height: 80,
       );
 }
 

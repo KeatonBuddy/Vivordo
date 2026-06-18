@@ -70,7 +70,6 @@ class LoginDemoState extends State<LoginDemo> {
                       style: TextStyle(color: Colors.white, fontSize: 20),
                     ),
                     onPressed: () {
-                      // Demo-only: uses a dummy PageController
                       AuthService.emailSignup(
                         emailAddress: "random@gmail.com",
                         password: "passsd",

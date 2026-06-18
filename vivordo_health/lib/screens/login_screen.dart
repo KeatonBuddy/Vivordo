@@ -204,24 +204,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Column(
                         children: [
                           Image.asset(
-                            'assets/finalLogo.png',
-                            width: 75,
-                            height: 75,
+                            'assets/vivordo_logo.png',
+                            width: 380,
+                            height: 300,
+                            fit: BoxFit.contain,
                           ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Vivordo',
-                            style: TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                              color: textDark,
-                              letterSpacing: -0.5,
+                          Transform.translate(
+                            offset: const Offset(0, -110),
+                            child: const Text(
+                              'See your stress. Find your balance.',
+                              style: TextStyle(fontSize: 18, color: textGrey),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            'See your stress. Find your balance.',
-                            style: TextStyle(fontSize: 14, color: textGrey),
                           ),
                         ],
                       ),

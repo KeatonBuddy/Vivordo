@@ -129,7 +129,6 @@ class MetricsService {
     if (user == null) return;
 
     final period = _formatDate(DateTime.now());
-
     final moodScore = _moodToScore(moodLabel);
 
     await _db.collection('users').doc(user.uid).collection('metrics_daily').doc(period).set({
@@ -149,7 +148,7 @@ class MetricsService {
       },
       'date':      period,
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    }, SetOptions(merge: true)); // merge so we don't overwrite if already exists
 
     // Recompute BaaS stress score now that mood data has changed
     StressScoreService.computeAndSave(uid: user.uid, force: true).catchError((_) {});

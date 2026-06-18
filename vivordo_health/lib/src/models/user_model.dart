@@ -43,7 +43,6 @@ class UserModel {
     preferences![Preferences.scannerTutorialSeenKey] = value;
   }
 
-
   factory UserModel.fromMap(Map<String, dynamic> firestoreData, String id) {
     return UserModel(
       uid: id,
@@ -83,3 +82,5 @@ class UserModel {
     };
   }
 }
+
+

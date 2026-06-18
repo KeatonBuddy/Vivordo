@@ -33,7 +33,7 @@ dependencies:
   provider: ^6.0.0 # Simple solution for state management
   http: ^1.1.0
   url_launcher: ^6.2.0
-  firebase_app_check: ^0.4.4+1
+  flutter_svg: ^2.0.10
 
 
   googleapis: ^13.2.0
@@ -84,7 +84,11 @@ flutter:
     - assets/panda_icon.png
     - assets/panda_home_icon.png
     - assets/finalLogo.png
-    - assets/test_payloads/
+    - assets/vivordo_logo.png
+    - assets/recommendations.json
+    - assets/vivordo_robot.svg
+
+
 
   # To add assets to your application, add an assets section, like this:
   # assets:
@@ -116,3 +120,13 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+  fonts:
+    - family: DMSans
+      fonts:
+        - asset: assets/fonts/DMSans-Regular.ttf
+        - asset: assets/fonts/DMSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/DMSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/DMSans-Bold.ttf
+          weight: 700
