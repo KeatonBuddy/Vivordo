@@ -1,12 +1,10 @@
 import 'dart:async';
-import 'package:firebase_ai/firebase_ai.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:async';
-import '../src/services/gemini_service.dart';
+import '../src/services/ai_service.dart';
+import '../src/services/ai_service_factory.dart';
 import '../src/services/recommendation_engine.dart';
 import '../src/services/insight_service.dart';
 import '../src/models/insights.dart';
@@ -126,7 +124,7 @@ class _PandaScreenState extends State<PandaScreen>
   static const Color _ink = Color(0xFF2D3142);
   static const Color _bg = Color(0xFFF2F2F7);
 
-  final GeminiService _svc = GeminiService();
+  late AIService _svc;
   final InsightService _insightSvc = InsightService();
 
   // ── Session ────────────────────────────────────────────────────────────────
@@ -168,6 +166,8 @@ class _PandaScreenState extends State<PandaScreen>
   // _categoryPillsDismissed is no longer used for dismissal by the user;
   // pills are permanent once shown (but done card hides when a category is tapped).
   bool _categoryPillsVisible = false;
+  // Which pill's sub-options are currently expanded. Null = none.
+  String? _activeCategoryLabel;
 
   // ── Done card visibility ───────────────────────────────────────────────────
   // The "Session complete" card is shown after all spike Qs are answered
@@ -227,7 +227,15 @@ class _PandaScreenState extends State<PandaScreen>
       _subscribeToInsights(_currentUserId);
     }
 
-    _loadSession();
+    _initAIService();
+  }
+
+  // Resolves the active AIService backend (via Remote Config feature flag)
+  // and then starts the session.  The loading indicator is already visible
+  // (_loading = true by default), so there is no UI gap.
+  Future<void> _initAIService() async {
+    _svc = await AIServiceFactory.get();
+    if (mounted) _loadSession();
   }
 
   // ── Subscribe to Firestore insights stream ─────────────────────────────────
@@ -283,6 +291,7 @@ class _PandaScreenState extends State<PandaScreen>
       _sessionComplete = false;
       // Pills and done card reset on new session
       _categoryPillsVisible = false;
+      _activeCategoryLabel = null;
       _doneCardVisible = false;
       _session = null;
     });
@@ -291,6 +300,7 @@ class _PandaScreenState extends State<PandaScreen>
       final session = await _svc
           .analyzePandaSession(
             userName: _currentFirstName.isNotEmpty ? _currentFirstName : null,
+            userId: _currentUserId.isNotEmpty ? _currentUserId : null,
           )
           .timeout(const Duration(seconds: 90));
 
@@ -414,10 +424,11 @@ class _PandaScreenState extends State<PandaScreen>
 
   Future<void> _categoryTap(_PromptSet set) async {
     if (_pandaTyping) return;
-    // Hide the session complete card once the user starts exploring categories
-    if (_doneCardVisible) {
-      setState(() => _doneCardVisible = false);
-    }
+    setState(() {
+      _pandaTyping = true;
+      _doneCardVisible = false;
+      _activeCategoryLabel = set.label; // collapse any previously open pill
+    });
     await _pandaSay(
       set.categoryMessage,
       typingMs: 600,
@@ -480,6 +491,7 @@ class _PandaScreenState extends State<PandaScreen>
       setState(() {
         _categoryInsights[insightKey] = reply.message;
         _pandaTyping = false;
+        _activeCategoryLabel = null; // collapse options once one is selected
       });
 
       // Handle recommend intent — surface rec cards alongside the message
@@ -515,6 +527,7 @@ class _PandaScreenState extends State<PandaScreen>
     if (q == null) return;
 
     setState(() {
+      _pandaTyping = true;
       _turns.add(_Turn.user(option));
       _spikeAnswers[q.questionId] = option;
       _graphNodes.add(_ConvNode(
@@ -591,8 +604,8 @@ class _PandaScreenState extends State<PandaScreen>
                 .where((e) => e.value.trim().isNotEmpty))));
       }
 
-      setState(() => _pandaTyping = false);
-
+      // _pandaTyping stays true here — _pandaSay handles the false transition
+      // once the response is rendered. Clearing it early causes chips to flash.
       switch (reply.intent) {
         case PandaIntent.answerLabel:
           if (currentQ != null) {
@@ -738,9 +751,7 @@ class _PandaScreenState extends State<PandaScreen>
   }
 
   Future<void> _persistCompletedSession() async {
-    final resolvedUserId = _currentUserId.isNotEmpty
-        ? _currentUserId
-        : _svc.getActiveDemoUser().userId;
+    final resolvedUserId = _currentUserId;
     final labeledAnswers = {..._spikeAnswers, ..._categoryInsights};
     try {
       final insight = await _insightSvc.saveSessionInsight(
@@ -953,22 +964,28 @@ class _PandaScreenState extends State<PandaScreen>
     // Done card: shown after completion, hidden after first category tap.
     final showDone = _doneCardVisible && _sessionComplete;
 
+    // Category pills are pinned above the first bot message so the user sees
+    // the available digression topics without scrolling to the bottom.
+    final pillsFirst = showCategoryPills ? 1 : 0;
+
     return SafeArea(
       bottom: false,
       child: ListView.builder(
         controller: _scrollCtrl,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        itemCount: _turns.length +
+        itemCount: pillsFirst +
+            _turns.length +
             (_pandaTyping ? 1 : 0) +
-            (showCategoryPills ? 1 : 0) +
             (showChips ? 1 : 0) +
             (showDepthHint ? 1 : 0) +
             (showDone ? 1 : 0),
         itemBuilder: (context, i) {
-          if (i < _turns.length) {
-            final t = _turns[i];
-            final isLastAssistant = t.role == _Role.assistant &&
-                !_turns.sublist(i + 1).any((x) => x.role == _Role.assistant);
+          // Category pills: index 0 when visible, above all chat turns.
+          if (showCategoryPills && i == 0) return _categoryPillsWidget();
+
+          final turnIdx = i - pillsFirst;
+          if (turnIdx < _turns.length) {
+            final t = _turns[turnIdx];
             return t.role == _Role.user
                 ? _userBubble(t.text)
                 : _assistantBubble(t.text,
@@ -977,13 +994,13 @@ class _PandaScreenState extends State<PandaScreen>
                     recs: t.recs,
                     categoryOptions: t.categoryOptions,
                     categoryColor: t.categoryColor,
-                    categoryLabel: t.categoryLabel);
+                    categoryLabel: t.categoryLabel,
+                    showCategoryOptions:
+                        t.categoryLabel == _activeCategoryLabel);
           }
-          int off = _turns.length;
+          int off = pillsFirst + _turns.length;
           if (_pandaTyping && i == off) return _typingBubble();
           if (_pandaTyping) off++;
-          if (showCategoryPills && i == off) return _categoryPillsWidget();
-          if (showCategoryPills) off++;
           if (showChips && i == off) return _chipRow(_currentQ!);
           if (showChips) off++;
           if (showDepthHint && i == off) return _depthHintRow();
@@ -1006,6 +1023,7 @@ class _PandaScreenState extends State<PandaScreen>
     List<String> categoryOptions = const [],
     Color? categoryColor,
     String? categoryLabel,
+    bool showCategoryOptions = false,
   }) {
     Color bg;
     Color border;
@@ -1084,8 +1102,8 @@ class _PandaScreenState extends State<PandaScreen>
               const SizedBox(width: 40),
             ]),
           ),
-          // Category option chips below a categoryMenu bubble
-          if (categoryOptions.isNotEmpty && categoryLabel != null)
+          // Category option chips — only for the active pill (one at a time).
+          if (showCategoryOptions && categoryOptions.isNotEmpty && categoryLabel != null)
             Padding(
               padding:
                   const EdgeInsets.only(left: 50, right: 8, bottom: 12),
@@ -1884,9 +1902,7 @@ class _PandaScreenState extends State<PandaScreen>
     final newAnswer = controller.text.trim();
     if (newAnswer.isEmpty || newAnswer == currentAnswer) return;
 
-    final resolvedUserId = _currentUserId.isNotEmpty
-        ? _currentUserId
-        : _svc.getActiveDemoUser().userId;
+    final resolvedUserId = _currentUserId;
 
     try {
       await _insightSvc.correctAnswer(

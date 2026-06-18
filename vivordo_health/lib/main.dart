@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
@@ -18,6 +20,12 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Uncomment to route Cloud Function calls to the local emulator instead of
+  // the deployed function. Requires `firebase emulators:start --only functions`.
+  // if (kDebugMode) {
+  //   FirebaseFunctions.instance.useFunctionsEmulator('localhost', 5001);
+  // }
 
   // Initialize notification service
   await NotificationService().initialize();
