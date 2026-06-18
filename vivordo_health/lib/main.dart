@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
@@ -12,6 +13,7 @@ import 'package:vivordo_health/src/services/health_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
 
 
 // Global navigator key for notification navigation
@@ -135,6 +137,55 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     }
 
     _triggerFullSync(user.uid);
-    return const MainNavigationScreen();
+
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const MainNavigationScreen();
+        }
+
+        final data = snapshot.data?.data() as Map<String, dynamic>?;
+        final preferences =
+            data?['preferences'] as Map<String, dynamic>?;
+        final onboardingSeen =
+            preferences?['onboardingSeen'] == true;
+
+        if (onboardingSeen) {
+          return const MainNavigationScreen();
+        }
+
+        return OnboardingScreen(
+          onFinished: () async {
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .update({
+              'preferences.onboardingSeen': true,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+
+            if (!mounted) return;
+
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => const MainNavigationScreen(),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 }
