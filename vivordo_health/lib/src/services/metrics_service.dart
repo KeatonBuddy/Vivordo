@@ -130,12 +130,21 @@ class MetricsService {
 
     final period = _formatDate(DateTime.now());
 
+    final moodScore = _moodToScore(moodLabel);
+
     await _db.collection('users').doc(user.uid).collection('metrics_daily').doc(period).set({
       'mood': {
-        'avg':    _moodToScore(moodLabel),
+        'avg':    moodScore,
         'label':  moodLabel,
         'unit':   'score',
         'source': 'user_checkin',
+        'entries': FieldValue.arrayUnion([
+          {
+            'score': moodScore,
+            'label': moodLabel,
+            'timestamp': Timestamp.now(),
+          }
+        ]),
         'syncedAt': FieldValue.serverTimestamp(),
       },
       'date':      period,

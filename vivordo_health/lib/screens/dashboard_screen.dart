@@ -72,18 +72,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ── Per-metric helpers ─────────────────────────────────────────────────────
 
-  /// Extract [field] values for [metricType] from docs that contain that metric.
-  List<double> _metricVals(
+  /// Filter docs by metricType from the combined daily snapshot.
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _docsFor(
     QuerySnapshot<Map<String, dynamic>>? snap,
     String metricType,
-    String field,
   ) {
     if (snap == null) return [];
-    return snap.docs
-        .where((d) => d.data().containsKey(metricType))
-        .map((d) => ((d.data()[metricType] as Map?)?[field] as num?)?.toDouble() ?? 0.0)
-        .toList();
+    return snap.docs.where((d) => d.data().containsKey(metricType)).toList();
   }
+
+  List<double> _vals(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String metricType,
+    String field,
+  ) =>
+      docs
+          .map((d) => ((d.data()[metricType] as Map?)?[field] as num?)?.toDouble() ?? 0.0)
+          .toList();
 
   List<String> _dayLabels(
     QuerySnapshot<Map<String, dynamic>>? snap,
@@ -113,6 +118,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
           if (dt == null || dt.weekday != DateTime.monday) return '';
           return '${dt.day}/${dt.month}';
         }).toList();
+  }
+
+  // ── Mood entry helpers ─────────────────────────────────────────────────────
+  List<Map<String, dynamic>> _moodEntryPoints(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final points = <Map<String, dynamic>>[];
+
+    for (final doc in docs) {
+      final moodMap = doc.data()['mood'] as Map?;
+      if (moodMap == null) continue;
+      final period = doc.id;
+      final entries = moodMap['entries'];
+
+      if (entries is List && entries.isNotEmpty) {
+        for (final entry in entries) {
+          if (entry is! Map) continue;
+          final score = entry['score'];
+          if (score is! num) continue;
+
+          final timestamp = entry['timestamp'];
+          final dateTime = timestamp is Timestamp
+              ? timestamp.toDate()
+              : DateTime.tryParse(period) ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+          points.add({
+            'score': score.toDouble(),
+            'dateTime': dateTime,
+            'period': period,
+          });
+        }
+      } else {
+        final avg = moodMap['avg'];
+        if (avg is num) {
+          points.add({
+            'score': avg.toDouble(),
+            'dateTime': DateTime.tryParse(period) ?? DateTime.fromMillisecondsSinceEpoch(0),
+            'period': period,
+          });
+        }
+      }
+    }
+
+    points.sort((a, b) =>
+        (a['dateTime'] as DateTime).compareTo(b['dateTime'] as DateTime));
+    return points;
+  }
+
+  List<double> _moodEntryValues(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) =>
+      _moodEntryPoints(docs)
+          .map((point) => point['score'] as double)
+          .toList();
+
+  List<String> _moodEntryLabels(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final points = _moodEntryPoints(docs);
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    return points.map((point) {
+      final dateTime = point['dateTime'] as DateTime;
+
+      if (_filterIndex == 0) {
+        final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
+        final minute = dateTime.minute.toString().padLeft(2, '0');
+        final suffix = dateTime.hour >= 12 ? 'PM' : 'AM';
+        return '$hour:$minute $suffix';
+      }
+
+      if (_filterIndex == 2 && dateTime.weekday != DateTime.monday) {
+        return '';
+      }
+
+      return dayNames[dateTime.weekday - 1];
+    }).toList();
   }
 
   double _avg(List<double> vals) =>
@@ -164,8 +246,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               StreamBuilder<Map<String, bool>>(
                 stream: _consentStream,
                 builder: (_, consentSnap) {
+                  final consentLoaded = consentSnap.hasData;
                   final consent     = consentSnap.data ?? {};
-                  final anyConsented = consent.values.any((v) => v);
+                  final anyConsented = consentLoaded && consent.values.any((v) => v);
 
                   return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     stream: _allMetricsStream,
@@ -173,17 +256,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       final snap = metricsSnap.data;
 
                       // ── Summary row ────────────────────────────────────────
-                      final stressVals   = _metricVals(snap, 'stress',   'avg');
-                      final hrvVals      = _metricVals(snap, 'hrv',      'avg');
-                      final sleepVals    = _metricVals(snap, 'sleep',    'avg');
-                      final moodVals     = _metricVals(snap, 'mood',     'avg');
-                      final wellnessVals = _metricVals(snap, 'wellness', 'avg');
+                      final stressVals = _vals(_docsFor(snap, 'stress'), 'stress', 'avg');
+                      final hrvVals    = _vals(_docsFor(snap, 'hrv'),    'hrv',    'avg');
+                      final sleepVals  = _vals(_docsFor(snap, 'sleep'),  'sleep',  'avg');
+                      final moodVals   = _vals(_docsFor(snap, 'mood'),   'mood',   'avg');
+                      final wellnessVals = _vals(_docsFor(snap, 'wellness'), 'wellness', 'avg');
+
+                      bool hasMetricData(String metricType) =>
+                          _docsFor(snap, metricType).isNotEmpty;
+
+                      bool showHealthMetric(String metricType) =>
+                          consent[metricType] == true || hasMetricData(metricType);
+
+                      final hasAnyHealthData = [
+                        'steps',
+                        'active_calories',
+                        'exercise_time',
+                        'distance',
+                        'flights_climbed',
+                        'heart_rate',
+                        'resting_heart_rate',
+                        'hrv',
+                        'blood_oxygen',
+                        'respiratory_rate',
+                        'sleep',
+                        'weight',
+                        'body_fat',
+                        'mindfulness',
+                        'vo2max',
+                      ].any(hasMetricData);
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (!consentLoaded && !hasAnyHealthData) ...[
+                            _buildHealthConsentLoadingCard(),
+                            const SizedBox(height: 16),
+                          ],
+
                           // Summary cards — only shown when a watch/Health is connected
-                            if (anyConsented || stressVals.isNotEmpty || hrvVals.isNotEmpty || sleepVals.isNotEmpty || moodVals.isNotEmpty || wellnessVals.isNotEmpty) ...[
+                          if (anyConsented || stressVals.isNotEmpty || hrvVals.isNotEmpty || sleepVals.isNotEmpty || moodVals.isNotEmpty || wellnessVals.isNotEmpty) ...[
                             Row(
                               children: [
                                 Expanded(child: _buildStatCard(
@@ -219,47 +331,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                           // ── HealthKit metrics — consent-gated ───────────────
                           // Activity
-                          if (consent['steps']              == true)
+                          if (showHealthMetric('steps'))
                             _maybeChart(snap, 'steps',              'Daily Steps',                  Colors.blueAccent,           'sum',  20000),
-                          if (consent['active_calories']    == true)
+                          if (showHealthMetric('active_calories'))
                             _maybeChart(snap, 'active_calories',    'Active Calories (kcal)',       const Color(0xFFF97316),     'sum',  1000),
-                          if (consent['exercise_time']      == true)
+                          if (showHealthMetric('exercise_time'))
                             _maybeChart(snap, 'exercise_time',      'Exercise Time (min)',          const Color(0xFFFF9500),     'sum',  120),
-                          if (consent['distance']           == true)
+                          if (showHealthMetric('distance'))
                             _maybeChart(snap, 'distance',           'Distance (km)',                const Color(0xFF3B82F6),     'sum',  20),
-                          if (consent['flights_climbed']    == true)
-                            _maybeChart(snap, 'flights_climbed',    'Flights Climbed',              const Color(0xFF14B8A6),     'sum',  30),
                           // Heart
-                          if (consent['heart_rate']         == true)
+                          if (showHealthMetric('heart_rate'))
                             _maybeChart(snap, 'heart_rate',         'Heart Rate (bpm)',             Colors.redAccent,            'avg',  200),
-                          if (consent['resting_heart_rate'] == true)
+                          if (showHealthMetric('resting_heart_rate'))
                             _maybeChart(snap, 'resting_heart_rate', 'Resting Heart Rate (bpm)',     const Color(0xFFFF6B6B),     'avg',  120),
-                          if (consent['hrv']                == true)
+                          if (showHealthMetric('hrv'))
                             _maybeChart(snap, 'hrv',                'HRV (ms)',                     greenColor,                  'avg',  120),
                           // Breathing / Vitals
-                          if (consent['blood_oxygen']       == true)
+                          if (showHealthMetric('blood_oxygen'))
                             _maybeChart(snap, 'blood_oxygen',       'Blood Oxygen SpO₂ (%)',        const Color(0xFF06B6D4),     'avg',  100),
-                          if (consent['respiratory_rate']   == true)
+                          if (showHealthMetric('respiratory_rate'))
                             _maybeChart(snap, 'respiratory_rate',   'Respiratory Rate (brpm)',      const Color(0xFF0EA5E9),     'avg',  30),
                           // Sleep
-                          if (consent['sleep']              == true)
+                          if (showHealthMetric('sleep'))
                             _maybeChart(snap, 'sleep',              'Sleep (hours)',                const Color(0xFF8B5CF6),     'avg',  12),
                           // Body
-                          if (consent['weight']             == true)
+                          if (showHealthMetric('weight'))
                             _maybeChart(snap, 'weight',             'Weight (kg)',                  const Color(0xFFA78BFA),     'avg',  0),
-                          if (consent['body_fat']           == true)
+                          if (showHealthMetric('body_fat'))
                             _maybeChart(snap, 'body_fat',           'Body Fat (%)',                 const Color(0xFFFBBF24),     'avg',  50),
                           // Mind
-                          if (consent['mindfulness']        == true)
+                          if (showHealthMetric('mindfulness'))
                             _maybeChart(snap, 'mindfulness',        'Mindfulness (min)',            const Color(0xFF7C3AED),     'sum',  60),
                           // Fitness
-                          if (consent['vo2max']             == true)
+                          if (showHealthMetric('vo2max'))
                             _maybeChart(snap, 'vo2max',             'VO₂ Max (ml/kg/min)',          greenColor,                  'avg',  70),
 
                           // ── Apple Health CTA when nothing is consented ──────
                           if (snap == null || snap.docs.isEmpty)
                             _buildEmptyState()
-                          else if (!anyConsented) 
+                          else if (consentLoaded && !anyConsented && !hasAnyHealthData)
                             _buildConnectCard(),
 
                           const SizedBox(height: 120),
@@ -285,10 +395,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String field,
     double maxY,
   ) {
-    final values = _metricVals(snap, metricType, field);
-    final labels = _filterIndex == 2
-        ? _monthLabels(snap, metricType)
-        : _dayLabels(snap, metricType);
+    final docs = _docsFor(snap, metricType);
+    final values = metricType == 'mood'
+        ? _moodEntryValues(docs)
+        : _vals(docs, metricType, field);
+    final labels = metricType == 'mood'
+        ? _moodEntryLabels(docs)
+        : _filterIndex == 2
+            ? _monthLabels(snap, metricType)
+            : _dayLabels(snap, metricType);
     if (values.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -609,6 +724,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHealthConsentLoadingCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: const Row(
+        children: [
+          SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: accentPurple,
+            ),
+          ),
+          SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Checking Apple Health permissions',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: textDark,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Loading your connected health data…',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: textGrey,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

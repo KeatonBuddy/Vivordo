@@ -129,15 +129,15 @@ class UserService {
             'onboardingCompletedAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
           });
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set({
-            'onboardingCompleted': true,
-            'onboardingCompletedAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-            'preferences': preferences,
-          }, SetOptions(merge: true));
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'onboardingCompleted': true,
+        'onboardingCompletedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'preferences.timezone': preferences['timezone'],
+        'preferences.locale': preferences['locale'],
+        'preferences.units': preferences['units'],
+        'preferences.notificationsEnabled': preferences['notificationsEnabled'],
+      }, SetOptions(merge: true));
     } catch (e) {
         rethrow;
       }
@@ -148,10 +148,10 @@ class UserService {
 
   static Map<String, dynamic> _derivePreferences(Map<String, dynamic> answers) {
     return {
-      'timezone':             answers['timezone']             ?? 'UTC',
-      'locale':               answers['locale']               ?? 'en',
+      'timezone':             answers['timezone']             ?? 'America/Edmonton',
+      'locale':               answers['locale']               ?? 'en_CA',
       'units':                answers['units']                ?? 'metric',
-      'notificationsEnabled': answers['notificationsEnabled'] ?? true,
+      'notificationsEnabled': answers['notificationsEnabled'] == true,
       Preferences.scannerTutorialSeenKey: false,
     };
   }

@@ -20,10 +20,52 @@ class CalendarService {
           _currentUser = null;
       }
     }).onError((e) => debugPrint('Auth error: $e'));
+
+    try {
+      _currentUser = await GoogleSignIn.instance.attemptLightweightAuthentication();
+    } catch (e) {
+      debugPrint('Silent Google sign-in failed: $e');
+    }
+
     _initialized = true;
   }
 
   static Future<List<gcal.Event>> getWeekEvents(DateTime weekStart) async {
+    try {
+      await initialize();
+
+      var user = _currentUser;
+      user ??= await GoogleSignIn.instance.attemptLightweightAuthentication();
+      _currentUser = user;
+      if (user == null) return [];
+
+      const scopes = [gcal.CalendarApi.calendarReadonlyScope];
+
+      final authorization = await user.authorizationClient
+          .authorizationForScopes(scopes);
+
+      if (authorization == null) return [];
+
+      final client = authorization.authClient(scopes: scopes);
+      final calendarApi = gcal.CalendarApi(client);
+      final weekEnd = weekStart.add(const Duration(days: 7));
+
+      final events = await calendarApi.events.list(
+        'primary',
+        timeMin: weekStart.toUtc(),
+        timeMax: weekEnd.toUtc(),
+        singleEvents: true,
+        orderBy: 'startTime',
+      );
+
+      return events.items ?? [];
+    } catch (e) {
+      debugPrint('CalendarService error: $e');
+      return [];
+    }
+  }
+
+  static Future<List<gcal.Event>> connectAndGetWeekEvents(DateTime weekStart) async {
     try {
       await initialize();
 
@@ -61,12 +103,13 @@ class CalendarService {
 
       return events.items ?? [];
     } catch (e) {
-      debugPrint('CalendarService error: $e');
+      debugPrint('CalendarService connect error: $e');
       return [];
     }
   }
-
+  
   static Future<bool> isSignedIn() async {
+    await initialize();
     return _currentUser != null;
   }
 
