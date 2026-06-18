@@ -986,6 +986,8 @@ class _PandaScreenState extends State<PandaScreen>
           final turnIdx = i - pillsFirst;
           if (turnIdx < _turns.length) {
             final t = _turns[turnIdx];
+            final isLastAssistant = t.role == _Role.assistant &&
+                !_turns.sublist(turnIdx + 1).any((x) => x.role == _Role.assistant);
             return t.role == _Role.user
                 ? _userBubble(t.text)
                 : _assistantBubble(t.text,
