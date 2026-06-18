@@ -8,6 +8,10 @@ const admin = require("firebase-admin");
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
 
+// Single shared client — reused across all function invocations on the same
+// container instance (connection pooling, no per-call allocation overhead).
+const client = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});
+
 // =============================================================================
 // pandaClaude — real-time HTTPS Callable proxy for Anthropic API
 // Security: API key stays server-side (VIV-309).
@@ -27,8 +31,6 @@ exports.pandaClaude = onCall(async (request) => {
   // Fall back to 300 (chat default) if omitted.
   const outputCap =
       (typeof maxTokens === "number" && maxTokens > 0) ? maxTokens : 300;
-
-  const client = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});
 
   const systemBlocks = Array.isArray(system) ?
     system :
@@ -132,7 +134,6 @@ exports.pandaBatchNightly = onSchedule({
   memory: "256MiB",
 }, async () => {
   const db = admin.firestore();
-  const client = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});
 
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -231,7 +232,6 @@ exports.pandaQuestionnaireBatch = onDocumentCreated(
       const insightId = event.params.insightId;
       const userId = data.userId;
       const db = admin.firestore();
-      const client = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});
 
       const payload = {
         pandaSlots: data.pandaSlots ?? {},
@@ -294,7 +294,6 @@ exports.pandaBatchPoller = onSchedule({
   memory: "256MiB",
 }, async () => {
   const db = admin.firestore();
-  const client = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});
 
   const pendingSnap = await db.collection("batch_jobs")
       .where("status", "==", "pending")
@@ -323,6 +322,33 @@ exports.pandaBatchPoller = onSchedule({
 
     let written = 0;
     const weekOf = new Date().toISOString().split("T")[0];
+    const ts = () => admin.firestore.FieldValue.serverTimestamp();
+
+    // Dispatch table — prefix → Firestore write spec.
+    // Adding a new batch type = one new entry here, nothing else to touch.
+    const routes = [
+      {
+        prefix: "weekly-trend-",
+        write: (rest, text) =>
+          db.collection("weekly_trends").doc(rest)
+              .set({content: text, generatedAt: ts(), weekOf}, {merge: true}),
+      },
+      {
+        prefix: "insight-summary-",
+        write: (rest, text) =>
+          db.collection("insight_summaries").doc(rest)
+              .set({content: text, generatedAt: ts(), weekOf}, {merge: true}),
+      },
+      {
+        prefix: "questionnaire-",
+        write: (rest, text) =>
+          db.collection("insights").doc(rest).update({
+            questionnaireAnalysis: text,
+            questionnaireAnalysisStatus: "completed",
+            questionnaireAnalyzedAt: ts(),
+          }),
+      },
+    ];
 
     try {
       for await (const result of
@@ -336,34 +362,10 @@ exports.pandaBatchPoller = onSchedule({
         }
 
         const text = result.result.message.content?.[0]?.text ?? "";
-        const id = result.custom_id;
-
-        if (id.startsWith("weekly-trend-")) {
-          const userId = id.slice("weekly-trend-".length);
-          await db.collection("weekly_trends").doc(userId).set({
-            content: text,
-            generatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            weekOf,
-          }, {merge: true});
-          written++;
-        } else if (id.startsWith("insight-summary-")) {
-          const userId = id.slice("insight-summary-".length);
-          await db.collection("insight_summaries").doc(userId).set({
-            content: text,
-            generatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            weekOf,
-          }, {merge: true});
-          written++;
-        } else if (id.startsWith("questionnaire-")) {
-          const insightId = id.slice("questionnaire-".length);
-          await db.collection("insights").doc(insightId).update({
-            questionnaireAnalysis: text,
-            questionnaireAnalysisStatus: "completed",
-            questionnaireAnalyzedAt:
-                admin.firestore.FieldValue.serverTimestamp(),
-          });
-          written++;
-        }
+        const route = routes.find((r) => result.custom_id.startsWith(r.prefix));
+        if (!route) continue;
+        await route.write(result.custom_id.slice(route.prefix.length), text);
+        written++;
       }
     } catch (err) {
       console.error(

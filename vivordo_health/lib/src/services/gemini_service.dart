@@ -448,8 +448,13 @@ RULES:
   // =========================================================================
   // Real user data fetch  (public static — reused by ClaudeService)
   //
-  // Queries metrics_daily for the last 7 days and returns a map shaped
-  // identically to getSampleData() so the rest of the pipeline works unchanged.
+  // Queries users/{userId}/metrics_daily/{YYYY-MM-DD} subcollection for the
+  // last 7 days.  Each document holds all metrics for that day as top-level
+  // fields (heart_rate, mood, sleep, steps, stress, wellness, hrv).
+  //
+  // Also fetches users/{userId}/preferences and
+  // users/{userId}/questionaire_responses for compact user context.
+  //
   // Returns null when the user has no data yet (caller shows empty state).
   // =========================================================================
 
@@ -457,54 +462,45 @@ RULES:
       String userId) async {
     final db = FirebaseFirestore.instance;
     final now = DateTime.now();
-    // Keys match what HealthService._writeDataPoints writes to metrics_daily.
-    // heart_rate_scans is also tried for backwards compat with older synced data.
-    const metricTypes = [
-      'heart_rate',
-      'heart_rate_scans',
-      'resting_heart_rate',
-      'hrv',
-      'steps',
-      'sleep',
-    ];
+    final userRef = db.collection('users').doc(userId);
 
-    final tags = <(String, String)>[];
-    final fetches = <Future<DocumentSnapshot<Map<String, dynamic>>>>[];
-    for (int daysBack = 0; daysBack < 7; daysBack++) {
-      final day = now.subtract(Duration(days: daysBack));
-      final dateStr = _fmtDate(day);
-      for (final metric in metricTypes) {
-        tags.add((dateStr, metric));
-        fetches.add(db
-            .collection('metrics_daily')
-            .doc('${userId}_${metric}_$dateStr')
-            .get());
-      }
-    }
+    // Date keys for the past 7 days (today = index 0)
+    final dateStrings = List.generate(7, (i) {
+      final day = now.subtract(Duration(days: i));
+      return _fmtDate(day);
+    });
 
-    final snaps = await Future.wait(fetches);
+    // Fire all Firestore reads concurrently before any await
+    final metricFutures = dateStrings
+        .map((d) => userRef.collection('metrics_daily').doc(d).get())
+        .toList();
+    final prefFuture = userRef.collection('preferences').get();
+    final questFuture = userRef.collection('questionaire_responses').get();
 
-    final dailyData = <String, Map<String, Map<String, dynamic>>>{};
-    for (int i = 0; i < tags.length; i++) {
-      final snap = snaps[i];
+    final metricSnaps = await Future.wait(metricFutures);
+    final prefSnap = await prefFuture;
+    final questSnap = await questFuture;
+
+    // Build daily data map: dateStr → {field → value} from the single day doc
+    final dailyData = <String, Map<String, dynamic>>{};
+    for (int i = 0; i < dateStrings.length; i++) {
+      final snap = metricSnaps[i];
       if (!snap.exists) continue;
       final data = snap.data();
       if (data == null) continue;
-      final (dateStr, metric) = tags[i];
-      dailyData.putIfAbsent(dateStr, () => {})[metric] = data;
+      dailyData[dateStrings[i]] = data;
     }
 
     if (dailyData.isEmpty) return null;
 
-    // Prefer resting_heart_rate as baseline; fall back to heart_rate avg.
-    final baselineHr = dailyData.values
-            .map((d) =>
-                (d['resting_heart_rate']?['avg'] as num?)?.toDouble() ??
-                (d['heart_rate']?['avg'] as num?)?.toDouble() ??
-                (d['heart_rate_scans']?['avg'] as num?)?.toDouble())
-            .whereType<double>()
-            .firstOrNull ??
-        65.0;
+    // HR baseline: 7-day average of heart_rate.avg
+    final hrValues = dailyData.values
+        .map((d) => (d['heart_rate']?['avg'] as num?)?.toDouble())
+        .whereType<double>()
+        .toList();
+    final baselineHr = hrValues.isEmpty
+        ? 65.0
+        : hrValues.reduce((a, b) => a + b) / hrValues.length;
 
     final hrvValues = dailyData.values
         .map((d) => (d['hrv']?['avg'] as num?)?.toDouble())
@@ -534,12 +530,11 @@ RULES:
     final samplesChronological = sortedDates.reversed.map((dateStr) {
       final d = dailyData[dateStr]!;
       final hrMax = (d['heart_rate']?['max'] as num?)?.toDouble() ??
-          (d['heart_rate_scans']?['max'] as num?)?.toDouble() ??
           (d['heart_rate']?['avg'] as num?)?.toDouble() ??
-          (d['heart_rate_scans']?['avg'] as num?)?.toDouble() ??
           baselineHr;
       final hrv = (d['hrv']?['avg'] as num?)?.toDouble() ?? baselineHrv;
       final steps = (d['steps']?['sum'] as num?)?.toDouble() ?? 0.0;
+      final stress = (d['stress']?['avg'] as num?)?.toInt();
       return <String, dynamic>{
         't': '${dateStr}T12:00:00',
         'hr': hrMax.round(),
@@ -550,6 +545,7 @@ RULES:
             : steps > 3000
                 ? 'light'
                 : 'sedentary',
+        'stress': ?stress,
         'tag': '',
       };
     }).toList();
@@ -557,12 +553,30 @@ RULES:
     final windowStart = DateTime.parse('${sortedDates.last}T00:00:00');
     final windowEnd = DateTime.parse('${latestDate}T23:59:59');
 
+    // Compact user setup from preferences + questionnaire (scalar values only,
+    // max 10 fields) — keeps token overhead under ~100 tokens.
+    final userSetup = <String, dynamic>{};
+    const metaKeys = {
+      'createdAt', 'updatedAt', 'userId', 'id', 'timestamp',
+    };
+    for (final doc in [...prefSnap.docs, ...questSnap.docs]) {
+      for (final entry in doc.data().entries) {
+        if (userSetup.length >= 10) break;
+        if (metaKeys.contains(entry.key)) continue;
+        final v = entry.value;
+        if (v is String || v is num || v is bool) {
+          userSetup[entry.key] = v;
+        }
+      }
+    }
+
     return {
       'user_profile': {
         'timezone': 'UTC',
         'age_range': 'adult',
         'resting_hr_typical': baselineHr,
         'hrv_rmssd_typical': baselineHrv,
+        if (userSetup.isNotEmpty) 'user_setup': userSetup,
       },
       'data_window': {
         'start': windowStart.toIso8601String(),
@@ -632,6 +646,16 @@ DATA: ${jsonEncode(compact)}
   /// Builds the full dialogue prompt for a single conversation turn.
   /// Caps history to the last 6 items (≈3 exchanges, ≤350 tokens) and
   /// trims spike context automatically.
+  ///
+  /// [embedSpikeContext] — pass false when the caller already provides spike
+  /// context in a cached system block (ClaudeService), to avoid sending it
+  /// twice and wasting ~40–60 uncached tokens per turn.
+  ///
+  /// [embedPersona] — pass false when the persona intro ("You are Panda 🐼…")
+  /// is already in a cached system block, saving ~17 uncached tokens per turn.
+  ///
+  /// [embedTaskInstructions] — pass false when the TASKS section is already
+  /// in a cached system block, saving ~90 uncached tokens per turn.
   static String buildDialoguePrompt({
     required String userMessage,
     required List<Map<String, String>> conversationHistory,
@@ -643,6 +667,9 @@ DATA: ${jsonEncode(compact)}
     String? pendingQuestionPrompt,
     String? digressionTopic,
     Map<String, String>? accumulatedSlots,
+    bool embedSpikeContext = true,
+    bool embedPersona = true,
+    bool embedTaskInstructions = true,
   }) {
     final cappedHistory = conversationHistory.length > 6
         ? conversationHistory.sublist(conversationHistory.length - 6)
@@ -672,46 +699,41 @@ DATA: ${jsonEncode(compact)}
         ? 'SLOTS SO FAR: ${jsonEncode(accumulatedSlots)}'
         : 'SLOTS SO FAR: none';
 
-    final trimmedSpikes = trimSpikeContext(spikeContext);
+    final spikeCtxLine = embedSpikeContext
+        ? 'SPIKE CONTEXT: ${jsonEncode(trimSpikeContext(spikeContext))}\n\n'
+        : '';
 
-    return '''
-You are Panda 🐼, a warm, empathetic wellness companion in Vivordo.
+    final personaLine = embedPersona
+        ? 'You are Panda 🐼, a warm, empathetic wellness companion in Vivordo.\n\n'
+        : '';
 
-$pathCtx
-SPIKE CONTEXT: ${jsonEncode(trimmedSpikes)}
+    final tasksSection = embedTaskInstructions
+        ? '\n\nTASKS:\n\n'
+          '1. INTENT (pick one): "answer_label" | "want_deeper_answer" | "digress" |\n'
+          '   "digression_complete" | "new_stressor" | "recommend" | "chitchat" | "skip"\n'
+          '\n'
+          '2. MESSAGE (2–4 sentences):\n'
+          '   • Never ask the next predefined question — the app handles that automatically.\n'
+          '   • Deliver advice immediately with concrete examples — never just promise it.\n'
+          '   • intent=="recommend": one warm intro sentence; the app shows the rec cards.\n'
+          '   • intent=="want_deeper_answer": include one probing follow-up question.\n'
+          '   • Digression depth ≥ 3: warmly begin wrapping up the side conversation.\n'
+          '   • Tone: warm, peer-like. Never clinical. No diagnoses; use "may be related to".\n'
+          '\n'
+          '3. DEPTH_FOLLOW_UP: one open-ended probe (intent=="want_deeper_answer" only).\n'
+          '\n'
+          '4. INJECTED_QUESTION: targeted Q + 3–5 chip options + "Something else 🙋"\n'
+          '   (intent=="new_stressor" only).\n'
+          '\n'
+          '5. REC_HINT: comma-separated keywords for the rec engine\n'
+          '   (intent=="recommend" only). E.g. "music, sleep", "breathing, anxiety".\n'
+          '\n'
+          '6. FILLED_SLOTS: stressor, emotion, intensity (low/medium/high),\n'
+          '   physical_symptom, activity, location, time_context, coping_strategy,\n'
+          '   sleep_quality, social_context, other. Use "" for anything not mentioned.\n'
+        : '';
 
-$slotsCtx
-
-CONVERSATION:
-$historyText
-
-USER: "$userMessage"
-
-TASKS:
-
-1. INTENT (pick one): "answer_label" | "want_deeper_answer" | "digress" |
-   "digression_complete" | "new_stressor" | "recommend" | "chitchat" | "skip"
-
-2. MESSAGE (2–4 sentences):
-   • Never ask the next predefined question — the app handles that automatically.
-   • Deliver advice immediately with concrete examples — never just promise it.
-   • intent=="recommend": one warm intro sentence; the app shows the rec cards.
-   • intent=="want_deeper_answer": include one probing follow-up question.
-   • Digression depth ≥ 3: warmly begin wrapping up the side conversation.
-   • Tone: warm, peer-like. Never clinical. No diagnoses; use "may be related to".
-
-3. DEPTH_FOLLOW_UP: one open-ended probe (intent=="want_deeper_answer" only).
-
-4. INJECTED_QUESTION: targeted Q + 3–5 chip options + "Something else 🙋"
-   (intent=="new_stressor" only).
-
-5. REC_HINT: comma-separated keywords for the rec engine
-   (intent=="recommend" only). E.g. "music, sleep", "breathing, anxiety".
-
-6. FILLED_SLOTS: stressor, emotion, intensity (low/medium/high),
-   physical_symptom, activity, location, time_context, coping_strategy,
-   sleep_quality, social_context, other. Use "" for anything not mentioned.
-''';
+    return '$personaLine$pathCtx\n$spikeCtxLine$slotsCtx\n\nCONVERSATION:\n$historyText\n\nUSER: "$userMessage"$tasksSection';
   }
 
   // =========================================================================
@@ -748,12 +770,15 @@ TASKS:
           (s['context']['nearby_events'] as List).isEmpty ? 0.55 : 0.75;
     }
 
+    final userSetup = profile['user_setup'] as Map?;
     return {
       'user_profile': {
         'timezone': profile['timezone'] ?? 'UTC',
         'age_range': profile['age_range'] ?? 'adult',
         'resting_hr_typical': baselineHr,
         'hrv_rmssd_typical': baselineHrv,
+        if (userSetup != null && userSetup.isNotEmpty)
+          'user_setup': userSetup,
       },
       'data_window': window,
       'user_context': raw['user_context'] ?? '',
