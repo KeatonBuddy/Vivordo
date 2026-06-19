@@ -453,7 +453,7 @@ RULES:
   // fields (heart_rate, mood, sleep, steps, stress, wellness, hrv).
   //
   // Also fetches users/{userId}/preferences and
-  // users/{userId}/questionaire_responses for compact user context.
+  // users/{userId}/questionnaire_responses for compact user context.
   //
   // Returns null when the user has no data yet (caller shows empty state).
   // =========================================================================
@@ -477,7 +477,7 @@ RULES:
         .map((d) => userRef.collection('metrics_daily').doc(d).get())
         .toList();
     final prefFuture = userRef.collection('preferences').get();
-    final questFuture = userRef.collection('questionaire_responses').get();
+    final questFuture = userRef.collection('questionnaire_responses').get();
 
     final metricSnaps = await Future.wait(metricFutures);
     final prefSnap = await prefFuture;

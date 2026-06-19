@@ -78,11 +78,12 @@ exports.pandaClaude = onCall(async (request) => {
 // Model: claude-haiku-4-5-20251001 (cheapest; batch gives additional 50% off)
 //
 // Workloads:
-//   1. weekly-trend-{userId}      nightly      → weekly_trends/{userId}
-//   2. insight-summary-{userId}   nightly      → insight_summaries/{userId}
-//   3. questionnaire-{insightId}  on submission → insights/{insightId}
+//   1. weekly-trend-{userId}      nightly       → users/{userId}/weekly_trends/{weekOf}
+//   2. insight-summary-{userId}   nightly       → users/{userId}/insight_summaries/{weekOf}
+//   3. questionnaire-{insightId}  on submission → users/{userId}/insights/{insightId}
 //
-// All batch jobs tracked in batch_jobs/{batchId}.
+// All batch jobs tracked top-level in batch_jobs/{batchId} — a single nightly
+// batch spans many users, so job tracking isn't nested under any one user.
 // =============================================================================
 
 const _BATCH_MODEL = "claude-haiku-4-5-20251001";
@@ -138,7 +139,9 @@ exports.pandaBatchNightly = onSchedule({
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  const insightsSnap = await db.collection("insights")
+  // insights now lives at users/{userId}/insights — collectionGroup() reaches
+  // every user's subcollection in one query.
+  const insightsSnap = await db.collectionGroup("insights")
       .where("createdAt", ">=", sevenDaysAgo)
       .get();
 
@@ -213,13 +216,13 @@ exports.pandaBatchNightly = onSchedule({
 // =============================================================================
 
 /**
- * Fires when a new `insights` document is created with source == "panda"
- * and at least one labeled answer present.
+ * Fires when a new `users/{userId}/insights` document is created with
+ * source == "panda" and at least one labeled answer present.
  * Submits a single-request Batch API job for deep questionnaire analysis;
  * the result is written back to the same document by pandaBatchPoller.
  */
 exports.pandaQuestionnaireBatch = onDocumentCreated(
-    "insights/{insightId}",
+    "users/{userId}/insights/{insightId}",
     async (event) => {
       const data = event.data?.data();
       if (!data) return;
@@ -230,7 +233,7 @@ exports.pandaQuestionnaireBatch = onDocumentCreated(
       if (Object.keys(answers).length === 0) return;
 
       const insightId = event.params.insightId;
-      const userId = data.userId;
+      const userId = event.params.userId;
       const db = admin.firestore();
 
       const payload = {
@@ -284,9 +287,12 @@ exports.pandaQuestionnaireBatch = onDocumentCreated(
  * Polls every 30 min for completed batch jobs and writes results to Firestore.
  *
  * Routing by custom_id prefix:
- *   weekly-trend-{userId}      → weekly_trends/{userId}
- *   insight-summary-{userId}   → insight_summaries/{userId}
- *   questionnaire-{insightId}  → insights/{insightId}.questionnaireAnalysis
+ *   weekly-trend-{userId}      → users/{userId}/weekly_trends/{weekOf}
+ *   insight-summary-{userId}   → users/{userId}/insight_summaries/{weekOf}
+ *   questionnaire-{insightId}  → users/{userId}/insights/{insightId}.questionnaireAnalysis
+ *     (userId for the questionnaire route comes from the batch_jobs doc
+ *     itself, since unlike the other two, its custom_id only carries the
+ *     insightId.)
  */
 exports.pandaBatchPoller = onSchedule({
   schedule: "every 30 minutes",
@@ -323,30 +329,38 @@ exports.pandaBatchPoller = onSchedule({
     let written = 0;
     const weekOf = new Date().toISOString().split("T")[0];
     const ts = () => admin.firestore.FieldValue.serverTimestamp();
+    const jobData = jobDoc.data();
 
     // Dispatch table — prefix → Firestore write spec.
     // Adding a new batch type = one new entry here, nothing else to touch.
     const routes = [
       {
         prefix: "weekly-trend-",
+        // rest = userId
         write: (rest, text) =>
-          db.collection("weekly_trends").doc(rest)
+          db.collection("users").doc(rest).collection("weekly_trends")
+              .doc(weekOf)
               .set({content: text, generatedAt: ts(), weekOf}, {merge: true}),
       },
       {
         prefix: "insight-summary-",
+        // rest = userId
         write: (rest, text) =>
-          db.collection("insight_summaries").doc(rest)
+          db.collection("users").doc(rest).collection("insight_summaries")
+              .doc(weekOf)
               .set({content: text, generatedAt: ts(), weekOf}, {merge: true}),
       },
       {
         prefix: "questionnaire-",
+        // rest = insightId; userId comes from the batch_jobs doc (the
+        // custom_id alone doesn't carry it for this workload).
         write: (rest, text) =>
-          db.collection("insights").doc(rest).update({
-            questionnaireAnalysis: text,
-            questionnaireAnalysisStatus: "completed",
-            questionnaireAnalyzedAt: ts(),
-          }),
+          db.collection("users").doc(jobData.userId)
+              .collection("insights").doc(rest).update({
+                questionnaireAnalysis: text,
+                questionnaireAnalysisStatus: "completed",
+                questionnaireAnalyzedAt: ts(),
+              }),
       },
     ];
 
