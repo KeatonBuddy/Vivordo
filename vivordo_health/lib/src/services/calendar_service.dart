@@ -71,11 +71,10 @@ class CalendarService {
 
       if (_currentUser == null) {
         if (GoogleSignIn.instance.supportsAuthenticate()) {
-          await GoogleSignIn.instance.authenticate();
+          _currentUser = await GoogleSignIn.instance.authenticate();
         } else {
           return [];
         }
-        await Future.delayed(const Duration(milliseconds: 500));
       }
 
       final user = _currentUser;

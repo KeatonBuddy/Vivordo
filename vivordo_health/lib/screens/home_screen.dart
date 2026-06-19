@@ -167,9 +167,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<List<gcal.Event>> _loadReachableWindowEvents(DateTime todayStart) async {
-    final signedIn = await CalendarService.isSignedIn();
-    if (!signedIn) return [];
-    return CalendarService.getWeekEvents(todayStart);
+    try {
+      final signedIn = await CalendarService.isSignedIn()
+          .timeout(const Duration(seconds: 5), onTimeout: () => false);
+      if (!signedIn) return [];
+
+      return CalendarService.getWeekEvents(todayStart)
+          .timeout(const Duration(seconds: 8), onTimeout: () => <gcal.Event>[]);
+    } catch (e) {
+      debugPrint('Reachable windows calendar load failed: $e');
+      return [];
+    }
   }
 
   Widget _buildScaffold({
@@ -1265,7 +1273,11 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
 
     setState(() => _isLoading = true);
     try {
-      final signedIn = await CalendarService.isSignedIn();
+      final signedIn = await CalendarService.isSignedIn()
+        .timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => false,
+        );
       if (!signedIn) {
         if (!mounted) return;
         setState(() {
@@ -1277,7 +1289,11 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
 
       final dates = _getWeekDates();
       final weekStart = dates.first;
-      final events = await CalendarService.getWeekEvents(weekStart);
+      final events = await CalendarService.getWeekEvents(weekStart)
+            .timeout(
+              const Duration(seconds: 8),
+              onTimeout: () => <gcal.Event>[],
+            );
 
       if (!mounted) return;
       setState(() {
