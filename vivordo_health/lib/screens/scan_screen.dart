@@ -84,8 +84,10 @@ class _ScanScreenState extends State<ScanScreen>
       }
 
       final previousScans = await FirebaseFirestore.instance
-          .collection('heart_rate_scans')
-          .where('userId', isEqualTo: user.uid)
+          .collection('users')
+          .doc(user.uid)
+          .collection('metrics_daily')
+          .where('heart_rate.source', isEqualTo: 'camera_ppg')
           .limit(1)
           .get();
 
@@ -394,53 +396,34 @@ class _ScanScreenState extends State<ScanScreen>
             '${now.month.toString().padLeft(2, '0')}-'
             '${now.day.toString().padLeft(2, '0')}';
 
-        await FirebaseFirestore.instance.collection('heart_rate_scans').add({
-          'userId': user.uid,
-          'bpm': bpm,
-          'signalQuality': signalQuality,
-          'isFirstScan': _isFirstScan,
-          'timestamp': FieldValue.serverTimestamp(),
-          'durationSeconds': _scanDurationSeconds,
-          'source': 'camera_ppg',
-        });
-
-        final heartRateDoc = await FirebaseFirestore.instance
+        final ref = FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
             .collection('metrics_daily')
-            .add({
-          'userId': user.uid,
-          'avg': bpm.toDouble(),
-          'sum': bpm.toDouble(),
-          'dimension': 'vitals',
-          'metricType': 'heart_rate',
-          'period': dayKey,
-          'source': 'camera_ppg',
-          'syncedAt': FieldValue.serverTimestamp(),
-          'tags': _isFirstScan
-              ? ['heart_rate', 'ppg', 'first_scan']
-              : ['heart_rate', 'ppg'],
-          'unit': 'bpm',
-        });
+            .doc(dayKey);
 
-        debugPrint('metrics_daily heart_rate doc created: ${heartRateDoc.id}');
+        await ref.set({
+          'heart_rate': {
+            'avg': bpm.toDouble(),
+            'unit': 'bpm',
+            'dimension': 'vitals',
+            'source': 'camera_ppg',
+            'durationSeconds': _scanDurationSeconds,
+            'isFirstScan': _isFirstScan,
+            'syncedAt': FieldValue.serverTimestamp(),
+          },
+          'signal_quality': {
+            'avg': signalQuality,
+            'unit': 'score',
+            'dimension': 'vitals',
+            'source': 'camera_ppg',
+            'syncedAt': FieldValue.serverTimestamp(),
+          },
+          'date': dayKey,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
 
-        final signalQualityDoc = await FirebaseFirestore.instance
-            .collection('metrics_daily')
-            .add({
-          'userId': user.uid,
-          'avg': signalQuality,
-          'sum': signalQuality,
-          'dimension': 'vitals',
-          'metricType': 'signal_quality',
-          'period': dayKey,
-          'source': 'camera_ppg',
-          'syncedAt': FieldValue.serverTimestamp(),
-          'tags': _isFirstScan
-              ? ['signal_quality', 'ppg', 'first_scan']
-              : ['signal_quality', 'ppg'],
-          'unit': 'score',
-        });
-
-        debugPrint('metrics_daily signal_quality doc created: ${signalQualityDoc.id}');
+        debugPrint('users/${user.uid}/metrics_daily/$dayKey updated with heart_rate scan');
         if (_isFirstScan && mounted) {
           setState(() {
             _isFirstScan = false;
