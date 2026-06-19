@@ -296,11 +296,6 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     return 'APPLE HEALTH CONTEXT\n${jsonEncode(trimmed)}';
   }
 
-  static String _buildStressAvailabilityContext(
-      Map<String, String>? accumulatedSlots) {
-    return 'STRESS SCORE / AVAILABILITY\n${jsonEncode(accumulatedSlots ?? <String, String>{})}';
-  }
-
   static Map<String, dynamic> _cacheBlock(String text) => {
         'type': 'text',
         'text': text,
@@ -389,17 +384,18 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     // fire after only 6 turns (budget: 2500 - 1800 = 700 tokens).  The 6-item
     // cap is the primary defence against runaway histories; this guard catches
     // unexpectedly large health context or user messages.
+    // Cap history once — reused for both the token guard and the prompt builder
+    // so buildDialoguePrompt doesn't duplicate the cap internally.
     final cappedHistory = conversationHistory.length > 6
         ? conversationHistory.sublist(conversationHistory.length - 6)
         : conversationHistory;
+    // Build health context once — reused in token guard and cached system block.
+    final healthCtx = _buildAppleHealthContext(spikeContext);
     final cappedHistoryText = cappedHistory
         .map((t) => '${t['role']}: ${t['text']}')
         .join('\n');
     final estimated = GeminiService.estimateTokens(
-        _dialogueSystem +
-        _buildAppleHealthContext(spikeContext) +
-        cappedHistoryText +
-        userMessage);
+        _dialogueSystem + healthCtx + cappedHistoryText + userMessage);
     if (estimated > kMaxInputTokens) {
       if (kDebugMode) {
         debugPrint('[Claude][dialogue] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
@@ -412,9 +408,12 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       );
     }
 
+    // embedSpikeContext/embedPersona/embedTaskInstructions: false — all three
+    // are already in the cached system blocks (_dialogueSystem + healthCtx),
+    // so omitting them from the user prompt saves ~110–130 uncached tokens/turn.
     final userPrompt = GeminiService.buildDialoguePrompt(
       userMessage: userMessage,
-      conversationHistory: conversationHistory,
+      conversationHistory: cappedHistory,
       spikeContext: spikeContext,
       isOnPredefinedPath: isOnPredefinedPath,
       isInDigression: isInDigression,
@@ -423,17 +422,20 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       pendingQuestionPrompt: pendingQuestionPrompt,
       digressionTopic: digressionTopic,
       accumulatedSlots: accumulatedSlots,
+      embedSpikeContext: false,
+      embedPersona: false,
+      embedTaskInstructions: false,
     );
 
     // Two stable cached blocks per session:
-    //  1. dialogueSystem  — JSON schema instructions (never changes)
-    //  2. appleHealthContext — spike data (stable for the session lifetime)
+    //  1. dialogueSystem  — JSON schema + persona instructions (never changes)
+    //  2. healthCtx       — spike data (stable for the session lifetime)
     // accumulatedSlots are NOT cached because they change every turn and would
     // invalidate the cache.  They are already included in userPrompt via
     // buildDialoguePrompt ("SLOTS SO FAR: ...").
     final cachedSystem = [
       _cacheBlock(_dialogueSystem),
-      _cacheBlock(_buildAppleHealthContext(spikeContext)),
+      _cacheBlock(healthCtx),
     ];
 
     final result = await _fn.call<dynamic>({
