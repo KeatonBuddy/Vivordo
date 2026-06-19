@@ -21,10 +21,20 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "source", "order": "ASCENDING" },
-        { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "sessionDate", "order": "DESCENDING" }
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "insights",
+      "fieldPath": "createdAt",
+      "indexes": [
+        { "queryScope": "COLLECTION", "order": "ASCENDING" },
+        { "queryScope": "COLLECTION", "order": "DESCENDING" },
+        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" },
+        { "queryScope": "COLLECTION_GROUP", "order": "DESCENDING" }
+      ]
+    }
+  ]
 }

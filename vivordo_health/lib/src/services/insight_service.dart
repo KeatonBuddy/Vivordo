@@ -2,11 +2,11 @@
 // insight_service.dart
 //
 // Firestore persistence layer for Panda session insights.
-// Writes to the existing top-level `insights` collection with source="panda"
-// so all insight sources (AI metrics, questionnaires, Panda) stay unified.
+// Writes to users/{userId}/insights with source="panda" so all insight
+// sources (AI metrics, questionnaires, Panda) stay unified per user.
 //
-// COLLECTION:  insights/{autoId}
-// PANDA QUERY: where('userId', ==, uid).where('source', ==, 'panda')
+// COLLECTION:  users/{userId}/insights/{autoId}
+// PANDA QUERY: where('source', ==, 'panda')
 //
 // METHODS:
 //   saveSessionInsight()   — write a completed session's slots + Q->A pairs
@@ -31,10 +31,11 @@ class InsightService {
   final FirebaseFirestore _db;
 
   // Collection helper
-  CollectionReference<Map<String, dynamic>> get _col =>
-      _db.collection('insights');
+  CollectionReference<Map<String, dynamic>> _col(String userId) =>
+      _db.collection('users').doc(userId).collection('insights');
 
-  DocumentReference<Map<String, dynamic>> _doc(String id) => _col.doc(id);
+  DocumentReference<Map<String, dynamic>> _doc(String userId, String id) =>
+      _col(userId).doc(id);
 
   // ===========================================================================
   // saveSessionInsight
@@ -61,7 +62,7 @@ class InsightService {
       labeledAnswers: labeledAnswers,
     );
 
-    final ref = await insight.toFirestore();
+    final ref = await insight.toFirestore(userId);
     insight.id = ref.id;
 
     // Lightweight user-doc summary — fire-and-forget
@@ -101,13 +102,13 @@ class InsightService {
       correctedAt: Timestamp.now(),
     );
 
-    await _doc(insightId).update({
+    await _doc(userId, insightId).update({
       'pandaLabeledAnswers.$questionId': newAnswer,
       'pandaCorrections': FieldValue.arrayUnion([correction.toMap()]),
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    final snap = await _doc(insightId).get();
+    final snap = await _doc(userId, insightId).get();
     return Insights.fromDoc(snap);
   }
 
@@ -125,8 +126,7 @@ class InsightService {
     final hi = Timestamp.fromDate(
         sessionDate.add(const Duration(minutes: 1)));
 
-    final snap = await _col
-        .where('userId',      isEqualTo: userId)
+    final snap = await _col(userId)
         .where('source',      isEqualTo: 'panda')
         .where('sessionDate', isGreaterThanOrEqualTo: lo)
         .where('sessionDate', isLessThanOrEqualTo: hi)
@@ -145,8 +145,7 @@ class InsightService {
     String userId, {
     int limit = 50,
   }) {
-    return _col
-        .where('userId', isEqualTo: userId)
+    return _col(userId)
         .where('source', isEqualTo: 'panda')
         .orderBy('sessionDate', descending: true)
         .limit(limit)
@@ -162,8 +161,7 @@ class InsightService {
     String userId, {
     int limit = 100,
   }) {
-    return _col
-        .where('userId', isEqualTo: userId)
+    return _col(userId)
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots()
@@ -174,8 +172,8 @@ class InsightService {
   // getInsight — fetch a single document by its Firestore ID.
   // ===========================================================================
 
-  Future<Insights?> getInsight(String insightId) async {
-    final snap = await _doc(insightId).get();
+  Future<Insights?> getInsight(String userId, String insightId) async {
+    final snap = await _doc(userId, insightId).get();
     if (!snap.exists) return null;
     return Insights.fromDoc(snap);
   }
@@ -184,8 +182,8 @@ class InsightService {
   // acknowledgeInsight — mark an insight as read by the user.
   // ===========================================================================
 
-  Future<void> acknowledgeInsight(String insightId) async {
-    await _doc(insightId).update({
+  Future<void> acknowledgeInsight(String userId, String insightId) async {
+    await _doc(userId, insightId).update({
       'acknowledged':   true,
       'acknowledgedAt': FieldValue.serverTimestamp(),
       'updatedAt':      FieldValue.serverTimestamp(),
@@ -196,8 +194,8 @@ class InsightService {
   // deleteInsight — permanent deletion for GDPR / user-requested removal.
   // ===========================================================================
 
-  Future<void> deleteInsight(String insightId) async {
-    await _doc(insightId).delete();
+  Future<void> deleteInsight(String userId, String insightId) async {
+    await _doc(userId, insightId).delete();
   }
 
   // ===========================================================================
@@ -220,8 +218,7 @@ class InsightService {
     String userId, {
     int lookback = 10,
   }) async {
-    final snap = await _col
-        .where('userId', isEqualTo: userId)
+    final snap = await _col(userId)
         .where('source', isEqualTo: 'panda')
         .orderBy('sessionDate', descending: true)
         .limit(lookback)
