@@ -30,7 +30,14 @@ class CalendarService {
     _initialized = true;
   }
 
-  static Future<List<gcal.Event>> getWeekEvents(DateTime weekStart) async {
+  static Future<List<gcal.Event>> getWeekEvents(DateTime weekStart) =>
+      getEventsBetween(weekStart, weekStart.add(const Duration(days: 7)));
+
+  /// Returns the user's primary-calendar events between [start] and [end]
+  /// (expanded recurrences, ordered by start time). Returns [] when the user
+  /// hasn't connected Google Calendar or on any auth/network error.
+  static Future<List<gcal.Event>> getEventsBetween(
+      DateTime start, DateTime end) async {
     try {
       await initialize();
 
@@ -48,12 +55,11 @@ class CalendarService {
 
       final client = authorization.authClient(scopes: scopes);
       final calendarApi = gcal.CalendarApi(client);
-      final weekEnd = weekStart.add(const Duration(days: 7));
 
       final events = await calendarApi.events.list(
         'primary',
-        timeMin: weekStart.toUtc(),
-        timeMax: weekEnd.toUtc(),
+        timeMin: start.toUtc(),
+        timeMax: end.toUtc(),
         singleEvents: true,
         orderBy: 'startTime',
       );

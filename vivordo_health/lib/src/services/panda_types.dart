@@ -7,6 +7,7 @@ class PandaSessionData {
     required this.questions,
     required this.overallNotes,
     required this.rawSpikes,
+    this.scheduleContext,
   });
 
   final String openerMessage;
@@ -15,6 +16,11 @@ class PandaSessionData {
 
   /// Raw spike JSON kept so the dialogue LLM has health data for context.
   final List<Map<String, dynamic>> rawSpikes;
+
+  /// Per-day Google Calendar digest for the next 7 days (local time), passed
+  /// into each dialogue turn so Panda can answer availability / "when am I
+  /// mentally free" planning questions. Null when Calendar isn't connected.
+  final String? scheduleContext;
 }
 
 class PandaQuestion {

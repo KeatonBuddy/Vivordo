@@ -148,7 +148,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
   // Dialogue system prompt — must stay above 1,024 tokens (Anthropic cache min)
   // so the cache fires on turn 2+ of every session.
   static const _dialogueSystem =
-      'You are Panda 🐼, a warm, empathetic wellness companion in the Vivordo app.\n'
+      'You are Robot, a warm, empathetic wellness companion in the Vivordo app.\n'
       'Your role is to help users understand their stress patterns through structured\n'
       'but caring conversations grounded in their real Apple Health data.\n'
       '\n'
@@ -213,6 +213,11 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '• Never ask more than one question per turn.\n'
       '• Reference the Apple Health data (heart rate, HRV, steps) when relevant —\n'
       '  it makes insights feel grounded rather than generic.\n'
+      '• Availability/planning asks ("when am I free / mentally available"): when a\n'
+      '  SCHEDULE block is provided, use it to find open windows, then weigh them\n'
+      '  against the stress/energy patterns in APPLE HEALTH CONTEXT to recommend\n'
+      '  the best time(s). Name a specific day + time range. If no SCHEDULE block is\n'
+      '  present, tell them their calendar isn\'t connected. Keep intent "chitchat".\n'
       '\n'
       'SLOT EXTRACTION RULES\n'
       'Extract values from what the user says in THIS turn only. Use "" for any\n'
@@ -377,6 +382,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     String? pendingQuestionPrompt,
     String? digressionTopic,
     Map<String, String>? accumulatedSlots,
+    String? scheduleContext,
   }) async {
     // Token guard on the CAPPED payload — estimate what's actually sent to the
     // API after buildDialoguePrompt applies its 6-item history cap.
@@ -391,11 +397,16 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
         : conversationHistory;
     // Build health context once — reused in token guard and cached system block.
     final healthCtx = _buildAppleHealthContext(spikeContext);
+    // Schedule digest is stable for the session → goes in a cached system block.
+    final scheduleCtx = (scheduleContext != null && scheduleContext.isNotEmpty)
+        ? 'SCHEDULE (next 7 days, local time):\n$scheduleContext'
+        : null;
     final cappedHistoryText = cappedHistory
         .map((t) => '${t['role']}: ${t['text']}')
         .join('\n');
     final estimated = GeminiService.estimateTokens(
-        _dialogueSystem + healthCtx + cappedHistoryText + userMessage);
+        _dialogueSystem + healthCtx + (scheduleCtx ?? '') +
+        cappedHistoryText + userMessage);
     if (estimated > kMaxInputTokens) {
       if (kDebugMode) {
         debugPrint('[Claude][dialogue] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
@@ -404,7 +415,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
         intent: PandaIntent.chitchat,
         message: "We've covered a lot of ground! Our conversation is getting "
             "quite long — let's wrap up here and you can start a fresh session "
-            "anytime 💜",
+            "anytime",
       );
     }
 
@@ -425,17 +436,20 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       embedSpikeContext: false,
       embedPersona: false,
       embedTaskInstructions: false,
+      embedScheduleContext: false,
     );
 
-    // Two stable cached blocks per session:
+    // Stable cached blocks per session:
     //  1. dialogueSystem  — JSON schema + persona instructions (never changes)
     //  2. healthCtx       — spike data (stable for the session lifetime)
+    //  3. scheduleCtx     — calendar digest (stable for the session lifetime)
     // accumulatedSlots are NOT cached because they change every turn and would
     // invalidate the cache.  They are already included in userPrompt via
     // buildDialoguePrompt ("SLOTS SO FAR: ...").
     final cachedSystem = [
       _cacheBlock(_dialogueSystem),
       _cacheBlock(healthCtx),
+      if (scheduleCtx != null) _cacheBlock(scheduleCtx),
     ];
 
     final result = await _fn.call<dynamic>({

@@ -53,12 +53,14 @@ class InsightService {
     required DateTime sessionDate,
     required Map<String, String> sessionSlots,
     required Map<String, String> labeledAnswers,
+    List<Map<String, String>>? conversation,
   }) async {
     final insight = Insights.fromPandaSession(
       userId:         userId,
       sessionDate:    sessionDate,
       sessionSlots:   sessionSlots,
       labeledAnswers: labeledAnswers,
+      conversation:   conversation,
     );
 
     final ref = await insight.toFirestore();
@@ -213,6 +215,7 @@ class InsightService {
   //     'top_coping':    ['box breathing', ...],
   //     'avg_intensity': 'medium',
   //     'session_count': 12,
+  //     'recent_summaries': ['work deadline, felt anxious. User: "..."', ...],
   //   }
   // ===========================================================================
 
@@ -243,12 +246,22 @@ class InsightService {
       _inc(intensityCounts, s.intensity);
     }
 
+    // Most recent session recaps (newest first) — chat + context fed back into
+    // the next session's user context for cross-session continuity.
+    final recentSummaries = insights
+        .map((i) => i.summary)
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .take(2)
+        .toList();
+
     return {
       'top_stressors': _topN(stressorCounts,  3),
       'top_emotions':  _topN(emotionCounts,   3),
       'top_coping':    _topN(copingCounts,    3),
       'avg_intensity': _modal(intensityCounts),
       'session_count': insights.length,
+      'recent_summaries': recentSummaries,
     };
   }
 

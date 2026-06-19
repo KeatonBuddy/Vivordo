@@ -33,6 +33,10 @@ abstract class AIService {
   });
 
   /// Process a single dialogue turn.
+  ///
+  /// [scheduleContext] — optional per-day Google Calendar digest for the next
+  /// 7 days (from PandaSessionData.scheduleContext) so Panda can answer
+  /// availability / planning questions. Null when Calendar isn't connected.
   Future<PandaTurnReply> processTurn({
     required String userMessage,
     required List<Map<String, String>> conversationHistory,
@@ -44,5 +48,6 @@ abstract class AIService {
     String? pendingQuestionPrompt,
     String? digressionTopic,
     Map<String, String>? accumulatedSlots,
+    String? scheduleContext,
   });
 }

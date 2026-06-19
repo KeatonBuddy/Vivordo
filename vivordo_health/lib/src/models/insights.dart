@@ -162,6 +162,7 @@ class Insights {
     this.pandaSlots,
     this.pandaLabeledAnswers,
     this.pandaCorrections,
+    this.summary,
   });
 
   // ── Core fields (all sources) ─────────────────────────────────────────────
@@ -210,6 +211,11 @@ class Insights {
   /// Append-only audit trail of corrections made from the History tab.
   List<PandaCorrection>? pandaCorrections;
 
+  /// Compact natural-language recap of the session (chat + extracted context).
+  /// Bounded to ~160 chars so it is cheap to feed back into future sessions'
+  /// user context (see GeminiService.fetchRealUserPayload + aggregateSummary).
+  String? summary;
+
   // ── Factories ─────────────────────────────────────────────────────────────
 
   /// Build an Insights document from a completed Panda session.
@@ -220,6 +226,7 @@ class Insights {
     required DateTime sessionDate,
     required Map<String, String> sessionSlots,
     required Map<String, String> labeledAnswers,
+    List<Map<String, String>>? conversation,
   }) {
     final slots = PandaSlots.fromSessionSlots(sessionSlots);
     final now = Timestamp.now();
@@ -264,6 +271,7 @@ class Insights {
       pandaSlots:           slots,
       pandaLabeledAnswers:  Map<String, String>.from(labeledAnswers),
       pandaCorrections:     [],
+      summary:              _buildSessionSummary(slots, labeledAnswers, conversation),
       acknowledged:         false,
       createdAt:            now,
       updatedAt:            now,
@@ -297,6 +305,8 @@ class Insights {
         'pandaLabeledAnswers':    pandaLabeledAnswers,
       if (pandaCorrections != null && pandaCorrections!.isNotEmpty)
         'pandaCorrections':       pandaCorrections!.map((c) => c.toMap()).toList(),
+      if (summary != null && summary!.isNotEmpty)
+        'summary':                summary,
     };
   }
 
@@ -347,6 +357,7 @@ class Insights {
       pandaSlots:               slots,
       pandaLabeledAnswers:      labeledAnswers,
       pandaCorrections:         corrections,
+      summary:                  map['summary']       as String?,
     );
   }
 
@@ -367,4 +378,47 @@ class Insights {
 
   static String _capitalise(String s) =>
       s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
+  /// Builds a compact, deterministic recap combining the extracted context
+  /// (stressor/emotion/intensity/coping) with a digest of the user's own
+  /// words from the chat. Bounded to ~160 chars so it stays cheap to feed back
+  /// into future sessions. Returns null when there is nothing worth recording.
+  static String? _buildSessionSummary(
+    PandaSlots slots,
+    Map<String, String> labeledAnswers,
+    List<Map<String, String>>? conversation,
+  ) {
+    final ctx = <String>[];
+    if (slots.stressor?.isNotEmpty == true)       ctx.add(slots.stressor!);
+    if (slots.emotion?.isNotEmpty == true)        ctx.add('felt ${slots.emotion}');
+    if (slots.intensity?.isNotEmpty == true)      ctx.add('${slots.intensity} intensity');
+    if (slots.copingStrategy?.isNotEmpty == true) ctx.add('tried ${slots.copingStrategy}');
+
+    // The user's own words — the "chat" part. Keep the last two user turns.
+    final userWords = (conversation ?? const <Map<String, String>>[])
+        .where((t) => t['role'] == 'user')
+        .map((t) => t['text']?.trim() ?? '')
+        .where((t) => t.isNotEmpty)
+        .toList();
+    final recentUserWords =
+        userWords.length > 2 ? userWords.sublist(userWords.length - 2) : userWords;
+
+    final parts = <String>[];
+    if (ctx.isNotEmpty) parts.add(ctx.join(', '));
+    if (recentUserWords.isNotEmpty) {
+      parts.add('User: "${recentUserWords.join('" / "')}"');
+    }
+    // Fall back to labeled answers when neither slots nor chat were captured.
+    if (parts.isEmpty && labeledAnswers.isNotEmpty) {
+      final answers =
+          labeledAnswers.values.where((v) => v.isNotEmpty).take(2).join('; ');
+      if (answers.isNotEmpty) parts.add(answers);
+    }
+
+    if (parts.isEmpty) return null;
+    return _truncate(parts.join('. '), 160);
+  }
+
+  static String _truncate(String s, int max) =>
+      s.length <= max ? s : '${s.substring(0, max - 1).trimRight()}…';
 }

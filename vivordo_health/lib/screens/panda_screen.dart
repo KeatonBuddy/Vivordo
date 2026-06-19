@@ -476,6 +476,7 @@ class _PandaScreenState extends State<PandaScreen>
             pendingQuestionPrompt: null,
             digressionTopic: null,
             accumulatedSlots: Map<String, String>.from(_sessionSlots),
+            scheduleContext: session.scheduleContext,
           )
           .timeout(const Duration(seconds: 35));
 
@@ -593,6 +594,7 @@ class _PandaScreenState extends State<PandaScreen>
                 ? _digressionStack.last.topic
                 : null,
             accumulatedSlots: Map<String, String>.from(_sessionSlots),
+            scheduleContext: session.scheduleContext,
           )
           .timeout(const Duration(seconds: 35));
 
@@ -753,12 +755,19 @@ class _PandaScreenState extends State<PandaScreen>
   Future<void> _persistCompletedSession() async {
     final resolvedUserId = _currentUserId;
     final labeledAnswers = {..._spikeAnswers, ..._categoryInsights};
+    final conversation = _turns
+        .map((t) => {
+              'role': t.role == _Role.user ? 'user' : 'assistant',
+              'text': t.text,
+            })
+        .toList();
     try {
       final insight = await _insightSvc.saveSessionInsight(
         userId: resolvedUserId,
         sessionDate: _sessionStart ?? DateTime.now(),
         sessionSlots: Map<String, String>.from(_sessionSlots),
         labeledAnswers: labeledAnswers,
+        conversation: conversation,
       );
       if (mounted) setState(() => _currentInsightId = insight.id);
     } catch (e) {

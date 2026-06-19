@@ -2,10 +2,13 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
+import 'package:googleapis/calendar/v3.dart' as gcal;
 
 import '../demo/demo_user_repository.dart';
 import '../demo/demo_user_data.dart';
 import 'ai_service.dart';
+import 'calendar_service.dart';
+import 'insight_service.dart';
 
 export 'ai_service.dart' show kMaxInputTokens, kMaxOutputTokensChat, kMaxOutputTokensSpike;
 
@@ -402,6 +405,7 @@ RULES:
     String? pendingQuestionPrompt,
     String? digressionTopic,
     Map<String, String>? accumulatedSlots,
+    String? scheduleContext,
   }) async {
     // Token guard on RAW inputs — fires before buildDialoguePrompt caps history
     // to 6 items, so a 50-turn history is still caught here as a safety net.
@@ -409,7 +413,8 @@ RULES:
         .map((t) => '${t['role']}: ${t['text']}')
         .join('\n');
     final estimated = estimateTokens(
-        rawHistoryText + userMessage + jsonEncode(trimSpikeContext(spikeContext)));
+        rawHistoryText + userMessage +
+        jsonEncode(trimSpikeContext(spikeContext)) + (scheduleContext ?? ''));
     if (estimated > kMaxInputTokens) {
       if (kDebugMode) {
         debugPrint('[Gemini][dialogue] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
@@ -433,6 +438,7 @@ RULES:
       pendingQuestionPrompt: pendingQuestionPrompt,
       digressionTopic: digressionTopic,
       accumulatedSlots: accumulatedSlots,
+      scheduleContext: scheduleContext,
     );
 
     final response =
@@ -453,7 +459,14 @@ RULES:
   // fields (heart_rate, mood, sleep, steps, stress, wellness, hrv).
   //
   // Also fetches users/{userId}/preferences and
-  // users/{userId}/questionaire_responses for compact user context.
+  // users/{userId}/questionaire_responses for compact user context, plus an
+  // aggregate of past Panda sessions from the top-level `insights` collection
+  // (recurring stressors/emotions/coping) so the model has cross-session memory.
+  //
+  // When the user has connected Google Calendar (CalendarService), their events
+  // for the analysis window are folded in as `events` — so the spike-correlation
+  // engine can tie HR spikes to real meetings — plus a compact `upcoming_events`
+  // list for planning context. Degrades silently when not connected.
   //
   // Returns null when the user has no data yet (caller shows empty state).
   // =========================================================================
@@ -478,10 +491,29 @@ RULES:
         .toList();
     final prefFuture = userRef.collection('preferences').get();
     final questFuture = userRef.collection('questionaire_responses').get();
+    // Recurring patterns from past Panda sessions (top-level `insights`).
+    // Degrade gracefully if the query fails (e.g. missing composite index) so a
+    // first-time user with no insight history never blocks session init.
+    final insightsFuture = InsightService(firestore: db)
+        .aggregateSummary(userId)
+        .catchError((Object _) => <String, dynamic>{});
+    // Google Calendar spanning the past metrics window AND the upcoming week
+    // (today-6 → today+8): the past half drives spike correlation + recent
+    // events, the future half feeds the schedule digest for "when am I free /
+    // mentally available next week" planning questions in the dialogue.
+    // Returns [] when not connected; .catchError guards any auth/network error.
+    final dayStart = DateTime(now.year, now.month, now.day);
+    final calendarFuture = CalendarService.getEventsBetween(
+            dayStart.subtract(const Duration(days: 6)),
+            dayStart.add(const Duration(days: 8)))
+        .timeout(const Duration(seconds: 5), onTimeout: () => <gcal.Event>[])
+        .catchError((Object _) => <gcal.Event>[]);
 
     final metricSnaps = await Future.wait(metricFutures);
     final prefSnap = await prefFuture;
     final questSnap = await questFuture;
+    final insightsAgg = await insightsFuture;
+    final calendarEvents = await calendarFuture;
 
     // Build daily data map: dateStr → {field → value} from the single day doc
     final dailyData = <String, Map<String, dynamic>>{};
@@ -555,6 +587,60 @@ RULES:
     final windowStart = DateTime.parse('${sortedDates.last}T00:00:00');
     final windowEnd = DateTime.parse('${latestDate}T23:59:59');
 
+    // Map calendar events to the {time, type, detail} shape the spike-correlation
+    // engine (_eventsNear) and the analysis prompt expect. Skip all-day events
+    // (no dateTime) since they can't be aligned to an HR spike.
+    final calendarMapped = <Map<String, dynamic>>[];
+    for (final e in calendarEvents) {
+      final startDt = e.start?.dateTime;
+      if (startDt == null) continue;
+      final title = (e.summary ?? '').trim();
+      calendarMapped.add({
+        'time': startDt.toUtc().toIso8601String(),
+        'type': 'calendar',
+        'detail': title.isEmpty ? 'event' : title,
+      });
+    }
+
+    // Compact "date HH:mm — title" line for a calendar event (local time).
+    String fmtEvent(DateTime startUtc, String? summary) {
+      final local = startUtc.toLocal();
+      final hh = local.hour.toString().padLeft(2, '0');
+      final mm = local.minute.toString().padLeft(2, '0');
+      final title = (summary ?? 'event').trim();
+      return '${_fmtDate(local)} $hh:$mm — ${title.isEmpty ? 'event' : title}';
+    }
+
+    // Two compact digests surfaced in user_profile so calendar context is
+    // guaranteed-visible regardless of metric-sample granularity (the
+    // spike↔event correlation in `events` only fires with intraday samples):
+    //   • recent_events   — what happened during the analysis window (past)
+    //   • upcoming_events  — what's coming up, for planning
+    // Events come back ascending by start time (orderBy: 'startTime').
+    final recentEvents = <String>[];
+    final upcomingEvents = <String>[];
+    for (final e in calendarEvents) {
+      final startDt = e.start?.dateTime;
+      if (startDt == null) continue;
+      if (startDt.isAfter(now)) {
+        if (upcomingEvents.length < 5) {
+          upcomingEvents.add(fmtEvent(startDt, e.summary));
+        }
+      } else if (!startDt.isBefore(windowStart)) {
+        recentEvents.add(fmtEvent(startDt, e.summary));
+      }
+    }
+    // Keep the 5 most recent past events within the analysis window.
+    if (recentEvents.length > 5) {
+      recentEvents.removeRange(0, recentEvents.length - 5);
+    }
+
+    // Per-day schedule digest for the next 7 days (incl. today) with start–end
+    // times, so the dialogue LLM can find free windows and reason about mental
+    // availability. Free days are listed explicitly so gaps are obvious.
+    final upcomingSchedule =
+        _buildScheduleDigest(calendarEvents, dayStart);
+
     // Compact user setup from preferences + questionnaire (scalar values only,
     // max 10 fields) — keeps token overhead under ~100 tokens.
     final userSetup = <String, dynamic>{};
@@ -572,6 +658,28 @@ RULES:
       }
     }
 
+    // Compact cross-session memory from the `insights` aggregate (only non-empty
+    // signals) — keeps token overhead to ~30–50 tokens.
+    final insightsSummary = <String, dynamic>{};
+    if ((insightsAgg['session_count'] as int? ?? 0) > 0) {
+      for (final key in const ['top_stressors', 'top_emotions', 'top_coping']) {
+        final list =
+            (insightsAgg[key] as List?)?.whereType<String>().toList() ?? [];
+        if (list.isNotEmpty) insightsSummary[key] = list;
+      }
+      final intensity = insightsAgg['avg_intensity'] as String?;
+      if (intensity != null && intensity.isNotEmpty) {
+        insightsSummary['typical_intensity'] = intensity;
+      }
+      final recentSummaries =
+          (insightsAgg['recent_summaries'] as List?)?.whereType<String>().toList() ??
+              const [];
+      if (recentSummaries.isNotEmpty) {
+        insightsSummary['recent_sessions'] = recentSummaries;
+      }
+      insightsSummary['past_session_count'] = insightsAgg['session_count'];
+    }
+
     return {
       'user_profile': {
         'timezone': 'UTC',
@@ -579,13 +687,17 @@ RULES:
         'resting_hr_typical': baselineHr,
         'hrv_rmssd_typical': baselineHrv,
         if (userSetup.isNotEmpty) 'user_setup': userSetup,
+        if (insightsSummary.isNotEmpty) 'insights_summary': insightsSummary,
+        if (recentEvents.isNotEmpty) 'recent_events': recentEvents,
+        if (upcomingEvents.isNotEmpty) 'upcoming_events': upcomingEvents,
       },
       'data_window': {
         'start': windowStart.toIso8601String(),
         'end': windowEnd.toIso8601String(),
       },
       'samples_5min': samplesChronological,
-      'events': <Map<String, dynamic>>[],
+      'events': calendarMapped,
+      if (upcomingSchedule.isNotEmpty) 'upcoming_schedule': upcomingSchedule,
       if (todaySleepHrs > 0)
         'sleep_summary': {
           'total_hours': todaySleepHrs,
@@ -620,6 +732,59 @@ RULES:
   static String _fmtDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
+
+  static const _weekdayAbbr = [
+    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+  ];
+
+  /// Builds a per-day schedule digest for the next 7 days (from [dayStart],
+  /// inclusive) in local time, e.g.:
+  ///   Mon 2026-06-22: 09:00–10:00 Standup; 14:00–15:30 Project review
+  ///   Tue 2026-06-23: (no events)
+  /// Each day is listed so free days are explicit. Returns '' when there are
+  /// no timed events in the window (nothing useful to plan around).
+  static String _buildScheduleDigest(
+      List<gcal.Event> events, DateTime dayStart) {
+    final windowEnd = dayStart.add(const Duration(days: 7));
+
+    // Group timed events by local calendar day.
+    final byDay = <String, List<String>>{};
+    var hasAny = false;
+    for (final e in events) {
+      final startDt = e.start?.dateTime;
+      if (startDt == null) continue;
+      final localStart = startDt.toLocal();
+      if (localStart.isBefore(dayStart) || !localStart.isBefore(windowEnd)) {
+        continue;
+      }
+      final dayKey = _fmtDate(localStart);
+      final startHm = '${localStart.hour.toString().padLeft(2, '0')}:'
+          '${localStart.minute.toString().padLeft(2, '0')}';
+      final endLocal = e.end?.dateTime?.toLocal();
+      final endHm = endLocal == null
+          ? ''
+          : '–${endLocal.hour.toString().padLeft(2, '0')}:'
+              '${endLocal.minute.toString().padLeft(2, '0')}';
+      final title = (e.summary ?? 'event').trim();
+      (byDay[dayKey] ??= [])
+          .add('$startHm$endHm ${title.isEmpty ? 'event' : title}');
+      hasAny = true;
+    }
+
+    if (!hasAny) return '';
+
+    final lines = <String>[];
+    for (int i = 0; i < 7; i++) {
+      final day = dayStart.add(Duration(days: i));
+      final key = _fmtDate(day);
+      final label = '${_weekdayAbbr[day.weekday - 1]} $key';
+      final dayEvents = byDay[key];
+      lines.add(dayEvents == null || dayEvents.isEmpty
+          ? '$label: (no events)'
+          : '$label: ${dayEvents.join('; ')}');
+    }
+    return lines.join('\n');
+  }
 
   // =========================================================================
   // Prompt builders  (public static — reused by ClaudeService)
@@ -658,6 +823,11 @@ DATA: ${jsonEncode(compact)}
   ///
   /// [embedTaskInstructions] — pass false when the TASKS section is already
   /// in a cached system block, saving ~90 uncached tokens per turn.
+  ///
+  /// [scheduleContext] — optional per-day calendar digest (next 7 days). When
+  /// present and [embedScheduleContext] is true, it is included so Panda can
+  /// answer availability questions. ClaudeService passes embedScheduleContext
+  /// false and puts the (session-stable) schedule in a cached system block.
   static String buildDialoguePrompt({
     required String userMessage,
     required List<Map<String, String>> conversationHistory,
@@ -669,9 +839,11 @@ DATA: ${jsonEncode(compact)}
     String? pendingQuestionPrompt,
     String? digressionTopic,
     Map<String, String>? accumulatedSlots,
+    String? scheduleContext,
     bool embedSpikeContext = true,
     bool embedPersona = true,
     bool embedTaskInstructions = true,
+    bool embedScheduleContext = true,
   }) {
     final cappedHistory = conversationHistory.length > 6
         ? conversationHistory.sublist(conversationHistory.length - 6)
@@ -705,6 +877,11 @@ DATA: ${jsonEncode(compact)}
         ? 'SPIKE CONTEXT: ${jsonEncode(trimSpikeContext(spikeContext))}\n\n'
         : '';
 
+    final scheduleLine =
+        (embedScheduleContext && scheduleContext != null && scheduleContext.isNotEmpty)
+            ? 'SCHEDULE (next 7 days, local time):\n$scheduleContext\n\n'
+            : '';
+
     final personaLine = embedPersona
         ? 'You are Panda 🐼, a warm, empathetic wellness companion in Vivordo.\n\n'
         : '';
@@ -720,6 +897,11 @@ DATA: ${jsonEncode(compact)}
           '   • intent=="recommend": one warm intro sentence; the app shows the rec cards.\n'
           '   • intent=="want_deeper_answer": include one probing follow-up question.\n'
           '   • Digression depth ≥ 3: warmly begin wrapping up the side conversation.\n'
+          '   • Availability/planning asks ("when am I free / mentally available"):\n'
+          '     use SCHEDULE to find open windows, then weigh them against the\n'
+          '     user\'s stress/energy patterns (spikes, intensity) to suggest the\n'
+          '     best time(s). Name specific day + time range. If SCHEDULE is absent,\n'
+          '     say their calendar isn\'t connected. intent stays "chitchat".\n'
           '   • Tone: warm, peer-like. Never clinical. No diagnoses; use "may be related to".\n'
           '\n'
           '3. DEPTH_FOLLOW_UP: one open-ended probe (intent=="want_deeper_answer" only).\n'
@@ -735,7 +917,7 @@ DATA: ${jsonEncode(compact)}
           '   sleep_quality, social_context, other. Use "" for anything not mentioned.\n'
         : '';
 
-    return '$personaLine$pathCtx\n$spikeCtxLine$slotsCtx\n\nCONVERSATION:\n$historyText\n\nUSER: "$userMessage"$tasksSection';
+    return '$personaLine$pathCtx\n$spikeCtxLine$scheduleLine$slotsCtx\n\nCONVERSATION:\n$historyText\n\nUSER: "$userMessage"$tasksSection';
   }
 
   // =========================================================================
@@ -773,6 +955,9 @@ DATA: ${jsonEncode(compact)}
     }
 
     final userSetup = profile['user_setup'] as Map?;
+    final insightsSummary = profile['insights_summary'] as Map?;
+    final recentEvents = profile['recent_events'] as List?;
+    final upcomingEvents = profile['upcoming_events'] as List?;
     return {
       'user_profile': {
         'timezone': profile['timezone'] ?? 'UTC',
@@ -781,6 +966,12 @@ DATA: ${jsonEncode(compact)}
         'hrv_rmssd_typical': baselineHrv,
         if (userSetup != null && userSetup.isNotEmpty)
           'user_setup': userSetup,
+        if (insightsSummary != null && insightsSummary.isNotEmpty)
+          'insights_summary': insightsSummary,
+        if (recentEvents != null && recentEvents.isNotEmpty)
+          'recent_events': recentEvents,
+        if (upcomingEvents != null && upcomingEvents.isNotEmpty)
+          'upcoming_events': upcomingEvents,
       },
       'data_window': window,
       'user_context': raw['user_context'] ?? '',
@@ -803,10 +994,15 @@ DATA: ${jsonEncode(compact)}
             .split(' ')
             .first;
 
+    // Schedule digest travels with the payload — surface it on every return
+    // path so the dialogue turn always has calendar context when available.
+    final scheduleContext = rawSample['upcoming_schedule'] as String?;
+
     final obj = _extractJson(raw);
 
     if (obj == null) {
-      return _fallbackSession(userName, 'earlier today', []);
+      return _fallbackSession(userName, 'earlier today', [],
+          scheduleContext: scheduleContext);
     }
 
     final overallNotes =
@@ -833,6 +1029,7 @@ DATA: ${jsonEncode(compact)}
         questions: [],
         overallNotes: overallNotes,
         rawSpikes: rawSpikes,
+        scheduleContext: scheduleContext,
       );
     }
 
@@ -884,7 +1081,7 @@ DATA: ${jsonEncode(compact)}
 
     if (questions.isEmpty) {
       return _fallbackSession(userName, timePhrase, rawSpikes,
-          notes: overallNotes);
+          notes: overallNotes, scheduleContext: scheduleContext);
     }
 
     return PandaSessionData(
@@ -892,6 +1089,7 @@ DATA: ${jsonEncode(compact)}
       questions: questions,
       overallNotes: overallNotes,
       rawSpikes: rawSpikes,
+      scheduleContext: scheduleContext,
     );
   }
 
@@ -1044,7 +1242,7 @@ DATA: ${jsonEncode(compact)}
 
   static PandaSessionData _fallbackSession(
       String userName, String timePhrase, List<Map<String, dynamic>> spikes,
-      {String notes = ''}) {
+      {String notes = '', String? scheduleContext}) {
     return PandaSessionData(
       openerMessage:
           'Hey $userName! 🌿 Ive pulled up your health data for today. '
@@ -1069,6 +1267,7 @@ DATA: ${jsonEncode(compact)}
       ],
       overallNotes: notes,
       rawSpikes: spikes,
+      scheduleContext: scheduleContext,
     );
   }
 
