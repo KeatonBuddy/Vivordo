@@ -4,8 +4,8 @@
 // Unified Insights model for the Vivordo app.
 //
 // All insight sources (AI metric analysis, Panda sessions, questionnaire
-// processing, goal tracking) write to the same top-level `insights` collection
-// and are distinguished by the `source` field.
+// processing, goal tracking) write to the same `insights` subcollection,
+// nested under the owning user, and are distinguished by the `source` field.
 //
 // PANDA EXTENSION:
 //   When source == "panda", the optional panda* fields are populated:
@@ -13,8 +13,7 @@
 //     • pandaLabeledAnswers — structured Q→A pairs from the predefined path
 //     • pandaCorrections    — append-only audit trail of user edits
 //
-// Firestore path:  insights/{autoId}
-// Query by user:   where('userId', isEqualTo: uid)
+// Firestore path:  users/{userId}/insights/{autoId}
 // Query by source: where('source', isEqualTo: 'panda')
 //
 // =============================================================================
@@ -370,8 +369,13 @@ class Insights {
 
   // ── Firestore write (original API preserved) ───────────────────────────────
 
-  Future<DocumentReference<Map<String, dynamic>>> toFirestore() async {
-    return FirebaseFirestore.instance.collection('insights').add(toMap());
+  Future<DocumentReference<Map<String, dynamic>>> toFirestore(
+      String userId) async {
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('insights')
+        .add(toMap());
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

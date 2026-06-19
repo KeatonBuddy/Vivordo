@@ -4,7 +4,9 @@
       "Bash(flutter analyze *)",
       "Bash(firebase firestore:rules:get)",
       "Bash(dart analyze *)",
-      "Bash(grep -rn *)"
+      "Bash(grep -rn *)",
+      "Bash(npx eslint *)",
+      "Bash(node --check index.js)"
     ]
   }
 }
