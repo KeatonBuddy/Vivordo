@@ -457,41 +457,25 @@ RULES:
       String userId) async {
     final db = FirebaseFirestore.instance;
     final now = DateTime.now();
-    // Keys match what HealthService._writeDataPoints writes to metrics_daily.
-    // heart_rate_scans is also tried for backwards compat with older synced data.
-    const metricTypes = [
-      'heart_rate',
-      'heart_rate_scans',
-      'resting_heart_rate',
-      'hrv',
-      'steps',
-      'sleep',
-    ];
 
-    final tags = <(String, String)>[];
-    final fetches = <Future<DocumentSnapshot<Map<String, dynamic>>>>[];
-    for (int daysBack = 0; daysBack < 7; daysBack++) {
-      final day = now.subtract(Duration(days: daysBack));
-      final dateStr = _fmtDate(day);
-      for (final metric in metricTypes) {
-        tags.add((dateStr, metric));
-        fetches.add(db
-            .collection('metrics_daily')
-            .doc('${userId}_${metric}_$dateStr')
-            .get());
-      }
-    }
+    // Each day's metrics live in a single merged doc at
+    // users/{userId}/metrics_daily/{YYYY-MM-DD}, keyed by metric type
+    // (e.g. 'heart_rate', 'hrv', 'steps', 'sleep') — see MetricsService._addMetric,
+    // HealthService._writeDataPoints and ScanScreen._saveToFirestore.
+    final dateStrs = List.generate(
+        7, (daysBack) => _fmtDate(now.subtract(Duration(days: daysBack))));
+    final snaps = await Future.wait(dateStrs.map((dateStr) => db
+        .collection('users')
+        .doc(userId)
+        .collection('metrics_daily')
+        .doc(dateStr)
+        .get()));
 
-    final snaps = await Future.wait(fetches);
-
-    final dailyData = <String, Map<String, Map<String, dynamic>>>{};
-    for (int i = 0; i < tags.length; i++) {
-      final snap = snaps[i];
-      if (!snap.exists) continue;
-      final data = snap.data();
+    final dailyData = <String, Map<String, dynamic>>{};
+    for (int i = 0; i < dateStrs.length; i++) {
+      final data = snaps[i].data();
       if (data == null) continue;
-      final (dateStr, metric) = tags[i];
-      dailyData.putIfAbsent(dateStr, () => {})[metric] = data;
+      dailyData[dateStrs[i]] = data;
     }
 
     if (dailyData.isEmpty) return null;
@@ -500,8 +484,7 @@ RULES:
     final baselineHr = dailyData.values
             .map((d) =>
                 (d['resting_heart_rate']?['avg'] as num?)?.toDouble() ??
-                (d['heart_rate']?['avg'] as num?)?.toDouble() ??
-                (d['heart_rate_scans']?['avg'] as num?)?.toDouble())
+                (d['heart_rate']?['avg'] as num?)?.toDouble())
             .whereType<double>()
             .firstOrNull ??
         65.0;
@@ -534,9 +517,7 @@ RULES:
     final samplesChronological = sortedDates.reversed.map((dateStr) {
       final d = dailyData[dateStr]!;
       final hrMax = (d['heart_rate']?['max'] as num?)?.toDouble() ??
-          (d['heart_rate_scans']?['max'] as num?)?.toDouble() ??
           (d['heart_rate']?['avg'] as num?)?.toDouble() ??
-          (d['heart_rate_scans']?['avg'] as num?)?.toDouble() ??
           baselineHr;
       final hrv = (d['hrv']?['avg'] as num?)?.toDouble() ?? baselineHrv;
       final steps = (d['steps']?['sum'] as num?)?.toDouble() ?? 0.0;
