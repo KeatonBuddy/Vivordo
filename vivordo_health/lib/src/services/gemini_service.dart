@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_ai/firebase_ai.dart';
@@ -10,7 +11,12 @@ import 'ai_service.dart';
 import 'calendar_service.dart';
 import 'insight_service.dart';
 
-export 'ai_service.dart' show kMaxInputTokens, kMaxOutputTokensChat, kMaxOutputTokensSpike;
+export 'ai_service.dart'
+    show
+        kMaxInputTokens,
+        kMaxOutputTokensChat,
+        kMaxOutputTokensSpike,
+        kMaxOutputTokensSummary;
 
 export 'panda_types.dart';
 
@@ -69,10 +75,20 @@ class GeminiService implements AIService {
             temperature: 0.5,
             maxOutputTokens: kMaxOutputTokensChat,
           ),
+        ),
+        // Plain-text model (no JSON schema) for the end-of-session recap.
+        _summaryModel = FirebaseAI.googleAI().generativeModel(
+          model: 'gemini-2.5-flash',
+          generationConfig: GenerationConfig(
+            candidateCount: 1,
+            temperature: 0.3,
+            maxOutputTokens: kMaxOutputTokensSummary,
+          ),
         );
 
   final GenerativeModel _spikeModel;
   final GenerativeModel _dialogueModel;
+  final GenerativeModel _summaryModel;
 
   final DemoUserRepository _demoRepo = DemoUserRepository();
   DemoUserData? _activeDemoUser;
@@ -98,6 +114,21 @@ class GeminiService implements AIService {
   // Spike analysis schema
   // =========================================================================
 
+  // System prompt for the end-of-session insight summary (summarizeSession).
+  // Shared by GeminiService and ClaudeService so both produce the same shape.
+  static const String summarySystemPrompt = '''
+You are condensing a completed Vivordo wellness check-in into a CONTINUITY NOTE
+for a future session. Write ONE compact paragraph — 2-3 sentences, max 55 words,
+third person, plain prose.
+
+Capture, when present: the main stressor and what triggered it; the user's emotion
+and intensity; relevant context (time of day, activity, location, social, sleep);
+and what coping was tried or actually helped. Add ONE durable insight or recurring
+pattern if it is evident from the data.
+
+Do NOT restate the questions or answers verbatim, give advice, greet, or use
+emojis. If very little was shared, say so in one short sentence.''';
+
   static const String spikeSystemPrompt = '''
 You are Vivordo Stress Labeling Assistant.
 
@@ -111,6 +142,9 @@ RULES:
 - VARY the phrasing each call — never reuse the same wording.
 - Generate 2–3 depth_prompts per question (open-ended follow-ups if user wants more).
 - Keep question prompts ≤ 90 chars. overall_notes ≤ 140 chars.
+- DAILY DATA ONLY: metrics are daily aggregates. You do NOT know the time of day
+  a spike happened. Reference the DAY (use spike.day, e.g. "on Wed, Jun 17") and
+  NEVER state or invent a clock time ("2pm", "noon", "this morning", "afternoon").
 ''';
 
   static final Schema _spikeSchema = Schema(
@@ -378,7 +412,12 @@ RULES:
       final compact = buildCompactPayload(payload, topK: 1);
       final raw = await analyzeStressSpikes(
           data: compact, extraUserContext: extraUserContext);
-      return parsePandaSession(raw, payload, overrideName: userName);
+      final session = parsePandaSession(raw, payload, overrideName: userName);
+      // Record the surfaced spike's day so it isn't analyzed again.
+      if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
+        unawaited(markSpikeDaysAnalyzed(userId, spikeDaysFromCompact(compact)));
+      }
+      return session;
     }
 
     // ── Demo / test path — only reachable from test pages ────────────────
@@ -406,6 +445,7 @@ RULES:
     String? digressionTopic,
     Map<String, String>? accumulatedSlots,
     String? scheduleContext,
+    String? insightsContext,
   }) async {
     // Token guard on RAW inputs — fires before buildDialoguePrompt caps history
     // to 6 items, so a 50-turn history is still caught here as a safety net.
@@ -414,7 +454,8 @@ RULES:
         .join('\n');
     final estimated = estimateTokens(
         rawHistoryText + userMessage +
-        jsonEncode(trimSpikeContext(spikeContext)) + (scheduleContext ?? ''));
+        jsonEncode(trimSpikeContext(spikeContext)) + (scheduleContext ?? '') +
+        (insightsContext ?? ''));
     if (estimated > kMaxInputTokens) {
       if (kDebugMode) {
         debugPrint('[Gemini][dialogue] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
@@ -439,6 +480,7 @@ RULES:
       digressionTopic: digressionTopic,
       accumulatedSlots: accumulatedSlots,
       scheduleContext: scheduleContext,
+      insightsContext: insightsContext,
     );
 
     final response =
@@ -449,6 +491,41 @@ RULES:
           'out: ${usage?.candidatesTokenCount}');
     }
     return parseTurnReply(response.text ?? '');
+  }
+
+  // =========================================================================
+  // Session summary  (implements AIService)
+  // =========================================================================
+
+  @override
+  Future<String> summarizeSession({
+    required List<Map<String, String>> conversation,
+    required Map<String, String> slots,
+    required Map<String, String> labeledAnswers,
+  }) async {
+    try {
+      final userPrompt = buildSummaryPrompt(
+        conversation: conversation,
+        slots: slots,
+        labeledAnswers: labeledAnswers,
+      );
+      final estimated = estimateTokens(summarySystemPrompt + userPrompt);
+      if (estimated > kMaxInputTokens) return '';
+
+      final response = await _summaryModel.generateContent([
+        Content.text(summarySystemPrompt),
+        Content.text(userPrompt),
+      ]);
+      if (kDebugMode) {
+        final usage = response.usageMetadata;
+        debugPrint('[Gemini][summary] tokens — in: ${usage?.promptTokenCount}, '
+            'out: ${usage?.candidatesTokenCount}');
+      }
+      return (response.text ?? '').trim();
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Gemini][summary] failed: $e');
+      return '';
+    }
   }
 
   // =========================================================================
@@ -509,11 +586,24 @@ RULES:
         .timeout(const Duration(seconds: 5), onTimeout: () => <gcal.Event>[])
         .catchError((Object _) => <gcal.Event>[]);
 
+    // User root doc — holds analyzed_spike_days (spike-dedupe ledger).
+    final userDocFuture = userRef.get();
+
     final metricSnaps = await Future.wait(metricFutures);
     final prefSnap = await prefFuture;
     final questSnap = await questFuture;
     final insightsAgg = await insightsFuture;
     final calendarEvents = await calendarFuture;
+    final userSnap = await userDocFuture;
+
+    // Days whose spike has already been surfaced once — excluded from detection
+    // so Panda doesn't re-ask about the same spike (AppFlags.dedupeAnalyzedSpikes).
+    final excludedSpikeDays = AppFlags.dedupeAnalyzedSpikes
+        ? Set<String>.from(
+            (userSnap.data()?['analyzed_spike_days'] as List?)
+                    ?.whereType<String>() ??
+                const <String>[])
+        : <String>{};
 
     // Build daily data map: dateStr → {field → value} from the single day doc
     final dailyData = <String, Map<String, dynamic>>{};
@@ -561,7 +651,9 @@ RULES:
                     ? 25.0
                     : 0.0;
 
-    final samplesChronological = sortedDates.reversed.map((dateStr) {
+    final samplesChronological = sortedDates.reversed
+        .where((dateStr) => !excludedSpikeDays.contains(dateStr))
+        .map((dateStr) {
       final d = dailyData[dateStr]!;
       final hrMax = (d['heart_rate']?['max'] as num?)?.toDouble() ??
           (d['heart_rate']?['avg'] as num?)?.toDouble() ??
@@ -729,6 +821,39 @@ RULES:
   /// Used by both GeminiService and ClaudeService before every API call.
   static int estimateTokens(String text) => (text.length / 4).ceil();
 
+  // =========================================================================
+  // Spike de-duplication  (public static — reused by ClaudeService)
+  //
+  // Spikes are identified by their DAY (metrics are daily aggregates). Once a
+  // day's spike is surfaced for analysis it is recorded on the user doc so it
+  // is never re-detected. Gated by AppFlags.dedupeAnalyzedSpikes.
+  // =========================================================================
+
+  /// The set of spike days (YYYY-MM-DD) present in a compact payload.
+  static List<String> spikeDaysFromCompact(Map<String, dynamic> compact) {
+    final cands = compact['spike_candidates'] as List? ?? const [];
+    return cands
+        .map((s) => (s as Map)['start']?.toString() ?? '')
+        .where((s) => s.isNotEmpty)
+        .map((s) => s.contains('T') ? s.split('T').first : s)
+        .toSet()
+        .toList();
+  }
+
+  /// Records [days] as analyzed on the user doc so their spikes aren't re-asked.
+  static Future<void> markSpikeDaysAnalyzed(
+      String userId, List<String> days) async {
+    if (days.isEmpty) return;
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(userId).set({
+        'analyzed_spike_days': FieldValue.arrayUnion(days),
+        'updated_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      if (kDebugMode) debugPrint('[spike-dedupe] mark failed: $e');
+    }
+  }
+
   static String _fmtDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
@@ -736,6 +861,30 @@ RULES:
   static const _weekdayAbbr = [
     'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
   ];
+
+  static const _monthAbbr = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// Human day label for a spike (e.g. "Wed, Jun 17"). Health metrics are daily
+  /// aggregates, so this is the finest real granularity — never a clock time.
+  static String _dayPhrase(String? iso) {
+    if (iso == null || iso.isEmpty) return 'that day';
+    try {
+      final d = DateTime.parse(iso).toLocal();
+      return '${_weekdayAbbr[d.weekday - 1]}, ${_monthAbbr[d.month - 1]} ${d.day}';
+    } catch (_) {
+      return 'that day';
+    }
+  }
+
+  /// Strips the time component from an ISO timestamp, leaving the date only.
+  static String _dateOnly(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    final t = iso.indexOf('T');
+    return t == -1 ? iso : iso.substring(0, t);
+  }
 
   /// Builds a per-day schedule digest for the next 7 days (from [dayStart],
   /// inclusive) in local time, e.g.:
@@ -810,6 +959,38 @@ DATA: ${jsonEncode(compact)}
 ''';
   }
 
+  /// Builds the user-role prompt for the end-of-session insight summary.
+  /// Caps the conversation to the last 8 turns to bound token cost; slots and
+  /// labeled answers are included compactly so the model can synthesise context
+  /// rather than merely echo answers.
+  static String buildSummaryPrompt({
+    required List<Map<String, String>> conversation,
+    required Map<String, String> slots,
+    required Map<String, String> labeledAnswers,
+  }) {
+    final capped = conversation.length > 8
+        ? conversation.sublist(conversation.length - 8)
+        : conversation;
+    final convoText = capped
+        .map((t) =>
+            "${t['role'] == 'user' ? 'User' : 'Panda'}: ${t['text'] ?? ''}")
+        .join('\n');
+
+    final slotsText = slots.isNotEmpty ? jsonEncode(slots) : 'none';
+    final answersText =
+        labeledAnswers.isNotEmpty ? jsonEncode(labeledAnswers) : 'none';
+
+    return '''
+EXTRACTED SLOTS: $slotsText
+
+LABELED ANSWERS: $answersText
+
+CONVERSATION:
+$convoText
+
+Write the continuity note now.''';
+  }
+
   /// Builds the full dialogue prompt for a single conversation turn.
   /// Caps history to the last 6 items (≈3 exchanges, ≤350 tokens) and
   /// trims spike context automatically.
@@ -840,10 +1021,12 @@ DATA: ${jsonEncode(compact)}
     String? digressionTopic,
     Map<String, String>? accumulatedSlots,
     String? scheduleContext,
+    String? insightsContext,
     bool embedSpikeContext = true,
     bool embedPersona = true,
     bool embedTaskInstructions = true,
     bool embedScheduleContext = true,
+    bool embedInsightsContext = true,
   }) {
     final cappedHistory = conversationHistory.length > 6
         ? conversationHistory.sublist(conversationHistory.length - 6)
@@ -882,6 +1065,11 @@ DATA: ${jsonEncode(compact)}
             ? 'SCHEDULE (next 7 days, local time):\n$scheduleContext\n\n'
             : '';
 
+    final insightsLine =
+        (embedInsightsContext && insightsContext != null && insightsContext.isNotEmpty)
+            ? 'PAST INSIGHTS (from previous sessions):\n$insightsContext\n\n'
+            : '';
+
     final personaLine = embedPersona
         ? 'You are Panda 🐼, a warm, empathetic wellness companion in Vivordo.\n\n'
         : '';
@@ -902,6 +1090,9 @@ DATA: ${jsonEncode(compact)}
           '     user\'s stress/energy patterns (spikes, intensity) to suggest the\n'
           '     best time(s). Name specific day + time range. If SCHEDULE is absent,\n'
           '     say their calendar isn\'t connected. intent stays "chitchat".\n'
+          '   • You DO have memory of past sessions — PAST INSIGHTS holds the\n'
+          '     user\'s recurring stressors, emotions, coping, and recent recaps.\n'
+          '     Reference it when relevant; never claim you lack access to it.\n'
           '   • Tone: warm, peer-like. Never clinical. No diagnoses; use "may be related to".\n'
           '\n'
           '3. DEPTH_FOLLOW_UP: one open-ended probe (intent=="want_deeper_answer" only).\n'
@@ -917,7 +1108,7 @@ DATA: ${jsonEncode(compact)}
           '   sleep_quality, social_context, other. Use "" for anything not mentioned.\n'
         : '';
 
-    return '$personaLine$pathCtx\n$spikeCtxLine$scheduleLine$slotsCtx\n\nCONVERSATION:\n$historyText\n\nUSER: "$userMessage"$tasksSection';
+    return '$personaLine$pathCtx\n$spikeCtxLine$scheduleLine$insightsLine$slotsCtx\n\nCONVERSATION:\n$historyText\n\nUSER: "$userMessage"$tasksSection';
   }
 
   // =========================================================================
@@ -952,6 +1143,14 @@ DATA: ${jsonEncode(compact)}
       );
       s['context']['confidence'] =
           (s['context']['nearby_events'] as List).isEmpty ? 0.55 : 0.75;
+
+      // Health metrics are DAILY aggregates — there is no real time-of-day for
+      // a spike. Expose a day label and strip the placeholder clock time from
+      // start/end so the model references the day, never a fabricated hour.
+      s['day'] = _dayPhrase(s['start']?.toString());
+      s['start'] = _dateOnly(s['start']?.toString());
+      s['end'] = _dateOnly(s['end']?.toString());
+      s['granularity'] = 'daily';
     }
 
     final userSetup = profile['user_setup'] as Map?;
@@ -994,15 +1193,16 @@ DATA: ${jsonEncode(compact)}
             .split(' ')
             .first;
 
-    // Schedule digest travels with the payload — surface it on every return
-    // path so the dialogue turn always has calendar context when available.
+    // Schedule + insights travel with the payload — surface them on every
+    // return path so each dialogue turn has calendar + past-session context.
     final scheduleContext = rawSample['upcoming_schedule'] as String?;
+    final insightsContext = _insightsContextFromPayload(rawSample);
 
     final obj = _extractJson(raw);
 
     if (obj == null) {
       return _fallbackSession(userName, 'earlier today', [],
-          scheduleContext: scheduleContext);
+          scheduleContext: scheduleContext, insightsContext: insightsContext);
     }
 
     final overallNotes =
@@ -1030,12 +1230,13 @@ DATA: ${jsonEncode(compact)}
         overallNotes: overallNotes,
         rawSpikes: rawSpikes,
         scheduleContext: scheduleContext,
+        insightsContext: insightsContext,
       );
     }
 
     final spike = spikes.first as Map<String, dynamic>;
-    final timePhrase =
-        _formatTimeRange(spike['start'] as String?, spike['end'] as String?);
+    // Daily data — reference the day, not a fabricated clock time.
+    final timePhrase = _dayPhrase(spike['start'] as String?);
 
     final questions = <PandaQuestion>[];
     final qs = spike['questions'] as List?;
@@ -1081,7 +1282,9 @@ DATA: ${jsonEncode(compact)}
 
     if (questions.isEmpty) {
       return _fallbackSession(userName, timePhrase, rawSpikes,
-          notes: overallNotes, scheduleContext: scheduleContext);
+          notes: overallNotes,
+          scheduleContext: scheduleContext,
+          insightsContext: insightsContext);
     }
 
     return PandaSessionData(
@@ -1090,7 +1293,42 @@ DATA: ${jsonEncode(compact)}
       overallNotes: overallNotes,
       rawSpikes: rawSpikes,
       scheduleContext: scheduleContext,
+      insightsContext: insightsContext,
     );
+  }
+
+  /// Formats the payload's insights_summary into a compact PAST-SESSIONS block
+  /// for the dialogue context. Returns null when there is no usable history.
+  static String? _insightsContextFromPayload(Map<String, dynamic> rawSample) {
+    final profile = rawSample['user_profile'];
+    if (profile is! Map) return null;
+    final s = profile['insights_summary'];
+    if (s is! Map) return null;
+
+    final lines = <String>[];
+    List<String> asList(Object? v) =>
+        (v as List?)?.whereType<String>().where((e) => e.isNotEmpty).toList() ??
+        const [];
+
+    final stressors = asList(s['top_stressors']);
+    final emotions = asList(s['top_emotions']);
+    final coping = asList(s['top_coping']);
+    final intensity = (s['typical_intensity'] as String?)?.trim() ?? '';
+    final recents = asList(s['recent_sessions']);
+
+    if (stressors.isNotEmpty) lines.add('Recurring stressors: ${stressors.join(', ')}');
+    if (emotions.isNotEmpty) lines.add('Common emotions: ${emotions.join(', ')}');
+    if (coping.isNotEmpty) lines.add('Coping that came up: ${coping.join(', ')}');
+    if (intensity.isNotEmpty) lines.add('Typical intensity: $intensity');
+    if (recents.isNotEmpty) {
+      lines.add('Recent session recaps:');
+      for (final r in recents) {
+        lines.add('• $r');
+      }
+    }
+
+    if (lines.isEmpty) return null;
+    return lines.join('\n');
   }
 
   /// Parses a raw dialogue-turn JSON string into a PandaTurnReply.
@@ -1242,7 +1480,7 @@ DATA: ${jsonEncode(compact)}
 
   static PandaSessionData _fallbackSession(
       String userName, String timePhrase, List<Map<String, dynamic>> spikes,
-      {String notes = '', String? scheduleContext}) {
+      {String notes = '', String? scheduleContext, String? insightsContext}) {
     return PandaSessionData(
       openerMessage:
           'Hey $userName! 🌿 Ive pulled up your health data for today. '
@@ -1251,7 +1489,7 @@ DATA: ${jsonEncode(compact)}
       questions: [
         PandaQuestion(
           questionId: 'q_fallback',
-          prompt: 'What was happening around $timePhrase?',
+          prompt: 'What was happening on $timePhrase?',
           options: const [
             'Work or study 📚',
             'Exercise 🏃',
@@ -1268,27 +1506,10 @@ DATA: ${jsonEncode(compact)}
       overallNotes: notes,
       rawSpikes: spikes,
       scheduleContext: scheduleContext,
+      insightsContext: insightsContext,
     );
   }
 
-  static String _formatTimeRange(String? startIso, String? endIso) {
-    try {
-      if (startIso == null) return 'earlier today';
-      final start = DateTime.parse(startIso).toLocal();
-      final s = _formatTime(start);
-      if (endIso == null) return s;
-      return '$s–${_formatTime(DateTime.parse(endIso).toLocal())}';
-    } catch (_) {
-      return 'earlier today';
-    }
-  }
-
-  static String _formatTime(DateTime dt) {
-    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final period = dt.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $period';
-  }
 
   static double _severity(
       Map<String, dynamic> s, double baselineHr, double baselineHrv) {

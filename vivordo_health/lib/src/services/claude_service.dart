@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_functions/cloud_functions.dart';
@@ -44,8 +45,9 @@ Required top-level keys:
 
 Spike object schema:
   "spike_id":  "spk_N" (N = 1-based index),
-  "start":     "ISO-8601 — when the heart rate began to rise",
-  "end":       "ISO-8601 — when it returned to baseline",
+  "day":       "human day label — copy DATA spike.day verbatim, e.g. \"Wed, Jun 17\"",
+  "start":     "YYYY-MM-DD — the day the spike occurred (DATE ONLY, no time)",
+  "end":       "YYYY-MM-DD — same day (DATE ONLY, no time)",
   "signals": {
     "heart_rate": { "baseline": number, "peak": number },
     "hrv":        { "baseline": number, "min": number },
@@ -76,6 +78,9 @@ RULES
   — say "work-related stress" or "social pressure" etc.
 • Do NOT invent symptoms, events, journal entries, goals, or any context not
   present in DATA. If a field is absent, omit it from your hypotheses.
+• DAILY DATA ONLY: metrics are daily aggregates — you do NOT know the time of
+  day a spike happened. Reference the DAY (copy spike.day) and NEVER state or
+  invent a clock time ("2pm", "noon", "this morning", "afternoon", "evening").
 • If no spikes are detected, return "spikes": [] with a reassuring overall_notes.
 
 HYPOTHESIS LABEL TAXONOMY
@@ -100,10 +105,10 @@ ML LABELS TO COLLECT PER SPIKE
   trigger_recurs   — is this a recurring trigger? yes | no | unsure
 
 QUESTION PHRASING GUIDE
-• Use conversational language: "What were you up to around 2pm?" not
+• Use conversational language: "What was going on for you on [DAY]?" not
   "What was your primary activity during the spike window?"
-• Reference the time from the spike data: "around [TIME]" or "that [MORNING/AFTERNOON]"
-• Name the signal: "your heart rate hit [PEAK] bpm" grounds the question in data
+• Reference the DAY using spike.day (e.g. "on Wed, Jun 17") — NEVER a clock time.
+• Name the signal: "your heart rate reached [PEAK] bpm that day" grounds it in data
 • Chip option order: most likely hypothesis first, then alternatives, then
   "Something else 🙋" always last
 • depth_prompts should be open-ended: "What made that feel particularly hard?"
@@ -112,14 +117,15 @@ QUESTION PHRASING GUIDE
 EXAMPLE OUTPUT (reference only — vary wording each call)
 {
   "summary": {
-    "data_window_start": "2026-06-09T00:00:00",
-    "data_window_end": "2026-06-16T23:59:59",
-    "overall_notes": "One notable spike Tuesday afternoon — heart rate reached 115 bpm."
+    "data_window_start": "2026-06-09",
+    "data_window_end": "2026-06-16",
+    "overall_notes": "One notable spike on Tuesday — heart rate reached 115 bpm."
   },
   "spikes": [{
     "spike_id": "spk_1",
-    "start": "2026-06-16T14:30:00",
-    "end": "2026-06-16T15:15:00",
+    "day": "Tue, Jun 16",
+    "start": "2026-06-16",
+    "end": "2026-06-16",
     "signals": {
       "heart_rate": {"baseline": 62.0, "peak": 115.0},
       "hrv": {"baseline": 52.0, "min": 38.0},
@@ -128,16 +134,16 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     "context": {"nearby_events": [], "confidence": 0.72},
     "hypotheses": [
       {"label": "work_stress",
-       "reason": "Peak 2pm, low steps — may be related to desk-bound deadline pressure",
+       "reason": "Low steps that day — may be related to desk-bound deadline pressure",
        "confidence": 0.74}
     ],
     "questions": [{
       "question_id": "q_1",
-      "prompt": "What were you doing when your heart rate spiked around 2:30pm?",
+      "prompt": "What was going on for you on Tue, Jun 16 when your HR hit 115 bpm?",
       "type": "multiple_choice",
       "options": ["Work / study 📚", "Exercise 🏃", "Social situation 👥", "Commute 🚗", "Something else 🙋"],
       "depth_prompts": [
-        "What made that feel particularly stressful?",
+        "What made that day feel particularly stressful?",
         "How long did that pressure last?"
       ]
     }],
@@ -218,6 +224,10 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '  against the stress/energy patterns in APPLE HEALTH CONTEXT to recommend\n'
       '  the best time(s). Name a specific day + time range. If no SCHEDULE block is\n'
       '  present, tell them their calendar isn\'t connected. Keep intent "chitchat".\n'
+      '• MEMORY: you DO have access to past sessions. When a "PAST INSIGHTS" block\n'
+      '  is present it holds the user\'s recurring stressors, emotions, coping, and\n'
+      '  recent session recaps — use it to personalise and show continuity. NEVER\n'
+      '  say you lack access to past insights or saved data when that block exists.\n'
       '\n'
       'SLOT EXTRACTION RULES\n'
       'Extract values from what the user says in THIS turn only. Use "" for any\n'
@@ -362,8 +372,14 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
           'cache_read: ${usage?['cache_read_input_tokens'] ?? 0}');
     }
 
-    return GeminiService.parsePandaSession(raw, payload,
+    final session = GeminiService.parsePandaSession(raw, payload,
         overrideName: userName);
+    // Record the surfaced spike's day so Panda doesn't re-ask about it.
+    if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
+      unawaited(GeminiService.markSpikeDaysAnalyzed(
+          userId, GeminiService.spikeDaysFromCompact(compact)));
+    }
+    return session;
   }
 
   // ---------------------------------------------------------------------------
@@ -383,6 +399,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     String? digressionTopic,
     Map<String, String>? accumulatedSlots,
     String? scheduleContext,
+    String? insightsContext,
   }) async {
     // Token guard on the CAPPED payload — estimate what's actually sent to the
     // API after buildDialoguePrompt applies its 6-item history cap.
@@ -406,7 +423,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
         .join('\n');
     final estimated = GeminiService.estimateTokens(
         _dialogueSystem + healthCtx + (scheduleCtx ?? '') +
-        cappedHistoryText + userMessage);
+        (insightsContext ?? '') + cappedHistoryText + userMessage);
     if (estimated > kMaxInputTokens) {
       if (kDebugMode) {
         debugPrint('[Claude][dialogue] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
@@ -433,10 +450,14 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       pendingQuestionPrompt: pendingQuestionPrompt,
       digressionTopic: digressionTopic,
       accumulatedSlots: accumulatedSlots,
+      // Insights can change mid-session (a just-saved finding), so they are NOT
+      // cached — embed them in the uncached user prompt so they're always fresh.
+      insightsContext: insightsContext,
       embedSpikeContext: false,
       embedPersona: false,
       embedTaskInstructions: false,
       embedScheduleContext: false,
+      embedInsightsContext: true,
     );
 
     // Stable cached blocks per session:
@@ -471,5 +492,55 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     }
 
     return GeminiService.parseTurnReply(raw);
+  }
+
+  // ---------------------------------------------------------------------------
+  // summarizeSession
+  //
+  // Generates the brief end-of-session continuity note via the pandaClaude
+  // proxy. Reuses GeminiService.summarySystemPrompt + buildSummaryPrompt so
+  // both backends produce the same shape. Returns '' on any failure so the
+  // caller falls back to the deterministic summary.
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<String> summarizeSession({
+    required List<Map<String, String>> conversation,
+    required Map<String, String> slots,
+    required Map<String, String> labeledAnswers,
+  }) async {
+    try {
+      final userPrompt = GeminiService.buildSummaryPrompt(
+        conversation: conversation,
+        slots: slots,
+        labeledAnswers: labeledAnswers,
+      );
+
+      final estimated = GeminiService.estimateTokens(
+          GeminiService.summarySystemPrompt + userPrompt);
+      if (estimated > kMaxInputTokens) return '';
+
+      final result = await _fn.call<dynamic>({
+        'system': [
+          {'type': 'text', 'text': GeminiService.summarySystemPrompt},
+        ],
+        'user': [
+          {'type': 'text', 'text': userPrompt},
+        ],
+        'maxTokens': kMaxOutputTokensSummary,
+      });
+
+      final raw = (result.data as Map?)?['text']?.toString() ?? '';
+      if (kDebugMode) {
+        final usage = (result.data as Map?)?['usage'] as Map?;
+        debugPrint('[Claude][summary] length: ${raw.length} chars, '
+            'input: ${usage?['input_tokens'] ?? 0}, '
+            'output: ${usage?['output_tokens'] ?? 0}');
+      }
+      return raw.trim();
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Claude][summary] failed: $e');
+      return '';
+    }
   }
 }

@@ -17,6 +17,25 @@ const int kMaxOutputTokensChat = 300;
 /// Output cap for session spike analysis (analyzePandaSession).
 const int kMaxOutputTokensSpike = 1800;
 
+/// Output cap for the end-of-session insight summary (summarizeSession).
+const int kMaxOutputTokensSummary = 180;
+
+// ---------------------------------------------------------------------------
+// Runtime feature flags (toggle without a rebuild via these static fields).
+// ---------------------------------------------------------------------------
+
+class AppFlags {
+  AppFlags._();
+
+  /// When true, each detected spike is surfaced for analysis only ONCE per
+  /// user. Since metrics are daily aggregates, a spike is identified by its day:
+  /// once a day's spike has been analyzed it is recorded on the user doc
+  /// (`analyzed_spike_days`) and excluded from future sessions, so Panda never
+  /// re-asks about the same spike. Set to false to analyze every detected spike
+  /// on every session.
+  static bool dedupeAnalyzedSpikes = false;
+}
+
 // ---------------------------------------------------------------------------
 
 /// Common interface implemented by GeminiService and ClaudeService.
@@ -49,5 +68,18 @@ abstract class AIService {
     String? digressionTopic,
     Map<String, String>? accumulatedSlots,
     String? scheduleContext,
+    String? insightsContext,
+  });
+
+  /// Produce a brief (≤55 word) third-person insight recap of a completed
+  /// session, written as durable context for a FUTURE session — capturing the
+  /// main stressor + trigger, emotional state + intensity, relevant context,
+  /// what coping helped, and any pattern. NOT a restatement of the Q&A.
+  /// Returns '' on failure so the caller can fall back to a deterministic
+  /// summary.
+  Future<String> summarizeSession({
+    required List<Map<String, String>> conversation,
+    required Map<String, String> slots,
+    required Map<String, String> labeledAnswers,
   });
 }

@@ -55,6 +55,7 @@ class InsightService {
     required Map<String, String> sessionSlots,
     required Map<String, String> labeledAnswers,
     List<Map<String, String>>? conversation,
+    String? summary,
   }) async {
     final insight = Insights.fromPandaSession(
       userId:         userId,
@@ -62,6 +63,7 @@ class InsightService {
       sessionSlots:   sessionSlots,
       labeledAnswers: labeledAnswers,
       conversation:   conversation,
+      summary:        summary,
     );
 
     final ref = await insight.toFirestore(userId);
@@ -112,6 +114,22 @@ class InsightService {
 
     final snap = await _doc(userId, insightId).get();
     return Insights.fromDoc(snap);
+  }
+
+  // ===========================================================================
+  // updateSummary
+  //
+  // Overwrites the continuity note on an insight — used after an answer is
+  // edited from the History tab so the LLM-fed-back summary reflects the
+  // correction.
+  // ===========================================================================
+
+  Future<void> updateSummary(
+      String userId, String insightId, String summary) async {
+    await _doc(userId, insightId).update({
+      'summary': summary,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   // ===========================================================================

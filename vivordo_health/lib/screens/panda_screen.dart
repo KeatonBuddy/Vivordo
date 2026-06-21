@@ -252,6 +252,15 @@ class _PandaScreenState extends State<PandaScreen>
   // ── Recommendation tracking ────────────────────────────────────────────────
   final Set<String> _shownRecIds = {};
 
+  // Stressors already saved as a standalone chat insight this session — prevents
+  // saving a duplicate insight when the same stressor recurs across turns.
+  final Set<String> _savedChatStressors = {};
+
+  // Insight summaries generated THIS session (chat findings + completion recap),
+  // surfaced to the dialogue LLM immediately so a just-saved insight is usable
+  // on the very next turn (the session-init insightsContext only has the past).
+  final List<String> _sessionInsightNotes = [];
+
   // ── Category pill state ────────────────────────────────────────────────────
   // Pills appear only after ALL spike questions are answered.
   // They stay visible throughout free chat.
@@ -379,6 +388,8 @@ class _PandaScreenState extends State<PandaScreen>
       _interruptedNodeId = null;
       _sessionSlots.clear();
       _shownRecIds.clear();
+      _savedChatStressors.clear();
+      _sessionInsightNotes.clear();
       _currentInsightId = null;
       _sessionComplete = false;
       // Pills and done card reset on new session
@@ -569,6 +580,7 @@ class _PandaScreenState extends State<PandaScreen>
             digressionTopic: null,
             accumulatedSlots: Map<String, String>.from(_sessionSlots),
             scheduleContext: session.scheduleContext,
+            insightsContext: _currentInsightsContext(),
           )
           .timeout(const Duration(seconds: 35));
 
@@ -579,6 +591,10 @@ class _PandaScreenState extends State<PandaScreen>
             Map.fromEntries(reply.filledSlots!.entries
                 .where((e) => e.value.trim().isNotEmpty))));
       }
+
+      // Persist a significant stressor surfaced via this category pill.
+      _maybeSaveChatInsight(
+          reply: reply, userMessage: prompt, questionLabel: categoryLabel);
 
       final insightKey = 'category::$categoryLabel::$prompt';
       setState(() {
@@ -687,6 +703,7 @@ class _PandaScreenState extends State<PandaScreen>
                 : null,
             accumulatedSlots: Map<String, String>.from(_sessionSlots),
             scheduleContext: session.scheduleContext,
+            insightsContext: _currentInsightsContext(),
           )
           .timeout(const Duration(seconds: 35));
 
@@ -697,6 +714,9 @@ class _PandaScreenState extends State<PandaScreen>
             Map.fromEntries(reply.filledSlots!.entries
                 .where((e) => e.value.trim().isNotEmpty))));
       }
+
+      // Persist a significant stressor surfaced via this free-text question.
+      _maybeSaveChatInsight(reply: reply, userMessage: text);
 
       // _pandaTyping stays true here — _pandaSay handles the false transition
       // once the response is rendered. Clearing it early causes chips to flash.
@@ -853,6 +873,22 @@ class _PandaScreenState extends State<PandaScreen>
               'text': t.text,
             })
         .toList();
+    // Ask the LLM for a comprehensive-but-brief continuity note that captures
+    // context/insight (not just a restatement of answers). Falls back to the
+    // deterministic summary inside saveSessionInsight when this returns ''.
+    String llmSummary = '';
+    try {
+      llmSummary = await _svc
+          .summarizeSession(
+            conversation: conversation,
+            slots: Map<String, String>.from(_sessionSlots),
+            labeledAnswers: labeledAnswers,
+          )
+          .timeout(const Duration(seconds: 20));
+    } catch (_) {
+      // Non-fatal — saveSessionInsight will use the deterministic fallback.
+    }
+
     try {
       final insight = await _insightSvc.saveSessionInsight(
         userId: resolvedUserId,
@@ -860,8 +896,13 @@ class _PandaScreenState extends State<PandaScreen>
         sessionSlots: Map<String, String>.from(_sessionSlots),
         labeledAnswers: labeledAnswers,
         conversation: conversation,
+        summary: llmSummary.isNotEmpty ? llmSummary : null,
       );
       if (mounted) setState(() => _currentInsightId = insight.id);
+      // Surface this session's recap to subsequent free-conversation turns.
+      if (llmSummary.isNotEmpty && mounted) {
+        _sessionInsightNotes.add(llmSummary);
+      }
     } catch (e) {
       // ignore: avoid_print
       print('[PandaScreen] saveSessionInsight failed: $e');
@@ -2016,7 +2057,7 @@ class _PandaScreenState extends State<PandaScreen>
     final resolvedUserId = _currentUserId;
 
     try {
-      await _insightSvc.correctAnswer(
+      final updated = await _insightSvc.correctAnswer(
         userId: resolvedUserId,
         insightId: insight.id!,
         questionId: questionId,
@@ -2024,9 +2065,131 @@ class _PandaScreenState extends State<PandaScreen>
         newAnswer: newAnswer,
       );
       // The Firestore stream will push the updated insight automatically.
+
+      // Regenerate the continuity note so the fed-back summary reflects the
+      // corrected answer. No conversation is stored on the insight, so this
+      // synthesises from the (updated) slots + labeled answers. Non-fatal.
+      unawaited(_regenerateSummary(resolvedUserId, updated));
     } catch (e) {
       // ignore: avoid_print
       print('[PandaScreen] correctAnswer failed: $e');
+    }
+  }
+
+  /// Re-runs the LLM summary for an edited insight and writes it back.
+  Future<void> _regenerateSummary(String userId, Insights updated) async {
+    if (updated.id == null) return;
+    try {
+      final slots = (updated.pandaSlots?.toMap() ?? <String, dynamic>{})
+          .map((k, v) => MapEntry(k, v.toString()));
+      final answers = updated.pandaLabeledAnswers ?? const <String, String>{};
+      if (slots.isEmpty && answers.isEmpty) return;
+
+      final summary = await _svc
+          .summarizeSession(
+            conversation: const [],
+            slots: slots,
+            labeledAnswers: answers,
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (summary.isNotEmpty) {
+        await _insightSvc.updateSummary(userId, updated.id!, summary);
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('[PandaScreen] summary regeneration failed: $e');
+    }
+  }
+
+  // ===========================================================================
+  // Chat-discovered stressors → saved as insights
+  //
+  // When a free-text question or a category-pill answer surfaces a significant
+  // stressor (a non-empty `stressor` slot, or intent == new_stressor), persist
+  // it as its own insight so it's captured and fed back — even after the
+  // predefined session has completed. De-duped by stressor within the session.
+  // ===========================================================================
+
+  /// Combines past-session insights (from session init) with summaries captured
+  /// earlier in THIS session, so the dialogue LLM always has current context.
+  String? _currentInsightsContext() {
+    final base = _session?.insightsContext?.trim() ?? '';
+    if (base.isEmpty && _sessionInsightNotes.isEmpty) return null;
+    final buf = StringBuffer();
+    if (_sessionInsightNotes.isNotEmpty) {
+      buf.writeln('From earlier in THIS session:');
+      for (final n in _sessionInsightNotes) {
+        buf.writeln('• $n');
+      }
+      if (base.isNotEmpty) buf.writeln();
+    }
+    if (base.isNotEmpty) buf.write(base);
+    return buf.toString().trim();
+  }
+
+  void _maybeSaveChatInsight({
+    required PandaTurnReply reply,
+    required String userMessage,
+    String? questionLabel,
+  }) {
+    final stressor = reply.filledSlots?['stressor']?.trim() ?? '';
+    final significant =
+        stressor.isNotEmpty || reply.intent == PandaIntent.newStressor;
+    if (!significant) return;
+
+    final key = stressor.toLowerCase();
+    if (key.isNotEmpty && !_savedChatStressors.add(key)) return; // already saved
+
+    final userId = _currentUserId;
+    final slots = Map<String, String>.from(_sessionSlots);
+    final conversation = _turns
+        .map((t) => {
+              'role': t.role == _Role.user ? 'user' : 'assistant',
+              'text': t.text,
+            })
+        .toList();
+    final labeled = (questionLabel != null && questionLabel.isNotEmpty)
+        ? {questionLabel: userMessage}
+        : <String, String>{};
+
+    unawaited(_saveChatInsight(userId, slots, conversation, labeled));
+  }
+
+  Future<void> _saveChatInsight(
+    String userId,
+    Map<String, String> slots,
+    List<Map<String, String>> conversation,
+    Map<String, String> labeled,
+  ) async {
+    try {
+      String summary = '';
+      try {
+        summary = await _svc
+            .summarizeSession(
+              conversation: conversation,
+              slots: slots,
+              labeledAnswers: labeled,
+            )
+            .timeout(const Duration(seconds: 20));
+      } catch (_) {
+        // Non-fatal — saveSessionInsight falls back to a deterministic summary.
+      }
+
+      await _insightSvc.saveSessionInsight(
+        userId: userId,
+        sessionDate: DateTime.now(),
+        sessionSlots: slots,
+        labeledAnswers: labeled,
+        conversation: conversation,
+        summary: summary.isNotEmpty ? summary : null,
+      );
+
+      // Make this finding usable on the next dialogue turn immediately.
+      if (summary.isNotEmpty && mounted) _sessionInsightNotes.add(summary);
+    } catch (e) {
+      // ignore: avoid_print
+      print('[PandaScreen] saveChatInsight failed: $e');
     }
   }
 

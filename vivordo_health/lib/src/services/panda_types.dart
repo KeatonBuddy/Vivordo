@@ -8,6 +8,7 @@ class PandaSessionData {
     required this.overallNotes,
     required this.rawSpikes,
     this.scheduleContext,
+    this.insightsContext,
   });
 
   final String openerMessage;
@@ -21,6 +22,11 @@ class PandaSessionData {
   /// into each dialogue turn so Panda can answer availability / "when am I
   /// mentally free" planning questions. Null when Calendar isn't connected.
   final String? scheduleContext;
+
+  /// Compact recap of PAST sessions (recurring stressors/emotions/coping +
+  /// recent session summaries), passed into each dialogue turn so Panda can
+  /// reference prior insights. Null when the user has no insight history.
+  final String? insightsContext;
 }
 
 class PandaQuestion {

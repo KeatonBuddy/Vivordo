@@ -226,6 +226,7 @@ class Insights {
     required Map<String, String> sessionSlots,
     required Map<String, String> labeledAnswers,
     List<Map<String, String>>? conversation,
+    String? summary,
   }) {
     final slots = PandaSlots.fromSessionSlots(sessionSlots);
     final now = Timestamp.now();
@@ -270,7 +271,11 @@ class Insights {
       pandaSlots:           slots,
       pandaLabeledAnswers:  Map<String, String>.from(labeledAnswers),
       pandaCorrections:     [],
-      summary:              _buildSessionSummary(slots, labeledAnswers, conversation),
+      // Prefer the LLM-generated continuity note; fall back to the
+      // deterministic recap when it is unavailable (offline / call failed).
+      summary:              (summary != null && summary.trim().isNotEmpty)
+          ? summary.trim()
+          : _buildSessionSummary(slots, labeledAnswers, conversation),
       acknowledged:         false,
       createdAt:            now,
       updatedAt:            now,
@@ -350,8 +355,15 @@ class Insights {
       goalId:                   map['goalId']        as String?,
       acknowledged:             map['acknowledged']  as bool?,
       acknowledgedAt:           map['acknowledgedAt'] as Timestamp?,
-      createdAt:                map['createdAt']     as Timestamp,
-      updatedAt:                map['updatedAt']     as Timestamp,
+      // createdAt/updatedAt can be transiently null in a LOCAL snapshot while a
+      // FieldValue.serverTimestamp() write is pending (hasPendingWrites). Fall
+      // back so deserialisation never throws on the optimistic local update.
+      createdAt:                (map['createdAt'] as Timestamp?) ??
+                                (map['updatedAt'] as Timestamp?) ??
+                                Timestamp.now(),
+      updatedAt:                (map['updatedAt'] as Timestamp?) ??
+                                (map['createdAt'] as Timestamp?) ??
+                                Timestamp.now(),
       sessionDate:              map['sessionDate']   as Timestamp?,
       pandaSlots:               slots,
       pandaLabeledAnswers:      labeledAnswers,
