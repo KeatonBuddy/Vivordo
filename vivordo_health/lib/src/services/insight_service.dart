@@ -66,10 +66,65 @@ class InsightService {
       summary:        summary,
     );
 
+    // De-dupe by FUZZY/CANONICAL stressor match: if this stressor already has
+    // an insight (same canonical bucket, containment, or high token overlap),
+    // bump its frequency and refresh its context instead of writing a duplicate.
+    final newStressor = sessionSlots['stressor'];
+    if (newStressor != null && newStressor.trim().isNotEmpty) {
+      // Fetch this user's panda insights and match in-memory (fuzzy matching
+      // can't be expressed as a Firestore query). Capped for cost.
+      final existing = await _col(userId)
+          .where('source', isEqualTo: 'panda')
+          .limit(60)
+          .get();
+      QueryDocumentSnapshot<Map<String, dynamic>>? matchDoc;
+      for (final d in existing.docs) {
+        final candStressor =
+            (d.data()['pandaSlots'] as Map?)?['stressor']?.toString();
+        if (Insights.stressorsMatch(newStressor, candStressor)) {
+          matchDoc = d;
+          break;
+        }
+      }
+      if (matchDoc != null) {
+        final doc = matchDoc;
+        final mergedAnswers = <String, String>{
+          ...?(doc.data()['pandaLabeledAnswers'] as Map?)
+              ?.map((k, v) => MapEntry(k.toString(), v.toString())),
+          ...labeledAnswers,
+        };
+        await doc.reference.update({
+          'frequency':  FieldValue.increment(1),
+          'updatedAt':  FieldValue.serverTimestamp(),
+          'sessionDate': Timestamp.fromDate(sessionDate),
+          'title':      insight.title,
+          'body':       insight.body,
+          'severity':   insight.severity,
+          if (insight.pandaSlots != null && !insight.pandaSlots!.isEmpty)
+            'pandaSlots': insight.pandaSlots!.toMap(),
+          if (mergedAnswers.isNotEmpty) 'pandaLabeledAnswers': mergedAnswers,
+          if (insight.summary != null && insight.summary!.isNotEmpty)
+            'summary':  insight.summary,
+        });
+        _touchUserHistory(userId, sessionDate, insight);
+
+        insight.id = doc.id;
+        insight.frequency =
+            ((doc.data()['frequency'] as num?)?.toInt() ?? 1) + 1;
+        return insight;
+      }
+    }
+
     final ref = await insight.toFirestore(userId);
     insight.id = ref.id;
+    _touchUserHistory(userId, sessionDate, insight);
+    return insight;
+  }
 
-    // Lightweight user-doc summary — fire-and-forget
+  /// Fire-and-forget lightweight summary on the parent users/{userId} doc so the
+  /// HomeScreen and recommendation engine can read recent stressors cheaply.
+  void _touchUserHistory(
+      String userId, DateTime sessionDate, Insights insight) {
     _unawaited(_db.collection('users').doc(userId).set({
       'last_panda_session': Timestamp.fromDate(sessionDate),
       'updated_at': FieldValue.serverTimestamp(),
@@ -80,16 +135,16 @@ class InsightService {
         'emotion_history': FieldValue.arrayUnion(
             [insight.pandaSlots!.emotion!]),
     }, SetOptions(merge: true)));
-
-    return insight;
   }
 
   // ===========================================================================
   // correctAnswer
   //
-  // Called when the user edits a labeled answer from the History tab.
-  // Appends a PandaCorrection and overwrites the specific labeled answer
-  // using a Firestore field-path update so no other data is touched.
+  // Called when the user edits a labeled answer from the History tab — works
+  // for both spike answers (keys like "q_1") and chat-finding answers (keys
+  // like a category label or "You shared", which may contain spaces/emojis).
+  // Read-modify-writes the whole answers map so any key is handled safely
+  // (Firestore dot-path strings can't address keys with spaces/special chars).
   // ===========================================================================
 
   Future<Insights> correctAnswer({
@@ -106,14 +161,22 @@ class InsightService {
       correctedAt: Timestamp.now(),
     );
 
-    await _doc(userId, insightId).update({
-      'pandaLabeledAnswers.$questionId': newAnswer,
+    final ref = _doc(userId, insightId);
+    final snap = await ref.get();
+    final answers = <String, String>{
+      ...?(snap.data()?['pandaLabeledAnswers'] as Map?)
+          ?.map((k, v) => MapEntry(k.toString(), v.toString())),
+    };
+    answers[questionId] = newAnswer;
+
+    await ref.update({
+      'pandaLabeledAnswers': answers,
       'pandaCorrections': FieldValue.arrayUnion([correction.toMap()]),
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    final snap = await _doc(userId, insightId).get();
-    return Insights.fromDoc(snap);
+    final updated = await ref.get();
+    return Insights.fromDoc(updated);
   }
 
   // ===========================================================================
@@ -252,13 +315,16 @@ class InsightService {
     final copingCounts    = <String, int>{};
     final intensityCounts = <String, int>{};
 
+    // Weight by frequency: a stressor recorded 5× counts 5, so the most
+    // frequent stressors rank highest (academia 5× > work stress 3×).
     for (final insight in insights) {
       final s = insight.pandaSlots;
       if (s == null) continue;
-      _inc(stressorCounts,  s.stressor);
-      _inc(emotionCounts,   s.emotion);
-      _inc(copingCounts,    s.copingStrategy);
-      _inc(intensityCounts, s.intensity);
+      final w = insight.frequency < 1 ? 1 : insight.frequency;
+      _addWeighted(stressorCounts,  s.stressor,       w);
+      _addWeighted(emotionCounts,   s.emotion,        w);
+      _addWeighted(copingCounts,    s.copingStrategy, w);
+      _addWeighted(intensityCounts, s.intensity,      w);
     }
 
     // Most recent session recaps (newest first) — chat + context fed back into
@@ -270,21 +336,28 @@ class InsightService {
         .take(2)
         .toList();
 
+    final topStressors = _topN(stressorCounts, 3);
+
     return {
-      'top_stressors': _topN(stressorCounts,  3),
+      'top_stressors': topStressors,
       'top_emotions':  _topN(emotionCounts,   3),
       'top_coping':    _topN(copingCounts,    3),
       'avg_intensity': _modal(intensityCounts),
       'session_count': insights.length,
       'recent_summaries': recentSummaries,
+      // How often each top stressor has been recorded — lets the fed-back
+      // context annotate priority, e.g. "academia (5×), work stress (3×)".
+      'stressor_counts': {
+        for (final s in topStressors) s: stressorCounts[s] ?? 0,
+      },
     };
   }
 
   // Private helpers
 
-  void _inc(Map<String, int> counts, String? value) {
+  void _addWeighted(Map<String, int> counts, String? value, int weight) {
     if (value == null || value.isEmpty) return;
-    counts[value] = (counts[value] ?? 0) + 1;
+    counts[value] = (counts[value] ?? 0) + weight;
   }
 
   List<String> _topN(Map<String, int> counts, int n) {

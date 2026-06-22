@@ -6,7 +6,6 @@ import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:vivordo_health/src/services/metrics_service.dart';
 
 
 
@@ -577,57 +576,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                         'Syncs every 3 minutes in background',
                         _autoSyncData,
                         (val) => setState(() => _autoSyncData = val),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-// ── Developer Tools ────────────────────────────────────────
-                  _buildSectionLabel('Developer Tools'),
-                  _buildCard(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () async {
-                              try {
-                                await MetricsService.seedDemoData();
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Demo data loaded successfully!'),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Failed: $e'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                            icon: const Icon(Icons.data_object_rounded, size: 18),
-                            label: const Text('Load Demo Data'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF7B6EF6),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              textStyle: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
                       ),
                     ],
                   ),
