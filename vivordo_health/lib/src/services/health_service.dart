@@ -355,9 +355,17 @@ class HealthService {
       final day  = entry.key;
       final vals = entry.value;
       final ref  = _db.collection('users').doc(uid).collection('metrics_daily').doc(day);
+      final payload = _buildValueMap(def.type, vals);
+
+      if (def.key == 'steps') {
+        debugPrint('DEBUG STEPS: Preparing Firebase write for $day');
+        debugPrint('DEBUG STEPS: Values = $vals');
+        debugPrint('DEBUG STEPS: Payload = $payload');
+      }
+
       batch.set(ref, {
         def.key: {
-          ..._buildValueMap(def.type, vals),
+          ...payload,
           'source':   'apple_health',
           'syncedAt': FieldValue.serverTimestamp(),
         },
@@ -365,7 +373,17 @@ class HealthService {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }
-    await batch.commit();
+
+    try {
+      await batch.commit();
+      debugPrint(
+        'DEBUG: Firestore batch commit succeeded for ${def.key}. Days written: ${byDay.length}',
+      );
+    } catch (e, st) {
+      debugPrint('DEBUG: Firestore batch commit FAILED for ${def.key}: $e');
+      debugPrint(st.toString());
+      rethrow;
+    }
   }
 
   Map<String, dynamic> _buildValueMap(HealthDataType type, List<double> vals) {
