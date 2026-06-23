@@ -29,6 +29,8 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>com.vivordo.health</string>
+				<string>msauth.com.vivordo.health</string>
 				<string>com.googleusercontent.apps.226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj</string>
 			</array>
 		</dict>
