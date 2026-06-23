@@ -77,17 +77,40 @@ class NotificationService {
         onDidReceiveNotificationResponse: _onNotificationTapped,
       );
 
-      // Get and log FCM token
-      try {
-        String? token = await _firebaseMessaging.getToken();
-        print('NotificationService: FCM Token: $token');
+      // Listen for token refresh
+      _firebaseMessaging.onTokenRefresh.listen((newToken) {
+        print('NotificationService: FCM Token refreshed: $newToken');
+      });
 
-        // Listen for token refresh
-        _firebaseMessaging.onTokenRefresh.listen((newToken) {
-          print('NotificationService: FCM Token refreshed: $newToken');
-        });
+      // Get and log FCM token after APNs token is available on iOS.
+      try {
+        if (Platform.isIOS) {
+          String? apnsToken;
+
+          for (int attempt = 1; attempt <= 10; attempt++) {
+            apnsToken = await _firebaseMessaging.getAPNSToken();
+
+            if (apnsToken != null) {
+              print('NotificationService: APNs Token received: $apnsToken');
+              break;
+            }
+
+            print('NotificationService: APNs token not available yet, retrying ($attempt/10)');
+            await Future.delayed(const Duration(seconds: 1));
+          }
+
+          if (apnsToken == null) {
+            print('NotificationService: Warning - APNs token still unavailable; skipping FCM token for now');
+          } else {
+            final token = await _firebaseMessaging.getToken();
+            print('NotificationService: FCM Token: $token');
+          }
+        } else {
+          final token = await _firebaseMessaging.getToken();
+          print('NotificationService: FCM Token: $token');
+        }
       } catch (e) {
-        print('NotificationService: Warning - Could not get FCM token (normal on simulator): $e');
+        print('NotificationService: Warning - Could not get FCM token: $e');
       }
 
       // Handle foreground messages
