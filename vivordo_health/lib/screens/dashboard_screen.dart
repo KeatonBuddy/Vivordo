@@ -405,6 +405,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ? _monthLabels(snap, metricType)
             : _dayLabels(snap, metricType);
     if (values.isEmpty) return const SizedBox.shrink();
+
+    if (_filterIndex == 0) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: _buildDailyMetricTile(
+          title: title,
+          icon: _metricIcon(metricType),
+          color: color,
+          metricType: metricType,
+          field: field,
+          values: values,
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: _buildChartCard(
@@ -419,6 +434,127 @@ class _DashboardScreenState extends State<DashboardScreen> {
         labels: labels,
       ),
     );
+  }
+
+  Widget _buildDailyMetricTile({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required String metricType,
+    required String field,
+    required List<double> values,
+  }) {
+    final primaryValue = field == 'sum'
+        ? values.fold<double>(0, (total, value) => total + value)
+        : values.last;
+    final avgValue = _avg(values);
+    final hasMultipleValues = values.length > 1;
+
+    final primaryLabel = _formatMetricValue(metricType, primaryValue);
+    final subtitle = hasMultipleValues
+        ? field == 'sum'
+            ? '${values.length} entries today'
+            : 'avg ${_formatMetricValue(metricType, avgValue)} today'
+        : 'today';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E5EA)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 20, color: color),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: textDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: textGrey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            primaryLabel,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatMetricValue(String metricType, double value) {
+    String number({int decimals = 0}) => decimals == 0
+        ? value.round().toString()
+        : value.toStringAsFixed(decimals);
+
+    switch (metricType) {
+      case 'steps':
+        return number();
+      case 'active_calories':
+        return '${number()} kcal';
+      case 'exercise_time':
+      case 'mindfulness':
+        return '${number()} min';
+      case 'distance':
+        return '${number(decimals: value >= 10 ? 1 : 2)} km';
+      case 'heart_rate':
+      case 'resting_heart_rate':
+        return '${number()} bpm';
+      case 'hrv':
+        return '${number()} ms';
+      case 'blood_oxygen':
+        return '${number()}%';
+      case 'respiratory_rate':
+        return '${number()} brpm';
+      case 'sleep':
+        return '${number(decimals: 1)}h';
+      case 'weight':
+        return '${number(decimals: 1)} kg';
+      case 'body_fat':
+        return '${number(decimals: 1)}%';
+      case 'vo2max':
+        return number(decimals: 1);
+      case 'stress':
+      case 'mood':
+      case 'wellness':
+        return number();
+      default:
+        return value == value.roundToDouble()
+            ? number()
+            : number(decimals: 1);
+    }
   }
 
   IconData _metricIcon(String key) {
