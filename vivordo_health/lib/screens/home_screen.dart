@@ -1318,27 +1318,42 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
   }
 
   Future<void> _loadExistingOutlookCalendar() async {
-    try {
-      final dates = _getWeekDates();
-      final weekStart = dates.first;
-      final events = await OutlookCalendarService.getWeekEvents(weekStart).timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => <OutlookEvent>[],
-      );
+  try {
+    final signedIn = await OutlookCalendarService.isSignedIn().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => false,
+    );
 
+    if (!signedIn) {
       if (!mounted) return;
       setState(() {
-        _outlookEvents = events;
-        _isOutlookConnected = true;
-      });
-    } catch (e) {
-      debugPrint('Existing Outlook calendar load failed: $e');
-      if (!mounted) return;
-      setState(() {
+        _outlookEvents = [];
         _isOutlookConnected = false;
       });
+      return;
     }
+
+    final dates = _getWeekDates();
+    final weekStart = dates.first;
+    final events = await OutlookCalendarService.getWeekEvents(weekStart).timeout(
+      const Duration(seconds: 8),
+      onTimeout: () => <OutlookEvent>[],
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _outlookEvents = events;
+      _isOutlookConnected = true;
+    });
+  } catch (e) {
+    debugPrint('Existing Outlook calendar load failed: $e');
+    if (!mounted) return;
+    setState(() {
+      _outlookEvents = [];
+      _isOutlookConnected = false;
+    });
   }
+}
 
   @override
   void dispose() {

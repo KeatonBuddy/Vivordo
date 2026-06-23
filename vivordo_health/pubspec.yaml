@@ -66,6 +66,7 @@ dev_dependencies:
     sdk: flutter
   mockito: ^5.0.0 # For creating mock objects in test
   build_runner: ^2.0.0 # For generating code from annotations
+  flutter_launcher_icons: ^0.14.4
   
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -134,3 +135,10 @@ flutter:
           weight: 600
         - asset: assets/fonts/DMSans-Bold.ttf
           weight: 700
+
+
+flutter_launcher_icons:
+  ios: true
+  android: false
+  image_path: "assets/app_icon.png"
+  remove_alpha_ios: true
