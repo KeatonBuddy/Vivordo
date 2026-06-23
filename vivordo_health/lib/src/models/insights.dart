@@ -162,6 +162,8 @@ class Insights {
     this.pandaLabeledAnswers,
     this.pandaCorrections,
     this.summary,
+    this.frequency = 1,
+    this.stressorKey,
   });
 
   // ── Core fields (all sources) ─────────────────────────────────────────────
@@ -214,6 +216,15 @@ class Insights {
   /// Bounded to ~160 chars so it is cheap to feed back into future sessions'
   /// user context (see GeminiService.fetchRealUserPayload + aggregateSummary).
   String? summary;
+
+  /// How many times this stressor has been recorded. Repeated stressors
+  /// increment this on the existing doc instead of creating duplicates
+  /// (see InsightService.saveSessionInsight). Used to prioritise feedback.
+  int frequency;
+
+  /// Normalised stressor (lowercased, punctuation-stripped) — the exact-match
+  /// key used to find the existing insight to increment. Null when no stressor.
+  String? stressorKey;
 
   // ── Factories ─────────────────────────────────────────────────────────────
 
@@ -276,10 +287,102 @@ class Insights {
       summary:              (summary != null && summary.trim().isNotEmpty)
           ? summary.trim()
           : _buildSessionSummary(slots, labeledAnswers, conversation),
+      stressorKey:          canonicalStressor(slots.stressor),
       acknowledged:         false,
       createdAt:            now,
       updatedAt:            now,
     );
+  }
+
+  /// Normalises a stressor: lowercased, trimmed, punctuation removed,
+  /// whitespace collapsed. Returns null when empty.
+  static String? normalizeStressor(String? raw) {
+    if (raw == null) return null;
+    final n = raw
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return n.isEmpty ? null : n;
+  }
+
+  // Canonical stressor categories — keyword → bucket. Lets differently-worded
+  // stressors collapse to one insight ("work deadline" / "meeting" / "boss" all
+  // → work). Order matters only for overlap; keep buckets distinct.
+  static const Map<String, List<String>> _stressorCanon = {
+    'academia': [
+      'academ', 'school', 'exam', 'study', 'studies', 'class', 'homework',
+      'assignment', 'test', 'grade', 'university', 'college', 'course',
+      'thesis', 'lecture', 'tuition', 'semester', 'midterm', 'final',
+    ],
+    'work': [
+      'work', 'job', 'deadline', 'meeting', 'boss', 'project', 'career',
+      'office', 'workload', 'coworker', 'colleague', 'client', 'shift',
+      'manager', 'promotion', 'interview',
+    ],
+    'financial': [
+      'money', 'financ', 'bill', 'rent', 'debt', 'budget', 'salary', 'loan',
+      'expense', 'afford',
+    ],
+    'family': [
+      'family', 'parent', 'mom', 'dad', 'mother', 'father', 'sibling',
+      'brother', 'sister', 'child', 'kid', 'caregiv',
+    ],
+    'relationship': [
+      'partner', 'relationship', 'boyfriend', 'girlfriend', 'spouse', 'wife',
+      'husband', 'marriage', 'dating', 'breakup', 'divorce',
+    ],
+    'social': [
+      'social', 'friend', 'argument', 'conflict', 'people', 'crowd', 'party',
+      'lonel', 'isolation',
+    ],
+    'health': [
+      'health', 'sick', 'illness', 'pain', 'injury', 'symptom', 'doctor',
+      'medical', 'diagnos',
+    ],
+    'sleep': ['sleep', 'insomnia', 'rest', 'fatigue', 'tired', 'exhaust'],
+  };
+
+  /// Maps a stressor to a canonical category when its wording matches a known
+  /// bucket; otherwise returns the normalised phrase. Used as the de-dup key.
+  static String? canonicalStressor(String? raw) {
+    final n = normalizeStressor(raw);
+    if (n == null) return null;
+    for (final entry in _stressorCanon.entries) {
+      for (final kw in entry.value) {
+        if (n.contains(kw)) return entry.key;
+      }
+    }
+    return n;
+  }
+
+  /// True when two stressors should be treated as the same for de-duplication:
+  /// same canonical category, OR substring containment, OR high token overlap.
+  static bool stressorsMatch(String? a, String? b) {
+    final na = normalizeStressor(a);
+    final nb = normalizeStressor(b);
+    if (na == null || nb == null) return false;
+    if (na == nb) return true;
+
+    final ca = canonicalStressor(a);
+    final cb = canonicalStressor(b);
+    // Same real category (not just two equal fallback phrases).
+    if (ca == cb && _stressorCanon.containsKey(ca)) return true;
+
+    // Plural / phrasing drift, e.g. "noisy neighbor" vs "noisy neighbors".
+    if (na.contains(nb) || nb.contains(na)) return true;
+
+    return _jaccard(na, nb) >= 0.5;
+  }
+
+  /// Word-set Jaccard similarity of two normalised phrases (0..1).
+  static double _jaccard(String a, String b) {
+    final sa = a.split(' ').where((w) => w.isNotEmpty).toSet();
+    final sb = b.split(' ').where((w) => w.isNotEmpty).toSet();
+    if (sa.isEmpty || sb.isEmpty) return 0;
+    final inter = sa.intersection(sb).length;
+    final union = sa.union(sb).length;
+    return inter / union;
   }
 
   // ── Serialisation ─────────────────────────────────────────────────────────
@@ -311,6 +414,9 @@ class Insights {
         'pandaCorrections':       pandaCorrections!.map((c) => c.toMap()).toList(),
       if (summary != null && summary!.isNotEmpty)
         'summary':                summary,
+      'frequency':                frequency,
+      if (stressorKey != null && stressorKey!.isNotEmpty)
+        'stressorKey':            stressorKey,
     };
   }
 
@@ -369,6 +475,8 @@ class Insights {
       pandaLabeledAnswers:      labeledAnswers,
       pandaCorrections:         corrections,
       summary:                  map['summary']       as String?,
+      frequency:                (map['frequency'] as num?)?.toInt() ?? 1,
+      stressorKey:              map['stressorKey']   as String?,
     );
   }
 

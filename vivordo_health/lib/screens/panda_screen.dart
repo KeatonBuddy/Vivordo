@@ -716,7 +716,9 @@ class _PandaScreenState extends State<PandaScreen>
       }
 
       // Persist a significant stressor surfaced via this free-text question.
-      _maybeSaveChatInsight(reply: reply, userMessage: text);
+      // 'You shared' becomes an editable Q→A entry in the History card.
+      _maybeSaveChatInsight(
+          reply: reply, userMessage: text, questionLabel: 'You shared');
 
       // _pandaTyping stays true here — _pandaSay handles the false transition
       // once the response is rendered. Clearing it early causes chips to flash.

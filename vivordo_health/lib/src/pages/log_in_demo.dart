@@ -82,24 +82,6 @@ class LoginDemoState extends State<LoginDemo> {
               ),
             ),
 
-            // --- NEW: Stress Spike Test button ---
-            SizedBox(
-              height: 55,
-              width: 360,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 10.0),
-                child: OutlinedButton(
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/stress-test');
-                  },
-                  child: const Text(
-                    'Open Stress Spike Test',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
-              ),
-            ),
-
             const SizedBox(height: 50),
 
             Row(

@@ -44,7 +44,8 @@ abstract class AIService {
   /// Run spike analysis and return the initial Panda session data
   /// (opener message, labeling questions, raw spike context).
   ///
-  /// [userId] — real Firebase uid; when null/empty, demo path is used.
+  /// [userId] — real Firebase uid; when null/empty, an empty-state session
+  /// is returned (no data to analyze).
   Future<PandaSessionData> analyzePandaSession({
     String? extraUserContext,
     String? userName,

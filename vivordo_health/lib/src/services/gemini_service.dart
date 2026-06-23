@@ -5,8 +5,6 @@ import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 
-import '../demo/demo_user_repository.dart';
-import '../demo/demo_user_data.dart';
 import 'ai_service.dart';
 import 'calendar_service.dart';
 import 'insight_service.dart';
@@ -89,26 +87,6 @@ class GeminiService implements AIService {
   final GenerativeModel _spikeModel;
   final GenerativeModel _dialogueModel;
   final GenerativeModel _summaryModel;
-
-  final DemoUserRepository _demoRepo = DemoUserRepository();
-  DemoUserData? _activeDemoUser;
-
-  DemoUserData getActiveDemoUser() {
-    _activeDemoUser ??= _demoRepo.getRandomDemoUser();
-    return _activeDemoUser!;
-  }
-
-  DemoUserData switchDemoUser() {
-    _activeDemoUser = _demoRepo.getRandomDemoUser();
-    return _activeDemoUser!;
-  }
-
-  DemoUserData peekDemoUser() => getActiveDemoUser();
-  DemoUserData pickNewDemoUser() => switchDemoUser();
-
-  Map<String, dynamic> buildCompactPayloadForTest(Map<String, dynamic> raw,
-          {int topK = 3}) =>
-      buildCompactPayload(raw, topK: topK);
 
   // =========================================================================
   // Spike analysis schema
@@ -237,124 +215,6 @@ RULES:
   );
 
   // =========================================================================
-  // Sample data (demo / test path only)
-  // =========================================================================
-
-  Map<String, dynamic> getSampleData() {
-    final demo = getActiveDemoUser();
-    final day = DateTime.tryParse(demo.date) ?? DateTime.now();
-    final start = DateTime(day.year, day.month, day.day, 18, 0);
-    final end = start.add(const Duration(hours: 24));
-    final baselineHr = demo.restingHeartRate.toDouble();
-    final baselineHrv = demo.hrv.toDouble();
-    final samples = <Map<String, dynamic>>[];
-    final stressLift = (demo.dailyStressLevel / 25.0);
-    final hrvDrop = (demo.dailyStressLevel / 40.0);
-    final stepsPerHour = (demo.stepsCount / 24.0);
-
-    for (int i = 0; i < 24; i++) {
-      final t = start.add(Duration(hours: i));
-      double hr = baselineHr + stressLift;
-      double hrv = baselineHrv - hrvDrop;
-      double steps = stepsPerHour;
-      String activity = "sedentary";
-      String tag = "";
-
-      if (i == 14) {
-        activity = "light";
-        tag = "commute";
-        steps += 200;
-        hr += 10;
-      }
-      if (i == 15) {
-        activity = "sedentary";
-        tag = "work_focus";
-        if (demo.stressed) {
-          hr += 30;
-          hrv -= 18;
-        } else {
-          hr += 12;
-          hrv -= 6;
-        }
-      }
-      if (i == 20) {
-        activity = "sedentary";
-        tag = "deadline";
-        final extra = (demo.stressVariability / 10.0);
-        hr += extra;
-        hrv -= extra / 2.0;
-      }
-      if (i == 22 && demo.exerciseSessions > 0) {
-        activity = "workout";
-        tag = "gym";
-        hr += 50;
-        hrv -= 22;
-        steps += 900;
-      }
-
-      hr = hr.clamp(45, 190);
-      hrv = hrv.clamp(10, 140);
-      steps = steps.clamp(0, 2500);
-
-      samples.add({
-        "t": t.toIso8601String(),
-        "hr": hr.round(),
-        "hrv": hrv.round(),
-        "steps": steps.round(),
-        "stress_score": demo.dailyStressLevel,
-        "activity": activity,
-        "tag": tag,
-      });
-    }
-
-    final events = <Map<String, dynamic>>[
-      {
-        "time": start
-            .add(const Duration(hours: 13, minutes: 40))
-            .toIso8601String(),
-        "type": "caffeine",
-        "detail": demo.stressed ? "coffee (strong)" : "coffee (small)",
-      },
-      {
-        "time": start.add(const Duration(hours: 15)).toIso8601String(),
-        "type": "work",
-        "detail": "work / class start",
-      },
-      {
-        "time": start.add(const Duration(hours: 20)).toIso8601String(),
-        "type": "work",
-        "detail": "deadline / high focus",
-      },
-      if (demo.exerciseSessions > 0)
-        {
-          "time": start.add(const Duration(hours: 22)).toIso8601String(),
-          "type": "activity",
-          "detail": "gym workout started",
-        },
-    ];
-
-    return {
-      "demo_user": demo.toMap(),
-      "user_profile": {
-        "timezone": demo.timezone,
-        "age_range": (demo.age < 18) ? "teen" : "adult",
-        "resting_hr_typical": demo.restingHeartRate,
-        "hrv_rmssd_typical": demo.hrv,
-      },
-      "data_window": {
-        "start": start.toIso8601String(),
-        "end": end.toIso8601String(),
-      },
-      "samples_5min": samples,
-      "events": events,
-      "sleep_summary": {
-        "total_minutes": (demo.sleepDurationHours * 60).round(),
-        "sleep_quality": demo.sleepQualityScore,
-      },
-    };
-  }
-
-  // =========================================================================
   // Spike analysis
   // =========================================================================
 
@@ -420,12 +280,8 @@ RULES:
       return session;
     }
 
-    // ── Demo / test path — only reachable from test pages ────────────────
-    final rawSample = getSampleData();
-    final compact = buildCompactPayload(rawSample, topK: 1);
-    final raw = await analyzeStressSpikes(
-        data: compact, extraUserContext: extraUserContext);
-    return parsePandaSession(raw, rawSample, overrideName: userName);
+    // No user id → nothing to analyze; surface the empty state.
+    return emptyStateSession(userName ?? 'there');
   }
 
   // =========================================================================
@@ -769,6 +625,10 @@ RULES:
       if (recentSummaries.isNotEmpty) {
         insightsSummary['recent_sessions'] = recentSummaries;
       }
+      final stressorCounts = insightsAgg['stressor_counts'];
+      if (stressorCounts is Map && stressorCounts.isNotEmpty) {
+        insightsSummary['stressor_counts'] = stressorCounts;
+      }
       insightsSummary['past_session_count'] = insightsAgg['session_count'];
     }
 
@@ -795,7 +655,7 @@ RULES:
           'total_hours': todaySleepHrs,
           'sleep_quality': sleepQuality,
         },
-      'demo_user': {
+      'user_meta': {
         'userId': userId,
         'hrv': baselineHrv,
       },
@@ -1184,11 +1044,11 @@ Write the continuity note now.''';
     Map<String, dynamic> rawSample, {
     String? overrideName,
   }) {
-    final demo = rawSample['demo_user'] as Map<String, dynamic>?;
+    final userMeta = rawSample['user_meta'] as Map<String, dynamic>?;
 
     final userName = overrideName?.isNotEmpty == true
         ? overrideName!
-        : (demo?['userId'] as String? ?? 'there')
+        : (userMeta?['userId'] as String? ?? 'there')
             .replaceAll(RegExp(r'[_\-]'), ' ')
             .split(' ')
             .first;
@@ -1315,8 +1175,20 @@ Write the continuity note now.''';
     final coping = asList(s['top_coping']);
     final intensity = (s['typical_intensity'] as String?)?.trim() ?? '';
     final recents = asList(s['recent_sessions']);
+    final counts = s['stressor_counts'] is Map
+        ? (s['stressor_counts'] as Map)
+        : const {};
 
-    if (stressors.isNotEmpty) lines.add('Recurring stressors: ${stressors.join(', ')}');
+    if (stressors.isNotEmpty) {
+      // Annotate with frequency so priority is explicit, e.g.
+      // "academia (5×), work stress (3×)" — higher count = higher priority,
+      // but all listed stressors still matter.
+      final rendered = stressors.map((st) {
+        final c = (counts[st] as num?)?.toInt() ?? 0;
+        return c > 1 ? '$st (${c}×)' : st;
+      }).join(', ');
+      lines.add('Recurring stressors (by frequency): $rendered');
+    }
     if (emotions.isNotEmpty) lines.add('Common emotions: ${emotions.join(', ')}');
     if (coping.isNotEmpty) lines.add('Coping that came up: ${coping.join(', ')}');
     if (intensity.isNotEmpty) lines.add('Typical intensity: $intensity');

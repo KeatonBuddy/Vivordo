@@ -28,7 +28,6 @@ import 'panda_recommendations.dart';
 // UserContext — persistent user signals fed into recommendation scoring.
 //
 // In production: populate from Firestore user doc.
-// In demo:       call UserContext.fromDemoMap(demoUser.toMap()).
 // =============================================================================
 
 class UserContext {
@@ -56,7 +55,7 @@ class UserContext {
   /// Short journal entry summary (used for richer tag matching)
   final String? journalSummary;
 
-  /// True if the user is flagged as stressed today (from DemoUserData.stressed)
+  /// True if the user is flagged as stressed today.
   final bool isStressed;
 
   /// Sleep quality score 0–100. Low (<50) → boost sleep recs.
@@ -67,29 +66,6 @@ class UserContext {
 
   /// Exercise sessions per week. Low (≤1) → nudge movement recs.
   final int? exerciseSessions;
-
-  /// Build from a DemoUserData.toMap() result. Safe for missing keys.
-  factory UserContext.fromDemoMap(Map<String, dynamic> demo) {
-    // Goals may be List<String> or a comma-separated String
-    List<String> goals = [];
-    final rawGoals = demo['goals'];
-    if (rawGoals is List) {
-      goals = rawGoals.map((g) => g.toString()).toList();
-    } else if (rawGoals is String && rawGoals.isNotEmpty) {
-      goals = rawGoals.split(',').map((g) => g.trim()).toList();
-    }
-
-    return UserContext(
-      goals: goals,
-      journalMood: demo['journalMood']?.toString(),
-      journalKeyword: demo['keyword']?.toString(),
-      journalSummary: demo['journalEntrySummary']?.toString(),
-      isStressed: demo['stressed'] as bool? ?? false,
-      sleepQuality: (demo['sleepQualityScore'] as num?)?.toDouble(),
-      stressLevel: (demo['dailyStressLevel'] as num?)?.toDouble(),
-      exerciseSessions: (demo['exerciseSessions'] as num?)?.toInt(),
-    );
-  }
 
   bool get isEmpty =>
       goals.isEmpty &&
