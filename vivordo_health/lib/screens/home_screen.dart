@@ -1411,6 +1411,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
       _lastGoogleCalendarWeekOffset = null; 
 
       final events = await CalendarService.connectAndGetWeekEvents(weekStart);
+      if (!mounted) return;
       setState(() {
         _googleEvents = events;
         _isGoogleConnected = true;

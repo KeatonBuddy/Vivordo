@@ -42,15 +42,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ── Separate consent stream (reads from users/ doc) ───────────────────────
   late Stream<Map<String, bool>> _consentStream;
 
+  bool _refreshingTodaySteps = false;
+
   @override
   void initState() {
     super.initState();
     _rebuildStreams();
+    _refreshTodayStepsFromHealth();
   }
 
   void _rebuildStreams() {
     _allMetricsStream = _buildCombinedStream();
     _consentStream    = HealthService().consentStream();
+  }
+
+  Future<void> _refreshTodayStepsFromHealth() async {
+    if (_refreshingTodaySteps) return;
+    _refreshingTodaySteps = true;
+
+    try {
+      await HealthService().syncMetric('steps', daysBack: 1);
+    } catch (e) {
+      debugPrint('DashboardScreen: failed to refresh today steps from Apple Health: $e');
+    } finally {
+      _refreshingTodaySteps = false;
+    }
   }
 
   /// Single Firestore query that fetches all daily docs in the date window from
@@ -590,10 +606,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return Padding(
           padding: EdgeInsets.only(right: i < _filterLabels.length - 1 ? 8 : 0),
           child: GestureDetector(
-            onTap: () => setState(() {
-              _filterIndex = i;
-              _rebuildStreams();
-            }),
+            onTap: () {
+              setState(() {
+                _filterIndex = i;
+                _rebuildStreams();
+              });
+
+              if (i == 0) {
+                _refreshTodayStepsFromHealth();
+              }
+            },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),

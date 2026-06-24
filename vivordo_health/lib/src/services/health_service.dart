@@ -221,7 +221,7 @@ class HealthService {
       permissions: [HealthDataAccess.READ],
     );
 
-    await _setConsent(metricKey, true);
+    await _setConsent(metricKey, granted);
     if (granted) {
       await syncMetric(metricKey, daysBack: 30);
     }
@@ -272,6 +272,39 @@ class HealthService {
     if (def == null) return;
 
     await _health.configure();
+
+    var hasPermission = await _health.hasPermissions(
+      [def.type],
+      permissions: [HealthDataAccess.READ],
+    ) ?? false;
+
+    if (!hasPermission) {
+      debugPrint(
+        'HealthService.syncMetric($metricKey): HealthKit permission missing. Attempting quiet reconnect...',
+      );
+
+      // This is silent if iOS already has valid authorization state for the app.
+      // If the user revoked permission in Settings, iOS requires user action and
+      // this will return false.
+      hasPermission = await _health.requestAuthorization(
+        [def.type],
+        permissions: [HealthDataAccess.READ],
+      );
+
+      if (!hasPermission) {
+        debugPrint(
+          'HealthService.syncMetric($metricKey): quiet reconnect failed. User needs to reconnect Apple Health.',
+        );
+        await _setConsent(metricKey, false);
+        return;
+      }
+
+      debugPrint(
+        'HealthService.syncMetric($metricKey): quiet reconnect succeeded.',
+      );
+      await _setConsent(metricKey, true);
+    }
+
     final now   = DateTime.now();
     final start = now.subtract(Duration(days: daysBack));
 
@@ -281,7 +314,18 @@ class HealthService {
         endTime: now,
         types: [def.type],
       );
-      if (dataPoints.isEmpty) return;
+
+      if (metricKey == 'steps') {
+        debugPrint('DEBUG STEPS: Apple Health returned ${dataPoints.length} step data point(s) for $daysBack day(s).');
+      }
+
+      if (dataPoints.isEmpty) {
+        if (metricKey == 'steps') {
+          debugPrint('DEBUG STEPS: No step data returned from Apple Health. Nothing will be written to Firebase.');
+        }
+        return;
+      }
+
       await _writeDataPoints(uid, def, dataPoints);
     } catch (e, st) {
       debugPrint('HealthService.syncMetric($metricKey): $e\n$st');
