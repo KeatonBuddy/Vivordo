@@ -235,6 +235,27 @@ class UserService {
   }
 
 
+  /// Submits a bug report to the top-level `bug_reports` collection.
+  /// This is intentionally NOT under the user's document so reports are
+  /// collected centrally for the team to triage.
+  static Future<void> submitBugReport(String message) async {
+    final trimmed = message.trim();
+    if (trimmed.isEmpty) {
+      throw Exception('Bug report message cannot be empty');
+    }
+
+    final user = FirebaseAuth.instance.currentUser;
+
+    await FirebaseFirestore.instance.collection('bug_reports').add({
+      'message': trimmed,
+      'userId': user?.uid,
+      'userEmail': user?.email,
+      'status': 'open',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+
   /// Syncs Firebase Auth email with Firestore.
   ///
   /// Returns true ONLY when all three conditions are true simultaneously:

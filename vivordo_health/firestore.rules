@@ -21,5 +21,16 @@ service cloud.firestore {
     match /batch_jobs/{batchId} {
       allow read: if request.auth != null;
     }
+
+    // ── Bug reports (written by the app from the Profile screen) ──────────────
+    // Any signed-in user may submit a report. Reports are triaged via the
+    // Firebase console / Cloud Functions, so clients may not read or modify
+    // them — this keeps one user from seeing another's report. The new doc
+    // must be stamped with the submitter's own uid.
+    match /bug_reports/{reportId} {
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      allow read, update, delete: if false;
+    }
   }
 }
