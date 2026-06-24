@@ -29,6 +29,10 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isConnectingAll = false;           // "Connect Apple Health" button
   String? _togglingMetric;                 // key of metric currently being toggled
 
+  // Bug report
+  final TextEditingController _bugReportController = TextEditingController();
+  bool _isSubmittingBugReport = false;
+
   StreamSubscription<User?>? _authSubscription;
 
   // Cached Firestore stream — MUST be created once in initState and reused.
@@ -87,8 +91,40 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _bugReportController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+
+  Future<void> _submitBugReport() async {
+    final message = _bugReportController.text.trim();
+    if (message.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please describe the bug before sending.')),
+      );
+      return;
+    }
+
+    setState(() => _isSubmittingBugReport = true);
+    try {
+      await UserService.submitBugReport(message);
+      if (mounted) {
+        _bugReportController.clear();
+        FocusScope.of(context).unfocus();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Thanks! Your bug report has been sent.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not send report: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmittingBugReport = false);
+    }
   }
 
 
@@ -576,6 +612,103 @@ class _SettingsScreenState extends State<SettingsScreen>
                         'Syncs every 3 minutes in background',
                         _autoSyncData,
                         (val) => setState(() => _autoSyncData = val),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── Report a Bug ───────────────────────────────────────────
+                  _buildSectionLabel('Report a Bug'),
+                  _buildCard(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(7),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF7B6EF6).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.bug_report_outlined,
+                                      size: 16, color: Color(0xFF7B6EF6)),
+                                ),
+                                const SizedBox(width: 14),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Found a problem?',
+                                          style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF1C1C1E))),
+                                      Text('Tell us what went wrong and we’ll look into it',
+                                          style: TextStyle(
+                                              fontSize: 12, color: Color(0xFF8E8E93))),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            TextField(
+                              controller: _bugReportController,
+                              minLines: 3,
+                              maxLines: 6,
+                              textCapitalization: TextCapitalization.sentences,
+                              style: const TextStyle(fontSize: 14, color: Color(0xFF1C1C1E)),
+                              decoration: InputDecoration(
+                                hintText: 'Describe the bug…',
+                                hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF8E8E93)),
+                                filled: true,
+                                fillColor: const Color(0xFFF2F2F7),
+                                contentPadding: const EdgeInsets.all(14),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide.none,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide.none,
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(color: Color(0xFF7B6EF6), width: 1.5),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _isSubmittingBugReport ? null : _submitBugReport,
+                                icon: _isSubmittingBugReport
+                                    ? const SizedBox(
+                                        width: 16, height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : const Icon(Icons.send_rounded, size: 18),
+                                label: Text(_isSubmittingBugReport ? 'Sending…' : 'Send Report'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF7B6EF6),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                  textStyle: const TextStyle(
+                                      fontSize: 14, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
