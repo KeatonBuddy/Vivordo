@@ -23,6 +23,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // Single stream for today's unified metrics doc
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _todayStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
+  Future<List<gcal.Event>>? _reachableWindowEventsFuture;
+  DateTime? _reachableWindowEventsDate;
 
   static const Color bgColor = Color(0xFFF2F2F7);
   static const Color cardWhite = Colors.white;
@@ -180,6 +182,21 @@ class _HomeScreenState extends State<HomeScreen> {
       return [];
     }
   }
+  Future<List<gcal.Event>> _getReachableWindowEventsFuture(DateTime todayStart) {
+  final normalizedDate = DateTime(todayStart.year, todayStart.month, todayStart.day);
+
+  if (_reachableWindowEventsFuture != null &&
+      _reachableWindowEventsDate != null &&
+      _reachableWindowEventsDate!.year == normalizedDate.year &&
+      _reachableWindowEventsDate!.month == normalizedDate.month &&
+      _reachableWindowEventsDate!.day == normalizedDate.day) {
+    return _reachableWindowEventsFuture!;
+  }
+
+  _reachableWindowEventsDate = normalizedDate;
+  _reachableWindowEventsFuture = _loadReachableWindowEvents(normalizedDate);
+  return _reachableWindowEventsFuture!;
+}
 
   Widget _buildScaffold({
     required double? stressScore,
@@ -699,7 +716,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final todayStart = DateTime(now.year, now.month, now.day);
 
     return FutureBuilder<List<gcal.Event>>(
-      future: _loadReachableWindowEvents(todayStart),
+      future: _getReachableWindowEventsFuture(todayStart),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Container(
@@ -1239,7 +1256,9 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
   bool _isGoogleConnected = false;
   bool _isOutlookConnected = false;
   bool _isLoading = false;
-
+  DateTime? _lastGoogleCalendarAttempt;
+  DateTime? _lastGoogleCalendarFailure;
+  int? _lastGoogleCalendarWeekOffset;
   bool get _hasConnectedCalendar => _isGoogleConnected || _isOutlookConnected;
 
   static const double _cellH = 52;
@@ -1274,10 +1293,30 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
     });
   }
 
-  Future<void> _loadExistingGoogleCalendar() async {
-    if (_isLoading) return;
+  Future<void> _loadExistingGoogleCalendar({bool force = false}) async {
+  if (_isLoading) return;
 
-    setState(() => _isLoading = true);
+  final now = DateTime.now();
+
+  if (!force &&
+      _lastGoogleCalendarAttempt != null &&
+      _lastGoogleCalendarWeekOffset == _weekOffset &&
+      now.difference(_lastGoogleCalendarAttempt!) < const Duration(seconds: 30)) {
+    debugPrint('Google Calendar load skipped: cooldown active');
+    return;
+  }
+
+  if (!force &&
+      _lastGoogleCalendarFailure != null &&
+      now.difference(_lastGoogleCalendarFailure!) < const Duration(minutes: 2)) {
+    debugPrint('Google Calendar load skipped: recent failure cooldown active');
+    return;
+  }
+
+  _lastGoogleCalendarAttempt = now;
+  _lastGoogleCalendarWeekOffset = _weekOffset;
+
+  setState(() => _isLoading = true);
     try {
       final signedIn = await CalendarService.isSignedIn()
         .timeout(
@@ -1309,6 +1348,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
       });
     } catch (e) {
       debugPrint('Calendar silent load error: $e');
+      _lastGoogleCalendarFailure = DateTime.now();
       if (!mounted) return;
       setState(() {
         _isGoogleConnected = false;
@@ -1366,6 +1406,10 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
     try {
       final dates = _getWeekDates();
       final weekStart = dates.first;
+      _lastGoogleCalendarAttempt = null;
+      _lastGoogleCalendarFailure = null;
+      _lastGoogleCalendarWeekOffset = null; 
+
       final events = await CalendarService.connectAndGetWeekEvents(weekStart);
       setState(() {
         _googleEvents = events;
