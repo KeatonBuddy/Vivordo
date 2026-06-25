@@ -1280,6 +1280,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
   @override
   void initState() {
     super.initState();
+    CalendarService.connectionNotifier.addListener(_handleGoogleCalendarConnectionChange);
     _loadExistingGoogleCalendar();
     _loadExistingOutlookCalendar();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1397,8 +1398,21 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
 
   @override
   void dispose() {
+    CalendarService.connectionNotifier.removeListener(_handleGoogleCalendarConnectionChange);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _handleGoogleCalendarConnectionChange() {
+    if (!mounted || CalendarService.connectionNotifier.value) return;
+    setState(() {
+      _googleEvents = [];
+      _isGoogleConnected = false;
+      _isLoading = false;
+      _lastGoogleCalendarAttempt = null;
+      _lastGoogleCalendarFailure = null;
+      _lastGoogleCalendarWeekOffset = null;
+    });
   }
 
   Future<void> _connectGoogle() async {

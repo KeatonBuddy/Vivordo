@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 class CalendarService {
   static bool _initialized = false;
   static GoogleSignInAccount? _currentUser;
+  static final ValueNotifier<bool> connectionNotifier = ValueNotifier<bool>(false);
 
   static Future<void> initialize() async {
     if (_initialized) return;
@@ -18,6 +19,7 @@ class CalendarService {
           _currentUser = event.user;
         case GoogleSignInAuthenticationEventSignOut():
           _currentUser = null;
+          connectionNotifier.value = false;
       }
     }).onError((e) => debugPrint('Auth error: $e'));
 
@@ -51,7 +53,10 @@ class CalendarService {
       final authorization = await user.authorizationClient
           .authorizationForScopes(scopes);
 
-      if (authorization == null) return [];
+      if (authorization == null) {
+        connectionNotifier.value = false;
+        return [];
+      }
 
       final client = authorization.authClient(scopes: scopes);
       final calendarApi = gcal.CalendarApi(client);
@@ -64,6 +69,7 @@ class CalendarService {
         orderBy: 'startTime',
       );
 
+      connectionNotifier.value = true;
       return events.items ?? [];
     } catch (e) {
       debugPrint('CalendarService error: $e');
@@ -92,8 +98,6 @@ class CalendarService {
           .authorizationForScopes(scopes);
       authorization ??= await user.authorizationClient.authorizeScopes(scopes);
 
-      if (authorization == null) return [];
-
       final client = authorization.authClient(scopes: scopes);
       final calendarApi = gcal.CalendarApi(client);
       final weekEnd = weekStart.add(const Duration(days: 7));
@@ -106,6 +110,7 @@ class CalendarService {
         orderBy: 'startTime',
       );
 
+      connectionNotifier.value = true;
       return events.items ?? [];
     } catch (e) {
       debugPrint('CalendarService connect error: $e');
@@ -118,8 +123,35 @@ class CalendarService {
     return _currentUser != null;
   }
 
+  static Future<bool> hasCalendarAccess() async {
+    try {
+      await initialize();
+
+      var user = _currentUser;
+      user ??= await GoogleSignIn.instance.attemptLightweightAuthentication();
+      _currentUser = user;
+      if (user == null) {
+        connectionNotifier.value = false;
+        return false;
+      }
+
+      const scopes = [gcal.CalendarApi.calendarReadonlyScope];
+      final authorization = await user.authorizationClient
+          .authorizationForScopes(scopes);
+      final hasAccess = authorization != null;
+      connectionNotifier.value = hasAccess;
+      return hasAccess;
+    } catch (e) {
+      debugPrint('CalendarService access check error: $e');
+      connectionNotifier.value = false;
+      return false;
+    }
+  }
+
   static Future<void> signOut() async {
-    await GoogleSignIn.instance.signOut();
+    await initialize();
+    await GoogleSignIn.instance.disconnect();
     _currentUser = null;
+    connectionNotifier.value = false;
   }
 }

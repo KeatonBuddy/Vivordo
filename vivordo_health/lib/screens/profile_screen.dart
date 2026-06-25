@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
@@ -28,6 +29,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   // Loading states for HealthKit actions
   bool _isConnectingAll = false;           // "Connect Apple Health" button
   String? _togglingMetric;                 // key of metric currently being toggled
+  bool _isGoogleCalendarConnected = false;
+  bool _isUpdatingGoogleCalendar = false;
 
   // Bug report
   final TextEditingController _bugReportController = TextEditingController();
@@ -53,6 +56,9 @@ class _SettingsScreenState extends State<SettingsScreen>
             .doc(uid)
             .snapshots()
         : const Stream.empty();
+
+    CalendarService.connectionNotifier.addListener(_handleGoogleCalendarConnectionChange);
+    _refreshGoogleCalendarConnection();
 
 
     // Skip the first emission — it just reflects current login state, not a change
@@ -92,6 +98,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   void dispose() {
     _authSubscription?.cancel();
     _bugReportController.dispose();
+    CalendarService.connectionNotifier.removeListener(_handleGoogleCalendarConnectionChange);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -124,6 +131,55 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
     } finally {
       if (mounted) setState(() => _isSubmittingBugReport = false);
+    }
+  }
+
+  void _handleGoogleCalendarConnectionChange() {
+    if (!mounted) return;
+    setState(() {
+      _isGoogleCalendarConnected = CalendarService.connectionNotifier.value;
+    });
+  }
+
+  Future<void> _refreshGoogleCalendarConnection() async {
+    final hasAccess = await CalendarService.hasCalendarAccess();
+    if (mounted) setState(() => _isGoogleCalendarConnected = hasAccess);
+  }
+
+  Future<void> _updateGoogleCalendarConnection() async {
+    setState(() => _isUpdatingGoogleCalendar = true);
+    try {
+      if (_isGoogleCalendarConnected) {
+        await CalendarService.signOut();
+      } else {
+        final today = DateTime.now();
+        final weekStart = today.subtract(Duration(days: today.weekday - 1));
+        await CalendarService.connectAndGetWeekEvents(
+          DateTime(weekStart.year, weekStart.month, weekStart.day),
+        );
+      }
+
+      final isConnected = CalendarService.connectionNotifier.value;
+      if (mounted) {
+        setState(() => _isGoogleCalendarConnected = isConnected);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isConnected
+                  ? 'Google Calendar has been signed in.'
+                  : 'Google Calendar has been logged out.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update Google Calendar: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdatingGoogleCalendar = false);
     }
   }
 
@@ -487,7 +543,14 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 : () async {
                                     setState(() => _isConnectingAll = true);
                                     try {
-                                      await HealthService().enableAll();
+                                      final granted = await HealthService().enableAll();
+                                      if (mounted && !granted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Apple Health permissions were not granted.'),
+                                          ),
+                                        );
+                                      }
                                     } catch (e) {
                                       if (mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
@@ -522,6 +585,93 @@ class _SettingsScreenState extends State<SettingsScreen>
                           style: TextStyle(fontSize: 11, color: Color(0xFF8E8E93)),
                         ),
                       ],
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── Connected Calendars ───────────────────────────────────
+                  _buildSectionLabel('Connected Calendars'),
+                  _buildCard(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF7B6EF6).withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.calendar_month_rounded,
+                                size: 18,
+                                color: Color(0xFF7B6EF6),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Google Calendar',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF1C1C1E),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _isGoogleCalendarConnected
+                                        ? 'Connected — calendar access enabled'
+                                        : 'Not connected',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: _isGoogleCalendarConnected
+                                          ? const Color(0xFF34C759)
+                                          : const Color(0xFF8E8E93),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: _isUpdatingGoogleCalendar ? null : _updateGoogleCalendarConnection,
+                              icon: _isUpdatingGoogleCalendar
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Color(0xFF7B6EF6),
+                                      ),
+                                    )
+                                  : Icon(
+                                      _isGoogleCalendarConnected
+                                          ? Icons.logout_rounded
+                                          : Icons.login_rounded,
+                                      size: 16,
+                                    ),
+                              label: Text(
+                                _isUpdatingGoogleCalendar
+                                    ? (_isGoogleCalendarConnected ? 'Logging out…' : 'Signing in…')
+                                    : (_isGoogleCalendarConnected ? 'Log Out' : 'Sign In'),
+                              ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: _isGoogleCalendarConnected
+                                    ? const Color(0xFFFF3B30)
+                                    : const Color(0xFF7B6EF6),
+                                textStyle: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),

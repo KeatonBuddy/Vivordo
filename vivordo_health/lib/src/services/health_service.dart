@@ -188,18 +188,21 @@ class HealthService {
 
   /// Request HealthKit permission for ALL metrics at once, then do a full sync.
   /// Call this when the user taps "Connect Apple Health" for the first time.
-  Future<void> enableAll() async {
+  Future<bool> enableAll() async {
     await _health.configure();
     final types = kHealthMetrics.map((m) => m.type).toList();
     final perms = kHealthMetrics.map((_) => HealthDataAccess.READ).toList();
 
     // This shows the iOS permission sheet for all metrics in one dialog.
-    await _health.requestAuthorization(types, permissions: perms);
+    final granted = await _health.requestAuthorization(types, permissions: perms);
 
-    // Mark all as consented — iOS never tells us which ones the user denied,
-    // so we record intent here. Charts only appear when real data arrives.
+    if (!granted) return false;
+
+    // Mark all as requested/consented. On iOS, HealthKit does not disclose
+    // per-type read grants after the prompt, so this records the user's app
+    // intent while the actual charts still depend on real HealthKit data reads.
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) return granted;
     final consentMap = {for (final m in kHealthMetrics) m.key: true};
     await _db.collection('users').doc(uid).set(
       {'healthKitConsent': consentMap},
@@ -208,6 +211,7 @@ class HealthService {
 
     // Sync the last 30 days for all metrics.
     await syncToFirestore(daysBack: 30);
+    return granted;
   }
 
   /// Request HealthKit permission for a single metric, then sync it.
@@ -276,9 +280,9 @@ class HealthService {
     var hasPermission = await _health.hasPermissions(
       [def.type],
       permissions: [HealthDataAccess.READ],
-    ) ?? false;
+    );
 
-    if (!hasPermission) {
+    if (hasPermission == false) {
       debugPrint(
         'HealthService.syncMetric($metricKey): HealthKit permission missing. Attempting quiet reconnect...',
       );
@@ -303,6 +307,10 @@ class HealthService {
         'HealthService.syncMetric($metricKey): quiet reconnect succeeded.',
       );
       await _setConsent(metricKey, true);
+    } else if (hasPermission == null) {
+      debugPrint(
+        'HealthService.syncMetric($metricKey): HealthKit read permission is undetermined by platform; attempting data read.',
+      );
     }
 
     final now   = DateTime.now();
@@ -467,11 +475,11 @@ class HealthService {
       case HealthDataType.RESPIRATORY_RATE:
         return {'avg': avg(), 'min': min(), 'max': max(), 'unit': 'brpm', 'dimension': 'respiratory'};
 
-      // ── Sleep (Apple returns seconds) ────────────────────────────────────────
+      // ── Sleep (health package returns minutes for interval-based sleep data) ─
       case HealthDataType.SLEEP_ASLEEP:
       case HealthDataType.SLEEP_IN_BED:
-        final hours = sum() / 3600;
-        return {'avg': hours, 'min': min() / 3600, 'max': max() / 3600, 'unit': 'hours', 'dimension': 'sleep'};
+        final hours = sum() / 60;
+        return {'avg': hours, 'min': min() / 60, 'max': max() / 60, 'unit': 'hours', 'dimension': 'sleep'};
 
       // ── Body metrics ─────────────────────────────────────────────────────────
       case HealthDataType.WEIGHT:
