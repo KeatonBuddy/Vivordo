@@ -61,7 +61,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _refreshingTodaySteps = true;
 
     try {
-      await HealthService().syncMetric('steps', daysBack: 1);
+      await HealthService().syncMetric('steps', daysBack: _filterIndex == 2 ? 30 : 7);
     } catch (e) {
       debugPrint('DashboardScreen: failed to refresh today steps from Apple Health: $e');
     } finally {
@@ -611,10 +611,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _filterIndex = i;
                 _rebuildStreams();
               });
-
-              if (i == 0) {
-                _refreshTodayStepsFromHealth();
-              }
+              _refreshTodayStepsFromHealth();
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
