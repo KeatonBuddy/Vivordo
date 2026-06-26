@@ -610,7 +610,7 @@ class _ScanScreenState extends State<ScanScreen>
         'icon': Icons.camera_alt_outlined,
         'title': 'Use the rear camera',
         'body': _hasTorch
-            ? 'Place your fingertip so it fully covers both the rear camera and flash.'
+            ? 'Place your fingertip so it fully covers the rear camera.'
             : 'Place your fingertip so it fully covers the rear camera lens.',
       },
       {

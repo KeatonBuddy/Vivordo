@@ -42,13 +42,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ── Separate consent stream (reads from users/ doc) ───────────────────────
   late Stream<Map<String, bool>> _consentStream;
 
-  bool _refreshingTodaySteps = false;
+  bool _refreshingHealthMetrics = false;
 
   @override
   void initState() {
     super.initState();
     _rebuildStreams();
-    _refreshTodayStepsFromHealth();
+    _refreshHealthMetricsFromHealth();
   }
 
   void _rebuildStreams() {
@@ -56,16 +56,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _consentStream    = HealthService().consentStream();
   }
 
-  Future<void> _refreshTodayStepsFromHealth() async {
-    if (_refreshingTodaySteps) return;
-    _refreshingTodaySteps = true;
+  Future<void> _refreshHealthMetricsFromHealth() async {
+    if (_refreshingHealthMetrics) return;
+    _refreshingHealthMetrics = true;
 
     try {
-      await HealthService().syncMetric('steps', daysBack: _filterIndex == 2 ? 30 : 7);
+      await HealthService().syncMetric('steps', daysBack: _daysBack);
+      await HealthService().syncToFirestore(daysBack: _daysBack);
     } catch (e) {
-      debugPrint('DashboardScreen: failed to refresh today steps from Apple Health: $e');
+      debugPrint('DashboardScreen: failed to refresh metrics from Apple Health: $e');
     } finally {
-      _refreshingTodaySteps = false;
+      _refreshingHealthMetrics = false;
     }
   }
 
@@ -611,7 +612,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _filterIndex = i;
                 _rebuildStreams();
               });
-              _refreshTodayStepsFromHealth();
+              _refreshHealthMetricsFromHealth();
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),

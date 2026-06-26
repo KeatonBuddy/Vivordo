@@ -309,14 +309,71 @@ class HealthService {
       await _setConsent(metricKey, true);
     } else if (hasPermission == null) {
       debugPrint(
-        'HealthService.syncMetric($metricKey): HealthKit read permission is undetermined by platform; attempting data read.',
+        'HealthService.syncMetric($metricKey): HealthKit read permission is undetermined. Requesting authorization...',
       );
+
+      hasPermission = await _health.requestAuthorization(
+        [def.type],
+        permissions: [HealthDataAccess.READ],
+      );
+
+      if (!hasPermission) {
+        debugPrint(
+          'HealthService.syncMetric($metricKey): authorization request failed. User needs to reconnect Apple Health.',
+        );
+        await _setConsent(metricKey, false);
+        return;
+      }
+
+      debugPrint(
+        'HealthService.syncMetric($metricKey): authorization request succeeded.',
+      );
+      await _setConsent(metricKey, true);
+    }
+
+    if (metricKey == 'steps') {
+      await _syncStepTotals(uid, daysBack: daysBack);
+      return;
     }
 
     final now   = DateTime.now();
-    final start = now.subtract(Duration(days: daysBack));
+    final today = DateTime(now.year, now.month, now.day);
+    final start = today.subtract(Duration(days: daysBack - 1));
 
     try {
+      if (_usesDailyTotals(def.type)) {
+        final dataPoints = await _health.getHealthIntervalDataFromTypes(
+          startDate: start,
+          endDate: now,
+          types: [def.type],
+          interval: const Duration(days: 1).inSeconds,
+        );
+
+        if (dataPoints.isEmpty) {
+          debugPrint(
+            'HealthService.syncMetric($metricKey): no daily total data returned from Apple Health.',
+          );
+          await _deleteMetricForMissingDays(
+            uid,
+            metricKey,
+            start: start,
+            end: now,
+            daysWithData: const {},
+          );
+          return;
+        }
+
+        final daysWithData = await _writeDataPoints(uid, def, dataPoints);
+        await _deleteMetricForMissingDays(
+          uid,
+          metricKey,
+          start: start,
+          end: now,
+          daysWithData: daysWithData,
+        );
+        return;
+      }
+
       final dataPoints = await _health.getHealthDataFromTypes(
         startTime: start,
         endTime: now,
@@ -331,10 +388,24 @@ class HealthService {
         if (metricKey == 'steps') {
           debugPrint('DEBUG STEPS: No step data returned from Apple Health. Nothing will be written to Firebase.');
         }
+        await _deleteMetricForMissingDays(
+          uid,
+          metricKey,
+          start: start,
+          end: now,
+          daysWithData: const {},
+        );
         return;
       }
 
-      await _writeDataPoints(uid, def, dataPoints);
+      final daysWithData = await _writeDataPoints(uid, def, dataPoints);
+      await _deleteMetricForMissingDays(
+        uid,
+        metricKey,
+        start: start,
+        end: now,
+        daysWithData: daysWithData,
+      );
     } catch (e, st) {
       debugPrint('HealthService.syncMetric($metricKey): $e\n$st');
       rethrow; // Surface Firestore/permissions errors to the caller
@@ -380,6 +451,129 @@ class HealthService {
 
   // ─── Internal helpers ──────────────────────────────────────────────────────
 
+  bool _usesDailyTotals(HealthDataType type) {
+    return type == HealthDataType.ACTIVE_ENERGY_BURNED ||
+        type == HealthDataType.DISTANCE_WALKING_RUNNING ||
+        type == HealthDataType.FLIGHTS_CLIMBED;
+  }
+
+  Future<void> _syncStepTotals(String uid, {int daysBack = 30}) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final batch = _db.batch();
+    final daysWithData = <String>{};
+    var daysWritten = 0;
+
+    for (var i = 0; i < daysBack; i++) {
+      final day = today.subtract(Duration(days: i));
+      final end = i == 0 ? now : day.add(const Duration(days: 1));
+      var total = (await _health.getTotalStepsInInterval(day, end))?.toDouble();
+
+      if (total == null) {
+        debugPrint(
+          'HealthService.syncMetric(steps): total API returned null for ${_formatDate(day)}. Trying raw step samples.',
+        );
+        total = await _readRawStepTotal(day, end);
+        if (total == null) {
+          debugPrint(
+            'HealthService.syncMetric(steps): no raw step data returned for ${_formatDate(day)}',
+          );
+          continue;
+        }
+      }
+
+      final dayKey = _formatDate(day);
+      daysWithData.add(dayKey);
+      final ref = _db
+          .collection('users')
+          .doc(uid)
+          .collection('metrics_daily')
+          .doc(dayKey);
+
+      batch.set(ref, {
+        'steps': {
+          'sum': total,
+          'avg': total,
+          'unit': 'steps',
+          'dimension': 'activity',
+          'source': 'apple_health',
+          'syncedAt': FieldValue.serverTimestamp(),
+        },
+        'date': dayKey,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      daysWritten++;
+    }
+
+    if (daysWritten == 0) return;
+    await batch.commit();
+    await _deleteMetricForMissingDays(
+      uid,
+      'steps',
+      start: today.subtract(Duration(days: daysBack - 1)),
+      end: now,
+      daysWithData: daysWithData,
+    );
+    debugPrint(
+      'HealthService.syncMetric(steps): wrote Apple Health step totals for $daysWritten day(s).',
+    );
+  }
+
+  Future<double?> _readRawStepTotal(DateTime start, DateTime end) async {
+    final points = await _health.getHealthDataFromTypes(
+      startTime: start,
+      endTime: end,
+      types: [HealthDataType.STEPS],
+    );
+
+    var total = 0.0;
+    for (final point in points) {
+      if (point.value is! NumericHealthValue) continue;
+      total += (point.value as NumericHealthValue).numericValue.toDouble();
+    }
+
+    return points.isEmpty ? null : total;
+  }
+
+  Future<void> _deleteMetricForMissingDays(
+    String uid,
+    String metricKey, {
+    required DateTime start,
+    required DateTime end,
+    required Set<String> daysWithData,
+  }) async {
+    final startDay = DateTime(start.year, start.month, start.day);
+    final endDay = DateTime(end.year, end.month, end.day);
+    final days = endDay.difference(startDay).inDays + 1;
+    if (days <= 0) return;
+
+    final batch = _db.batch();
+    var deletes = 0;
+
+    for (var i = 0; i < days; i++) {
+      final dayKey = _formatDate(startDay.add(Duration(days: i)));
+      if (daysWithData.contains(dayKey)) continue;
+
+      final ref = _db
+          .collection('users')
+          .doc(uid)
+          .collection('metrics_daily')
+          .doc(dayKey);
+      batch.set(ref, {metricKey: FieldValue.delete()}, SetOptions(merge: true));
+      deletes++;
+    }
+
+    if (deletes == 0) return;
+
+    try {
+      await batch.commit();
+    } catch (e) {
+      debugPrint(
+        'HealthService.syncMetric($metricKey): stale-day cleanup skipped: $e',
+      );
+    }
+  }
+
   Future<void> _setConsent(String metricKey, bool value) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -389,7 +583,7 @@ class HealthService {
     );
   }
 
-  Future<void> _writeDataPoints(
+  Future<Set<String>> _writeDataPoints(
     String uid,
     HealthMetricDef def,
     List<HealthDataPoint> dataPoints,
@@ -402,9 +596,13 @@ class HealthService {
       byDay.putIfAbsent(day, () => []).add(val);
     }
 
+    if (byDay.isEmpty) return {};
+
     final batch = _db.batch();
+    final daysWithData = <String>{};
     for (final entry in byDay.entries) {
       final day  = entry.key;
+      daysWithData.add(day);
       final vals = entry.value;
       final ref  = _db.collection('users').doc(uid).collection('metrics_daily').doc(day);
       final payload = _buildValueMap(def.type, vals);
@@ -431,6 +629,7 @@ class HealthService {
       debugPrint(
         'DEBUG: Firestore batch commit succeeded for ${def.key}. Days written: ${byDay.length}',
       );
+      return daysWithData;
     } catch (e, st) {
       debugPrint('DEBUG: Firestore batch commit FAILED for ${def.key}: $e');
       debugPrint(st.toString());
@@ -443,6 +642,7 @@ class HealthService {
     double avg() => sum() / vals.length;
     double min() => vals.reduce((a, b) => a < b ? a : b);
     double max() => vals.reduce((a, b) => a > b ? a : b);
+    double normalizePercent(double value) => value <= 1 ? value * 100 : value;
 
     switch (type) {
       // ── Cumulative (sum is meaningful) ──────────────────────────────────────
@@ -470,7 +670,13 @@ class HealthService {
         return {'avg': hrvAvg, 'stressScore': stress, 'unit': 'ms', 'dimension': 'stress'};
 
       case HealthDataType.BLOOD_OXYGEN:
-        return {'avg': avg(), 'min': min(), 'max': max(), 'unit': '%', 'dimension': 'cardiovascular'};
+        return {
+          'avg': normalizePercent(avg()),
+          'min': normalizePercent(min()),
+          'max': normalizePercent(max()),
+          'unit': '%',
+          'dimension': 'cardiovascular',
+        };
 
       case HealthDataType.RESPIRATORY_RATE:
         return {'avg': avg(), 'min': min(), 'max': max(), 'unit': 'brpm', 'dimension': 'respiratory'};
@@ -485,7 +691,7 @@ class HealthService {
       case HealthDataType.WEIGHT:
         return {'avg': avg(), 'unit': 'kg', 'dimension': 'body'};
       case HealthDataType.BODY_FAT_PERCENTAGE:
-        return {'avg': avg(), 'unit': '%', 'dimension': 'body'};
+        return {'avg': normalizePercent(avg()), 'unit': '%', 'dimension': 'body'};
       // case HealthDataType.VO2MAX:
       //   return {'avg': avg(), 'unit': 'ml/kg/min', 'dimension': 'fitness'};
 
