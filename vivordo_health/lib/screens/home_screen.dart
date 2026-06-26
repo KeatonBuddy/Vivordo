@@ -172,15 +172,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<List<gcal.Event>> _loadReachableWindowEvents(DateTime todayStart) async {
     try {
-      final signedIn = await CalendarService.isSignedIn()
-          .timeout(const Duration(seconds: 5), onTimeout: () => false);
+      final events = await CalendarService.getWeekEvents(todayStart).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => <gcal.Event>[],
+      );
+      final signedIn = await CalendarService.isSignedIn();
       if (!signedIn) {
         await NotificationService().cancelCalendarCheckIn();
         return [];
       }
 
-      final events = await CalendarService.getWeekEvents(todayStart)
-          .timeout(const Duration(seconds: 8), onTimeout: () => <gcal.Event>[]);
       await _scheduleFinalEventCheckIn(events, todayStart);
       return events;
     } catch (e) {
@@ -209,21 +210,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await NotificationService().scheduleCalendarCheckIn(eventEnds.last);
   }
-  Future<List<gcal.Event>> _getReachableWindowEventsFuture(DateTime todayStart) {
-  final normalizedDate = DateTime(todayStart.year, todayStart.month, todayStart.day);
 
-  if (_reachableWindowEventsFuture != null &&
-      _reachableWindowEventsDate != null &&
-      _reachableWindowEventsDate!.year == normalizedDate.year &&
-      _reachableWindowEventsDate!.month == normalizedDate.month &&
-      _reachableWindowEventsDate!.day == normalizedDate.day) {
+  Future<List<gcal.Event>> _getReachableWindowEventsFuture(DateTime todayStart) {
+    final normalizedDate = DateTime(
+      todayStart.year,
+      todayStart.month,
+      todayStart.day,
+    );
+
+    if (_reachableWindowEventsFuture != null &&
+        _reachableWindowEventsDate != null &&
+        _reachableWindowEventsDate!.year == normalizedDate.year &&
+        _reachableWindowEventsDate!.month == normalizedDate.month &&
+        _reachableWindowEventsDate!.day == normalizedDate.day) {
+      return _reachableWindowEventsFuture!;
+    }
+
+    _reachableWindowEventsDate = normalizedDate;
+    _reachableWindowEventsFuture = _loadReachableWindowEvents(normalizedDate);
     return _reachableWindowEventsFuture!;
   }
-
-  _reachableWindowEventsDate = normalizedDate;
-  _reachableWindowEventsFuture = _loadReachableWindowEvents(normalizedDate);
-  return _reachableWindowEventsFuture!;
-}
 
   Widget _buildScaffold({
     required double? stressScore,

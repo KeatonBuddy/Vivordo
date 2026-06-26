@@ -5,11 +5,23 @@ import 'package:flutter/foundation.dart';
 
 class CalendarService {
   static bool _initialized = false;
+  static Future<void>? _initializationFuture;
   static GoogleSignInAccount? _currentUser;
   static final ValueNotifier<bool> connectionNotifier = ValueNotifier<bool>(false);
 
   static Future<void> initialize() async {
     if (_initialized) return;
+    if (_initializationFuture != null) return _initializationFuture!;
+
+    _initializationFuture = _initialize();
+    try {
+      await _initializationFuture;
+    } finally {
+      _initializationFuture = null;
+    }
+  }
+
+  static Future<void> _initialize() async {
     await GoogleSignIn.instance.initialize(
       clientId: '226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj.apps.googleusercontent.com',
     );
