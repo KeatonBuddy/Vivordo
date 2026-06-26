@@ -1,9 +1,14 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 import 'package:vivordo_health/main.dart' show navigatorKey;
-import 'dart:io';
 
 /// Function to handle background messages
 @pragma('vm:entry-point')
@@ -15,6 +20,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 /// Handles iOS push notifications using Firebase Cloud Messaging
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
+  static const int _dailyScanReminderMorningId = 1001;
+  static const int _dailyScanReminderEveningId = 1002;
+  static const int _calendarCheckInReminderId = 1101;
 
   factory NotificationService() {
     return _instance;
@@ -34,48 +42,73 @@ class NotificationService {
     if (_isInitialized) return;
 
     if (kIsWeb) {
-      print('NotificationService: Web platform detected, skipping initialization');
+      print(
+        'NotificationService: Web platform detected, skipping initialization',
+      );
       _isInitialized = true;
       return;
     }
 
     try {
+      tz.initializeTimeZones();
+      final deviceTimeZone = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(deviceTimeZone.identifier));
+      print(
+        'NotificationService: Local timezone set to ${deviceTimeZone.identifier}',
+      );
+
       // Request IOS permissions
       if (Platform.isIOS) {
-        NotificationSettings settings = await _firebaseMessaging.requestPermission(
-          alert: true,
-          badge: true,
-          sound: true,
-          provisional: false,
-        );
+        NotificationSettings settings = await _firebaseMessaging
+            .requestPermission(
+              alert: true,
+              badge: true,
+              sound: true,
+              provisional: false,
+            );
 
-        print('NotificationService: Permission status: ${settings.authorizationStatus}');
+        print(
+          'NotificationService: Permission status: ${settings.authorizationStatus}',
+        );
 
         if (settings.authorizationStatus == AuthorizationStatus.authorized) {
           print('NotificationService: User granted permission');
-        } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+        } else if (settings.authorizationStatus ==
+            AuthorizationStatus.provisional) {
           print('NotificationService: User granted provisional permission');
         } else {
-          print('NotificationService: User declined or has not accepted permission');
+          print(
+            'NotificationService: User declined or has not accepted permission',
+          );
         }
       }
 
       // Initialize Local Notifications Plugin
       const DarwinInitializationSettings initializationSettingsIOS =
           DarwinInitializationSettings(
-        requestSoundPermission: true,
-        requestBadgePermission: true,
-        requestAlertPermission: true,
-      );
+            requestSoundPermission: true,
+            requestBadgePermission: true,
+            requestAlertPermission: true,
+          );
 
-      const InitializationSettings initializationSettings = InitializationSettings(
-        iOS: initializationSettingsIOS,
-      );
+      const InitializationSettings initializationSettings =
+          InitializationSettings(iOS: initializationSettingsIOS);
 
       await _localNotificationsPlugin.initialize(
         initializationSettings,
         onDidReceiveNotificationResponse: _onNotificationTapped,
       );
+
+      // Remove the temporary notification used while testing scheduling.
+      await _localNotificationsPlugin.cancel(1003);
+
+      final launchDetails = await _localNotificationsPlugin
+          .getNotificationAppLaunchDetails();
+      final launchResponse = launchDetails?.notificationResponse;
+      if (launchDetails?.didNotificationLaunchApp == true &&
+          launchResponse != null) {
+        _onNotificationTapped(launchResponse);
+      }
 
       // Listen for token refresh
       _firebaseMessaging.onTokenRefresh.listen((newToken) {
@@ -95,12 +128,16 @@ class NotificationService {
               break;
             }
 
-            print('NotificationService: APNs token not available yet, retrying ($attempt/10)');
+            print(
+              'NotificationService: APNs token not available yet, retrying ($attempt/10)',
+            );
             await Future.delayed(const Duration(seconds: 1));
           }
 
           if (apnsToken == null) {
-            print('NotificationService: Warning - APNs token still unavailable; skipping FCM token for now');
+            print(
+              'NotificationService: Warning - APNs token still unavailable; skipping FCM token for now',
+            );
           } else {
             final token = await _firebaseMessaging.getToken();
             print('NotificationService: FCM Token: $token');
@@ -117,13 +154,16 @@ class NotificationService {
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
       // Handle background messages
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
 
       // Handle notification tap when app is in background but not terminated
       FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
 
       // Check if app was opened from a terminated state by tapping notification
-      RemoteMessage? initialMessage = await _firebaseMessaging.getInitialMessage();
+      RemoteMessage? initialMessage = await _firebaseMessaging
+          .getInitialMessage();
       if (initialMessage != null) {
         _handleNotificationTap(initialMessage);
       }
@@ -137,7 +177,9 @@ class NotificationService {
 
   /// Handle foreground messages by showing local notification
   void _handleForegroundMessage(RemoteMessage message) {
-    print('NotificationService: Foreground message received: ${message.messageId}');
+    print(
+      'NotificationService: Foreground message received: ${message.messageId}',
+    );
 
     if (message.notification != null) {
       showLocalNotification(
@@ -151,25 +193,43 @@ class NotificationService {
   /// Handle notification tap
   void _handleNotificationTap(RemoteMessage message) {
     print('NotificationService: Notification tapped, data: ${message.data}');
-    
-    // Use navigatorKey to navigate even from background or context-less states
-    final context = navigatorKey.currentContext;
-    if (context != null) {
-      if (message.data['screen'] == 'home' || message.data['screen'] == 'goals') {
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
-      }
-    }
+    _navigateToNotificationScreen(message.data['screen'] as String?);
   }
 
   /// Handle local notification tap
   void _onNotificationTapped(NotificationResponse response) {
-    print('NotificationService: Local notification tapped, payload: ${response.payload}');
-    
-    // Parse payload if it's JSON
-    final context = navigatorKey.currentContext;
-    if (context != null) {
-      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+    print(
+      'NotificationService: Local notification tapped, payload: ${response.payload}',
+    );
+
+    String? screen;
+    final payload = response.payload;
+    if (payload != null) {
+      try {
+        final data = jsonDecode(payload) as Map<String, dynamic>;
+        screen = data['screen'] as String?;
+      } catch (e) {
+        print('NotificationService: Invalid notification payload: $e');
+      }
     }
+
+    _navigateToNotificationScreen(screen);
+  }
+
+  void _navigateToNotificationScreen(String? screen) {
+    final route = screen == 'ai_chat' ? '/ai-chat' : '/home';
+    final navigator = navigatorKey.currentState;
+    if (navigator != null) {
+      navigator.pushNamedAndRemoveUntil(route, (route) => false);
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.pushNamedAndRemoveUntil(
+        route,
+        (route) => false,
+      );
+    });
   }
 
   /// Show a local notification for testing purposes
@@ -204,19 +264,19 @@ class NotificationService {
 
     const DarwinNotificationDetails iOSPlatformChannelSpecifics =
         DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-      presentBanner: true,
-      presentList: true,
-    );
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          presentBanner: true,
+          presentList: true,
+        );
 
     const NotificationDetails platformChannelSpecifics = NotificationDetails(
       iOS: iOSPlatformChannelSpecifics,
     );
 
     await _localNotificationsPlugin.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000, 
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title,
       body,
       platformChannelSpecifics,
@@ -224,6 +284,115 @@ class NotificationService {
     );
 
     print('NotificationService: Local notification shown - $title');
+  }
+
+  /// Schedule a daily scan reminder notification.
+  Future<void> scheduleDailyScanReminder({
+    int hour = 9,
+    int minute = 0,
+    int notificationId = _dailyScanReminderMorningId,
+  }) async {
+    if (kIsWeb) {
+      print('NotificationService: Cannot schedule daily scan reminder on web');
+      return;
+    }
+
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduledTime = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
+
+    if (scheduledTime.isBefore(now)) {
+      scheduledTime = scheduledTime.add(const Duration(days: 1));
+    }
+
+    const DarwinNotificationDetails iOSDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      presentBanner: true,
+      presentList: true,
+    );
+
+    const NotificationDetails notificationDetails = NotificationDetails(
+      iOS: iOSDetails,
+    );
+
+    await _localNotificationsPlugin.zonedSchedule(
+      notificationId,
+      'Time for your daily scan',
+      'Take a quick Vivordo scan to keep your stress insights updated.',
+      scheduledTime,
+      notificationDetails,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.time,
+      payload: '{"screen": "home", "type": "daily_scan_reminder"}',
+    );
+
+    print(
+      'NotificationService: Daily scan reminder $notificationId scheduled for '
+      '$scheduledTime',
+    );
+  }
+
+  /// Cancel the daily scan reminder notification.
+  Future<void> cancelDailyScanReminder() async {
+    if (kIsWeb) return;
+
+    await _localNotificationsPlugin.cancel(_dailyScanReminderMorningId);
+    await _localNotificationsPlugin.cancel(_dailyScanReminderEveningId);
+    print('NotificationService: Daily scan reminder canceled');
+  }
+
+  /// Schedule a check-in when today's final calendar event ends.
+  Future<void> scheduleCalendarCheckIn(DateTime eventEnd) async {
+    if (kIsWeb) return;
+
+    await _localNotificationsPlugin.cancel(_calendarCheckInReminderId);
+
+    final scheduledTime = tz.TZDateTime.from(eventEnd, tz.local);
+    if (!scheduledTime.isAfter(tz.TZDateTime.now(tz.local))) {
+      print('NotificationService: Final calendar event has already ended');
+      return;
+    }
+
+    const notificationDetails = NotificationDetails(
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        presentBanner: true,
+        presentList: true,
+      ),
+    );
+
+    await _localNotificationsPlugin.zonedSchedule(
+      _calendarCheckInReminderId,
+      'Time for your daily check-in',
+      'Your calendar is clear. Check in with Vivordo about your day.',
+      scheduledTime,
+      notificationDetails,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      payload: '{"screen": "ai_chat", "type": "calendar_check_in"}',
+    );
+
+    print(
+      'NotificationService: Calendar check-in scheduled for $scheduledTime',
+    );
+  }
+
+  Future<void> cancelCalendarCheckIn() async {
+    if (kIsWeb) return;
+    await _localNotificationsPlugin.cancel(_calendarCheckInReminderId);
   }
 
   /// Get the current FCM token

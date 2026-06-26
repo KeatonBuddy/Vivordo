@@ -7,6 +7,7 @@ import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
+import 'package:vivordo_health/src/services/notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
@@ -173,14 +174,40 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final signedIn = await CalendarService.isSignedIn()
           .timeout(const Duration(seconds: 5), onTimeout: () => false);
-      if (!signedIn) return [];
+      if (!signedIn) {
+        await NotificationService().cancelCalendarCheckIn();
+        return [];
+      }
 
-      return CalendarService.getWeekEvents(todayStart)
+      final events = await CalendarService.getWeekEvents(todayStart)
           .timeout(const Duration(seconds: 8), onTimeout: () => <gcal.Event>[]);
+      await _scheduleFinalEventCheckIn(events, todayStart);
+      return events;
     } catch (e) {
       debugPrint('Reachable windows calendar load failed: $e');
       return [];
     }
+  }
+
+  Future<void> _scheduleFinalEventCheckIn(
+    List<gcal.Event> events,
+    DateTime todayStart,
+  ) async {
+    final tomorrow = todayStart.add(const Duration(days: 1));
+    final eventEnds = events
+        .where((event) => event.status != 'cancelled')
+        .map((event) => event.end?.dateTime?.toLocal())
+        .whereType<DateTime>()
+        .where((end) => !end.isBefore(todayStart) && end.isBefore(tomorrow))
+        .toList()
+      ..sort();
+
+    if (eventEnds.isEmpty) {
+      await NotificationService().cancelCalendarCheckIn();
+      return;
+    }
+
+    await NotificationService().scheduleCalendarCheckIn(eventEnds.last);
   }
   Future<List<gcal.Event>> _getReachableWindowEventsFuture(DateTime todayStart) {
   final normalizedDate = DateTime(todayStart.year, todayStart.month, todayStart.day);

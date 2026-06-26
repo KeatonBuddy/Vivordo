@@ -12,9 +12,7 @@ import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
-import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
-
 
 // Global navigator key for notification navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -31,6 +29,11 @@ void main() async {
 
   // Initialize notification service
   await NotificationService().initialize();
+  await NotificationService().scheduleDailyScanReminder(hour: 9);
+  await NotificationService().scheduleDailyScanReminder(
+    hour: 17,
+    notificationId: 1002,
+  );
 
   runApp(
     // Only one provider: the auth state stream.
@@ -69,7 +72,8 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => const AuthGate(),
         '/signup': (context) => const SignupScreen(),
-        '/home': (context) => const HomeScreen(),
+        '/home': (context) => const MainNavigationScreen(),
+        '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 3),
       },
     );
   }
@@ -146,9 +150,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
@@ -157,10 +159,8 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         }
 
         final data = snapshot.data?.data() as Map<String, dynamic>?;
-        final preferences =
-            data?['preferences'] as Map<String, dynamic>?;
-        final onboardingSeen =
-            preferences?['onboardingSeen'] == true;
+        final preferences = data?['preferences'] as Map<String, dynamic>?;
+        final onboardingSeen = preferences?['onboardingSeen'] == true;
 
         if (onboardingSeen) {
           return const MainNavigationScreen();
@@ -172,16 +172,14 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
                 .collection('users')
                 .doc(user.uid)
                 .update({
-              'preferences.onboardingSeen': true,
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
+                  'preferences.onboardingSeen': true,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                });
 
             if (!mounted) return;
 
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (_) => const MainNavigationScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
             );
           },
         );
