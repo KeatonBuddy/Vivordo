@@ -1496,14 +1496,35 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
     CalendarService.connectionNotifier.addListener(_handleGoogleCalendarConnectionChange);
     _loadExistingGoogleCalendar();
     _loadExistingOutlookCalendar();
+  }
+
+  void _scrollToFirstTodayEvent() {
+    if (_weekOffset != 0) return;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+
       final now = DateTime.now();
-      final scrollTo = (now.hour * _cellH) - _cellH;
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(
-          scrollTo.clamp(0, _scrollController.position.maxScrollExtent),
-        );
-      }
+      final starts = <DateTime>[
+        ..._googleEvents
+            .map((event) => event.start?.dateTime?.toLocal())
+            .whereType<DateTime>(),
+        ..._outlookEvents.map((event) => event.start.toLocal()),
+      ].where((start) {
+        return start.year == now.year &&
+            start.month == now.month &&
+            start.day == now.day;
+      }).toList()
+        ..sort();
+
+      final firstStart = starts.isEmpty ? now : starts.first;
+      final eventHour = firstStart.hour + (firstStart.minute / 60);
+      final scrollTo = (eventHour * _cellH) - _cellH;
+      _scrollController.animateTo(
+        scrollTo.clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
     });
   }
 
@@ -1560,6 +1581,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
         _isGoogleConnected = true;
         _isLoading = false;
       });
+      _scrollToFirstTodayEvent();
     } catch (e) {
       debugPrint('Calendar silent load error: $e');
       _lastGoogleCalendarFailure = DateTime.now();
@@ -1599,6 +1621,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
       _outlookEvents = events;
       _isOutlookConnected = true;
     });
+    _scrollToFirstTodayEvent();
   } catch (e) {
     debugPrint('Existing Outlook calendar load failed: $e');
     if (!mounted) return;
@@ -1643,6 +1666,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
         _googleEvents = events;
         _isGoogleConnected = true;
       });
+      _scrollToFirstTodayEvent();
     } catch (e) {
       debugPrint('Calendar error: $e');
     } finally {
@@ -1661,6 +1685,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
         _outlookEvents = events;
         _isOutlookConnected = true;
       });
+      _scrollToFirstTodayEvent();
     } catch (e) {
       debugPrint('Outlook calendar connect error: $e');
     } finally {
