@@ -326,7 +326,7 @@ class NotificationService {
     await _localNotificationsPlugin.zonedSchedule(
       notificationId,
       'Time for your daily scan',
-      'Take a quick Vivordo scan to keep your stress insights updated.',
+      'Take a quick heart rate scan to keep your stress insights updated',
       scheduledTime,
       notificationDetails,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,

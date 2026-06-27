@@ -73,6 +73,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const AuthGate(),
         '/signup': (context) => const SignupScreen(),
         '/home': (context) => const MainNavigationScreen(),
+        '/scan': (context) => const MainNavigationScreen(initialIndex: 1),
         '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 3),
       },
     );
