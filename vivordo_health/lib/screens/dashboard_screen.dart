@@ -31,6 +31,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   static const Color cardWhite   = Colors.white;
   static const Color textDark    = Color(0xFF1C1C1E);
   static const Color textGrey    = Color(0xFF8E8E93);
+  static const List<String> _defaultMetricOrder = [
+    'stress',
+    'mood',
+    'wellness',
+    'steps',
+    'active_calories',
+    'exercise_time',
+    'distance',
+    'flights_climbed',
+    'heart_rate',
+    'resting_heart_rate',
+    'hrv',
+    'blood_oxygen',
+    'respiratory_rate',
+    'sleep',
+    'weight',
+    'body_fat',
+    'mindfulness',
+    'vo2max',
+  ];
 
   // 0 = Day, 1 = Week (default), 2 = Month
   int _filterIndex = 1;
@@ -43,12 +63,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late Stream<Map<String, bool>> _consentStream;
 
   bool _refreshingHealthMetrics = false;
+  List<String> _metricOrder = [..._defaultMetricOrder];
+  bool _isLoadingMetricOrder = true;
 
   @override
   void initState() {
     super.initState();
     _rebuildStreams();
+    _loadMetricOrder();
     _refreshHealthMetricsFromHealth();
+  }
+
+  Future<void> _loadMetricOrder() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() => _isLoadingMetricOrder = false);
+      return;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      final preferences = snapshot.data()?['preferences'] as Map?;
+      final saved = preferences?['dashboardMetricOrder'] as List?;
+      final savedKeys = saved
+              ?.whereType<String>()
+              .where(_defaultMetricOrder.contains)
+              .toList() ??
+          [];
+      final missingKeys = _defaultMetricOrder
+          .where((key) => !savedKeys.contains(key));
+      if (mounted) {
+        setState(() {
+          _metricOrder = [...savedKeys, ...missingKeys];
+        });
+      }
+    } catch (e) {
+      debugPrint('DashboardScreen: failed to load metric order: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingMetricOrder = false);
+    }
+  }
+
+  Future<void> _saveMetricOrder(List<String> order) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      'preferences.dashboardMetricOrder': order,
+    });
   }
 
   void _rebuildStreams() {
@@ -267,14 +331,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 48),
-              const Text(
-                'Metrics',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: textDark,
-                  letterSpacing: -0.5,
-                ),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Metrics',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: textDark,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed:
+                        _isLoadingMetricOrder ? null : _showLayoutEditor,
+                    icon: const Icon(Icons.tune_rounded, size: 18),
+                    label: const Text('Edit layout'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: accentPurple,
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 4),
               const Text(
@@ -307,9 +390,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                       bool hasMetricData(String metricType) =>
                           _docsFor(snap, metricType).isNotEmpty;
-
-                      bool showHealthMetric(String metricType) =>
-                          consent[metricType] == true || hasMetricData(metricType);
 
                       final hasAnyHealthData = [
                         'steps',
@@ -367,47 +447,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             const SizedBox(height: 20),
                           ],
 
-                          // ── Manual metrics — shown only when data exists ────
-                          _maybeChart(snap, 'stress',  'Stress Levels',          accentPurple,                'avg', 100),
-                          _maybeChart(snap, 'mood',    'Mood',                   const Color(0xFFF97316),     'avg', 100),
-                          _maybeChart(snap, 'wellness','Wellness',               Colors.teal,                 'avg', 100),
-
-                          // ── HealthKit metrics — consent-gated ───────────────
-                          // Activity
-                          if (showHealthMetric('steps'))
-                            _maybeChart(snap, 'steps',              'Daily Steps',                  Colors.blueAccent,           'sum',  20000),
-                          if (showHealthMetric('active_calories'))
-                            _maybeChart(snap, 'active_calories',    'Active Calories (kcal)',       const Color(0xFFF97316),     'sum',  1000),
-                          if (showHealthMetric('exercise_time'))
-                            _maybeChart(snap, 'exercise_time',      'Exercise Time (min)',          const Color(0xFFFF9500),     'sum',  120),
-                          if (showHealthMetric('distance'))
-                            _maybeChart(snap, 'distance',           'Distance (km)',                const Color(0xFF3B82F6),     'sum',  20),
-                          // Heart
-                          if (showHealthMetric('heart_rate'))
-                            _maybeChart(snap, 'heart_rate',         'Heart Rate (bpm)',             Colors.redAccent,            'avg',  200),
-                          if (showHealthMetric('resting_heart_rate'))
-                            _maybeChart(snap, 'resting_heart_rate', 'Resting Heart Rate (bpm)',     const Color(0xFFFF6B6B),     'avg',  120),
-                          if (showHealthMetric('hrv'))
-                            _maybeChart(snap, 'hrv',                'HRV (ms)',                     greenColor,                  'avg',  120),
-                          // Breathing / Vitals
-                          if (showHealthMetric('blood_oxygen'))
-                            _maybeChart(snap, 'blood_oxygen',       'Blood Oxygen SpO₂ (%)',        const Color(0xFF06B6D4),     'avg',  100),
-                          if (showHealthMetric('respiratory_rate'))
-                            _maybeChart(snap, 'respiratory_rate',   'Respiratory Rate (brpm)',      const Color(0xFF0EA5E9),     'avg',  30),
-                          // Sleep
-                          if (showHealthMetric('sleep'))
-                            _maybeChart(snap, 'sleep',              'Sleep (hours)',                const Color(0xFF8B5CF6),     'avg',  12),
-                          // Body
-                          if (showHealthMetric('weight'))
-                            _maybeChart(snap, 'weight',             'Weight (kg)',                  const Color(0xFFA78BFA),     'avg',  0),
-                          if (showHealthMetric('body_fat'))
-                            _maybeChart(snap, 'body_fat',           'Body Fat (%)',                 const Color(0xFFFBBF24),     'avg',  50),
-                          // Mind
-                          if (showHealthMetric('mindfulness'))
-                            _maybeChart(snap, 'mindfulness',        'Mindfulness (min)',            const Color(0xFF7C3AED),     'sum',  60),
-                          // Fitness
-                          if (showHealthMetric('vo2max'))
-                            _maybeChart(snap, 'vo2max',             'VO₂ Max (ml/kg/min)',          greenColor,                  'avg',  70),
+                          ..._metricOrder.map(
+                            (metric) => _buildOrderedMetric(
+                              snap,
+                              consent,
+                              metric,
+                            ),
+                          ),
 
                           // ── Apple Health CTA when nothing is consented ──────
                           if (snap == null || snap.docs.isEmpty)
@@ -427,6 +473,220 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
     );
+  }
+
+  bool _isManualMetric(String key) =>
+      key == 'stress' || key == 'mood' || key == 'wellness';
+
+  String _metricTitle(String key) {
+    switch (key) {
+      case 'stress': return 'Stress Levels';
+      case 'mood': return 'Mood';
+      case 'wellness': return 'Wellness';
+      case 'steps': return 'Daily Steps';
+      case 'active_calories': return 'Active Calories (kcal)';
+      case 'exercise_time': return 'Exercise Time (min)';
+      case 'distance': return 'Distance (km)';
+      case 'flights_climbed': return 'Flights Climbed';
+      case 'heart_rate': return 'Heart Rate (bpm)';
+      case 'resting_heart_rate': return 'Resting Heart Rate (bpm)';
+      case 'hrv': return 'HRV (ms)';
+      case 'blood_oxygen': return 'Blood Oxygen SpO2 (%)';
+      case 'respiratory_rate': return 'Respiratory Rate (brpm)';
+      case 'sleep': return 'Sleep (hours)';
+      case 'weight': return 'Weight (kg)';
+      case 'body_fat': return 'Body Fat (%)';
+      case 'mindfulness': return 'Mindfulness (min)';
+      case 'vo2max': return 'VO2 Max (ml/kg/min)';
+      default: return key;
+    }
+  }
+
+  Color _metricColor(String key) {
+    switch (key) {
+      case 'stress': return accentPurple;
+      case 'mood': return const Color(0xFFF97316);
+      case 'wellness': return Colors.teal;
+      case 'steps': return Colors.blueAccent;
+      case 'active_calories': return const Color(0xFFF97316);
+      case 'exercise_time': return const Color(0xFFFF9500);
+      case 'distance': return const Color(0xFF3B82F6);
+      case 'flights_climbed': return const Color(0xFF14B8A6);
+      case 'heart_rate': return Colors.redAccent;
+      case 'resting_heart_rate': return const Color(0xFFFF6B6B);
+      case 'hrv': return greenColor;
+      case 'blood_oxygen': return const Color(0xFF06B6D4);
+      case 'respiratory_rate': return const Color(0xFF0EA5E9);
+      case 'sleep': return const Color(0xFF8B5CF6);
+      case 'weight': return const Color(0xFFA78BFA);
+      case 'body_fat': return const Color(0xFFFBBF24);
+      case 'mindfulness': return const Color(0xFF7C3AED);
+      case 'vo2max': return greenColor;
+      default: return accentPurple;
+    }
+  }
+
+  String _metricField(String key) {
+    const summed = {
+      'steps',
+      'active_calories',
+      'exercise_time',
+      'distance',
+      'flights_climbed',
+      'mindfulness',
+    };
+    return summed.contains(key) ? 'sum' : 'avg';
+  }
+
+  double _metricMaxY(String key) {
+    switch (key) {
+      case 'stress':
+      case 'mood':
+      case 'wellness':
+      case 'blood_oxygen': return 100;
+      case 'steps': return 20000;
+      case 'active_calories': return 1000;
+      case 'exercise_time':
+      case 'resting_heart_rate':
+      case 'hrv': return 120;
+      case 'distance': return 20;
+      case 'flights_climbed': return 30;
+      case 'heart_rate': return 200;
+      case 'respiratory_rate': return 30;
+      case 'sleep': return 12;
+      case 'body_fat': return 50;
+      case 'mindfulness': return 60;
+      case 'vo2max': return 70;
+      default: return 0;
+    }
+  }
+
+  Widget _buildOrderedMetric(
+    QuerySnapshot<Map<String, dynamic>>? snap,
+    Map<String, bool> consent,
+    String metric,
+  ) {
+    final hasData = _docsFor(snap, metric).isNotEmpty;
+    if (!_isManualMetric(metric) && consent[metric] != true && !hasData) {
+      return const SizedBox.shrink();
+    }
+    return _maybeChart(
+      snap,
+      metric,
+      _metricTitle(metric),
+      _metricColor(metric),
+      _metricField(metric),
+      _metricMaxY(metric),
+    );
+  }
+
+  Future<void> _showLayoutEditor() async {
+    final draftOrder = [..._metricOrder];
+    final result = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          height: MediaQuery.sizeOf(context).height * 0.78,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 12, 10),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Edit dashboard layout',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: textDark,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, draftOrder),
+                        child: const Text('Done'),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    buildDefaultDragHandles: false,
+                    itemCount: draftOrder.length,
+                    onReorder: (oldIndex, newIndex) {
+                      setModalState(() {
+                        if (newIndex > oldIndex) newIndex--;
+                        final item = draftOrder.removeAt(oldIndex);
+                        draftOrder.insert(newIndex, item);
+                      });
+                    },
+                    itemBuilder: (context, index) {
+                      final metric = draftOrder[index];
+                      final color = _metricColor(metric);
+                      return ListTile(
+                        key: ValueKey(metric),
+                        leading: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            _metricIcon(metric),
+                            size: 18,
+                            color: color,
+                          ),
+                        ),
+                        title: Text(
+                          _metricTitle(metric),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        trailing: ReorderableDragStartListener(
+                          index: index,
+                          child: const Padding(
+                            padding: EdgeInsets.all(10),
+                            child: Icon(
+                              Icons.drag_handle_rounded,
+                              color: textGrey,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    setState(() => _metricOrder = result);
+    try {
+      await _saveMetricOrder(result);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save dashboard layout.')),
+      );
+    }
   }
 
   /// Returns a chart card if the metric has data, otherwise SizedBox.shrink().
