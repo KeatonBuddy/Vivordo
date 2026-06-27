@@ -137,8 +137,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }).toList();
   }
 
-  // ── Mood entry helpers ─────────────────────────────────────────────────────
-  List<Map<String, dynamic>> _moodEntryPoints(
+  // ── Daily mood helpers ─────────────────────────────────────────────────────
+  List<Map<String, dynamic>> _dailyMoodPoints(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
     final points = <Map<String, dynamic>>[];
@@ -148,34 +148,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (moodMap == null) continue;
       final period = doc.id;
       final entries = moodMap['entries'];
+      final scores = <double>[];
 
       if (entries is List && entries.isNotEmpty) {
         for (final entry in entries) {
           if (entry is! Map) continue;
           final score = entry['score'];
-          if (score is! num) continue;
-
-          final timestamp = entry['timestamp'];
-          final dateTime = timestamp is Timestamp
-              ? timestamp.toDate()
-              : DateTime.tryParse(period) ?? DateTime.fromMillisecondsSinceEpoch(0);
-
-          points.add({
-            'score': score.toDouble(),
-            'dateTime': dateTime,
-            'period': period,
-          });
-        }
-      } else {
-        final avg = moodMap['avg'];
-        if (avg is num) {
-          points.add({
-            'score': avg.toDouble(),
-            'dateTime': DateTime.tryParse(period) ?? DateTime.fromMillisecondsSinceEpoch(0),
-            'period': period,
-          });
+          if (score is num) scores.add(score.toDouble());
         }
       }
+
+      if (scores.isEmpty) {
+        final avg = moodMap['avg'];
+        if (avg is num) scores.add(avg.toDouble());
+      }
+
+      if (scores.isEmpty) continue;
+      points.add({
+        'score': _avg(scores),
+        'dateTime': DateTime.tryParse(period) ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+      });
     }
 
     points.sort((a, b) =>
@@ -183,28 +176,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return points;
   }
 
-  List<double> _moodEntryValues(
+  List<double> _dailyMoodValues(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) =>
-      _moodEntryPoints(docs)
+      _dailyMoodPoints(docs)
           .map((point) => point['score'] as double)
           .toList();
 
-  List<String> _moodEntryLabels(
+  List<String> _dailyMoodLabels(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
-    final points = _moodEntryPoints(docs);
+    final points = _dailyMoodPoints(docs);
     const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
     return points.map((point) {
       final dateTime = point['dateTime'] as DateTime;
-
-      if (_filterIndex == 0) {
-        final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
-        final minute = dateTime.minute.toString().padLeft(2, '0');
-        final suffix = dateTime.hour >= 12 ? 'PM' : 'AM';
-        return '$hour:$minute $suffix';
-      }
 
       if (_filterIndex == 2 && dateTime.weekday != DateTime.monday) {
         return '';
@@ -212,6 +198,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       return dayNames[dateTime.weekday - 1];
     }).toList();
+  }
+
+  List<Map<String, dynamic>> _todayMoodEntries(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final entries = <Map<String, dynamic>>[];
+
+    for (final doc in docs) {
+      final moodMap = doc.data()['mood'] as Map?;
+      final rawEntries = moodMap?['entries'];
+      if (rawEntries is! List) continue;
+
+      for (final entry in rawEntries) {
+        if (entry is! Map || entry['score'] is! num) continue;
+        final timestamp = entry['timestamp'];
+        entries.add({
+          'score': (entry['score'] as num).toDouble(),
+          'dateTime': timestamp is Timestamp
+              ? timestamp.toDate()
+              : DateTime.tryParse(doc.id),
+        });
+      }
+    }
+
+    entries.sort((a, b) {
+      final aTime = a['dateTime'] as DateTime?;
+      final bTime = b['dateTime'] as DateTime?;
+      if (aTime == null) return -1;
+      if (bTime == null) return 1;
+      return aTime.compareTo(bTime);
+    });
+    return entries;
+  }
+
+  String _formatMoodEntryTime(DateTime? dateTime) {
+    if (dateTime == null) return '';
+    final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final suffix = dateTime.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $suffix';
   }
 
   double _avg(List<double> vals) =>
@@ -413,11 +439,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
     double maxY,
   ) {
     final docs = _docsFor(snap, metricType);
+    if (metricType == 'mood' && _filterIndex == 0) {
+      final entries = _todayMoodEntries(docs);
+      if (entries.isEmpty) return const SizedBox.shrink();
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: _buildChartCard(
+          title: title,
+          icon: _metricIcon(metricType),
+          color: color,
+          values: entries
+              .map((entry) => entry['score'] as double)
+              .toList(),
+          maxY: maxY,
+          labels: entries
+              .map(
+                (entry) =>
+                    _formatMoodEntryTime(entry['dateTime'] as DateTime?),
+              )
+              .toList(),
+        ),
+      );
+    }
+
     final values = metricType == 'mood'
-        ? _moodEntryValues(docs)
+        ? _dailyMoodValues(docs)
         : _vals(docs, metricType, field);
     final labels = metricType == 'mood'
-        ? _moodEntryLabels(docs)
+        ? _dailyMoodLabels(docs)
         : _filterIndex == 2
             ? _monthLabels(snap, metricType)
             : _dayLabels(snap, metricType);
