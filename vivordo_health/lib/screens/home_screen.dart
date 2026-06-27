@@ -23,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Single stream for today's unified metrics doc
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _todayStream;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _latestScanStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
   Future<List<gcal.Event>>? _reachableWindowEventsFuture;
   DateTime? _reachableWindowEventsDate;
@@ -45,6 +46,13 @@ class _HomeScreenState extends State<HomeScreen> {
     _todayStream = uid != null
         ? FirebaseFirestore.instance
             .collection('users').doc(uid).collection('metrics_daily').doc(today)
+            .snapshots()
+        : const Stream.empty();
+    _latestScanStream = uid != null
+        ? FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('metrics_daily')
             .snapshots()
         : const Stream.empty();
     _goalsStreamCached = _goalsStream();
@@ -108,7 +116,6 @@ class _HomeScreenState extends State<HomeScreen> {
         final hrvMap       = data?['hrv']         as Map?;
         final sleepMap     = data?['sleep']       as Map?;
         final stepsMap     = data?['steps']       as Map?;
-        final hrMap        = data?['heart_rate']  as Map?;
         final moodMap      = data?['mood']        as Map?;
         final wellnessMap  = data?['wellness']    as Map?;
 
@@ -125,10 +132,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ? (steps >= 1000 ? '${(steps / 1000).toStringAsFixed(1)}k' : steps.toString())
             : '--';
 
-        final hrVal = hrMap != null
-            ? '${(hrMap['avg'] as num?)?.round() ?? '--'} bpm'
-            : '--';
-
         if (moodMap != null && _currentMood == 'Good') {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) setState(() => _currentMood = moodMap['label'] as String? ?? 'Good');
@@ -141,28 +144,60 @@ class _HomeScreenState extends State<HomeScreen> {
             : '--';
 
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _goalsStreamCached,
-          builder: (context, goalSnap) {
-            final goalDocs = goalSnap.data?.docs ?? [];
-            final goalData = goalDocs.isNotEmpty ? goalDocs.first.data() : null;
-            final goalTitle = goalData?['title'] as String? ?? 'No active goal';
-            final rawPercent = (goalData?['progress']?['completionPercent'] as num?)?.toDouble() ?? 0;
-            final goalProgress = (rawPercent / 100).clamp(0.0, 1.0);
+          stream: _latestScanStream,
+          builder: (context, scanSnap) {
+            final scanDocs = [...?scanSnap.data?.docs]
+              ..sort((a, b) => b.id.compareTo(a.id));
+            Map? latestScan;
+            for (final doc in scanDocs) {
+              final data = doc.data();
+              final savedScan = data['heart_rate_scan'] as Map?;
+              final heartRate = data['heart_rate'] as Map?;
+              if (savedScan != null) {
+                latestScan = savedScan;
+                break;
+              }
+              if (heartRate?['source'] == 'camera_ppg') {
+                latestScan = heartRate;
+                break;
+              }
+            }
+            final latestScanBpm = (latestScan?['avg'] as num?)?.round();
+            final hrVal = latestScanBpm == null ? '--' : '$latestScanBpm bpm';
 
-            return _buildScaffold(
-              stressScore: stressScore,
-              stressLoading: loading,
-              sleepVal: sleepVal,
-              sleepLoading: loading,
-              stepsVal: stepsVal,
-              stepsLoading: loading,
-              hrVal: hrVal,
-              hrLoading: loading,
-              moodVal: moodVal,
-              moodLoading: loading,
-              wellnessVal: wellnessVal,
-              goalTitle: goalTitle,
-              goalProgress: goalProgress,
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _goalsStreamCached,
+              builder: (context, goalSnap) {
+                final goalDocs = goalSnap.data?.docs ?? [];
+                final goalData = goalDocs.isNotEmpty
+                    ? goalDocs.first.data()
+                    : null;
+                final goalTitle =
+                    goalData?['title'] as String? ?? 'No active goal';
+                final rawPercent =
+                    (goalData?['progress']?['completionPercent'] as num?)
+                            ?.toDouble() ??
+                        0;
+                final goalProgress = (rawPercent / 100).clamp(0.0, 1.0);
+
+                return _buildScaffold(
+                  stressScore: stressScore,
+                  stressLoading: loading,
+                  sleepVal: sleepVal,
+                  sleepLoading: loading,
+                  stepsVal: stepsVal,
+                  stepsLoading: loading,
+                  hrVal: hrVal,
+                  hrLoading: scanSnap.connectionState ==
+                          ConnectionState.waiting &&
+                      !scanSnap.hasData,
+                  moodVal: moodVal,
+                  moodLoading: loading,
+                  wellnessVal: wellnessVal,
+                  goalTitle: goalTitle,
+                  goalProgress: goalProgress,
+                );
+              },
             );
           },
         );
@@ -845,6 +880,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? event.summary!.trim()
                     : 'Calendar event',
                 'duration': clippedEnd.difference(clippedStart),
+                'event': event,
               };
             })
             .whereType<Map<String, dynamic>>()
@@ -988,47 +1024,191 @@ class _HomeScreenState extends State<HomeScreen> {
           )
         else
           ...windows.map((window) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
+            final event = window['event'] as gcal.Event?;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
                 color: const Color(0xFFF7F7FA),
                 borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: event == null
+                      ? null
+                      : () => _showReachableEventDetails(event),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
                       children: [
-                        Text(
-                          window['time'] as String,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: textDark,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                window['time'] as String,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: textDark,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                window['label'] as String,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: textGrey,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          window['label'] as String,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: textGrey,
+                        if (event != null)
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            color: color,
+                            size: 20,
                           ),
-                        ),
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, color: color, size: 20),
-                ],
+                ),
               ),
             );
           }),
       ],
+    );
+  }
+
+  void _showReachableEventDetails(gcal.Event event) {
+    final start = event.start?.dateTime?.toLocal();
+    final end = event.end?.dateTime?.toLocal();
+    final location = event.location?.trim();
+    final description = event.description?.trim();
+    final attendees = event.attendees ?? const <gcal.EventAttendee>[];
+
+    String formatDateTime(DateTime value) {
+      const months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December',
+      ];
+      final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+      final minute = value.minute.toString().padLeft(2, '0');
+      final suffix = value.hour >= 12 ? 'PM' : 'AM';
+      return '${months[value.month - 1]} ${value.day} at '
+          '$hour:$minute $suffix';
+    }
+
+    final timeText = start == null
+        ? 'Unknown time'
+        : end == null
+            ? formatDateTime(start)
+            : '${formatDateTime(start)} - '
+                '${formatDateTime(end).split(' at ').last}';
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        margin: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE5E5EA),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF1E6),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.event_rounded,
+                        color: orangeColor,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            event.summary ?? 'Untitled event',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: textDark,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            timeText,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: textGrey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (location != null && location.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  _EventDetailRow(
+                    icon: Icons.place_rounded,
+                    label: 'Location',
+                    value: location,
+                  ),
+                ],
+                if (description != null && description.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _EventDetailRow(
+                    icon: Icons.notes_rounded,
+                    label: 'Description',
+                    value: description,
+                  ),
+                ],
+                if (attendees.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _EventDetailRow(
+                    icon: Icons.group_rounded,
+                    label: 'Attendees',
+                    value: attendees
+                        .map((attendee) => attendee.displayName ?? attendee.email)
+                        .whereType<String>()
+                        .join(', '),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

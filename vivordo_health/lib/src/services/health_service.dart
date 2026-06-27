@@ -143,7 +143,7 @@ class HealthService {
   final Health _health = Health();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // ─── Consent stream (shared broadcast) ────────────────────────────────────
+  // ─── Sync preferences (shared broadcast) ─────────────────────────────────
 
   // All callers share ONE Firestore listener via a broadcast stream.
   // Multiple listeners on the same doc caused Firestore's internal assertion error.
@@ -175,7 +175,7 @@ class HealthService {
     _consentCacheUid = null;
   }
 
-  /// Read the current consent map once (non-reactive).
+  /// Read the user's metric sync selections once (non-reactive).
   Future<Map<String, bool>> getConsent() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return {};
@@ -277,59 +277,9 @@ class HealthService {
 
     await _health.configure();
 
-    var hasPermission = await _health.hasPermissions(
-      [def.type],
-      permissions: [HealthDataAccess.READ],
-    );
-
-    if (hasPermission == false) {
-      debugPrint(
-        'HealthService.syncMetric($metricKey): HealthKit permission missing. Attempting quiet reconnect...',
-      );
-
-      // This is silent if iOS already has valid authorization state for the app.
-      // If the user revoked permission in Settings, iOS requires user action and
-      // this will return false.
-      hasPermission = await _health.requestAuthorization(
-        [def.type],
-        permissions: [HealthDataAccess.READ],
-      );
-
-      if (!hasPermission) {
-        debugPrint(
-          'HealthService.syncMetric($metricKey): quiet reconnect failed. User needs to reconnect Apple Health.',
-        );
-        await _setConsent(metricKey, false);
-        return;
-      }
-
-      debugPrint(
-        'HealthService.syncMetric($metricKey): quiet reconnect succeeded.',
-      );
-      await _setConsent(metricKey, true);
-    } else if (hasPermission == null) {
-      debugPrint(
-        'HealthService.syncMetric($metricKey): HealthKit read permission is undetermined. Requesting authorization...',
-      );
-
-      hasPermission = await _health.requestAuthorization(
-        [def.type],
-        permissions: [HealthDataAccess.READ],
-      );
-
-      if (!hasPermission) {
-        debugPrint(
-          'HealthService.syncMetric($metricKey): authorization request failed. User needs to reconnect Apple Health.',
-        );
-        await _setConsent(metricKey, false);
-        return;
-      }
-
-      debugPrint(
-        'HealthService.syncMetric($metricKey): authorization request succeeded.',
-      );
-      await _setConsent(metricKey, true);
-    }
+    // HealthKit intentionally does not reveal read authorization status on iOS.
+    // Only explicit user actions request permission; routine syncs read the
+    // selected metrics and let HealthKit return the data available to the app.
 
     if (metricKey == 'steps') {
       await _syncStepTotals(uid, daysBack: daysBack);

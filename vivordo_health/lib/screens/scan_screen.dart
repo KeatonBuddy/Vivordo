@@ -87,11 +87,16 @@ class _ScanScreenState extends State<ScanScreen>
           .collection('users')
           .doc(user.uid)
           .collection('metrics_daily')
-          .where('heart_rate.source', isEqualTo: 'camera_ppg')
-          .limit(1)
           .get();
 
-      final isFirstScan = previousScans.docs.isEmpty;
+      final hasPreviousScan = previousScans.docs.any((doc) {
+        final data = doc.data();
+        final savedScan = data['heart_rate_scan'] as Map?;
+        final heartRate = data['heart_rate'] as Map?;
+        return savedScan?['source'] == 'camera_ppg' ||
+            heartRate?['source'] == 'camera_ppg';
+      });
+      final isFirstScan = !hasPreviousScan;
       /* TODO: Remove after testing.
       final isFirstScan = true;
       final isFirstScan = previousScans.docs.isEmpty; */
@@ -402,16 +407,20 @@ class _ScanScreenState extends State<ScanScreen>
             .collection('metrics_daily')
             .doc(dayKey);
 
+        final heartRateScan = {
+          'avg': bpm.toDouble(),
+          'unit': 'bpm',
+          'dimension': 'vitals',
+          'source': 'camera_ppg',
+          'durationSeconds': _scanDurationSeconds,
+          'isFirstScan': _isFirstScan,
+          'syncedAt': FieldValue.serverTimestamp(),
+        };
+
         await ref.set({
-          'heart_rate': {
-            'avg': bpm.toDouble(),
-            'unit': 'bpm',
-            'dimension': 'vitals',
-            'source': 'camera_ppg',
-            'durationSeconds': _scanDurationSeconds,
-            'isFirstScan': _isFirstScan,
-            'syncedAt': FieldValue.serverTimestamp(),
-          },
+          'heart_rate': heartRateScan,
+          // Keep camera scans separate from HealthKit's daily heart-rate data.
+          'heart_rate_scan': heartRateScan,
           'signal_quality': {
             'avg': signalQuality,
             'unit': 'score',
@@ -1429,4 +1438,3 @@ class _ScanScreenState extends State<ScanScreen>
     );
   }
 }
-

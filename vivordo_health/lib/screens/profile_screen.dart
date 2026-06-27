@@ -346,6 +346,9 @@ class _SettingsScreenState extends State<SettingsScreen>
         final consentRaw   = rawData['healthKitConsent'] as Map? ?? {};
         final consent      = consentRaw.map((k, v) => MapEntry(k.toString(), v == true));
         final anyConsented = consent.values.any((v) => v);
+        final selectedMetricCount = kHealthMetrics
+            .where((metric) => consent[metric.key] == true)
+            .length;
 
 
         return Scaffold(
@@ -467,8 +470,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Connected Devices ──────────────────────────────────────
-                  _buildSectionLabel('Connected Devices'),
+                  // ── Apple Health ───────────────────────────────────────────
+                  _buildSectionLabel('Apple Health'),
                   _buildCard(
                     children: [
                       Padding(
@@ -495,7 +498,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    'Apple Health',
+                                    'Health data sync',
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
@@ -504,7 +507,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    anyConsented ? 'Connected — syncing data' : 'Not connected',
+                                    anyConsented
+                                        ? '$selectedMetricCount of ${kHealthMetrics.length} metrics selected'
+                                        : 'No metrics selected',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: anyConsented ? const Color(0xFF34C759) : const Color(0xFF8E8E93),
@@ -522,7 +527,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text(
-                                anyConsented ? 'Active' : 'Off',
+                                anyConsented ? 'On' : 'Off',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
@@ -567,7 +572,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                   )
                                 : const Icon(Icons.health_and_safety_outlined, size: 18),
-                            label: Text(_isConnectingAll ? 'Connecting…' : 'Connect Apple Health'),
+                            label: Text(
+                              _isConnectingAll
+                                  ? 'Requesting access…'
+                                  : 'Select all health metrics',
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF7B6EF6),
                               foregroundColor: Colors.white,
@@ -580,7 +589,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         ),
                         const SizedBox(height: 6),
                         const Text(
-                          'Grants read-only access to all health metrics',
+                          'Apple controls access. Vivordo only reads the metrics you approve.',
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 11, color: Color(0xFF8E8E93)),
                         ),
@@ -676,25 +685,48 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                   const SizedBox(height: 24),
 
-                  // ── Health Data Permissions ────────────────────────────────
-                  _buildSectionLabel('Health Data Permissions'),
+                  // ── Health Data Sync ───────────────────────────────────────
+                  _buildSectionLabel('Health Data Sync'),
                   _buildCard(
-                    children: kHealthMetrics.map((metric) {
-                      final enabled    = consent[metric.key] == true;
-                      final isToggling = _togglingMetric == metric.key;
-                      return Column(
-                        children: [
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'Choose which Apple Health metrics Vivordo syncs. Turning a metric off removes its saved data from Vivordo but does not change Apple Health permissions.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.4,
+                            color: Color(0xFF636366),
+                          ),
+                        ),
+                      ),
+                      ...kHealthMetrics.map((metric) {
+                        final enabled = consent[metric.key] == true;
+                        final isToggling = _togglingMetric == metric.key;
+                        return Column(
+                          children: [
                           SwitchListTile(
                             contentPadding: EdgeInsets.zero,
                             value: enabled,
-                            activeColor: const Color(0xFF7B6EF6),
+                            activeThumbColor: const Color(0xFF7B6EF6),
                             onChanged: isToggling
                                 ? null
                                 : (val) async {
                                     setState(() => _togglingMetric = metric.key);
                                     try {
                                       if (val) {
-                                        await HealthService().enableMetric(metric.key);
+                                        final granted = await HealthService()
+                                            .enableMetric(metric.key);
+                                        if (!granted && mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                '${metric.label} was not enabled. Review Vivordo permissions in Apple Health.',
+                                              ),
+                                            ),
+                                          );
+                                        }
                                       } else {
                                         await HealthService().disableMetric(metric.key);
                                       }
@@ -718,7 +750,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                             ),
                             subtitle: Text(
                               isToggling
-                                  ? (enabled ? 'Removing access…' : 'Requesting access…')
+                                  ? (enabled
+                                      ? 'Removing saved Vivordo data…'
+                                      : 'Requesting Apple Health access…')
                                   : metric.description,
                               style: TextStyle(
                                 fontSize: 12,
@@ -736,11 +770,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     size: 20,
                                   ),
                           ),
-                          if (metric != kHealthMetrics.last)
-                            const Divider(height: 1, indent: 44, endIndent: 0),
-                        ],
-                      );
-                    }).toList(),
+                            if (metric != kHealthMetrics.last)
+                              const Divider(
+                                height: 1,
+                                indent: 44,
+                                endIndent: 0,
+                              ),
+                          ],
+                        );
+                      }),
+                    ],
                   ),
                   const SizedBox(height: 24),
 
