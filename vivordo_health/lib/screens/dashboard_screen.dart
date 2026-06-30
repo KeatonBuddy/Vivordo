@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -125,7 +126,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _refreshingHealthMetrics = true;
 
     try {
-      await HealthService().syncMetric('steps', daysBack: _daysBack);
       await HealthService().syncToFirestore(daysBack: _daysBack);
     } catch (e) {
       debugPrint('DashboardScreen: failed to refresh metrics from Apple Health: $e');
@@ -567,16 +567,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String metric,
   ) {
     final hasData = _docsFor(snap, metric).isNotEmpty;
-    if (!_isManualMetric(metric) && consent[metric] != true && !hasData) {
-      return const SizedBox.shrink();
-    }
-    return _maybeChart(
-      snap,
-      metric,
-      _metricTitle(metric),
-      _metricColor(metric),
-      _metricField(metric),
-      _metricMaxY(metric),
+    return KeyedSubtree(
+      key: ValueKey('dashboard-metric-$metric'),
+      child: !_isManualMetric(metric) && consent[metric] != true && !hasData
+          ? const SizedBox.shrink()
+          : _maybeChart(
+              snap,
+              metric,
+              _metricTitle(metric),
+              _metricColor(metric),
+              _metricField(metric),
+              _metricMaxY(metric),
+            ),
     );
   }
 
@@ -1392,6 +1394,7 @@ class _AreaChartState extends State<_AreaChart>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
+  int? _selectedIndex;
 
   @override
   void initState() {
@@ -1408,9 +1411,26 @@ class _AreaChartState extends State<_AreaChart>
   @override
   void didUpdateWidget(_AreaChart old) {
     super.didUpdateWidget(old);
-    if (old.values != widget.values) {
+    if (!listEquals(old.values, widget.values)) {
+      if (_selectedIndex != null &&
+          _selectedIndex! >= widget.values.length) {
+        _selectedIndex = null;
+      }
       _controller.forward(from: 0);
     }
+  }
+
+  void _selectPoint(double localX, double width) {
+    if (widget.values.isEmpty) return;
+    const leftPad = _AreaChartPainter.leftPad;
+    final chartWidth = width - leftPad;
+    final index = widget.values.length == 1
+        ? 0
+        : (((localX - leftPad) / chartWidth) *
+                (widget.values.length - 1))
+            .round()
+            .clamp(0, widget.values.length - 1);
+    if (index != _selectedIndex) setState(() => _selectedIndex = index);
   }
 
   @override
@@ -1421,17 +1441,29 @@ class _AreaChartState extends State<_AreaChart>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (_, __) => CustomPaint(
-        painter: _AreaChartPainter(
-          values: widget.values,
-          maxY: widget.maxY,
-          color: widget.color,
-          labels: widget.labels,
-          progress: _animation.value,
+    return LayoutBuilder(
+      builder: (context, constraints) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (details) =>
+            _selectPoint(details.localPosition.dx, constraints.maxWidth),
+        onHorizontalDragStart: (details) =>
+            _selectPoint(details.localPosition.dx, constraints.maxWidth),
+        onHorizontalDragUpdate: (details) =>
+            _selectPoint(details.localPosition.dx, constraints.maxWidth),
+        child: AnimatedBuilder(
+          animation: _animation,
+          builder: (_, __) => CustomPaint(
+            painter: _AreaChartPainter(
+              values: widget.values,
+              maxY: widget.maxY,
+              color: widget.color,
+              labels: widget.labels,
+              progress: _animation.value,
+              selectedIndex: _selectedIndex,
+            ),
+            size: Size.infinite,
+          ),
         ),
-        size: Size.infinite,
       ),
     );
   }
@@ -1443,6 +1475,7 @@ class _AreaChartPainter extends CustomPainter {
   final Color color;
   final List<String> labels;
   final double progress;
+  final int? selectedIndex;
 
   static const double labelHeight = 22;
   static const double leftPad     = 36;
@@ -1453,6 +1486,7 @@ class _AreaChartPainter extends CustomPainter {
     required this.color,
     required this.labels,
     required this.progress,
+    required this.selectedIndex,
   });
 
   @override
@@ -1490,58 +1524,44 @@ class _AreaChartPainter extends CustomPainter {
       return Offset(x, y);
     });
 
-     // Single data point — draw a dot instead of a line
     if (pts.length == 1) {
       canvas.drawCircle(
         pts.first,
         6,
         Paint()..color = color,
       );
-      return;
-    }
+    } else {
+      final linePath = _smoothPath(pts);
+      final pathMetrics = linePath.computeMetrics().toList();
+      if (pathMetrics.isEmpty) return;
+      final animatedLine = pathMetrics.first
+          .extractPath(0, pathMetrics.first.length * progress);
 
-    final linePath    = _smoothPath(pts);
-    final pathMetrics = linePath.computeMetrics().toList();
-    if (pathMetrics.isEmpty) return;
-    final animatedLine = pathMetrics.first
-        .extractPath(0, pathMetrics.first.length * progress);
-
-    // Gradient fill
-    final fillPath = Path.from(animatedLine)
-      ..lineTo(pts.last.dx, chartH)
-      ..lineTo(leftPad, chartH)
-      ..close();
-    canvas.drawPath(
-      fillPath,
-      Paint()
-        ..shader = ui.Gradient.linear(
-          Offset.zero,
-          Offset(0, chartH),
-          [color.withValues(alpha: 0.28), color.withValues(alpha: 0.0)],
-        )
-        ..style = PaintingStyle.fill,
-    );
-
-    // Single data point — draw a dot instead of a line
-    if (values.length == 1) {
-      canvas.drawCircle(
-        pts.first,
-        6,
-        Paint()..color = color,
+      final fillPath = Path.from(animatedLine)
+        ..lineTo(pts.last.dx, chartH)
+        ..lineTo(leftPad, chartH)
+        ..close();
+      canvas.drawPath(
+        fillPath,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset.zero,
+            Offset(0, chartH),
+            [color.withValues(alpha: 0.28), color.withValues(alpha: 0.0)],
+          )
+          ..style = PaintingStyle.fill,
       );
-      return;
-    }
 
-    // Stroke
-    canvas.drawPath(
-      animatedLine,
-      Paint()
-        ..color = color
-        ..strokeWidth = 2.5
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
+      canvas.drawPath(
+        animatedLine,
+        Paint()
+          ..color = color
+          ..strokeWidth = 2.5
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
 
     // X-axis labels — skip empty strings (used for month view non-Monday points)
     if (labels.length == n) {
@@ -1557,6 +1577,67 @@ class _AreaChartPainter extends CustomPainter {
             Offset(pts[i].dx - tp.width / 2, chartH + 6));
       }
     }
+
+    final selected = selectedIndex;
+    if (selected != null && selected >= 0 && selected < pts.length) {
+      _drawSelection(canvas, size, chartH, pts[selected], selected);
+    }
+  }
+
+  void _drawSelection(
+    Canvas canvas,
+    Size size,
+    double chartH,
+    Offset point,
+    int index,
+  ) {
+    canvas.drawLine(
+      Offset(point.dx, 0),
+      Offset(point.dx, chartH),
+      Paint()
+        ..color = color.withValues(alpha: 0.35)
+        ..strokeWidth = 1,
+    );
+    canvas.drawCircle(point, 7, Paint()..color = Colors.white);
+    canvas.drawCircle(point, 4.5, Paint()..color = color);
+
+    final value = values[index];
+    final valueText = value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(1);
+    final label = labels.length == values.length && labels[index].isNotEmpty
+        ? labels[index]
+        : 'Day ${index + 1}';
+    final painter = TextPainter(
+      text: TextSpan(
+        text: '$label: $valueText',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    const horizontalPadding = 9.0;
+    const tooltipHeight = 26.0;
+    final tooltipWidth = painter.width + horizontalPadding * 2;
+    final left = (point.dx - tooltipWidth / 2)
+        .clamp(leftPad, size.width - tooltipWidth);
+    final top = (point.dy - 34).clamp(2.0, chartH - tooltipHeight);
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(left, top, tooltipWidth, tooltipHeight),
+      const Radius.circular(6),
+    );
+    canvas.drawRRect(rect, Paint()..color = const Color(0xEB1C1C1E));
+    painter.paint(
+      canvas,
+      Offset(
+        left + horizontalPadding,
+        top + (tooltipHeight - painter.height) / 2,
+      ),
+    );
   }
 
   Path _smoothPath(List<Offset> pts) {
@@ -1577,5 +1658,8 @@ class _AreaChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_AreaChartPainter old) =>
-      old.progress != progress || old.values != values;
+      old.progress != progress ||
+      old.selectedIndex != selectedIndex ||
+      !listEquals(old.values, values) ||
+      !listEquals(old.labels, labels);
 }

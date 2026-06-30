@@ -142,6 +142,8 @@ class HealthService {
 
   final Health _health = Health();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  Future<void>? _activeSync;
+  int _pendingSyncDays = 0;
 
   // ─── Sync preferences (shared broadcast) ─────────────────────────────────
 
@@ -362,7 +364,28 @@ class HealthService {
     }
   }
 
-  Future<void> syncToFirestore({int daysBack = 30}) async {
+  Future<void> syncToFirestore({int daysBack = 30}) {
+    if (daysBack > _pendingSyncDays) _pendingSyncDays = daysBack;
+
+    final activeSync = _activeSync;
+    if (activeSync != null) return activeSync;
+
+    final worker = _drainSyncQueue();
+    _activeSync = worker;
+    return worker.whenComplete(() {
+      if (identical(_activeSync, worker)) _activeSync = null;
+    });
+  }
+
+  Future<void> _drainSyncQueue() async {
+    while (_pendingSyncDays > 0) {
+      final daysBack = _pendingSyncDays;
+      _pendingSyncDays = 0;
+      await _performSync(daysBack: daysBack);
+    }
+  }
+
+  Future<void> _performSync({required int daysBack}) async {
     final consent = await getConsent();
     for (final m in kHealthMetrics) {
       if (consent[m.key] == true) {
