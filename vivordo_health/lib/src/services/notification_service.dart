@@ -9,6 +9,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:vivordo_health/main.dart' show navigatorKey;
+import 'package:vivordo_health/src/services/analytics_service.dart';
 
 /// Function to handle background messages
 @pragma('vm:entry-point')
@@ -193,7 +194,12 @@ class NotificationService {
   /// Handle notification tap
   void _handleNotificationTap(RemoteMessage message) {
     print('NotificationService: Notification tapped, data: ${message.data}');
-    _navigateToNotificationScreen(message.data['screen'] as String?);
+    final screen = message.data['screen'] as String?;
+    AnalyticsService().logNotificationTap(
+      notificationType: message.data['type'] as String? ?? 'remote',
+      screen: screen,
+    );
+    _navigateToNotificationScreen(screen);
   }
 
   /// Handle local notification tap
@@ -203,16 +209,22 @@ class NotificationService {
     );
 
     String? screen;
+    String? type;
     final payload = response.payload;
     if (payload != null) {
       try {
         final data = jsonDecode(payload) as Map<String, dynamic>;
         screen = data['screen'] as String?;
+        type = data['type'] as String?;
       } catch (e) {
         print('NotificationService: Invalid notification payload: $e');
       }
     }
 
+    AnalyticsService().logNotificationTap(
+      notificationType: type ?? 'local',
+      screen: screen,
+    );
     _navigateToNotificationScreen(screen);
   }
 
@@ -281,6 +293,23 @@ class NotificationService {
       body,
       platformChannelSpecifics,
       payload: payload,
+    );
+
+    // Record the impression so tap-through rate per notification type can be
+    // computed against logNotificationTap. Parse the type/screen out of the
+    // JSON payload when present.
+    String? shownType;
+    String? shownScreen;
+    if (payload != null) {
+      try {
+        final data = jsonDecode(payload) as Map<String, dynamic>;
+        shownType = data['type'] as String?;
+        shownScreen = data['screen'] as String?;
+      } catch (_) {}
+    }
+    AnalyticsService().logNotificationShown(
+      notificationType: shownType ?? 'local',
+      screen: shownScreen,
     );
 
     print('NotificationService: Local notification shown - $title');

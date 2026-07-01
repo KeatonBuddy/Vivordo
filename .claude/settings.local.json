@@ -6,7 +6,10 @@
       "Bash(dart analyze *)",
       "Bash(grep -rn *)",
       "Bash(npx eslint *)",
-      "Bash(node --check index.js)"
+      "Bash(node --check index.js)",
+      "Bash(graphify query *)",
+      "Bash(ls docs *)",
+      "Bash(grep -rl \"analytics\" lib)"
     ]
   }
 }

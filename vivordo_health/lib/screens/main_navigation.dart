@@ -3,6 +3,7 @@ import 'home_screen.dart';
 import 'scan_screen.dart';
 import 'dashboard_screen.dart';
 import 'panda_screen.dart';
+import '../src/services/analytics_service.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final int initialIndex;
@@ -16,10 +17,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   late int _selectedIndex;
   final Color primaryPurple = const Color(0xFF7B6EF6);
 
+  /// Analytics screen name per tab index, aligned with the nav bar order.
+  static const List<String> _screenNames = ['home', 'scan', 'metrics', 'ai_chat'];
+
   @override
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    _logScreenView(_selectedIndex);
+  }
+
+  /// Switches to [index] and records the screen view. All tab changes route
+  /// through here so analytics stay in sync with what's on screen.
+  void _selectTab(int index) {
+    if (index != _selectedIndex) _logScreenView(index);
+    setState(() => _selectedIndex = index);
+  }
+
+  void _logScreenView(int index) {
+    if (index >= 0 && index < _screenNames.length) {
+      AnalyticsService().logScreenView(_screenNames[index]);
+    }
   }
 
   @override
@@ -29,19 +47,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     Widget activePage;
     switch (_selectedIndex) {
       case 0:
-        activePage = HomeScreen(onScanTap: () => setState(() => _selectedIndex = 1));
+        activePage = HomeScreen(onScanTap: () => _selectTab(1));
         break;
       case 1:
         activePage = const ScanScreen();
         break;
       case 2:
-        activePage = DashboardScreen(onScanTap: () => setState(() => _selectedIndex = 1));
+        activePage = DashboardScreen(onScanTap: () => _selectTab(1));
         break;
       case 3:
         activePage = const PandaScreen();
         break;
       default:
-        activePage = HomeScreen(onScanTap: () => setState(() => _selectedIndex = 1));
+        activePage = HomeScreen(onScanTap: () => _selectTab(1));
     }
 
     return Scaffold(
@@ -88,7 +106,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget _navItem(IconData icon, String label, int index) {
     bool isActive = _selectedIndex == index;
     return GestureDetector(
-      onTap: () => setState(() => _selectedIndex = index),
+      onTap: () => _selectTab(index),
       behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,

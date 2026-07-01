@@ -10,6 +10,7 @@ import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
+import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -113,21 +114,29 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  /// Sync today's data whenever the app comes back to the foreground.
+  /// Sync today's data whenever the app comes back to the foreground, and
+  /// track foreground time as analytics sessions (resume opens a session,
+  /// backgrounding closes it and records its duration).
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       if (FirebaseAuth.instance.currentUser != null) {
         HealthService().syncToday();
+        AnalyticsService().startSession();
       }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      AnalyticsService().endSession();
     }
   }
 
-  /// Full 30-day sync triggered once per login session.
+  /// Full 30-day sync triggered once per login session. Also the point where we
+  /// record the login and open the first analytics session for it.
   void _triggerFullSync(String uid) {
     if (_lastSyncedUid == uid) return;
     _lastSyncedUid = uid;
     HealthService().syncToFirestore(daysBack: 30);
+    AnalyticsService().logLogin();
   }
 
   @override

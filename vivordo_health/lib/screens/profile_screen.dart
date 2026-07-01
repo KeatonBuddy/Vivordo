@@ -5,6 +5,7 @@ import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
+import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1043,7 +1044,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton.icon(
-                      onPressed: () async => FirebaseAuth.instance.signOut(),
+                      onPressed: () async {
+                        // Log while still authenticated — Firestore rules
+                        // reject writes once signOut() clears the session.
+                        await AnalyticsService().logLogout();
+                        await FirebaseAuth.instance.signOut();
+                      },
                       icon: const Icon(Icons.logout_rounded, size: 18, color: Color(0xFFFF3B30)),
                       label: const Text('Log Out'),
                       style: ElevatedButton.styleFrom(
