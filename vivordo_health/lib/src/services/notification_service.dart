@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -21,8 +22,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 /// Handles iOS push notifications using Firebase Cloud Messaging
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
-  static const int _dailyScanReminderMorningId = 1001;
-  static const int _dailyScanReminderEveningId = 1002;
+  static const int _dailyScanReminderBaseId = 1001;
+  static const int _maxDailyScanReminders = 10;
   static const int _calendarCheckInReminderId = 1101;
 
   factory NotificationService() {
@@ -36,6 +37,106 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _isInitialized = false;
+  bool _dailyScanRemindersEnabled = true;
+  bool _calendarCheckInReminderEnabled = true;
+  String? _configuredUid;
+  DateTime? _lastCalendarEventEnd;
+  List<int> _scanReminderMinutes = [9 * 60, 17 * 60];
+
+  Future<void> configureForUser(String uid) async {
+    if (_configuredUid != uid) {
+      await cancelCalendarCheckIn();
+      _lastCalendarEventEnd = null;
+      _configuredUid = uid;
+    }
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+    final preferences = snapshot.data()?['preferences'] as Map?;
+    final savedTimes = (preferences?['scanReminderTimes'] as List?)
+            ?.whereType<num>()
+            .map((value) => value.toInt().clamp(0, 1439).toInt())
+            .toSet()
+            .toList() ??
+        [];
+    if (savedTimes.isNotEmpty) {
+      savedTimes.sort();
+      _scanReminderMinutes = savedTimes.take(_maxDailyScanReminders).toList();
+    } else {
+      final morning =
+          ((preferences?['scanReminderMorningMinutes'] as num?)?.toInt() ??
+                  9 * 60)
+              .clamp(0, 1439)
+              .toInt();
+      final evening =
+          ((preferences?['scanReminderEveningMinutes'] as num?)?.toInt() ??
+                  17 * 60)
+              .clamp(0, 1439)
+              .toInt();
+      _scanReminderMinutes = {morning, evening}.toList()..sort();
+    }
+    await setDailyScanRemindersEnabled(
+      preferences?['scanReminderEnabled'] != false,
+    );
+    await setCalendarCheckInReminderEnabled(
+      preferences?['checkInReminderEnabled'] != false,
+    );
+  }
+
+  Future<void> clearUserReminders() async {
+    _configuredUid = null;
+    _lastCalendarEventEnd = null;
+    _dailyScanRemindersEnabled = false;
+    _calendarCheckInReminderEnabled = false;
+    await cancelDailyScanReminder();
+    await cancelCalendarCheckIn();
+  }
+
+  Future<void> setDailyScanRemindersEnabled(bool enabled) async {
+    _dailyScanRemindersEnabled = enabled;
+    if (!enabled) {
+      await cancelDailyScanReminder();
+      return;
+    }
+
+    await cancelDailyScanReminder();
+    for (var index = 0; index < _scanReminderMinutes.length; index++) {
+      final minutes = _scanReminderMinutes[index];
+      await scheduleDailyScanReminder(
+        hour: minutes ~/ 60,
+        minute: minutes % 60,
+        notificationId: _dailyScanReminderBaseId + index,
+      );
+    }
+  }
+
+  Future<void> setDailyScanReminderTimes(List<int> reminderTimes) async {
+    if (reminderTimes.isEmpty) {
+      throw ArgumentError('At least one scan reminder is required.');
+    }
+    _scanReminderMinutes = reminderTimes
+        .map((minutes) => minutes.clamp(0, 1439).toInt())
+        .toSet()
+        .take(_maxDailyScanReminders)
+        .toList()
+      ..sort();
+    if (_dailyScanRemindersEnabled) {
+      await setDailyScanRemindersEnabled(true);
+    }
+  }
+
+  Future<void> setCalendarCheckInReminderEnabled(bool enabled) async {
+    _calendarCheckInReminderEnabled = enabled;
+    if (!enabled) {
+      await cancelCalendarCheckIn();
+      return;
+    }
+
+    final eventEnd = _lastCalendarEventEnd;
+    if (eventEnd != null) await scheduleCalendarCheckIn(eventEnd);
+  }
 
   /// Initialize the notification service
   /// Should be called once in main() after Firebase.initializeApp()
@@ -229,7 +330,11 @@ class NotificationService {
   }
 
   void _navigateToNotificationScreen(String? screen) {
-    final route = screen == 'ai_chat' ? '/ai-chat' : '/home';
+    final route = switch (screen) {
+      'scan' => '/scan',
+      'ai_chat' => '/ai-chat',
+      _ => '/home',
+    };
     final navigator = navigatorKey.currentState;
     if (navigator != null) {
       navigator.pushNamedAndRemoveUntil(route, (route) => false);
@@ -319,12 +424,13 @@ class NotificationService {
   Future<void> scheduleDailyScanReminder({
     int hour = 9,
     int minute = 0,
-    int notificationId = _dailyScanReminderMorningId,
+    int notificationId = _dailyScanReminderBaseId,
   }) async {
     if (kIsWeb) {
       print('NotificationService: Cannot schedule daily scan reminder on web');
       return;
     }
+    if (!_dailyScanRemindersEnabled) return;
 
     final now = tz.TZDateTime.now(tz.local);
     var scheduledTime = tz.TZDateTime(
@@ -362,7 +468,7 @@ class NotificationService {
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.time,
-      payload: '{"screen": "home", "type": "daily_scan_reminder"}',
+      payload: '{"screen": "scan", "type": "daily_scan_reminder"}',
     );
 
     print(
@@ -375,14 +481,21 @@ class NotificationService {
   Future<void> cancelDailyScanReminder() async {
     if (kIsWeb) return;
 
-    await _localNotificationsPlugin.cancel(_dailyScanReminderMorningId);
-    await _localNotificationsPlugin.cancel(_dailyScanReminderEveningId);
+    for (var index = 0; index < _maxDailyScanReminders; index++) {
+      await _localNotificationsPlugin.cancel(_dailyScanReminderBaseId + index);
+    }
     print('NotificationService: Daily scan reminder canceled');
   }
 
   /// Schedule a check-in when today's final calendar event ends.
   Future<void> scheduleCalendarCheckIn(DateTime eventEnd) async {
     if (kIsWeb) return;
+
+    _lastCalendarEventEnd = eventEnd;
+    if (!_calendarCheckInReminderEnabled) {
+      await cancelCalendarCheckIn();
+      return;
+    }
 
     await _localNotificationsPlugin.cancel(_calendarCheckInReminderId);
 

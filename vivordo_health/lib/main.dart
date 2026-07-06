@@ -30,11 +30,9 @@ void main() async {
 
   // Initialize notification service
   await NotificationService().initialize();
-  await NotificationService().scheduleDailyScanReminder(hour: 9);
-  await NotificationService().scheduleDailyScanReminder(
-    hour: 17,
-    notificationId: 1002,
-  );
+  if (FirebaseAuth.instance.currentUser == null) {
+    await NotificationService().clearUserReminders();
+  }
 
   runApp(
     // Only one provider: the auth state stream.
@@ -136,6 +134,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     if (_lastSyncedUid == uid) return;
     _lastSyncedUid = uid;
     HealthService().syncToFirestore(daysBack: 30);
+    NotificationService().configureForUser(uid);
     AnalyticsService().logLogin();
   }
 
@@ -144,6 +143,9 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     final user = context.watch<User?>();
 
     if (user == null) {
+      if (_lastSyncedUid != null) {
+        NotificationService().clearUserReminders();
+      }
       _lastSyncedUid = null;
       // Clear the cached consent broadcast so the next login gets a fresh stream
       HealthService().clearConsentCache();

@@ -550,10 +550,9 @@ class HealthService {
   Future<void> _setConsent(String metricKey, bool value) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    await _db.collection('users').doc(uid).set(
-      {'healthKitConsent': {metricKey: value}},
-      SetOptions(merge: true),
-    );
+    await _db.collection('users').doc(uid).update({
+      'healthKitConsent.$metricKey': value,
+    });
   }
 
   Future<Set<String>> _writeDataPoints(

@@ -5,6 +5,7 @@ import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
+import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
@@ -23,7 +24,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
-  bool _pushNotifications = true;
   bool _autoSyncData = true;
 
   bool _isEmailVerificationSignOut = false;
@@ -35,6 +35,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isUpdatingGoogleCalendar = false;
   bool _isOutlookCalendarConnected = false;
   bool _isUpdatingOutlookCalendar = false;
+  bool _isUpdatingScanReminder = false;
+  bool _isUpdatingCheckInReminder = false;
 
   // Bug report
   final TextEditingController _bugReportController = TextEditingController();
@@ -232,6 +234,127 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  Future<void> _updateReminderPreference({
+    required String field,
+    required bool enabled,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final isScanReminder = field == 'scanReminderEnabled';
+    if (isScanReminder ? _isUpdatingScanReminder : _isUpdatingCheckInReminder) {
+      return;
+    }
+
+    setState(() {
+      if (isScanReminder) {
+        _isUpdatingScanReminder = true;
+      } else {
+        _isUpdatingCheckInReminder = true;
+      }
+    });
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'preferences.$field': enabled,
+      });
+      if (isScanReminder) {
+        await NotificationService().setDailyScanRemindersEnabled(enabled);
+      } else {
+        await NotificationService().setCalendarCheckInReminderEnabled(enabled);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update reminder settings.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (isScanReminder) {
+            _isUpdatingScanReminder = false;
+          } else {
+            _isUpdatingCheckInReminder = false;
+          }
+        });
+      }
+    }
+  }
+
+  String _formatReminderTime(int minutes) {
+    final hour24 = minutes ~/ 60;
+    final minute = minutes % 60;
+    final hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12;
+    final suffix = hour24 >= 12 ? 'PM' : 'AM';
+    return '$hour12:${minute.toString().padLeft(2, '0')} $suffix';
+  }
+
+  Future<void> _chooseScanReminderTime({
+    required List<int> reminderTimes,
+    int? index,
+  }) async {
+    final isAdding = index == null;
+    final currentMinutes = isAdding
+        ? (reminderTimes.last + 4 * 60) % (24 * 60)
+        : reminderTimes[index!];
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: currentMinutes ~/ 60,
+        minute: currentMinutes % 60,
+      ),
+    );
+    if (selected == null || !mounted) return;
+
+    final selectedMinutes = selected.hour * 60 + selected.minute;
+    final updatedTimes = [...reminderTimes];
+    final existingTime = index == null ? null : reminderTimes[index];
+    if (updatedTimes.contains(selectedMinutes) &&
+        existingTime != selectedMinutes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That reminder time already exists.')),
+      );
+      return;
+    }
+    if (isAdding) {
+      updatedTimes.add(selectedMinutes);
+    } else {
+      updatedTimes[index!] = selectedMinutes;
+    }
+    updatedTimes.sort();
+    await _saveScanReminderTimes(updatedTimes);
+  }
+
+  Future<void> _removeScanReminderTime(
+    List<int> reminderTimes,
+    int index,
+  ) async {
+    if (reminderTimes.length <= 1) return;
+    final updatedTimes = [...reminderTimes]..removeAt(index);
+    await _saveScanReminderTimes(updatedTimes);
+  }
+
+  Future<void> _saveScanReminderTimes(List<int> reminderTimes) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'preferences.scanReminderTimes': reminderTimes,
+        'preferences.scanReminderMorningMinutes': FieldValue.delete(),
+        'preferences.scanReminderEveningMinutes': FieldValue.delete(),
+      });
+      await NotificationService().setDailyScanReminderTimes(reminderTimes);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update reminder time.')),
+        );
+      }
+    }
+  }
+
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -391,6 +514,35 @@ class _SettingsScreenState extends State<SettingsScreen>
         final rawData     = snapshot.data!.data() as Map<String, dynamic>;
         final userData    = UserModel.fromMap(rawData, snapshot.data!.id);
         final pendingEmail = rawData['pendingEmail'] as String?;
+        final preferences = rawData['preferences'] as Map? ?? {};
+        final scanReminderEnabled =
+            preferences['scanReminderEnabled'] != false;
+        final checkInReminderEnabled =
+            preferences['checkInReminderEnabled'] != false;
+        final savedReminderTimes =
+            (preferences['scanReminderTimes'] as List?)
+                    ?.whereType<num>()
+                    .map(
+                      (value) => value.toInt().clamp(0, 1439).toInt(),
+                    )
+                    .toSet()
+                    .toList() ??
+                [];
+        final scanReminderTimes = savedReminderTimes.isNotEmpty
+            ? savedReminderTimes
+            : <int>[
+                ((preferences['scanReminderMorningMinutes'] as num?)
+                            ?.toInt() ??
+                        9 * 60)
+                    .clamp(0, 1439)
+                    .toInt(),
+                ((preferences['scanReminderEveningMinutes'] as num?)
+                            ?.toInt() ??
+                        17 * 60)
+                    .clamp(0, 1439)
+                    .toInt(),
+              ];
+        scanReminderTimes.sort();
 
         // Read consent from the same doc — avoids opening extra listeners.
         final consentRaw   = rawData['healthKitConsent'] as Map? ?? {};
@@ -842,13 +994,24 @@ class _SettingsScreenState extends State<SettingsScreen>
                         final isToggling = _togglingMetric == metric.key;
                         return Column(
                           children: [
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            value: enabled,
-                            activeThumbColor: const Color(0xFF7B6EF6),
-                            onChanged: isToggling
-                                ? null
-                                : (val) async {
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              value: enabled,
+                              thumbColor: WidgetStateProperty.resolveWith(
+                                (states) => states.contains(WidgetState.selected)
+                                    ? Colors.white
+                                    : const Color(0xFFFFFFFF),
+                              ),
+                              trackColor: WidgetStateProperty.resolveWith(
+                                (states) => states.contains(WidgetState.selected)
+                                    ? const Color(0xFF7B6EF6)
+                                    : const Color(0xFFD1D1D6),
+                              ),
+                              trackOutlineColor: const WidgetStatePropertyAll(
+                                Colors.transparent,
+                              ),
+                              onChanged: (val) async {
+                                    if (isToggling) return;
                                     setState(() => _togglingMetric = metric.key);
                                     try {
                                       if (val) {
@@ -925,11 +1088,58 @@ class _SettingsScreenState extends State<SettingsScreen>
                   _buildCard(
                     children: [
                       _buildToggleRow(
-                        Icons.notifications_none_rounded,
-                        'Push Notifications',
-                        'Daily reminders & insights',
-                        _pushNotifications,
-                        (val) => setState(() => _pushNotifications = val),
+                        Icons.monitor_heart_outlined,
+                        'Scan Reminders',
+                        '${scanReminderTimes.length} reminder${scanReminderTimes.length == 1 ? '' : 's'} each day',
+                        scanReminderEnabled,
+                        (val) => _updateReminderPreference(
+                          field: 'scanReminderEnabled',
+                          enabled: val,
+                        ),
+                      ),
+                      if (scanReminderEnabled) ...[
+                        for (var index = 0;
+                            index < scanReminderTimes.length;
+                            index++) ...[
+                          _buildDivider(),
+                          _buildReminderTimeRow(
+                            index: index,
+                            minutes: scanReminderTimes[index],
+                            canRemove: scanReminderTimes.length > 1,
+                            onEdit: () => _chooseScanReminderTime(
+                              reminderTimes: scanReminderTimes,
+                              index: index,
+                            ),
+                            onRemove: () => _removeScanReminderTime(
+                              scanReminderTimes,
+                              index,
+                            ),
+                          ),
+                        ],
+                        if (scanReminderTimes.length < 10) ...[
+                          _buildDivider(),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: () => _chooseScanReminderTime(
+                                reminderTimes: scanReminderTimes,
+                              ),
+                              icon: const Icon(Icons.add_alarm_rounded),
+                              label: const Text('Add reminder'),
+                            ),
+                          ),
+                        ],
+                      ],
+                      _buildDivider(),
+                      _buildToggleRow(
+                        Icons.chat_bubble_outline_rounded,
+                        'Daily Check-in Reminder',
+                        'After your final calendar event',
+                        checkInReminderEnabled,
+                        (val) => _updateReminderPreference(
+                          field: 'checkInReminderEnabled',
+                          enabled: val,
+                        ),
                       ),
                       _buildDivider(),
                       _buildToggleRow(
@@ -1135,6 +1345,76 @@ class _SettingsScreenState extends State<SettingsScreen>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildReminderTimeRow({
+    required int index,
+    required int minutes,
+    required bool canRemove,
+    required VoidCallback onEdit,
+    required VoidCallback onRemove,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: InkWell(
+            onTap: onEdit,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.alarm_rounded,
+                    size: 18,
+                    color: Color(0xFF7B6EF6),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Reminder ${index + 1}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF8E8E93),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _formatReminderTime(minutes),
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1C1C1E),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: Color(0xFFC7C7CC),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: canRemove ? onRemove : null,
+          tooltip: canRemove
+              ? 'Remove reminder'
+              : 'At least one reminder is required',
+          icon: const Icon(Icons.delete_outline_rounded),
+          color: const Color(0xFFFF3B30),
+          disabledColor: const Color(0xFFC7C7CC),
+        ),
+      ],
     );
   }
 
