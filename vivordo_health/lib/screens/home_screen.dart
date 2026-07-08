@@ -27,6 +27,8 @@ class _HomeScreenState extends State<HomeScreen> {
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
   Future<List<gcal.Event>>? _reachableWindowEventsFuture;
   DateTime? _reachableWindowEventsDate;
+  Future<_ScheduleInsight?>? _scheduleInsightFuture;
+  DateTime? _scheduleInsightDate;
 
   static const Color bgColor = Color(0xFFF2F2F7);
   static const Color cardWhite = Colors.white;
@@ -313,6 +315,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 28),
               _buildSectionTitle("TODAY'S INSIGHTS"),
               const SizedBox(height: 12),
+              _buildScheduleInsightCard(),
               if (sleepVal != '--')
                 _buildInsightCard(
                   icon: Icons.nightlight_round,
@@ -777,6 +780,254 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildScheduleInsightCard() {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+
+    return FutureBuilder<_ScheduleInsight?>(
+      future: _getScheduleInsightFuture(todayStart),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _buildInsightCard(
+              icon: Icons.calendar_today_rounded,
+              iconColor: const Color(0xFF007AFF),
+              iconBg: const Color(0x1F007AFF),
+              title: 'Reviewing your schedule',
+              subtitle: 'Checking today’s calendar load for useful timing insights.',
+            ),
+          );
+        }
+
+        final insight = snapshot.data;
+        if (insight == null) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _buildInsightCard(
+            icon: insight.icon,
+            iconColor: insight.color,
+            iconBg: insight.color.withValues(alpha: 0.12),
+            title: insight.title,
+            subtitle: insight.subtitle,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<_ScheduleInsight?> _getScheduleInsightFuture(
+    DateTime todayStart,
+  ) {
+    if (_scheduleInsightFuture != null &&
+        _scheduleInsightDate != null &&
+        _scheduleInsightDate!.year == todayStart.year &&
+        _scheduleInsightDate!.month == todayStart.month &&
+        _scheduleInsightDate!.day == todayStart.day) {
+      return _scheduleInsightFuture!;
+    }
+
+    _scheduleInsightDate = todayStart;
+    _scheduleInsightFuture = _loadScheduleInsight(todayStart);
+    return _scheduleInsightFuture!;
+  }
+
+  Future<_ScheduleInsight?> _loadScheduleInsight(DateTime todayStart) async {
+    final todayEnd = todayStart.add(const Duration(days: 1));
+    final events = <_ScheduleEvent>[];
+
+    bool googleSignedIn = false;
+    bool outlookSignedIn = false;
+
+    try {
+      googleSignedIn = await CalendarService.isSignedIn().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => false,
+      );
+    } catch (_) {
+      googleSignedIn = false;
+    }
+
+    try {
+      outlookSignedIn = await OutlookCalendarService.isSignedIn().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => false,
+      );
+    } catch (_) {
+      outlookSignedIn = false;
+    }
+
+    if (!googleSignedIn && !outlookSignedIn) return null;
+
+    if (googleSignedIn) {
+      try {
+        final googleEvents = await _getReachableWindowEventsFuture(todayStart);
+        events.addAll(
+          googleEvents
+              .where((event) => event.status != 'cancelled')
+              .map((event) {
+                final start = event.start?.dateTime?.toLocal();
+                final end = event.end?.dateTime?.toLocal();
+                if (start == null || end == null) return null;
+                return _ScheduleEvent(
+                  title: event.summary?.trim().isNotEmpty == true
+                      ? event.summary!.trim()
+                      : 'Calendar event',
+                  start: start,
+                  end: end,
+                );
+              })
+              .whereType<_ScheduleEvent>(),
+        );
+      } catch (e) {
+        debugPrint('Schedule insight Google load failed: $e');
+      }
+    }
+
+    if (outlookSignedIn) {
+      try {
+        final outlookEvents = await OutlookCalendarService
+            .getWeekEvents(todayStart)
+            .timeout(
+              const Duration(seconds: 8),
+              onTimeout: () => <OutlookEvent>[],
+            );
+        events.addAll(
+          outlookEvents.map((event) {
+            return _ScheduleEvent(
+              title: event.subject.trim().isNotEmpty
+                  ? event.subject.trim()
+                  : 'Calendar event',
+              start: event.start.toLocal(),
+              end: event.end.toLocal(),
+            );
+          }),
+        );
+      } catch (e) {
+        debugPrint('Schedule insight Outlook load failed: $e');
+      }
+    }
+
+    final todayEvents = events.where((event) {
+      return event.start.isBefore(todayEnd) && event.end.isAfter(todayStart);
+    }).toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+
+    return _buildScheduleInsight(todayEvents, todayStart);
+  }
+
+  _ScheduleInsight _buildScheduleInsight(
+    List<_ScheduleEvent> events,
+    DateTime todayStart,
+  ) {
+    if (events.isEmpty) {
+      return const _ScheduleInsight(
+        icon: Icons.event_available_rounded,
+        color: greenColor,
+        title: 'Light schedule today',
+        subtitle: 'No calendar events found today. This is a good window for focus, recovery, or goal progress.',
+      );
+    }
+
+    final workStart = DateTime(
+      todayStart.year,
+      todayStart.month,
+      todayStart.day,
+      9,
+    );
+    final workEnd = DateTime(
+      todayStart.year,
+      todayStart.month,
+      todayStart.day,
+      17,
+    );
+
+    DateTime clampStart(DateTime value) =>
+        value.isBefore(workStart) ? workStart : value;
+    DateTime clampEnd(DateTime value) =>
+        value.isAfter(workEnd) ? workEnd : value;
+
+    int scheduledMinutes = 0;
+    int afternoonEvents = 0;
+    _ScheduleEvent? longestEvent;
+
+    for (final event in events) {
+      final clippedStart = clampStart(event.start);
+      final clippedEnd = clampEnd(event.end);
+      if (clippedEnd.isAfter(clippedStart)) {
+        scheduledMinutes += clippedEnd.difference(clippedStart).inMinutes;
+      }
+      if (event.start.hour >= 12) afternoonEvents++;
+      if (longestEvent == null || event.duration > longestEvent.duration) {
+        longestEvent = event;
+      }
+    }
+
+    var tightTransitions = 0;
+    for (var i = 1; i < events.length; i++) {
+      final gap = events[i].start.difference(events[i - 1].end).inMinutes;
+      if (gap >= 0 && gap <= 15) tightTransitions++;
+    }
+
+    final scheduledLabel = _durationLabel(Duration(minutes: scheduledMinutes));
+    final eventWord = events.length == 1 ? 'event' : 'events';
+
+    if (tightTransitions >= 2) {
+      return _ScheduleInsight(
+        icon: Icons.event_busy_rounded,
+        color: orangeColor,
+        title: 'Back-to-back schedule block',
+        subtitle: 'You have ${events.length} $eventWord with tight transitions. Protect a short reset before the busiest block.',
+      );
+    }
+
+    if (scheduledMinutes >= 240 || events.length >= 5) {
+      return _ScheduleInsight(
+        icon: Icons.calendar_month_rounded,
+        color: orangeColor,
+        title: 'Heavy day ahead',
+        subtitle: '$scheduledLabel is scheduled between 9 AM and 5 PM. Keep one recovery window open if you can.',
+      );
+    }
+
+    if (afternoonEvents >= 3) {
+      return _ScheduleInsight(
+        icon: Icons.wb_sunny_rounded,
+        color: const Color(0xFFFF9500),
+        title: 'Busy afternoon ahead',
+        subtitle: 'Most of today’s calendar load is later in the day. Use the morning for focused or important work.',
+      );
+    }
+
+    final longest = longestEvent;
+    if (longest != null && longest.duration.inMinutes >= 90) {
+      return _ScheduleInsight(
+        icon: Icons.timelapse_rounded,
+        color: const Color(0xFF007AFF),
+        title: 'Long calendar block today',
+        subtitle: '${longest.title} runs ${_durationLabel(longest.duration)}. Plan a quick decompression break afterward.',
+      );
+    }
+
+    return _ScheduleInsight(
+      icon: Icons.event_note_rounded,
+      color: const Color(0xFF007AFF),
+      title: 'Balanced schedule today',
+      subtitle: 'You have ${events.length} $eventWord today. Your calendar load looks manageable if you keep small buffers between tasks.',
+    );
+  }
+
+  String _durationLabel(Duration duration) {
+    final minutes = duration.inMinutes;
+    if (minutes >= 60) {
+      final hours = minutes ~/ 60;
+      final remainder = minutes % 60;
+      return remainder == 0 ? '${hours}h' : '${hours}h ${remainder}m';
+    }
+    return '${minutes}m';
   }
 
   Widget _buildReachableWindows() {
@@ -1453,6 +1704,34 @@ Widget _buildCalendarCard() {
       ),
     );
   }
+}
+
+class _ScheduleEvent {
+  const _ScheduleEvent({
+    required this.title,
+    required this.start,
+    required this.end,
+  });
+
+  final String title;
+  final DateTime start;
+  final DateTime end;
+
+  Duration get duration => end.difference(start);
+}
+
+class _ScheduleInsight {
+  const _ScheduleInsight({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
 }
 
 class _WeeklyCalendar extends StatefulWidget {

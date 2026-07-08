@@ -47,7 +47,7 @@ class CalendarService {
   static Future<List<gcal.Event>> getWeekEvents(DateTime weekStart) =>
       getEventsBetween(weekStart, weekStart.add(const Duration(days: 7)));
 
-  /// Returns the user's primary-calendar events between [start] and [end]
+  /// Returns the user's visible Google Calendar events between [start] and [end]
   /// (expanded recurrences, ordered by start time). Returns [] when the user
   /// hasn't connected Google Calendar or on any auth/network error.
   static Future<List<gcal.Event>> getEventsBetween(
@@ -73,16 +73,14 @@ class CalendarService {
       final client = authorization.authClient(scopes: scopes);
       final calendarApi = gcal.CalendarApi(client);
 
-      final events = await calendarApi.events.list(
-        'primary',
-        timeMin: start.toUtc(),
-        timeMax: end.toUtc(),
-        singleEvents: true,
-        orderBy: 'startTime',
+      final events = await _fetchEventsFromCalendars(
+        calendarApi,
+        start: start,
+        end: end,
       );
 
       connectionNotifier.value = true;
-      return events.items ?? [];
+      return events;
     } catch (e) {
       debugPrint('CalendarService error: $e');
       return [];
@@ -114,16 +112,14 @@ class CalendarService {
       final calendarApi = gcal.CalendarApi(client);
       final weekEnd = weekStart.add(const Duration(days: 7));
 
-      final events = await calendarApi.events.list(
-        'primary',
-        timeMin: weekStart.toUtc(),
-        timeMax: weekEnd.toUtc(),
-        singleEvents: true,
-        orderBy: 'startTime',
+      final events = await _fetchEventsFromCalendars(
+        calendarApi,
+        start: weekStart,
+        end: weekEnd,
       );
 
       connectionNotifier.value = true;
-      return events.items ?? [];
+      return events;
     } catch (e) {
       debugPrint('CalendarService connect error: $e');
       return [];
@@ -165,5 +161,55 @@ class CalendarService {
     await GoogleSignIn.instance.disconnect();
     _currentUser = null;
     connectionNotifier.value = false;
+  }
+
+  static Future<List<gcal.Event>> _fetchEventsFromCalendars(
+    gcal.CalendarApi calendarApi, {
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final calendarList = await calendarApi.calendarList.list();
+    final calendars = (calendarList.items ?? const <gcal.CalendarListEntry>[])
+        .where((calendar) => calendar.id != null)
+        .where((calendar) => calendar.hidden != true)
+        .where((calendar) => calendar.selected != false)
+        .toList();
+
+    if (calendars.isEmpty) {
+      return [];
+    }
+
+    final eventLists = await Future.wait(
+      calendars.map((calendar) async {
+        try {
+          final events = await calendarApi.events.list(
+            calendar.id!,
+            timeMin: start.toUtc(),
+            timeMax: end.toUtc(),
+            singleEvents: true,
+            orderBy: 'startTime',
+          );
+          return events.items ?? const <gcal.Event>[];
+        } catch (e) {
+          debugPrint(
+            'CalendarService calendar fetch skipped ${calendar.summary ?? calendar.id}: $e',
+          );
+          return const <gcal.Event>[];
+        }
+      }),
+    );
+
+    final events = eventLists.expand((items) => items).toList();
+    events.sort((a, b) {
+      final aStart = a.start?.dateTime ?? a.start?.date;
+      final bStart = b.start?.dateTime ?? b.start?.date;
+
+      if (aStart == null && bStart == null) return 0;
+      if (aStart == null) return 1;
+      if (bStart == null) return -1;
+      return aStart.compareTo(bStart);
+    });
+
+    return events;
   }
 }
