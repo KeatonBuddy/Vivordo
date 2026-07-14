@@ -29,6 +29,19 @@ class PandaSessionData {
   final String? insightsContext;
 }
 
+/// Result of a fast session bootstrap.
+///
+/// [session] is ready IMMEDIATELY (opener + contexts, no labeling questions) so
+/// the chat opens without waiting on the LLM. [spikeAnalysis] resolves later
+/// with the full session INCLUDING the questions; it is null when there is
+/// nothing to analyze (no new spike), in which case the chat is already final.
+class PandaSessionBootstrap {
+  PandaSessionBootstrap({required this.session, this.spikeAnalysis});
+
+  final PandaSessionData session;
+  final Future<PandaSessionData>? spikeAnalysis;
+}
+
 class PandaQuestion {
   PandaQuestion({
     required this.questionId,

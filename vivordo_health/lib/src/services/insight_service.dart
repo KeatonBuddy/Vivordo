@@ -56,6 +56,7 @@ class InsightService {
     required Map<String, String> labeledAnswers,
     List<Map<String, String>>? conversation,
     String? summary,
+    String? chatSessionId,
   }) async {
     final insight = Insights.fromPandaSession(
       userId:         userId,
@@ -64,54 +65,89 @@ class InsightService {
       labeledAnswers: labeledAnswers,
       conversation:   conversation,
       summary:        summary,
+      chatSessionId:  chatSessionId,
     );
 
-    // De-dupe by FUZZY/CANONICAL stressor match: if this stressor already has
-    // an insight (same canonical bucket, containment, or high token overlap),
-    // bump its frequency and refresh its context instead of writing a duplicate.
     final newStressor = sessionSlots['stressor'];
     if (newStressor != null && newStressor.trim().isNotEmpty) {
-      // Fetch this user's panda insights and match in-memory (fuzzy matching
-      // can't be expressed as a Firestore query). Capped for cost.
+      // Fetch this user's panda insights and match in-memory (canonical/fuzzy
+      // matching can't be expressed as a Firestore query). Capped for cost.
       final existing = await _col(userId)
           .where('source', isEqualTo: 'panda')
           .limit(60)
           .get();
-      QueryDocumentSnapshot<Map<String, dynamic>>? matchDoc;
-      for (final d in existing.docs) {
-        final candStressor =
-            (d.data()['pandaSlots'] as Map?)?['stressor']?.toString();
-        if (Insights.stressorsMatch(newStressor, candStressor)) {
-          matchDoc = d;
-          break;
+
+      // (1) SAME-CHAT accumulation — facets of ONE stressor raised across a
+      // chat merge into a single record (e.g. "missing sports", "risk of
+      // missing summer", "hamstring injury"). A NEW record is created only when
+      // an ENTIRELY different stressor (distinct real category — work vs social)
+      // appears in the same chat. Frequency is NOT bumped (same occurrence).
+      if (chatSessionId != null) {
+        for (final d in existing.docs) {
+          final data = d.data();
+          if (data['chatSessionId'] != chatSessionId) continue;
+          final candStressor =
+              (data['pandaSlots'] as Map?)?['stressor']?.toString();
+          if (Insights.clearlyDifferentStressors(newStressor, candStressor)) {
+            continue; // genuinely different stressor → keep separate
+          }
+          final mergedSlots = <String, String>{
+            ...?(data['pandaSlots'] as Map?)
+                ?.map((k, v) => MapEntry(k.toString(), v.toString())),
+            if (insight.pandaSlots != null)
+              ...insight.pandaSlots!.toMap()
+                  .map((k, v) => MapEntry(k, v.toString())),
+          };
+          await d.reference.update({
+            'pandaSlots': mergedSlots,
+            'title':      insight.title,
+            'body':       insight.body,
+            'severity':   insight.severity,
+            'pandaLabeledAnswers':
+                _mergeAnswers(data['pandaLabeledAnswers'] as Map?, labeledAnswers),
+            if (insight.summary != null && insight.summary!.isNotEmpty)
+              'summary':  insight.summary,
+            'sessionDate': Timestamp.fromDate(sessionDate),
+            'updatedAt':  FieldValue.serverTimestamp(),
+          });
+          _touchUserHistory(userId, sessionDate, insight);
+          insight.id = d.id;
+          insight.frequency = (data['frequency'] as num?)?.toInt() ?? 1;
+          return insight;
         }
       }
-      if (matchDoc != null) {
-        final doc = matchDoc;
-        final mergedAnswers = <String, String>{
-          ...?(doc.data()['pandaLabeledAnswers'] as Map?)
-              ?.map((k, v) => MapEntry(k.toString(), v.toString())),
-          ...labeledAnswers,
-        };
-        await doc.reference.update({
-          'frequency':  FieldValue.increment(1),
-          'updatedAt':  FieldValue.serverTimestamp(),
-          'sessionDate': Timestamp.fromDate(sessionDate),
-          'title':      insight.title,
-          'body':       insight.body,
-          'severity':   insight.severity,
-          if (insight.pandaSlots != null && !insight.pandaSlots!.isEmpty)
-            'pandaSlots': insight.pandaSlots!.toMap(),
-          if (mergedAnswers.isNotEmpty) 'pandaLabeledAnswers': mergedAnswers,
-          if (insight.summary != null && insight.summary!.isNotEmpty)
-            'summary':  insight.summary,
-        });
-        _touchUserHistory(userId, sessionDate, insight);
 
-        insight.id = doc.id;
-        insight.frequency =
-            ((doc.data()['frequency'] as num?)?.toInt() ?? 1) + 1;
-        return insight;
+      // (2) CROSS-CHAT frequency dedup — the SAME stressor (canonical/fuzzy
+      // match) seen in a DIFFERENT chat bumps frequency instead of duplicating.
+      for (final d in existing.docs) {
+        final data = d.data();
+        if (chatSessionId != null && data['chatSessionId'] == chatSessionId) {
+          continue;
+        }
+        final candStressor =
+            (data['pandaSlots'] as Map?)?['stressor']?.toString();
+        if (Insights.stressorsMatch(newStressor, candStressor)) {
+          await d.reference.update({
+            'frequency':  FieldValue.increment(1),
+            'updatedAt':  FieldValue.serverTimestamp(),
+            'sessionDate': Timestamp.fromDate(sessionDate),
+            if (chatSessionId != null) 'chatSessionId': chatSessionId,
+            'title':      insight.title,
+            'body':       insight.body,
+            'severity':   insight.severity,
+            if (insight.pandaSlots != null && !insight.pandaSlots!.isEmpty)
+              'pandaSlots': insight.pandaSlots!.toMap(),
+            'pandaLabeledAnswers':
+                _mergeAnswers(data['pandaLabeledAnswers'] as Map?, labeledAnswers),
+            if (insight.summary != null && insight.summary!.isNotEmpty)
+              'summary':  insight.summary,
+          });
+          _touchUserHistory(userId, sessionDate, insight);
+          insight.id = d.id;
+          insight.frequency =
+              ((data['frequency'] as num?)?.toInt() ?? 1) + 1;
+          return insight;
+        }
       }
     }
 
@@ -372,6 +408,26 @@ class InsightService {
           ..sort((a, b) => b.value.compareTo(a.value)))
         .first
         .key;
+  }
+
+  /// Merges incoming labeled answers into existing ones, giving colliding keys
+  /// a unique suffix so multiple "You shared" notes from one chat are all kept.
+  Map<String, String> _mergeAnswers(
+      Map? existingRaw, Map<String, String> incoming) {
+    final merged = <String, String>{
+      ...?existingRaw?.map((k, v) => MapEntry(k.toString(), v.toString())),
+    };
+    for (final e in incoming.entries) {
+      if (merged[e.key] == e.value) continue; // identical → nothing to add
+      var key = e.key;
+      if (merged.containsKey(key)) {
+        var i = 2;
+        while (merged.containsKey('$key ($i)')) i++;
+        key = '$key ($i)';
+      }
+      merged[key] = e.value;
+    }
+    return merged;
   }
 
   void _unawaited(Future<void> future) {

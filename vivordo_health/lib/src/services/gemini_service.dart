@@ -270,6 +270,16 @@ RULES:
         return emptyStateSession(userName ?? 'there');
       }
       final compact = buildCompactPayload(payload, topK: 1);
+
+      // Nothing to analyze — skip the LLM round trip and open the chat instantly
+      // instead of waiting on a call that would just return `spikes: []`.
+      if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
+        if (kDebugMode) {
+          debugPrint('[Gemini][spike] no spike candidates — skipping LLM call');
+        }
+        return noSpikesSession(payload, overrideName: userName);
+      }
+
       final raw = await analyzeStressSpikes(
           data: compact, extraUserContext: extraUserContext);
       final session = parsePandaSession(raw, payload, overrideName: userName);
@@ -282,6 +292,48 @@ RULES:
 
     // No user id → nothing to analyze; surface the empty state.
     return emptyStateSession(userName ?? 'there');
+  }
+
+  @override
+  Future<PandaSessionBootstrap> startSession({
+    String? extraUserContext,
+    String? userName,
+    String? userId,
+  }) async {
+    if (userId == null || userId.isEmpty) {
+      return PandaSessionBootstrap(
+          session: emptyStateSession(userName ?? 'there'));
+    }
+
+    final payload = await fetchRealUserPayload(userId);
+    if (payload == null) {
+      return PandaSessionBootstrap(
+          session: emptyStateSession(userName ?? 'there'));
+    }
+
+    final compact = buildCompactPayload(payload, topK: 1);
+
+    // Nothing to analyze → no LLM call at all; the chat is already final.
+    if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
+      return PandaSessionBootstrap(
+          session: noSpikesSession(payload, overrideName: userName));
+    }
+
+    // Opener NOW; the labeling questions stream in behind it.
+    final analysis = Future(() async {
+      final raw = await analyzeStressSpikes(
+          data: compact, extraUserContext: extraUserContext);
+      final session = parsePandaSession(raw, payload, overrideName: userName);
+      if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
+        unawaited(markSpikeDaysAnalyzed(userId, spikeDaysFromCompact(compact)));
+      }
+      return session;
+    });
+
+    return PandaSessionBootstrap(
+      session: bootstrapSession(payload, overrideName: userName, hasSpikes: true),
+      spikeAnalysis: analysis,
+    );
   }
 
   // =========================================================================
@@ -303,30 +355,13 @@ RULES:
     String? scheduleContext,
     String? insightsContext,
   }) async {
-    // Token guard on RAW inputs — fires before buildDialoguePrompt caps history
-    // to 6 items, so a 50-turn history is still caught here as a safety net.
-    final rawHistoryText = conversationHistory
-        .map((t) => '${t['role']}: ${t['text']}')
-        .join('\n');
-    final estimated = estimateTokens(
-        rawHistoryText + userMessage +
-        jsonEncode(trimSpikeContext(spikeContext)) + (scheduleContext ?? '') +
-        (insightsContext ?? ''));
-    if (estimated > kMaxInputTokens) {
-      if (kDebugMode) {
-        debugPrint('[Gemini][dialogue] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
-      }
-      return PandaTurnReply(
-        intent: PandaIntent.chitchat,
-        message: "We've covered a lot of ground! Our conversation is getting "
-            "quite long — let's wrap up here and you can start a fresh session "
-            "anytime 💜",
-      );
-    }
+    // Trim to fit rather than refuse — Panda always answers, so the chat ends
+    // naturally instead of being cut off with a canned "let's wrap up".
+    final fitted = fitConversation(conversationHistory, userMessage);
 
     final prompt = buildDialoguePrompt(
-      userMessage: userMessage,
-      conversationHistory: conversationHistory,
+      userMessage: fitted.message,
+      conversationHistory: fitted.history,
       spikeContext: spikeContext,
       isOnPredefinedPath: isOnPredefinedPath,
       isInDigression: isInDigression,
@@ -430,17 +465,13 @@ RULES:
     final insightsFuture = InsightService(firestore: db)
         .aggregateSummary(userId)
         .catchError((Object _) => <String, dynamic>{});
-    // Google Calendar spanning the past metrics window AND the upcoming week
-    // (today-6 → today+8): the past half drives spike correlation + recent
-    // events, the future half feeds the schedule digest for "when am I free /
-    // mentally available next week" planning questions in the dialogue.
-    // Returns [] when not connected; .catchError guards any auth/network error.
-    final dayStart = DateTime(now.year, now.month, now.day);
-    final calendarFuture = CalendarService.getEventsBetween(
-            dayStart.subtract(const Duration(days: 6)),
-            dayStart.add(const Duration(days: 8)))
-        .timeout(const Duration(seconds: 5), onTimeout: () => <gcal.Event>[])
-        .catchError((Object _) => <gcal.Event>[]);
+    // NOTE: Google Calendar is deliberately NOT fetched here. It needs auth +
+    // an enumeration of every calendar + a fetch per calendar, which can take
+    // seconds — and it sat on the session-init critical path. It is now loaded
+    // in the BACKGROUND via fetchScheduleContext() and fed into later dialogue
+    // turns, so the chat opens immediately. (Calendar↔spike correlation was
+    // near-useless anyway: the metrics are daily aggregates with no real
+    // time-of-day, so no event could ever be aligned to a spike.)
 
     // User root doc — holds analyzed_spike_days (spike-dedupe ledger).
     final userDocFuture = userRef.get();
@@ -449,7 +480,6 @@ RULES:
     final prefSnap = await prefFuture;
     final questSnap = await questFuture;
     final insightsAgg = await insightsFuture;
-    final calendarEvents = await calendarFuture;
     final userSnap = await userDocFuture;
 
     // Days whose spike has already been surfaced once — excluded from detection
@@ -535,60 +565,6 @@ RULES:
     final windowStart = DateTime.parse('${sortedDates.last}T00:00:00');
     final windowEnd = DateTime.parse('${latestDate}T23:59:59');
 
-    // Map calendar events to the {time, type, detail} shape the spike-correlation
-    // engine (_eventsNear) and the analysis prompt expect. Skip all-day events
-    // (no dateTime) since they can't be aligned to an HR spike.
-    final calendarMapped = <Map<String, dynamic>>[];
-    for (final e in calendarEvents) {
-      final startDt = e.start?.dateTime;
-      if (startDt == null) continue;
-      final title = (e.summary ?? '').trim();
-      calendarMapped.add({
-        'time': startDt.toUtc().toIso8601String(),
-        'type': 'calendar',
-        'detail': title.isEmpty ? 'event' : title,
-      });
-    }
-
-    // Compact "date HH:mm — title" line for a calendar event (local time).
-    String fmtEvent(DateTime startUtc, String? summary) {
-      final local = startUtc.toLocal();
-      final hh = local.hour.toString().padLeft(2, '0');
-      final mm = local.minute.toString().padLeft(2, '0');
-      final title = (summary ?? 'event').trim();
-      return '${_fmtDate(local)} $hh:$mm — ${title.isEmpty ? 'event' : title}';
-    }
-
-    // Two compact digests surfaced in user_profile so calendar context is
-    // guaranteed-visible regardless of metric-sample granularity (the
-    // spike↔event correlation in `events` only fires with intraday samples):
-    //   • recent_events   — what happened during the analysis window (past)
-    //   • upcoming_events  — what's coming up, for planning
-    // Events come back ascending by start time (orderBy: 'startTime').
-    final recentEvents = <String>[];
-    final upcomingEvents = <String>[];
-    for (final e in calendarEvents) {
-      final startDt = e.start?.dateTime;
-      if (startDt == null) continue;
-      if (startDt.isAfter(now)) {
-        if (upcomingEvents.length < 5) {
-          upcomingEvents.add(fmtEvent(startDt, e.summary));
-        }
-      } else if (!startDt.isBefore(windowStart)) {
-        recentEvents.add(fmtEvent(startDt, e.summary));
-      }
-    }
-    // Keep the 5 most recent past events within the analysis window.
-    if (recentEvents.length > 5) {
-      recentEvents.removeRange(0, recentEvents.length - 5);
-    }
-
-    // Per-day schedule digest for the next 7 days (incl. today) with start–end
-    // times, so the dialogue LLM can find free windows and reason about mental
-    // availability. Free days are listed explicitly so gaps are obvious.
-    final upcomingSchedule =
-        _buildScheduleDigest(calendarEvents, dayStart);
-
     // Compact user setup from preferences + questionnaire (scalar values only,
     // max 10 fields) — keeps token overhead under ~100 tokens.
     final userSetup = <String, dynamic>{};
@@ -640,16 +616,15 @@ RULES:
         'hrv_rmssd_typical': baselineHrv,
         if (userSetup.isNotEmpty) 'user_setup': userSetup,
         if (insightsSummary.isNotEmpty) 'insights_summary': insightsSummary,
-        if (recentEvents.isNotEmpty) 'recent_events': recentEvents,
-        if (upcomingEvents.isNotEmpty) 'upcoming_events': upcomingEvents,
       },
       'data_window': {
         'start': windowStart.toIso8601String(),
         'end': windowEnd.toIso8601String(),
       },
       'samples_5min': samplesChronological,
-      'events': calendarMapped,
-      if (upcomingSchedule.isNotEmpty) 'upcoming_schedule': upcomingSchedule,
+      // Calendar is loaded in the background (fetchScheduleContext) — it is not
+      // on the session-init critical path.
+      'events': const <Map<String, dynamic>>[],
       if (todaySleepHrs > 0)
         'sleep_summary': {
           'total_hours': todaySleepHrs,
@@ -669,17 +644,122 @@ RULES:
           'Hey $name! 👋 I don\'t have any health data to analyze yet. '
           'Once you start tracking your metrics, I\'ll be able to surface '
           'personalized stress insights here. For now, feel free to chat with '
-          'me about anything on your mind 💜',
+          'me about anything on your mind.',
       questions: [],
       overallNotes: '',
       rawSpikes: [],
     );
   }
 
+  /// Fetches the Google Calendar schedule digest for the next 7 days.
+  ///
+  /// Runs OFF the session-init critical path — the calendar needs auth, an
+  /// enumeration of every calendar, and a fetch per calendar, which can take
+  /// seconds. PandaScreen calls this in the background after the chat has
+  /// already opened and feeds the result into subsequent dialogue turns.
+  /// Returns null when Calendar isn't connected or nothing is scheduled.
+  static Future<String?> fetchScheduleContext() async {
+    try {
+      final now = DateTime.now();
+      final dayStart = DateTime(now.year, now.month, now.day);
+      final events = await CalendarService.getEventsBetween(
+              dayStart, dayStart.add(const Duration(days: 8)))
+          .timeout(const Duration(seconds: 12),
+              onTimeout: () => <gcal.Event>[]);
+      final digest = _buildScheduleDigest(events, dayStart);
+      return digest.isEmpty ? null : digest;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[schedule] background fetch failed: $e');
+      return null;
+    }
+  }
+
+  /// Immediate session built from the payload alone — NO LLM call.
+  ///
+  /// [hasSpikes] false → nothing to analyze (chat is already final).
+  /// [hasSpikes] true  → the opener shows now while the labeling questions are
+  /// still being generated in the background (progressive loading).
+  static PandaSessionData bootstrapSession(
+    Map<String, dynamic> payload, {
+    String? overrideName,
+    required bool hasSpikes,
+  }) {
+    final meta = payload['user_meta'] as Map<String, dynamic>?;
+    final userName = overrideName?.isNotEmpty == true
+        ? overrideName!
+        : (meta?['userId'] as String? ?? 'there')
+            .replaceAll(RegExp(r'[_\-]'), ' ')
+            .split(' ')
+            .first;
+
+    final sleepSummary = payload['sleep_summary'] as Map?;
+    final sleepHours =
+        (sleepSummary?['total_hours'] as num?)?.toDouble() ?? 0.0;
+
+    return PandaSessionData(
+      openerMessage: _buildWarmOpener(
+        userName: userName,
+        hasSpikes: hasSpikes,
+        overallNotes: '',
+        sleepHours: sleepHours,
+      ),
+      questions: const [],
+      overallNotes: '',
+      rawSpikes: const [],
+      insightsContext: _insightsContextFromPayload(payload),
+    );
+  }
+
+  /// Session for a user who HAS data but no NEW spike to analyze (e.g. every
+  /// detected spike day was already surfaced once — AppFlags.dedupeAnalyzedSpikes).
+  ///
+  /// There is nothing to label, so this skips the spike-analysis LLM call
+  /// entirely and opens the chat instantly instead of waiting on a round trip
+  /// that would just return `spikes: []`. Schedule + insights context still
+  /// travel with it so the dialogue keeps full context.
+  static PandaSessionData noSpikesSession(
+    Map<String, dynamic> payload, {
+    String? overrideName,
+  }) =>
+      bootstrapSession(payload, overrideName: overrideName, hasSpikes: false);
+
   /// Rough token estimate: 1 token ≈ 4 chars for English text.
   /// Intentionally conservative (over-counts) — the safe direction for budget checks.
   /// Used by both GeminiService and ClaudeService before every API call.
   static int estimateTokens(String text) => (text.length / 4).ceil();
+
+  /// Fits the dynamic conversation into the token budget WITHOUT ever refusing
+  /// to reply: caps history to the last 6 turns, truncates a single runaway
+  /// message, then drops the oldest turns until it fits.
+  ///
+  /// This replaces the old hard token guard, which returned a canned
+  /// "we've covered a lot of ground — let's wrap up" message and abruptly ended
+  /// the chat before the user was done. Panda now always answers, so the
+  /// conversation reaches its own natural conclusion.
+  static ({List<Map<String, String>> history, String message}) fitConversation(
+    List<Map<String, String>> history,
+    String message, {
+    int budget = kMaxInputTokens,
+  }) {
+    final h = history.length > 6
+        ? List<Map<String, String>>.from(history.sublist(history.length - 6))
+        : List<Map<String, String>>.from(history);
+
+    // Truncate a single oversized message to at most half the budget.
+    final maxMsgChars = (budget * 4) ~/ 2;
+    final msg = message.length > maxMsgChars
+        ? '${message.substring(0, maxMsgChars).trimRight()}…'
+        : message;
+
+    String histText(List<Map<String, String>> hh) =>
+        hh.map((t) => '${t['role']}: ${t['text']}').join('\n');
+
+    // Drop the oldest turns until the conversation fits.
+    while (h.isNotEmpty && estimateTokens(histText(h) + msg) > budget) {
+      h.removeAt(0);
+    }
+    return (history: h, message: msg);
+  }
 
   // =========================================================================
   // Spike de-duplication  (public static — reused by ClaudeService)
@@ -738,6 +818,18 @@ RULES:
       return 'that day';
     }
   }
+
+  /// Normalised key for de-duplicating chip options — lowercased with emoji and
+  /// punctuation stripped, so "Something else 🙋" and "Something else!" collide.
+  static String _optionKey(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  /// True when a normalised option already acts as the "none of these" choice.
+  static bool _isEscapeHatch(String key) =>
+      key.contains('something else') || key.contains('other');
 
   /// Strips the time component from an ISO timestamp, leaving the date only.
   static String _dateOnly(String? iso) {
@@ -954,6 +1046,7 @@ Write the continuity note now.''';
           '     user\'s recurring stressors, emotions, coping, and recent recaps.\n'
           '     Reference it when relevant; never claim you lack access to it.\n'
           '   • Tone: warm, peer-like. Never clinical. No diagnoses; use "may be related to".\n'
+          '   • NEVER use the 💜 emoji or any heart emoji (❤️🩷💙 etc.).\n'
           '\n'
           '3. DEPTH_FOLLOW_UP: one open-ended probe (intent=="want_deeper_answer" only).\n'
           '\n'
@@ -1110,16 +1203,22 @@ Write the continuity note now.''';
         final qp = q['prompt']?.toString() ?? '';
         if (qp.isEmpty) continue;
 
+        // De-dupe options (the model sometimes repeats one) — compare
+        // case/emoji/punctuation-insensitively.
         final opts = <String>[];
+        final optKeys = <String>{};
         if (q['options'] is List) {
           for (final o in q['options'] as List) {
             final t = o.toString().trim();
-            if (t.isNotEmpty) opts.add(t);
+            if (t.isEmpty) continue;
+            if (optKeys.add(_optionKey(t))) opts.add(t);
           }
         }
 
-        if (opts.isNotEmpty &&
-            !opts.any((o) => o.toLowerCase().contains('other'))) {
+        // Only add the escape hatch when the model didn't already supply one.
+        // (The old check looked for "other", which "Something else 🙋" does not
+        // contain — so it appended a duplicate every time.)
+        if (opts.isNotEmpty && !optKeys.any(_isEscapeHatch)) {
           opts.add('Something else 🙋');
         }
 
@@ -1213,7 +1312,7 @@ Write the continuity note now.''';
       final intent = _parseIntent(intentStr);
       final message = obj['message']?.toString().trim().isNotEmpty == true
           ? obj['message'].toString().trim()
-          : 'Got it 💜';
+          : 'Got it';
 
       final depthFollowUp = (intent == PandaIntent.wantDeeperAnswer)
           ? obj['depth_follow_up']?.toString().trim()
@@ -1226,11 +1325,16 @@ Write the continuity note now.''';
           final qid = iqRaw['question_id']?.toString() ?? '';
           final qp = iqRaw['prompt']?.toString() ?? '';
           final opts = <String>[];
+          final optKeys = <String>{};
           if (iqRaw['options'] is List) {
             for (final o in iqRaw['options'] as List) {
               final t = o.toString().trim();
-              if (t.isNotEmpty) opts.add(t);
+              if (t.isEmpty) continue;
+              if (optKeys.add(_optionKey(t))) opts.add(t); // de-dupe
             }
+          }
+          if (opts.isNotEmpty && !optKeys.any(_isEscapeHatch)) {
+            opts.add('Something else 🙋');
           }
           if (qid.isNotEmpty && qp.isNotEmpty && opts.isNotEmpty) {
             injected =
@@ -1265,7 +1369,7 @@ Write the continuity note now.''';
         recHint: recHint,
       );
     } catch (_) {
-      return PandaTurnReply(intent: PandaIntent.chitchat, message: 'Got it 💜');
+      return PandaTurnReply(intent: PandaIntent.chitchat, message: 'Got it');
     }
   }
 
@@ -1347,7 +1451,7 @@ Write the continuity note now.''';
         'What would you like to explore — your patterns, how to plan today, '
         'or something else on your mind?';
 
-    return 'Hey $userName! 💜 $spikeSnippet$sleepSnippet$invite';
+    return 'Hey $userName! $spikeSnippet$sleepSnippet$invite';
   }
 
   static PandaSessionData _fallbackSession(
@@ -1357,7 +1461,7 @@ Write the continuity note now.''';
       openerMessage:
           'Hey $userName! 🌿 Ive pulled up your health data for today. '
           'What would you like to explore — your stress patterns, how to plan your day, '
-          'or something else on your mind? 💜',
+          'or something else on your mind?',
       questions: [
         PandaQuestion(
           questionId: 'q_fallback',

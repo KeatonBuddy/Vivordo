@@ -164,6 +164,7 @@ class Insights {
     this.summary,
     this.frequency = 1,
     this.stressorKey,
+    this.chatSessionId,
   });
 
   // ── Core fields (all sources) ─────────────────────────────────────────────
@@ -226,6 +227,11 @@ class Insights {
   /// key used to find the existing insight to increment. Null when no stressor.
   String? stressorKey;
 
+  /// Groups insights that came from the SAME chat session (stable per session,
+  /// e.g. the session-start ISO timestamp). The History tab renders all
+  /// insights sharing a chatSessionId together as one split-view card.
+  String? chatSessionId;
+
   // ── Factories ─────────────────────────────────────────────────────────────
 
   /// Build an Insights document from a completed Panda session.
@@ -238,6 +244,7 @@ class Insights {
     required Map<String, String> labeledAnswers,
     List<Map<String, String>>? conversation,
     String? summary,
+    String? chatSessionId,
   }) {
     final slots = PandaSlots.fromSessionSlots(sessionSlots);
     final now = Timestamp.now();
@@ -288,6 +295,7 @@ class Insights {
           ? summary.trim()
           : _buildSessionSummary(slots, labeledAnswers, conversation),
       stressorKey:          canonicalStressor(slots.stressor),
+      chatSessionId:        chatSessionId,
       acknowledged:         false,
       createdAt:            now,
       updatedAt:            now,
@@ -375,6 +383,20 @@ class Insights {
     return _jaccard(na, nb) >= 0.5;
   }
 
+  /// True only when two stressors are ENTIRELY different topics — i.e. both map
+  /// to a *known* canonical category AND those categories differ (e.g. work vs
+  /// social). When either is an un-bucketed phrase, they are NOT considered
+  /// clearly different, so facets of one stressor ("missing sports", "hamstring
+  /// injury") stay together. Used to decide when a new record is warranted
+  /// within a single chat.
+  static bool clearlyDifferentStressors(String? a, String? b) {
+    final ca = canonicalStressor(a);
+    final cb = canonicalStressor(b);
+    final aReal = _stressorCanon.containsKey(ca);
+    final bReal = _stressorCanon.containsKey(cb);
+    return aReal && bReal && ca != cb;
+  }
+
   /// Word-set Jaccard similarity of two normalised phrases (0..1).
   static double _jaccard(String a, String b) {
     final sa = a.split(' ').where((w) => w.isNotEmpty).toSet();
@@ -417,6 +439,8 @@ class Insights {
       'frequency':                frequency,
       if (stressorKey != null && stressorKey!.isNotEmpty)
         'stressorKey':            stressorKey,
+      if (chatSessionId != null && chatSessionId!.isNotEmpty)
+        'chatSessionId':          chatSessionId,
     };
   }
 
@@ -477,6 +501,7 @@ class Insights {
       summary:                  map['summary']       as String?,
       frequency:                (map['frequency'] as num?)?.toInt() ?? 1,
       stressorKey:              map['stressorKey']   as String?,
+      chatSessionId:            map['chatSessionId'] as String?,
     );
   }
 
