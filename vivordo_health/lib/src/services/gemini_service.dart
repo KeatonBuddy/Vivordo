@@ -303,30 +303,13 @@ RULES:
     String? scheduleContext,
     String? insightsContext,
   }) async {
-    // Token guard on RAW inputs — fires before buildDialoguePrompt caps history
-    // to 6 items, so a 50-turn history is still caught here as a safety net.
-    final rawHistoryText = conversationHistory
-        .map((t) => '${t['role']}: ${t['text']}')
-        .join('\n');
-    final estimated = estimateTokens(
-        rawHistoryText + userMessage +
-        jsonEncode(trimSpikeContext(spikeContext)) + (scheduleContext ?? '') +
-        (insightsContext ?? ''));
-    if (estimated > kMaxInputTokens) {
-      if (kDebugMode) {
-        debugPrint('[Gemini][dialogue] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
-      }
-      return PandaTurnReply(
-        intent: PandaIntent.chitchat,
-        message: "We've covered a lot of ground! Our conversation is getting "
-            "quite long — let's wrap up here and you can start a fresh session "
-            "anytime 💜",
-      );
-    }
+    // Trim to fit rather than refuse — Panda always answers, so the chat ends
+    // naturally instead of being cut off with a canned "let's wrap up".
+    final fitted = fitConversation(conversationHistory, userMessage);
 
     final prompt = buildDialoguePrompt(
-      userMessage: userMessage,
-      conversationHistory: conversationHistory,
+      userMessage: fitted.message,
+      conversationHistory: fitted.history,
       spikeContext: spikeContext,
       isOnPredefinedPath: isOnPredefinedPath,
       isInDigression: isInDigression,
@@ -669,7 +652,7 @@ RULES:
           'Hey $name! 👋 I don\'t have any health data to analyze yet. '
           'Once you start tracking your metrics, I\'ll be able to surface '
           'personalized stress insights here. For now, feel free to chat with '
-          'me about anything on your mind 💜',
+          'me about anything on your mind.',
       questions: [],
       overallNotes: '',
       rawSpikes: [],
@@ -680,6 +663,39 @@ RULES:
   /// Intentionally conservative (over-counts) — the safe direction for budget checks.
   /// Used by both GeminiService and ClaudeService before every API call.
   static int estimateTokens(String text) => (text.length / 4).ceil();
+
+  /// Fits the dynamic conversation into the token budget WITHOUT ever refusing
+  /// to reply: caps history to the last 6 turns, truncates a single runaway
+  /// message, then drops the oldest turns until it fits.
+  ///
+  /// This replaces the old hard token guard, which returned a canned
+  /// "we've covered a lot of ground — let's wrap up" message and abruptly ended
+  /// the chat before the user was done. Panda now always answers, so the
+  /// conversation reaches its own natural conclusion.
+  static ({List<Map<String, String>> history, String message}) fitConversation(
+    List<Map<String, String>> history,
+    String message, {
+    int budget = kMaxInputTokens,
+  }) {
+    final h = history.length > 6
+        ? List<Map<String, String>>.from(history.sublist(history.length - 6))
+        : List<Map<String, String>>.from(history);
+
+    // Truncate a single oversized message to at most half the budget.
+    final maxMsgChars = (budget * 4) ~/ 2;
+    final msg = message.length > maxMsgChars
+        ? '${message.substring(0, maxMsgChars).trimRight()}…'
+        : message;
+
+    String histText(List<Map<String, String>> hh) =>
+        hh.map((t) => '${t['role']}: ${t['text']}').join('\n');
+
+    // Drop the oldest turns until the conversation fits.
+    while (h.isNotEmpty && estimateTokens(histText(h) + msg) > budget) {
+      h.removeAt(0);
+    }
+    return (history: h, message: msg);
+  }
 
   // =========================================================================
   // Spike de-duplication  (public static — reused by ClaudeService)
@@ -738,6 +754,18 @@ RULES:
       return 'that day';
     }
   }
+
+  /// Normalised key for de-duplicating chip options — lowercased with emoji and
+  /// punctuation stripped, so "Something else 🙋" and "Something else!" collide.
+  static String _optionKey(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9 ]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  /// True when a normalised option already acts as the "none of these" choice.
+  static bool _isEscapeHatch(String key) =>
+      key.contains('something else') || key.contains('other');
 
   /// Strips the time component from an ISO timestamp, leaving the date only.
   static String _dateOnly(String? iso) {
@@ -954,6 +982,7 @@ Write the continuity note now.''';
           '     user\'s recurring stressors, emotions, coping, and recent recaps.\n'
           '     Reference it when relevant; never claim you lack access to it.\n'
           '   • Tone: warm, peer-like. Never clinical. No diagnoses; use "may be related to".\n'
+          '   • NEVER use the 💜 emoji or any heart emoji (❤️🩷💙 etc.).\n'
           '\n'
           '3. DEPTH_FOLLOW_UP: one open-ended probe (intent=="want_deeper_answer" only).\n'
           '\n'
@@ -1110,16 +1139,22 @@ Write the continuity note now.''';
         final qp = q['prompt']?.toString() ?? '';
         if (qp.isEmpty) continue;
 
+        // De-dupe options (the model sometimes repeats one) — compare
+        // case/emoji/punctuation-insensitively.
         final opts = <String>[];
+        final optKeys = <String>{};
         if (q['options'] is List) {
           for (final o in q['options'] as List) {
             final t = o.toString().trim();
-            if (t.isNotEmpty) opts.add(t);
+            if (t.isEmpty) continue;
+            if (optKeys.add(_optionKey(t))) opts.add(t);
           }
         }
 
-        if (opts.isNotEmpty &&
-            !opts.any((o) => o.toLowerCase().contains('other'))) {
+        // Only add the escape hatch when the model didn't already supply one.
+        // (The old check looked for "other", which "Something else 🙋" does not
+        // contain — so it appended a duplicate every time.)
+        if (opts.isNotEmpty && !optKeys.any(_isEscapeHatch)) {
           opts.add('Something else 🙋');
         }
 
@@ -1213,7 +1248,7 @@ Write the continuity note now.''';
       final intent = _parseIntent(intentStr);
       final message = obj['message']?.toString().trim().isNotEmpty == true
           ? obj['message'].toString().trim()
-          : 'Got it 💜';
+          : 'Got it';
 
       final depthFollowUp = (intent == PandaIntent.wantDeeperAnswer)
           ? obj['depth_follow_up']?.toString().trim()
@@ -1226,11 +1261,16 @@ Write the continuity note now.''';
           final qid = iqRaw['question_id']?.toString() ?? '';
           final qp = iqRaw['prompt']?.toString() ?? '';
           final opts = <String>[];
+          final optKeys = <String>{};
           if (iqRaw['options'] is List) {
             for (final o in iqRaw['options'] as List) {
               final t = o.toString().trim();
-              if (t.isNotEmpty) opts.add(t);
+              if (t.isEmpty) continue;
+              if (optKeys.add(_optionKey(t))) opts.add(t); // de-dupe
             }
+          }
+          if (opts.isNotEmpty && !optKeys.any(_isEscapeHatch)) {
+            opts.add('Something else 🙋');
           }
           if (qid.isNotEmpty && qp.isNotEmpty && opts.isNotEmpty) {
             injected =
@@ -1265,7 +1305,7 @@ Write the continuity note now.''';
         recHint: recHint,
       );
     } catch (_) {
-      return PandaTurnReply(intent: PandaIntent.chitchat, message: 'Got it 💜');
+      return PandaTurnReply(intent: PandaIntent.chitchat, message: 'Got it');
     }
   }
 
@@ -1347,7 +1387,7 @@ Write the continuity note now.''';
         'What would you like to explore — your patterns, how to plan today, '
         'or something else on your mind?';
 
-    return 'Hey $userName! 💜 $spikeSnippet$sleepSnippet$invite';
+    return 'Hey $userName! $spikeSnippet$sleepSnippet$invite';
   }
 
   static PandaSessionData _fallbackSession(
@@ -1357,7 +1397,7 @@ Write the continuity note now.''';
       openerMessage:
           'Hey $userName! 🌿 Ive pulled up your health data for today. '
           'What would you like to explore — your stress patterns, how to plan your day, '
-          'or something else on your mind? 💜',
+          'or something else on your mind?',
       questions: [
         PandaQuestion(
           questionId: 'q_fallback',

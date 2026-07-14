@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'package:url_launcher/url_launcher.dart';
@@ -848,7 +849,7 @@ class _PandaScreenState extends State<PandaScreen>
       // All spike questions answered
       if (!_sessionComplete) {
         await _pandaSay(
-          'Thanks so much for sharing all of that! 💜  '
+          'Thanks so much for sharing all of that!  '
           "I've captured everything. Feel free to explore the categories below or start a new session.",
           typingMs: 900,
         );
@@ -865,6 +866,10 @@ class _PandaScreenState extends State<PandaScreen>
       }
     }
   }
+
+  /// Stable id grouping every insight saved during the current chat session,
+  /// so the History tab can render them together (split view).
+  String? get _chatSessionId => _sessionStart?.toIso8601String();
 
   Future<void> _persistCompletedSession() async {
     final resolvedUserId = _currentUserId;
@@ -899,6 +904,7 @@ class _PandaScreenState extends State<PandaScreen>
         labeledAnswers: labeledAnswers,
         conversation: conversation,
         summary: llmSummary.isNotEmpty ? llmSummary : null,
+        chatSessionId: _chatSessionId,
       );
       if (mounted) setState(() => _currentInsightId = insight.id);
       // Surface this session's recap to subsequent free-conversation turns.
@@ -1678,13 +1684,15 @@ class _PandaScreenState extends State<PandaScreen>
                           style: TextStyle(
                               color: Colors.black45, height: 1.5)),
                     ]))
-                : ListView.separated(
-                    itemCount: _firestoreInsights.length,
-                    separatorBuilder: (_, __) =>
-                        const SizedBox(height: 10),
-                    itemBuilder: (_, i) =>
-                        _insightCard(_firestoreInsights[i]),
-                  ),
+                : Builder(builder: (_) {
+                    final groups = _groupedInsights();
+                    return ListView.separated(
+                      itemCount: groups.length,
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(height: 10),
+                      itemBuilder: (_, i) => _chatGroupCard(groups[i]),
+                    );
+                  }),
           ),
         ]),
       ),
@@ -1699,94 +1707,144 @@ class _PandaScreenState extends State<PandaScreen>
   // edit-answer support wired to InsightService.correctAnswer().
   // ===========================================================================
 
-  Widget _insightCard(Insights insight) {
-    final sessionDt = insight.sessionDate?.toDate() ??
-        insight.createdAt.toDate();
-
-    String fmtDt(DateTime dt) {
-      final l = dt.toLocal();
-      final h12 = l.hour % 12 == 0 ? 12 : l.hour % 12;
-      final min = l.minute.toString().padLeft(2, '0');
-      final ap = l.hour >= 12 ? 'PM' : 'AM';
-      return '${l.year}-${l.month.toString().padLeft(2, '0')}-${l.day.toString().padLeft(2, '0')}  $h12:$min $ap';
+  /// Groups the flat insight stream into chat sessions (by chatSessionId),
+  /// preserving the newest-first order. Insights without a chatSessionId
+  /// (older records) each form their own single-item group.
+  List<List<Insights>> _groupedInsights() {
+    final order = <String>[];
+    final map = <String, List<Insights>>{};
+    for (final ins in _firestoreInsights) {
+      final key = (ins.chatSessionId != null && ins.chatSessionId!.isNotEmpty)
+          ? 'chat:${ins.chatSessionId}'
+          : 'id:${ins.id ?? identityHashCode(ins)}';
+      if (!map.containsKey(key)) {
+        map[key] = [];
+        order.add(key);
+      }
+      map[key]!.add(ins);
     }
+    return [for (final k in order) map[k]!];
+  }
 
-    final slots = insight.pandaSlots;
-    final labeledAnswers = insight.pandaLabeledAnswers ?? {};
-    final corrections = insight.pandaCorrections ?? [];
-    final hasSlots = slots != null && !slots.isEmpty;
-    final hasAnswers = labeledAnswers.isNotEmpty;
+  static String _fmtInsightDt(DateTime dt) {
+    final l = dt.toLocal();
+    final h12 = l.hour % 12 == 0 ? 12 : l.hour % 12;
+    final min = l.minute.toString().padLeft(2, '0');
+    final ap = l.hour >= 12 ? 'PM' : 'AM';
+    return '${l.year}-${l.month.toString().padLeft(2, '0')}-${l.day.toString().padLeft(2, '0')}  $h12:$min $ap';
+  }
+
+  // One History card per chat session. When a chat produced multiple distinct
+  // insights they render as a split view — one section per insight.
+  Widget _chatGroupCard(List<Insights> group) {
+    final latest = group.first; // stream is newest-first
+    final sessionDt =
+        latest.sessionDate?.toDate() ?? latest.createdAt.toDate();
+    final multi = group.length > 1;
+    final headerLabel = multi
+        ? '${group.length} insights this chat'
+        : '${(latest.pandaLabeledAnswers ?? const {}).length} answers captured';
 
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withOpacity(0.07)),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
-        ],
-      ),
-      child: Theme(
-        data: Theme.of(context)
-            .copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          childrenPadding: const EdgeInsets.only(
-              left: 16, right: 16, bottom: 16),
-          title: Row(children: [
-            Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(fmtDt(sessionDt),
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                            color: _ink)),
-                    const SizedBox(height: 3),
-                    Row(children: [
-                      Text(
-                          '${labeledAnswers.length} answers captured',
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.black.withOpacity(0.07)),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2))
+          ],
+        ),
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            childrenPadding:
+                const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+            title: Row(children: [
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_fmtInsightDt(sessionDt),
                           style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.black45)),
-                      if (hasSlots) ...[
-                        const SizedBox(width: 8),
-                        _badge(
-                            '${slots.toMap().length} insights',
-                            _purple),
-                      ],
-                      if (corrections.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        _badge('${corrections.length} edits', _teal),
-                      ],
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: _ink)),
+                      const SizedBox(height: 3),
+                      Text(headerLabel,
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black45)),
                     ]),
-                  ]),
-            ),
-            // Status pill
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                    color: Colors.green.withOpacity(0.3)),
               ),
-              child: const Text('Complete',
-                  style: TextStyle(
-                      color: Colors.green,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700)),
-            ),
-          ]),
-          children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: const Text('Complete',
+                    style: TextStyle(
+                        color: Colors.green,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ]),
+            children: [
+              for (int i = 0; i < group.length; i++) ...[
+                if (i > 0) ...[
+                  const SizedBox(height: 6),
+                  Divider(color: Colors.black.withOpacity(0.06), height: 1),
+                  const SizedBox(height: 10),
+                ],
+                _insightSection(group[i], showHeader: multi),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // The content for a single insight — used inside a chat-group split view.
+  Widget _insightSection(Insights insight, {required bool showHeader}) {
+    final slots = insight.pandaSlots;
+    final labeledAnswers = insight.pandaLabeledAnswers ?? {};
+    final corrections = insight.pandaCorrections ?? [];
+    final hasSlots = slots != null && !slots.isEmpty;
+    final hasAnswers = labeledAnswers.entries
+        .any((e) => !e.key.startsWith('category::'));
+
+    return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+            // Per-insight header (only when several insights share the card).
+            if (showHeader) ...[
+              Row(children: [
+                Expanded(
+                  child: Text(
+                      (insight.title != null && insight.title!.isNotEmpty)
+                          ? insight.title!
+                          : 'Insight',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: _purple)),
+                ),
+                if (insight.frequency > 1) ...[
+                  const SizedBox(width: 8),
+                  _badge('seen ${insight.frequency}×', _teal),
+                ],
+              ]),
+              const SizedBox(height: 8),
+            ],
             // Overall notes
             if (insight.body != null && insight.body!.isNotEmpty) ...[
               _noteBox(insight.body!),
@@ -1962,10 +2020,7 @@ class _PandaScreenState extends State<PandaScreen>
                   )),
             ],
           ],
-        ),
-      ),
-      ),
-    );
+        );
   }
 
   // ===========================================================================
@@ -2135,16 +2190,46 @@ class _PandaScreenState extends State<PandaScreen>
     required String userMessage,
     String? questionLabel,
   }) {
-    final stressor = reply.filledSlots?['stressor']?.trim() ?? '';
+    // Per-turn slots ONLY (this finding) — NOT accumulated _sessionSlots, so a
+    // later stressor (e.g. "social") can't inherit/merge into an earlier one
+    // (e.g. "work"). Each distinct finding becomes its own insight.
+    final slots = Map<String, String>.from(reply.filledSlots ?? const {})
+      ..removeWhere((k, v) => v.trim().isEmpty);
+
+    // The model often files a stressor under a more specific slot
+    // (social_context / activity / location / other) and leaves `stressor`
+    // empty. Promote the best available signal so the finding is still a
+    // distinct, titled insight rather than being dropped.
+    if ((slots['stressor'] ?? '').isEmpty) {
+      final derived = slots['social_context'] ??
+          slots['activity'] ??
+          slots['location'] ??
+          slots['other'] ??
+          '';
+      if (derived.trim().isNotEmpty) slots['stressor'] = derived.trim();
+    }
+    final stressor = (slots['stressor'] ?? '').trim();
+
     final significant =
         stressor.isNotEmpty || reply.intent == PandaIntent.newStressor;
+    if (kDebugMode) {
+      debugPrint('[ChatInsight] intent=${reply.intent} stressor="$stressor" '
+          'filledSlots=${reply.filledSlots} significant=$significant');
+    }
     if (!significant) return;
 
-    final key = stressor.toLowerCase();
-    if (key.isNotEmpty && !_savedChatStressors.add(key)) return; // already saved
+    // Within this chat, only block an EXACT repeat of the same stressor phrase.
+    // Different scenarios (even in the same category) each get their own
+    // insight — cross-chat frequency merging is handled in saveSessionInsight.
+    final dedupeKey = Insights.normalizeStressor(stressor);
+    if (dedupeKey != null && !_savedChatStressors.add(dedupeKey)) {
+      if (kDebugMode) {
+        debugPrint('[ChatInsight] skip — "$dedupeKey" already saved this chat');
+      }
+      return;
+    }
 
     final userId = _currentUserId;
-    final slots = Map<String, String>.from(_sessionSlots);
     final conversation = _turns
         .map((t) => {
               'role': t.role == _Role.user ? 'user' : 'assistant',
@@ -2185,6 +2270,7 @@ class _PandaScreenState extends State<PandaScreen>
         labeledAnswers: labeled,
         conversation: conversation,
         summary: summary.isNotEmpty ? summary : null,
+        chatSessionId: _chatSessionId,
       );
 
       // Make this finding usable on the next dialogue turn immediately.

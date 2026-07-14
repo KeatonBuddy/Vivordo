@@ -33,7 +33,7 @@ class AppFlags {
   /// (`analyzed_spike_days`) and excluded from future sessions, so Panda never
   /// re-asks about the same spike. Set to false to analyze every detected spike
   /// on every session.
-  static bool dedupeAnalyzedSpikes = false;
+  static bool dedupeAnalyzedSpikes = true;
 }
 
 // ---------------------------------------------------------------------------
