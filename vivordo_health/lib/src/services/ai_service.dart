@@ -52,6 +52,17 @@ abstract class AIService {
     String? userId,
   });
 
+  /// Fast session bootstrap for progressive loading: does the Firestore reads
+  /// only (NO calendar, NO LLM) and returns the opener + contexts immediately so
+  /// the chat opens without a wait. The returned bootstrap's `spikeAnalysis`
+  /// future resolves later with the labeling questions — or is null when there
+  /// is no new spike to analyze, in which case no LLM call is made at all.
+  Future<PandaSessionBootstrap> startSession({
+    String? extraUserContext,
+    String? userName,
+    String? userId,
+  });
+
   /// Process a single dialogue turn.
   ///
   /// [scheduleContext] — optional per-day Google Calendar digest for the next

@@ -338,6 +338,78 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     }
 
     final compact = GeminiService.buildCompactPayload(payload, topK: 1);
+
+    // Nothing to analyze (no spike candidates — e.g. every detected spike day
+    // was already surfaced once). Skip the LLM round trip entirely: it would
+    // just return `spikes: []` after several seconds. Opens the chat instantly.
+    if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
+      if (kDebugMode) {
+        debugPrint('[Claude][spike] no spike candidates — skipping LLM call');
+      }
+      return GeminiService.noSpikesSession(payload, overrideName: userName);
+    }
+
+    return _runSpikeAnalysis(
+      userId: userId,
+      payload: payload,
+      compact: compact,
+      userName: userName,
+      extraUserContext: extraUserContext,
+    );
+  }
+
+  @override
+  Future<PandaSessionBootstrap> startSession({
+    String? extraUserContext,
+    String? userName,
+    String? userId,
+  }) async {
+    if (userId == null || userId.isEmpty) {
+      return PandaSessionBootstrap(
+          session: GeminiService.emptyStateSession(userName ?? 'there'));
+    }
+
+    final payload = await GeminiService.fetchRealUserPayload(userId);
+    if (payload == null) {
+      return PandaSessionBootstrap(
+          session: GeminiService.emptyStateSession(userName ?? 'there'));
+    }
+
+    final compact = GeminiService.buildCompactPayload(payload, topK: 1);
+
+    // Nothing to analyze → no LLM call at all; the chat is already final.
+    if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
+      if (kDebugMode) {
+        debugPrint('[Claude][spike] no spike candidates — skipping LLM call');
+      }
+      return PandaSessionBootstrap(
+        session: GeminiService.noSpikesSession(payload, overrideName: userName),
+      );
+    }
+
+    // Opener NOW; the labeling questions stream in behind it.
+    return PandaSessionBootstrap(
+      session: GeminiService.bootstrapSession(payload,
+          overrideName: userName, hasSpikes: true),
+      spikeAnalysis: _runSpikeAnalysis(
+        userId: userId,
+        payload: payload,
+        compact: compact,
+        userName: userName,
+        extraUserContext: extraUserContext,
+      ),
+    );
+  }
+
+  /// The spike-analysis LLM round trip — shared by analyzePandaSession (await)
+  /// and startSession (background).
+  Future<PandaSessionData> _runSpikeAnalysis({
+    required String userId,
+    required Map<String, dynamic> payload,
+    required Map<String, dynamic> compact,
+    String? userName,
+    String? extraUserContext,
+  }) async {
     compact['user_context'] = extraUserContext?.trim() ?? '';
     compact['_variability_seed'] =
         DateTime.now().millisecondsSinceEpoch % 100000;
@@ -345,15 +417,6 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     final userPrompt = GeminiService.buildSpikeUserPrompt(compact);
     final systemPrompt =
         '${GeminiService.spikeSystemPrompt}$_spikeJsonSuffix';
-
-    // Token guard — check BEFORE calling the Cloud Function.
-    final estimated = GeminiService.estimateTokens(systemPrompt + userPrompt);
-    if (estimated > kMaxInputTokens) {
-      if (kDebugMode) {
-        debugPrint('[Claude][spike] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
-      }
-      return GeminiService.emptyStateSession(userName ?? 'there');
-    }
 
     final result = await _fn.call<dynamic>({
       'system': [_cacheBlock(systemPrompt)],

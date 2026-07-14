@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../src/services/ai_service.dart';
 import '../src/services/ai_service_factory.dart';
+import '../src/services/gemini_service.dart' show GeminiService;
 import '../src/services/recommendation_engine.dart';
 import '../src/services/insight_service.dart';
 import '../src/models/insights.dart';
@@ -262,6 +263,15 @@ class _PandaScreenState extends State<PandaScreen>
   // on the very next turn (the session-init insightsContext only has the past).
   final List<String> _sessionInsightNotes = [];
 
+  /// True while the spike-analysis LLM call is still running in the background
+  /// (the chat is already open and usable — progressive loading).
+  bool _analyzingSpikes = false;
+
+  /// Google Calendar schedule digest, fetched in the BACKGROUND after the chat
+  /// opens (it's too slow for the init critical path). Fed into dialogue turns
+  /// once it arrives; null until then / when Calendar isn't connected.
+  String? _scheduleContext;
+
   // ── Category pill state ────────────────────────────────────────────────────
   // Pills appear only after ALL spike questions are answered.
   // They stay visible throughout free chat.
@@ -369,6 +379,15 @@ class _PandaScreenState extends State<PandaScreen>
   // Session init
   // ===========================================================================
 
+  /// Background calendar load — kicked off after the chat has already opened so
+  /// it never delays session init. Once it lands, subsequent dialogue turns get
+  /// the schedule and Panda can answer availability/planning questions.
+  Future<void> _loadScheduleContext() async {
+    final ctx = await GeminiService.fetchScheduleContext();
+    if (!mounted || ctx == null || ctx.isEmpty) return;
+    setState(() => _scheduleContext = ctx);
+  }
+
   Future<void> _loadSession() async {
     final startedAt = DateTime.now();
     _sessionStart = startedAt;
@@ -391,6 +410,8 @@ class _PandaScreenState extends State<PandaScreen>
       _shownRecIds.clear();
       _savedChatStressors.clear();
       _sessionInsightNotes.clear();
+      _analyzingSpikes = false;
+      _scheduleContext = null;
       _currentInsightId = null;
       _sessionComplete = false;
       // Pills and done card reset on new session
@@ -401,28 +422,56 @@ class _PandaScreenState extends State<PandaScreen>
     });
 
     try {
-      final session = await _svc
-          .analyzePandaSession(
+      // PHASE 1 — fast bootstrap: Firestore only (no calendar, no LLM). The
+      // chat opens immediately with the opener instead of waiting on the model.
+      final boot = await _svc
+          .startSession(
             userName: _currentFirstName.isNotEmpty ? _currentFirstName : null,
             userId: _currentUserId.isNotEmpty ? _currentUserId : null,
           )
-          .timeout(const Duration(seconds: 90));
+          .timeout(const Duration(seconds: 30));
 
       if (!mounted) return;
       setState(() {
-        _session = session;
-        _questionQueue.addAll(session.questions);
+        _session = boot.session;
         _loading = false;
+        _analyzingSpikes = boot.spikeAnalysis != null;
       });
 
-      // 1. Warm opener
-      await _pandaSay(session.openerMessage);
+      // Calendar is slow — load it in the background and feed it into later
+      // dialogue turns once it lands.
+      unawaited(_loadScheduleContext());
 
-      // 2. First spike question fires immediately (no waiting for engagement)
+      // 1. Warm opener — shown right away.
+      await _pandaSay(boot.session.openerMessage);
+
+      // Nothing to analyze → the session is already final.
+      if (boot.spikeAnalysis == null) {
+        if (!mounted) return;
+        setState(() {
+          _sessionComplete = true;
+          _state = _DialogueState.free;
+          _categoryPillsVisible = true;
+          _doneCardVisible = true;
+        });
+        _saveLocalHistory(startedAt, success: true);
+        return;
+      }
+
+      // PHASE 2 — the labeling questions arrive behind the opener.
+      final full = await boot.spikeAnalysis!.timeout(const Duration(seconds: 90));
+      if (!mounted) return;
+      setState(() {
+        _session = full;
+        _questionQueue
+          ..clear()
+          ..addAll(full.questions);
+        _analyzingSpikes = false;
+      });
+
       if (_questionQueue.isNotEmpty) {
         await _pandaSay(_questionQueue.first.prompt);
       } else {
-        // No questions at all — treat as complete immediately
         setState(() {
           _sessionComplete = true;
           _state = _DialogueState.free;
@@ -435,12 +484,14 @@ class _PandaScreenState extends State<PandaScreen>
       if (!mounted) return;
       setState(() {
         _loading = false;
+        _analyzingSpikes = false;
         _error = 'Took too long. Tap retry to try again.';
       });
       _saveLocalHistory(startedAt, success: false, error: 'Timed out after 90s.');
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        _analyzingSpikes = false;
         _loading = false;
         _error = 'Something went wrong: $e';
       });
@@ -580,7 +631,7 @@ class _PandaScreenState extends State<PandaScreen>
             pendingQuestionPrompt: null,
             digressionTopic: null,
             accumulatedSlots: Map<String, String>.from(_sessionSlots),
-            scheduleContext: session.scheduleContext,
+            scheduleContext: _scheduleContext,
             insightsContext: _currentInsightsContext(),
           )
           .timeout(const Duration(seconds: 35));
@@ -703,7 +754,7 @@ class _PandaScreenState extends State<PandaScreen>
                 ? _digressionStack.last.topic
                 : null,
             accumulatedSlots: Map<String, String>.from(_sessionSlots),
-            scheduleContext: session.scheduleContext,
+            scheduleContext: _scheduleContext,
             insightsContext: _currentInsightsContext(),
           )
           .timeout(const Duration(seconds: 35));
@@ -938,6 +989,8 @@ class _PandaScreenState extends State<PandaScreen>
       _DialogueState.inDigression => ('side chat', _teal),
       _DialogueState.inDepth      => ('going deeper…', _purple),
       _ when _loading             => ('analysing…', Colors.orange),
+      // Chat is already open and usable while the spike analysis finishes.
+      _ when _analyzingSpikes     => ('reading your data…', Colors.orange),
       _ when _pandaTyping         => ('typing…', Colors.orange),
       _DialogueState.free         => ('', _purple),
       _                           => ('online', Colors.green),
