@@ -43,6 +43,11 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     // Fire-and-forget: compute BaaS stress score on every home screen load
     StressScoreService.computeAndSave().catchError((_) {});
+    // Fire-and-forget: send any complete, mood-labelled days to the BaaS
+    // validation/learning loop. No-op when nothing is pending, so it is safe
+    // on every load. This is where yesterday's check-in actually gets
+    // submitted — by now its day is closed and its metrics are complete.
+    StressScoreService.submitPendingFeedback().catchError((_) {});
     final today = _todayPeriod();
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _todayStream = uid != null

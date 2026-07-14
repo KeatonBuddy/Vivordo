@@ -36,6 +36,14 @@ class MetricsService {
 
     // Recompute BaaS stress score now that mood data has changed
     StressScoreService.computeAndSave(uid: user.uid, force: true).catchError((_) {});
+
+    // Feed the check-in to the validation/learning loop. This does NOT submit
+    // today — today's metrics are still incomplete (no sleep yet, steps still
+    // accruing), and labelling a half-built day would train the model on
+    // truncated inputs. It drains any earlier complete labelled days that
+    // haven't been sent; today's tap goes up on a later launch once its day is
+    // closed. See submitPendingFeedback for the full reasoning.
+    StressScoreService.submitPendingFeedback(uid: user.uid).catchError((_) {});
   }
 
   // ─── HELPERS ──────────────────────────────────────────────────────

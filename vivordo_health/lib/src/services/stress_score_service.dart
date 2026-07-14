@@ -45,6 +45,13 @@ import 'package:http/http.dart' as http;
 class StressScoreService {
   static const kApiUrl = 'https://vivordo-baas.onrender.com/baas/score';
 
+  /// Validation / online-learning endpoint. Takes a completed day's metrics
+  /// plus that day's 1-5 mood check-in as a supervised label, appends the pair
+  /// to the training dataset, and nudges this user's channel weights toward
+  /// whatever actually predicts how they said they felt.
+  /// See weight_learning.py in the BaaS repo for the full rationale.
+  static const kFeedbackUrl = 'https://vivordo-baas.onrender.com/baas/feedback';
+
 /// Computes a BaaS stress score from the user's Firestore metrics and saves
   /// the result to metrics_daily/{uid}_stress_{today}.
   ///
@@ -87,6 +94,154 @@ class StressScoreService {
       if (result != null) await _saveScore(uid, today, result);
     } catch (e, st) {
       debugPrint('StressScoreService.computeAndSave: $e\n$st');
+    }
+  }
+
+  // ── Validation / learning feedback ──────────────────────────────────────────
+
+  /// Maps the home-screen mood labels to the 1-5 ordinal the BaaS expects
+  /// (1 = Awful … 5 = Great). Mirrors MOOD_RATING_TO_LABEL in weight_learning.py.
+  static const _moodLabelToRating = <String, int>{
+    'awful': 1,
+    'down': 2,
+    'okay': 3,
+    'good': 4,
+    'great': 5,
+  };
+
+  /// Submits every COMPLETE, mood-labelled day that hasn't been sent yet.
+  ///
+  /// Call this on app launch and after a mood check-in — it is a no-op when
+  /// there is nothing eligible, so both triggers are safe and cheap.
+  ///
+  /// WHY ONLY COMPLETE DAYS — and why a check-in does NOT submit its own day.
+  /// The label has to be paired with that day's FULL metrics, and today's are
+  /// unfinished: tonight's sleep hasn't happened, steps are still accruing, and
+  /// the nocturnal HRV/HR windows that carry most of the physiological signal
+  /// don't exist yet. Submitting today's tap against today's half-built day
+  /// would train the model on systematically truncated inputs — the single
+  /// easiest way to make a learning loop quietly worse than the fixed prior it
+  /// started from. So a tap made today is picked up on the NEXT launch, once
+  /// its day is closed. In practice that costs a day of latency and buys a
+  /// clean dataset.
+  ///
+  /// Idempotency is enforced on both sides: locally via `baasFeedbackSentAt`
+  /// on the day's metrics_daily doc, and server-side per user-day. The local
+  /// marker exists to avoid pointless cold-start hits, not for correctness.
+  ///
+  /// Fire-and-forget: `StressScoreService.submitPendingFeedback().catchError((_) {})`.
+  static Future<void> submitPendingFeedback({
+    String? uid,
+    int lookbackDays = 14,
+    int maxPerRun = 5,
+  }) async {
+    uid ??= FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      final today = _formatDate(DateTime.now());
+      final snap = await FirebaseFirestore.instance
+          .collection('users').doc(uid).collection('metrics_daily').get();
+
+      final earliest = _formatDate(
+          DateTime.now().subtract(Duration(days: lookbackDays)));
+
+      final pending = <String>[];
+      for (final doc in snap.docs) {
+        final date = doc.id;
+        if (date.compareTo(today) >= 0) continue;    // today isn't complete yet
+        if (date.compareTo(earliest) < 0) continue;  // too old to bother
+
+        final data = doc.data();
+        final mood = data['mood'] as Map?;
+        if (mood == null || mood['label'] == null) continue;   // no label
+        if (data['baasFeedbackSentAt'] != null) continue;      // already sent
+        if (!_moodLabelToRating.containsKey(
+            (mood['label'] as String).toLowerCase())) continue;
+        pending.add(date);
+      }
+
+      pending.sort();
+      if (pending.isEmpty) {
+        debugPrint('StressScoreService.submitPendingFeedback: nothing pending');
+        return;
+      }
+
+      // Cap per run: each call is a cold-start-prone HTTP round trip, and the
+      // backlog will drain over subsequent launches anyway.
+      final batch = pending.length > maxPerRun
+          ? pending.sublist(pending.length - maxPerRun)
+          : pending;
+      debugPrint('StressScoreService.submitPendingFeedback: '
+          '${pending.length} pending, submitting ${batch.length}');
+
+      // One payload of history, reused for every labelled day — the BaaS needs
+      // the full window regardless of which day it is being asked to label,
+      // because the z-scores are computed against a rolling 14-day baseline.
+      final basePayload = await _buildPayload(uid, today);
+
+      for (final date in batch) {
+        final moodLabel = (snap.docs
+            .firstWhere((d) => d.id == date)
+            .data()['mood'] as Map)['label'] as String;
+        final rating = _moodLabelToRating[moodLabel.toLowerCase()]!;
+
+        final ok = await _postFeedback({
+          ...basePayload,
+          'date': date,
+          'mood_rating': rating,
+          'mood_label': moodLabel,
+          // Recorded so the confound stays visible in the dataset: this label
+          // comes from "How are you feeling?" (affect), not from a stress item.
+          // See warning 2 in weight_learning.py.
+          'label_source': 'mood_checkin',
+        });
+
+        if (ok) {
+          await FirebaseFirestore.instance
+              .collection('users').doc(uid).collection('metrics_daily').doc(date)
+              .set({'baasFeedbackSentAt': FieldValue.serverTimestamp()},
+                   SetOptions(merge: true));
+        }
+      }
+    } catch (e, st) {
+      // Never let the learning loop break the app — it is an enhancement.
+      debugPrint('StressScoreService.submitPendingFeedback: $e\n$st');
+    }
+  }
+
+  static Future<bool> _postFeedback(Map<String, dynamic> payload) async {
+    try {
+      final res = await http
+          .post(Uri.parse(kFeedbackUrl),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(payload))
+          .timeout(const Duration(seconds: _timeoutSeconds));
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        debugPrint('StressScoreService.feedback[${payload['date']}]: '
+            'applied=${body['applied']} n=${body['n_samples']} '
+            'predicted=${body['predicted_stress']} target=${body['target_stress']} '
+            '— ${body['reason']}');
+        // A rejected-but-understood day (e.g. thin coverage) still counts as
+        // handled: the sample was stored server-side and re-sending it would
+        // only burn another cold start for the same answer.
+        return true;
+      }
+      // 422 = this day is not usable as a label (no metrics for it, bad
+      // rating). Retrying will never change that, so mark it done.
+      if (res.statusCode == 422) {
+        debugPrint('StressScoreService.feedback[${payload['date']}]: '
+            '422 — ${res.body}');
+        return true;
+      }
+      debugPrint('StressScoreService.feedback[${payload['date']}]: '
+          '${res.statusCode} — ${res.body}');
+      return false;
+    } catch (e) {
+      debugPrint('StressScoreService.feedback[${payload['date']}]: $e');
+      return false;  // transient — retry on the next launch
     }
   }
 
