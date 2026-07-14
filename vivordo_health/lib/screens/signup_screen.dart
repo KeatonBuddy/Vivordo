@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
+import 'email_verification_screen.dart';
 import 'welcome_beta_screen.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -10,6 +11,23 @@ class SignupScreen extends StatefulWidget {
   @override
   State<SignupScreen> createState() => _SignupScreenState();
 }
+
+class _PasswordRequirement {
+  final String label;
+  final bool Function(String) isMet;
+  const _PasswordRequirement(this.label, this.isMet);
+}
+
+final List<_PasswordRequirement> _passwordRequirements = [
+  _PasswordRequirement('At least 6 characters', (p) => p.length >= 6),
+  _PasswordRequirement('One uppercase letter', (p) => RegExp(r'[A-Z]').hasMatch(p)),
+  _PasswordRequirement('One lowercase letter', (p) => RegExp(r'[a-z]').hasMatch(p)),
+  _PasswordRequirement('One number', (p) => RegExp(r'[0-9]').hasMatch(p)),
+  _PasswordRequirement(
+    'One special character',
+    (p) => RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]').hasMatch(p),
+  ),
+];
 
 class _SignupScreenState extends State<SignupScreen> {
   final PageController _pageController = PageController();
@@ -36,9 +54,32 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _showPassword = false;
   bool _showConfirmPassword = false;
 
+  // Single consolidated spot for every password-related alert (weak
+  // password, mismatch, Firebase's weak-password error) — replaces the old
+  // mix of a bottom SnackBar and inline form-field errorText so the user
+  // only ever has to look in one place, right below the password boxes.
+  String? _passwordError;
+
+  @override
+  void initState() {
+    super.initState();
+    // Rebuilds the live requirements checklist and the field's checkmark
+    // as the user types, without touching the rest of the form state.
+    _passController.addListener(_onPasswordChanged);
+    _confirmPassController.addListener(_onConfirmPasswordChanged);
+  }
+
+  void _onPasswordChanged() => setState(() => _passwordError = null);
+
+  void _onConfirmPasswordChanged() => setState(() => _passwordError = null);
+
+  bool get _passwordMeetsRequirements =>
+      _passwordRequirements.every((r) => r.isMet(_passController.text));
 
   @override
   void dispose() {
+    _passController.removeListener(_onPasswordChanged);
+    _confirmPassController.removeListener(_onConfirmPasswordChanged);
     _nameController.dispose();
     _emailController.dispose();
     _passController.dispose();
@@ -59,16 +100,26 @@ class _SignupScreenState extends State<SignupScreen> {
   Future<void> _nextPage() async {
     //TODO: Consider case where user signs up but exists before questionare is completed
     if (_currentPage == 0) {
+      setState(() => _passwordError = null);
+
+      // All password validation (empty, weak, mismatch) is checked here
+      // rather than through the Form validator, so every failure reason
+      // surfaces through the single _passwordError label instead of some
+      // showing as inline field errors and others as toasts.
+      if (_passController.text.isEmpty || !_passwordMeetsRequirements) {
+        setState(() => _passwordError = 'Password does not meet all requirements');
+        return;
+      }
+      if (_confirmPassController.text.isEmpty) {
+        setState(() => _passwordError = 'Please confirm your password');
+        return;
+      }
+      if (_passController.text != _confirmPassController.text) {
+        setState(() => _passwordError = 'Passwords do not match');
+        return;
+      }
+
       if (_formKey.currentState!.validate()) {
-        if (_passController.text != _confirmPassController.text) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Passwords do not match"),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-          return;
-        }
         // Guard against double-tap: if already loading, do nothing.
         // Without this, tapping the button twice calls createUserWithEmailAndPassword
         // twice with the same email — the second call returns email-already-in-use
@@ -80,13 +131,27 @@ class _SignupScreenState extends State<SignupScreen> {
           password: _passController.text,
           displayName: _nameController.text,
           context: context,
+          onPasswordError: (message) => setState(() => _passwordError = message),
         );
         if (mounted) setState(() => _isLoading = false);
         if (success && mounted) {
-          _pageController.nextPage(
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeInOutCubicEmphasized,
+          // Don't advance to the questionnaire until the address is proven
+          // real. EmailVerificationScreen pops itself (via onVerified) once
+          // FirebaseAuth.currentUser.emailVerified comes back true, instead
+          // of its default behavior of jumping straight to AuthGate/home.
+          final verified = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(
+              builder: (verifyContext) => EmailVerificationScreen(
+                onVerified: () => Navigator.of(verifyContext).pop(true),
+              ),
+            ),
           );
+          if (verified == true && mounted) {
+            _pageController.nextPage(
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOutCubicEmphasized,
+            );
+          }
           return;
         }
       }
@@ -345,7 +410,9 @@ class _SignupScreenState extends State<SignupScreen> {
             _buildField('Full Name', _nameController, Icons.person_outline_rounded, 'First Last'),
             _buildField('Work Email', _emailController, Icons.mail_outline_rounded, 'you@company.com', keyboardType: TextInputType.emailAddress),
             _buildField('Password', _passController, Icons.lock_outline_rounded, 'Min 6 characters', isPass: true),
+            _buildPasswordRequirementsChecklist(),
             _buildField('Confirm Password', _confirmPassController, Icons.lock_outline_rounded, 'Repeat password', isPass: true, isConfirm: true),
+            _buildPasswordErrorLabel(),
             const SizedBox(height: 4),
             // Security notice
             Container(
@@ -374,6 +441,69 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
+  Widget _buildPasswordRequirementsChecklist() {
+    final pass = _passController.text;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14, top: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: _passwordRequirements.map((req) {
+          final met = req.isMet(pass);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              children: [
+                Icon(
+                  met ? Icons.check_circle_rounded : Icons.circle_outlined,
+                  size: 14,
+                  color: met ? const Color(0xFF34C759) : textGrey,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  req.label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: met ? const Color(0xFF34C759) : textGrey,
+                    fontWeight: met ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // Single label for every password-related alert — replaces the old
+  // bottom SnackBar ("Passwords do not match", Firebase's weak-password
+  // message) so all of them render in one consistent spot, right under
+  // the password/confirm boxes, instead of scattered between a toast and
+  // inline field errors.
+  Widget _buildPasswordErrorLabel() {
+    if (_passwordError == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14, top: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline_rounded, size: 15, color: Color(0xFFFF3B30)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              _passwordError!,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFFFF3B30),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildField(
     String label,
     TextEditingController ctrl,
@@ -384,6 +514,8 @@ class _SignupScreenState extends State<SignupScreen> {
     TextInputType keyboardType = TextInputType.text,
   }) {
     final isVisible = isConfirm ? _showConfirmPassword : _showPassword;
+    final showValidCheckmark =
+        isPass && !isConfirm && ctrl.text.isNotEmpty && _passwordMeetsRequirements;
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
@@ -421,29 +553,46 @@ class _SignupScreenState extends State<SignupScreen> {
                 borderSide: const BorderSide(color: Color(0xFFFF3B30)),
               ),
               suffixIcon: isPass
-                  ? IconButton(
-                      icon: Icon(
-                        isVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                        color: const Color(0xFFC7C7CC), size: 18,
-                      ),
-                      onPressed: () => setState(() {
-                        if (isConfirm) {
-                          _showConfirmPassword = !_showConfirmPassword;
-                        } else {
-                          _showPassword = !_showPassword;
-                        }
-                      }),
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (showValidCheckmark)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 2),
+                            child: Icon(
+                              Icons.check_circle_rounded,
+                              color: Color(0xFF34C759),
+                              size: 18,
+                            ),
+                          ),
+                        IconButton(
+                          icon: Icon(
+                            isVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: const Color(0xFFC7C7CC), size: 18,
+                          ),
+                          onPressed: () => setState(() {
+                            if (isConfirm) {
+                              _showConfirmPassword = !_showConfirmPassword;
+                            } else {
+                              _showPassword = !_showPassword;
+                            }
+                          }),
+                        ),
+                      ],
                     )
                   : null,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             ),
             validator: (v) {
+              // Password/confirm-password errors are surfaced through the
+              // single _passwordError label below instead of this field's
+              // own inline errorText — keeps every password alert in one place.
+              if (isPass) return null;
               if (v == null || v.isEmpty) return 'Required';
               if (label == 'Work Email' &&
                   !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
                 return 'Invalid email';
               }
-              if (isPass && v.length < 6) return 'Min 6 characters';
               return null;
             },
           ),
@@ -564,7 +713,18 @@ class _SignupScreenState extends State<SignupScreen> {
           ...options.map((opt) {
             final isSelected = selected == opt;
             return GestureDetector(
-              onTap: () => setState(() => _userData['responses'][q] = opt),
+              onTap: () async {
+                // Capture the page we're on before the delay — if the user
+                // taps a different option (or the page has already moved
+                // on) before this fires, skip advancing so we don't queue
+                // up multiple page transitions from rapid taps.
+                final tappedOnPage = _currentPage;
+                setState(() => _userData['responses'][q] = opt);
+                await Future.delayed(const Duration(milliseconds: 300));
+                if (mounted && _currentPage == tappedOnPage) {
+                  _nextPage();
+                }
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 margin: const EdgeInsets.only(bottom: 10),

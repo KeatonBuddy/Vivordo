@@ -1,8 +1,5 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
-import 'main_navigation.dart';
-import 'signup_screen.dart';
 import 'welcome_beta_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -21,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passCtrl = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
 
   @override
   void dispose() {
@@ -42,10 +40,24 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (success) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
-      );
+      // Route through AuthGate ('/') rather than straight to
+      // MainNavigationScreen — AuthGate is what checks emailVerified and
+      // redirects to EmailVerificationScreen when it's false. Pushing
+      // directly to MainNavigationScreen here would let an unverified user
+      // straight into the app, bypassing that gate entirely.
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+    }
+  }
+
+  Future<void> _loginWithGoogle() async {
+    setState(() => _isGoogleLoading = true);
+    final success = await AuthService.signInWithGoogle(context: context);
+    if (!mounted) return;
+    setState(() => _isGoogleLoading = false);
+    if (success) {
+      // Google accounts come back with emailVerified already true, so this
+      // always lands straight in the app rather than EmailVerificationScreen.
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
     }
   }
 
@@ -324,6 +336,65 @@ class _LoginScreenState extends State<LoginScreen> {
                             : const Text(
                                 'Sign In',
                                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                              ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Divider
+                    Row(
+                      children: [
+                        Expanded(child: Divider(color: Colors.grey.shade200)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: Text(
+                            'or',
+                            style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                          ),
+                        ),
+                        Expanded(child: Divider(color: Colors.grey.shade200)),
+                      ],
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Google sign-in button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: OutlinedButton(
+                        onPressed: _isGoogleLoading ? null : _loginWithGoogle,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: textDark,
+                          side: BorderSide(color: Colors.grey.shade300),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: _isGoogleLoading
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2.5),
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const [
+                                  Text(
+                                    'G',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF4285F4),
+                                    ),
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text(
+                                    'Continue with Google',
+                                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
                               ),
                       ),
                     ),

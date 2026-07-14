@@ -22,8 +22,17 @@ class CalendarService {
   }
 
   static Future<void> _initialize() async {
+    // GoogleSignIn.instance is a singleton — this is the one place it gets
+    // initialized for the whole app (AuthService.signInWithGoogle reuses it
+    // via this same initialize() call rather than calling initialize() a
+    // second time, which google_sign_in doesn't support).
+    // serverClientId (the Android/web OAuth client, not the iOS one above)
+    // is what makes GoogleSignInAccount.authentication.idToken come back
+    // non-null — without it, Firebase's GoogleAuthProvider.credential(idToken:)
+    // sign-in has nothing to authenticate with, especially on Android.
     await GoogleSignIn.instance.initialize(
       clientId: '226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj.apps.googleusercontent.com',
+      serverClientId: '226030806435-51d18dlptiokmfejr5irqmjefq8han4g.apps.googleusercontent.com',
     );
     GoogleSignIn.instance.authenticationEvents.listen((event) {
       switch (event) {

@@ -384,17 +384,35 @@ class _SettingsScreenState extends State<SettingsScreen>
     final TextEditingController controller = TextEditingController(
       text: currentValue,
     );
+    // Only used when field == "Password" — Firebase always requires proof of
+    // the current password (via reauthentication) before it will accept a
+    // new one, so we collect it up front instead of dead-ending on a
+    // requires-recent-login error after the fact.
+    final TextEditingController currentPasswordController =
+        TextEditingController();
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: Text('Edit $field'),
           content: field == "Password"
-              ? TextField(
-                  controller: controller,
-                  obscureText: true,
-                  decoration:
-                      const InputDecoration(labelText: 'New Password'),
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: currentPasswordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Current Password',
+                      ),
+                    ),
+                    TextField(
+                      controller: controller,
+                      obscureText: true,
+                      decoration:
+                          const InputDecoration(labelText: 'New Password'),
+                    ),
+                  ],
                 )
               : TextField(
                   controller: controller,
@@ -413,6 +431,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                   } else if (field == "Email") {
                     await UserService.updateEmail(controller.text);
                   } else if (field == "Password") {
+                    if (controller.text.length < 6) {
+                      throw FirebaseAuthException(
+                        code: 'weak-password',
+                        message: 'Password should be at least 6 characters',
+                      );
+                    }
+                    await UserService.reauthenticate(
+                      currentPasswordController.text,
+                    );
                     await UserService.updatePassword(controller.text);
                   }
 
@@ -435,6 +462,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                   if (e.code == 'requires-recent-login') {
                     errorMessage =
                         'For security, please log out and log back in to change your $field.';
+                  } else if (e.code == 'wrong-password' ||
+                      e.code == 'invalid-credential') {
+                    errorMessage = 'Current password is incorrect.';
+                  } else if (e.code == 'weak-password') {
+                    errorMessage = e.message ?? 'Password is too weak.';
                   }
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(

@@ -14,6 +14,7 @@ import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/email_verification_screen.dart';
 
 // Global navigator key for notification navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -41,7 +42,13 @@ void main() async {
     // time always got null (initialData) and created a broken/wasted Firestore
     // listener — removed to reduce concurrent listener count.
     StreamProvider<User?>(
-      create: (_) => FirebaseAuth.instance.authStateChanges(),
+      // userChanges() (not authStateChanges()) — it's the one Firebase
+      // guarantees re-emits after currentUser.reload(), which is how
+      // EmailVerificationScreen picks up a newly-verified email.
+      // authStateChanges() only fires on sign-in/out, so AuthGate would
+      // keep reading a stale, still-unverified User forever after
+      // verification, even though reload() elsewhere already saw it flip.
+      create: (_) => FirebaseAuth.instance.userChanges(),
       initialData: null,
       child: const MyApp(),
     ),
@@ -92,6 +99,12 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   String? _lastSyncedUid;
   Timer? _syncTimer;
+  // Cached by uid so userChanges() firing more often than authStateChanges()
+  // used to (token refresh, any profile update anywhere in the app) doesn't
+  // re-run this Firestore read on every emission — only when the signed-in
+  // user actually changes.
+  String? _userDocUid;
+  Future<DocumentSnapshot>? _userDocFuture;
 
   @override
   void initState() {
@@ -147,18 +160,31 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         NotificationService().clearUserReminders();
       }
       _lastSyncedUid = null;
+      _userDocUid = null;
+      _userDocFuture = null;
       // Clear the cached consent broadcast so the next login gets a fresh stream
       HealthService().clearConsentCache();
       return const LoginScreen();
     }
 
+    // Blocks app access until the user has clicked the link in their
+    // verification email. This is what actually prevents an account being
+    // created and used with an address that doesn't exist — Firebase can't
+    // check deliverability at signup, only that a real inbox opened the link.
+    if (!user.emailVerified) {
+      return const EmailVerificationScreen();
+    }
+
     _triggerFullSync(user.uid);
 
+    if (_userDocUid != user.uid) {
+      _userDocUid = user.uid;
+      _userDocFuture =
+          FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    }
+
     return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get(),
+      future: _userDocFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(

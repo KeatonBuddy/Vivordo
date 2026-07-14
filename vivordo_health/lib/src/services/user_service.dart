@@ -223,6 +223,24 @@ class UserService {
   }
 
 
+  /// Re-proves the user's identity with their current password. Firebase
+  /// requires a "recent" sign-in before it will allow sensitive updates
+  /// (password change, email change) — without this, updatePassword()
+  /// throws 'requires-recent-login' whenever the session is more than a
+  /// few minutes old.
+  static Future<void> reauthenticate(String currentPassword) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email;
+    if (user == null || email == null) {
+      throw Exception('No signed-in email/password user to reauthenticate');
+    }
+    final credential = EmailAuthProvider.credential(
+      email: email,
+      password: currentPassword,
+    );
+    await user.reauthenticateWithCredential(credential);
+  }
+
   static Future<void> updatePassword(String newPassword) async {
     User? user = FirebaseAuth.instance.currentUser;
     if (user != null) {
