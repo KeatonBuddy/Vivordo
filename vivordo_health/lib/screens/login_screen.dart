@@ -215,24 +215,29 @@ class _LoginScreenState extends State<LoginScreen> {
                     Center(
                       child: Column(
                         children: [
-                          Image.asset(
-                            'assets/vivordo_logo.png',
-                            width: 380,
-                            height: 300,
-                            fit: BoxFit.contain,
-                          ),
-                          Transform.translate(
-                            offset: const Offset(0, -110),
-                            child: const Text(
-                              'See your stress. Find your balance.',
-                              style: TextStyle(fontSize: 18, color: textGrey),
+                          ClipRect(
+                            child: SizedBox(
+                              height: 100,
+                              child: OverflowBox(
+                                maxHeight: 300,
+                                child: Image.asset(
+                                  'assets/vivordo_logo.png',
+                                  width: 380,
+                                  height: 300,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
                             ),
+                          ),
+                          const Text(
+                            'See your stress. Find your balance.',
+                            style: TextStyle(fontSize: 18, color: textGrey),
                           ),
                         ],
                       ),
                     ),
 
-                    const SizedBox(height: 48),
+                    const SizedBox(height: 24),
 
                     // ── Form ────────────────────────────────────────────────
                     const Text(
