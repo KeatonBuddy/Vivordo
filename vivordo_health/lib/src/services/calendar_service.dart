@@ -7,7 +7,136 @@ class CalendarService {
   static bool _initialized = false;
   static Future<void>? _initializationFuture;
   static GoogleSignInAccount? _currentUser;
-  static final ValueNotifier<bool> connectionNotifier = ValueNotifier<bool>(false);
+  static final ValueNotifier<bool> connectionNotifier = ValueNotifier<bool>(
+    false,
+  );
+  static final Map<String, String> _eventCalendarIds = <String, String>{};
+
+  static String? _calendarIdFor(gcal.Event event) =>
+      event.id == null ? null : _eventCalendarIds[event.id!];
+
+  /// Records the account returned directly by an interactive Google sign-in.
+  /// This avoids waiting for the asynchronous authentication event before
+  /// screens that depend on Google Calendar are built.
+  static void registerSignedInAccount(GoogleSignInAccount account) {
+    _currentUser = account;
+  }
+
+  /// Requests Calendar access for the currently authenticated Google account.
+  /// Google identity sign-in and Calendar authorization are separate grants.
+  static Future<bool> authorizeCalendarAccess() async {
+    try {
+      await initialize();
+      var user = _currentUser;
+      user ??= await GoogleSignIn.instance.attemptLightweightAuthentication();
+      _currentUser = user;
+      if (user == null) return false;
+
+      const scopes = [gcal.CalendarApi.calendarScope];
+      var authorization = await user.authorizationClient.authorizationForScopes(
+        scopes,
+      );
+      authorization ??= await user.authorizationClient.authorizeScopes(scopes);
+      connectionNotifier.value = true;
+      return true;
+    } catch (e) {
+      debugPrint('Calendar authorization failed: $e');
+      connectionNotifier.value = false;
+      return false;
+    }
+  }
+
+  static Future<gcal.CalendarApi> _authorizedCalendarApi() async {
+    await initialize();
+    var user = _currentUser;
+    user ??= await GoogleSignIn.instance.attemptLightweightAuthentication();
+    _currentUser = user;
+    if (user == null) throw StateError('Google Calendar is not connected.');
+
+    const scopes = [gcal.CalendarApi.calendarScope];
+    var authorization = await user.authorizationClient.authorizationForScopes(
+      scopes,
+    );
+    authorization ??= await user.authorizationClient.authorizeScopes(scopes);
+    return gcal.CalendarApi(authorization.authClient(scopes: scopes));
+  }
+
+  static Future<void> deleteEvent(gcal.Event event) async {
+    final calendarId = _calendarIdFor(event);
+    final eventId = event.id;
+    if (calendarId == null || eventId == null) {
+      throw StateError(
+        'This event cannot be removed because its calendar is unknown.',
+      );
+    }
+    final calendarApi = await _authorizedCalendarApi();
+    await calendarApi.events.delete(calendarId, eventId);
+    _eventCalendarIds.remove(eventId);
+  }
+
+  static Future<gcal.Event> createEvent({
+    required String title,
+    required DateTime start,
+    required DateTime end,
+    required String recurrence,
+  }) async {
+    if (!end.isAfter(start)) {
+      throw ArgumentError('The end time must be after the start time.');
+    }
+
+    final event = gcal.Event()
+      ..summary = title
+      ..start = (gcal.EventDateTime()..dateTime = start.toUtc())
+      ..end = (gcal.EventDateTime()..dateTime = end.toUtc())
+      ..recurrence = switch (recurrence) {
+        'daily' => <String>['RRULE:FREQ=DAILY'],
+        'weekly' => <String>['RRULE:FREQ=WEEKLY'],
+        'monthly' => <String>['RRULE:FREQ=MONTHLY'],
+        _ => <String>[],
+      };
+
+    final calendarApi = await _authorizedCalendarApi();
+    final result = await calendarApi.events.insert(event, 'primary');
+    if (result.id != null) _eventCalendarIds[result.id!] = 'primary';
+    return result;
+  }
+
+  static Future<gcal.Event> updateEventTimeAndRecurrence(
+    gcal.Event event, {
+    required DateTime start,
+    required DateTime end,
+    required String recurrence,
+  }) async {
+    final calendarId = _calendarIdFor(event);
+    final eventId = event.id;
+    if (calendarId == null || eventId == null) {
+      throw StateError(
+        'This event cannot be edited because its calendar is unknown.',
+      );
+    }
+    if (!end.isAfter(start)) {
+      throw ArgumentError('The end time must be after the start time.');
+    }
+
+    final updated = gcal.Event()
+      ..start = (gcal.EventDateTime()
+        ..dateTime = start.toUtc()
+        ..timeZone = event.start?.timeZone)
+      ..end = (gcal.EventDateTime()
+        ..dateTime = end.toUtc()
+        ..timeZone = event.end?.timeZone)
+      ..recurrence = switch (recurrence) {
+        'daily' => <String>['RRULE:FREQ=DAILY'],
+        'weekly' => <String>['RRULE:FREQ=WEEKLY'],
+        'monthly' => <String>['RRULE:FREQ=MONTHLY'],
+        _ => <String>[],
+      };
+
+    final calendarApi = await _authorizedCalendarApi();
+    final result = await calendarApi.events.patch(updated, calendarId, eventId);
+    if (result.id != null) _eventCalendarIds[result.id!] = calendarId;
+    return result;
+  }
 
   static Future<void> initialize() async {
     if (_initialized) return;
@@ -31,21 +160,26 @@ class CalendarService {
     // non-null — without it, Firebase's GoogleAuthProvider.credential(idToken:)
     // sign-in has nothing to authenticate with, especially on Android.
     await GoogleSignIn.instance.initialize(
-      clientId: '226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj.apps.googleusercontent.com',
-      serverClientId: '226030806435-51d18dlptiokmfejr5irqmjefq8han4g.apps.googleusercontent.com',
+      clientId:
+          '226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj.apps.googleusercontent.com',
+      serverClientId:
+          '226030806435-51d18dlptiokmfejr5irqmjefq8han4g.apps.googleusercontent.com',
     );
-    GoogleSignIn.instance.authenticationEvents.listen((event) {
-      switch (event) {
-        case GoogleSignInAuthenticationEventSignIn():
-          _currentUser = event.user;
-        case GoogleSignInAuthenticationEventSignOut():
-          _currentUser = null;
-          connectionNotifier.value = false;
-      }
-    }).onError((e) => debugPrint('Auth error: $e'));
+    GoogleSignIn.instance.authenticationEvents
+        .listen((event) {
+          switch (event) {
+            case GoogleSignInAuthenticationEventSignIn():
+              _currentUser = event.user;
+            case GoogleSignInAuthenticationEventSignOut():
+              _currentUser = null;
+              connectionNotifier.value = false;
+          }
+        })
+        .onError((e) => debugPrint('Auth error: $e'));
 
     try {
-      _currentUser = await GoogleSignIn.instance.attemptLightweightAuthentication();
+      _currentUser = await GoogleSignIn.instance
+          .attemptLightweightAuthentication();
     } catch (e) {
       debugPrint('Silent Google sign-in failed: $e');
     }
@@ -60,7 +194,9 @@ class CalendarService {
   /// (expanded recurrences, ordered by start time). Returns [] when the user
   /// hasn't connected Google Calendar or on any auth/network error.
   static Future<List<gcal.Event>> getEventsBetween(
-      DateTime start, DateTime end) async {
+    DateTime start,
+    DateTime end,
+  ) async {
     try {
       await initialize();
 
@@ -69,7 +205,7 @@ class CalendarService {
       _currentUser = user;
       if (user == null) return [];
 
-      const scopes = [gcal.CalendarApi.calendarReadonlyScope];
+      const scopes = [gcal.CalendarApi.calendarScope];
 
       final authorization = await user.authorizationClient
           .authorizationForScopes(scopes);
@@ -96,7 +232,9 @@ class CalendarService {
     }
   }
 
-  static Future<List<gcal.Event>> connectAndGetWeekEvents(DateTime weekStart) async {
+  static Future<List<gcal.Event>> connectAndGetWeekEvents(
+    DateTime weekStart,
+  ) async {
     try {
       await initialize();
 
@@ -111,10 +249,11 @@ class CalendarService {
       final user = _currentUser;
       if (user == null) return [];
 
-      const scopes = [gcal.CalendarApi.calendarReadonlyScope];
+      const scopes = [gcal.CalendarApi.calendarScope];
 
-      var authorization = await user.authorizationClient
-          .authorizationForScopes(scopes);
+      var authorization = await user.authorizationClient.authorizationForScopes(
+        scopes,
+      );
       authorization ??= await user.authorizationClient.authorizeScopes(scopes);
 
       final client = authorization.authClient(scopes: scopes);
@@ -134,9 +273,11 @@ class CalendarService {
       return [];
     }
   }
-  
+
   static Future<bool> isSignedIn() async {
     await initialize();
+    _currentUser ??= await GoogleSignIn.instance
+        .attemptLightweightAuthentication();
     return _currentUser != null;
   }
 
@@ -152,7 +293,7 @@ class CalendarService {
         return false;
       }
 
-      const scopes = [gcal.CalendarApi.calendarReadonlyScope];
+      const scopes = [gcal.CalendarApi.calendarScope];
       final authorization = await user.authorizationClient
           .authorizationForScopes(scopes);
       final hasAccess = authorization != null;
@@ -198,7 +339,11 @@ class CalendarService {
             singleEvents: true,
             orderBy: 'startTime',
           );
-          return events.items ?? const <gcal.Event>[];
+          final items = events.items ?? const <gcal.Event>[];
+          for (final event in items) {
+            if (event.id != null) _eventCalendarIds[event.id!] = calendar.id!;
+          }
+          return items;
         } catch (e) {
           debugPrint(
             'CalendarService calendar fetch skipped ${calendar.summary ?? calendar.id}: $e',
