@@ -9,10 +9,10 @@ import 'stress_score_service.dart';
 
 /// Every HealthKit metric the app supports, with UI metadata.
 class HealthMetricDef {
-  final String key;          // Firestore metricType value
+  final String key; // Firestore metricType value
   final HealthDataType type; // HealthKit data type
-  final String label;        // Display label
-  final String description;  // One-line description for consent UI
+  final String label; // Display label
+  final String description; // One-line description for consent UI
   const HealthMetricDef({
     required this.key,
     required this.type,
@@ -142,8 +142,20 @@ class HealthService {
 
   final Health _health = Health();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  bool _isRequestingAuthorization = false;
+  Future<bool>? _authorizationFuture;
+  bool? _authorizationResultThisSession;
   Future<void>? _activeSync;
   int _pendingSyncDays = 0;
+
+  List<HealthDataType> get _authorizationTypes =>
+      kHealthMetrics.map((metric) => metric.type).toList(growable: false);
+
+  List<HealthDataAccess> get _authorizationAccess => List.filled(
+    kHealthMetrics.length,
+    HealthDataAccess.READ,
+    growable: false,
+  );
 
   // ─── Sync preferences (shared broadcast) ─────────────────────────────────
 
@@ -159,15 +171,12 @@ class HealthService {
       return _consentBroadcast!;
     }
     _consentCacheUid = uid;
-    _consentBroadcast = _db
-        .collection('users')
-        .doc(uid)
-        .snapshots()
-        .map((snap) {
-          final raw = snap.data()?['healthKitConsent'] as Map? ?? {};
-          return raw.map((k, v) => MapEntry(k.toString(), v == true));
-        })
-        .asBroadcastStream();
+    _consentBroadcast = _db.collection('users').doc(uid).snapshots().map((
+      snap,
+    ) {
+      final raw = snap.data()?['healthKitConsent'] as Map? ?? {};
+      return raw.map((k, v) => MapEntry(k.toString(), v == true));
+    }).asBroadcastStream();
     return _consentBroadcast!;
   }
 
@@ -188,15 +197,68 @@ class HealthService {
 
   // ─── Permission requests ───────────────────────────────────────────────────
 
+  /// Ensures all HealthKit read permissions used by routine sync are resolved.
+  ///
+  /// HealthKit deliberately reports read authorization as undetermined on iOS.
+  /// Once this process has completed a request, an undetermined re-check means
+  /// reads may be attempted; individual denied types will simply return no data.
+  Future<bool> ensureHealthAuthorization() {
+    final activeRequest = _authorizationFuture;
+    if (activeRequest != null) {
+      debugPrint(
+        '[HealthService] Duplicate authorization request reused '
+        '(requesting: $_isRequestingAuthorization).',
+      );
+      return activeRequest;
+    }
+
+    _isRequestingAuthorization = true;
+    final request = _requestAndVerifyAuthorization();
+    _authorizationFuture = request;
+    return request.whenComplete(() {
+      if (identical(_authorizationFuture, request)) {
+        _authorizationFuture = null;
+        _isRequestingAuthorization = false;
+      }
+    });
+  }
+
+  Future<bool> _requestAndVerifyAuthorization() async {
+    final types = _authorizationTypes;
+    final access = _authorizationAccess;
+
+    try {
+      await _health.configure();
+      debugPrint('[HealthService] Authorization check started.');
+      final current = await _health.hasPermissions(types, permissions: access);
+      if (current == true) return true;
+
+      // A READ check is always null on iOS. Do not reopen the sheet after a
+      // request already completed during this app session.
+      final previousResult = _authorizationResultThisSession;
+      if (current == null && previousResult != null) {
+        return previousResult;
+      }
+
+      debugPrint('[HealthService] Authorization request started.');
+      final requested = await _health.requestAuthorization(
+        types,
+        permissions: access,
+      );
+      _authorizationResultThisSession = requested;
+      debugPrint('[HealthService] Authorization request result: $requested.');
+      return requested;
+    } catch (error) {
+      _authorizationResultThisSession = false;
+      debugPrint('[HealthService] Authorization unavailable: $error');
+      return false;
+    }
+  }
+
   /// Request HealthKit permission for ALL metrics at once, then do a full sync.
   /// Call this when the user taps "Connect Apple Health" for the first time.
   Future<bool> enableAll() async {
-    await _health.configure();
-    final types = kHealthMetrics.map((m) => m.type).toList();
-    final perms = kHealthMetrics.map((_) => HealthDataAccess.READ).toList();
-
-    // This shows the iOS permission sheet for all metrics in one dialog.
-    final granted = await _health.requestAuthorization(types, permissions: perms);
+    final granted = await ensureHealthAuthorization();
 
     if (!granted) return false;
 
@@ -206,10 +268,9 @@ class HealthService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return granted;
     final consentMap = {for (final m in kHealthMetrics) m.key: true};
-    await _db.collection('users').doc(uid).set(
-      {'healthKitConsent': consentMap},
-      SetOptions(merge: true),
-    );
+    await _db.collection('users').doc(uid).set({
+      'healthKitConsent': consentMap,
+    }, SetOptions(merge: true));
 
     // Sync the last 30 days for all metrics.
     await syncToFirestore(daysBack: 30);
@@ -221,11 +282,10 @@ class HealthService {
     final def = kMetricByKey[metricKey];
     if (def == null) return false;
 
-    await _health.configure();
-    final granted = await _health.requestAuthorization(
-      [def.type],
-      permissions: [HealthDataAccess.READ],
-    );
+    // Use the same complete type/access lists as routine sync authorization.
+    // iOS presents permissions once while Firestore consent controls which
+    // metrics Vivordo actually reads and stores.
+    final granted = await ensureHealthAuthorization();
 
     await _setConsent(metricKey, granted);
     if (granted) {
@@ -272,6 +332,17 @@ class HealthService {
   // ─── Sync ──────────────────────────────────────────────────────────────────
 
   Future<void> syncMetric(String metricKey, {int daysBack = 30}) async {
+    final authorized = await ensureHealthAuthorization();
+    if (!authorized) {
+      debugPrint(
+        '[HealthService] Health authorization unavailable; skipping sync.',
+      );
+      return;
+    }
+    await _syncMetric(metricKey, daysBack: daysBack);
+  }
+
+  Future<void> _syncMetric(String metricKey, {int daysBack = 30}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final def = kMetricByKey[metricKey];
@@ -288,7 +359,7 @@ class HealthService {
       return;
     }
 
-    final now   = DateTime.now();
+    final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final start = today.subtract(Duration(days: daysBack - 1));
 
@@ -333,12 +404,16 @@ class HealthService {
       );
 
       if (metricKey == 'steps') {
-        debugPrint('DEBUG STEPS: Apple Health returned ${dataPoints.length} step data point(s) for $daysBack day(s).');
+        debugPrint(
+          'DEBUG STEPS: Apple Health returned ${dataPoints.length} step data point(s) for $daysBack day(s).',
+        );
       }
 
       if (dataPoints.isEmpty) {
         if (metricKey == 'steps') {
-          debugPrint('DEBUG STEPS: No step data returned from Apple Health. Nothing will be written to Firebase.');
+          debugPrint(
+            'DEBUG STEPS: No step data returned from Apple Health. Nothing will be written to Firebase.',
+          );
         }
         await _deleteMetricForMissingDays(
           uid,
@@ -368,7 +443,10 @@ class HealthService {
     if (daysBack > _pendingSyncDays) _pendingSyncDays = daysBack;
 
     final activeSync = _activeSync;
-    if (activeSync != null) return activeSync;
+    if (activeSync != null) {
+      debugPrint('[HealthService] Duplicate sync request reused.');
+      return activeSync;
+    }
 
     final worker = _drainSyncQueue();
     _activeSync = worker;
@@ -386,11 +464,19 @@ class HealthService {
   }
 
   Future<void> _performSync({required int daysBack}) async {
+    final authorized = await ensureHealthAuthorization();
+    if (!authorized) {
+      debugPrint(
+        '[HealthService] Health authorization unavailable; skipping sync.',
+      );
+      return;
+    }
+
     final consent = await getConsent();
     for (final m in kHealthMetrics) {
       if (consent[m.key] == true) {
         try {
-          await syncMetric(m.key, daysBack: daysBack);
+          await _syncMetric(m.key, daysBack: daysBack);
         } catch (e) {
           // One metric failing (e.g. permissions) shouldn't stop the others.
           debugPrint('HealthService.syncToFirestore — skipped ${m.key}: $e');
@@ -400,7 +486,10 @@ class HealthService {
 
     // Compute and write wellness score for each day in the window
     try {
-      await _computeAndWriteWellness(uid: FirebaseAuth.instance.currentUser?.uid, daysBack: daysBack);
+      await _computeAndWriteWellness(
+        uid: FirebaseAuth.instance.currentUser?.uid,
+        daysBack: daysBack,
+      );
     } catch (e) {
       debugPrint('HealthService.syncToFirestore — wellness compute failed: $e');
     }
@@ -408,15 +497,19 @@ class HealthService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       try {
-        await _db.collection('users').doc(uid).set(
-          {'lastHealthKitSync': FieldValue.serverTimestamp()},
-          SetOptions(merge: true),
-        );
+        await _db.collection('users').doc(uid).set({
+          'lastHealthKitSync': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       } catch (e) {
-        debugPrint('HealthService.syncToFirestore — could not update lastSync: $e');
+        debugPrint(
+          'HealthService.syncToFirestore — could not update lastSync: $e',
+        );
       }
       // Recompute BaaS stress score now that fresh HealthKit data is in Firestore
-      StressScoreService.computeAndSave(uid: uid, force: true).catchError((_) {});
+      StressScoreService.computeAndSave(
+        uid: uid,
+        force: true,
+      ).catchError((_) {});
     }
   }
 
@@ -573,10 +666,14 @@ class HealthService {
     final batch = _db.batch();
     final daysWithData = <String>{};
     for (final entry in byDay.entries) {
-      final day  = entry.key;
+      final day = entry.key;
       daysWithData.add(day);
       final vals = entry.value;
-      final ref  = _db.collection('users').doc(uid).collection('metrics_daily').doc(day);
+      final ref = _db
+          .collection('users')
+          .doc(uid)
+          .collection('metrics_daily')
+          .doc(day);
       final payload = _buildValueMap(def.type, vals);
 
       if (def.key == 'steps') {
@@ -588,10 +685,10 @@ class HealthService {
       batch.set(ref, {
         def.key: {
           ...payload,
-          'source':   'apple_health',
+          'source': 'apple_health',
           'syncedAt': FieldValue.serverTimestamp(),
         },
-        'date':      day,
+        'date': day,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }
@@ -619,27 +716,71 @@ class HealthService {
     switch (type) {
       // ── Cumulative (sum is meaningful) ──────────────────────────────────────
       case HealthDataType.STEPS:
-        return {'sum': sum(), 'avg': avg(), 'unit': 'steps', 'dimension': 'activity'};
+        return {
+          'sum': sum(),
+          'avg': avg(),
+          'unit': 'steps',
+          'dimension': 'activity',
+        };
       case HealthDataType.ACTIVE_ENERGY_BURNED:
-        return {'sum': sum(), 'avg': avg(), 'unit': 'kcal', 'dimension': 'activity'};
+        return {
+          'sum': sum(),
+          'avg': avg(),
+          'unit': 'kcal',
+          'dimension': 'activity',
+        };
       case HealthDataType.EXERCISE_TIME:
-        return {'sum': sum(), 'avg': avg(), 'unit': 'min', 'dimension': 'activity'};
+        return {
+          'sum': sum(),
+          'avg': avg(),
+          'unit': 'min',
+          'dimension': 'activity',
+        };
       case HealthDataType.DISTANCE_WALKING_RUNNING:
-        return {'sum': sum() / 1000, 'avg': avg() / 1000, 'unit': 'km', 'dimension': 'activity'};
+        return {
+          'sum': sum() / 1000,
+          'avg': avg() / 1000,
+          'unit': 'km',
+          'dimension': 'activity',
+        };
       case HealthDataType.FLIGHTS_CLIMBED:
-        return {'sum': sum(), 'avg': avg(), 'unit': 'flights', 'dimension': 'activity'};
+        return {
+          'sum': sum(),
+          'avg': avg(),
+          'unit': 'flights',
+          'dimension': 'activity',
+        };
       case HealthDataType.MINDFULNESS:
-        return {'sum': sum(), 'avg': avg(), 'unit': 'min', 'dimension': 'mental'};
+        return {
+          'sum': sum(),
+          'avg': avg(),
+          'unit': 'min',
+          'dimension': 'mental',
+        };
 
       // ── Point-in-time averages ───────────────────────────────────────────────
       case HealthDataType.HEART_RATE:
       case HealthDataType.RESTING_HEART_RATE:
-        return {'avg': avg(), 'min': min(), 'max': max(), 'unit': 'bpm', 'dimension': 'cardiovascular'};
+        return {
+          'avg': avg(),
+          'min': min(),
+          'max': max(),
+          'unit': 'bpm',
+          'dimension': 'cardiovascular',
+        };
 
       case HealthDataType.HEART_RATE_VARIABILITY_SDNN:
         final hrvAvg = avg();
-        final stress = ((1.0 - (hrvAvg.clamp(0, 100) / 100)) * 100).clamp(0.0, 100.0);
-        return {'avg': hrvAvg, 'stressScore': stress, 'unit': 'ms', 'dimension': 'stress'};
+        final stress = ((1.0 - (hrvAvg.clamp(0, 100) / 100)) * 100).clamp(
+          0.0,
+          100.0,
+        );
+        return {
+          'avg': hrvAvg,
+          'stressScore': stress,
+          'unit': 'ms',
+          'dimension': 'stress',
+        };
 
       case HealthDataType.BLOOD_OXYGEN:
         return {
@@ -651,19 +792,35 @@ class HealthService {
         };
 
       case HealthDataType.RESPIRATORY_RATE:
-        return {'avg': avg(), 'min': min(), 'max': max(), 'unit': 'brpm', 'dimension': 'respiratory'};
+        return {
+          'avg': avg(),
+          'min': min(),
+          'max': max(),
+          'unit': 'brpm',
+          'dimension': 'respiratory',
+        };
 
       // ── Sleep (health package returns minutes for interval-based sleep data) ─
       case HealthDataType.SLEEP_ASLEEP:
       case HealthDataType.SLEEP_IN_BED:
         final hours = sum() / 60;
-        return {'avg': hours, 'min': min() / 60, 'max': max() / 60, 'unit': 'hours', 'dimension': 'sleep'};
+        return {
+          'avg': hours,
+          'min': min() / 60,
+          'max': max() / 60,
+          'unit': 'hours',
+          'dimension': 'sleep',
+        };
 
       // ── Body metrics ─────────────────────────────────────────────────────────
       case HealthDataType.WEIGHT:
         return {'avg': avg(), 'unit': 'kg', 'dimension': 'body'};
       case HealthDataType.BODY_FAT_PERCENTAGE:
-        return {'avg': normalizePercent(avg()), 'unit': '%', 'dimension': 'body'};
+        return {
+          'avg': normalizePercent(avg()),
+          'unit': '%',
+          'dimension': 'body',
+        };
       // case HealthDataType.VO2MAX:
       //   return {'avg': avg(), 'unit': 'ml/kg/min', 'dimension': 'fitness'};
 
@@ -674,14 +831,16 @@ class HealthService {
 
   String _formatDate(DateTime dt) => DateFormat('yyyy-MM-dd').format(dt);
 
-
-  Future<void> _computeAndWriteWellness({String? uid, int daysBack = 30}) async {
+  Future<void> _computeAndWriteWellness({
+    String? uid,
+    int daysBack = 30,
+  }) async {
     if (uid == null) return;
     final now = DateTime.now();
     final batch = _db.batch();
 
     for (int i = 0; i < daysBack; i++) {
-      final day    = now.subtract(Duration(days: i));
+      final day = now.subtract(Duration(days: i));
       final period = _formatDate(day);
 
       final snap = await _db
@@ -693,43 +852,53 @@ class HealthService {
       final data = snap.data();
 
       final stress = (data?['stress']?['avg'] as num?)?.toDouble();
-      final sleep  = (data?['sleep']?['avg']  as num?)?.toDouble();
-      final steps  = (data?['steps']?['sum']  as num?)?.toDouble();
-      final hrv    = (data?['hrv']?['avg']    as num?)?.toDouble();
+      final sleep = (data?['sleep']?['avg'] as num?)?.toDouble();
+      final steps = (data?['steps']?['sum'] as num?)?.toDouble();
+      final hrv = (data?['hrv']?['avg'] as num?)?.toDouble();
 
-      if (stress == null && sleep == null && steps == null && hrv == null) continue;
+      if (stress == null && sleep == null && steps == null && hrv == null)
+        continue;
 
       double wellness = 0;
       int weight = 0;
 
-      if (stress != null) { wellness += (100 - stress) * 0.35; weight += 35; }
-      if (sleep  != null) {
+      if (stress != null) {
+        wellness += (100 - stress) * 0.35;
+        weight += 35;
+      }
+      if (sleep != null) {
         final sleepScore = ((sleep / 8.0) * 100).clamp(0.0, 100.0);
         wellness += sleepScore * 0.30;
         weight += 30;
       }
-      if (steps  != null) {
+      if (steps != null) {
         final stepsScore = ((steps / 10000.0) * 100).clamp(0.0, 100.0);
         wellness += stepsScore * 0.20;
         weight += 20;
       }
-      if (hrv    != null) {
+      if (hrv != null) {
         final hrvScore = ((hrv / 100.0) * 100).clamp(0.0, 100.0);
         wellness += hrvScore * 0.15;
         weight += 15;
       }
 
-      final finalWellness = weight > 0 ? (wellness / weight * 100).clamp(0.0, 100.0) : 0.0;
+      final finalWellness = weight > 0
+          ? (wellness / weight * 100).clamp(0.0, 100.0)
+          : 0.0;
 
-      final ref = _db.collection('users').doc(uid).collection('metrics_daily').doc(period);
+      final ref = _db
+          .collection('users')
+          .doc(uid)
+          .collection('metrics_daily')
+          .doc(period);
       batch.set(ref, {
         'wellness': {
-          'avg':        finalWellness,
-          'unit':       'score',
-          'source':     'computed',
+          'avg': finalWellness,
+          'unit': 'score',
+          'source': 'computed',
           'computedAt': FieldValue.serverTimestamp(),
         },
-        'date':      period,
+        'date': period,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }

@@ -27,11 +27,11 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   static const Color accentPurple = Color(0xFF7B6EF6);
-  static const Color greenColor  = Color(0xFF34C759);
-  static const Color bgColor     = Color(0xFFF2F2F7);
-  static const Color cardWhite   = Colors.white;
-  static const Color textDark    = Color(0xFF1C1C1E);
-  static const Color textGrey    = Color(0xFF8E8E93);
+  static const Color greenColor = Color(0xFF34C759);
+  static const Color bgColor = Color(0xFFF2F2F7);
+  static const Color cardWhite = Colors.white;
+  static const Color textDark = Color(0xFF1C1C1E);
+  static const Color textGrey = Color(0xFF8E8E93);
   static const List<String> _defaultMetricOrder = [
     'stress',
     'mood',
@@ -56,7 +56,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // 0 = Day, 1 = Week (default), 2 = Month
   int _filterIndex = 1;
   static const _filterLabels = ['Day', 'Week', 'Month'];
-  int get _daysBack => _filterIndex == 0 ? 1 : _filterIndex == 1 ? 7 : 30;
+  int get _daysBack => _filterIndex == 0
+      ? 1
+      : _filterIndex == 1
+      ? 7
+      : 30;
 
   // ── ONE combined stream for all metrics_daily docs in the date window ──────
   late Stream<QuerySnapshot<Map<String, dynamic>>> _allMetricsStream;
@@ -90,13 +94,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .get();
       final preferences = snapshot.data()?['preferences'] as Map?;
       final saved = preferences?['dashboardMetricOrder'] as List?;
-      final savedKeys = saved
+      final savedKeys =
+          saved
               ?.whereType<String>()
               .where(_defaultMetricOrder.contains)
               .toList() ??
           [];
-      final missingKeys = _defaultMetricOrder
-          .where((key) => !savedKeys.contains(key));
+      final missingKeys = _defaultMetricOrder.where(
+        (key) => !savedKeys.contains(key),
+      );
       if (mounted) {
         setState(() {
           _metricOrder = [...savedKeys, ...missingKeys];
@@ -119,10 +125,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _rebuildStreams() {
     _allMetricsStream = _buildCombinedStream();
-    _consentStream    = HealthService().consentStream();
+    _consentStream = HealthService().consentStream();
   }
 
-  Future<void> _refreshHealthMetricsFromHealth({bool showFeedback = false}) async {
+  Future<void> _refreshHealthMetricsFromHealth({
+    bool showFeedback = false,
+  }) async {
     if (_refreshingHealthMetrics) return;
     if (mounted) setState(() => _refreshingHealthMetrics = true);
 
@@ -136,7 +144,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       }
     } catch (e) {
-      debugPrint('DashboardScreen: failed to refresh metrics from Apple Health: $e');
+      debugPrint(
+        'DashboardScreen: failed to refresh metrics from Apple Health: $e',
+      );
       if (showFeedback && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Apple Health refresh failed: $e')),
@@ -161,12 +171,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Stream<QuerySnapshot<Map<String, dynamic>>> _buildCombinedStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
-    final now    = DateTime.now();
+    final now = DateTime.now();
     final oldest = now.subtract(Duration(days: _daysBack - 1));
     String fmt(DateTime d) =>
         '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
     return FirebaseFirestore.instance
-        .collection('users').doc(uid).collection('metrics_daily')
+        .collection('users')
+        .doc(uid)
+        .collection('metrics_daily')
         .where(FieldPath.documentId, isGreaterThanOrEqualTo: fmt(oldest))
         .where(FieldPath.documentId, isLessThanOrEqualTo: fmt(now))
         .orderBy(FieldPath.documentId)
@@ -188,24 +200,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     String metricType,
     String field,
-  ) =>
-      docs
-          .map((d) => ((d.data()[metricType] as Map?)?[field] as num?)?.toDouble() ?? 0.0)
-          .toList();
+  ) => docs
+      .map(
+        (d) =>
+            ((d.data()[metricType] as Map?)?[field] as num?)?.toDouble() ?? 0.0,
+      )
+      .toList();
 
   List<String> _dayLabels(
     QuerySnapshot<Map<String, dynamic>>? snap,
     String metricType,
   ) {
     if (snap == null) return [];
-    return snap.docs
-        .where((d) => d.data().containsKey(metricType))
-        .map((d) {
-          final dt = DateTime.tryParse(d.id);
-          if (dt == null) return '';
-          const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-          return names[dt.weekday - 1];
-        }).toList();
+    return snap.docs.where((d) => d.data().containsKey(metricType)).map((d) {
+      final dt = DateTime.tryParse(d.id);
+      if (dt == null) return '';
+      const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return names[dt.weekday - 1];
+    }).toList();
   }
 
   /// Month view: only label Mondays to avoid x-axis crowding.
@@ -214,13 +226,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String metricType,
   ) {
     if (snap == null) return [];
-    return snap.docs
-        .where((d) => d.data().containsKey(metricType))
-        .map((d) {
-          final dt = DateTime.tryParse(d.id);
-          if (dt == null || dt.weekday != DateTime.monday) return '';
-          return '${dt.day}/${dt.month}';
-        }).toList();
+    return snap.docs.where((d) => d.data().containsKey(metricType)).map((d) {
+      final dt = DateTime.tryParse(d.id);
+      if (dt == null || dt.weekday != DateTime.monday) return '';
+      return '${dt.day}/${dt.month}';
+    }).toList();
   }
 
   // ── Daily mood helpers ─────────────────────────────────────────────────────
@@ -252,22 +262,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (scores.isEmpty) continue;
       points.add({
         'score': _avg(scores),
-        'dateTime': DateTime.tryParse(period) ??
-            DateTime.fromMillisecondsSinceEpoch(0),
+        'dateTime':
+            DateTime.tryParse(period) ?? DateTime.fromMillisecondsSinceEpoch(0),
       });
     }
 
-    points.sort((a, b) =>
-        (a['dateTime'] as DateTime).compareTo(b['dateTime'] as DateTime));
+    points.sort(
+      (a, b) =>
+          (a['dateTime'] as DateTime).compareTo(b['dateTime'] as DateTime),
+    );
     return points;
   }
 
   List<double> _dailyMoodValues(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) =>
-      _dailyMoodPoints(docs)
-          .map((point) => point['score'] as double)
-          .toList();
+  ) => _dailyMoodPoints(docs).map((point) => point['score'] as double).toList();
 
   List<String> _dailyMoodLabels(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
@@ -331,8 +340,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _trend(List<double> vals) {
     if (vals.length < 2) return '';
-    final half   = vals.length ~/ 2;
-    final old    = _avg(vals.sublist(0, half));
+    final half = vals.length ~/ 2;
+    final old = _avg(vals.sublist(0, half));
     final recent = _avg(vals.sublist(half));
     if (old == 0) return '';
     final pct = ((recent - old) / old * 100).round();
@@ -388,7 +397,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     label: const Text('Layout'),
                     style: TextButton.styleFrom(
                       foregroundColor: accentPurple,
-                      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ],
@@ -409,8 +421,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 stream: _consentStream,
                 builder: (_, consentSnap) {
                   final consentLoaded = consentSnap.hasData;
-                  final consent     = consentSnap.data ?? {};
-                  final anyConsented = consentLoaded && consent.values.any((v) => v);
+                  final consent = consentSnap.data ?? {};
+                  final anyConsented =
+                      consentLoaded && consent.values.any((v) => v);
 
                   return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     stream: _allMetricsStream,
@@ -418,11 +431,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       final snap = metricsSnap.data;
 
                       // ── Summary row ────────────────────────────────────────
-                      final stressVals = _vals(_docsFor(snap, 'stress'), 'stress', 'avg');
-                      final hrvVals    = _vals(_docsFor(snap, 'hrv'),    'hrv',    'avg');
-                      final sleepVals  = _vals(_docsFor(snap, 'sleep'),  'sleep',  'avg');
-                      final moodVals   = _vals(_docsFor(snap, 'mood'),   'mood',   'avg');
-                      final wellnessVals = _vals(_docsFor(snap, 'wellness'), 'wellness', 'avg');
+                      final stressVals = _vals(
+                        _docsFor(snap, 'stress'),
+                        'stress',
+                        'avg',
+                      );
+                      final hrvVals = _vals(
+                        _docsFor(snap, 'hrv'),
+                        'hrv',
+                        'avg',
+                      );
+                      final sleepVals = _vals(
+                        _docsFor(snap, 'sleep'),
+                        'sleep',
+                        'avg',
+                      );
+                      final moodVals = _vals(
+                        _docsFor(snap, 'mood'),
+                        'mood',
+                        'avg',
+                      );
+                      final wellnessVals = _vals(
+                        _docsFor(snap, 'wellness'),
+                        'wellness',
+                        'avg',
+                      );
 
                       bool hasMetricData(String metricType) =>
                           _docsFor(snap, metricType).isNotEmpty;
@@ -454,28 +487,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
 
                           // Summary cards — only shown when a watch/Health is connected
-                          if (anyConsented || stressVals.isNotEmpty || hrvVals.isNotEmpty || sleepVals.isNotEmpty || moodVals.isNotEmpty || wellnessVals.isNotEmpty) ...[
+                          if (anyConsented ||
+                              stressVals.isNotEmpty ||
+                              hrvVals.isNotEmpty ||
+                              sleepVals.isNotEmpty ||
+                              moodVals.isNotEmpty ||
+                              wellnessVals.isNotEmpty) ...[
                             Row(
                               children: [
-                                Expanded(child: _buildStatCard(
-                                  label: 'Avg Stress',
-                                  value: stressVals.isEmpty ? '--' : _avg(stressVals).toInt().toString(),
-                                  change: _trend(stressVals),
-                                  trendUp: !_trend(stressVals).startsWith('+'),
-                                )),
+                                Expanded(
+                                  child: _buildStatCard(
+                                    label: 'Avg Stress',
+                                    value: stressVals.isEmpty
+                                        ? '--'
+                                        : _avg(stressVals).toInt().toString(),
+                                    change: _trend(stressVals),
+                                    trendUp: !_trend(
+                                      stressVals,
+                                    ).startsWith('+'),
+                                  ),
+                                ),
                                 const SizedBox(width: 10),
-                                Expanded(child: _buildStatCard(
-                                  label: 'Avg HRV',
-                                  value: hrvVals.isEmpty ? '--' : '${_avg(hrvVals).toInt()}ms',
-                                  change: _trend(hrvVals),
-                                  trendUp: _trend(hrvVals).startsWith('+'),                                )),
+                                Expanded(
+                                  child: _buildStatCard(
+                                    label: 'Avg HRV',
+                                    value: hrvVals.isEmpty
+                                        ? '--'
+                                        : '${_avg(hrvVals).toInt()}ms',
+                                    change: _trend(hrvVals),
+                                    trendUp: _trend(hrvVals).startsWith('+'),
+                                  ),
+                                ),
                                 const SizedBox(width: 10),
-                                Expanded(child: _buildStatCard(
-                                  label: 'Avg Sleep',
-                                  value: sleepVals.isEmpty ? '--' : '${_avg(sleepVals).toStringAsFixed(1)}h',
-                                  change: _trend(sleepVals),
-                                  trendUp: _trend(sleepVals).startsWith('+'),
-                                )),
+                                Expanded(
+                                  child: _buildStatCard(
+                                    label: 'Avg Sleep',
+                                    value: sleepVals.isEmpty
+                                        ? '--'
+                                        : '${_avg(sleepVals).toStringAsFixed(1)}h',
+                                    change: _trend(sleepVals),
+                                    trendUp: _trend(sleepVals).startsWith('+'),
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 10),
@@ -484,17 +537,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
 
                           ..._metricOrder.map(
-                            (metric) => _buildOrderedMetric(
-                              snap,
-                              consent,
-                              metric,
-                            ),
+                            (metric) =>
+                                _buildOrderedMetric(snap, consent, metric),
                           ),
 
                           // ── Apple Health CTA when nothing is consented ──────
                           if (snap == null || snap.docs.isEmpty)
                             _buildEmptyState()
-                          else if (consentLoaded && !anyConsented && !hasAnyHealthData)
+                          else if (consentLoaded &&
+                              !anyConsented &&
+                              !hasAnyHealthData)
                             _buildConnectCard(),
 
                           const SizedBox(height: 120),
@@ -516,49 +568,87 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _metricTitle(String key) {
     switch (key) {
-      case 'stress': return 'Stress Levels';
-      case 'mood': return 'Mood';
-      case 'wellness': return 'Wellness';
-      case 'steps': return 'Daily Steps';
-      case 'active_calories': return 'Active Calories (kcal)';
-      case 'exercise_time': return 'Exercise Time (min)';
-      case 'distance': return 'Distance (km)';
-      case 'flights_climbed': return 'Flights Climbed';
-      case 'heart_rate': return 'Heart Rate (bpm)';
-      case 'resting_heart_rate': return 'Resting Heart Rate (bpm)';
-      case 'hrv': return 'HRV (ms)';
-      case 'blood_oxygen': return 'Blood Oxygen SpO2 (%)';
-      case 'respiratory_rate': return 'Respiratory Rate (brpm)';
-      case 'sleep': return 'Sleep (hours)';
-      case 'weight': return 'Weight (kg)';
-      case 'body_fat': return 'Body Fat (%)';
-      case 'mindfulness': return 'Mindfulness (min)';
-      case 'vo2max': return 'VO2 Max (ml/kg/min)';
-      default: return key;
+      case 'stress':
+        return 'Stress Levels';
+      case 'mood':
+        return 'Mood';
+      case 'wellness':
+        return 'Wellness';
+      case 'steps':
+        return 'Daily Steps';
+      case 'active_calories':
+        return 'Active Calories (kcal)';
+      case 'exercise_time':
+        return 'Exercise Time (min)';
+      case 'distance':
+        return 'Distance (km)';
+      case 'flights_climbed':
+        return 'Flights Climbed';
+      case 'heart_rate':
+        return 'Heart Rate (bpm)';
+      case 'resting_heart_rate':
+        return 'Resting Heart Rate (bpm)';
+      case 'hrv':
+        return 'HRV (ms)';
+      case 'blood_oxygen':
+        return 'Blood Oxygen SpO2 (%)';
+      case 'respiratory_rate':
+        return 'Respiratory Rate (brpm)';
+      case 'sleep':
+        return 'Sleep (hours)';
+      case 'weight':
+        return 'Weight (kg)';
+      case 'body_fat':
+        return 'Body Fat (%)';
+      case 'mindfulness':
+        return 'Mindfulness (min)';
+      case 'vo2max':
+        return 'VO2 Max (ml/kg/min)';
+      default:
+        return key;
     }
   }
 
   Color _metricColor(String key) {
     switch (key) {
-      case 'stress': return accentPurple;
-      case 'mood': return const Color(0xFFF97316);
-      case 'wellness': return Colors.teal;
-      case 'steps': return Colors.blueAccent;
-      case 'active_calories': return const Color(0xFFF97316);
-      case 'exercise_time': return const Color(0xFFFF9500);
-      case 'distance': return const Color(0xFF3B82F6);
-      case 'flights_climbed': return const Color(0xFF14B8A6);
-      case 'heart_rate': return Colors.redAccent;
-      case 'resting_heart_rate': return const Color(0xFFFF6B6B);
-      case 'hrv': return greenColor;
-      case 'blood_oxygen': return const Color(0xFF06B6D4);
-      case 'respiratory_rate': return const Color(0xFF0EA5E9);
-      case 'sleep': return const Color(0xFF8B5CF6);
-      case 'weight': return const Color(0xFFA78BFA);
-      case 'body_fat': return const Color(0xFFFBBF24);
-      case 'mindfulness': return const Color(0xFF7C3AED);
-      case 'vo2max': return greenColor;
-      default: return accentPurple;
+      case 'stress':
+        return accentPurple;
+      case 'mood':
+        return const Color(0xFFF97316);
+      case 'wellness':
+        return Colors.teal;
+      case 'steps':
+        return Colors.blueAccent;
+      case 'active_calories':
+        return const Color(0xFFF97316);
+      case 'exercise_time':
+        return const Color(0xFFFF9500);
+      case 'distance':
+        return const Color(0xFF3B82F6);
+      case 'flights_climbed':
+        return const Color(0xFF14B8A6);
+      case 'heart_rate':
+        return Colors.redAccent;
+      case 'resting_heart_rate':
+        return const Color(0xFFFF6B6B);
+      case 'hrv':
+        return greenColor;
+      case 'blood_oxygen':
+        return const Color(0xFF06B6D4);
+      case 'respiratory_rate':
+        return const Color(0xFF0EA5E9);
+      case 'sleep':
+        return const Color(0xFF8B5CF6);
+      case 'weight':
+        return const Color(0xFFA78BFA);
+      case 'body_fat':
+        return const Color(0xFFFBBF24);
+      case 'mindfulness':
+        return const Color(0xFF7C3AED);
+      case 'vo2max':
+        return greenColor;
+      default:
+        return accentPurple;
     }
   }
 
@@ -579,21 +669,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'stress':
       case 'mood':
       case 'wellness':
-      case 'blood_oxygen': return 100;
-      case 'steps': return 20000;
-      case 'active_calories': return 1000;
+      case 'blood_oxygen':
+        return 100;
+      case 'steps':
+        return 20000;
+      case 'active_calories':
+        return 1000;
       case 'exercise_time':
       case 'resting_heart_rate':
-      case 'hrv': return 120;
-      case 'distance': return 20;
-      case 'flights_climbed': return 30;
-      case 'heart_rate': return 200;
-      case 'respiratory_rate': return 30;
-      case 'sleep': return 12;
-      case 'body_fat': return 50;
-      case 'mindfulness': return 60;
-      case 'vo2max': return 70;
-      default: return 0;
+      case 'hrv':
+        return 120;
+      case 'distance':
+        return 20;
+      case 'flights_climbed':
+        return 30;
+      case 'heart_rate':
+        return 200;
+      case 'respiratory_rate':
+        return 30;
+      case 'sleep':
+        return 12;
+      case 'body_fat':
+        return 50;
+      case 'mindfulness':
+        return 60;
+      case 'vo2max':
+        return 70;
+      default:
+        return 0;
     }
   }
 
@@ -747,14 +850,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           title: title,
           icon: _metricIcon(metricType),
           color: color,
-          values: entries
-              .map((entry) => entry['score'] as double)
-              .toList(),
+          values: entries.map((entry) => entry['score'] as double).toList(),
           maxY: maxY,
           labels: entries
               .map(
-                (entry) =>
-                    _formatMoodEntryTime(entry['dateTime'] as DateTime?),
+                (entry) => _formatMoodEntryTime(entry['dateTime'] as DateTime?),
               )
               .toList(),
         ),
@@ -767,8 +867,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final labels = metricType == 'mood'
         ? _dailyMoodLabels(docs)
         : _filterIndex == 2
-            ? _monthLabels(snap, metricType)
-            : _dayLabels(snap, metricType);
+        ? _monthLabels(snap, metricType)
+        : _dayLabels(snap, metricType);
     if (values.isEmpty) return const SizedBox.shrink();
 
     if (_filterIndex == 0) {
@@ -794,8 +894,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         values: values,
         maxY: maxY > 0
             ? maxY
-            : (values.reduce((a, b) => a > b ? a : b) * 1.2)
-                .clamp(1, double.infinity),
+            : (values.reduce((a, b) => a > b ? a : b) * 1.2).clamp(
+                1,
+                double.infinity,
+              ),
         labels: labels,
       ),
     );
@@ -818,8 +920,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final primaryLabel = _formatMetricValue(metricType, primaryValue);
     final subtitle = hasMultipleValues
         ? field == 'sum'
-            ? '${values.length} entries today'
-            : 'avg ${_formatMetricValue(metricType, avgValue)} today'
+              ? '${values.length} entries today'
+              : 'avg ${_formatMetricValue(metricType, avgValue)} today'
         : 'today';
 
     return Container(
@@ -856,10 +958,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: textGrey,
-                  ),
+                  style: const TextStyle(fontSize: 12, color: textGrey),
                 ),
               ],
             ),
@@ -916,33 +1015,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'wellness':
         return number();
       default:
-        return value == value.roundToDouble()
-            ? number()
-            : number(decimals: 1);
+        return value == value.roundToDouble() ? number() : number(decimals: 1);
     }
   }
 
   IconData _metricIcon(String key) {
     switch (key) {
-      case 'steps':              return Icons.directions_walk_rounded;
-      case 'active_calories':    return Icons.local_fire_department_rounded;
-      case 'exercise_time':      return Icons.fitness_center_rounded;
-      case 'distance':           return Icons.straighten_rounded;
-      case 'flights_climbed':    return Icons.stairs_rounded;
-      case 'heart_rate':         return Icons.favorite_rounded;
-      case 'resting_heart_rate': return Icons.favorite_border_rounded;
-      case 'hrv':                return Icons.show_chart_rounded;
-      case 'blood_oxygen':       return Icons.air_rounded;
-      case 'respiratory_rate':   return Icons.wind_power_rounded;
-      case 'sleep':              return Icons.bedtime_rounded;
-      case 'weight':             return Icons.monitor_weight_rounded;
-      case 'body_fat':           return Icons.percent_rounded;
-      case 'mindfulness':        return Icons.self_improvement_rounded;
-      case 'vo2max':             return Icons.speed_rounded;
-      case 'stress':             return Icons.psychology_rounded;
-      case 'mood':               return Icons.mood_rounded;
-      case 'wellness':           return Icons.spa_rounded;
-      default:                   return Icons.monitor_heart_outlined;
+      case 'steps':
+        return Icons.directions_walk_rounded;
+      case 'active_calories':
+        return Icons.local_fire_department_rounded;
+      case 'exercise_time':
+        return Icons.fitness_center_rounded;
+      case 'distance':
+        return Icons.straighten_rounded;
+      case 'flights_climbed':
+        return Icons.stairs_rounded;
+      case 'heart_rate':
+        return Icons.favorite_rounded;
+      case 'resting_heart_rate':
+        return Icons.favorite_border_rounded;
+      case 'hrv':
+        return Icons.show_chart_rounded;
+      case 'blood_oxygen':
+        return Icons.air_rounded;
+      case 'respiratory_rate':
+        return Icons.wind_power_rounded;
+      case 'sleep':
+        return Icons.bedtime_rounded;
+      case 'weight':
+        return Icons.monitor_weight_rounded;
+      case 'body_fat':
+        return Icons.percent_rounded;
+      case 'mindfulness':
+        return Icons.self_improvement_rounded;
+      case 'vo2max':
+        return Icons.speed_rounded;
+      case 'stress':
+        return Icons.psychology_rounded;
+      case 'mood':
+        return Icons.mood_rounded;
+      case 'wellness':
+        return Icons.spa_rounded;
+      default:
+        return Icons.monitor_heart_outlined;
     }
   }
 
@@ -966,7 +1082,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               duration: const Duration(milliseconds: 250),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
               decoration: BoxDecoration(
-                color:  active ? accentPurple : cardWhite,
+                color: active ? accentPurple : cardWhite,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: active ? accentPurple : const Color(0xFFE5E5EA),
@@ -1117,7 +1233,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: labelColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(20),
@@ -1145,7 +1264,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ? Icons.trending_up_rounded
                       : Icons.trending_down_rounded,
                   size: 16,
-                  color: trend.startsWith('+') ? greenColor : const Color(0xFFFF3B30),
+                  color: trend.startsWith('+')
+                      ? greenColor
+                      : const Color(0xFFFF3B30),
                 ),
                 const SizedBox(width: 4),
                 Text(
@@ -1153,7 +1274,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: trend.startsWith('+') ? greenColor : const Color(0xFFFF3B30),
+                    color: trend.startsWith('+')
+                        ? greenColor
+                        : const Color(0xFFFF3B30),
                   ),
                 ),
               ],
@@ -1162,7 +1285,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
-  
+
   Widget _buildEmptyState() {
     return Container(
       width: double.infinity,
@@ -1174,7 +1297,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Column(
         children: [
-          const Icon(Icons.bar_chart_rounded, size: 48, color: Color(0xFFE5E5EA)),
+          const Icon(
+            Icons.bar_chart_rounded,
+            size: 48,
+            color: Color(0xFFE5E5EA),
+          ),
           const SizedBox(height: 16),
           const Text(
             'No data for this period',
@@ -1193,7 +1320,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 20),
           Row(
             children: [
-             
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => Navigator.push(
@@ -1253,11 +1379,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 SizedBox(height: 4),
                 Text(
                   'Loading your connected health data…',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: textGrey,
-                    height: 1.4,
-                  ),
+                  style: TextStyle(fontSize: 12, color: textGrey, height: 1.4),
                 ),
               ],
             ),
@@ -1283,15 +1405,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         child: Column(
           children: [
-            const Icon(Icons.health_and_safety_outlined,
-                size: 36, color: Color(0xFF7B6EF6)),
+            const Icon(
+              Icons.health_and_safety_outlined,
+              size: 36,
+              color: Color(0xFF7B6EF6),
+            ),
             const SizedBox(height: 12),
             const Text(
               'Apple Health not connected',
               style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: textDark),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: textDark,
+              ),
             ),
             const SizedBox(height: 6),
             const Text(
@@ -1330,7 +1456,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     IconData? icon,
   }) {
     // Compute a quick summary value for the subtitle
-    final avg = values.isEmpty ? 0.0 : values.reduce((a, b) => a + b) / values.length;
+    final avg = values.isEmpty
+        ? 0.0
+        : values.reduce((a, b) => a + b) / values.length;
     final latest = values.isNotEmpty ? values.last : 0.0;
 
     return Container(
@@ -1439,8 +1567,10 @@ class _AreaChartState extends State<_AreaChart>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    _animation =
-        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
     _controller.forward();
   }
 
@@ -1448,8 +1578,7 @@ class _AreaChartState extends State<_AreaChart>
   void didUpdateWidget(_AreaChart old) {
     super.didUpdateWidget(old);
     if (!listEquals(old.values, widget.values)) {
-      if (_selectedIndex != null &&
-          _selectedIndex! >= widget.values.length) {
+      if (_selectedIndex != null && _selectedIndex! >= widget.values.length) {
         _selectedIndex = null;
       }
       _controller.forward(from: 0);
@@ -1462,10 +1591,9 @@ class _AreaChartState extends State<_AreaChart>
     final chartWidth = width - leftPad;
     final index = widget.values.length == 1
         ? 0
-        : (((localX - leftPad) / chartWidth) *
-                (widget.values.length - 1))
-            .round()
-            .clamp(0, widget.values.length - 1);
+        : (((localX - leftPad) / chartWidth) * (widget.values.length - 1))
+              .round()
+              .clamp(0, widget.values.length - 1);
     if (index != _selectedIndex) setState(() => _selectedIndex = index);
   }
 
@@ -1514,7 +1642,7 @@ class _AreaChartPainter extends CustomPainter {
   final int? selectedIndex;
 
   static const double labelHeight = 22;
-  static const double leftPad     = 36;
+  static const double leftPad = 36;
 
   _AreaChartPainter({
     required this.values,
@@ -1537,8 +1665,7 @@ class _AreaChartPainter extends CustomPainter {
     const gridLines = 4;
     for (int i = 0; i <= gridLines; i++) {
       final y = chartH * i / gridLines;
-      canvas.drawLine(
-          Offset(leftPad, y), Offset(size.width, y), gridPaint);
+      canvas.drawLine(Offset(leftPad, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
         text: TextSpan(
           text: '${(maxY * (1 - i / gridLines)).round()}',
@@ -1553,25 +1680,21 @@ class _AreaChartPainter extends CustomPainter {
 
     final n = values.length;
     final pts = List.generate(n, (i) {
-      final x = n == 1
-          ? leftPad + chartW / 2
-          : leftPad + chartW * i / (n - 1);
+      final x = n == 1 ? leftPad + chartW / 2 : leftPad + chartW * i / (n - 1);
       final y = chartH * (1 - (values[i] / maxY).clamp(0.0, 1.0));
       return Offset(x, y);
     });
 
     if (pts.length == 1) {
-      canvas.drawCircle(
-        pts.first,
-        6,
-        Paint()..color = color,
-      );
+      canvas.drawCircle(pts.first, 6, Paint()..color = color);
     } else {
       final linePath = _smoothPath(pts);
       final pathMetrics = linePath.computeMetrics().toList();
       if (pathMetrics.isEmpty) return;
-      final animatedLine = pathMetrics.first
-          .extractPath(0, pathMetrics.first.length * progress);
+      final animatedLine = pathMetrics.first.extractPath(
+        0,
+        pathMetrics.first.length * progress,
+      );
 
       final fillPath = Path.from(animatedLine)
         ..lineTo(pts.last.dx, chartH)
@@ -1580,11 +1703,10 @@ class _AreaChartPainter extends CustomPainter {
       canvas.drawPath(
         fillPath,
         Paint()
-          ..shader = ui.Gradient.linear(
-            Offset.zero,
-            Offset(0, chartH),
-            [color.withValues(alpha: 0.28), color.withValues(alpha: 0.0)],
-          )
+          ..shader = ui.Gradient.linear(Offset.zero, Offset(0, chartH), [
+            color.withValues(alpha: 0.28),
+            color.withValues(alpha: 0.0),
+          ])
           ..style = PaintingStyle.fill,
       );
 
@@ -1601,16 +1723,14 @@ class _AreaChartPainter extends CustomPainter {
 
     // X-axis labels — skip empty strings (used for month view non-Monday points)
     if (labels.length == n) {
-      final labelStyle =
-          TextStyle(fontSize: 10, color: Colors.grey.shade500);
+      final labelStyle = TextStyle(fontSize: 10, color: Colors.grey.shade500);
       for (int i = 0; i < n; i++) {
         if (labels[i].isEmpty) continue;
         final tp = TextPainter(
           text: TextSpan(text: labels[i], style: labelStyle),
           textDirection: TextDirection.ltr,
         )..layout();
-        tp.paint(canvas,
-            Offset(pts[i].dx - tp.width / 2, chartH + 6));
+        tp.paint(canvas, Offset(pts[i].dx - tp.width / 2, chartH + 6));
       }
     }
 
@@ -1659,8 +1779,10 @@ class _AreaChartPainter extends CustomPainter {
     const horizontalPadding = 9.0;
     const tooltipHeight = 26.0;
     final tooltipWidth = painter.width + horizontalPadding * 2;
-    final left = (point.dx - tooltipWidth / 2)
-        .clamp(leftPad, size.width - tooltipWidth);
+    final left = (point.dx - tooltipWidth / 2).clamp(
+      leftPad,
+      size.width - tooltipWidth,
+    );
     final top = (point.dy - 34).clamp(2.0, chartH - tooltipHeight);
     final rect = RRect.fromRectAndRadius(
       Rect.fromLTWH(left, top, tooltipWidth, tooltipHeight),
@@ -1682,12 +1804,16 @@ class _AreaChartPainter extends CustomPainter {
     }
     final path = Path()..moveTo(pts[0].dx, pts[0].dy);
     for (int i = 0; i < pts.length - 1; i++) {
-      final cp1 =
-          Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i].dy);
-      final cp2 =
-          Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i + 1].dy);
+      final cp1 = Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i].dy);
+      final cp2 = Offset((pts[i].dx + pts[i + 1].dx) / 2, pts[i + 1].dy);
       path.cubicTo(
-          cp1.dx, cp1.dy, cp2.dx, cp2.dy, pts[i + 1].dx, pts[i + 1].dy);
+        cp1.dx,
+        cp1.dy,
+        cp2.dx,
+        cp2.dy,
+        pts[i + 1].dx,
+        pts[i + 1].dy,
+      );
     }
     return path;
   }
