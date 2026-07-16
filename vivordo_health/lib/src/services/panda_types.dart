@@ -70,6 +70,29 @@ enum PandaIntent {
   recommend,
   chitchat,
   skip,
+  calendarAction,
+}
+
+enum PandaCalendarOperation { create, update, delete }
+
+/// A proposed calendar mutation. The UI must obtain explicit confirmation
+/// before passing this to CalendarService.
+class PandaCalendarAction {
+  const PandaCalendarAction({
+    required this.operation,
+    this.title,
+    this.targetTitle,
+    this.start,
+    this.end,
+    this.recurrence = 'none',
+  });
+
+  final PandaCalendarOperation operation;
+  final String? title;
+  final String? targetTitle;
+  final DateTime? start;
+  final DateTime? end;
+  final String recurrence;
 }
 
 /// Full structured reply from a single dialogue turn.
@@ -81,6 +104,7 @@ class PandaTurnReply {
     this.injectedQuestion,
     this.filledSlots,
     this.recHint,
+    this.calendarAction,
   });
 
   final PandaIntent intent;
@@ -99,4 +123,7 @@ class PandaTurnReply {
 
   /// When intent == recommend: comma-separated keywords for the rec engine.
   final String? recHint;
+
+  /// Present only when [intent] is [PandaIntent.calendarAction].
+  final PandaCalendarAction? calendarAction;
 }

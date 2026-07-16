@@ -6,7 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'ai_service.dart';
 import 'gemini_service.dart';
 
-export 'ai_service.dart' show kMaxInputTokens, kMaxOutputTokensChat, kMaxOutputTokensSpike;
+export 'ai_service.dart'
+    show kMaxInputTokens, kMaxOutputTokensChat, kMaxOutputTokensSpike;
 
 // =============================================================================
 // ClaudeService
@@ -24,8 +25,7 @@ export 'ai_service.dart' show kMaxInputTokens, kMaxOutputTokensChat, kMaxOutputT
 // =============================================================================
 
 class ClaudeService implements AIService {
-  static final _fn =
-      FirebaseFunctions.instance.httpsCallable('pandaClaude');
+  static final _fn = FirebaseFunctions.instance.httpsCallable('pandaClaude');
 
   // Appended to GeminiService.spikeSystemPrompt for Claude calls.
   // Together they must exceed 1,024 tokens so Anthropic caches the prefix.
@@ -185,7 +185,9 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '    "social_context": string,\n'
       '    "other": string\n'
       '  },\n'
-      '  "rec_hint": string\n'
+      '  "rec_hint": string,\n'
+      '  "calendar_action": {"operation": string, "title": string, '
+      '"target_title": string, "start": string, "end": string, "recurrence": string}\n'
       '}\n'
       '\n'
       'INTENT VALUES — choose exactly one:\n'
@@ -208,6 +210,10 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '                        the recommendation cards.\n'
       '"chitchat"            — General chat not requiring structured slot capture.\n'
       '"skip"                — User explicitly declines to engage on a topic.\n'
+      '"calendar_action"     — User asks to create, update, or delete a Google Calendar event.\n'
+      '                        Fill calendar_action; use local ISO-8601 start/end. title is the\n'
+      '                        new title and target_title identifies an existing event. Never\n'
+      '                        guess missing title/date/time; ask a chitchat clarification.\n'
       '\n'
       'TONE PRINCIPLES\n'
       '• Warm peer, never clinical. Say "may be related to" — never diagnose.\n'
@@ -307,16 +313,18 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '"location":"","time_context":"","coping_strategy":"","sleep_quality":"poor",'
       '"social_context":"","other":""},"rec_hint":""}';
 
-  static String _buildAppleHealthContext(List<Map<String, dynamic>> spikeContext) {
+  static String _buildAppleHealthContext(
+    List<Map<String, dynamic>> spikeContext,
+  ) {
     final trimmed = GeminiService.trimSpikeContext(spikeContext);
     return 'APPLE HEALTH CONTEXT\n${jsonEncode(trimmed)}';
   }
 
   static Map<String, dynamic> _cacheBlock(String text) => {
-        'type': 'text',
-        'text': text,
-        'cache_control': {'type': 'ephemeral'},
-      };
+    'type': 'text',
+    'text': text,
+    'cache_control': {'type': 'ephemeral'},
+  };
 
   // ---------------------------------------------------------------------------
   // analyzePandaSession
@@ -366,13 +374,15 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
   }) async {
     if (userId == null || userId.isEmpty) {
       return PandaSessionBootstrap(
-          session: GeminiService.emptyStateSession(userName ?? 'there'));
+        session: GeminiService.emptyStateSession(userName ?? 'there'),
+      );
     }
 
     final payload = await GeminiService.fetchRealUserPayload(userId);
     if (payload == null) {
       return PandaSessionBootstrap(
-          session: GeminiService.emptyStateSession(userName ?? 'there'));
+        session: GeminiService.emptyStateSession(userName ?? 'there'),
+      );
     }
 
     final compact = GeminiService.buildCompactPayload(payload, topK: 1);
@@ -389,8 +399,11 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
 
     // Opener NOW; the labeling questions stream in behind it.
     return PandaSessionBootstrap(
-      session: GeminiService.bootstrapSession(payload,
-          overrideName: userName, hasSpikes: true),
+      session: GeminiService.bootstrapSession(
+        payload,
+        overrideName: userName,
+        hasSpikes: true,
+      ),
       spikeAnalysis: _runSpikeAnalysis(
         userId: userId,
         payload: payload,
@@ -415,8 +428,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
         DateTime.now().millisecondsSinceEpoch % 100000;
 
     final userPrompt = GeminiService.buildSpikeUserPrompt(compact);
-    final systemPrompt =
-        '${GeminiService.spikeSystemPrompt}$_spikeJsonSuffix';
+    final systemPrompt = '${GeminiService.spikeSystemPrompt}$_spikeJsonSuffix';
 
     final result = await _fn.call<dynamic>({
       'system': [_cacheBlock(systemPrompt)],
@@ -430,18 +442,27 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     final usage = (result.data as Map?)?['usage'] as Map?;
     if (kDebugMode) {
       debugPrint('[Claude][spike] response length: ${raw.length} chars');
-      debugPrint('[Claude][spike] usage — input: ${usage?['input_tokens'] ?? 0}, '
-          'output: ${usage?['output_tokens'] ?? 0}, '
-          'cache_create: ${usage?['cache_creation_input_tokens'] ?? 0}, '
-          'cache_read: ${usage?['cache_read_input_tokens'] ?? 0}');
+      debugPrint(
+        '[Claude][spike] usage — input: ${usage?['input_tokens'] ?? 0}, '
+        'output: ${usage?['output_tokens'] ?? 0}, '
+        'cache_create: ${usage?['cache_creation_input_tokens'] ?? 0}, '
+        'cache_read: ${usage?['cache_read_input_tokens'] ?? 0}',
+      );
     }
 
-    final session = GeminiService.parsePandaSession(raw, payload,
-        overrideName: userName);
+    final session = GeminiService.parsePandaSession(
+      raw,
+      payload,
+      overrideName: userName,
+    );
     // Record the surfaced spike's day so Panda doesn't re-ask about it.
     if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
-      unawaited(GeminiService.markSpikeDaysAnalyzed(
-          userId, GeminiService.spikeDaysFromCompact(compact)));
+      unawaited(
+        GeminiService.markSpikeDaysAnalyzed(
+          userId,
+          GeminiService.spikeDaysFromCompact(compact),
+        ),
+      );
     }
     return session;
   }
@@ -469,8 +490,10 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     // returned a canned "we've covered a lot of ground — let's wrap up" reply,
     // which ended the chat before the user was finished. Panda now always
     // answers, so the conversation reaches its own natural conclusion.
-    final fitted =
-        GeminiService.fitConversation(conversationHistory, userMessage);
+    final fitted = GeminiService.fitConversation(
+      conversationHistory,
+      userMessage,
+    );
     final cappedHistory = fitted.history;
     final effectiveMessage = fitted.message;
 
@@ -530,10 +553,12 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     final usage = (result.data as Map?)?['usage'] as Map?;
     if (kDebugMode) {
       debugPrint('[Claude][dialogue] response length: ${raw.length} chars');
-      debugPrint('[Claude][dialogue] usage — input: ${usage?['input_tokens'] ?? 0}, '
-          'output: ${usage?['output_tokens'] ?? 0}, '
-          'cache_create: ${usage?['cache_creation_input_tokens'] ?? 0}, '
-          'cache_read: ${usage?['cache_read_input_tokens'] ?? 0}');
+      debugPrint(
+        '[Claude][dialogue] usage — input: ${usage?['input_tokens'] ?? 0}, '
+        'output: ${usage?['output_tokens'] ?? 0}, '
+        'cache_create: ${usage?['cache_creation_input_tokens'] ?? 0}, '
+        'cache_read: ${usage?['cache_read_input_tokens'] ?? 0}',
+      );
     }
 
     return GeminiService.parseTurnReply(raw);
@@ -562,7 +587,8 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       );
 
       final estimated = GeminiService.estimateTokens(
-          GeminiService.summarySystemPrompt + userPrompt);
+        GeminiService.summarySystemPrompt + userPrompt,
+      );
       if (estimated > kMaxInputTokens) return '';
 
       final result = await _fn.call<dynamic>({
@@ -578,9 +604,11 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       final raw = (result.data as Map?)?['text']?.toString() ?? '';
       if (kDebugMode) {
         final usage = (result.data as Map?)?['usage'] as Map?;
-        debugPrint('[Claude][summary] length: ${raw.length} chars, '
-            'input: ${usage?['input_tokens'] ?? 0}, '
-            'output: ${usage?['output_tokens'] ?? 0}');
+        debugPrint(
+          '[Claude][summary] length: ${raw.length} chars, '
+          'input: ${usage?['input_tokens'] ?? 0}, '
+          'output: ${usage?['output_tokens'] ?? 0}',
+        );
       }
       return raw.trim();
     } catch (e) {

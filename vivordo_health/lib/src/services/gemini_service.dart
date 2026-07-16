@@ -54,35 +54,35 @@ export 'panda_types.dart';
 
 class GeminiService implements AIService {
   GeminiService()
-      : _spikeModel = FirebaseAI.googleAI().generativeModel(
-          model: 'gemini-2.5-flash',
-          generationConfig: GenerationConfig(
-            responseMimeType: 'application/json',
-            responseSchema: _spikeSchema,
-            candidateCount: 1,
-            temperature: 0,
-            maxOutputTokens: kMaxOutputTokensSpike,
-          ),
+    : _spikeModel = FirebaseAI.googleAI().generativeModel(
+        model: 'gemini-2.5-flash',
+        generationConfig: GenerationConfig(
+          responseMimeType: 'application/json',
+          responseSchema: _spikeSchema,
+          candidateCount: 1,
+          temperature: 0,
+          maxOutputTokens: kMaxOutputTokensSpike,
         ),
-        _dialogueModel = FirebaseAI.googleAI().generativeModel(
-          model: 'gemini-2.5-flash',
-          generationConfig: GenerationConfig(
-            responseMimeType: 'application/json',
-            responseSchema: _turnSchema,
-            candidateCount: 1,
-            temperature: 0.5,
-            maxOutputTokens: kMaxOutputTokensChat,
-          ),
+      ),
+      _dialogueModel = FirebaseAI.googleAI().generativeModel(
+        model: 'gemini-2.5-flash',
+        generationConfig: GenerationConfig(
+          responseMimeType: 'application/json',
+          responseSchema: _turnSchema,
+          candidateCount: 1,
+          temperature: 0.5,
+          maxOutputTokens: kMaxOutputTokensChat,
         ),
-        // Plain-text model (no JSON schema) for the end-of-session recap.
-        _summaryModel = FirebaseAI.googleAI().generativeModel(
-          model: 'gemini-2.5-flash',
-          generationConfig: GenerationConfig(
-            candidateCount: 1,
-            temperature: 0.3,
-            maxOutputTokens: kMaxOutputTokensSummary,
-          ),
-        );
+      ),
+      // Plain-text model (no JSON schema) for the end-of-session recap.
+      _summaryModel = FirebaseAI.googleAI().generativeModel(
+        model: 'gemini-2.5-flash',
+        generationConfig: GenerationConfig(
+          candidateCount: 1,
+          temperature: 0.3,
+          maxOutputTokens: kMaxOutputTokensSummary,
+        ),
+      );
 
   final GenerativeModel _spikeModel;
   final GenerativeModel _dialogueModel;
@@ -128,57 +128,99 @@ RULES:
   static final Schema _spikeSchema = Schema(
     SchemaType.object,
     properties: {
-      "summary": Schema(SchemaType.object, properties: {
-        "data_window_start": Schema(SchemaType.string),
-        "data_window_end": Schema(SchemaType.string),
-        "overall_notes": Schema(SchemaType.string),
-      }),
-      "spikes": Schema(SchemaType.array,
-          items: Schema(SchemaType.object, properties: {
+      "summary": Schema(
+        SchemaType.object,
+        properties: {
+          "data_window_start": Schema(SchemaType.string),
+          "data_window_end": Schema(SchemaType.string),
+          "overall_notes": Schema(SchemaType.string),
+        },
+      ),
+      "spikes": Schema(
+        SchemaType.array,
+        items: Schema(
+          SchemaType.object,
+          properties: {
             "spike_id": Schema(SchemaType.string),
             "start": Schema(SchemaType.string),
             "end": Schema(SchemaType.string),
-            "signals": Schema(SchemaType.object, properties: {
-              "heart_rate": Schema(SchemaType.object, properties: {
-                "baseline": Schema(SchemaType.number),
-                "peak": Schema(SchemaType.number),
-              }),
-              "hrv": Schema(SchemaType.object, properties: {
-                "baseline": Schema(SchemaType.number),
-                "min": Schema(SchemaType.number),
-              }),
-              "steps": Schema(SchemaType.object, properties: {
-                "peak_window": Schema(SchemaType.number),
-              }),
-            }),
-            "context": Schema(SchemaType.object, properties: {
-              "nearby_events": Schema(SchemaType.array,
-                  items: Schema(SchemaType.object, properties: {
-                    "time": Schema(SchemaType.string),
-                    "type": Schema(SchemaType.string),
-                    "detail": Schema(SchemaType.string),
-                  })),
-              "confidence": Schema(SchemaType.number),
-            }),
-            "hypotheses": Schema(SchemaType.array,
-                items: Schema(SchemaType.object, properties: {
+            "signals": Schema(
+              SchemaType.object,
+              properties: {
+                "heart_rate": Schema(
+                  SchemaType.object,
+                  properties: {
+                    "baseline": Schema(SchemaType.number),
+                    "peak": Schema(SchemaType.number),
+                  },
+                ),
+                "hrv": Schema(
+                  SchemaType.object,
+                  properties: {
+                    "baseline": Schema(SchemaType.number),
+                    "min": Schema(SchemaType.number),
+                  },
+                ),
+                "steps": Schema(
+                  SchemaType.object,
+                  properties: {"peak_window": Schema(SchemaType.number)},
+                ),
+              },
+            ),
+            "context": Schema(
+              SchemaType.object,
+              properties: {
+                "nearby_events": Schema(
+                  SchemaType.array,
+                  items: Schema(
+                    SchemaType.object,
+                    properties: {
+                      "time": Schema(SchemaType.string),
+                      "type": Schema(SchemaType.string),
+                      "detail": Schema(SchemaType.string),
+                    },
+                  ),
+                ),
+                "confidence": Schema(SchemaType.number),
+              },
+            ),
+            "hypotheses": Schema(
+              SchemaType.array,
+              items: Schema(
+                SchemaType.object,
+                properties: {
                   "label": Schema(SchemaType.string),
                   "reason": Schema(SchemaType.string),
                   "confidence": Schema(SchemaType.number),
-                })),
-            "questions": Schema(SchemaType.array,
-                items: Schema(SchemaType.object, properties: {
+                },
+              ),
+            ),
+            "questions": Schema(
+              SchemaType.array,
+              items: Schema(
+                SchemaType.object,
+                properties: {
                   "question_id": Schema(SchemaType.string),
                   "prompt": Schema(SchemaType.string),
                   "type": Schema(SchemaType.string),
-                  "options": Schema(SchemaType.array,
-                      items: Schema(SchemaType.string)),
-                  "depth_prompts": Schema(SchemaType.array,
-                      items: Schema(SchemaType.string)),
-                })),
-            "ml_labels_to_collect":
-                Schema(SchemaType.array, items: Schema(SchemaType.string)),
-          })),
+                  "options": Schema(
+                    SchemaType.array,
+                    items: Schema(SchemaType.string),
+                  ),
+                  "depth_prompts": Schema(
+                    SchemaType.array,
+                    items: Schema(SchemaType.string),
+                  ),
+                },
+              ),
+            ),
+            "ml_labels_to_collect": Schema(
+              SchemaType.array,
+              items: Schema(SchemaType.string),
+            ),
+          },
+        ),
+      ),
     },
   );
 
@@ -192,25 +234,42 @@ RULES:
       "intent": Schema(SchemaType.string),
       "message": Schema(SchemaType.string),
       "depth_follow_up": Schema(SchemaType.string),
-      "injected_question": Schema(SchemaType.object, properties: {
-        "question_id": Schema(SchemaType.string),
-        "prompt": Schema(SchemaType.string),
-        "options": Schema(SchemaType.array, items: Schema(SchemaType.string)),
-      }),
-      "filled_slots": Schema(SchemaType.object, properties: {
-        "stressor": Schema(SchemaType.string),
-        "emotion": Schema(SchemaType.string),
-        "intensity": Schema(SchemaType.string),
-        "physical_symptom": Schema(SchemaType.string),
-        "activity": Schema(SchemaType.string),
-        "location": Schema(SchemaType.string),
-        "time_context": Schema(SchemaType.string),
-        "coping_strategy": Schema(SchemaType.string),
-        "sleep_quality": Schema(SchemaType.string),
-        "social_context": Schema(SchemaType.string),
-        "other": Schema(SchemaType.string),
-      }),
+      "injected_question": Schema(
+        SchemaType.object,
+        properties: {
+          "question_id": Schema(SchemaType.string),
+          "prompt": Schema(SchemaType.string),
+          "options": Schema(SchemaType.array, items: Schema(SchemaType.string)),
+        },
+      ),
+      "filled_slots": Schema(
+        SchemaType.object,
+        properties: {
+          "stressor": Schema(SchemaType.string),
+          "emotion": Schema(SchemaType.string),
+          "intensity": Schema(SchemaType.string),
+          "physical_symptom": Schema(SchemaType.string),
+          "activity": Schema(SchemaType.string),
+          "location": Schema(SchemaType.string),
+          "time_context": Schema(SchemaType.string),
+          "coping_strategy": Schema(SchemaType.string),
+          "sleep_quality": Schema(SchemaType.string),
+          "social_context": Schema(SchemaType.string),
+          "other": Schema(SchemaType.string),
+        },
+      ),
       "rec_hint": Schema(SchemaType.string),
+      "calendar_action": Schema(
+        SchemaType.object,
+        properties: {
+          "operation": Schema(SchemaType.string),
+          "title": Schema(SchemaType.string),
+          "target_title": Schema(SchemaType.string),
+          "start": Schema(SchemaType.string),
+          "end": Schema(SchemaType.string),
+          "recurrence": Schema(SchemaType.string),
+        },
+      ),
     },
   );
 
@@ -236,7 +295,9 @@ RULES:
     final estimated = estimateTokens(spikeSystemPrompt + userPrompt);
     if (estimated > kMaxInputTokens) {
       if (kDebugMode) {
-        debugPrint('[Gemini][spike] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
+        debugPrint(
+          '[Gemini][spike] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)',
+        );
       }
       return '';
     }
@@ -247,8 +308,10 @@ RULES:
     ]);
     if (kDebugMode) {
       final usage = response.usageMetadata;
-      debugPrint('[Gemini][spike] tokens — in: ${usage?.promptTokenCount}, '
-          'out: ${usage?.candidatesTokenCount}');
+      debugPrint(
+        '[Gemini][spike] tokens — in: ${usage?.promptTokenCount}, '
+        'out: ${usage?.candidatesTokenCount}',
+      );
     }
     return response.text ?? '';
   }
@@ -281,7 +344,9 @@ RULES:
       }
 
       final raw = await analyzeStressSpikes(
-          data: compact, extraUserContext: extraUserContext);
+        data: compact,
+        extraUserContext: extraUserContext,
+      );
       final session = parsePandaSession(raw, payload, overrideName: userName);
       // Record the surfaced spike's day so it isn't analyzed again.
       if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
@@ -302,13 +367,15 @@ RULES:
   }) async {
     if (userId == null || userId.isEmpty) {
       return PandaSessionBootstrap(
-          session: emptyStateSession(userName ?? 'there'));
+        session: emptyStateSession(userName ?? 'there'),
+      );
     }
 
     final payload = await fetchRealUserPayload(userId);
     if (payload == null) {
       return PandaSessionBootstrap(
-          session: emptyStateSession(userName ?? 'there'));
+        session: emptyStateSession(userName ?? 'there'),
+      );
     }
 
     final compact = buildCompactPayload(payload, topK: 1);
@@ -316,13 +383,16 @@ RULES:
     // Nothing to analyze → no LLM call at all; the chat is already final.
     if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
       return PandaSessionBootstrap(
-          session: noSpikesSession(payload, overrideName: userName));
+        session: noSpikesSession(payload, overrideName: userName),
+      );
     }
 
     // Opener NOW; the labeling questions stream in behind it.
     final analysis = Future(() async {
       final raw = await analyzeStressSpikes(
-          data: compact, extraUserContext: extraUserContext);
+        data: compact,
+        extraUserContext: extraUserContext,
+      );
       final session = parsePandaSession(raw, payload, overrideName: userName);
       if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
         unawaited(markSpikeDaysAnalyzed(userId, spikeDaysFromCompact(compact)));
@@ -331,7 +401,11 @@ RULES:
     });
 
     return PandaSessionBootstrap(
-      session: bootstrapSession(payload, overrideName: userName, hasSpikes: true),
+      session: bootstrapSession(
+        payload,
+        overrideName: userName,
+        hasSpikes: true,
+      ),
       spikeAnalysis: analysis,
     );
   }
@@ -374,12 +448,15 @@ RULES:
       insightsContext: insightsContext,
     );
 
-    final response =
-        await _dialogueModel.generateContent([Content.text(prompt)]);
+    final response = await _dialogueModel.generateContent([
+      Content.text(prompt),
+    ]);
     if (kDebugMode) {
       final usage = response.usageMetadata;
-      debugPrint('[Gemini][dialogue] tokens — in: ${usage?.promptTokenCount}, '
-          'out: ${usage?.candidatesTokenCount}');
+      debugPrint(
+        '[Gemini][dialogue] tokens — in: ${usage?.promptTokenCount}, '
+        'out: ${usage?.candidatesTokenCount}',
+      );
     }
     return parseTurnReply(response.text ?? '');
   }
@@ -409,8 +486,10 @@ RULES:
       ]);
       if (kDebugMode) {
         final usage = response.usageMetadata;
-        debugPrint('[Gemini][summary] tokens — in: ${usage?.promptTokenCount}, '
-            'out: ${usage?.candidatesTokenCount}');
+        debugPrint(
+          '[Gemini][summary] tokens — in: ${usage?.promptTokenCount}, '
+          'out: ${usage?.candidatesTokenCount}',
+        );
       }
       return (response.text ?? '').trim();
     } catch (e) {
@@ -440,7 +519,8 @@ RULES:
   // =========================================================================
 
   static Future<Map<String, dynamic>?> fetchRealUserPayload(
-      String userId) async {
+    String userId,
+  ) async {
     final db = FirebaseFirestore.instance;
     final now = DateTime.now();
     final userRef = db.collection('users').doc(userId);
@@ -451,7 +531,9 @@ RULES:
     // MetricsService._addMetric, HealthService._writeDataPoints and
     // ScanScreen._saveToFirestore.
     final dateStrings = List.generate(
-        7, (i) => _fmtDate(now.subtract(Duration(days: i))));
+      7,
+      (i) => _fmtDate(now.subtract(Duration(days: i))),
+    );
 
     // Fire all Firestore reads concurrently before any await
     final metricFutures = dateStrings
@@ -462,9 +544,9 @@ RULES:
     // Recurring patterns from past Panda sessions (top-level `insights`).
     // Degrade gracefully if the query fails (e.g. missing composite index) so a
     // first-time user with no insight history never blocks session init.
-    final insightsFuture = InsightService(firestore: db)
-        .aggregateSummary(userId)
-        .catchError((Object _) => <String, dynamic>{});
+    final insightsFuture = InsightService(
+      firestore: db,
+    ).aggregateSummary(userId).catchError((Object _) => <String, dynamic>{});
     // NOTE: Google Calendar is deliberately NOT fetched here. It needs auth +
     // an enumeration of every calendar + a fetch per calendar, which can take
     // seconds — and it sat on the session-init critical path. It is now loaded
@@ -488,7 +570,8 @@ RULES:
         ? Set<String>.from(
             (userSnap.data()?['analyzed_spike_days'] as List?)
                     ?.whereType<String>() ??
-                const <String>[])
+                const <String>[],
+          )
         : <String>{};
 
     // Build daily data map: dateStr → {field → value} from the single day doc
@@ -503,9 +586,11 @@ RULES:
 
     // HR baseline: 7-day average, preferring resting_heart_rate over heart_rate.
     final hrValues = dailyData.values
-        .map((d) =>
-            (d['resting_heart_rate']?['avg'] as num?)?.toDouble() ??
-            (d['heart_rate']?['avg'] as num?)?.toDouble())
+        .map(
+          (d) =>
+              (d['resting_heart_rate']?['avg'] as num?)?.toDouble() ??
+              (d['heart_rate']?['avg'] as num?)?.toDouble(),
+        )
         .whereType<double>()
         .toList();
     final baselineHr = hrValues.isEmpty
@@ -520,8 +605,7 @@ RULES:
         ? 52.0
         : hrvValues.reduce((a, b) => a + b) / hrvValues.length;
 
-    final sortedDates = dailyData.keys.toList()
-      ..sort((a, b) => b.compareTo(a));
+    final sortedDates = dailyData.keys.toList()..sort((a, b) => b.compareTo(a));
     final latestDate = sortedDates.first;
     final latestData = dailyData[latestDate]!;
 
@@ -530,37 +614,39 @@ RULES:
     final sleepQuality = todaySleepHrs >= 8
         ? 80.0
         : todaySleepHrs >= 7
-            ? 65.0
-            : todaySleepHrs >= 6
-                ? 45.0
-                : todaySleepHrs > 0
-                    ? 25.0
-                    : 0.0;
+        ? 65.0
+        : todaySleepHrs >= 6
+        ? 45.0
+        : todaySleepHrs > 0
+        ? 25.0
+        : 0.0;
 
     final samplesChronological = sortedDates.reversed
         .where((dateStr) => !excludedSpikeDays.contains(dateStr))
         .map((dateStr) {
-      final d = dailyData[dateStr]!;
-      final hrMax = (d['heart_rate']?['max'] as num?)?.toDouble() ??
-          (d['heart_rate']?['avg'] as num?)?.toDouble() ??
-          baselineHr;
-      final hrv = (d['hrv']?['avg'] as num?)?.toDouble() ?? baselineHrv;
-      final steps = (d['steps']?['sum'] as num?)?.toDouble() ?? 0.0;
-      final stress = (d['stress']?['avg'] as num?)?.toInt();
-      return <String, dynamic>{
-        't': '${dateStr}T12:00:00',
-        'hr': hrMax.round(),
-        'hrv': hrv.round(),
-        'steps': steps.round(),
-        'activity': steps > 8000
-            ? 'active'
-            : steps > 3000
+          final d = dailyData[dateStr]!;
+          final hrMax =
+              (d['heart_rate']?['max'] as num?)?.toDouble() ??
+              (d['heart_rate']?['avg'] as num?)?.toDouble() ??
+              baselineHr;
+          final hrv = (d['hrv']?['avg'] as num?)?.toDouble() ?? baselineHrv;
+          final steps = (d['steps']?['sum'] as num?)?.toDouble() ?? 0.0;
+          final stress = (d['stress']?['avg'] as num?)?.toInt();
+          return <String, dynamic>{
+            't': '${dateStr}T12:00:00',
+            'hr': hrMax.round(),
+            'hrv': hrv.round(),
+            'steps': steps.round(),
+            'activity': steps > 8000
+                ? 'active'
+                : steps > 3000
                 ? 'light'
                 : 'sedentary',
-        'stress': ?stress,
-        'tag': '',
-      };
-    }).toList();
+            'stress': ?stress,
+            'tag': '',
+          };
+        })
+        .toList();
 
     final windowStart = DateTime.parse('${sortedDates.last}T00:00:00');
     final windowEnd = DateTime.parse('${latestDate}T23:59:59');
@@ -568,9 +654,7 @@ RULES:
     // Compact user setup from preferences + questionnaire (scalar values only,
     // max 10 fields) — keeps token overhead under ~100 tokens.
     final userSetup = <String, dynamic>{};
-    const metaKeys = {
-      'createdAt', 'updatedAt', 'userId', 'id', 'timestamp',
-    };
+    const metaKeys = {'createdAt', 'updatedAt', 'userId', 'id', 'timestamp'};
     for (final doc in [...prefSnap.docs, ...questSnap.docs]) {
       for (final entry in doc.data().entries) {
         if (userSetup.length >= 10) break;
@@ -596,8 +680,10 @@ RULES:
         insightsSummary['typical_intensity'] = intensity;
       }
       final recentSummaries =
-          (insightsAgg['recent_summaries'] as List?)?.whereType<String>().toList() ??
-              const [];
+          (insightsAgg['recent_summaries'] as List?)
+              ?.whereType<String>()
+              .toList() ??
+          const [];
       if (recentSummaries.isNotEmpty) {
         insightsSummary['recent_sessions'] = recentSummaries;
       }
@@ -630,10 +716,7 @@ RULES:
           'total_hours': todaySleepHrs,
           'sleep_quality': sleepQuality,
         },
-      'user_meta': {
-        'userId': userId,
-        'hrv': baselineHrv,
-      },
+      'user_meta': {'userId': userId, 'hrv': baselineHrv},
     };
   }
 
@@ -663,9 +746,9 @@ RULES:
       final now = DateTime.now();
       final dayStart = DateTime(now.year, now.month, now.day);
       final events = await CalendarService.getEventsBetween(
-              dayStart, dayStart.add(const Duration(days: 8)))
-          .timeout(const Duration(seconds: 12),
-              onTimeout: () => <gcal.Event>[]);
+        dayStart,
+        dayStart.add(const Duration(days: 8)),
+      ).timeout(const Duration(seconds: 12), onTimeout: () => <gcal.Event>[]);
       final digest = _buildScheduleDigest(events, dayStart);
       return digest.isEmpty ? null : digest;
     } catch (e) {
@@ -688,9 +771,9 @@ RULES:
     final userName = overrideName?.isNotEmpty == true
         ? overrideName!
         : (meta?['userId'] as String? ?? 'there')
-            .replaceAll(RegExp(r'[_\-]'), ' ')
-            .split(' ')
-            .first;
+              .replaceAll(RegExp(r'[_\-]'), ' ')
+              .split(' ')
+              .first;
 
     final sleepSummary = payload['sleep_summary'] as Map?;
     final sleepHours =
@@ -720,8 +803,7 @@ RULES:
   static PandaSessionData noSpikesSession(
     Map<String, dynamic> payload, {
     String? overrideName,
-  }) =>
-      bootstrapSession(payload, overrideName: overrideName, hasSpikes: false);
+  }) => bootstrapSession(payload, overrideName: overrideName, hasSpikes: false);
 
   /// Rough token estimate: 1 token ≈ 4 chars for English text.
   /// Intentionally conservative (over-counts) — the safe direction for budget checks.
@@ -782,7 +864,9 @@ RULES:
 
   /// Records [days] as analyzed on the user doc so their spikes aren't re-asked.
   static Future<void> markSpikeDaysAnalyzed(
-      String userId, List<String> days) async {
+    String userId,
+    List<String> days,
+  ) async {
     if (days.isEmpty) return;
     try {
       await FirebaseFirestore.instance.collection('users').doc(userId).set({
@@ -798,13 +882,21 @@ RULES:
       '${d.year}-${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
-  static const _weekdayAbbr = [
-    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
-  ];
+  static const _weekdayAbbr = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   static const _monthAbbr = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   /// Human day label for a spike (e.g. "Wed, Jun 17"). Health metrics are daily
@@ -845,7 +937,9 @@ RULES:
   /// Each day is listed so free days are explicit. Returns '' when there are
   /// no timed events in the window (nothing useful to plan around).
   static String _buildScheduleDigest(
-      List<gcal.Event> events, DateTime dayStart) {
+    List<gcal.Event> events,
+    DateTime dayStart,
+  ) {
     final windowEnd = dayStart.add(const Duration(days: 7));
 
     // Group timed events by local calendar day.
@@ -859,16 +953,18 @@ RULES:
         continue;
       }
       final dayKey = _fmtDate(localStart);
-      final startHm = '${localStart.hour.toString().padLeft(2, '0')}:'
+      final startHm =
+          '${localStart.hour.toString().padLeft(2, '0')}:'
           '${localStart.minute.toString().padLeft(2, '0')}';
       final endLocal = e.end?.dateTime?.toLocal();
       final endHm = endLocal == null
           ? ''
           : '–${endLocal.hour.toString().padLeft(2, '0')}:'
-              '${endLocal.minute.toString().padLeft(2, '0')}';
+                '${endLocal.minute.toString().padLeft(2, '0')}';
       final title = (e.summary ?? 'event').trim();
-      (byDay[dayKey] ??= [])
-          .add('$startHm$endHm ${title.isEmpty ? 'event' : title}');
+      (byDay[dayKey] ??= []).add(
+        '$startHm$endHm ${title.isEmpty ? 'event' : title}',
+      );
       hasAny = true;
     }
 
@@ -880,9 +976,11 @@ RULES:
       final key = _fmtDate(day);
       final label = '${_weekdayAbbr[day.weekday - 1]} $key';
       final dayEvents = byDay[key];
-      lines.add(dayEvents == null || dayEvents.isEmpty
-          ? '$label: (no events)'
-          : '$label: ${dayEvents.join('; ')}');
+      lines.add(
+        dayEvents == null || dayEvents.isEmpty
+            ? '$label: (no events)'
+            : '$label: ${dayEvents.join('; ')}',
+      );
     }
     return lines.join('\n');
   }
@@ -924,13 +1022,16 @@ DATA: ${jsonEncode(compact)}
         ? conversation.sublist(conversation.length - 8)
         : conversation;
     final convoText = capped
-        .map((t) =>
-            "${t['role'] == 'user' ? 'User' : 'Panda'}: ${t['text'] ?? ''}")
+        .map(
+          (t) =>
+              "${t['role'] == 'user' ? 'User' : 'Panda'}: ${t['text'] ?? ''}",
+        )
         .join('\n');
 
     final slotsText = slots.isNotEmpty ? jsonEncode(slots) : 'none';
-    final answersText =
-        labeledAnswers.isNotEmpty ? jsonEncode(labeledAnswers) : 'none';
+    final answersText = labeledAnswers.isNotEmpty
+        ? jsonEncode(labeledAnswers)
+        : 'none';
 
     return '''
 EXTRACTED SLOTS: $slotsText
@@ -985,21 +1086,23 @@ Write the continuity note now.''';
         : conversationHistory;
 
     final historyText = cappedHistory
-        .map((t) =>
-            "${t['role'] == 'user' ? 'User' : 'Panda'}: ${t['text']}")
+        .map((t) => "${t['role'] == 'user' ? 'User' : 'Panda'}: ${t['text']}")
         .join('\n');
 
     final StringBuffer pathCtx = StringBuffer();
     if (isInDigression) {
       pathCtx.writeln('STATE: IN_DIGRESSION');
       pathCtx.writeln(
-          'Digression topic: "${digressionTopic ?? "unknown"}", depth: $digressionTurnCount turn(s).');
+        'Digression topic: "${digressionTopic ?? "unknown"}", depth: $digressionTurnCount turn(s).',
+      );
       pathCtx.writeln(
-          'If the user seems satisfied / wrapping up, set intent = "digression_complete".');
+        'If the user seems satisfied / wrapping up, set intent = "digression_complete".',
+      );
     } else if (isOnPredefinedPath && pendingQuestionPrompt != null) {
       pathCtx.writeln('STATE: ON_PREDEFINED_PATH');
       pathCtx.writeln(
-          'Current question (ID: $pendingQuestionId): "$pendingQuestionPrompt"');
+        'Current question (ID: $pendingQuestionId): "$pendingQuestionPrompt"',
+      );
     } else {
       pathCtx.writeln('STATE: FREE_CONVERSATION (predefined path complete)');
     }
@@ -1013,14 +1116,18 @@ Write the continuity note now.''';
         : '';
 
     final scheduleLine =
-        (embedScheduleContext && scheduleContext != null && scheduleContext.isNotEmpty)
-            ? 'SCHEDULE (next 7 days, local time):\n$scheduleContext\n\n'
-            : '';
+        (embedScheduleContext &&
+            scheduleContext != null &&
+            scheduleContext.isNotEmpty)
+        ? 'SCHEDULE (next 7 days, local time):\n$scheduleContext\n\n'
+        : '';
 
     final insightsLine =
-        (embedInsightsContext && insightsContext != null && insightsContext.isNotEmpty)
-            ? 'PAST INSIGHTS (from previous sessions):\n$insightsContext\n\n'
-            : '';
+        (embedInsightsContext &&
+            insightsContext != null &&
+            insightsContext.isNotEmpty)
+        ? 'PAST INSIGHTS (from previous sessions):\n$insightsContext\n\n'
+        : '';
 
     final personaLine = embedPersona
         ? 'You are Panda 🐼, a warm, empathetic wellness companion in Vivordo.\n\n'
@@ -1028,37 +1135,42 @@ Write the continuity note now.''';
 
     final tasksSection = embedTaskInstructions
         ? '\n\nTASKS:\n\n'
-          '1. INTENT (pick one): "answer_label" | "want_deeper_answer" | "digress" |\n'
-          '   "digression_complete" | "new_stressor" | "recommend" | "chitchat" | "skip"\n'
-          '\n'
-          '2. MESSAGE (2–4 sentences):\n'
-          '   • Never ask the next predefined question — the app handles that automatically.\n'
-          '   • Deliver advice immediately with concrete examples — never just promise it.\n'
-          '   • intent=="recommend": one warm intro sentence; the app shows the rec cards.\n'
-          '   • intent=="want_deeper_answer": include one probing follow-up question.\n'
-          '   • Digression depth ≥ 3: warmly begin wrapping up the side conversation.\n'
-          '   • Availability/planning asks ("when am I free / mentally available"):\n'
-          '     use SCHEDULE to find open windows, then weigh them against the\n'
-          '     user\'s stress/energy patterns (spikes, intensity) to suggest the\n'
-          '     best time(s). Name specific day + time range. If SCHEDULE is absent,\n'
-          '     say their calendar isn\'t connected. intent stays "chitchat".\n'
-          '   • You DO have memory of past sessions — PAST INSIGHTS holds the\n'
-          '     user\'s recurring stressors, emotions, coping, and recent recaps.\n'
-          '     Reference it when relevant; never claim you lack access to it.\n'
-          '   • Tone: warm, peer-like. Never clinical. No diagnoses; use "may be related to".\n'
-          '   • NEVER use the 💜 emoji or any heart emoji (❤️🩷💙 etc.).\n'
-          '\n'
-          '3. DEPTH_FOLLOW_UP: one open-ended probe (intent=="want_deeper_answer" only).\n'
-          '\n'
-          '4. INJECTED_QUESTION: targeted Q + 3–5 chip options + "Something else 🙋"\n'
-          '   (intent=="new_stressor" only).\n'
-          '\n'
-          '5. REC_HINT: comma-separated keywords for the rec engine\n'
-          '   (intent=="recommend" only). E.g. "music, sleep", "breathing, anxiety".\n'
-          '\n'
-          '6. FILLED_SLOTS: stressor, emotion, intensity (low/medium/high),\n'
-          '   physical_symptom, activity, location, time_context, coping_strategy,\n'
-          '   sleep_quality, social_context, other. Use "" for anything not mentioned.\n'
+              '1. INTENT (pick one): "answer_label" | "want_deeper_answer" | "digress" |\n'
+              '   "digression_complete" | "new_stressor" | "recommend" | "chitchat" | "skip" | "calendar_action"\n'
+              '\n'
+              '2. MESSAGE (2–4 sentences):\n'
+              '   • Never ask the next predefined question — the app handles that automatically.\n'
+              '   • Deliver advice immediately with concrete examples — never just promise it.\n'
+              '   • intent=="recommend": one warm intro sentence; the app shows the rec cards.\n'
+              '   • intent=="want_deeper_answer": include one probing follow-up question.\n'
+              '   • Digression depth ≥ 3: warmly begin wrapping up the side conversation.\n'
+              '   • Availability/planning asks ("when am I free / mentally available"):\n'
+              '     use SCHEDULE to find open windows, then weigh them against the\n'
+              '     user\'s stress/energy patterns (spikes, intensity) to suggest the\n'
+              '     best time(s). Name specific day + time range. If SCHEDULE is absent,\n'
+              '     say their calendar isn\'t connected. intent stays "chitchat".\n'
+              '   • Calendar mutation asks: set intent="calendar_action" and fill calendar_action.\n'
+              '     operation is create/update/delete; target_title identifies an existing event.\n'
+              '     start/end must be local ISO-8601 date-times. Resolve relative dates using the\n'
+              '     dates shown in SCHEDULE. Ask for missing required title/date/time instead of\n'
+              '     guessing. The app always asks the user to confirm before changing anything.\n'
+              '   • You DO have memory of past sessions — PAST INSIGHTS holds the\n'
+              '     user\'s recurring stressors, emotions, coping, and recent recaps.\n'
+              '     Reference it when relevant; never claim you lack access to it.\n'
+              '   • Tone: warm, peer-like. Never clinical. No diagnoses; use "may be related to".\n'
+              '   • NEVER use the 💜 emoji or any heart emoji (❤️🩷💙 etc.).\n'
+              '\n'
+              '3. DEPTH_FOLLOW_UP: one open-ended probe (intent=="want_deeper_answer" only).\n'
+              '\n'
+              '4. INJECTED_QUESTION: targeted Q + 3–5 chip options + "Something else 🙋"\n'
+              '   (intent=="new_stressor" only).\n'
+              '\n'
+              '5. REC_HINT: comma-separated keywords for the rec engine\n'
+              '   (intent=="recommend" only). E.g. "music, sleep", "breathing, anxiety".\n'
+              '\n'
+              '6. FILLED_SLOTS: stressor, emotion, intensity (low/medium/high),\n'
+              '   physical_symptom, activity, location, time_context, coping_strategy,\n'
+              '   sleep_quality, social_context, other. Use "" for anything not mentioned.\n'
         : '';
 
     return '$personaLine$pathCtx\n$spikeCtxLine$scheduleLine$insightsLine$slotsCtx\n\nCONVERSATION:\n$historyText\n\nUSER: "$userMessage"$tasksSection';
@@ -1069,8 +1181,10 @@ Write the continuity note now.''';
   // =========================================================================
 
   /// Builds the compact spike-candidate payload from raw health data.
-  static Map<String, dynamic> buildCompactPayload(Map<String, dynamic> raw,
-      {int topK = 3}) {
+  static Map<String, dynamic> buildCompactPayload(
+    Map<String, dynamic> raw, {
+    int topK = 3,
+  }) {
     final profile = raw['user_profile'] ?? {};
     final window = raw['data_window'] ?? {};
     final events = (raw['events'] as List? ?? []).cast<Map>();
@@ -1079,9 +1193,13 @@ Write the continuity note now.''';
     final baselineHrv = (profile['hrv_rmssd_typical'] ?? 52).toDouble();
 
     var spikeCandidates = _detectSpikes(samples, baselineHr, baselineHrv);
-    spikeCandidates.sort((a, b) =>
-        _severity(b, baselineHr, baselineHrv)
-            .compareTo(_severity(a, baselineHr, baselineHrv)));
+    spikeCandidates.sort(
+      (a, b) => _severity(
+        b,
+        baselineHr,
+        baselineHrv,
+      ).compareTo(_severity(a, baselineHr, baselineHrv)),
+    );
     if (spikeCandidates.length > topK) {
       spikeCandidates = spikeCandidates.sublist(0, topK);
     }
@@ -1116,8 +1234,7 @@ Write the continuity note now.''';
         'age_range': profile['age_range'] ?? 'adult',
         'resting_hr_typical': baselineHr,
         'hrv_rmssd_typical': baselineHrv,
-        if (userSetup != null && userSetup.isNotEmpty)
-          'user_setup': userSetup,
+        if (userSetup != null && userSetup.isNotEmpty) 'user_setup': userSetup,
         if (insightsSummary != null && insightsSummary.isNotEmpty)
           'insights_summary': insightsSummary,
         if (recentEvents != null && recentEvents.isNotEmpty)
@@ -1142,9 +1259,9 @@ Write the continuity note now.''';
     final userName = overrideName?.isNotEmpty == true
         ? overrideName!
         : (userMeta?['userId'] as String? ?? 'there')
-            .replaceAll(RegExp(r'[_\-]'), ' ')
-            .split(' ')
-            .first;
+              .replaceAll(RegExp(r'[_\-]'), ' ')
+              .split(' ')
+              .first;
 
     // Schedule + insights travel with the payload — surface them on every
     // return path so each dialogue turn has calendar + past-session context.
@@ -1154,16 +1271,20 @@ Write the continuity note now.''';
     final obj = _extractJson(raw);
 
     if (obj == null) {
-      return _fallbackSession(userName, 'earlier today', [],
-          scheduleContext: scheduleContext, insightsContext: insightsContext);
+      return _fallbackSession(
+        userName,
+        'earlier today',
+        [],
+        scheduleContext: scheduleContext,
+        insightsContext: insightsContext,
+      );
     }
 
-    final overallNotes =
-        (obj['summary']?['overall_notes'] as String? ?? '').trim();
+    final overallNotes = (obj['summary']?['overall_notes'] as String? ?? '')
+        .trim();
 
     final spikes = obj['spikes'] as List?;
-    final rawSpikes =
-        spikes?.whereType<Map<String, dynamic>>().toList() ?? [];
+    final rawSpikes = spikes?.whereType<Map<String, dynamic>>().toList() ?? [];
 
     final sleepSummary = rawSample['sleep_summary'] as Map?;
     final sleepHours =
@@ -1198,8 +1319,7 @@ Write the continuity note now.''';
       for (final q in qs) {
         if (q is! Map) continue;
 
-        final qid =
-            q['question_id']?.toString() ?? 'q_${questions.length + 1}';
+        final qid = q['question_id']?.toString() ?? 'q_${questions.length + 1}';
         final qp = q['prompt']?.toString() ?? '';
         if (qp.isEmpty) continue;
 
@@ -1230,20 +1350,26 @@ Write the continuity note now.''';
           }
         }
 
-        questions.add(PandaQuestion(
-          questionId: qid,
-          prompt: qp,
-          options: opts,
-          depthPrompts: depths,
-        ));
+        questions.add(
+          PandaQuestion(
+            questionId: qid,
+            prompt: qp,
+            options: opts,
+            depthPrompts: depths,
+          ),
+        );
       }
     }
 
     if (questions.isEmpty) {
-      return _fallbackSession(userName, timePhrase, rawSpikes,
-          notes: overallNotes,
-          scheduleContext: scheduleContext,
-          insightsContext: insightsContext);
+      return _fallbackSession(
+        userName,
+        timePhrase,
+        rawSpikes,
+        notes: overallNotes,
+        scheduleContext: scheduleContext,
+        insightsContext: insightsContext,
+      );
     }
 
     return PandaSessionData(
@@ -1282,14 +1408,18 @@ Write the continuity note now.''';
       // Annotate with frequency so priority is explicit, e.g.
       // "academia (5×), work stress (3×)" — higher count = higher priority,
       // but all listed stressors still matter.
-      final rendered = stressors.map((st) {
-        final c = (counts[st] as num?)?.toInt() ?? 0;
-        return c > 1 ? '$st (${c}×)' : st;
-      }).join(', ');
+      final rendered = stressors
+          .map((st) {
+            final c = (counts[st] as num?)?.toInt() ?? 0;
+            return c > 1 ? '$st (${c}×)' : st;
+          })
+          .join(', ');
       lines.add('Recurring stressors (by frequency): $rendered');
     }
-    if (emotions.isNotEmpty) lines.add('Common emotions: ${emotions.join(', ')}');
-    if (coping.isNotEmpty) lines.add('Coping that came up: ${coping.join(', ')}');
+    if (emotions.isNotEmpty)
+      lines.add('Common emotions: ${emotions.join(', ')}');
+    if (coping.isNotEmpty)
+      lines.add('Coping that came up: ${coping.join(', ')}');
     if (intensity.isNotEmpty) lines.add('Typical intensity: $intensity');
     if (recents.isNotEmpty) {
       lines.add('Recent session recaps:');
@@ -1337,8 +1467,11 @@ Write the continuity note now.''';
             opts.add('Something else 🙋');
           }
           if (qid.isNotEmpty && qp.isNotEmpty && opts.isNotEmpty) {
-            injected =
-                PandaQuestion(questionId: qid, prompt: qp, options: opts);
+            injected = PandaQuestion(
+              questionId: qid,
+              prompt: qp,
+              options: opts,
+            );
           }
         }
       }
@@ -1356,9 +1489,54 @@ Write the continuity note now.''';
 
       final recHint = (intent == PandaIntent.recommend)
           ? (obj['rec_hint']?.toString().trim().isNotEmpty == true
-              ? obj['rec_hint'].toString().trim()
-              : null)
+                ? obj['rec_hint'].toString().trim()
+                : null)
           : null;
+
+      PandaCalendarAction? calendarAction;
+      if (intent == PandaIntent.calendarAction &&
+          obj['calendar_action'] is Map) {
+        final rawAction = Map<String, dynamic>.from(
+          obj['calendar_action'] as Map,
+        );
+        final operation = switch (rawAction['operation']
+            ?.toString()
+            .toLowerCase()) {
+          'create' => PandaCalendarOperation.create,
+          'update' => PandaCalendarOperation.update,
+          'delete' => PandaCalendarOperation.delete,
+          _ => null,
+        };
+        DateTime? parseDate(String key) {
+          final value = rawAction[key]?.toString().trim();
+          return value == null || value.isEmpty
+              ? null
+              : DateTime.tryParse(value);
+        }
+
+        final title = rawAction['title']?.toString().trim();
+        final targetTitle = rawAction['target_title']?.toString().trim();
+        final start = parseDate('start');
+        final end = parseDate('end');
+        final valid =
+            operation != null &&
+            ((operation == PandaCalendarOperation.create &&
+                    title?.isNotEmpty == true &&
+                    start != null &&
+                    end != null) ||
+                (operation != PandaCalendarOperation.create &&
+                    targetTitle?.isNotEmpty == true));
+        if (valid) {
+          calendarAction = PandaCalendarAction(
+            operation: operation,
+            title: title,
+            targetTitle: targetTitle,
+            start: start,
+            end: end,
+            recurrence: rawAction['recurrence']?.toString().trim() ?? 'none',
+          );
+        }
+      }
 
       return PandaTurnReply(
         intent: intent,
@@ -1367,6 +1545,7 @@ Write the continuity note now.''';
         injectedQuestion: injected,
         filledSlots: slots,
         recHint: recHint,
+        calendarAction: calendarAction,
       );
     } catch (_) {
       return PandaTurnReply(intent: PandaIntent.chitchat, message: 'Got it');
@@ -1376,13 +1555,13 @@ Write the continuity note now.''';
   /// Strips spike objects to (spike_id, window, top_hypothesis) to bound
   /// per-turn prompt token cost regardless of signal count.
   static List<Map<String, dynamic>> trimSpikeContext(
-      List<Map<String, dynamic>> spikes) {
+    List<Map<String, dynamic>> spikes,
+  ) {
     return spikes.map((s) {
       final hypotheses = s['hypotheses'] as List? ?? [];
       final topLabel = hypotheses.isNotEmpty
-          ? (hypotheses.first as Map<String, dynamic>)['label']
-                  ?.toString() ??
-              ''
+          ? (hypotheses.first as Map<String, dynamic>)['label']?.toString() ??
+                ''
           : '';
       return {
         'spike_id': s['spike_id'] ?? '',
@@ -1425,6 +1604,8 @@ Write the continuity note now.''';
         return PandaIntent.recommend;
       case 'skip':
         return PandaIntent.skip;
+      case 'calendar_action':
+        return PandaIntent.calendarAction;
       default:
         return PandaIntent.chitchat;
     }
@@ -1438,14 +1619,14 @@ Write the continuity note now.''';
   }) {
     final spikeSnippet = hasSpikes
         ? 'I noticed some elevated heart rate patterns in your recent data — '
-            'I\'ve put together a few questions to help us understand what was going on. '
+              'I\'ve put together a few questions to help us understand what was going on. '
         : 'Your heart rate looks fairly steady in the data I have. ';
 
     final sleepSnippet = sleepHours >= 6
         ? 'You got ${sleepHours.toStringAsFixed(1)}h of sleep last night. '
         : sleepHours > 0
-            ? 'You only got ${sleepHours.toStringAsFixed(1)}h of sleep — that can amplify stress. '
-            : '';
+        ? 'You only got ${sleepHours.toStringAsFixed(1)}h of sleep — that can amplify stress. '
+        : '';
 
     const invite =
         'What would you like to explore — your patterns, how to plan today, '
@@ -1455,8 +1636,13 @@ Write the continuity note now.''';
   }
 
   static PandaSessionData _fallbackSession(
-      String userName, String timePhrase, List<Map<String, dynamic>> spikes,
-      {String notes = '', String? scheduleContext, String? insightsContext}) {
+    String userName,
+    String timePhrase,
+    List<Map<String, dynamic>> spikes, {
+    String notes = '',
+    String? scheduleContext,
+    String? insightsContext,
+  }) {
     return PandaSessionData(
       openerMessage:
           'Hey $userName! 🌿 Ive pulled up your health data for today. '
@@ -1486,28 +1672,29 @@ Write the continuity note now.''';
     );
   }
 
-
   static double _severity(
-      Map<String, dynamic> s, double baselineHr, double baselineHrv) {
+    Map<String, dynamic> s,
+    double baselineHr,
+    double baselineHrv,
+  ) {
     final hr = (s['signals']?['heart_rate']?['peak'] ?? 0).toDouble();
-    final hrvMin =
-        (s['signals']?['hrv']?['min'] ?? baselineHrv).toDouble();
-    final steps =
-        (s['signals']?['steps']?['peak_window'] ?? 0).toDouble();
+    final hrvMin = (s['signals']?['hrv']?['min'] ?? baselineHrv).toDouble();
+    final steps = (s['signals']?['steps']?['peak_window'] ?? 0).toDouble();
     return (hr - baselineHr).clamp(0, 100) +
         (baselineHrv - hrvMin).clamp(0, 100) +
         (steps / 200.0).clamp(0, 30);
   }
 
   static List<Map<String, dynamic>> _detectSpikes(
-      List<Map> samples, double baselineHr, double baselineHrv) {
+    List<Map> samples,
+    double baselineHr,
+    double baselineHrv,
+  ) {
     bool isSpike(Map s) {
       final hr = (s['hr'] ?? baselineHr).toDouble();
       final hrv = (s['hrv'] ?? baselineHrv).toDouble();
       final stress = (s['stress_score'] ?? 0).toDouble();
-      return hr >= baselineHr + 25 ||
-          hrv <= baselineHrv - 18 ||
-          stress >= 65;
+      return hr >= baselineHr + 25 || hrv <= baselineHrv - 18 || stress >= 65;
     }
 
     final List<Map<String, dynamic>> spikes = [];
@@ -1536,8 +1723,7 @@ Write the continuity note now.''';
         if (hrv < minHrv) minHrv = hrv;
         if (steps > peakSteps) peakSteps = steps;
         cur['signals']['heart_rate']['peak'] = peakHr;
-        cur['signals']['hrv']['min'] =
-            (minHrv == 1e9) ? baselineHrv : minHrv;
+        cur['signals']['hrv']['min'] = (minHrv == 1e9) ? baselineHrv : minHrv;
         cur['signals']['steps']['peak_window'] = peakSteps;
       } else {
         if (cur != null) {

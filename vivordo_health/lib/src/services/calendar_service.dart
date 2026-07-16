@@ -138,6 +138,46 @@ class CalendarService {
     return result;
   }
 
+  /// Updates the fields Panda is allowed to propose. Null fields are preserved.
+  static Future<gcal.Event> updateEvent(
+    gcal.Event event, {
+    String? title,
+    DateTime? start,
+    DateTime? end,
+    String? recurrence,
+  }) async {
+    final calendarId = _calendarIdFor(event);
+    final eventId = event.id;
+    if (calendarId == null || eventId == null) {
+      throw StateError(
+        'This event cannot be edited because its calendar is unknown.',
+      );
+    }
+    final originalStart = event.start?.dateTime?.toLocal();
+    final originalEnd = event.end?.dateTime?.toLocal();
+    final nextStart = start ?? originalStart;
+    final nextEnd = end ?? originalEnd;
+    if (nextStart == null || nextEnd == null || !nextEnd.isAfter(nextStart)) {
+      throw ArgumentError('The event must have a valid start and end time.');
+    }
+    final updated = gcal.Event()
+      ..summary = title?.trim().isNotEmpty == true ? title!.trim() : null
+      ..start = (gcal.EventDateTime()..dateTime = nextStart.toUtc())
+      ..end = (gcal.EventDateTime()..dateTime = nextEnd.toUtc());
+    if (recurrence != null) {
+      updated.recurrence = switch (recurrence) {
+        'daily' => <String>['RRULE:FREQ=DAILY'],
+        'weekly' => <String>['RRULE:FREQ=WEEKLY'],
+        'monthly' => <String>['RRULE:FREQ=MONTHLY'],
+        _ => <String>[],
+      };
+    }
+    final api = await _authorizedCalendarApi();
+    final result = await api.events.patch(updated, calendarId, eventId);
+    if (result.id != null) _eventCalendarIds[result.id!] = calendarId;
+    return result;
+  }
+
   static Future<void> initialize() async {
     if (_initialized) return;
     if (_initializationFuture != null) return _initializationFuture!;

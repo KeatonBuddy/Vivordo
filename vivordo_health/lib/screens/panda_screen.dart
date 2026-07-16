@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
+import 'package:googleapis/calendar/v3.dart' as gcal;
 import '../src/services/ai_service.dart';
 import '../src/services/ai_service_factory.dart';
 import '../src/services/gemini_service.dart' show GeminiService;
@@ -11,6 +13,7 @@ import '../src/services/recommendation_engine.dart';
 import '../src/services/insight_service.dart';
 import '../src/models/insights.dart';
 import '../src/services/panda_recommendations.dart';
+import '../src/services/calendar_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 // Robot mascot inlined as a string so it renders via SvgPicture.string —
@@ -18,7 +21,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 // blank/stale asset on Flutter Web. Gradient ("3D") version; SVG <filter>
 // elements were removed (flutter_svg can't render them — they were what
 // blanked it before). viewBox is cropped tight to the robot so it fills.
-const String _kRobotSvg = r'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="288 35 648 900" fill="none">
+const String _kRobotSvg =
+    r'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="288 35 648 900" fill="none">
 <defs>
 <radialGradient id="shellHead" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(580 182) rotate(70) scale(410 300)">
 <stop offset="0" stop-color="#FBFAFF"/><stop offset=".20" stop-color="#DCD8FF"/><stop offset=".52" stop-color="#7B6EF6"/><stop offset="1" stop-color="#4636BE"/>
@@ -176,7 +180,8 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Energy',
     icon: Icons.bolt_rounded,
-    color: Color(0xFF7B6EF6),    categoryMessage:
+    color: Color(0xFF7B6EF6),
+    categoryMessage:
         "Let's look at what's shaping your energy and recovery — choose a question 👇",
     prompts: [
       "What does my typical day look like?",
@@ -189,7 +194,8 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'Plans & People',
     icon: Icons.people_outline_rounded,
-    color: Color(0xFF7B6EF6),    categoryMessage:
+    color: Color(0xFF7B6EF6),
+    categoryMessage:
         "I can help you navigate plans and people based on how you're doing — what do you need? 👇",
     prompts: [
       "Set expectations for this week",
@@ -316,8 +322,7 @@ class _PandaScreenState extends State<PandaScreen>
 
   @override
   void initState() {
-    super.initState()
-    ;
+    super.initState();
     _tabCtrl = TabController(length: 2, vsync: this);
 
     final user = FirebaseAuth.instance.currentUser;
@@ -356,14 +361,17 @@ class _PandaScreenState extends State<PandaScreen>
     _historyStream?.cancel();
     _historyStream = _insightSvc
         .streamPandaInsights(userId, limit: 50)
-        .listen((insights) {
-      if (mounted) {
-        setState(() => _firestoreInsights = insights);
-      }
-    }, onError: (Object e) {
-      // ignore: avoid_print
-      print('[PandaScreen] streamPandaInsights error: $e');
-    });
+        .listen(
+          (insights) {
+            if (mounted) {
+              setState(() => _firestoreInsights = insights);
+            }
+          },
+          onError: (Object e) {
+            // ignore: avoid_print
+            print('[PandaScreen] streamPandaInsights error: $e');
+          },
+        );
   }
 
   @override
@@ -459,7 +467,9 @@ class _PandaScreenState extends State<PandaScreen>
       }
 
       // PHASE 2 — the labeling questions arrive behind the opener.
-      final full = await boot.spikeAnalysis!.timeout(const Duration(seconds: 90));
+      final full = await boot.spikeAnalysis!.timeout(
+        const Duration(seconds: 90),
+      );
       if (!mounted) return;
       setState(() {
         _session = full;
@@ -487,7 +497,11 @@ class _PandaScreenState extends State<PandaScreen>
         _analyzingSpikes = false;
         _error = 'Took too long. Tap retry to try again.';
       });
-      _saveLocalHistory(startedAt, success: false, error: 'Timed out after 90s.');
+      _saveLocalHistory(
+        startedAt,
+        success: false,
+        error: 'Timed out after 90s.',
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -503,8 +517,11 @@ class _PandaScreenState extends State<PandaScreen>
   // Local history (conversation graph / answer display only)
   // ===========================================================================
 
-  void _saveLocalHistory(DateTime startedAt,
-      {required bool success, String? error}) {
+  void _saveLocalHistory(
+    DateTime startedAt, {
+    required bool success,
+    String? error,
+  }) {
     if (!mounted) return;
     setState(() {
       _localHistory.insert(
@@ -515,10 +532,7 @@ class _PandaScreenState extends State<PandaScreen>
           success: success,
           error: error,
           turns: List<_Turn>.from(_turns),
-          answers: {
-            ..._spikeAnswers,
-            ..._categoryInsights,
-          },
+          answers: {..._spikeAnswers, ..._categoryInsights},
           overallNotes: _session?.overallNotes ?? '',
           graphNodes: List<_ConvNode>.from(_graphNodes),
           sessionSlots: Map<String, String>.from(_sessionSlots),
@@ -534,13 +548,16 @@ class _PandaScreenState extends State<PandaScreen>
   // Panda says
   // ===========================================================================
 
-  Future<void> _pandaSay(String text,
-      {int typingMs = 1100,
-      _TurnKind kind = _TurnKind.normal,
-      List<PandaRec> recs = const [],
-      List<String> categoryOptions = const [],
-      Color? categoryColor,
-      String? categoryLabel}) async {
+  Future<void> _pandaSay(
+    String text, {
+    int typingMs = 1100,
+    _TurnKind kind = _TurnKind.normal,
+    List<PandaRec> recs = const [],
+    List<String> categoryOptions = const [],
+    Color? categoryColor,
+    String? categoryLabel,
+    PandaCalendarAction? calendarAction,
+  }) async {
     if (!mounted) return;
     setState(() => _pandaTyping = true);
     _scrollBottom();
@@ -548,12 +565,17 @@ class _PandaScreenState extends State<PandaScreen>
     if (!mounted) return;
     setState(() {
       _pandaTyping = false;
-      _turns.add(_Turn.assistant(text,
+      _turns.add(
+        _Turn.assistant(
+          text,
           kind: kind,
           recs: recs,
           categoryOptions: categoryOptions,
           categoryColor: categoryColor,
-          categoryLabel: categoryLabel));
+          categoryLabel: categoryLabel,
+          calendarAction: calendarAction,
+        ),
+      );
     });
     _scrollBottom();
   }
@@ -608,10 +630,12 @@ class _PandaScreenState extends State<PandaScreen>
     if (session == null) return;
 
     final history = _turns
-        .map((t) => {
-              'role': t.role == _Role.user ? 'user' : 'assistant',
-              'text': t.text,
-            })
+        .map(
+          (t) => {
+            'role': t.role == _Role.user ? 'user' : 'assistant',
+            'text': t.text,
+          },
+        )
         .toList();
 
     setState(() => _pandaTyping = true);
@@ -639,14 +663,23 @@ class _PandaScreenState extends State<PandaScreen>
       if (!mounted) return;
 
       if (reply.filledSlots != null) {
-        setState(() => _sessionSlots.addAll(
-            Map.fromEntries(reply.filledSlots!.entries
-                .where((e) => e.value.trim().isNotEmpty))));
+        setState(
+          () => _sessionSlots.addAll(
+            Map.fromEntries(
+              reply.filledSlots!.entries.where(
+                (e) => e.value.trim().isNotEmpty,
+              ),
+            ),
+          ),
+        );
       }
 
       // Persist a significant stressor surfaced via this category pill.
       _maybeSaveChatInsight(
-          reply: reply, userMessage: prompt, questionLabel: categoryLabel);
+        reply: reply,
+        userMessage: prompt,
+        questionLabel: categoryLabel,
+      );
 
       final insightKey = 'category::$categoryLabel::$prompt';
       setState(() {
@@ -663,8 +696,12 @@ class _PandaScreenState extends State<PandaScreen>
           excludeIds: Set<String>.from(_shownRecIds),
         );
         setState(() => _shownRecIds.addAll(recs.map((r) => r.id)));
-        await _pandaSay(reply.message, typingMs: 0,
-            kind: _TurnKind.recommend, recs: recs);
+        await _pandaSay(
+          reply.message,
+          typingMs: 0,
+          kind: _TurnKind.recommend,
+          recs: recs,
+        );
       } else {
         setState(() => _turns.add(_Turn.assistant(reply.message)));
         _scrollBottom();
@@ -673,8 +710,9 @@ class _PandaScreenState extends State<PandaScreen>
       if (!mounted) return;
       setState(() => _pandaTyping = false);
       await _pandaSay(
-          "I ran into a hiccup — try tapping that again.",
-          typingMs: 0);
+        "I ran into a hiccup — try tapping that again.",
+        typingMs: 0,
+      );
     }
   }
 
@@ -691,14 +729,17 @@ class _PandaScreenState extends State<PandaScreen>
       _pandaTyping = true;
       _turns.add(_Turn.user(option));
       _spikeAnswers[q.questionId] = option;
-      _graphNodes.add(_ConvNode(
-        questionId: q.questionId,
-        questionText: q.prompt,
-        answer: option,
-        isBranch: _injectedIds.contains(q.questionId),
-        parentNodeId:
-            _injectedIds.contains(q.questionId) ? _interruptedNodeId : null,
-      ));
+      _graphNodes.add(
+        _ConvNode(
+          questionId: q.questionId,
+          questionText: q.prompt,
+          answer: option,
+          isBranch: _injectedIds.contains(q.questionId),
+          parentNodeId: _injectedIds.contains(q.questionId)
+              ? _interruptedNodeId
+              : null,
+        ),
+      );
       _qIdx++;
       _depthTurns = 0;
       _state = _DialogueState.onPath;
@@ -725,10 +766,12 @@ class _PandaScreenState extends State<PandaScreen>
     if (session == null) return;
 
     final history = _turns
-        .map((t) => {
-              'role': t.role == _Role.user ? 'user' : 'assistant',
-              'text': t.text,
-            })
+        .map(
+          (t) => {
+            'role': t.role == _Role.user ? 'user' : 'assistant',
+            'text': t.text,
+          },
+        )
         .toList();
 
     setState(() => _pandaTyping = true);
@@ -742,7 +785,8 @@ class _PandaScreenState extends State<PandaScreen>
             userMessage: text,
             conversationHistory: history,
             spikeContext: session.rawSpikes,
-            isOnPredefinedPath: _state == _DialogueState.onPath ||
+            isOnPredefinedPath:
+                _state == _DialogueState.onPath ||
                 _state == _DialogueState.inDepth,
             isInDigression: _state == _DialogueState.inDigression,
             digressionTurnCount: _digressionStack.isNotEmpty
@@ -762,15 +806,24 @@ class _PandaScreenState extends State<PandaScreen>
       if (!mounted) return;
 
       if (reply.filledSlots != null) {
-        setState(() => _sessionSlots.addAll(
-            Map.fromEntries(reply.filledSlots!.entries
-                .where((e) => e.value.trim().isNotEmpty))));
+        setState(
+          () => _sessionSlots.addAll(
+            Map.fromEntries(
+              reply.filledSlots!.entries.where(
+                (e) => e.value.trim().isNotEmpty,
+              ),
+            ),
+          ),
+        );
       }
 
       // Persist a significant stressor surfaced via this free-text question.
       // 'You shared' becomes an editable Q→A entry in the History card.
       _maybeSaveChatInsight(
-          reply: reply, userMessage: text, questionLabel: 'You shared');
+        reply: reply,
+        userMessage: text,
+        questionLabel: 'You shared',
+      );
 
       // _pandaTyping stays true here — _pandaSay handles the false transition
       // once the response is rendered. Clearing it early causes chips to flash.
@@ -779,15 +832,17 @@ class _PandaScreenState extends State<PandaScreen>
           if (currentQ != null) {
             setState(() {
               _spikeAnswers[currentQ.questionId] = text;
-              _graphNodes.add(_ConvNode(
-                questionId: currentQ.questionId,
-                questionText: currentQ.prompt,
-                answer: text,
-                isBranch: _injectedIds.contains(currentQ.questionId),
-                parentNodeId: _injectedIds.contains(currentQ.questionId)
-                    ? _interruptedNodeId
-                    : null,
-              ));
+              _graphNodes.add(
+                _ConvNode(
+                  questionId: currentQ.questionId,
+                  questionText: currentQ.prompt,
+                  answer: text,
+                  isBranch: _injectedIds.contains(currentQ.questionId),
+                  parentNodeId: _injectedIds.contains(currentQ.questionId)
+                      ? _interruptedNodeId
+                      : null,
+                ),
+              );
               _qIdx++;
               _depthTurns = 0;
               _state = _DialogueState.onPath;
@@ -813,13 +868,19 @@ class _PandaScreenState extends State<PandaScreen>
         case PandaIntent.digress:
           setState(() {
             _state = _DialogueState.inDigression;
-            _digressionStack.add(_DigressionFrame(
-              pendingQuestionId: currentQ?.questionId ?? '',
-              pendingQuestionPrompt: currentQ?.prompt ?? '',
-              topic: text,
-            ));
+            _digressionStack.add(
+              _DigressionFrame(
+                pendingQuestionId: currentQ?.questionId ?? '',
+                pendingQuestionPrompt: currentQ?.prompt ?? '',
+                topic: text,
+              ),
+            );
           });
-          await _pandaSay(reply.message, typingMs: 0, kind: _TurnKind.digression);
+          await _pandaSay(
+            reply.message,
+            typingMs: 0,
+            kind: _TurnKind.digression,
+          );
 
         case PandaIntent.digressionComplete:
           final frame = _digressionStack.isNotEmpty
@@ -830,7 +891,11 @@ class _PandaScreenState extends State<PandaScreen>
                 ? _DialogueState.free
                 : _DialogueState.onPath;
           });
-          await _pandaSay(reply.message, typingMs: 0, kind: _TurnKind.digression);
+          await _pandaSay(
+            reply.message,
+            typingMs: 0,
+            kind: _TurnKind.digression,
+          );
           if (_state == _DialogueState.onPath && _currentQ != null) {
             await Future.delayed(const Duration(milliseconds: 400));
             await _pandaSay(_currentQ!.prompt);
@@ -855,8 +920,12 @@ class _PandaScreenState extends State<PandaScreen>
             excludeIds: Set<String>.from(_shownRecIds),
           );
           setState(() => _shownRecIds.addAll(recs.map((r) => r.id)));
-          await _pandaSay(reply.message, typingMs: 0,
-              kind: _TurnKind.recommend, recs: recs);
+          await _pandaSay(
+            reply.message,
+            typingMs: 0,
+            kind: _TurnKind.recommend,
+            recs: recs,
+          );
 
         case PandaIntent.skip:
           if (currentQ != null) {
@@ -875,13 +944,29 @@ class _PandaScreenState extends State<PandaScreen>
             setState(() => _digressionStack.last.turnCount++);
           }
           await _pandaSay(reply.message, typingMs: 0);
+
+        case PandaIntent.calendarAction:
+          if (reply.calendarAction == null) {
+            await _pandaSay(
+              'I need a little more detail before I can prepare that calendar change.',
+              typingMs: 0,
+            );
+          } else {
+            await _pandaSay(
+              reply.message,
+              typingMs: 0,
+              kind: _TurnKind.calendarAction,
+              calendarAction: reply.calendarAction,
+            );
+          }
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _pandaTyping = false);
       await _pandaSay(
-          "I hit a small issue. Try sending that again.",
-          typingMs: 0);
+        "I hit a small issue. Try sending that again.",
+        typingMs: 0,
+      );
     }
   }
 
@@ -926,10 +1011,12 @@ class _PandaScreenState extends State<PandaScreen>
     final resolvedUserId = _currentUserId;
     final labeledAnswers = {..._spikeAnswers, ..._categoryInsights};
     final conversation = _turns
-        .map((t) => {
-              'role': t.role == _Role.user ? 'user' : 'assistant',
-              'text': t.text,
-            })
+        .map(
+          (t) => {
+            'role': t.role == _Role.user ? 'user' : 'assistant',
+            'text': t.text,
+          },
+        )
         .toList();
     // Ask the LLM for a comprehensive-but-brief continuity note that captures
     // context/insight (not just a restatement of answers). Falls back to the
@@ -987,33 +1074,50 @@ class _PandaScreenState extends State<PandaScreen>
   PreferredSizeWidget _buildAppBar() {
     final (String statusText, Color statusColor) = switch (_state) {
       _DialogueState.inDigression => ('side chat', _teal),
-      _DialogueState.inDepth      => ('going deeper…', _purple),
-      _ when _loading             => ('analysing…', Colors.orange),
+      _DialogueState.inDepth => ('going deeper…', _purple),
+      _ when _loading => ('analysing…', Colors.orange),
       // Chat is already open and usable while the spike analysis finishes.
-      _ when _analyzingSpikes     => ('reading your data…', Colors.orange),
-      _ when _pandaTyping         => ('typing…', Colors.orange),
-      _DialogueState.free         => ('', _purple),
-      _                           => ('online', Colors.green),
+      _ when _analyzingSpikes => ('reading your data…', Colors.orange),
+      _ when _pandaTyping => ('typing…', Colors.orange),
+      _DialogueState.free => ('', _purple),
+      _ => ('online', Colors.green),
     };
 
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0.5,
       automaticallyImplyLeading: false,
-      title: Row(mainAxisSize: MainAxisSize.min, children: [
-        _avatar(size: 42),
-        const SizedBox(width: 8),
-        Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('AI Assistant',
-              style: TextStyle(
-                  color: _ink, fontSize: 17, fontWeight: FontWeight.bold)),
-          Text(statusText, style: TextStyle(color: statusColor, fontSize: 12)),
-        ]),
-      ]),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _avatar(size: 42),
+          const SizedBox(width: 8),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'AI Assistant',
+                style: TextStyle(
+                  color: _ink,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                statusText,
+                style: TextStyle(color: statusColor, fontSize: 12),
+              ),
+            ],
+          ),
+        ],
+      ),
       centerTitle: true,
       bottom: TabBar(
         controller: _tabCtrl,
-        tabs: const [Tab(text: 'Chat'), Tab(text: 'History')],
+        tabs: const [
+          Tab(text: 'Chat'),
+          Tab(text: 'History'),
+        ],
         labelColor: _purple,
         unselectedLabelColor: Colors.grey,
         indicatorColor: _purple,
@@ -1036,12 +1140,14 @@ class _PandaScreenState extends State<PandaScreen>
   }
 
   Widget _buildChatTab() {
-    return Column(children: [
-      _buildPathStrip(),
-      Expanded(child: _buildChatArea()),
-      _buildInputArea(),
-      SizedBox(height: MediaQuery.of(context).padding.bottom + 100),
-    ]);
+    return Column(
+      children: [
+        _buildPathStrip(),
+        Expanded(child: _buildChatArea()),
+        _buildInputArea(),
+        SizedBox(height: MediaQuery.of(context).padding.bottom + 100),
+      ],
+    );
   }
 
   Widget _buildPathStrip() {
@@ -1074,54 +1180,64 @@ class _PandaScreenState extends State<PandaScreen>
       duration: const Duration(milliseconds: 300),
       color: stripColor.withOpacity(0.07),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-      child: Row(children: [
-        Icon(stripIcon, size: 13, color: stripColor),
-        const SizedBox(width: 8),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 4,
-              backgroundColor: Colors.black.withOpacity(0.07),
-              valueColor: AlwaysStoppedAnimation<Color>(stripColor),
+      child: Row(
+        children: [
+          Icon(stripIcon, size: 13, color: stripColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: Colors.black.withOpacity(0.07),
+                valueColor: AlwaysStoppedAnimation<Color>(stripColor),
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Text(stripLabel,
+          const SizedBox(width: 10),
+          Text(
+            stripLabel,
             style: TextStyle(
-                fontSize: 11,
-                color: stripColor,
-                fontWeight: FontWeight.w600)),
-      ]),
+              fontSize: 11,
+              color: stripColor,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildChatArea() {
     if (_loading && _turns.isEmpty) {
       return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Image.asset(
-            'assets/vivordo_logo.png',
-            width: 380,
-            height: 300,
-            fit: BoxFit.contain,
-          ),
-          Transform.translate(
-            offset: const Offset(0, -40),
-            child: const SizedBox(
-              width: 200,
-              child: LinearProgressIndicator(
-                backgroundColor: Color(0xFFE5E5EA),
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7B6EF6)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/vivordo_logo.png',
+              width: 380,
+              height: 300,
+              fit: BoxFit.contain,
+            ),
+            Transform.translate(
+              offset: const Offset(0, -40),
+              child: const SizedBox(
+                width: 200,
+                child: LinearProgressIndicator(
+                  backgroundColor: Color(0xFFE5E5EA),
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7B6EF6)),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 14),
-          const Text('Analysing your data…',
-              style: TextStyle(color: Colors.black45, fontSize: 14)),
-        ]),
+            const SizedBox(height: 14),
+            const Text(
+              'Analysing your data…',
+              style: TextStyle(color: Colors.black45, fontSize: 14),
+            ),
+          ],
+        ),
       );
     }
 
@@ -1129,41 +1245,52 @@ class _PandaScreenState extends State<PandaScreen>
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.wifi_off_rounded, size: 48, color: Colors.black26),
-            const SizedBox(height: 16),
-            Text(_error!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.black54)),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: _loadSession,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _purple,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.wifi_off_rounded,
+                size: 48,
+                color: Colors.black26,
               ),
-            ),
-          ]),
+              const SizedBox(height: 16),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black54),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: _loadSession,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _purple,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    final showChips = !_pandaTyping &&
+    final showChips =
+        !_pandaTyping &&
         !_sessionComplete &&
         _state != _DialogueState.inDigression &&
         _currentQ != null &&
         _currentQ!.options.isNotEmpty;
 
-    final showDepthHint = !_pandaTyping &&
-        _state == _DialogueState.inDepth &&
-        _currentQ != null;
+    final showDepthHint =
+        !_pandaTyping && _state == _DialogueState.inDepth && _currentQ != null;
 
     // Category pills: only visible after ALL spike questions are answered.
-    final showCategoryPills = _categoryPillsVisible &&
+    final showCategoryPills =
+        _categoryPillsVisible &&
         !_pandaTyping &&
         !_loading &&
         _turns.isNotEmpty;
@@ -1180,7 +1307,8 @@ class _PandaScreenState extends State<PandaScreen>
       child: ListView.builder(
         controller: _scrollCtrl,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        itemCount: pillsFirst +
+        itemCount:
+            pillsFirst +
             _turns.length +
             (_pandaTyping ? 1 : 0) +
             (showChips ? 1 : 0) +
@@ -1193,19 +1321,25 @@ class _PandaScreenState extends State<PandaScreen>
           final turnIdx = i - pillsFirst;
           if (turnIdx < _turns.length) {
             final t = _turns[turnIdx];
-            final isLastAssistant = t.role == _Role.assistant &&
-                !_turns.sublist(turnIdx + 1).any((x) => x.role == _Role.assistant);
+            final isLastAssistant =
+                t.role == _Role.assistant &&
+                !_turns
+                    .sublist(turnIdx + 1)
+                    .any((x) => x.role == _Role.assistant);
             return t.role == _Role.user
                 ? _userBubble(t.text)
-                : _assistantBubble(t.text,
+                : _assistantBubble(
+                    t.text,
                     showAvatar: isLastAssistant,
                     kind: t.kind,
+                    turn: t,
                     recs: t.recs,
                     categoryOptions: t.categoryOptions,
                     categoryColor: t.categoryColor,
                     categoryLabel: t.categoryLabel,
                     showCategoryOptions:
-                        t.categoryLabel == _activeCategoryLabel);
+                        t.categoryLabel == _activeCategoryLabel,
+                  );
           }
           int off = pillsFirst + _turns.length;
           if (_pandaTyping && i == off) return _typingBubble();
@@ -1225,9 +1359,11 @@ class _PandaScreenState extends State<PandaScreen>
   // Bubbles
   // ===========================================================================
 
-  Widget _assistantBubble(String text, {
+  Widget _assistantBubble(
+    String text, {
     bool showAvatar = false,
     _TurnKind kind = _TurnKind.normal,
+    _Turn? turn,
     List<PandaRec> recs = const [],
     List<String> categoryOptions = const [],
     Color? categoryColor,
@@ -1250,8 +1386,11 @@ class _PandaScreenState extends State<PandaScreen>
       case _TurnKind.recommend:
         bg = Colors.white;
         border = Colors.transparent;
-        badge = _kindBadge(Icons.auto_awesome_rounded, 'for you',
-            const Color(0xFFFF8C69));
+        badge = _kindBadge(
+          Icons.auto_awesome_rounded,
+          'for you',
+          const Color(0xFFFF8C69),
+        );
       case _TurnKind.categoryMenu:
         bg = Colors.white;
         border = (categoryColor ?? _purple).withOpacity(0.15);
@@ -1260,6 +1399,10 @@ class _PandaScreenState extends State<PandaScreen>
         bg = Colors.white;
         border = Colors.transparent;
         badge = null;
+      case _TurnKind.calendarAction:
+        bg = const Color(0xFFF4F1FF);
+        border = _purple.withOpacity(0.25);
+        badge = _kindBadge(Icons.calendar_month_rounded, 'calendar', _purple);
     }
 
     return Padding(
@@ -1272,100 +1415,122 @@ class _PandaScreenState extends State<PandaScreen>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-            showAvatar
-                ? Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: _avatar(size: 48))
-                : const SizedBox(width: 10),
-              Flexible(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
-                      bottomRight: Radius.circular(20),
-                      bottomLeft: Radius.circular(4),
+                showAvatar
+                    ? Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _avatar(size: 48),
+                      )
+                    : const SizedBox(width: 10),
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
                     ),
-                    border: Border.all(color: border, width: 1.2),
-                    boxShadow: [
-                      BoxShadow(
+                    decoration: BoxDecoration(
+                      color: bg,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
+                        bottomRight: Radius.circular(20),
+                        bottomLeft: Radius.circular(4),
+                      ),
+                      border: Border.all(color: border, width: 1.2),
+                      boxShadow: [
+                        BoxShadow(
                           color: Colors.black.withOpacity(0.04),
                           blurRadius: 5,
-                          offset: const Offset(0, 2))
-                    ],
-                  ),
-                  child: Column(
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (badge != null) ...[
                           badge,
-                          const SizedBox(height: 6)
+                          const SizedBox(height: 6),
                         ],
-                        Text(text,
-                            style: const TextStyle(
-                                color: Colors.black87,
-                                fontSize: 15,
-                                height: 1.45)),
-                      ]),
+                        Text(
+                          text,
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 15,
+                            height: 1.45,
+                          ),
+                        ),
+                        if (turn?.calendarAction != null) ...[
+                          const SizedBox(height: 10),
+                          _calendarActionControls(turn!),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 40),
-            ]),
+                const SizedBox(width: 40),
+              ],
+            ),
           ),
           // Category option chips — only for the active pill (one at a time).
-          if (showCategoryOptions && categoryOptions.isNotEmpty && categoryLabel != null)
+          if (showCategoryOptions &&
+              categoryOptions.isNotEmpty &&
+              categoryLabel != null)
             Padding(
-              padding:
-                  const EdgeInsets.only(left: 50, right: 8, bottom: 12),
+              padding: const EdgeInsets.only(left: 50, right: 8, bottom: 12),
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: categoryOptions
-                    .map((opt) => GestureDetector(
-                          onTap: () =>
-                              _categoryOptionTap(opt, categoryLabel),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 9),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: (categoryColor ?? _purple)
-                                    .withOpacity(0.35),
-                                width: 1.2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (categoryColor ?? _purple)
-                                      .withOpacity(0.06),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Text(opt,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: (categoryColor ?? _purple)
-                                      .withOpacity(0.85),
-                                )),
+                    .map(
+                      (opt) => GestureDetector(
+                        onTap: () => _categoryOptionTap(opt, categoryLabel),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 9,
                           ),
-                        ))
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: (categoryColor ?? _purple).withOpacity(
+                                0.35,
+                              ),
+                              width: 1.2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: (categoryColor ?? _purple).withOpacity(
+                                  0.06,
+                                ),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            opt,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: (categoryColor ?? _purple).withOpacity(
+                                0.85,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
                     .toList(),
               ),
             ),
           // Rec cards
           if (recs.isNotEmpty)
             Padding(
-              padding:
-                  const EdgeInsets.only(left: 50, right: 8, bottom: 8),
+              padding: const EdgeInsets.only(left: 50, right: 8, bottom: 8),
               child: Column(
-                  children: recs.map((rec) => _RecCard(rec: rec)).toList()),
+                children: recs.map((rec) => _RecCard(rec: rec)).toList(),
+              ),
             ),
         ],
       ),
@@ -1373,42 +1538,51 @@ class _PandaScreenState extends State<PandaScreen>
   }
 
   Widget _kindBadge(IconData icon, String label, Color color) {
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 11, color: color.withOpacity(0.7)),
-      const SizedBox(width: 4),
-      Text(label,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 11, color: color.withOpacity(0.7)),
+        const SizedBox(width: 4),
+        Text(
+          label,
           style: TextStyle(
-              fontSize: 10,
-              color: color.withOpacity(0.7),
-              fontWeight: FontWeight.w600)),
-    ]);
+            fontSize: 10,
+            color: color.withOpacity(0.7),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _userBubble(String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-        const SizedBox(width: 40),
-        Flexible(
-          child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: _purple.withOpacity(0.12),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(20),
-                topRight: Radius.circular(20),
-                bottomLeft: Radius.circular(20),
-                bottomRight: Radius.circular(4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          const SizedBox(width: 40),
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: _purple.withOpacity(0.12),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                  bottomLeft: Radius.circular(20),
+                  bottomRight: Radius.circular(4),
+                ),
+                border: Border.all(color: _purple.withOpacity(0.2)),
               ),
-              border: Border.all(color: _purple.withOpacity(0.2)),
+              child: Text(
+                text,
+                style: const TextStyle(color: _ink, fontSize: 15, height: 1.45),
+              ),
             ),
-            child: Text(text,
-                style: const TextStyle(
-                    color: _ink, fontSize: 15, height: 1.45)),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -1416,31 +1590,32 @@ class _PandaScreenState extends State<PandaScreen>
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-        _avatar(size: 48),
-        const SizedBox(width: 10),
-        Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(20),
-              topRight: Radius.circular(20),
-              bottomRight: Radius.circular(20),
-              bottomLeft: Radius.circular(4),
-            ),
-            boxShadow: [
-              BoxShadow(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          _avatar(size: 48),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+                bottomRight: Radius.circular(20),
+                bottomLeft: Radius.circular(4),
+              ),
+              boxShadow: [
+                BoxShadow(
                   color: Colors.black.withOpacity(0.04),
                   blurRadius: 5,
-                  offset: const Offset(0, 2))
-            ],
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const TypingIndicator(),
           ),
-          child: const TypingIndicator(),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -1461,10 +1636,11 @@ class _PandaScreenState extends State<PandaScreen>
             child: Text(
               'Explore with AI Assistant',
               style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black38,
-                  letterSpacing: 0.3),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.black38,
+                letterSpacing: 0.3,
+              ),
             ),
           ),
           // Pills
@@ -1481,7 +1657,9 @@ class _PandaScreenState extends State<PandaScreen>
                   onTap: () => _categoryTap(s),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 9),
+                      horizontal: 16,
+                      vertical: 9,
+                    ),
                     decoration: BoxDecoration(
                       color: s.color.withOpacity(0.09),
                       borderRadius: BorderRadius.circular(20),
@@ -1522,24 +1700,30 @@ class _PandaScreenState extends State<PandaScreen>
         spacing: 8,
         runSpacing: 8,
         children: q.options
-            .map((opt) => GestureDetector(
-                  onTap: () => _chipTap(opt),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: _purple.withOpacity(0.10),
-                      borderRadius: BorderRadius.circular(20),
-                      border:
-                          Border.all(color: _purple.withOpacity(0.25)),
-                    ),
-                    child: Text(opt,
-                        style: const TextStyle(
-                            color: _purple,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14)),
+            .map(
+              (opt) => GestureDetector(
+                onTap: () => _chipTap(opt),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
                   ),
-                ))
+                  decoration: BoxDecoration(
+                    color: _purple.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _purple.withOpacity(0.25)),
+                  ),
+                  child: Text(
+                    opt,
+                    style: const TextStyle(
+                      color: _purple,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
+            )
             .toList(),
       ),
     );
@@ -1548,18 +1732,20 @@ class _PandaScreenState extends State<PandaScreen>
   Widget _depthHintRow() {
     return Padding(
       padding: const EdgeInsets.only(left: 58, bottom: 12),
-      child: Row(children: [
-        Icon(Icons.layers_rounded,
-            size: 13, color: _purple.withOpacity(0.5)),
-        const SizedBox(width: 6),
-        Text(
-          'Keep sharing or type "done" to move on',
-          style: TextStyle(
+      child: Row(
+        children: [
+          Icon(Icons.layers_rounded, size: 13, color: _purple.withOpacity(0.5)),
+          const SizedBox(width: 6),
+          Text(
+            'Keep sharing or type "done" to move on',
+            style: TextStyle(
               fontSize: 12,
               color: _purple.withOpacity(0.55),
-              fontStyle: FontStyle.italic),
-        ),
-      ]),
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1570,38 +1756,43 @@ class _PandaScreenState extends State<PandaScreen>
       padding: const EdgeInsets.only(top: 8, bottom: 16),
       child: Center(
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           decoration: BoxDecoration(
             color: _purple.withOpacity(0.08),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: _purple.withOpacity(0.15)),
           ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('✅  Session complete',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '✅  Session complete',
                 style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: _purple,
-                    fontSize: 14)),
-            const SizedBox(height: 4),
-            Text(
+                  fontWeight: FontWeight.bold,
+                  color: _purple,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
                 '${_spikeAnswers.length} answer${_spikeAnswers.length == 1 ? '' : 's'} captured'
                 '${_sessionSlots.isNotEmpty ? ' · ${_sessionSlots.length} insights extracted' : ''}',
-                style: const TextStyle(
-                    color: Colors.black45, fontSize: 13)),
-            const SizedBox(height: 4),
-            const Text('Tap a category above to explore, or start a new session.',
-                style:
-                    TextStyle(color: Colors.black38, fontSize: 12)),
-            const SizedBox(height: 10),
-            TextButton.icon(
-              onPressed: _loadSession,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('New session'),
-              style:
-                  TextButton.styleFrom(foregroundColor: _purple),
-            ),
-          ]),
+                style: const TextStyle(color: Colors.black45, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Tap a category above to explore, or start a new session.',
+                style: TextStyle(color: Colors.black38, fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              TextButton.icon(
+                onPressed: _loadSession,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('New session'),
+                style: TextButton.styleFrom(foregroundColor: _purple),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1626,82 +1817,93 @@ class _PandaScreenState extends State<PandaScreen>
     }
 
     return Container(
-      padding: EdgeInsets.fromLTRB(16, 10, 16, MediaQuery.of(context).padding.bottom + 10),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        10,
+        16,
+        MediaQuery.of(context).padding.bottom + 10,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
-        border:
-            Border(top: BorderSide(color: Colors.black12, width: 0.5)),
+        border: Border(top: BorderSide(color: Colors.black12, width: 0.5)),
       ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        if (!_sessionComplete &&
-            _state == _DialogueState.onPath &&
-            _currentQ != null &&
-            _currentQ!.options.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              'Tap an option above or type your own answer',
-              style: TextStyle(
-                  color: Colors.grey.shade400, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        Row(children: [
-          Expanded(
-            child: TextField(
-              controller: _inputCtrl,
-              enabled: !disabled,
-              textInputAction: TextInputAction.send,
-              maxLines: null,
-              decoration: InputDecoration(
-                hintText: hint,
-                hintStyle: TextStyle(
-                    color: Colors.grey.shade400, fontSize: 14),
-                filled: true,
-                fillColor:
-                    disabled ? Colors.grey.shade100 : _bg,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide:
-                        BorderSide(color: Colors.grey.shade300)),
-                enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide:
-                        BorderSide(color: Colors.grey.shade300)),
-                focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: const BorderSide(
-                        color: _purple, width: 1.5)),
-                disabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide:
-                        BorderSide(color: Colors.grey.shade200)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!_sessionComplete &&
+              _state == _DialogueState.onPath &&
+              _currentQ != null &&
+              _currentQ!.options.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Tap an option above or type your own answer',
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                textAlign: TextAlign.center,
               ),
-              onSubmitted: disabled ? null : (_) => _submit(),
             ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: disabled ? null : _submit,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              height: 46,
-              width: 46,
-              decoration: BoxDecoration(
-                color: disabled ? Colors.grey.shade300 : _purple,
-                shape: BoxShape.circle,
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _inputCtrl,
+                  enabled: !disabled,
+                  textInputAction: TextInputAction.send,
+                  maxLines: null,
+                  decoration: InputDecoration(
+                    hintText: hint,
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontSize: 14,
+                    ),
+                    filled: true,
+                    fillColor: disabled ? Colors.grey.shade100 : _bg,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: const BorderSide(color: _purple, width: 1.5),
+                    ),
+                    disabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide(color: Colors.grey.shade200),
+                    ),
+                  ),
+                  onSubmitted: disabled ? null : (_) => _submit(),
+                ),
               ),
-              child: Icon(Icons.send_rounded,
-                  color: disabled
-                      ? Colors.grey.shade400
-                      : Colors.white,
-                  size: 20),
-            ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: disabled ? null : _submit,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  height: 46,
+                  width: 46,
+                  decoration: BoxDecoration(
+                    color: disabled ? Colors.grey.shade300 : _purple,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.send_rounded,
+                    color: disabled ? Colors.grey.shade400 : Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ]),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -1713,41 +1915,56 @@ class _PandaScreenState extends State<PandaScreen>
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(children: [
-          Row(children: [
-            const Expanded(
-                child: Text('Past Sessions',
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Past Sessions',
                     style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: _ink))),
-          ]),
-          const SizedBox(height: 8),
-          Expanded(
-            child: _firestoreInsights.isEmpty
-                ? Center(
-                    child: Column(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: _ink,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _firestoreInsights.isEmpty
+                  ? Center(
+                      child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                      _avatar(),
-                      const SizedBox(height: 16),
-                      const Text(
-                          "No sessions yet.\nComplete a chat and it'll appear here.",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: Colors.black45, height: 1.5)),
-                    ]))
-                : Builder(builder: (_) {
-                    final groups = _groupedInsights();
-                    return ListView.separated(
-                      itemCount: groups.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: 10),
-                      itemBuilder: (_, i) => _chatGroupCard(groups[i]),
-                    );
-                  }),
-          ),
-        ]),
+                          _avatar(),
+                          const SizedBox(height: 16),
+                          const Text(
+                            "No sessions yet.\nComplete a chat and it'll appear here.",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.black45,
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Builder(
+                      builder: (_) {
+                        final groups = _groupedInsights();
+                        return ListView.separated(
+                          itemCount: groups.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (_, i) => _chatGroupCard(groups[i]),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1791,8 +2008,7 @@ class _PandaScreenState extends State<PandaScreen>
   // insights they render as a split view — one section per insight.
   Widget _chatGroupCard(List<Insights> group) {
     final latest = group.first; // stream is newest-first
-    final sessionDt =
-        latest.sessionDate?.toDate() ?? latest.createdAt.toDate();
+    final sessionDt = latest.sessionDate?.toDate() ?? latest.createdAt.toDate();
     final multi = group.length > 1;
     final headerLabel = multi
         ? '${group.length} insights this chat'
@@ -1807,49 +2023,70 @@ class _PandaScreenState extends State<PandaScreen>
           border: Border.all(color: Colors.black.withOpacity(0.07)),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 8,
-                offset: const Offset(0, 2))
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            tilePadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            childrenPadding:
-                const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-            title: Row(children: [
-              Expanded(
-                child: Column(
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
+            childrenPadding: const EdgeInsets.only(
+              left: 16,
+              right: 16,
+              bottom: 16,
+            ),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_fmtInsightDt(sessionDt),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: _ink)),
+                      Text(
+                        _fmtInsightDt(sessionDt),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: _ink,
+                        ),
+                      ),
                       const SizedBox(height: 3),
-                      Text(headerLabel,
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.black45)),
-                    ]),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                      Text(
+                        headerLabel,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black45,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: const Text('Complete',
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: const Text(
+                    'Complete',
                     style: TextStyle(
-                        color: Colors.green,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700)),
-              ),
-            ]),
+                      color: Colors.green,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
             children: [
               for (int i = 0; i < group.length; i++) ...[
                 if (i > 0) ...[
@@ -1872,66 +2109,78 @@ class _PandaScreenState extends State<PandaScreen>
     final labeledAnswers = insight.pandaLabeledAnswers ?? {};
     final corrections = insight.pandaCorrections ?? [];
     final hasSlots = slots != null && !slots.isEmpty;
-    final hasAnswers = labeledAnswers.entries
-        .any((e) => !e.key.startsWith('category::'));
+    final hasAnswers = labeledAnswers.entries.any(
+      (e) => !e.key.startsWith('category::'),
+    );
 
     return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-            // Per-insight header (only when several insights share the card).
-            if (showHeader) ...[
-              Row(children: [
-                Expanded(
-                  child: Text(
-                      (insight.title != null && insight.title!.isNotEmpty)
-                          ? insight.title!
-                          : 'Insight',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: _purple)),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Per-insight header (only when several insights share the card).
+        if (showHeader) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  (insight.title != null && insight.title!.isNotEmpty)
+                      ? insight.title!
+                      : 'Insight',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: _purple,
+                  ),
                 ),
-                if (insight.frequency > 1) ...[
-                  const SizedBox(width: 8),
-                  _badge('seen ${insight.frequency}×', _teal),
-                ],
-              ]),
-              const SizedBox(height: 8),
+              ),
+              if (insight.frequency > 1) ...[
+                const SizedBox(width: 8),
+                _badge('seen ${insight.frequency}×', _teal),
+              ],
             ],
-            // Overall notes
-            if (insight.body != null && insight.body!.isNotEmpty) ...[
-              _noteBox(insight.body!),
-              const SizedBox(height: 12),
-            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        // Overall notes
+        if (insight.body != null && insight.body!.isNotEmpty) ...[
+          _noteBox(insight.body!),
+          const SizedBox(height: 12),
+        ],
 
-            // Q→A pairs — spike labeled answers only
-            // (category insights are excluded; they are conversation, not spike labels)
-            if (hasAnswers) ...[
-              Row(children: [
-                const Expanded(
-                  child: Text('Your Answers',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: _ink)),
+        // Q→A pairs — spike labeled answers only
+        // (category insights are excluded; they are conversation, not spike labels)
+        if (hasAnswers) ...[
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Your Answers',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: _ink,
+                  ),
                 ),
-                Text('tap ✏️ to correct',
-                    style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.black38,
-                        fontStyle: FontStyle.italic)),
-              ]),
-              const SizedBox(height: 8),
-              ...labeledAnswers.entries
-                  // Only show spike answers (skip category:: keys)
-                  .where((e) => !e.key.startsWith('category::'))
-                  .map((e) {
+              ),
+              Text(
+                'tap ✏️ to correct',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.black38,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...labeledAnswers.entries
+              // Only show spike answers (skip category:: keys)
+              .where((e) => !e.key.startsWith('category::'))
+              .map((e) {
                 // Find the latest answer (account for corrections)
                 final correctedEntry = corrections
                     .where((c) => c.questionId == e.key)
                     .lastOrNull;
-                final displayAnswer =
-                    correctedEntry?.newAnswer ?? e.value;
+                final displayAnswer = correctedEntry?.newAnswer ?? e.value;
                 final wasEdited = correctedEntry != null;
 
                 return Padding(
@@ -1940,67 +2189,75 @@ class _PandaScreenState extends State<PandaScreen>
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: Colors.black.withOpacity(0.08)),
+                      border: Border.all(color: Colors.black.withOpacity(0.08)),
                     ),
                     child: Row(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: Padding(
-                            padding:
-                                const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
                             child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(e.key,
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.black45,
-                                        height: 1.35)),
+                                Text(
+                                  e.key,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.black45,
+                                    height: 1.35,
+                                  ),
+                                ),
                                 const SizedBox(height: 3),
-                                Row(children: [
-                                  Expanded(
-                                    child: Text(
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
                                         displayAnswer,
                                         style: const TextStyle(
-                                            fontSize: 13,
-                                            color: _ink,
-                                            fontWeight:
-                                                FontWeight.w500)),
-                                  ),
-                                  if (wasEdited)
-                                    Padding(
-                                      padding: const EdgeInsets
-                                          .only(left: 4),
-                                      child: Icon(
+                                          fontSize: 13,
+                                          color: _ink,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    if (wasEdited)
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 4),
+                                        child: Icon(
                                           Icons.edit_rounded,
                                           size: 11,
-                                          color: _teal
-                                              .withOpacity(0.6)),
-                                    ),
-                                ]),
+                                          color: _teal.withOpacity(0.6),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ],
                             ),
                           ),
                         ),
                         InkWell(
                           onTap: () => _editFirestoreAnswer(
-                              insight: insight,
-                              questionId: e.key,
-                              currentAnswer: displayAnswer),
+                            insight: insight,
+                            questionId: e.key,
+                            currentAnswer: displayAnswer,
+                          ),
                           borderRadius: const BorderRadius.only(
-                              topRight: Radius.circular(10),
-                              bottomRight: Radius.circular(10)),
+                            topRight: Radius.circular(10),
+                            bottomRight: Radius.circular(10),
+                          ),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 10),
-                            child: const Text('✏️',
-                                style: TextStyle(fontSize: 16)),
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            child: const Text(
+                              '✏️',
+                              style: TextStyle(fontSize: 16),
+                            ),
                           ),
                         ),
                       ],
@@ -2008,72 +2265,92 @@ class _PandaScreenState extends State<PandaScreen>
                   ),
                 );
               }),
-              const SizedBox(height: 4),
-            ],
+          const SizedBox(height: 4),
+        ],
 
-            // Extracted wellness slots
-            if (hasSlots) ...[
-              const Text('Extracted Insights',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: _ink)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: slots.toMap().entries
-                    .map((e) => Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: _teal.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: _teal.withOpacity(0.2)),
-                          ),
-                          child: Text('${e.key}: ${e.value}',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: _teal.withOpacity(0.9))),
-                        ))
-                    .toList(),
-              ),
-              const SizedBox(height: 8),
-            ],
-
-            // Corrections audit trail
-            if (corrections.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              const Text('Edit History',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: _ink)),
-              const SizedBox(height: 6),
-              ...corrections.map((c) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Icon(Icons.edit_rounded,
-                          size: 12,
-                          color: _teal.withOpacity(0.5)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          '${c.questionId}: "${c.oldAnswer}" → "${c.newAnswer}"',
-                          style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.black45,
-                              height: 1.3),
-                        ),
+        // Extracted wellness slots
+        if (hasSlots) ...[
+          const Text(
+            'Extracted Insights',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              color: _ink,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: slots
+                .toMap()
+                .entries
+                .map(
+                  (e) => Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _teal.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _teal.withOpacity(0.2)),
+                    ),
+                    child: Text(
+                      '${e.key}: ${e.value}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: _teal.withOpacity(0.9),
                       ),
-                    ]),
-                  )),
-            ],
-          ],
-        );
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 8),
+        ],
+
+        // Corrections audit trail
+        if (corrections.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          const Text(
+            'Edit History',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              color: _ink,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ...corrections.map(
+            (c) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.edit_rounded,
+                    size: 12,
+                    color: _teal.withOpacity(0.5),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${c.questionId}: "${c.oldAnswer}" → "${c.newAnswer}"',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black45,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   // ===========================================================================
@@ -2091,25 +2368,31 @@ class _PandaScreenState extends State<PandaScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
-        title: const Row(children: [
-          Text('✏️  ', style: TextStyle(fontSize: 20)),
-          Expanded(
-              child: Text('Edit Answer',
-                  style: TextStyle(
-                      fontSize: 17, fontWeight: FontWeight.bold))),
-        ]),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Text('✏️  ', style: TextStyle(fontSize: 20)),
+            Expanded(
+              child: Text(
+                'Edit Answer',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(questionId,
-                style: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.black54,
-                    height: 1.4,
-                    fontStyle: FontStyle.italic)),
+            Text(
+              questionId,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.black54,
+                height: 1.4,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
@@ -2122,36 +2405,40 @@ class _PandaScreenState extends State<PandaScreen>
                 fillColor: Colors.grey.shade50,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      BorderSide(color: _purple.withOpacity(0.3)),
+                  borderSide: BorderSide(color: _purple.withOpacity(0.3)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: _purple, width: 1.5),
+                  borderSide: const BorderSide(color: _purple, width: 1.5),
                 ),
               ),
             ),
             const SizedBox(height: 8),
             Text(
-                '⚡ Correcting your answer helps Panda learn your stress patterns more accurately.',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.black38,
-                    height: 1.4)),
+              '⚡ Correcting your answer helps Panda learn your stress patterns more accurately.',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.black38,
+                height: 1.4,
+              ),
+            ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel',
-                  style: TextStyle(color: Colors.black45))),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.black45),
+            ),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: _purple,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Save'),
@@ -2190,8 +2477,9 @@ class _PandaScreenState extends State<PandaScreen>
   Future<void> _regenerateSummary(String userId, Insights updated) async {
     if (updated.id == null) return;
     try {
-      final slots = (updated.pandaSlots?.toMap() ?? <String, dynamic>{})
-          .map((k, v) => MapEntry(k, v.toString()));
+      final slots = (updated.pandaSlots?.toMap() ?? <String, dynamic>{}).map(
+        (k, v) => MapEntry(k, v.toString()),
+      );
       final answers = updated.pandaLabeledAnswers ?? const <String, String>{};
       if (slots.isEmpty && answers.isEmpty) return;
 
@@ -2254,7 +2542,8 @@ class _PandaScreenState extends State<PandaScreen>
     // empty. Promote the best available signal so the finding is still a
     // distinct, titled insight rather than being dropped.
     if ((slots['stressor'] ?? '').isEmpty) {
-      final derived = slots['social_context'] ??
+      final derived =
+          slots['social_context'] ??
           slots['activity'] ??
           slots['location'] ??
           slots['other'] ??
@@ -2266,8 +2555,10 @@ class _PandaScreenState extends State<PandaScreen>
     final significant =
         stressor.isNotEmpty || reply.intent == PandaIntent.newStressor;
     if (kDebugMode) {
-      debugPrint('[ChatInsight] intent=${reply.intent} stressor="$stressor" '
-          'filledSlots=${reply.filledSlots} significant=$significant');
+      debugPrint(
+        '[ChatInsight] intent=${reply.intent} stressor="$stressor" '
+        'filledSlots=${reply.filledSlots} significant=$significant',
+      );
     }
     if (!significant) return;
 
@@ -2284,10 +2575,12 @@ class _PandaScreenState extends State<PandaScreen>
 
     final userId = _currentUserId;
     final conversation = _turns
-        .map((t) => {
-              'role': t.role == _Role.user ? 'user' : 'assistant',
-              'text': t.text,
-            })
+        .map(
+          (t) => {
+            'role': t.role == _Role.user ? 'user' : 'assistant',
+            'text': t.text,
+          },
+        )
         .toList();
     final labeled = (questionLabel != null && questionLabel.isNotEmpty)
         ? {questionLabel: userMessage}
@@ -2341,11 +2634,14 @@ class _PandaScreenState extends State<PandaScreen>
         color: color.withOpacity(0.10),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(label,
-          style: TextStyle(
-              fontSize: 10,
-              color: color,
-              fontWeight: FontWeight.w600)),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 
@@ -2357,15 +2653,19 @@ class _PandaScreenState extends State<PandaScreen>
         color: _purple.withOpacity(0.06),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Icon(Icons.psychology_outlined,
-            size: 16, color: _purple),
-        const SizedBox(width: 8),
-        Expanded(
-            child: Text(text,
-                style: const TextStyle(
-                    fontSize: 13, color: _purple, height: 1.4))),
-      ]),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.psychology_outlined, size: 16, color: _purple),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 13, color: _purple, height: 1.4),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2373,25 +2673,29 @@ class _PandaScreenState extends State<PandaScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24)),
-        title: const Row(children: [
-          Icon(Icons.shield_outlined, color: Colors.blueAccent),
-          SizedBox(width: 10),
-          Text('Privacy & Safety',
-              style: TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.bold)),
-        ]),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.shield_outlined, color: Colors.blueAccent),
+            SizedBox(width: 10),
+            Text(
+              'Privacy & Safety',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
         content: const Text(
-            'All health insights and conversations are encrypted and private.',
-            style: TextStyle(fontSize: 15, height: 1.4)),
+          'All health insights and conversations are encrypted and private.',
+          style: TextStyle(fontSize: 15, height: 1.4),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Got it',
-                  style: TextStyle(
-                      color: _purple,
-                      fontWeight: FontWeight.bold))),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'Got it',
+              style: TextStyle(color: _purple, fontWeight: FontWeight.bold),
+            ),
+          ),
         ],
       ),
     );
@@ -2400,93 +2704,119 @@ class _PandaScreenState extends State<PandaScreen>
   Widget _RecCard({required PandaRec rec}) {
     final Color catColor = _recCategoryColor(rec.category);
     return GestureDetector(
-      onTap:
-          rec.deepLink != null ? () => _launchUrl(rec.deepLink!) : null,
+      onTap: rec.deepLink != null ? () => _launchUrl(rec.deepLink!) : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-              color: catColor.withOpacity(0.25), width: 1.3),
+          border: Border.all(color: catColor.withOpacity(0.25), width: 1.3),
           boxShadow: [
             BoxShadow(
-                color: catColor.withOpacity(0.07),
-                blurRadius: 8,
-                offset: const Offset(0, 2))
+              color: catColor.withOpacity(0.07),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
-        child: Row(children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: catColor.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: catColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Text(rec.emoji, style: const TextStyle(fontSize: 18)),
+              ),
             ),
-            child: Center(
-                child: Text(rec.emoji,
-                    style: const TextStyle(fontSize: 18))),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(rec.title,
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: catColor)),
-                  const SizedBox(height: 2),
-                  Text(rec.subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 11.5,
-                          color: Colors.black54,
-                          height: 1.35)),
-                ]),
-          ),
-          const SizedBox(width: 8),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            if (rec.durationLabel != null)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: catColor.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(rec.durationLabel!,
+                  Text(
+                    rec.title,
                     style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: catColor,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    rec.subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.black54,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (rec.durationLabel != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: catColor.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      rec.durationLabel!,
+                      style: TextStyle(
                         fontSize: 10,
                         color: catColor,
-                        fontWeight: FontWeight.w600)),
-              ),
-            if (rec.deepLink != null) ...[
-              const SizedBox(height: 4),
-              Icon(Icons.open_in_new_rounded,
-                  size: 14, color: catColor.withOpacity(0.5)),
-            ],
-          ]),
-        ]),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                if (rec.deepLink != null) ...[
+                  const SizedBox(height: 4),
+                  Icon(
+                    Icons.open_in_new_rounded,
+                    size: 14,
+                    color: catColor.withOpacity(0.5),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Color _recCategoryColor(RecCategory cat) {
     switch (cat) {
-      case RecCategory.music:     return const Color(0xFF1DB954);
-      case RecCategory.breathing: return const Color(0xFF5B8DEF);
-      case RecCategory.movement:  return const Color(0xFFFF6B6B);
-      case RecCategory.sleep:     return const Color(0xFF9B72CF);
-      case RecCategory.focus:     return const Color(0xFFFFAA00);
-      case RecCategory.social:    return const Color(0xFF0ABFBC);
-      case RecCategory.nutrition: return const Color(0xFF4CAF50);
-      case RecCategory.journal:   return const Color(0xFFFF8C69);
+      case RecCategory.music:
+        return const Color(0xFF1DB954);
+      case RecCategory.breathing:
+        return const Color(0xFF5B8DEF);
+      case RecCategory.movement:
+        return const Color(0xFFFF6B6B);
+      case RecCategory.sleep:
+        return const Color(0xFF9B72CF);
+      case RecCategory.focus:
+        return const Color(0xFFFFAA00);
+      case RecCategory.social:
+        return const Color(0xFF0ABFBC);
+      case RecCategory.nutrition:
+        return const Color(0xFF4CAF50);
+      case RecCategory.journal:
+        return const Color(0xFFFF8C69);
     }
   }
 
@@ -2497,11 +2827,138 @@ class _PandaScreenState extends State<PandaScreen>
     }
   }
 
-  Widget _avatar({double size = 80}) => SvgPicture.string(
-        _kRobotSvg,
-        width: size,
-        height: size,
+  Widget _calendarActionControls(_Turn turn) {
+    final action = turn.calendarAction!;
+    if (turn.calendarStatus == _CalendarActionStatus.running) {
+      return const LinearProgressIndicator(minHeight: 3);
+    }
+    if (turn.calendarStatus == _CalendarActionStatus.done) {
+      return const Row(
+        children: [
+          Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
+          SizedBox(width: 6),
+          Text(
+            'Calendar updated',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ],
       );
+    }
+    if (turn.calendarStatus == _CalendarActionStatus.cancelled) {
+      return const Text('Cancelled', style: TextStyle(color: Colors.black54));
+    }
+    if (turn.calendarStatus == _CalendarActionStatus.failed) {
+      return Text(
+        turn.calendarError ?? 'The calendar change failed.',
+        style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+      );
+    }
+    final when = action.start == null
+        ? null
+        : DateFormat('EEE, MMM d · h:mm a').format(action.start!.toLocal());
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _calendarActionSummary(action),
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        if (when != null) Text(when, style: const TextStyle(fontSize: 13)),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            FilledButton.icon(
+              onPressed: () => _confirmCalendarAction(turn),
+              icon: const Icon(Icons.check_rounded, size: 17),
+              label: const Text('Confirm'),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: () => setState(
+                () => turn.calendarStatus = _CalendarActionStatus.cancelled,
+              ),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _calendarActionSummary(PandaCalendarAction action) =>
+      switch (action.operation) {
+        PandaCalendarOperation.create => 'Create “${action.title}”',
+        PandaCalendarOperation.update => 'Edit “${action.targetTitle}”',
+        PandaCalendarOperation.delete => 'Delete “${action.targetTitle}”',
+      };
+
+  Future<void> _confirmCalendarAction(_Turn turn) async {
+    setState(() => turn.calendarStatus = _CalendarActionStatus.running);
+    try {
+      final action = turn.calendarAction!;
+      if (action.operation == PandaCalendarOperation.create) {
+        await CalendarService.createEvent(
+          title: action.title!,
+          start: action.start!,
+          end: action.end!,
+          recurrence: action.recurrence,
+        );
+      } else {
+        final event = await _findCalendarEvent(action);
+        if (action.operation == PandaCalendarOperation.delete) {
+          await CalendarService.deleteEvent(event);
+        } else {
+          await CalendarService.updateEvent(
+            event,
+            title: action.title,
+            start: action.start,
+            end: action.end,
+            recurrence: action.recurrence == 'none' ? null : action.recurrence,
+          );
+        }
+      }
+      if (!mounted) return;
+      setState(() => turn.calendarStatus = _CalendarActionStatus.done);
+      unawaited(_loadScheduleContext());
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        turn.calendarStatus = _CalendarActionStatus.failed;
+        turn.calendarError = e.toString().replaceFirst('Bad state: ', '');
+      });
+    }
+  }
+
+  Future<gcal.Event> _findCalendarEvent(PandaCalendarAction action) async {
+    final anchor = action.start?.toLocal();
+    final from = anchor == null
+        ? DateTime.now().subtract(const Duration(days: 1))
+        : DateTime(anchor.year, anchor.month, anchor.day);
+    final to = anchor == null
+        ? DateTime.now().add(const Duration(days: 60))
+        : from.add(const Duration(days: 1));
+    final events = await CalendarService.getEventsBetween(from, to);
+    String normalize(String value) =>
+        value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    final target = normalize(action.targetTitle ?? '');
+    final matches = events
+        .where((event) => normalize(event.summary ?? '') == target)
+        .toList();
+    if (matches.isEmpty) {
+      throw StateError(
+        'I could not find “${action.targetTitle}” in that date range.',
+      );
+    }
+    if (matches.length > 1) {
+      throw StateError(
+        'More than one event matches “${action.targetTitle}”. Include its date or time.',
+      );
+    }
+    return matches.single;
+  }
+
+  Widget _avatar({double size = 80}) =>
+      SvgPicture.string(_kRobotSvg, width: size, height: size);
 }
 
 // =============================================================================
@@ -2509,7 +2966,17 @@ class _PandaScreenState extends State<PandaScreen>
 // =============================================================================
 
 enum _Role { user, assistant }
-enum _TurnKind { normal, digression, depth, recommend, categoryMenu }
+
+enum _TurnKind {
+  normal,
+  digression,
+  depth,
+  recommend,
+  categoryMenu,
+  calendarAction,
+}
+
+enum _CalendarActionStatus { pending, running, done, cancelled, failed }
 
 class _Turn {
   _Turn({
@@ -2520,6 +2987,7 @@ class _Turn {
     this.categoryOptions = const [],
     this.categoryColor,
     this.categoryLabel,
+    this.calendarAction,
   });
   final _Role role;
   final String text;
@@ -2527,25 +2995,32 @@ class _Turn {
   final List<PandaRec> recs;
   final List<String> categoryOptions;
   final Color? categoryColor;
+
   /// Which category set this menu belongs to — needed to route option taps.
   final String? categoryLabel;
+  final PandaCalendarAction? calendarAction;
+  _CalendarActionStatus calendarStatus = _CalendarActionStatus.pending;
+  String? calendarError;
 
   factory _Turn.user(String t) => _Turn(role: _Role.user, text: t);
-  factory _Turn.assistant(String t, {
+  factory _Turn.assistant(
+    String t, {
     _TurnKind kind = _TurnKind.normal,
     List<PandaRec> recs = const [],
     List<String> categoryOptions = const [],
     Color? categoryColor,
     String? categoryLabel,
-  }) =>
-      _Turn(
-          role: _Role.assistant,
-          text: t,
-          kind: kind,
-          recs: recs,
-          categoryOptions: categoryOptions,
-          categoryColor: categoryColor,
-          categoryLabel: categoryLabel);
+    PandaCalendarAction? calendarAction,
+  }) => _Turn(
+    role: _Role.assistant,
+    text: t,
+    kind: kind,
+    recs: recs,
+    categoryOptions: categoryOptions,
+    categoryColor: categoryColor,
+    categoryLabel: categoryLabel,
+    calendarAction: calendarAction,
+  );
 }
 
 class _DigressionFrame {
@@ -2619,14 +3094,19 @@ class _TypingIndicatorState extends State<TypingIndicator>
   void initState() {
     super.initState();
     _ctrls = List.generate(
-        3,
-        (_) => AnimationController(
-            vsync: this,
-            duration: const Duration(milliseconds: 600))
-          ..repeat(reverse: true));
+      3,
+      (_) => AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 600),
+      )..repeat(reverse: true),
+    );
     _anims = _ctrls
-        .map((c) => Tween<double>(begin: 0.25, end: 1.0).animate(
-            CurvedAnimation(parent: c, curve: Curves.easeInOut)))
+        .map(
+          (c) => Tween<double>(
+            begin: 0.25,
+            end: 1.0,
+          ).animate(CurvedAnimation(parent: c, curve: Curves.easeInOut)),
+        )
         .toList();
     for (int i = 0; i < 3; i++) {
       Timer(Duration(milliseconds: i * 180), () {
@@ -2654,11 +3134,12 @@ class _TypingIndicatorState extends State<TypingIndicator>
             height: 7,
             width: 7,
             decoration: BoxDecoration(
-                color: Colors.grey.shade400, shape: BoxShape.circle),
+              color: Colors.grey.shade400,
+              shape: BoxShape.circle,
+            ),
           ),
         ),
       ),
     );
   }
 }
-
