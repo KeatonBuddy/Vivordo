@@ -64,6 +64,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late Stream<Map<String, bool>> _consentStream;
 
   bool _refreshingHealthMetrics = false;
+  DateTime? _lastManualHealthRefresh;
   List<String> _metricOrder = [..._defaultMetricOrder];
   bool _isLoadingMetricOrder = true;
 
@@ -121,17 +122,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _consentStream    = HealthService().consentStream();
   }
 
-  Future<void> _refreshHealthMetricsFromHealth() async {
+  Future<void> _refreshHealthMetricsFromHealth({bool showFeedback = false}) async {
     if (_refreshingHealthMetrics) return;
-    _refreshingHealthMetrics = true;
+    if (mounted) setState(() => _refreshingHealthMetrics = true);
 
     try {
       await HealthService().syncToFirestore(daysBack: _daysBack);
+      if (!mounted) return;
+      setState(() => _lastManualHealthRefresh = DateTime.now());
+      if (showFeedback) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Apple Health metrics refreshed.')),
+        );
+      }
     } catch (e) {
       debugPrint('DashboardScreen: failed to refresh metrics from Apple Health: $e');
+      if (showFeedback && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Apple Health refresh failed: $e')),
+        );
+      }
     } finally {
-      _refreshingHealthMetrics = false;
+      if (mounted) setState(() => _refreshingHealthMetrics = false);
     }
+  }
+
+  String _manualRefreshLabel() {
+    final refreshed = _lastManualHealthRefresh;
+    if (refreshed == null) return 'Refresh';
+    final hour = refreshed.hour % 12 == 0 ? 12 : refreshed.hour % 12;
+    final minute = refreshed.minute.toString().padLeft(2, '0');
+    final suffix = refreshed.hour >= 12 ? 'PM' : 'AM';
+    return 'Updated $hour:$minute $suffix';
   }
 
   /// Single Firestore query that fetches all daily docs in the date window from
@@ -344,25 +366,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                   ),
+                  IconButton(
+                    tooltip: 'Refresh Apple Health',
+                    onPressed: _refreshingHealthMetrics
+                        ? null
+                        : () => _refreshHealthMetricsFromHealth(
+                            showFeedback: true,
+                          ),
+                    icon: _refreshingHealthMetrics
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2.4),
+                          )
+                        : const Icon(Icons.refresh_rounded),
+                    color: accentPurple,
+                  ),
                   TextButton.icon(
-                    onPressed:
-                        _isLoadingMetricOrder ? null : _showLayoutEditor,
+                    onPressed: _isLoadingMetricOrder ? null : _showLayoutEditor,
                     icon: const Icon(Icons.tune_rounded, size: 18),
-                    label: const Text('Edit layout'),
+                    label: const Text('Layout'),
                     style: TextButton.styleFrom(
                       foregroundColor: accentPurple,
-                      textStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Your health trends',
-                style: TextStyle(fontSize: 14, color: textGrey),
+              Text(
+                _lastManualHealthRefresh == null
+                    ? 'Your health trends • Tap refresh to sync now'
+                    : 'Your health trends • ${_manualRefreshLabel()}',
+                style: const TextStyle(fontSize: 14, color: textGrey),
               ),
               const SizedBox(height: 16),
               _buildFilter(),
