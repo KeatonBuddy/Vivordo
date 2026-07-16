@@ -39,6 +39,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Vivordo Health uses the camera and flash to measure your heart rate via PPG (photoplethysmography). Place your finger over the lens to scan.</string>
 	<key>NSHealthClinicalHealthRecordsShareUsageDescription</key>

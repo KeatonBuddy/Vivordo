@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
@@ -725,13 +727,12 @@ class _HomeScreenState extends State<HomeScreen> {
           if (isEmpty && showConnectHint) ...[
             const SizedBox(height: 4),
             GestureDetector(
-              onTap: emptyAction ??
+              onTap:
+                  emptyAction ??
                   () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SettingsScreen(),
-                        ),
-                      ),
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  ),
               child: Text(
                 emptyActionLabel,
                 style: const TextStyle(fontSize: 10, color: textGrey),
@@ -1416,8 +1417,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: event == null
                       ? openStart == null || openEnd == null
                             ? null
-                            : () => _calendarKey.currentState
-                                  ?.showCreateEvent(openStart, openEnd)
+                            : () => _calendarKey.currentState?.showCreateEvent(
+                                openStart,
+                                openEnd,
+                              )
                       : () =>
                             _calendarKey.currentState?.showEventDetails(event),
                   child: Padding(
@@ -2504,6 +2507,38 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _openMaps(String location) async {
+    final googleWebUri = Uri.https('www.google.com', '/maps/search/', {
+      'api': '1',
+      'query': location,
+    });
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      final googleAppUri = Uri.parse(
+        'comgooglemaps://?q=${Uri.encodeQueryComponent(location)}',
+      );
+      if (await canLaunchUrl(googleAppUri)) {
+        await launchUrl(googleAppUri, mode: LaunchMode.externalApplication);
+        return;
+      }
+
+      final appleMapsUri = Uri.https('maps.apple.com', '/', {'q': location});
+      if (await launchUrl(
+        appleMapsUri,
+        mode: LaunchMode.externalApplication,
+      )) {
+        return;
+      }
+    } else if (await launchUrl(
+      googleWebUri,
+      mode: LaunchMode.externalApplication,
+    )) {
+      return;
+    }
+
+    _showCalendarMessage('Could not open a maps app.');
+  }
+
   void showEventDetails(gcal.Event event) {
     showModalBottomSheet(
       context: context,
@@ -2596,6 +2631,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
                       icon: Icons.place_rounded,
                       label: 'Location',
                       value: location,
+                      onTap: () => _openMaps(location),
                     ),
                   ],
                   if (description != null && description.trim().isNotEmpty) ...[
@@ -2604,6 +2640,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
                       icon: Icons.notes_rounded,
                       label: 'Description',
                       value: description,
+                      maxValueHeight: 140,
                     ),
                   ],
                   if (attendees.isNotEmpty) ...[
@@ -3321,8 +3358,7 @@ class _CreateCalendarEventDialogState
     _date = DateUtils.dateOnly(widget.initialStart);
     _startTime = TimeOfDay.fromDateTime(widget.initialStart);
     _endTime = TimeOfDay.fromDateTime(
-      widget.initialEnd ??
-          widget.initialStart.add(const Duration(hours: 1)),
+      widget.initialEnd ?? widget.initialStart.add(const Duration(hours: 1)),
     );
   }
 
@@ -3479,47 +3515,79 @@ class _EventDetailRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
+  final double? maxValueHeight;
+  final VoidCallback? onTap;
 
   const _EventDetailRow({
     required this.icon,
     required this.label,
     required this.value,
+    this.maxValueHeight,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: const Color(0xFF8E8E93)),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: onTap == null ? 0 : 6),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF8E8E93),
-                  letterSpacing: 0.4,
+              Icon(icon, size: 18, color: const Color(0xFF8E8E93)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF8E8E93),
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: maxValueHeight ?? double.infinity,
+                      ),
+                      child: SingleChildScrollView(
+                        physics: maxValueHeight == null
+                            ? const NeverScrollableScrollPhysics()
+                            : const BouncingScrollPhysics(),
+                        child: Text(
+                          value,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF1C1C1E),
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF1C1C1E),
-                  height: 1.35,
+              if (onTap != null) ...[
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.open_in_new_rounded,
+                  size: 16,
+                  color: Color(0xFF1A73E8),
                 ),
-              ),
+              ],
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
