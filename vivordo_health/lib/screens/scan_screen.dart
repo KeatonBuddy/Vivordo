@@ -16,8 +16,7 @@ class ScanScreen extends StatefulWidget {
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen>
-    with TickerProviderStateMixin {
+class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   // ── Camera / PPG ──────────────────────────────────────────────────────────
   CameraController? _cameraController;
   ScanState _scanState = ScanState.initializing;
@@ -46,12 +45,12 @@ class _ScanScreenState extends State<ScanScreen>
   bool _dismissedFirstScanTutorial = false;
 
   static const Color accentPurple = Color(0xFF7B6EF6);
-  static const Color bgColor     = Color(0xFFF2F2F7);
-  static const Color cardWhite   = Colors.white;
-  static const Color textDark    = Color(0xFF1C1C1E);
-  static const Color textGrey    = Color(0xFF8E8E93);
-  static const Color greenColor  = Color(0xFF34C759);
-  static const Color redColor    = Color(0xFFFF3B30);
+  static const Color bgColor = Color(0xFFF2F2F7);
+  static const Color cardWhite = Colors.white;
+  static const Color textDark = Color(0xFF1C1C1E);
+  static const Color textGrey = Color(0xFF8E8E93);
+  static const Color greenColor = Color(0xFF34C759);
+  static const Color redColor = Color(0xFFFF3B30);
 
   @override
   void initState() {
@@ -187,40 +186,45 @@ class _ScanScreenState extends State<ScanScreen>
 
   void _startImageStream() {
     final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized || controller.value.isStreamingImages) {
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        controller.value.isStreamingImages) {
       return;
     }
 
-    controller.startImageStream((CameraImage image) {
-      if (!mounted || _isProcessingFrame || _showTutorial) {
-        _fingerDetectedFrames = 0;
-        return;
-      }
-      _isProcessingFrame = true;
-      try {
-        final redMean = _extractAverageRed(image);
-        final fingerDetected = redMean > _fingerRedThreshold;
-
-        if (fingerDetected) {
-          _fingerDetectedFrames++;
-
-          if (_scanState == ScanState.idle && _fingerDetectedFrames >= _requiredFingerFrames) {
-            _startScan();
+    controller
+        .startImageStream((CameraImage image) {
+          if (!mounted || _isProcessingFrame || _showTutorial) {
+            _fingerDetectedFrames = 0;
+            return;
           }
+          _isProcessingFrame = true;
+          try {
+            final redMean = _extractAverageRed(image);
+            final fingerDetected = redMean > _fingerRedThreshold;
 
-          if (_scanState == ScanState.scanning) {
-            _redValues.add(redMean);
+            if (fingerDetected) {
+              _fingerDetectedFrames++;
+
+              if (_scanState == ScanState.idle &&
+                  _fingerDetectedFrames >= _requiredFingerFrames) {
+                _startScan();
+              }
+
+              if (_scanState == ScanState.scanning) {
+                _redValues.add(redMean);
+              }
+            } else {
+              _fingerDetectedFrames = 0;
+              if (_scanState == ScanState.scanning) _pauseScan();
+            }
+          } finally {
+            _isProcessingFrame = false;
           }
-        } else {
-          _fingerDetectedFrames = 0;
-          if (_scanState == ScanState.scanning) _pauseScan();
-        }
-      } finally {
-        _isProcessingFrame = false;
-      }
-    }).catchError((e) {
-      debugPrint('[PPG] Failed to start image stream: $e');
-    });
+        })
+        .catchError((e) {
+          debugPrint('[PPG] Failed to start image stream: $e');
+        });
   }
 
   double _extractAverageRed(CameraImage image) {
@@ -252,8 +256,7 @@ class _ScanScreenState extends State<ScanScreen>
         timer.cancel();
         return;
       }
-      final elapsed =
-          DateTime.now().difference(_scanStartTime!).inMilliseconds;
+      final elapsed = DateTime.now().difference(_scanStartTime!).inMilliseconds;
       setState(() => _progress = elapsed / (_scanDurationSeconds * 1000));
       if (elapsed >= _scanDurationSeconds * 1000) {
         timer.cancel();
@@ -291,7 +294,9 @@ class _ScanScreenState extends State<ScanScreen>
       final minRed = _redValues.reduce(min);
       final maxRed = _redValues.reduce(max);
       final avgRed = _redValues.reduce((a, b) => a + b) / _redValues.length;
-      debugPrint('[PPG] samples=${_redValues.length}, duration=$durationSecs, minRed=$minRed, maxRed=$maxRed, avgRed=$avgRed');
+      debugPrint(
+        '[PPG] samples=${_redValues.length}, duration=$durationSecs, minRed=$minRed, maxRed=$maxRed, avgRed=$avgRed',
+      );
     }
 
     //final bpmResult = (60 + Random().nextInt(41)).toDouble(); <-- demo
@@ -301,8 +306,13 @@ class _ScanScreenState extends State<ScanScreen>
     final bpmResult = peakBpm > 0
         ? peakBpm
         : (algorithmBpm > minAcceptableBpm ? algorithmBpm : 0.0);
-    final qualityScore = PpgAlgorithm.calculateQuality(_redValues, durationSecs);
-    debugPrint('[PPG] algorithmBpm=$algorithmBpm, peakBpm=$peakBpm, finalBpm=$bpmResult, qualityScore=$qualityScore');
+    final qualityScore = PpgAlgorithm.calculateQuality(
+      _redValues,
+      durationSecs,
+    );
+    debugPrint(
+      '[PPG] algorithmBpm=$algorithmBpm, peakBpm=$peakBpm, finalBpm=$bpmResult, qualityScore=$qualityScore',
+    );
 
     if (bpmResult > 0) {
       await _saveToFirestore(bpmResult.round(), qualityScore);
@@ -316,7 +326,8 @@ class _ScanScreenState extends State<ScanScreen>
       if (mounted) {
         setState(() {
           _errorTitle = 'Poor signal detected';
-          _errorBody = 'Try again with your fingertip fully covering the camera and flash. Keep your hand still and use light, steady pressure.';
+          _errorBody =
+              'Try again with your fingertip fully covering the camera and flash. Keep your hand still and use light, steady pressure.';
           _scanState = ScanState.error;
         });
       }
@@ -330,9 +341,8 @@ class _ScanScreenState extends State<ScanScreen>
     if (sampleRate <= 0) return 0.0;
 
     final mean = values.reduce((a, b) => a + b) / values.length;
-    final variance = values
-            .map((v) => (v - mean) * (v - mean))
-            .reduce((a, b) => a + b) /
+    final variance =
+        values.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) /
         values.length;
     final sd = sqrt(variance);
     if (sd < 0.5) return 0.0;
@@ -359,7 +369,8 @@ class _ScanScreenState extends State<ScanScreen>
     int lastPeak = -9999;
 
     for (int i = 1; i < smoothed.length - 1; i++) {
-      final isLocalMax = smoothed[i] > smoothed[i - 1] && smoothed[i] >= smoothed[i + 1];
+      final isLocalMax =
+          smoothed[i] > smoothed[i - 1] && smoothed[i] >= smoothed[i + 1];
       final isTallEnough = smoothed[i] > threshold;
       final isFarEnough = i - lastPeak >= minGap;
 
@@ -378,7 +389,9 @@ class _ScanScreenState extends State<ScanScreen>
     }
 
     if (intervals.length < 2) {
-      debugPrint('[PPG] peak detector rejected: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, minGap=$minGap, maxGap=$maxGap');
+      debugPrint(
+        '[PPG] peak detector rejected: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, minGap=$minGap, maxGap=$maxGap',
+      );
       return 0.0;
     }
 
@@ -386,7 +399,9 @@ class _ScanScreenState extends State<ScanScreen>
     final medianInterval = intervals[intervals.length ~/ 2];
     final bpm = 60.0 / medianInterval;
 
-    debugPrint('[PPG] peak detector: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, bpm=$bpm');
+    debugPrint(
+      '[PPG] peak detector: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, bpm=$bpm',
+    );
 
     if (bpm < 45 || bpm > 160) return 0.0;
     return bpm;
@@ -397,7 +412,8 @@ class _ScanScreenState extends State<ScanScreen>
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         final now = DateTime.now();
-        final dayKey = '${now.year.toString().padLeft(4, '0')}-'
+        final dayKey =
+            '${now.year.toString().padLeft(4, '0')}-'
             '${now.month.toString().padLeft(2, '0')}-'
             '${now.day.toString().padLeft(2, '0')}';
 
@@ -407,6 +423,11 @@ class _ScanScreenState extends State<ScanScreen>
             .collection('metrics_daily')
             .doc(dayKey);
 
+        final scanEntry = {
+          'bpm': bpm.toDouble(),
+          'timestamp': Timestamp.fromDate(now),
+          'signalQuality': signalQuality,
+        };
         final heartRateScan = {
           'avg': bpm.toDouble(),
           'unit': 'bpm',
@@ -417,22 +438,55 @@ class _ScanScreenState extends State<ScanScreen>
           'syncedAt': FieldValue.serverTimestamp(),
         };
 
-        await ref.set({
-          'heart_rate': heartRateScan,
-          // Keep camera scans separate from HealthKit's daily heart-rate data.
-          'heart_rate_scan': heartRateScan,
-          'signal_quality': {
-            'avg': signalQuality,
-            'unit': 'score',
-            'dimension': 'vitals',
-            'source': 'camera_ppg',
-            'syncedAt': FieldValue.serverTimestamp(),
-          },
-          'date': dayKey,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        await FirebaseFirestore.instance.runTransaction((transaction) async {
+          final snapshot = await transaction.get(ref);
+          final existingScan = snapshot.data()?['heart_rate_scan'] as Map?;
+          final rawEntries = existingScan?['entries'];
+          final entries = <Map<String, dynamic>>[];
+          if (rawEntries is List) {
+            for (final entry in rawEntries) {
+              if (entry is Map) {
+                entries.add(Map<String, dynamic>.from(entry));
+              }
+            }
+          } else if (existingScan?['avg'] is num) {
+            // Preserve a scan saved before per-scan history was introduced.
+            entries.add({
+              'bpm': (existingScan!['avg'] as num).toDouble(),
+              'timestamp': existingScan['syncedAt'],
+            });
+          }
+          entries.add(scanEntry);
+          final average =
+              entries
+                  .map((entry) => entry['bpm'])
+                  .whereType<num>()
+                  .fold<double>(0, (total, value) => total + value.toDouble()) /
+              entries.length;
 
-        debugPrint('users/${user.uid}/metrics_daily/$dayKey updated with heart_rate scan');
+          transaction.set(ref, {
+            'heart_rate': heartRateScan,
+            // Keep camera scans separate from HealthKit's daily heart-rate data.
+            'heart_rate_scan': {
+              ...heartRateScan,
+              'avg': average,
+              'entries': entries,
+            },
+            'signal_quality': {
+              'avg': signalQuality,
+              'unit': 'score',
+              'dimension': 'vitals',
+              'source': 'camera_ppg',
+              'syncedAt': FieldValue.serverTimestamp(),
+            },
+            'date': dayKey,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        });
+
+        debugPrint(
+          'users/${user.uid}/metrics_daily/$dayKey updated with heart_rate scan',
+        );
         if (_isFirstScan && mounted) {
           setState(() {
             _isFirstScan = false;
@@ -519,7 +573,7 @@ class _ScanScreenState extends State<ScanScreen>
                   ),
                   IconButton(
                     tooltip: 'Show tutorial',
-                  onPressed: () {
+                    onPressed: () {
                       _scanTimer?.cancel();
                       _spinController.stop();
                       setState(() {
@@ -564,11 +618,11 @@ class _ScanScreenState extends State<ScanScreen>
                 const SizedBox(height: 20),
               ],
               if (_scanState == ScanState.initializing) _buildInitializing(),
-              if (_scanState == ScanState.idle)         _buildIdle(),
-              if (_scanState == ScanState.scanning)     _buildScanning(),
-              if (_scanState == ScanState.processing)   _buildProcessing(),
-              if (_scanState == ScanState.success)      _buildSuccess(),
-              if (_scanState == ScanState.error)        _buildError(),
+              if (_scanState == ScanState.idle) _buildIdle(),
+              if (_scanState == ScanState.scanning) _buildScanning(),
+              if (_scanState == ScanState.processing) _buildProcessing(),
+              if (_scanState == ScanState.success) _buildSuccess(),
+              if (_scanState == ScanState.error) _buildError(),
               const SizedBox(height: 120),
             ],
           ),
@@ -591,11 +645,7 @@ class _ScanScreenState extends State<ScanScreen>
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.warning_amber_rounded,
-            color: Color(0xFFFF9500),
-            size: 20,
-          ),
+          Icon(Icons.warning_amber_rounded, color: Color(0xFFFF9500), size: 20),
           SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -625,17 +675,20 @@ class _ScanScreenState extends State<ScanScreen>
       {
         'icon': Icons.touch_app_outlined,
         'title': 'Use light, steady pressure',
-        'body': 'Press firmly enough to cover the lens, but avoid squeezing too hard. Too much pressure can weaken the pulse signal.',
+        'body':
+            'Press firmly enough to cover the lens, but avoid squeezing too hard. Too much pressure can weaken the pulse signal.',
       },
       {
         'icon': Icons.back_hand_outlined,
         'title': 'Cup with your other hand',
-        'body': 'Use your other hand to gently shield the rear camera area. This helps block outside light and keeps your finger steady for a cleaner reading.',
+        'body':
+            'Use your other hand to gently shield the rear camera area. This helps block outside light and keeps your finger steady for a cleaner reading.',
       },
       {
         'icon': Icons.pan_tool_alt_outlined,
         'title': 'Hold still for 15 seconds',
-        'body': 'Keep your phone and hand steady. The scan starts automatically once your finger is detected.',
+        'body':
+            'Keep your phone and hand steady. The scan starts automatically once your finger is detected.',
       },
     ];
 
@@ -739,7 +792,9 @@ class _ScanScreenState extends State<ScanScreen>
                 width: isActive ? 18 : 7,
                 height: 7,
                 decoration: BoxDecoration(
-                  color: isActive ? accentPurple : accentPurple.withOpacity(0.22),
+                  color: isActive
+                      ? accentPurple
+                      : accentPurple.withOpacity(0.22),
                   borderRadius: BorderRadius.circular(10),
                 ),
               );
@@ -912,7 +967,11 @@ class _ScanScreenState extends State<ScanScreen>
             children: [
               const Row(
                 children: [
-                  Icon(Icons.info_outline_rounded, size: 15, color: accentPurple),
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 15,
+                    color: accentPurple,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'How it works',
@@ -935,14 +994,26 @@ class _ScanScreenState extends State<ScanScreen>
                     : 'Find a bright light source and press your fingertip firmly over the lens.',
               ),
               const SizedBox(height: 14),
-              _buildStep('2', Icons.touch_app_outlined,
-                  'Cover the lens', 'Gently press your fingertip over the rear camera and flash — no need to press hard.'),
+              _buildStep(
+                '2',
+                Icons.touch_app_outlined,
+                'Cover the lens',
+                'Gently press your fingertip over the rear camera and flash — no need to press hard.',
+              ),
               const SizedBox(height: 14),
-              _buildStep('3', Icons.favorite_outline_rounded,
-                  'Hold still', 'Keep steady for 15 seconds. Scanning starts the moment your finger is detected.'),
+              _buildStep(
+                '3',
+                Icons.favorite_outline_rounded,
+                'Hold still',
+                'Keep steady for 15 seconds. Scanning starts the moment your finger is detected.',
+              ),
               const SizedBox(height: 14),
-              _buildStep('4', Icons.bar_chart_rounded,
-                  'Get your results', 'Your heart rate and stress level are calculated and saved automatically.'),
+              _buildStep(
+                '4',
+                Icons.bar_chart_rounded,
+                'Get your results',
+                'Your heart rate and stress level are calculated and saved automatically.',
+              ),
             ],
           ),
         ),
@@ -960,11 +1031,20 @@ class _ScanScreenState extends State<ScanScreen>
           ),
           child: Column(
             children: [
-              _buildTipRow(Icons.do_not_touch_outlined, 'Avoid pressing too hard — light contact works best'),
+              _buildTipRow(
+                Icons.do_not_touch_outlined,
+                'Avoid pressing too hard — light contact works best',
+              ),
               const SizedBox(height: 10),
-              _buildTipRow(Icons.straighten_outlined, 'Keep your hand and phone level'),
+              _buildTipRow(
+                Icons.straighten_outlined,
+                'Keep your hand and phone level',
+              ),
               const SizedBox(height: 10),
-              _buildTipRow(Icons.timer_outlined, 'Scanning starts automatically — just wait'),
+              _buildTipRow(
+                Icons.timer_outlined,
+                'Scanning starts automatically — just wait',
+              ),
             ],
           ),
         ),
@@ -990,13 +1070,21 @@ class _ScanScreenState extends State<ScanScreen>
                     width: 168,
                     height: 168,
                     color: Colors.black,
-                    child: _cameraController != null &&
+                    child:
+                        _cameraController != null &&
                             _cameraController!.value.isInitialized
                         ? FittedBox(
                             fit: BoxFit.cover,
                             child: SizedBox(
-                              width: _cameraController!.value.previewSize?.height ?? 168,
-                              height: _cameraController!.value.previewSize?.width ?? 168,
+                              width:
+                                  _cameraController!
+                                      .value
+                                      .previewSize
+                                      ?.height ??
+                                  168,
+                              height:
+                                  _cameraController!.value.previewSize?.width ??
+                                  168,
                               child: CameraPreview(_cameraController!),
                             ),
                           )
@@ -1016,7 +1104,9 @@ class _ScanScreenState extends State<ScanScreen>
                     value: _progress,
                     strokeWidth: 6,
                     backgroundColor: accentPurple.withOpacity(0.15),
-                    valueColor: const AlwaysStoppedAnimation<Color>(accentPurple),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      accentPurple,
+                    ),
                   ),
                 ),
                 RotationTransition(
@@ -1103,13 +1193,13 @@ class _ScanScreenState extends State<ScanScreen>
     final stressLabel = bpm < 65
         ? 'Low Stress'
         : bpm < 80
-            ? 'Moderate'
-            : 'Elevated';
+        ? 'Moderate'
+        : 'Elevated';
     final stressColor = bpm < 65
         ? greenColor
         : bpm < 80
-            ? const Color(0xFFFF9500)
-            : redColor;
+        ? const Color(0xFFFF9500)
+        : redColor;
     final qualityScore = PpgAlgorithm.calculateQuality(
       _redValues,
       _scanDurationSeconds.toDouble(),
@@ -1148,7 +1238,11 @@ class _ScanScreenState extends State<ScanScreen>
             children: [
               const Text(
                 'Heart Rate',
-                style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -1163,11 +1257,18 @@ class _ScanScreenState extends State<ScanScreen>
               ),
               const Text(
                 'BPM',
-                style: TextStyle(color: Colors.white60, fontSize: 16, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                  color: Colors.white60,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.18),
                   borderRadius: BorderRadius.circular(20),
@@ -1203,11 +1304,32 @@ class _ScanScreenState extends State<ScanScreen>
         // Metric pills
         Row(
           children: [
-            Expanded(child: _buildMetricCard(Icons.favorite_rounded, 'Heart Rate', '$bpm bpm', redColor)),
+            Expanded(
+              child: _buildMetricCard(
+                Icons.favorite_rounded,
+                'Heart Rate',
+                '$bpm bpm',
+                redColor,
+              ),
+            ),
             const SizedBox(width: 10),
-            Expanded(child: _buildMetricCard(Icons.show_chart_rounded, 'Signal Quality', qualityLabel, qualityColor)),
+            Expanded(
+              child: _buildMetricCard(
+                Icons.show_chart_rounded,
+                'Signal Quality',
+                qualityLabel,
+                qualityColor,
+              ),
+            ),
             const SizedBox(width: 10),
-            Expanded(child: _buildMetricCard(Icons.psychology_outlined, 'Strain', stressLabel, stressColor)),
+            Expanded(
+              child: _buildMetricCard(
+                Icons.psychology_outlined,
+                'Strain',
+                stressLabel,
+                stressColor,
+              ),
+            ),
           ],
         ),
 
@@ -1227,11 +1349,19 @@ class _ScanScreenState extends State<ScanScreen>
             children: [
               const Row(
                 children: [
-                  Icon(Icons.auto_awesome_rounded, size: 15, color: accentPurple),
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 15,
+                    color: accentPurple,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'Insight',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textDark),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: textDark,
+                    ),
                   ),
                 ],
               ),
@@ -1240,9 +1370,13 @@ class _ScanScreenState extends State<ScanScreen>
                 bpm < 65
                     ? 'Your heart rate is low and relaxed — great time for focused work or important conversations.'
                     : bpm < 80
-                        ? 'Your heart rate looks healthy. Take a few deep breaths to keep stress balanced.'
-                        : 'Your heart rate is elevated. Consider a short break, breathing exercise, or a walk.',
-                style: const TextStyle(fontSize: 13, color: textGrey, height: 1.5),
+                    ? 'Your heart rate looks healthy. Take a few deep breaths to keep stress balanced.'
+                    : 'Your heart rate is elevated. Consider a short break, breathing exercise, or a walk.',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: textGrey,
+                  height: 1.5,
+                ),
               ),
             ],
           ),
@@ -1259,7 +1393,9 @@ class _ScanScreenState extends State<ScanScreen>
             style: OutlinedButton.styleFrom(
               foregroundColor: textDark,
               side: const BorderSide(color: Color(0xFFE5E5EA)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
             ),
             child: const Text(
               'Scan Again',
@@ -1296,7 +1432,11 @@ class _ScanScreenState extends State<ScanScreen>
         Text(
           _errorTitle,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textDark),
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: textDark,
+          ),
         ),
         const SizedBox(height: 8),
         Text(
@@ -1311,7 +1451,8 @@ class _ScanScreenState extends State<ScanScreen>
           child: ElevatedButton(
             onPressed: () {
               setState(() => _scanState = ScanState.initializing);
-              if (_cameraController != null && _cameraController!.value.isInitialized) {
+              if (_cameraController != null &&
+                  _cameraController!.value.isInitialized) {
                 _reset();
               } else {
                 _initCamera();
@@ -1321,9 +1462,14 @@ class _ScanScreenState extends State<ScanScreen>
               backgroundColor: accentPurple,
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
             ),
-            child: const Text('Try Again', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            child: const Text(
+              'Try Again',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
           ),
         ),
       ],
@@ -1376,7 +1522,11 @@ class _ScanScreenState extends State<ScanScreen>
               const SizedBox(height: 3),
               Text(
                 body,
-                style: const TextStyle(fontSize: 12, color: textGrey, height: 1.5),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: textGrey,
+                  height: 1.5,
+                ),
               ),
             ],
           ),
@@ -1396,22 +1546,27 @@ class _ScanScreenState extends State<ScanScreen>
     );
   }*/
   Widget _buildTipRow(IconData icon, String text) {
-  return Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Icon(icon, size: 16, color: accentPurple),
-      const SizedBox(width: 8),
-      Expanded(
-        child: Text(
-          text,
-          style: const TextStyle(fontSize: 13, color: textGrey),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: accentPurple),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 13, color: textGrey),
+          ),
         ),
-      ),
-    ],
-  );
-}
+      ],
+    );
+  }
 
-  Widget _buildMetricCard(IconData icon, String label, String value, Color color) {
+  Widget _buildMetricCard(
+    IconData icon,
+    String label,
+    String value,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
       decoration: BoxDecoration(
@@ -1425,13 +1580,21 @@ class _ScanScreenState extends State<ScanScreen>
           const SizedBox(height: 6),
           Text(
             value,
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10, color: textGrey, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              fontSize: 10,
+              color: textGrey,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),

@@ -41,7 +41,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     'exercise_time',
     'distance',
     'flights_climbed',
-    'heart_rate',
+    'heart_rate_scan',
     'resting_heart_rate',
     'hrv',
     'blood_oxygen',
@@ -335,6 +335,59 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return '$hour:$minute $suffix';
   }
 
+  List<Map<String, dynamic>> _bpmScanEntries(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final points = <Map<String, dynamic>>[];
+    for (final doc in docs) {
+      final scan = doc.data()['heart_rate_scan'] as Map?;
+      final rawEntries = scan?['entries'];
+      if (rawEntries is List && rawEntries.isNotEmpty) {
+        for (final entry in rawEntries) {
+          if (entry is! Map || entry['bpm'] is! num) continue;
+          final timestamp = entry['timestamp'];
+          points.add({
+            'bpm': (entry['bpm'] as num).toDouble(),
+            'dateTime': timestamp is Timestamp
+                ? timestamp.toDate()
+                : DateTime.tryParse(doc.id),
+          });
+        }
+      } else if (scan?['avg'] is num) {
+        final timestamp = scan?['syncedAt'];
+        points.add({
+          'bpm': (scan!['avg'] as num).toDouble(),
+          'dateTime': timestamp is Timestamp
+              ? timestamp.toDate()
+              : DateTime.tryParse(doc.id),
+        });
+      }
+    }
+    points.sort((a, b) {
+      final aTime = a['dateTime'] as DateTime?;
+      final bTime = b['dateTime'] as DateTime?;
+      if (aTime == null) return -1;
+      if (bTime == null) return 1;
+      return aTime.compareTo(bTime);
+    });
+    return points;
+  }
+
+  List<Map<String, dynamic>> _dailyBpmScanPoints(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final points = <Map<String, dynamic>>[];
+    for (final doc in docs) {
+      final entries = _bpmScanEntries([doc]);
+      if (entries.isEmpty) continue;
+      points.add({
+        'bpm': _avg(entries.map((entry) => entry['bpm'] as double).toList()),
+        'dateTime': DateTime.tryParse(doc.id),
+      });
+    }
+    return points;
+  }
+
   double _avg(List<double> vals) =>
       vals.isEmpty ? 0 : vals.reduce((a, b) => a + b) / vals.length;
 
@@ -564,7 +617,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   bool _isManualMetric(String key) =>
-      key == 'stress' || key == 'mood' || key == 'wellness';
+      key == 'stress' ||
+      key == 'mood' ||
+      key == 'wellness' ||
+      key == 'heart_rate_scan';
 
   String _metricTitle(String key) {
     switch (key) {
@@ -586,6 +642,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return 'Flights Climbed';
       case 'heart_rate':
         return 'Heart Rate (bpm)';
+      case 'heart_rate_scan':
+        return 'Heart Rate';
       case 'resting_heart_rate':
         return 'Resting Heart Rate (bpm)';
       case 'hrv':
@@ -628,6 +686,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'flights_climbed':
         return const Color(0xFF14B8A6);
       case 'heart_rate':
+      case 'heart_rate_scan':
         return Colors.redAccent;
       case 'resting_heart_rate':
         return const Color(0xFFFF6B6B);
@@ -684,6 +743,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'flights_climbed':
         return 30;
       case 'heart_rate':
+      case 'heart_rate_scan':
         return 200;
       case 'respiratory_rate':
         return 30;
@@ -722,7 +782,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _showLayoutEditor() async {
-    final draftOrder = [..._metricOrder];
+    Map<String, bool> consent;
+    try {
+      consent = await HealthService().getConsent();
+    } catch (e) {
+      debugPrint('DashboardScreen: failed to load layout permissions: $e');
+      consent = const {};
+    }
+    if (!mounted) return;
+
+    bool isVisibleOption(String metric) =>
+        _isManualMetric(metric) || consent[metric] == true;
+    final draftOrder = _metricOrder.where(isVisibleOption).toList();
     final result = await showModalBottomSheet<List<String>>(
       context: context,
       isScrollControlled: true,
@@ -765,9 +836,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     buildDefaultDragHandles: false,
                     itemCount: draftOrder.length,
-                    onReorder: (oldIndex, newIndex) {
+                    onReorderItem: (oldIndex, newIndex) {
                       setModalState(() {
-                        if (newIndex > oldIndex) newIndex--;
                         final item = draftOrder.removeAt(oldIndex);
                         draftOrder.insert(newIndex, item);
                       });
@@ -818,10 +888,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
 
-    if (result == null || !mounted) return;
-    setState(() => _metricOrder = result);
+    if (!mounted) return;
+    // A drag changes the layout even when the sheet is dismissed with Back,
+    // a swipe, or a tap outside instead of the Done button.
+    final visibleOrder = result ?? draftOrder;
+    final visibleIterator = visibleOrder.iterator;
+    final updatedOrder = _metricOrder.map((metric) {
+      if (!isVisibleOption(metric)) return metric;
+      visibleIterator.moveNext();
+      return visibleIterator.current;
+    }).toList();
+    if (listEquals(updatedOrder, _metricOrder)) return;
+    setState(() => _metricOrder = [...updatedOrder]);
     try {
-      await _saveMetricOrder(result);
+      await _saveMetricOrder(updatedOrder);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -840,6 +920,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
     double maxY,
   ) {
     final docs = _docsFor(snap, metricType);
+    if (metricType == 'heart_rate_scan') {
+      final points = _filterIndex == 0
+          ? _bpmScanEntries(docs)
+          : _dailyBpmScanPoints(docs);
+      if (points.isEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: _buildChartCard(
+          title: title,
+          icon: _metricIcon(metricType),
+          color: color,
+          values: points.map((point) => point['bpm'] as double).toList(),
+          maxY: maxY,
+          labels: points.map((point) {
+            final dateTime = point['dateTime'] as DateTime?;
+            if (_filterIndex == 0) return _formatMoodEntryTime(dateTime);
+            if (dateTime == null) return '';
+            if (_filterIndex == 2 && dateTime.weekday != DateTime.monday) {
+              return '';
+            }
+            const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            return names[dateTime.weekday - 1];
+          }).toList(),
+        ),
+      );
+    }
     if (metricType == 'mood' && _filterIndex == 0) {
       final entries = _todayMoodEntries(docs);
       if (entries.isEmpty) return const SizedBox.shrink();
@@ -994,6 +1100,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'distance':
         return '${number(decimals: value >= 10 ? 1 : 2)} km';
       case 'heart_rate':
+      case 'heart_rate_scan':
       case 'resting_heart_rate':
         return '${number()} bpm';
       case 'hrv':
@@ -1032,6 +1139,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'flights_climbed':
         return Icons.stairs_rounded;
       case 'heart_rate':
+      case 'heart_rate_scan':
         return Icons.favorite_rounded;
       case 'resting_heart_rate':
         return Icons.favorite_border_rounded;
