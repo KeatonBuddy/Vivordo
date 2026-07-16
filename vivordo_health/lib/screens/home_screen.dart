@@ -399,6 +399,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icons.mood_rounded,
                       const Color(0xFFF97316),
                       loading: moodLoading,
+                      emptyAction: _showMoodCheck,
+                      emptyActionLabel: 'Check in →',
                     ),
                   ),
                 ],
@@ -676,6 +678,8 @@ class _HomeScreenState extends State<HomeScreen> {
     Color color, {
     bool showConnectHint = true,
     bool loading = false,
+    VoidCallback? emptyAction,
+    String emptyActionLabel = 'Connect Health →',
   }) {
     final bool isEmpty = value == '--';
     return Container(
@@ -721,13 +725,16 @@ class _HomeScreenState extends State<HomeScreen> {
           if (isEmpty && showConnectHint) ...[
             const SizedBox(height: 4),
             GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              ),
-              child: const Text(
-                'Connect Health →',
-                style: TextStyle(fontSize: 10, color: textGrey),
+              onTap: emptyAction ??
+                  () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SettingsScreen(),
+                        ),
+                      ),
+              child: Text(
+                emptyActionLabel,
+                style: const TextStyle(fontSize: 10, color: textGrey),
               ),
             ),
           ],
@@ -1270,6 +1277,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 'time': formatRange(cursor, clippedStart),
                 'label': '${durationLabel(gap)} open',
                 'duration': gap,
+                'start': cursor,
+                'end': clippedStart,
               });
             }
           }
@@ -1286,6 +1295,8 @@ class _HomeScreenState extends State<HomeScreen> {
               'time': formatRange(cursor, workEnd),
               'label': '${durationLabel(gap)} open',
               'duration': gap,
+              'start': cursor,
+              'end': workEnd,
             });
           }
         }
@@ -1393,6 +1404,8 @@ class _HomeScreenState extends State<HomeScreen> {
         else
           ...windows.map((window) {
             final event = window['event'] as gcal.Event?;
+            final openStart = window['start'] as DateTime?;
+            final openEnd = window['end'] as DateTime?;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Material(
@@ -1401,7 +1414,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
                   onTap: event == null
-                      ? null
+                      ? openStart == null || openEnd == null
+                            ? null
+                            : () => _calendarKey.currentState
+                                  ?.showCreateEvent(openStart, openEnd)
                       : () =>
                             _calendarKey.currentState?.showEventDetails(event),
                   child: Padding(
@@ -1434,7 +1450,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                         ),
-                        if (event != null)
+                        if (event != null ||
+                            (openStart != null && openEnd != null))
                           Icon(
                             Icons.chevron_right_rounded,
                             color: color,
@@ -2277,10 +2294,20 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
     return 'none';
   }
 
-  Future<void> _createEvent(DateTime initialStart) async {
+  void showCreateEvent(DateTime initialStart, DateTime initialEnd) {
+    _createEvent(initialStart, initialEnd: initialEnd);
+  }
+
+  Future<void> _createEvent(
+    DateTime initialStart, {
+    DateTime? initialEnd,
+  }) async {
     final draft = await showDialog<_CalendarEventDraft>(
       context: context,
-      builder: (_) => _CreateCalendarEventDialog(initialStart: initialStart),
+      builder: (_) => _CreateCalendarEventDialog(
+        initialStart: initialStart,
+        initialEnd: initialEnd,
+      ),
     );
     if (!context.mounted || draft == null) return;
 
@@ -3265,9 +3292,13 @@ class _CalendarEventDraft {
 }
 
 class _CreateCalendarEventDialog extends StatefulWidget {
-  const _CreateCalendarEventDialog({required this.initialStart});
+  const _CreateCalendarEventDialog({
+    required this.initialStart,
+    this.initialEnd,
+  });
 
   final DateTime initialStart;
+  final DateTime? initialEnd;
 
   @override
   State<_CreateCalendarEventDialog> createState() =>
@@ -3290,7 +3321,8 @@ class _CreateCalendarEventDialogState
     _date = DateUtils.dateOnly(widget.initialStart);
     _startTime = TimeOfDay.fromDateTime(widget.initialStart);
     _endTime = TimeOfDay.fromDateTime(
-      widget.initialStart.add(const Duration(hours: 1)),
+      widget.initialEnd ??
+          widget.initialStart.add(const Duration(hours: 1)),
     );
   }
 
