@@ -101,6 +101,47 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
+  int? _latestBpmFrom(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
+
+    for (final doc in sortedDocs) {
+      final data = doc.data();
+      final savedScan = data['heart_rate_scan'] as Map?;
+      if (savedScan != null) {
+        final rawEntries = savedScan['entries'];
+        if (rawEntries is List && rawEntries.isNotEmpty) {
+          Map? latestEntry;
+          DateTime? latestTime;
+          for (final entry in rawEntries) {
+            if (entry is! Map || entry['bpm'] is! num) continue;
+            final timestamp = entry['timestamp'];
+            final entryTime = timestamp is Timestamp
+                ? timestamp.toDate()
+                : null;
+            if (latestEntry == null ||
+                (entryTime != null &&
+                    (latestTime == null || entryTime.isAfter(latestTime)))) {
+              latestEntry = entry;
+              latestTime = entryTime;
+            }
+          }
+          final bpm = latestEntry?['bpm'];
+          if (bpm is num) return bpm.round();
+        }
+
+        // Records created before scan history was added only have avg.
+        final legacyBpm = savedScan['avg'];
+        if (legacyBpm is num) return legacyBpm.round();
+      }
+
+      final heartRate = data['heart_rate'] as Map?;
+      if (heartRate?['source'] == 'camera_ppg' && heartRate?['avg'] is num) {
+        return (heartRate!['avg'] as num).round();
+      }
+    }
+    return null;
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStream() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
@@ -182,23 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _latestScanStream,
           builder: (context, scanSnap) {
-            final scanDocs = [...?scanSnap.data?.docs]
-              ..sort((a, b) => b.id.compareTo(a.id));
-            Map? latestScan;
-            for (final doc in scanDocs) {
-              final data = doc.data();
-              final savedScan = data['heart_rate_scan'] as Map?;
-              final heartRate = data['heart_rate'] as Map?;
-              if (savedScan != null) {
-                latestScan = savedScan;
-                break;
-              }
-              if (heartRate?['source'] == 'camera_ppg') {
-                latestScan = heartRate;
-                break;
-              }
-            }
-            final latestScanBpm = (latestScan?['avg'] as num?)?.round();
+            final latestScanBpm = _latestBpmFrom(scanSnap.data?.docs ?? []);
             final hrVal = latestScanBpm == null ? '--' : '$latestScanBpm bpm';
 
             return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
