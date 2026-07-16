@@ -362,7 +362,10 @@ class CalendarService {
     final calendars = (calendarList.items ?? const <gcal.CalendarListEntry>[])
         .where((calendar) => calendar.id != null)
         .where((calendar) => calendar.hidden != true)
-        .where((calendar) => calendar.selected != false)
+        // Google omits `selected` when a calendar is not selected. Requiring an
+        // explicit true keeps Vivordo aligned with the calendars visible in the
+        // user's Google Calendar sidebar instead of treating null as selected.
+        .where((calendar) => calendar.selected == true)
         .toList();
 
     if (calendars.isEmpty) {
