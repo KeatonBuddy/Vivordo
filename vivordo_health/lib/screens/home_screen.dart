@@ -29,6 +29,8 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _reachableWindowEventsDate;
   Future<_ScheduleInsight?>? _scheduleInsightFuture;
   DateTime? _scheduleInsightDate;
+  final GlobalKey<_WeeklyCalendarState> _calendarKey =
+      GlobalKey<_WeeklyCalendarState>();
 
   static const Color bgColor = Color(0xFFF2F2F7);
   static const Color cardWhite = Colors.white;
@@ -1375,7 +1377,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: InkWell(
                   onTap: event == null
                       ? null
-                      : () => _showReachableEventDetails(event),
+                      : () =>
+                            _calendarKey.currentState?.showEventDetails(event),
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Row(
@@ -1423,148 +1426,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showReachableEventDetails(gcal.Event event) {
-    final start = event.start?.dateTime?.toLocal();
-    final end = event.end?.dateTime?.toLocal();
-    final location = event.location?.trim();
-    final description = event.description?.trim();
-    final attendees = event.attendees ?? const <gcal.EventAttendee>[];
-
-    String formatDateTime(DateTime value) {
-      const months = [
-        'January',
-        'February',
-        'March',
-        'April',
-        'May',
-        'June',
-        'July',
-        'August',
-        'September',
-        'October',
-        'November',
-        'December',
-      ];
-      final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
-      final minute = value.minute.toString().padLeft(2, '0');
-      final suffix = value.hour >= 12 ? 'PM' : 'AM';
-      return '${months[value.month - 1]} ${value.day} at '
-          '$hour:$minute $suffix';
-    }
-
-    final timeText = start == null
-        ? 'Unknown time'
-        : end == null
-        ? formatDateTime(start)
-        : '${formatDateTime(start)} - '
-              '${formatDateTime(end).split(' at ').last}';
-
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => Container(
-        margin: const EdgeInsets.all(12),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(28),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE5E5EA),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF1E6),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.event_rounded,
-                        color: orangeColor,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            event.summary ?? 'Untitled event',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: textDark,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            timeText,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: textGrey,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if (location != null && location.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  _EventDetailRow(
-                    icon: Icons.place_rounded,
-                    label: 'Location',
-                    value: location,
-                  ),
-                ],
-                if (description != null && description.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _EventDetailRow(
-                    icon: Icons.notes_rounded,
-                    label: 'Description',
-                    value: description,
-                  ),
-                ],
-                if (attendees.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _EventDetailRow(
-                    icon: Icons.group_rounded,
-                    label: 'Attendees',
-                    value: attendees
-                        .map(
-                          (attendee) => attendee.displayName ?? attendee.email,
-                        )
-                        .whereType<String>()
-                        .join(', '),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   String _getSleepInsightTitle(String sleepVal) {
     final hours = double.tryParse(sleepVal.replaceAll('h', '')) ?? 0;
     if (hours >= 8) return 'Excellent sleep last night';
@@ -1596,7 +1457,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCalendarCard() {
-    return const _WeeklyCalendar();
+    return _WeeklyCalendar(key: _calendarKey);
   }
 
   String _formatCalendarDate(DateTime dt) {
@@ -2035,7 +1896,7 @@ class _ScheduleInsight {
 }
 
 class _WeeklyCalendar extends StatefulWidget {
-  const _WeeklyCalendar();
+  const _WeeklyCalendar({super.key});
   @override
   State<_WeeklyCalendar> createState() => _WeeklyCalendarState();
 }
@@ -2591,7 +2452,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _showEventDetails(gcal.Event event) {
+  void showEventDetails(gcal.Event event) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -3221,7 +3082,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
                                       color: Colors.transparent,
                                       child: InkWell(
                                         borderRadius: BorderRadius.circular(4),
-                                        onTap: () => _showEventDetails(ev),
+                                        onTap: () => showEventDetails(ev),
                                         child: Container(
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: 5,

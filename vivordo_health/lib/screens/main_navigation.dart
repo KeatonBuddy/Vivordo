@@ -1,9 +1,13 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import 'scan_screen.dart';
 import 'dashboard_screen.dart';
 import 'panda_screen.dart';
 import '../src/services/analytics_service.dart';
+import '../src/services/health_service.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final int initialIndex;
@@ -13,8 +17,10 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _MainNavigationScreenState extends State<MainNavigationScreen>
+    with WidgetsBindingObserver {
   late int _selectedIndex;
+  Timer? _healthRefreshTimer;
   final Color primaryPurple = const Color(0xFF7B6EF6);
 
   /// Analytics screen name per tab index, aligned with the nav bar order.
@@ -23,8 +29,35 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _selectedIndex = widget.initialIndex;
     _logScreenView(_selectedIndex);
+    _refreshTodayFromHealth();
+    // HealthKit does not push new values into Firestore. Keep the shared data
+    // source current for both Home and Dashboard while the app is in use.
+    _healthRefreshTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _refreshTodayFromHealth(),
+    );
+  }
+
+  void _refreshTodayFromHealth() {
+    if (FirebaseAuth.instance.currentUser == null) return;
+    HealthService().syncToday().catchError((Object error) {
+      debugPrint('MainNavigation: Apple Health refresh failed: $error');
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshTodayFromHealth();
+  }
+
+  @override
+  void dispose() {
+    _healthRefreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   /// Switches to [index] and records the screen view. All tab changes route
