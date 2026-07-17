@@ -7,6 +7,7 @@ class PandaSessionData {
     required this.questions,
     required this.overallNotes,
     required this.rawSpikes,
+    this.dashboardMetrics = const {},
     this.scheduleContext,
     this.insightsContext,
   });
@@ -17,6 +18,11 @@ class PandaSessionData {
 
   /// Raw spike JSON kept so the dialogue LLM has health data for context.
   final List<Map<String, dynamic>> rawSpikes;
+
+  /// Recent daily aggregates already used by the Dashboard. Kept in memory and
+  /// selectively summarized by PandaScreen; the full map is never sent to the
+  /// model.
+  final Map<String, Map<String, dynamic>> dashboardMetrics;
 
   /// Per-day Google Calendar digest for the next 7 days (local time), passed
   /// into each dialogue turn so Panda can answer availability / "when am I

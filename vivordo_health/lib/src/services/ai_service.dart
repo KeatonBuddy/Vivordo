@@ -81,6 +81,7 @@ abstract class AIService {
     Map<String, String>? accumulatedSlots,
     String? scheduleContext,
     String? insightsContext,
+    String? dashboardContext,
   });
 
   /// Produce a brief (≤55 word) third-person insight recap of a completed

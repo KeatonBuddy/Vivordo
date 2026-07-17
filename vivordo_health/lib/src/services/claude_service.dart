@@ -485,6 +485,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     Map<String, String>? accumulatedSlots,
     String? scheduleContext,
     String? insightsContext,
+    String? dashboardContext,
   }) async {
     // Trim the conversation to fit rather than REFUSING the turn. The old guard
     // returned a canned "we've covered a lot of ground — let's wrap up" reply,
@@ -521,6 +522,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       // Insights can change mid-session (a just-saved finding), so they are NOT
       // cached — embed them in the uncached user prompt so they're always fresh.
       insightsContext: insightsContext,
+      dashboardContext: dashboardContext,
       embedSpikeContext: false,
       embedPersona: false,
       embedTaskInstructions: false,

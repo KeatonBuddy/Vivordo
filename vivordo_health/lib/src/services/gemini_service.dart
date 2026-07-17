@@ -428,6 +428,7 @@ RULES:
     Map<String, String>? accumulatedSlots,
     String? scheduleContext,
     String? insightsContext,
+    String? dashboardContext,
   }) async {
     // Trim to fit rather than refuse — Panda always answers, so the chat ends
     // naturally instead of being cut off with a canned "let's wrap up".
@@ -446,6 +447,7 @@ RULES:
       accumulatedSlots: accumulatedSlots,
       scheduleContext: scheduleContext,
       insightsContext: insightsContext,
+      dashboardContext: dashboardContext,
     );
 
     final response = await _dialogueModel.generateContent([
@@ -708,6 +710,9 @@ RULES:
         'end': windowEnd.toIso8601String(),
       },
       'samples_5min': samplesChronological,
+      // Retained in memory for on-demand conversational metric lookups. This is
+      // never embedded wholesale in a model prompt.
+      'dashboard_metrics': dailyData,
       // Calendar is loaded in the background (fetchScheduleContext) — it is not
       // on the session-init critical path.
       'events': const <Map<String, dynamic>>[],
@@ -789,6 +794,7 @@ RULES:
       questions: const [],
       overallNotes: '',
       rawSpikes: const [],
+      dashboardMetrics: _dashboardMetricsFromPayload(payload),
       insightsContext: _insightsContextFromPayload(payload),
     );
   }
@@ -1075,6 +1081,7 @@ Write the continuity note now.''';
     Map<String, String>? accumulatedSlots,
     String? scheduleContext,
     String? insightsContext,
+    String? dashboardContext,
     bool embedSpikeContext = true,
     bool embedPersona = true,
     bool embedTaskInstructions = true,
@@ -1129,6 +1136,11 @@ Write the continuity note now.''';
         ? 'PAST INSIGHTS (from previous sessions):\n$insightsContext\n\n'
         : '';
 
+    final dashboardLine =
+        (dashboardContext != null && dashboardContext.isNotEmpty)
+        ? 'DASHBOARD METRICS (real HealthKit daily aggregates; use only these values):\n$dashboardContext\n\n'
+        : '';
+
     final personaLine = embedPersona
         ? 'You are Panda 🐼, a warm, empathetic wellness companion in Vivordo.\n\n'
         : '';
@@ -1173,7 +1185,7 @@ Write the continuity note now.''';
               '   sleep_quality, social_context, other. Use "" for anything not mentioned.\n'
         : '';
 
-    return '$personaLine$pathCtx\n$spikeCtxLine$scheduleLine$insightsLine$slotsCtx\n\nCONVERSATION:\n$historyText\n\nUSER: "$userMessage"$tasksSection';
+    return '$personaLine$pathCtx\n$spikeCtxLine$scheduleLine$insightsLine$dashboardLine$slotsCtx\n\nCONVERSATION:\n$historyText\n\nUSER: "$userMessage"$tasksSection';
   }
 
   // =========================================================================
@@ -1267,6 +1279,7 @@ Write the continuity note now.''';
     // return path so each dialogue turn has calendar + past-session context.
     final scheduleContext = rawSample['upcoming_schedule'] as String?;
     final insightsContext = _insightsContextFromPayload(rawSample);
+    final dashboardMetrics = _dashboardMetricsFromPayload(rawSample);
 
     final obj = _extractJson(raw);
 
@@ -1277,6 +1290,7 @@ Write the continuity note now.''';
         [],
         scheduleContext: scheduleContext,
         insightsContext: insightsContext,
+        dashboardMetrics: dashboardMetrics,
       );
     }
 
@@ -1305,6 +1319,7 @@ Write the continuity note now.''';
         rawSpikes: rawSpikes,
         scheduleContext: scheduleContext,
         insightsContext: insightsContext,
+        dashboardMetrics: dashboardMetrics,
       );
     }
 
@@ -1369,6 +1384,7 @@ Write the continuity note now.''';
         notes: overallNotes,
         scheduleContext: scheduleContext,
         insightsContext: insightsContext,
+        dashboardMetrics: dashboardMetrics,
       );
     }
 
@@ -1379,6 +1395,22 @@ Write the continuity note now.''';
       rawSpikes: rawSpikes,
       scheduleContext: scheduleContext,
       insightsContext: insightsContext,
+      dashboardMetrics: dashboardMetrics,
+    );
+  }
+
+  static Map<String, Map<String, dynamic>> _dashboardMetricsFromPayload(
+    Map<String, dynamic> payload,
+  ) {
+    final raw = payload['dashboard_metrics'];
+    if (raw is! Map) return const {};
+    return raw.map(
+      (date, metrics) => MapEntry(
+        date.toString(),
+        metrics is Map
+            ? Map<String, dynamic>.from(metrics)
+            : <String, dynamic>{},
+      ),
     );
   }
 
@@ -1642,6 +1674,7 @@ Write the continuity note now.''';
     String notes = '',
     String? scheduleContext,
     String? insightsContext,
+    Map<String, Map<String, dynamic>> dashboardMetrics = const {},
   }) {
     return PandaSessionData(
       openerMessage:
@@ -1669,6 +1702,7 @@ Write the continuity note now.''';
       rawSpikes: spikes,
       scheduleContext: scheduleContext,
       insightsContext: insightsContext,
+      dashboardMetrics: dashboardMetrics,
     );
   }
 

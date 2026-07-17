@@ -657,6 +657,7 @@ class _PandaScreenState extends State<PandaScreen>
             accumulatedSlots: Map<String, String>.from(_sessionSlots),
             scheduleContext: _scheduleContext,
             insightsContext: _currentInsightsContext(),
+            dashboardContext: _dashboardContextFor(prompt, session),
           )
           .timeout(const Duration(seconds: 35));
 
@@ -798,6 +799,7 @@ class _PandaScreenState extends State<PandaScreen>
                 ? _digressionStack.last.topic
                 : null,
             accumulatedSlots: Map<String, String>.from(_sessionSlots),
+            dashboardContext: _dashboardContextFor(text, session),
             scheduleContext: _scheduleContext,
             insightsContext: _currentInsightsContext(),
           )
@@ -968,6 +970,96 @@ class _PandaScreenState extends State<PandaScreen>
         typingMs: 0,
       );
     }
+  }
+
+  /// Selects dashboard metrics locally, so ordinary chat turns add zero health
+  /// tokens and health questions include only the relevant daily aggregates.
+  String? _dashboardContextFor(String message, PandaSessionData session) {
+    if (session.dashboardMetrics.isEmpty) return null;
+    final text = message.toLowerCase();
+    final requested = <String>{};
+
+    bool mentions(Iterable<String> terms) => terms.any(
+      (term) => RegExp(
+        '(^|[^a-z0-9])${RegExp.escape(term)}([^a-z0-9]|\$)',
+      ).hasMatch(text),
+    );
+
+    if (mentions(['step', 'steps', 'walk', 'walking'])) requested.add('steps');
+    if (mentions(['sleep', 'slept', 'rest', 'tired', 'fatigue'])) {
+      requested.add('sleep');
+    }
+    if (mentions(['hrv', 'variability', 'recovery'])) requested.add('hrv');
+    if (mentions(['heart rate', 'pulse', 'bpm'])) {
+      requested.addAll(['heart_rate', 'resting_heart_rate']);
+    }
+    if (mentions(['stress', 'stressed'])) requested.add('stress');
+    if (mentions(['wellness', 'wellbeing', 'well-being'])) {
+      requested.add('wellness');
+    }
+    if (mentions(['exercise', 'workout', 'activity', 'active'])) {
+      requested.addAll([
+        'steps',
+        'exercise_time',
+        'active_calories',
+        'distance',
+      ]);
+    }
+    if (mentions(['weight', 'weigh'])) requested.add('weight');
+    if (mentions(['oxygen', 'spo2'])) requested.add('blood_oxygen');
+    if (mentions(['respiratory', 'breathing rate'])) {
+      requested.add('respiratory_rate');
+    }
+
+    final overview = mentions([
+      'health',
+      'dashboard',
+      'metric',
+      'metrics',
+      'overview',
+    ]);
+    if (overview && requested.isEmpty) {
+      requested.addAll([
+        'steps',
+        'sleep',
+        'resting_heart_rate',
+        'hrv',
+        'stress',
+        'wellness',
+      ]);
+    }
+    if (requested.isEmpty) return null;
+
+    final dates = session.dashboardMetrics.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
+    final lines = <String>[];
+    for (final metric in requested) {
+      final values = <String>[];
+      for (final date in dates) {
+        final raw = session.dashboardMetrics[date]?[metric];
+        final value = _dashboardMetricValue(metric, raw);
+        if (value != null) values.add('$date=$value');
+      }
+      if (values.isNotEmpty) lines.add('$metric:${values.join(',')}');
+    }
+    return lines.isEmpty ? null : lines.join('\n');
+  }
+
+  String? _dashboardMetricValue(String metric, dynamic raw) {
+    num? value;
+    if (raw is num) {
+      value = raw;
+    } else if (raw is Map) {
+      final preferred = metric == 'steps' ? 'sum' : 'avg';
+      value = raw[preferred] as num? ??
+          raw['avg'] as num? ??
+          raw['sum'] as num? ??
+          raw['max'] as num?;
+    }
+    if (value == null) return null;
+    return value is int || value == value.roundToDouble()
+        ? value.round().toString()
+        : value.toStringAsFixed(1);
   }
 
   // ===========================================================================

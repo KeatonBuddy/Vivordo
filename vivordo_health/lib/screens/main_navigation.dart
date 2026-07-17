@@ -20,6 +20,7 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen>
     with WidgetsBindingObserver {
   late int _selectedIndex;
+  late bool _pandaHasBeenOpened;
   Timer? _healthRefreshTimer;
   final Color primaryPurple = const Color(0xFF7B6EF6);
 
@@ -31,6 +32,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _selectedIndex = widget.initialIndex;
+    _pandaHasBeenOpened = _selectedIndex == 3;
     _logScreenView(_selectedIndex);
     _refreshTodayFromHealth();
     // HealthKit does not push new values into Firestore. Keep the shared data
@@ -64,7 +66,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   /// through here so analytics stay in sync with what's on screen.
   void _selectTab(int index) {
     if (index != _selectedIndex) _logScreenView(index);
-    setState(() => _selectedIndex = index);
+    setState(() {
+      _selectedIndex = index;
+      if (index == 3) _pandaHasBeenOpened = true;
+    });
   }
 
   void _logScreenView(int index) {
@@ -89,7 +94,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         activePage = DashboardScreen(onScanTap: () => _selectTab(1));
         break;
       case 3:
-        activePage = const PandaScreen();
+        // Panda is mounted separately below so its active conversation survives
+        // switching bottom-navigation tabs.
+        activePage = const SizedBox.shrink();
         break;
       default:
         activePage = HomeScreen(onScanTap: () => _selectTab(1));
@@ -98,7 +105,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     return Scaffold(
       body: Stack(
         children: [
-          activePage,
+          Positioned.fill(child: activePage),
+          // Keep Panda in the tree after its first visit. Offstage preserves its
+          // State (turns, question progress, and session data) while preventing
+          // it from painting or receiving input on another tab. Other screens
+          // still use the active-page lifecycle, so the camera is not retained.
+          if (_pandaHasBeenOpened)
+            Positioned.fill(
+              child: Offstage(
+                offstage: _selectedIndex != 3,
+                child: const PandaScreen(),
+              ),
+            ),
           Positioned(
             bottom: 30,
             left: 24,
