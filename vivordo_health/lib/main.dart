@@ -10,6 +10,7 @@ import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
+import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
@@ -113,7 +114,9 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     // Sync HealthKit data every 3 minutes while the app is open.
     _syncTimer = Timer.periodic(const Duration(minutes: 3), (_) {
       if (FirebaseAuth.instance.currentUser != null) {
-        HealthService().syncToday();
+        HealthService().syncToday().whenComplete(
+          () => FitbitService.instance.syncInBackground(),
+        );
       }
     });
   }
@@ -132,7 +135,9 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       if (FirebaseAuth.instance.currentUser != null) {
-        HealthService().syncToday();
+        HealthService().syncToday().whenComplete(
+          () => FitbitService.instance.syncInBackground(),
+        );
         AnalyticsService().startSession();
       }
     } else if (state == AppLifecycleState.paused ||
@@ -146,7 +151,9 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void _triggerFullSync(String uid) {
     if (_lastSyncedUid == uid) return;
     _lastSyncedUid = uid;
-    HealthService().syncToFirestore(daysBack: 30);
+    HealthService().syncToFirestore(daysBack: 30).whenComplete(
+      () => FitbitService.instance.syncInBackground(daysBack: 30),
+    );
     NotificationService().configureForUser(uid);
     AnalyticsService().logLogin();
   }
@@ -179,8 +186,10 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
 
     if (_userDocUid != user.uid) {
       _userDocUid = user.uid;
-      _userDocFuture =
-          FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      _userDocFuture = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
     }
 
     return FutureBuilder<DocumentSnapshot>(
