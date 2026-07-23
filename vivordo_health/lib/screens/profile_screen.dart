@@ -11,6 +11,7 @@ import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -252,15 +253,58 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
         );
       }
-    } catch (e) {
+    } on FitbitAccountNotLinkedException catch (error) {
+      if (mounted) await _showGoogleHealthSetupDialog(error.setupUrl);
+    } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not update Fitbit: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Fitbit could not be updated. Please try again shortly.',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isUpdatingFitbit = false);
     }
+  }
+
+  Future<void> _showGoogleHealthSetupDialog(Uri setupUrl) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Finish Google Health setup'),
+        content: const Text(
+          'This Google account is not linked to Google Health yet. Complete '
+          'the setup using the same account that owns your Fitbit data, then '
+          'return to Vivordo and sync again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              final opened = await launchUrl(
+                setupUrl,
+                mode: LaunchMode.externalApplication,
+              );
+              if (!opened && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not open Google Health setup.'),
+                  ),
+                );
+              }
+            },
+            child: const Text('Open setup'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _updateReminderPreference({
@@ -1043,14 +1087,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                                           ),
                                         );
                                       }
-                                    } catch (e) {
+                                    } on FitbitAccountNotLinkedException catch (
+                                      error
+                                    ) {
+                                      if (mounted) {
+                                        await _showGoogleHealthSetupDialog(
+                                          error.setupUrl,
+                                        );
+                                      }
+                                    } catch (_) {
                                       if (mounted) {
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
-                                          SnackBar(
+                                          const SnackBar(
                                             content: Text(
-                                              'Could not sync Fitbit: $e',
+                                              'Fitbit could not be synced. '
+                                              'Please try again shortly.',
                                             ),
                                           ),
                                         );

@@ -229,13 +229,38 @@ async function googleHealthDailyRollup(accessToken, dataType, start, end) {
         dataType,
         body,
     );
-    throw new HttpsError(
-        "unavailable",
-        "Fitbit data could not be synced from Google Health.",
-    );
+    throwGoogleHealthError(response.status, body);
   }
   const body = await response.json();
   return body.rollupDataPoints || [];
+}
+
+function throwGoogleHealthError(status, body) {
+  let googleError;
+  try {
+    googleError = JSON.parse(body)?.error;
+  } catch (_) {
+    // Preserve the generic error below when Google returns a non-JSON body.
+  }
+  const accountDetail = googleError?.details?.find(
+      (detail) => detail?.reason === "ACCOUNT_NOT_LINKED",
+  );
+  if (accountDetail) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Finish setting up Google Health before syncing Fitbit.",
+        {
+          reason: "ACCOUNT_NOT_LINKED",
+          setupUrl:
+              accountDetail.metadata?.redirect_uri ||
+              "https://fitbit.google.com/auth/signup",
+        },
+    );
+  }
+  throw new HttpsError(
+      status === 401 ? "unauthenticated" : "unavailable",
+      "Fitbit data could not be synced from Google Health.",
+  );
 }
 
 async function googleHealthSleep(accessToken, start, end) {
@@ -270,10 +295,7 @@ async function googleHealthSleep(accessToken, start, end) {
           response.status,
           body,
       );
-      throw new HttpsError(
-          "unavailable",
-          "Fitbit sleep data could not be synced from Google Health.",
-      );
+      throwGoogleHealthError(response.status, body);
     }
     const body = await response.json();
     dataPoints.push(...(body.dataPoints || []));

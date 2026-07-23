@@ -4,6 +4,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 
+class FitbitAccountNotLinkedException implements Exception {
+  const FitbitAccountNotLinkedException(this.setupUrl);
+
+  final Uri setupUrl;
+}
+
 /// Fitbit account integration for iOS through the Google Health API.
 ///
 /// OAuth tokens and the authorization code stay on Firebase Functions. The
@@ -55,7 +61,17 @@ class FitbitService {
     final request = _functions
         .httpsCallable('syncFitbit')
         .call<void>({'daysBack': boundedDays})
-        .then((_) {});
+        .then((_) {})
+        .onError<FirebaseFunctionsException>((error, stackTrace) {
+          final details = error.details;
+          if (details is Map && details['reason'] == 'ACCOUNT_NOT_LINKED') {
+            final rawUrl = details['setupUrl'] as String?;
+            throw FitbitAccountNotLinkedException(
+              Uri.parse(rawUrl ?? 'https://fitbit.google.com/auth/signup'),
+            );
+          }
+          throw error;
+        });
     _activeSync = request;
     return request.whenComplete(() {
       if (identical(_activeSync, request)) _activeSync = null;
