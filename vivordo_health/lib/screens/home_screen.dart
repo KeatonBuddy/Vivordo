@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -792,49 +794,13 @@ class _HomeScreenState extends State<HomeScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return _PressableActionCard(
+      icon: icon,
+      iconColor: iconColor,
+      iconBg: iconBg,
+      title: title,
+      subtitle: subtitle,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: cardWhite,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x0F000000),
-              blurRadius: 15,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: iconColor, size: 22),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              style: const TextStyle(
-                color: textDark,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              subtitle,
-              style: const TextStyle(color: textGrey, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -3585,6 +3551,145 @@ class _EventDetailRow extends StatelessWidget {
                 ),
               ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PressableActionCard extends StatefulWidget {
+  final IconData icon;
+  final Color iconColor;
+  final Color iconBg;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _PressableActionCard({
+    required this.icon,
+    required this.iconColor,
+    required this.iconBg,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  State<_PressableActionCard> createState() => _PressableActionCardState();
+}
+
+class _PressableActionCardState extends State<_PressableActionCard> {
+  static const _minimumPressedDuration = Duration(milliseconds: 140);
+
+  bool _isPressed = false;
+  DateTime? _pressedAt;
+  Timer? _releaseTimer;
+
+  void _setPressed(bool value) {
+    if (_isPressed == value) return;
+    setState(() => _isPressed = value);
+  }
+
+  void _handleTapDown(TapDownDetails details) {
+    _releaseTimer?.cancel();
+    _pressedAt = DateTime.now();
+    _setPressed(true);
+  }
+
+  void _handleTapUp(TapUpDetails details) {
+    final pressedAt = _pressedAt;
+    final elapsed = pressedAt == null
+        ? Duration.zero
+        : DateTime.now().difference(pressedAt);
+    final remaining = _minimumPressedDuration - elapsed;
+
+    if (remaining <= Duration.zero) {
+      _setPressed(false);
+      return;
+    }
+
+    _releaseTimer = Timer(remaining, () {
+      if (mounted) {
+        _setPressed(false);
+      }
+    });
+  }
+
+  void _handleTapCancel() {
+    _releaseTimer?.cancel();
+    _setPressed(false);
+  }
+
+  @override
+  void dispose() {
+    _releaseTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: _handleTapDown,
+        onTapUp: _handleTapUp,
+        onTapCancel: _handleTapCancel,
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _isPressed ? 0.98 : 1,
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.easeOut,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _isPressed
+                  ? const Color(0xFFE5E5EA)
+                  : const Color(0xFFFFFFFF),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: _isPressed
+                  ? const []
+                  : const [
+                      BoxShadow(
+                        color: Color(0x0F000000),
+                        blurRadius: 15,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: widget.iconBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(widget.icon, color: widget.iconColor, size: 22),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  widget.title,
+                  style: const TextStyle(
+                    color: Color(0xFF1C1C1E),
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  widget.subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF8E8E93),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
