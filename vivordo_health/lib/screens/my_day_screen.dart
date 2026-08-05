@@ -246,6 +246,87 @@ class _MyDayScreenState extends State<MyDayScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  _DayInsight _calculateDayInsight() {
+    if (_isLoading) {
+      return const _DayInsight(
+        title: 'Analyzing today’s calendar',
+        detail: 'Looking for open windows and heavier calendar blocks.',
+      );
+    }
+
+    final now = DateTime.now();
+    final workStart = DateTime(now.year, now.month, now.day, 9);
+    final workEnd = DateTime(now.year, now.month, now.day, 17);
+    final timedEvents =
+        _events
+            .where(
+              (event) =>
+                  !event.isAllDay &&
+                  event.end.isAfter(workStart) &&
+                  event.start.isBefore(workEnd),
+            )
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
+
+    String range(DateTime start, DateTime end) =>
+        '${DateFormat('h:mm a').format(start)}–${DateFormat('h:mm a').format(end)}';
+    String duration(Duration value) {
+      final minutes = value.inMinutes;
+      if (minutes < 60) return '$minutes minutes';
+      final hours = minutes ~/ 60;
+      final remainder = minutes % 60;
+      return remainder == 0
+          ? '$hours ${hours == 1 ? 'hour' : 'hours'}'
+          : '${hours}h ${remainder}m';
+    }
+
+    if (timedEvents.isEmpty) {
+      final allDayCount = _events.where((event) => event.isAllDay).length;
+      return _DayInsight(
+        title: 'Your workday is open',
+        detail: allDayCount == 0
+            ? 'No timed events are scheduled between 9:00 AM and 5:00 PM. You have a large window for focused work, movement, or recovery.'
+            : 'You have $allDayCount all-day ${allDayCount == 1 ? 'event' : 'events'}, but no timed events between 9:00 AM and 5:00 PM.',
+      );
+    }
+
+    final gaps = <(DateTime, DateTime)>[];
+    var cursor = workStart;
+    for (final event in timedEvents) {
+      final start = event.start.isBefore(workStart) ? workStart : event.start;
+      final end = event.end.isAfter(workEnd) ? workEnd : event.end;
+      if (start.isAfter(cursor)) gaps.add((cursor, start));
+      if (end.isAfter(cursor)) cursor = end;
+    }
+    if (cursor.isBefore(workEnd)) gaps.add((cursor, workEnd));
+    gaps.sort((a, b) => b.$2.difference(b.$1).compareTo(a.$2.difference(a.$1)));
+
+    if (gaps.isNotEmpty) {
+      final longest = gaps.first;
+      final gapDuration = longest.$2.difference(longest.$1);
+      if (gapDuration.inMinutes >= 30) {
+        return _DayInsight(
+          title: 'Protect your longest opening',
+          detail:
+              'Your ${range(longest.$1, longest.$2)} window is the longest open block in today’s calendar (${duration(gapDuration)}). Consider using it for focused work, movement, or recovery.',
+        );
+      }
+    }
+
+    final longestEvent = timedEvents.reduce(
+      (current, event) =>
+          event.end.difference(event.start) >
+              current.end.difference(current.start)
+          ? event
+          : current,
+    );
+    return _DayInsight(
+      title: 'Your calendar is tightly packed',
+      detail:
+          'You have ${timedEvents.length} timed ${timedEvents.length == 1 ? 'event' : 'events'} during the workday. “${longestEvent.title}” is the longest block (${range(longestEvent.start, longestEvent.end)}), so leave recovery time around it if possible.',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final load = _events.length >= 6
@@ -253,6 +334,7 @@ class _MyDayScreenState extends State<MyDayScreen> {
         : _events.length >= 3
         ? 'Moderate'
         : 'Low';
+    final dayInsight = _calculateDayInsight();
 
     return Scaffold(
       backgroundColor: MyDayScreen.background,
@@ -387,26 +469,29 @@ class _MyDayScreenState extends State<MyDayScreen> {
                     color: Colors.black.withValues(alpha: .07),
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.auto_awesome_rounded, color: MyDayScreen.purple),
-                    SizedBox(width: 12),
+                    const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: MyDayScreen.purple,
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Protect your afternoon opening',
-                            style: TextStyle(
+                            dayInsight.title,
+                            style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               color: MyDayScreen.ink,
                             ),
                           ),
-                          SizedBox(height: 4),
+                          const SizedBox(height: 4),
                           Text(
-                            'Your 2:30–4:30 PM window has the lowest cognitive load. It is a good time for recovery or focused individual work.',
-                            style: TextStyle(
+                            dayInsight.detail,
+                            style: const TextStyle(
                               fontSize: 12,
                               height: 1.4,
                               color: MyDayScreen.muted,
@@ -516,6 +601,13 @@ class _DayEvent extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _DayInsight {
+  const _DayInsight({required this.title, required this.detail});
+
+  final String title;
+  final String detail;
 }
 
 class _CalendarEvent {

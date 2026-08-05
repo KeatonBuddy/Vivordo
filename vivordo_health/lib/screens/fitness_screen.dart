@@ -9,6 +9,8 @@ import 'package:intl/intl.dart';
 import '../src/services/activity_goals_service.dart';
 import '../src/services/recent_activity_service.dart';
 import '../src/services/workout_service.dart';
+import '../src/services/personal_profile_service.dart';
+import 'personal_profile_screen.dart';
 
 const _purple = Color(0xFF6B5CE7);
 const _background = Color(0xFFF2F2F7);
@@ -83,6 +85,8 @@ class _FitnessScreenState extends State<FitnessScreen> {
                   const Expanded(child: _LatestHeartScanCard()),
                 ],
               ),
+              const SizedBox(height: 12),
+              const _PersonalProfileCard(),
               const SizedBox(height: 22),
               _SectionTitle(
                 icon: Icons.auto_awesome_rounded,
@@ -106,27 +110,14 @@ class _FitnessScreenState extends State<FitnessScreen> {
                     : const SizedBox.shrink(),
               ),
               const SizedBox(height: 22),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _allActivity ? 'ACTIVITY' : 'STRENGTH TRAINING',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.2,
-                        color: _muted,
-                      ),
-                    ),
-                  ),
-                  const Text(
-                    'History',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: _purple,
-                    ),
-                  ),
-                ],
+              Text(
+                _allActivity ? 'ACTIVITY' : 'STRENGTH TRAINING',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                  color: _muted,
+                ),
               ),
               const SizedBox(height: 9),
               Container(
@@ -658,6 +649,219 @@ class _LatestHeartScanCardState extends State<_LatestHeartScanCard> {
     }
     return null;
   }
+}
+
+class _PersonalProfileCard extends StatefulWidget {
+  const _PersonalProfileCard();
+
+  @override
+  State<_PersonalProfileCard> createState() => _PersonalProfileCardState();
+}
+
+class _PersonalProfileCardState extends State<_PersonalProfileCard> {
+  late final Stream<PersonalProfile> profileStream;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> metricsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    profileStream = PersonalProfileService.watch();
+    final user = FirebaseAuth.instance.currentUser;
+    metricsStream = user == null
+        ? const Stream.empty()
+        : FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .collection('metrics_daily')
+              .orderBy(FieldPath.documentId, descending: true)
+              .limit(30)
+              .snapshots();
+  }
+
+  double? _latestMetric(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String key,
+  ) {
+    for (final doc in docs) {
+      final value = ((doc.data()[key] as Map?)?['avg'] as num?)?.toDouble();
+      if (value != null) return value;
+    }
+    return null;
+  }
+
+  String _number(double? value, {int decimals = 1}) {
+    if (value == null) return '--';
+    return value.toStringAsFixed(value % 1 == 0 ? 0 : decimals);
+  }
+
+  String _imperialHeight(double centimeters) {
+    final totalInches = centimeters / 2.54;
+    var feet = totalInches ~/ 12;
+    var inches = (totalInches - feet * 12).round();
+    if (inches == 12) {
+      feet++;
+      inches = 0;
+    }
+    return '$feet\u2032 $inches\u2033';
+  }
+
+  String _updatedLabel(DateTime? updatedAt) {
+    if (updatedAt == null) return 'Tap to add your measurements';
+    final local = updatedAt.toLocal();
+    final now = DateTime.now();
+    if (DateUtils.isSameDay(local, now)) return 'Updated today';
+    return 'Updated ${DateFormat('MMM d').format(local)}';
+  }
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<PersonalProfile>(
+    stream: profileStream,
+    initialData: const PersonalProfile(),
+    builder: (context, profileSnapshot) =>
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: metricsStream,
+          builder: (context, metricsSnapshot) {
+            final profile = profileSnapshot.data ?? const PersonalProfile();
+            final docs = metricsSnapshot.data?.docs ?? const [];
+            final height = profile.heightCm;
+            final weight = profile.weightKg ?? _latestMetric(docs, 'weight');
+            final bodyFat =
+                profile.bodyFatPercent ?? _latestMetric(docs, 'body_fat');
+            final bmi = height != null && height > 0 && weight != null
+                ? weight / math.pow(height / 100, 2)
+                : null;
+            DateTime? metricDate;
+            if (docs.isNotEmpty) {
+              metricDate = DateTime.tryParse(docs.first.id);
+            }
+            final updatedAt = profile.updatedAt ?? metricDate;
+
+            return Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const PersonalProfileScreen(),
+                  ),
+                ),
+                child: _Card(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          _IconBox(
+                            icon: Icons.person_outline_rounded,
+                            color: _purple,
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Personal Profile',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: _ink,
+                              ),
+                            ),
+                          ),
+                          Icon(Icons.chevron_right_rounded, color: _muted),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _ProfileMetric(
+                              label: 'HEIGHT',
+                              value: height == null
+                                  ? '--'
+                                  : _imperialHeight(height),
+                            ),
+                          ),
+                          const _ProfileDivider(),
+                          Expanded(
+                            child: _ProfileMetric(
+                              label: 'WEIGHT',
+                              value: weight == null
+                                  ? '--'
+                                  : '${_number(weight * 2.2046226218)} lbs',
+                            ),
+                          ),
+                          const _ProfileDivider(),
+                          Expanded(
+                            child: _ProfileMetric(
+                              label: 'BMI',
+                              value: _number(bmi),
+                            ),
+                          ),
+                          const _ProfileDivider(),
+                          Expanded(
+                            child: _ProfileMetric(
+                              label: 'BODY FAT',
+                              value: bodyFat == null
+                                  ? '--'
+                                  : '${_number(bodyFat)}%',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _updatedLabel(updatedAt),
+                        style: const TextStyle(fontSize: 12, color: _muted),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+  );
+}
+
+class _ProfileMetric extends StatelessWidget {
+  const _ProfileMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Text(
+        label,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: _muted,
+        ),
+      ),
+      const SizedBox(height: 7),
+      FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          value,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        ),
+      ),
+    ],
+  );
+}
+
+class _ProfileDivider extends StatelessWidget {
+  const _ProfileDivider();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 1,
+    height: 46,
+    color: Colors.black.withValues(alpha: .08),
+  );
 }
 
 class _ThisWeekActivityCard extends StatelessWidget {
