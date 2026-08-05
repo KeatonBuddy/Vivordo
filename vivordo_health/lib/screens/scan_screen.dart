@@ -34,6 +34,8 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   double _progress = 0.0;
   double _finalBpm = 0.0;
   bool _hasTorch = true;
+  bool _scanArmed = false;
+  bool _isStartingScan = false;
   bool _isFirstScan = false;
   bool _showTutorial = false;
   String _errorTitle = 'Camera unavailable';
@@ -189,6 +191,10 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   Future<void> _activateCamera() async {
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) return;
+    if (!_scanArmed) {
+      await controller.setFlashMode(FlashMode.off).catchError((_) {});
+      return;
+    }
     var hasTorch = true;
     try {
       await controller.setFlashMode(FlashMode.torch);
@@ -208,6 +214,8 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
   Future<void> _deactivateCamera() async {
     _fingerDetectedFrames = 0;
+    _scanArmed = false;
+    _isStartingScan = false;
     if (_scanState == ScanState.scanning) _pauseScan();
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) return;
@@ -215,6 +223,19 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       await controller.stopImageStream().catchError((_) {});
     }
     await controller.setFlashMode(FlashMode.off).catchError((_) {});
+  }
+
+  Future<void> _beginScanSession() async {
+    if (_isStartingScan || _showTutorial) return;
+    if (!mounted) return;
+    setState(() {
+      _scanArmed = true;
+      _isStartingScan = true;
+      _fingerDetectedFrames = 0;
+    });
+    await _activateCamera();
+    if (!mounted) return;
+    setState(() => _isStartingScan = false);
   }
 
   // ── Image stream / PPG ────────────────────────────────────────────────────
@@ -312,7 +333,10 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
   Future<void> _completeScan() async {
     if (!mounted) return;
-    setState(() => _scanState = ScanState.processing);
+    setState(() {
+      _scanArmed = false;
+      _scanState = ScanState.processing;
+    });
     _spinController.stop();
     final controller = _cameraController;
     if (controller != null && controller.value.isInitialized) {
@@ -544,16 +568,13 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       await _initCamera();
       return;
     }
-    bool hasTorch = _hasTorch;
-    try {
-      await controller.setFlashMode(FlashMode.torch);
-      hasTorch = controller.value.flashMode == FlashMode.torch;
-    } catch (e) {
-      hasTorch = false;
-      debugPrint('[PPG] Could not enable torch during reset: $e');
+    if (controller.value.isStreamingImages) {
+      await controller.stopImageStream().catchError((_) {});
     }
+    await controller.setFlashMode(FlashMode.off).catchError((_) {});
     setState(() {
-      _hasTorch = hasTorch;
+      _scanArmed = false;
+      _isStartingScan = false;
       _scanState = ScanState.idle;
       _progress = 0.0;
       _finalBpm = 0.0;
@@ -562,7 +583,6 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       _errorTitle = 'Camera unavailable';
       _errorBody = 'Please allow camera access in Settings\nand try again.';
     });
-    _startImageStream();
   }
 
   @override
@@ -595,21 +615,6 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               const SizedBox(height: 48),
               Row(
                 children: [
-                  IconButton(
-                    tooltip: 'Back to Home',
-                    onPressed: () {
-                      final onBackToHome = widget.onBackToHome;
-                      if (onBackToHome != null) {
-                        onBackToHome();
-                      } else {
-                        Navigator.of(context).maybePop();
-                      }
-                    },
-                    icon: const Icon(
-                      Icons.arrow_back_rounded,
-                      color: accentPurple,
-                    ),
-                  ),
                   const Expanded(
                     child: Text(
                       'Stress Scan',
@@ -624,6 +629,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                   IconButton(
                     tooltip: 'Show tutorial',
                     onPressed: () {
+                      unawaited(_deactivateCamera());
                       _scanTimer?.cancel();
                       _spinController.stop();
                       setState(() {
@@ -978,10 +984,10 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: 28),
-        const Text(
-          'Place your finger on the camera',
+        Text(
+          _scanArmed ? 'Place your finger on the camera' : 'Ready to scan?',
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
             color: textDark,
@@ -989,11 +995,48 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Your camera + flash measures your heart rate\nthrough your fingertip in 15 seconds.',
+        Text(
+          _scanArmed
+              ? 'Cover the rear camera and hold still. The scan begins when your finger is detected.'
+              : 'Tap Start Scan to turn on the torch, then cover the rear camera with your fingertip.',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: textGrey, height: 1.6),
+          style: const TextStyle(fontSize: 14, color: textGrey, height: 1.6),
         ),
+        if (!_scanArmed && !_showTutorial) ...[
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: FilledButton.icon(
+              onPressed: _isStartingScan ? null : _beginScanSession,
+              style: FilledButton.styleFrom(
+                backgroundColor: accentPurple,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: accentPurple.withValues(alpha: .55),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: _isStartingScan
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.flashlight_on_rounded),
+              label: Text(
+                _isStartingScan ? 'Starting...' : 'Start Scan',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 28),
 
         // ── How it works card ─────────────────────────────────────────
@@ -1040,22 +1083,22 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                 Icons.wb_sunny_outlined,
                 _hasTorch ? 'Enable torch' : 'Find bright light',
                 _hasTorch
-                    ? 'The flash turns on automatically to illuminate your fingertip.'
+                    ? 'Tap Start Scan to turn on the flash and illuminate your fingertip.'
                     : 'Find a bright light source and press your fingertip firmly over the lens.',
               ),
               const SizedBox(height: 14),
               _buildStep(
                 '2',
                 Icons.touch_app_outlined,
-                'Cover the lens',
-                'Gently press your fingertip over the rear camera and flash — no need to press hard.',
+                'Cover the camera and flash',
+                'Gently place your fingertip over the rear camera and flash, then use your other hand to cover the entire camera and flash module. No need to press hard.',
               ),
               const SizedBox(height: 14),
               _buildStep(
                 '3',
                 Icons.favorite_outline_rounded,
                 'Hold still',
-                'Keep steady for 15 seconds. Scanning starts the moment your finger is detected.',
+                'After pressing Start Scan, keep steady for 15 seconds. Scanning begins when your finger is detected.',
               ),
               const SizedBox(height: 14),
               _buildStep(
@@ -1093,7 +1136,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               const SizedBox(height: 10),
               _buildTipRow(
                 Icons.timer_outlined,
-                'Scanning starts automatically — just wait',
+                'After Start Scan, scanning begins when your finger is detected',
               ),
             ],
           ),

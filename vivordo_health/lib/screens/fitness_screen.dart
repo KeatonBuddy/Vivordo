@@ -736,84 +736,102 @@ class _PersonalProfileCardState extends State<_PersonalProfileCard> {
             }
             final updatedAt = profile.updatedAt ?? metricDate;
 
-            return Material(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(20),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const PersonalProfileScreen(),
+            return Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .035),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
                   ),
+                ],
+              ),
+              child: Material(
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(color: Colors.black.withValues(alpha: .07)),
                 ),
-                child: _Card(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          _IconBox(
-                            icon: Icons.person_outline_rounded,
-                            color: _purple,
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Personal Profile',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                                color: _ink,
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  splashColor: _purple.withValues(alpha: .10),
+                  highlightColor: _purple.withValues(alpha: .055),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const PersonalProfileScreen(),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            _IconBox(
+                              icon: Icons.person_outline_rounded,
+                              color: _purple,
+                            ),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Personal Profile',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: _ink,
+                                ),
                               ),
                             ),
-                          ),
-                          Icon(Icons.chevron_right_rounded, color: _muted),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _ProfileMetric(
-                              label: 'HEIGHT',
-                              value: height == null
-                                  ? '--'
-                                  : _imperialHeight(height),
+                            Icon(Icons.chevron_right_rounded, color: _muted),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _ProfileMetric(
+                                label: 'HEIGHT',
+                                value: height == null
+                                    ? '--'
+                                    : _imperialHeight(height),
+                              ),
                             ),
-                          ),
-                          const _ProfileDivider(),
-                          Expanded(
-                            child: _ProfileMetric(
-                              label: 'WEIGHT',
-                              value: weight == null
-                                  ? '--'
-                                  : '${_number(weight * 2.2046226218)} lbs',
+                            const _ProfileDivider(),
+                            Expanded(
+                              child: _ProfileMetric(
+                                label: 'WEIGHT',
+                                value: weight == null
+                                    ? '--'
+                                    : '${_number(weight * 2.2046226218)} lbs',
+                              ),
                             ),
-                          ),
-                          const _ProfileDivider(),
-                          Expanded(
-                            child: _ProfileMetric(
-                              label: 'BMI',
-                              value: _number(bmi),
+                            const _ProfileDivider(),
+                            Expanded(
+                              child: _ProfileMetric(
+                                label: 'BMI',
+                                value: _number(bmi),
+                              ),
                             ),
-                          ),
-                          const _ProfileDivider(),
-                          Expanded(
-                            child: _ProfileMetric(
-                              label: 'BODY FAT',
-                              value: bodyFat == null
-                                  ? '--'
-                                  : '${_number(bodyFat)}%',
+                            const _ProfileDivider(),
+                            Expanded(
+                              child: _ProfileMetric(
+                                label: 'BODY FAT',
+                                value: bodyFat == null
+                                    ? '--'
+                                    : '${_number(bodyFat)}%',
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _updatedLabel(updatedAt),
-                        style: const TextStyle(fontSize: 12, color: _muted),
-                      ),
-                    ],
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _updatedLabel(updatedAt),
+                          style: const TextStyle(fontSize: 12, color: _muted),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
