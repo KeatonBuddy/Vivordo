@@ -486,6 +486,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     String? scheduleContext,
     String? insightsContext,
     String? dashboardContext,
+    String? workoutContext,
   }) async {
     // Trim the conversation to fit rather than REFUSING the turn. The old guard
     // returned a canned "we've covered a lot of ground — let's wrap up" reply,
@@ -523,6 +524,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       // cached — embed them in the uncached user prompt so they're always fresh.
       insightsContext: insightsContext,
       dashboardContext: dashboardContext,
+      workoutContext: workoutContext,
       embedSpikeContext: false,
       embedPersona: false,
       embedTaskInstructions: false,

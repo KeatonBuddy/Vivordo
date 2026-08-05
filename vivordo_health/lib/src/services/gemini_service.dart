@@ -429,6 +429,7 @@ RULES:
     String? scheduleContext,
     String? insightsContext,
     String? dashboardContext,
+    String? workoutContext,
   }) async {
     // Trim to fit rather than refuse — Panda always answers, so the chat ends
     // naturally instead of being cut off with a canned "let's wrap up".
@@ -448,6 +449,7 @@ RULES:
       scheduleContext: scheduleContext,
       insightsContext: insightsContext,
       dashboardContext: dashboardContext,
+      workoutContext: workoutContext,
     );
 
     final response = await _dialogueModel.generateContent([
@@ -1082,6 +1084,7 @@ Write the continuity note now.''';
     String? scheduleContext,
     String? insightsContext,
     String? dashboardContext,
+    String? workoutContext,
     bool embedSpikeContext = true,
     bool embedPersona = true,
     bool embedTaskInstructions = true,
@@ -1141,6 +1144,10 @@ Write the continuity note now.''';
         ? 'DASHBOARD METRICS (real HealthKit daily aggregates; use only these values):\n$dashboardContext\n\n'
         : '';
 
+    final workoutLine = (workoutContext != null && workoutContext.isNotEmpty)
+        ? 'SAVED WORKOUT HISTORY (real user data; answer only from these records):\n$workoutContext\n\n'
+        : '';
+
     final personaLine = embedPersona
         ? 'You are Panda 🐼, a warm, empathetic wellness companion in Vivordo.\n\n'
         : '';
@@ -1185,7 +1192,7 @@ Write the continuity note now.''';
               '   sleep_quality, social_context, other. Use "" for anything not mentioned.\n'
         : '';
 
-    return '$personaLine$pathCtx\n$spikeCtxLine$scheduleLine$insightsLine$dashboardLine$slotsCtx\n\nCONVERSATION:\n$historyText\n\nUSER: "$userMessage"$tasksSection';
+    return '$personaLine$pathCtx\n$spikeCtxLine$scheduleLine$insightsLine$dashboardLine$workoutLine$slotsCtx\n\nCONVERSATION:\n$historyText\n\nUSER: "$userMessage"$tasksSection';
   }
 
   // =========================================================================

@@ -14,6 +14,7 @@ import '../src/services/insight_service.dart';
 import '../src/models/insights.dart';
 import '../src/services/panda_recommendations.dart';
 import '../src/services/calendar_service.dart';
+import '../src/services/workout_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 // Robot mascot inlined as a string so it renders via SvgPicture.string —
@@ -279,6 +280,8 @@ class _PandaScreenState extends State<PandaScreen>
   /// opens (it's too slow for the init critical path). Fed into dialogue turns
   /// once it arrives; null until then / when Calendar isn't connected.
   String? _scheduleContext;
+  String? _cachedWorkoutContext;
+  DateTime? _workoutContextCachedAt;
 
   // ── Category pill state ────────────────────────────────────────────────────
   // Pills appear only after ALL spike questions are answered.
@@ -644,6 +647,7 @@ class _PandaScreenState extends State<PandaScreen>
     _scrollBottom();
 
     try {
+      final workoutContext = await _workoutContextFor(prompt);
       final reply = await _svc
           .processTurn(
             userMessage: prompt,
@@ -660,6 +664,7 @@ class _PandaScreenState extends State<PandaScreen>
             scheduleContext: _scheduleContext,
             insightsContext: _currentInsightsContext(),
             dashboardContext: _dashboardContextFor(prompt, session),
+            workoutContext: workoutContext,
           )
           .timeout(const Duration(seconds: 35));
 
@@ -782,6 +787,7 @@ class _PandaScreenState extends State<PandaScreen>
 
     try {
       final currentQ = _currentQ;
+      final workoutContext = await _workoutContextFor(text);
 
       final reply = await _svc
           .processTurn(
@@ -804,6 +810,7 @@ class _PandaScreenState extends State<PandaScreen>
             dashboardContext: _dashboardContextFor(text, session),
             scheduleContext: _scheduleContext,
             insightsContext: _currentInsightsContext(),
+            workoutContext: workoutContext,
           )
           .timeout(const Duration(seconds: 35));
 
@@ -1045,6 +1052,62 @@ class _PandaScreenState extends State<PandaScreen>
       if (values.isNotEmpty) lines.add('$metric:${values.join(',')}');
     }
     return lines.isEmpty ? null : lines.join('\n');
+  }
+
+  Future<String?> _workoutContextFor(String message) async {
+    final asksAboutWorkouts = RegExp(
+      r'\b(workout|workouts|exercise|exercises|gym|lift|lifting|lifted|trained|training|sets|reps?|bench|squat|deadlift|row|pulldown|pull-up|chin-up|curl|press|lunge|cardio|run|running|walk|walking|stairmaster)\b',
+      caseSensitive: false,
+    ).hasMatch(message);
+
+    final now = DateTime.now();
+    final hasFreshContext =
+        _cachedWorkoutContext != null &&
+        _workoutContextCachedAt != null &&
+        now.difference(_workoutContextCachedAt!) < const Duration(minutes: 2);
+    if (!asksAboutWorkouts && !hasFreshContext) return null;
+    if (hasFreshContext) {
+      return _cachedWorkoutContext;
+    }
+
+    late final List<SavedWorkout> workouts;
+    try {
+      workouts = await WorkoutService.loadRecent(limit: 12);
+    } catch (error) {
+      debugPrint('Panda workout context load failed: $error');
+      return 'Workout history is temporarily unavailable.';
+    }
+    if (workouts.isEmpty) {
+      _cachedWorkoutContext = 'No saved workouts found.';
+      _workoutContextCachedAt = now;
+      return _cachedWorkoutContext;
+    }
+
+    String number(double value) =>
+        value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
+
+    final lines = <String>[
+      'Most recent ${workouts.length} saved workout${workouts.length == 1 ? '' : 's'} (newest first):',
+    ];
+    for (final workout in workouts) {
+      final minutes = (workout.durationSeconds / 60).round();
+      final exerciseParts = workout.exercises.take(8).map((exercise) {
+        final distance = exercise.distanceKm;
+        if (distance != null) return '${exercise.name}=${number(distance)}km';
+        final sets = exercise.sets
+            .take(6)
+            .map((set) => '${number(set.weightLbs)}lb×${set.reps}')
+            .join('/');
+        return sets.isEmpty ? exercise.name : '${exercise.name}=$sets';
+      }).toList();
+      if (workout.exercises.length > 8) exerciseParts.add('…');
+      lines.add(
+        '${DateFormat('yyyy-MM-dd').format(workout.completedAt.toLocal())}|${minutes}m|${exerciseParts.join(';')}',
+      );
+    }
+    _cachedWorkoutContext = lines.join('\n');
+    _workoutContextCachedAt = now;
+    return _cachedWorkoutContext;
   }
 
   String? _dashboardMetricValue(String metric, dynamic raw) {

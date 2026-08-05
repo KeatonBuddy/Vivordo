@@ -149,6 +149,33 @@ class WorkoutService {
         );
   }
 
+  static Future<List<SavedWorkout>> loadRecent({int limit = 12}) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const [];
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('workouts')
+        .orderBy('completedAt', descending: true)
+        .limit(limit)
+        .get();
+    return snapshot.docs.map(SavedWorkout.fromDocument).toList(growable: false);
+  }
+
+  static Future<void> delete(String workoutId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError('Sign in before deleting a workout.');
+    if (workoutId.trim().isEmpty) {
+      throw ArgumentError('Workout ID is required.');
+    }
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('workouts')
+        .doc(workoutId)
+        .delete();
+  }
+
   static Future<String> save({
     required DateTime startedAt,
     required int durationSeconds,

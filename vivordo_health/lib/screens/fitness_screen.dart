@@ -1130,6 +1130,20 @@ class _RecentWorkoutRow extends StatelessWidget {
                         ),
                         const SizedBox(height: 10),
                       ],
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => _deleteWorkout(context),
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        label: const Text('Delete Workout'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1139,6 +1153,39 @@ class _RecentWorkoutRow extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _deleteWorkout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete workout?'),
+        content: const Text(
+          'This workout and all of its exercise data will be permanently deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep Workout'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await WorkoutService.delete(workout.id);
+      if (context.mounted) Navigator.pop(context);
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete workout: $error')),
+      );
+    }
   }
 }
 
@@ -2113,15 +2160,102 @@ class _WorkoutSetRow extends StatelessWidget {
 }
 
 const _exerciseLibrary = <_ExerciseDefinition>[
-  _ExerciseDefinition(name: 'Bench Press', category: 'Chest'),
-  _ExerciseDefinition(name: 'Seated Row', category: 'Back'),
+  _ExerciseDefinition(name: 'Barbell Bench Press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Incline Barbell Bench Press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Decline Barbell Bench Press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Dumbbell Bench Press', category: 'Chest'),
   _ExerciseDefinition(name: 'Incline Dumbbell Press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Decline Dumbbell Press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Dumbbell Chest Fly', category: 'Chest'),
+  _ExerciseDefinition(name: 'Cable Chest Fly', category: 'Chest'),
+  _ExerciseDefinition(name: 'Cable Crossover', category: 'Chest'),
+  _ExerciseDefinition(name: 'Chest Press Machine', category: 'Chest'),
+  _ExerciseDefinition(name: 'Pec Deck', category: 'Chest'),
+  _ExerciseDefinition(name: 'Push-Up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Incline Push-Up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Decline Push-Up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Chest Dip', category: 'Chest'),
+  _ExerciseDefinition(name: 'Dumbbell Pullover', category: 'Chest'),
+  _ExerciseDefinition(name: 'Barbell Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'EZ-Bar Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dumbbell Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Hammer Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Preacher Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Incline Dumbbell Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Concentration Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Cable Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Machine Biceps Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Triceps Pushdown', category: 'Arms'),
+  _ExerciseDefinition(name: 'Rope Pushdown', category: 'Arms'),
+  _ExerciseDefinition(name: 'Skull Crusher', category: 'Arms'),
+  _ExerciseDefinition(name: 'Overhead Triceps Extension', category: 'Arms'),
+  _ExerciseDefinition(name: 'Triceps Kickback', category: 'Arms'),
+  _ExerciseDefinition(name: 'Close-Grip Bench Press', category: 'Arms'),
+  _ExerciseDefinition(name: 'Triceps Dip', category: 'Arms'),
+  _ExerciseDefinition(name: 'Bench Dip', category: 'Arms'),
+  _ExerciseDefinition(name: 'Diamond Push-Up', category: 'Arms'),
+  _ExerciseDefinition(name: 'Wrist Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Reverse Wrist Curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Deadlift', category: 'Back'),
+  _ExerciseDefinition(name: 'Barbell Row', category: 'Back'),
+  _ExerciseDefinition(name: 'T-Bar Row', category: 'Back'),
+  _ExerciseDefinition(name: 'Landmine Row', category: 'Back'),
+  _ExerciseDefinition(name: 'One-Arm Dumbbell Row', category: 'Back'),
+  _ExerciseDefinition(name: 'Chest-Supported Dumbbell Row', category: 'Back'),
+  _ExerciseDefinition(name: 'Seated Cable Row', category: 'Back'),
+  _ExerciseDefinition(name: 'Machine Row', category: 'Back'),
   _ExerciseDefinition(name: 'Lat Pulldown', category: 'Back'),
-  _ExerciseDefinition(name: 'Shoulder Press', category: 'Shoulders'),
-  _ExerciseDefinition(name: 'Bicep Curl', category: 'Arms'),
-  _ExerciseDefinition(name: 'Tricep Pushdown', category: 'Arms'),
-  _ExerciseDefinition(name: 'Leg Press', category: 'Legs'),
+  _ExerciseDefinition(name: 'Single-Arm Lat Pulldown', category: 'Back'),
+  _ExerciseDefinition(name: 'Straight-Arm Pulldown', category: 'Back'),
+  _ExerciseDefinition(name: 'Pull-Up', category: 'Back'),
+  _ExerciseDefinition(name: 'Chin-Up', category: 'Back'),
+  _ExerciseDefinition(name: 'Assisted Pull-Up', category: 'Back'),
+  _ExerciseDefinition(name: 'Inverted Row', category: 'Back'),
+  _ExerciseDefinition(name: 'Back Extension', category: 'Back'),
+  _ExerciseDefinition(name: 'Reverse Hyperextension', category: 'Back'),
+  _ExerciseDefinition(name: 'Barbell Overhead Press', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Dumbbell Shoulder Press', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Machine Shoulder Press', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Arnold Press', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Push Press', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Landmine Press', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Dumbbell Lateral Raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Cable Lateral Raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Machine Lateral Raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Dumbbell Front Raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Cable Front Raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Rear-Delt Dumbbell Fly', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Cable Rear-Delt Fly', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Reverse Pec Deck', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Face Pull', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Upright Row', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Dumbbell Shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Pike Push-Up', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Handstand Push-Up', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Back Squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Front Squat', category: 'Legs'),
   _ExerciseDefinition(name: 'Goblet Squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Hack Squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Leg Press', category: 'Legs'),
+  _ExerciseDefinition(name: 'Leg Extension', category: 'Legs'),
+  _ExerciseDefinition(name: 'Romanian Deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Stiff-Leg Deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Seated Leg Curl', category: 'Legs'),
+  _ExerciseDefinition(name: 'Lying Leg Curl', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bulgarian Split Squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Walking Lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Reverse Lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Step-Up', category: 'Legs'),
+  _ExerciseDefinition(name: 'Hip Thrust', category: 'Legs'),
+  _ExerciseDefinition(name: 'Glute Bridge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Cable Kickback', category: 'Legs'),
+  _ExerciseDefinition(name: 'Hip Abduction', category: 'Legs'),
+  _ExerciseDefinition(name: 'Hip Adduction', category: 'Legs'),
+  _ExerciseDefinition(name: 'Standing Calf Raise', category: 'Legs'),
+  _ExerciseDefinition(name: 'Seated Calf Raise', category: 'Legs'),
+  _ExerciseDefinition(name: 'Single-Leg Calf Raise', category: 'Legs'),
+  _ExerciseDefinition(name: 'Sled Push', category: 'Legs'),
+  _ExerciseDefinition(name: 'Box Jump', category: 'Legs'),
   _ExerciseDefinition(name: 'Plank', category: 'Core'),
   _ExerciseDefinition(name: 'Cable Crunch', category: 'Core'),
   _ExerciseDefinition(name: 'Run', category: 'Cardio'),
@@ -2261,11 +2395,6 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   @override
   Widget build(BuildContext context) {
     final exercises = _filteredExercises;
-    final recent = _exerciseLibrary.take(2).where((exercise) {
-      return (_filter == 'All' || exercise.category == _filter) &&
-          (_search.isEmpty ||
-              exercise.name.toLowerCase().contains(_search.toLowerCase()));
-    }).toList();
 
     return Scaffold(
       backgroundColor: _background,
@@ -2344,15 +2473,6 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
                 children: [
-                  if (recent.isNotEmpty) ...[
-                    const _PickerSectionTitle('RECENT'),
-                    _ExercisePickerCard(
-                      exercises: recent,
-                      selected: _selected,
-                      onTap: _toggle,
-                    ),
-                    const SizedBox(height: 18),
-                  ],
                   const _PickerSectionTitle('ALL EXERCISES'),
                   if (exercises.isEmpty)
                     const Padding(

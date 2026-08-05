@@ -82,6 +82,7 @@ abstract class AIService {
     String? scheduleContext,
     String? insightsContext,
     String? dashboardContext,
+    String? workoutContext,
   });
 
   /// Produce a brief (≤55 word) third-person insight recap of a completed
