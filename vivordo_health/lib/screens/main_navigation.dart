@@ -265,7 +265,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 child: AbsorbPointer(
                   child: RepaintBoundary(
                     child: ColoredBox(
-                      color: Colors.white,
+                      color: Color(0xFFFBFAFC),
                       child: Center(
                         child: Image.asset(
                           'assets/vivordo_splash_logo_v2.png',

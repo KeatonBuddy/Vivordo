@@ -149,6 +149,30 @@ class WorkoutService {
         );
   }
 
+  static Stream<List<SavedWorkout>> watchBetween({
+    required DateTime start,
+    required DateTime end,
+  }) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Stream.value(const []);
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('workouts')
+        .where(
+          'completedAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+          isLessThan: Timestamp.fromDate(end),
+        )
+        .orderBy('completedAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map(SavedWorkout.fromDocument)
+              .toList(growable: false),
+        );
+  }
+
   static Future<List<SavedWorkout>> loadRecent({int limit = 12}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const [];

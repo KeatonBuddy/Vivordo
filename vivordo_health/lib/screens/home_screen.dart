@@ -422,6 +422,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icons.mood_rounded,
                       const Color(0xFFF97316),
                       loading: moodLoading,
+                      onTap: _showMoodCheck,
                       emptyAction: _showMoodCheck,
                       emptyActionLabel: 'Check in →',
                     ),
@@ -434,10 +435,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 activeCalories: activeCalories,
                 exerciseMinutes: exerciseMinutes,
               ),
-              const SizedBox(height: 28),
-              _buildSectionTitle('QUICK ACTIONS'),
-              const SizedBox(height: 12),
-              _buildQuickActions(),
               const SizedBox(height: 28),
               _buildSectionTitle("TODAY'S INSIGHTS"),
               const SizedBox(height: 12),
@@ -831,66 +828,85 @@ class _HomeScreenState extends State<HomeScreen> {
     Color color, {
     bool showConnectHint = true,
     bool loading = false,
+    VoidCallback? onTap,
     VoidCallback? emptyAction,
     String emptyActionLabel = 'Connect Health →',
   }) {
     final bool isEmpty = value == '--';
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: BoxDecoration(
-        color: cardWhite,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0x0F000000),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Icon(
-            icon,
-            color: isEmpty ? const Color(0xFFC7C7CC) : color,
-            size: 20,
-          ),
-          const SizedBox(height: 6),
-          loading
-              ? Container(
-                  width: 36,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE5E5EA),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                )
-              : Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: isEmpty ? const Color(0xFFC7C7CC) : textDark,
-                  ),
-                ),
-          const SizedBox(height: 2),
-          Text(label, style: const TextStyle(fontSize: 10, color: textGrey)),
-          if (isEmpty && showConnectHint) ...[
-            const SizedBox(height: 4),
-            GestureDetector(
-              onTap:
-                  emptyAction ??
-                  () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  ),
-              child: Text(
-                emptyActionLabel,
-                style: const TextStyle(fontSize: 10, color: textGrey),
-              ),
+    return Semantics(
+      button: onTap != null,
+      label: onTap == null ? null : '$label, $value. Tap to check in.',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0F000000),
+              blurRadius: 10,
+              offset: Offset(0, 3),
             ),
           ],
-        ],
+        ),
+        child: Material(
+          color: cardWhite,
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+              child: Column(
+                children: [
+                  Icon(
+                    icon,
+                    color: isEmpty ? const Color(0xFFC7C7CC) : color,
+                    size: 20,
+                  ),
+                  const SizedBox(height: 6),
+                  loading
+                      ? Container(
+                          width: 36,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE5E5EA),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        )
+                      : Text(
+                          value,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: isEmpty ? const Color(0xFFC7C7CC) : textDark,
+                          ),
+                        ),
+                  const SizedBox(height: 2),
+                  Text(
+                    label,
+                    style: const TextStyle(fontSize: 10, color: textGrey),
+                  ),
+                  if (isEmpty && showConnectHint) ...[
+                    const SizedBox(height: 4),
+                    GestureDetector(
+                      onTap:
+                          emptyAction ??
+                          () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SettingsScreen(),
+                            ),
+                          ),
+                      child: Text(
+                        emptyActionLabel,
+                        style: const TextStyle(fontSize: 10, color: textGrey),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -903,88 +919,6 @@ class _HomeScreenState extends State<HomeScreen> {
         fontSize: 12,
         fontWeight: FontWeight.w700,
         letterSpacing: 1.0,
-      ),
-    );
-  }
-
-  Widget _buildQuickActions() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildActionCard(
-            icon: Icons.flash_on_rounded,
-            iconColor: accentPurple,
-            iconBg: Color(0x1F7B6EF6),
-            title: 'Quick Scan',
-            subtitle: '15-sec stress check',
-            onTap: () => widget.onScanTap?.call(),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildActionCard(
-            icon: Icons.edit_note_rounded,
-            iconColor: greenColor,
-            iconBg: Color(0x1F34C759),
-            title: 'Check In',
-            subtitle: 'Daily wellness log',
-            onTap: _showMoodCheck,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildActionCard({
-    required IconData icon,
-    required Color iconColor,
-    required Color iconBg,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: cardWhite,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x0F000000),
-              blurRadius: 15,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: iconColor, size: 22),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              style: const TextStyle(
-                color: textDark,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              subtitle,
-              style: const TextStyle(color: textGrey, fontSize: 12),
-            ),
-          ],
-        ),
       ),
     );
   }

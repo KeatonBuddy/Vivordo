@@ -211,47 +211,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
         ),
       ),
       const SizedBox(height: 12),
-      _Card(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'THIS WEEK',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 2,
-                      color: _muted,
-                    ),
-                  ),
-                ),
-                Text(
-                  '2 workouts',
-                  style: TextStyle(fontSize: 12, color: _muted),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            for (final entry in {
-              'Chest': 8,
-              'Back': 6,
-              'Legs': 3,
-              'Shoulders': 7,
-              'Arms': 5,
-            }.entries) ...[
-              _StrengthRow(
-                label: entry.key,
-                value: entry.value,
-                goal: _strengthGoals[entry.key]!,
-              ),
-              if (entry.key != 'Arms') const SizedBox(height: 13),
-            ],
-          ],
-        ),
-      ),
+      _WeeklyStrengthProgress(goals: _strengthGoals),
       const SizedBox(height: 18),
       Row(
         children: [
@@ -3431,6 +3391,92 @@ class _Segment extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _WeeklyStrengthProgress extends StatelessWidget {
+  const _WeeklyStrengthProgress({required this.goals});
+
+  final Map<String, int> goals;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = DateUtils.dateOnly(now);
+    final monday = today.subtract(Duration(days: today.weekday - 1));
+    final nextMonday = monday.add(const Duration(days: 7));
+    return StreamBuilder<List<SavedWorkout>>(
+      stream: WorkoutService.watchBetween(start: monday, end: nextMonday),
+      builder: (context, snapshot) {
+        final workouts = snapshot.data ?? const <SavedWorkout>[];
+        final setsByCategory = {for (final category in goals.keys) category: 0};
+        for (final workout in workouts) {
+          for (final exercise in workout.exercises) {
+            final category = setsByCategory.keys.cast<String?>().firstWhere(
+              (candidate) =>
+                  candidate!.toLowerCase() ==
+                  exercise.category.trim().toLowerCase(),
+              orElse: () => null,
+            );
+            if (category != null) {
+              setsByCategory[category] =
+                  setsByCategory[category]! + exercise.sets.length;
+            }
+          }
+        }
+        return _Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'THIS WEEK',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2,
+                        color: _muted,
+                      ),
+                    ),
+                  ),
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Text(
+                      '${workouts.length} ${workouts.length == 1 ? 'workout' : 'workouts'}',
+                      style: const TextStyle(fontSize: 12, color: _muted),
+                    ),
+                ],
+              ),
+              if (snapshot.hasError) ...[
+                const SizedBox(height: 10),
+                const Text(
+                  'Could not load this week’s workouts.',
+                  style: TextStyle(fontSize: 12, color: Colors.redAccent),
+                ),
+              ],
+              const SizedBox(height: 16),
+              for (final entry in setsByCategory.entries) ...[
+                _StrengthRow(
+                  label: entry.key,
+                  value: entry.value,
+                  goal: goals[entry.key]!,
+                ),
+                if (entry.key != setsByCategory.keys.last)
+                  const SizedBox(height: 13),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _StrengthRow extends StatelessWidget {
