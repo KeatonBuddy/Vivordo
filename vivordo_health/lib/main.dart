@@ -80,8 +80,8 @@ class MyApp extends StatelessWidget {
         '/': (context) => const AuthGate(),
         '/signup': (context) => const SignupScreen(),
         '/home': (context) => const MainNavigationScreen(),
-        '/scan': (context) => const MainNavigationScreen(initialIndex: 1),
-        '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 3),
+        '/scan': (context) => const MainNavigationScreen(initialIndex: 2),
+        '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 5),
       },
     );
   }
@@ -151,9 +151,11 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void _triggerFullSync(String uid) {
     if (_lastSyncedUid == uid) return;
     _lastSyncedUid = uid;
-    HealthService().syncToFirestore(daysBack: 30).whenComplete(
-      () => FitbitService.instance.syncInBackground(daysBack: 30),
-    );
+    HealthService()
+        .syncToFirestore(daysBack: 30)
+        .whenComplete(
+          () => FitbitService.instance.syncInBackground(daysBack: 30),
+        );
     NotificationService().configureForUser(uid);
     AnalyticsService().logLogin();
   }

@@ -211,7 +211,9 @@ const List<_PromptSet> _kPromptSets = [
 // =============================================================================
 
 class PandaScreen extends StatefulWidget {
-  const PandaScreen({super.key});
+  const PandaScreen({super.key, this.onClose});
+
+  final VoidCallback? onClose;
 
   @override
   State<PandaScreen> createState() => _PandaScreenState();
@@ -1051,7 +1053,8 @@ class _PandaScreenState extends State<PandaScreen>
       value = raw;
     } else if (raw is Map) {
       final preferred = metric == 'steps' ? 'sum' : 'avg';
-      value = raw[preferred] as num? ??
+      value =
+          raw[preferred] as num? ??
           raw['avg'] as num? ??
           raw['sum'] as num? ??
           raw['max'] as num?;
@@ -1179,6 +1182,13 @@ class _PandaScreenState extends State<PandaScreen>
       backgroundColor: Colors.white,
       elevation: 0.5,
       automaticallyImplyLeading: false,
+      leading: widget.onClose == null
+          ? null
+          : IconButton(
+              icon: const Icon(Icons.close_rounded, color: _ink),
+              tooltip: 'Close chat',
+              onPressed: widget.onClose,
+            ),
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

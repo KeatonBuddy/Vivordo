@@ -10,10 +10,19 @@ import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/activity_goals_service.dart';
+import 'package:vivordo_health/src/services/workout_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
-  const HomeScreen({super.key, this.onScanTap});
+  final VoidCallback? onFitnessTap;
+  final bool revealStress;
+  const HomeScreen({
+    super.key,
+    this.onScanTap,
+    this.onFitnessTap,
+    this.revealStress = true,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -31,8 +40,6 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _reachableWindowEventsDate;
   Future<_ScheduleInsight?>? _scheduleInsightFuture;
   DateTime? _scheduleInsightDate;
-  final GlobalKey<_WeeklyCalendarState> _calendarKey =
-      GlobalKey<_WeeklyCalendarState>();
 
   static const Color bgColor = Color(0xFFF2F2F7);
   static const Color cardWhite = Colors.white;
@@ -164,6 +171,9 @@ class _HomeScreenState extends State<HomeScreen> {
         sleepVal: '--',
         sleepLoading: false,
         stepsVal: '--',
+        steps: 0,
+        activeCalories: 0,
+        exerciseMinutes: 0,
         stepsLoading: false,
         hrVal: '--',
         hrLoading: false,
@@ -187,6 +197,8 @@ class _HomeScreenState extends State<HomeScreen> {
         final hrvMap = data?['hrv'] as Map?;
         final sleepMap = data?['sleep'] as Map?;
         final stepsMap = data?['steps'] as Map?;
+        final activeCaloriesMap = data?['active_calories'] as Map?;
+        final exerciseTimeMap = data?['exercise_time'] as Map?;
         final moodMap = data?['mood'] as Map?;
         final wellnessMap = data?['wellness'] as Map?;
 
@@ -200,6 +212,9 @@ class _HomeScreenState extends State<HomeScreen> {
             : '--';
 
         final steps = (stepsMap?['sum'] as num?)?.toInt();
+        final activeCalories =
+            (activeCaloriesMap?['sum'] as num?)?.round() ?? 0;
+        final exerciseMinutes = (exerciseTimeMap?['sum'] as num?)?.round() ?? 0;
         final stepsVal = steps != null
             ? (steps >= 1000
                   ? '${(steps / 1000).toStringAsFixed(1)}k'
@@ -249,6 +264,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   sleepVal: sleepVal,
                   sleepLoading: loading,
                   stepsVal: stepsVal,
+                  steps: steps ?? 0,
+                  activeCalories: activeCalories,
+                  exerciseMinutes: exerciseMinutes,
                   stepsLoading: loading,
                   hrVal: hrVal,
                   hrLoading:
@@ -339,6 +357,9 @@ class _HomeScreenState extends State<HomeScreen> {
     required String sleepVal,
     required bool sleepLoading,
     required String stepsVal,
+    required int steps,
+    required int activeCalories,
+    required int exerciseMinutes,
     required bool stepsLoading,
     required String hrVal,
     required bool hrLoading,
@@ -407,6 +428,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+              _buildFitnessSummaryCard(
+                steps: steps,
+                activeCalories: activeCalories,
+                exerciseMinutes: exerciseMinutes,
+              ),
               const SizedBox(height: 28),
               _buildSectionTitle('QUICK ACTIONS'),
               const SizedBox(height: 12),
@@ -445,10 +472,6 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildSectionTitle('TODAY\'S REACHABLE WINDOWS'),
               const SizedBox(height: 12),
               _buildReachableWindows(),
-              const SizedBox(height: 28),
-              _buildSectionTitle('TODAY\'S SCHEDULE'),
-              const SizedBox(height: 12),
-              _buildCalendarCard(),
               const SizedBox(height: 160),
             ],
           ),
@@ -515,6 +538,128 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildFitnessSummaryCard({
+    required int steps,
+    required int activeCalories,
+    required int exerciseMinutes,
+  }) {
+    return StreamBuilder<ActivityGoals>(
+      stream: ActivityGoalsService.watch(),
+      initialData: const ActivityGoals(),
+      builder: (context, snapshot) {
+        final goals = snapshot.data ?? const ActivityGoals();
+        final stepsProgress = (steps / goals.steps).clamp(0.0, 1.0);
+        final caloriesProgress = (activeCalories / goals.activeCalories).clamp(
+          0.0,
+          1.0,
+        );
+        final exerciseProgress = (exerciseMinutes / goals.exerciseMinutes)
+            .clamp(0.0, 1.0);
+        final overallPercent =
+            ((stepsProgress + caloriesProgress + exerciseProgress) / 3 * 100)
+                .round();
+
+        return InkWell(
+          onTap: widget.onFitnessTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: cardWhite,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 70,
+                  height: 70,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        width: 70,
+                        height: 70,
+                        child: CircularProgressIndicator(
+                          value: stepsProgress,
+                          strokeWidth: 7,
+                          color: accentPurple,
+                          backgroundColor: Color(0xFFECECF3),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 50,
+                        height: 50,
+                        child: CircularProgressIndicator(
+                          value: caloriesProgress,
+                          strokeWidth: 7,
+                          color: Color(0xFFFB923C),
+                          backgroundColor: Color(0xFFECECF3),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 30,
+                        height: 30,
+                        child: CircularProgressIndicator(
+                          value: exerciseProgress,
+                          strokeWidth: 6,
+                          color: Color(0xFF34D399),
+                          backgroundColor: Color(0xFFECECF3),
+                        ),
+                      ),
+                      Text(
+                        '$overallPercent%',
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Today’s Activity',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Steps $steps/${goals.steps}',
+                        style: const TextStyle(fontSize: 10, color: textGrey),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Active calories $activeCalories/${goals.activeCalories}',
+                        style: const TextStyle(fontSize: 10, color: textGrey),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Exercise $exerciseMinutes/${goals.exerciseMinutes} minutes',
+                        style: const TextStyle(fontSize: 10, color: textGrey),
+                      ),
+                    ],
+                  ),
+                ),
+                const _HomeWorkoutStreakBadge(),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right_rounded, color: textGrey),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -596,7 +741,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             )
                           : TweenAnimationBuilder<double>(
-                              tween: Tween(begin: 0, end: stressScore ?? 0),
+                              tween: Tween(
+                                begin: 0,
+                                end: widget.revealStress ? stressScore ?? 0 : 0,
+                              ),
                               duration: const Duration(milliseconds: 1200),
                               curve: Curves.easeOutCubic,
                               builder: (_, value, __) => Text(
@@ -651,7 +799,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: (stressScore ?? 0) / 100),
+                      tween: Tween(
+                        begin: 0,
+                        end: widget.revealStress ? (stressScore ?? 0) / 100 : 0,
+                      ),
                       duration: const Duration(milliseconds: 1400),
                       curve: Curves.easeOutCubic,
                       builder: (_, value, __) => LinearProgressIndicator(
@@ -1149,6 +1300,191 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${minutes}m';
   }
 
+  Future<void> _editReachableEvent(gcal.Event event) async {
+    final originalStart = event.start?.dateTime?.toLocal();
+    final originalEnd = event.end?.dateTime?.toLocal();
+    if (originalStart == null || originalEnd == null) {
+      _showHomeCalendarMessage('All-day events cannot be edited here yet.');
+      return;
+    }
+
+    var title = event.summary ?? '';
+    var date = DateUtils.dateOnly(originalStart);
+    var startTime = TimeOfDay.fromDateTime(originalStart);
+    var endTime = TimeOfDay.fromDateTime(originalEnd);
+    final shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text('Edit event'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  initialValue: title,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: 'Event title',
+                    prefixIcon: Icon(Icons.event_rounded),
+                  ),
+                  onChanged: (value) => title = value,
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.calendar_today_rounded),
+                  title: const Text('Date'),
+                  subtitle: Text(_formatCalendarDate(date)),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: date,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) setDialogState(() => date = picked);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.schedule_rounded),
+                  title: const Text('Start time'),
+                  trailing: Text(startTime.format(context)),
+                  onTap: () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: startTime,
+                    );
+                    if (picked != null) {
+                      setDialogState(() => startTime = picked);
+                    }
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.schedule_outlined),
+                  title: const Text('End time'),
+                  trailing: Text(endTime.format(context)),
+                  onTap: () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: endTime,
+                    );
+                    if (picked != null) setDialogState(() => endTime = picked);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (shouldSave != true || !mounted) return;
+    title = title.trim();
+    if (title.isEmpty) {
+      _showHomeCalendarMessage('Enter an event title.');
+      return;
+    }
+
+    final start = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      startTime.hour,
+      startTime.minute,
+    );
+    var end = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      endTime.hour,
+      endTime.minute,
+    );
+    if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
+
+    try {
+      await CalendarService.updateEvent(
+        event,
+        title: title,
+        start: start,
+        end: end,
+      );
+      _refreshHomeCalendarCards();
+      _showHomeCalendarMessage('Event updated.');
+    } catch (error) {
+      _showHomeCalendarMessage('Could not update event: $error');
+    }
+  }
+
+  Future<void> _createReachableEvent(DateTime start, DateTime end) async {
+    final draft = await showDialog<_CalendarEventDraft>(
+      context: context,
+      builder: (_) =>
+          _CreateCalendarEventDialog(initialStart: start, initialEnd: end),
+    );
+    if (draft == null || !mounted) return;
+    final eventStart = DateTime(
+      draft.date.year,
+      draft.date.month,
+      draft.date.day,
+      draft.startTime.hour,
+      draft.startTime.minute,
+    );
+    var eventEnd = DateTime(
+      draft.date.year,
+      draft.date.month,
+      draft.date.day,
+      draft.endTime.hour,
+      draft.endTime.minute,
+    );
+    if (!eventEnd.isAfter(eventStart)) {
+      eventEnd = eventEnd.add(const Duration(days: 1));
+    }
+    try {
+      await CalendarService.createEvent(
+        title: draft.title,
+        start: eventStart,
+        end: eventEnd,
+        recurrence: draft.recurrence,
+      );
+      _refreshHomeCalendarCards();
+      _showHomeCalendarMessage('Event created.');
+    } catch (error) {
+      _showHomeCalendarMessage('Could not create event: $error');
+    }
+  }
+
+  void _refreshHomeCalendarCards() {
+    if (!mounted) return;
+    setState(() {
+      _reachableWindowEventsFuture = null;
+      _reachableWindowEventsDate = null;
+      _scheduleInsightFuture = null;
+      _scheduleInsightDate = null;
+    });
+  }
+
+  void _showHomeCalendarMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Widget _buildReachableWindows() {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
@@ -1417,12 +1753,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: event == null
                       ? openStart == null || openEnd == null
                             ? null
-                            : () => _calendarKey.currentState?.showCreateEvent(
-                                openStart,
-                                openEnd,
-                              )
-                      : () =>
-                            _calendarKey.currentState?.showEventDetails(event),
+                            : () => _createReachableEvent(openStart, openEnd)
+                      : () => _editReachableEvent(event),
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Row(
@@ -1499,10 +1831,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (bpm < 100)
       return 'Your heart rate of $hrVal is a bit higher than usual. Consider a rest day.';
     return 'Your heart rate of $hrVal is elevated. Try some breathing exercises.';
-  }
-
-  Widget _buildCalendarCard() {
-    return _WeeklyCalendar(key: _calendarKey);
   }
 
   String _formatCalendarDate(DateTime dt) {
@@ -1912,6 +2240,59 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+class _HomeWorkoutStreakBadge extends StatefulWidget {
+  const _HomeWorkoutStreakBadge();
+
+  @override
+  State<_HomeWorkoutStreakBadge> createState() =>
+      _HomeWorkoutStreakBadgeState();
+}
+
+class _HomeWorkoutStreakBadgeState extends State<_HomeWorkoutStreakBadge> {
+  late final Stream<List<SavedWorkout>> _workoutsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _workoutsStream = WorkoutService.watchAll();
+  }
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<SavedWorkout>>(
+    stream: _workoutsStream,
+    builder: (context, snapshot) {
+      final streak = WorkoutService.calculateCurrentStreak(
+        snapshot.data ?? const [],
+      );
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF1E7),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.local_fire_department_rounded,
+              size: 16,
+              color: Colors.orange,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              '$streak-day',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: Colors.orange,
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
 class _ScheduleEvent {
   const _ScheduleEvent({
     required this.title,
@@ -1940,13 +2321,13 @@ class _ScheduleInsight {
   final String subtitle;
 }
 
-class _WeeklyCalendar extends StatefulWidget {
-  const _WeeklyCalendar({super.key});
+class WeeklyCalendar extends StatefulWidget {
+  const WeeklyCalendar({super.key});
   @override
-  State<_WeeklyCalendar> createState() => _WeeklyCalendarState();
+  State<WeeklyCalendar> createState() => _WeeklyCalendarState();
 }
 
-class _WeeklyCalendarState extends State<_WeeklyCalendar> {
+class _WeeklyCalendarState extends State<WeeklyCalendar> {
   int _weekOffset = 0;
   final ScrollController _scrollController = ScrollController();
   List<gcal.Event> _googleEvents = [];
@@ -2523,10 +2904,7 @@ class _WeeklyCalendarState extends State<_WeeklyCalendar> {
       }
 
       final appleMapsUri = Uri.https('maps.apple.com', '/', {'q': location});
-      if (await launchUrl(
-        appleMapsUri,
-        mode: LaunchMode.externalApplication,
-      )) {
+      if (await launchUrl(appleMapsUri, mode: LaunchMode.externalApplication)) {
         return;
       }
     } else if (await launchUrl(

@@ -10,7 +10,10 @@ import '../src/services/user_service.dart';
 enum ScanState { initializing, idle, scanning, processing, success, error }
 
 class ScanScreen extends StatefulWidget {
-  const ScanScreen({super.key});
+  const ScanScreen({super.key, this.onBackToHome, this.isActive = true});
+
+  final VoidCallback? onBackToHome;
+  final bool isActive;
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
@@ -72,6 +75,17 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
     _checkFirstScanStatus();
     _initCamera();
+  }
+
+  @override
+  void didUpdateWidget(covariant ScanScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive == widget.isActive) return;
+    if (widget.isActive) {
+      unawaited(_activateCamera());
+    } else {
+      unawaited(_deactivateCamera());
+    }
   }
 
   Future<void> _checkFirstScanStatus() async {
@@ -156,20 +170,10 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       );
 
       await _cameraController!.initialize();
-      bool hasTorch = true;
-      try {
-        await _cameraController!.setFlashMode(FlashMode.torch);
-        hasTorch = _cameraController!.value.flashMode == FlashMode.torch;
-      } catch (e) {
-        hasTorch = false;
-        debugPrint('[PPG] Could not enable torch: $e');
-      }
-
       setState(() {
-        _hasTorch = hasTorch;
         _scanState = ScanState.idle;
       });
-      _startImageStream();
+      if (widget.isActive) await _activateCamera();
     } catch (e) {
       debugPrint('[PPG] Camera init failed: $e');
       if (mounted) {
@@ -180,6 +184,37 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
         });
       }
     }
+  }
+
+  Future<void> _activateCamera() async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+    var hasTorch = true;
+    try {
+      await controller.setFlashMode(FlashMode.torch);
+      hasTorch = controller.value.flashMode == FlashMode.torch;
+    } catch (e) {
+      hasTorch = false;
+      debugPrint('[PPG] Could not enable torch: $e');
+    }
+    if (!mounted) return;
+    if (!widget.isActive) {
+      await controller.setFlashMode(FlashMode.off).catchError((_) {});
+      return;
+    }
+    setState(() => _hasTorch = hasTorch);
+    _startImageStream();
+  }
+
+  Future<void> _deactivateCamera() async {
+    _fingerDetectedFrames = 0;
+    if (_scanState == ScanState.scanning) _pauseScan();
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+    if (controller.value.isStreamingImages) {
+      await controller.stopImageStream().catchError((_) {});
+    }
+    await controller.setFlashMode(FlashMode.off).catchError((_) {});
   }
 
   // ── Image stream / PPG ────────────────────────────────────────────────────
@@ -560,6 +595,21 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               const SizedBox(height: 48),
               Row(
                 children: [
+                  IconButton(
+                    tooltip: 'Back to Home',
+                    onPressed: () {
+                      final onBackToHome = widget.onBackToHome;
+                      if (onBackToHome != null) {
+                        onBackToHome();
+                      } else {
+                        Navigator.of(context).maybePop();
+                      }
+                    },
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: accentPurple,
+                    ),
+                  ),
                   const Expanded(
                     child: Text(
                       'Stress Scan',
