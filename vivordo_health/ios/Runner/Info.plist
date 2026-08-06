@@ -46,6 +46,8 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Vivordo uses the rear camera and flash for heart-rate scans and the front camera when you choose to take a Circle profile picture.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Vivordo uses Face ID to protect access to your private journal.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Vivordo uses your photo library so you can choose a Circle profile picture.</string>
 	<key>NSHealthClinicalHealthRecordsShareUsageDescription</key>

@@ -49,6 +49,9 @@ class CircleActivity {
     required this.name,
     required this.minutes,
     required this.day,
+    this.kind = 'activity',
+    this.summary,
+    this.mood,
     this.km,
     this.sets,
   });
@@ -58,6 +61,9 @@ class CircleActivity {
   final String name;
   final int minutes;
   final DateTime day;
+  final String kind;
+  final String? summary;
+  final String? mood;
   final double? km;
   final int? sets;
 }
@@ -296,6 +302,75 @@ class CircleProfileService {
         });
   }
 
+  /// Watches accepted friends ordered by their newest shared Circle activity.
+  /// Friends without activity remain visible after active friends.
+  static Stream<List<CircleProfile>> watchFriendsByRecentActivity() {
+    final controller = StreamController<List<CircleProfile>>();
+    StreamSubscription<List<CircleProfile>>? friendsSubscription;
+    final activitySubscriptions = <StreamSubscription>[];
+    final latestActivity = <String, DateTime?>{};
+    var friends = <CircleProfile>[];
+
+    void emit() {
+      final sorted = List<CircleProfile>.of(friends)
+        ..sort((a, b) {
+          final aDate = latestActivity[a.uid];
+          final bDate = latestActivity[b.uid];
+          if (aDate == null && bDate == null) {
+            return a.username.toLowerCase().compareTo(b.username.toLowerCase());
+          }
+          if (aDate == null) return 1;
+          if (bDate == null) return -1;
+          final newestFirst = bDate.compareTo(aDate);
+          return newestFirst != 0
+              ? newestFirst
+              : a.username.toLowerCase().compareTo(b.username.toLowerCase());
+        });
+      if (!controller.isClosed) controller.add(sorted);
+    }
+
+    Future<void> replaceFriends(List<CircleProfile> updatedFriends) async {
+      for (final subscription in activitySubscriptions) {
+        await subscription.cancel();
+      }
+      activitySubscriptions.clear();
+      latestActivity.clear();
+      friends = updatedFriends;
+      emit();
+
+      for (final friend in friends) {
+        final subscription = FirebaseFirestore.instance
+            .collection('users')
+            .doc(friend.uid)
+            .collection('circle_activity')
+            .orderBy('day', descending: true)
+            .limit(1)
+            .snapshots()
+            .listen((snapshot) {
+              latestActivity[friend.uid] = snapshot.docs.isEmpty
+                  ? null
+                  : (snapshot.docs.first.data()['day'] as Timestamp?)?.toDate();
+              emit();
+            }, onError: controller.addError);
+        activitySubscriptions.add(subscription);
+      }
+    }
+
+    controller.onListen = () {
+      friendsSubscription = watchFriends().listen(
+        replaceFriends,
+        onError: controller.addError,
+      );
+    };
+    controller.onCancel = () async {
+      await friendsSubscription?.cancel();
+      for (final subscription in activitySubscriptions) {
+        await subscription.cancel();
+      }
+    };
+    return controller.stream;
+  }
+
   static Stream<int> watchWorkoutStreak(String uid) {
     if (uid.trim().isEmpty) return Stream.value(0);
     return FirebaseFirestore.instance
@@ -368,6 +443,9 @@ class CircleProfileService {
                   name: data['name'] as String? ?? 'Activity',
                   minutes: (data['minutes'] as num?)?.round() ?? 0,
                   day: (data['day'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                  kind: data['kind'] as String? ?? 'activity',
+                  summary: data['summary'] as String?,
+                  mood: data['mood'] as String?,
                   km: (data['km'] as num?)?.toDouble(),
                   sets: (data['sets'] as num?)?.round(),
                 );
@@ -416,6 +494,9 @@ class CircleProfileService {
                   name: data['name'] as String? ?? 'Activity',
                   minutes: (data['minutes'] as num?)?.round() ?? 0,
                   day: (data['day'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                  kind: data['kind'] as String? ?? 'activity',
+                  summary: data['summary'] as String?,
+                  mood: data['mood'] as String?,
                   km: (data['km'] as num?)?.toDouble(),
                   sets: (data['sets'] as num?)?.round(),
                 );

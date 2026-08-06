@@ -452,7 +452,10 @@ class _MyActivityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final detail = activity.km != null
+    final isJournal = activity.kind == 'journal';
+    final detail = isJournal
+        ? activity.mood ?? 'Shared reflection'
+        : activity.km != null
         ? '${activity.km!.toStringAsFixed(1)} km'
         : activity.sets != null && activity.sets! > 0
         ? '${activity.sets} sets'
@@ -479,7 +482,9 @@ class _MyActivityCard extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      activity.km != null
+                      isJournal
+                          ? Icons.menu_book_rounded
+                          : activity.km != null
                           ? Icons.directions_walk_rounded
                           : Icons.fitness_center_rounded,
                       color: CircleScreen._purple,
@@ -543,7 +548,7 @@ class _YourCircleCardState extends State<_YourCircleCard> {
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<CircleProfile>>(
-    stream: CircleProfileService.watchFriends(),
+    stream: CircleProfileService.watchFriendsByRecentActivity(),
     builder: (context, snapshot) {
       final friends = snapshot.data ?? const <CircleProfile>[];
       return _CircleCard(
@@ -740,6 +745,7 @@ class _CircleActivityTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isJournal = activity.kind == 'journal';
     final details = <String>[];
     if (activity.km != null) {
       details.add('${activity.km!.toStringAsFixed(1)} km');
@@ -774,7 +780,9 @@ class _CircleActivityTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      details.isEmpty
+                      isJournal
+                          ? 'shared a Journal Entry${activity.mood == null ? '' : ' · ${activity.mood}'}'
+                          : details.isEmpty
                           ? 'completed ${activity.name}'
                           : 'completed ${activity.name} · ${details.join(' · ')}',
                       maxLines: 2,
@@ -797,10 +805,14 @@ class _CircleActivityTile extends StatelessWidget {
                 ),
               ),
               Icon(
-                activity.km != null
+                isJournal
+                    ? Icons.menu_book_rounded
+                    : activity.km != null
                     ? Icons.directions_walk_rounded
                     : Icons.fitness_center_rounded,
-                color: activity.km != null
+                color: isJournal
+                    ? CircleScreen._purple
+                    : activity.km != null
                     ? const Color(0xFF10B77A)
                     : CircleScreen._purple,
               ),
@@ -918,6 +930,18 @@ class _CircleActivityDetailsSheetState
                             fontWeight: FontWeight.w800,
                           ),
                         ),
+                        if (activity.kind == 'journal' &&
+                            activity.summary?.trim().isNotEmpty == true) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            activity.summary!,
+                            style: const TextStyle(
+                              color: CircleScreen._muted,
+                              fontSize: 15,
+                              height: 1.45,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         Wrap(
                           spacing: 8,
