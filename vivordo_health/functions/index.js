@@ -609,7 +609,7 @@ function addFitbitWellness(days) {
     let totalWeight = 0;
     const sleep = metrics.sleep?.avg;
     const steps = metrics.steps?.sum;
-    const hrv = metrics.hrv?.avg;
+    const heartRate = metrics.heart_rate_scan?.avg;
     if (Number.isFinite(sleep)) {
       weightedScore += Math.max(0, Math.min(100, sleep / 8 * 100)) * 0.30;
       totalWeight += 30;
@@ -618,8 +618,14 @@ function addFitbitWellness(days) {
       weightedScore += Math.max(0, Math.min(100, steps / 10000 * 100)) * 0.20;
       totalWeight += 20;
     }
-    if (Number.isFinite(hrv)) {
-      weightedScore += Math.max(0, Math.min(100, hrv)) * 0.15;
+    if (Number.isFinite(heartRate)) {
+      const distanceFromOptimal = heartRate < 60 ?
+        60 - heartRate : heartRate > 80 ? heartRate - 80 : 0;
+      const heartRateScore = Math.max(
+          0,
+          Math.min(100, 100 - distanceFromOptimal * 2.5),
+      );
+      weightedScore += heartRateScore * 0.15;
       totalWeight += 15;
     }
     if (totalWeight > 0) {

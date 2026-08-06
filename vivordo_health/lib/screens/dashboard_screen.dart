@@ -1,11 +1,18 @@
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'profile_screen.dart';
+import 'heart_rate_detail_screen.dart';
+import 'active_calories_detail_screen.dart';
+import 'exercise_detail_screen.dart';
+import 'mood_detail_screen.dart';
+import 'sleep_detail_screen.dart';
+import 'steps_detail_screen.dart';
+import 'wellness_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DashboardScreen
@@ -29,28 +36,14 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   static const Color accentPurple = Color(0xFF7B6EF6);
   static const Color greenColor = Color(0xFF34C759);
-  static const Color cardWhite = Colors.white;
-  static const Color textDark = Color(0xFF1C1C1E);
   static const Color textGrey = Color(0xFF8E8E93);
   static const List<String> _defaultMetricOrder = [
-    'stress',
     'mood',
-    'wellness',
     'steps',
     'active_calories',
     'exercise_time',
-    'distance',
-    'flights_climbed',
     'heart_rate_scan',
-    'resting_heart_rate',
-    'hrv',
-    'blood_oxygen',
-    'respiratory_rate',
     'sleep',
-    'weight',
-    'body_fat',
-    'mindfulness',
-    'vo2max',
   ];
 
   // 0 = Day, 1 = Week (default), 2 = Month
@@ -64,12 +57,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ── ONE combined stream for all metrics_daily docs in the date window ──────
   late Stream<QuerySnapshot<Map<String, dynamic>>> _allMetricsStream;
-  // ── Separate consent stream (reads from users/ doc) ───────────────────────
-  late Stream<Map<String, bool>> _consentStream;
-
   bool _refreshingHealthMetrics = false;
   DateTime? _lastManualHealthRefresh;
-  List<String> _metricOrder = [..._defaultMetricOrder];
+  static const List<String> _defaultKeyMetrics = [
+    'steps',
+    'heart_rate_scan',
+    'sleep',
+  ];
+  Set<String> _enabledKeyMetrics = {..._defaultKeyMetrics};
+  List<String> _keyMetricOrder = [..._defaultMetricOrder];
   bool _isLoadingMetricOrder = true;
 
   @override
@@ -93,19 +89,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .doc(uid)
           .get();
       final preferences = snapshot.data()?['preferences'] as Map?;
-      final saved = preferences?['dashboardMetricOrder'] as List?;
-      final savedKeys =
-          saved
-              ?.whereType<String>()
-              .where(_defaultMetricOrder.contains)
-              .toList() ??
-          [];
-      final missingKeys = _defaultMetricOrder.where(
-        (key) => !savedKeys.contains(key),
-      );
+      final savedKeyMetrics = preferences?['dashboardKeyMetrics'] as List?;
+      final savedOrder = preferences?['dashboardKeyMetricOrder'] as List?;
       if (mounted) {
         setState(() {
-          _metricOrder = [...savedKeys, ...missingKeys];
+          if (savedKeyMetrics != null) {
+            _enabledKeyMetrics = savedKeyMetrics
+                .whereType<String>()
+                .map((metric) => metric == 'wellness' ? 'stress' : metric)
+                .where(_defaultMetricOrder.contains)
+                .toSet();
+          }
+          final validOrder =
+              savedOrder
+                  ?.whereType<String>()
+                  .where(_defaultMetricOrder.contains)
+                  .toList() ??
+              savedKeyMetrics
+                  ?.whereType<String>()
+                  .where(_defaultMetricOrder.contains)
+                  .toList() ??
+              const <String>[];
+          _keyMetricOrder = [
+            ...validOrder,
+            ..._defaultMetricOrder.where(
+              (metric) => !validOrder.contains(metric),
+            ),
+          ];
         });
       }
     } catch (e) {
@@ -115,17 +125,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  Future<void> _saveMetricOrder(List<String> order) async {
+  Future<void> _saveKeyMetrics(Set<String> metrics, List<String> order) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    await FirebaseFirestore.instance.collection('users').doc(uid).update({
-      'preferences.dashboardMetricOrder': order,
-    });
+    final ordered = order.where(metrics.contains).toList(growable: false);
+    await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      'preferences': {
+        'dashboardKeyMetrics': ordered,
+        'dashboardKeyMetricOrder': order,
+      },
+    }, SetOptions(merge: true));
   }
 
   void _rebuildStreams() {
     _allMetricsStream = _buildCombinedStream();
-    _consentStream = HealthService().consentStream();
   }
 
   Future<void> _refreshHealthMetricsFromHealth({
@@ -414,18 +427,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 48),
+              const SizedBox(height: 26),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
-                    child: Text(
-                      'Metrics',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: context.vivordoColors.textPrimary,
-                        letterSpacing: -0.5,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Metrics',
+                          style: TextStyle(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w900,
+                            color: context.vivordoColors.textPrimary,
+                            letterSpacing: -1,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _lastManualHealthRefresh == null
+                              ? 'Synced automatically'
+                              : _manualRefreshLabel().replaceFirst(
+                                  'Updated',
+                                  'Synced',
+                                ),
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: context.vivordoColors.textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   IconButton(
@@ -447,7 +479,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   TextButton.icon(
                     onPressed: _isLoadingMetricOrder ? null : _showLayoutEditor,
                     icon: const Icon(Icons.tune_rounded, size: 18),
-                    label: const Text('Layout'),
+                    label: const Text('Customize'),
                     style: TextButton.styleFrom(
                       foregroundColor: accentPurple,
                       textStyle: const TextStyle(
@@ -458,162 +490,520 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                _lastManualHealthRefresh == null
-                    ? 'Your health trends • Tap refresh to sync now'
-                    : 'Your health trends • ${_manualRefreshLabel()}',
-                style: const TextStyle(fontSize: 14, color: textGrey),
-              ),
-              const SizedBox(height: 16),
-              _buildFilter(),
-              const SizedBox(height: 20),
-
-              // ── Everything driven by the two cached streams ────────────────
-              StreamBuilder<Map<String, bool>>(
-                stream: _consentStream,
-                builder: (_, consentSnap) {
-                  final consentLoaded = consentSnap.hasData;
-                  final consent = consentSnap.data ?? {};
-                  final anyConsented =
-                      consentLoaded && consent.values.any((v) => v);
-
-                  return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: _allMetricsStream,
-                    builder: (_, metricsSnap) {
-                      final snap = metricsSnap.data;
-
-                      // ── Summary row ────────────────────────────────────────
-                      final stressVals = _vals(
-                        _docsFor(snap, 'stress'),
-                        'stress',
-                        'avg',
-                      );
-                      final hrvVals = _vals(
-                        _docsFor(snap, 'hrv'),
-                        'hrv',
-                        'avg',
-                      );
-                      final sleepVals = _vals(
-                        _docsFor(snap, 'sleep'),
-                        'sleep',
-                        'avg',
-                      );
-                      final moodVals = _vals(
-                        _docsFor(snap, 'mood'),
-                        'mood',
-                        'avg',
-                      );
-                      final wellnessVals = _vals(
-                        _docsFor(snap, 'wellness'),
-                        'wellness',
-                        'avg',
-                      );
-
-                      bool hasMetricData(String metricType) =>
-                          _docsFor(snap, metricType).isNotEmpty;
-
-                      final hasAnyHealthData = [
-                        'steps',
-                        'active_calories',
-                        'exercise_time',
-                        'distance',
-                        'flights_climbed',
-                        'heart_rate',
-                        'resting_heart_rate',
-                        'hrv',
-                        'blood_oxygen',
-                        'respiratory_rate',
-                        'sleep',
-                        'weight',
-                        'body_fat',
-                        'mindfulness',
-                        'vo2max',
-                      ].any(hasMetricData);
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (!consentLoaded && !hasAnyHealthData) ...[
-                            _buildHealthConsentLoadingCard(),
-                            const SizedBox(height: 16),
-                          ],
-
-                          // Summary cards — only shown when a watch/Health is connected
-                          if (anyConsented ||
-                              stressVals.isNotEmpty ||
-                              hrvVals.isNotEmpty ||
-                              sleepVals.isNotEmpty ||
-                              moodVals.isNotEmpty ||
-                              wellnessVals.isNotEmpty) ...[
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildStatCard(
-                                    label: 'Avg Stress',
-                                    value: stressVals.isEmpty
-                                        ? '--'
-                                        : _avg(stressVals).toInt().toString(),
-                                    change: _trend(stressVals),
-                                    trendUp: !_trend(
-                                      stressVals,
-                                    ).startsWith('+'),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildStatCard(
-                                    label: 'Avg HRV',
-                                    value: hrvVals.isEmpty
-                                        ? '--'
-                                        : '${_avg(hrvVals).toInt()}ms',
-                                    change: _trend(hrvVals),
-                                    trendUp: _trend(hrvVals).startsWith('+'),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildStatCard(
-                                    label: 'Avg Sleep',
-                                    value: sleepVals.isEmpty
-                                        ? '--'
-                                        : '${_avg(sleepVals).toStringAsFixed(1)}h',
-                                    change: _trend(sleepVals),
-                                    trendUp: _trend(sleepVals).startsWith('+'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            _buildWellnessCard(wellnessVals),
-                            const SizedBox(height: 20),
-                          ],
-
-                          ..._metricOrder.map(
-                            (metric) =>
-                                _buildOrderedMetric(snap, consent, metric),
-                          ),
-
-                          // ── Apple Health CTA when nothing is consented ──────
-                          if (snap == null || snap.docs.isEmpty)
-                            _buildEmptyState()
-                          else if (consentLoaded &&
-                              !anyConsented &&
-                              !hasAnyHealthData)
-                            _buildConnectCard(),
-
-                          const SizedBox(height: 120),
-                        ],
-                      );
-                    },
-                  );
-                },
+              const SizedBox(height: 28),
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _allMetricsStream,
+                builder: (_, metricsSnap) => _buildMetricsOverview(
+                  metricsSnap.data,
+                  loading:
+                      metricsSnap.connectionState == ConnectionState.waiting,
+                ),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildMetricsOverview(
+    QuerySnapshot<Map<String, dynamic>>? snap, {
+    required bool loading,
+  }) {
+    if (loading && snap == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(48),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final steps = _vals(_docsFor(snap, 'steps'), 'steps', 'sum');
+    final stress = _vals(_docsFor(snap, 'stress'), 'stress', 'avg');
+    final wellness = _vals(_docsFor(snap, 'wellness'), 'wellness', 'avg');
+    final stepLabels = _dayLabels(snap, 'steps');
+    final latestWellness = wellness.isEmpty ? null : wellness.last;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildWellnessHero(wellness),
+        const SizedBox(height: 24),
+        const Text(
+          'Key metrics',
+          style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 12),
+        if (_enabledKeyMetrics.isEmpty)
+          _buildNoKeyMetricsCard()
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final tileWidth = (constraints.maxWidth - 12) / 2;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: _keyMetricOrder
+                    .where(_enabledKeyMetrics.contains)
+                    .map(
+                      (metric) => SizedBox(
+                        width: tileWidth,
+                        child: _buildKeyMetricFor(metric, snap),
+                      ),
+                    )
+                    .toList(),
+              );
+            },
+          ),
+        const SizedBox(height: 28),
+        const Text(
+          'Insights',
+          style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 10),
+        _buildInsightsCard(
+          steps: steps,
+          stress: stress,
+          wellness: latestWellness,
+          labels: stepLabels,
+        ),
+        if (snap == null || snap.docs.isEmpty) ...[
+          const SizedBox(height: 18),
+          _buildEmptyState(),
+        ],
+        const SizedBox(height: 120),
+      ],
+    );
+  }
+
+  Widget _buildWellnessHero(List<double> values) {
+    final score = values.isEmpty ? null : values.last.clamp(0, 100);
+    final previous = values.length < 2 ? null : values[values.length - 2];
+    final change = score == null || previous == null || previous == 0
+        ? null
+        : ((score - previous) / previous * 100).round();
+    final status = score == null
+        ? 'Not enough data'
+        : score >= 75
+        ? 'Doing well'
+        : score >= 50
+        ? 'Fair'
+        : 'Needs attention';
+    final color = score == null
+        ? context.vivordoColors.textSecondary
+        : score >= 75
+        ? greenColor
+        : score >= 50
+        ? const Color(0xFFFF9500)
+        : const Color(0xFFE91F3D);
+    final explanation = score == null
+        ? 'Sync your health data to calculate your wellness score.'
+        : score >= 75
+        ? 'Your recent health signals indicate strong overall wellness.'
+        : score >= 50
+        ? 'Your wellness is fair. Small improvements can raise your score.'
+        : 'Your recent health signals suggest that recovery needs attention.';
+
+    return Material(
+      color: context.vivordoColors.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(22),
+        side: BorderSide(color: context.vivordoColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const WellnessDetailScreen())),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'WELLNESS SCORE',
+                      style: TextStyle(
+                        color: context.vivordoColors.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .8,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: [
+                        Text(
+                          score == null ? '--' : score.round().toString(),
+                          style: const TextStyle(
+                            fontSize: 46,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: .1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            status,
+                            style: TextStyle(
+                              color: color,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (change != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '${change >= 0 ? '↑' : '↓'} ${change.abs()}%',
+                        style: TextStyle(
+                          color: change >= 0
+                              ? greenColor
+                              : const Color(0xFFE91F3D),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Text(
+                      explanation,
+                      style: TextStyle(
+                        color: context.vivordoColors.textSecondary,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+              SizedBox(
+                width: 92,
+                height: 92,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      value: score == null ? 0 : score / 100,
+                      strokeWidth: 10,
+                      strokeCap: StrokeCap.round,
+                      color: color,
+                      backgroundColor: context.vivordoColors.cardMuted,
+                    ),
+                    Container(
+                      width: 45,
+                      height: 45,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: color.withValues(alpha: .1),
+                      ),
+                      child: Icon(Icons.spa_rounded, color: color),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKeyMetricFor(
+    String metric,
+    QuerySnapshot<Map<String, dynamic>>? snap,
+  ) {
+    List<double> values;
+    if (metric == 'heart_rate_scan') {
+      values = _bpmScanEntries(
+        _docsFor(snap, metric),
+      ).map((entry) => entry['bpm'] as double).toList();
+    } else if (metric == 'mood') {
+      values = _dailyMoodValues(_docsFor(snap, metric));
+    } else {
+      values = _vals(_docsFor(snap, metric), metric, _metricField(metric));
+    }
+
+    final title = switch (metric) {
+      'steps' => 'Steps',
+      'active_calories' => 'Active calories',
+      'exercise_time' => 'Exercise',
+      'heart_rate_scan' => 'Heart rate',
+      'resting_heart_rate' => 'Resting heart rate',
+      'blood_oxygen' => 'Blood oxygen',
+      'respiratory_rate' => 'Respiratory rate',
+      'body_fat' => 'Body fat',
+      'vo2max' => 'VO₂ max',
+      _ => _metricTitle(metric),
+    };
+    final value = values.isEmpty
+        ? 'No data'
+        : metric == 'steps'
+        ? _formatCount(values.last)
+        : _formatMetricValue(metric, values.last);
+    final detail = values.isEmpty
+        ? 'Not synced recently'
+        : metric == 'heart_rate_scan' || metric == 'resting_heart_rate'
+        ? _heartRateStatus(values.last)
+        : _comparisonText(values, lowerIsBetter: metric == 'stress');
+
+    return _buildKeyMetricTile(
+      title: title,
+      value: value,
+      detail: detail,
+      icon: _metricIcon(metric),
+      color: _metricColor(metric),
+      onTap: switch (metric) {
+        'steps' => () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const StepsDetailScreen())),
+        'heart_rate_scan' => () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const HeartRateDetailScreen()),
+        ),
+        'active_calories' => () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ActiveCaloriesDetailScreen()),
+        ),
+        'exercise_time' => () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const ExerciseDetailScreen())),
+        'mood' => () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const MoodDetailScreen())),
+        'sleep' => () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const SleepDetailScreen())),
+        _ => null,
+      },
+    );
+  }
+
+  Widget _buildNoKeyMetricsCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: context.vivordoColors.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: context.vivordoColors.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.tune_rounded, color: accentPurple),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Use Customize to choose the metrics shown here.',
+              style: TextStyle(color: context.vivordoColors.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKeyMetricTile({
+    required String title,
+    required String value,
+    required String detail,
+    required IconData icon,
+    required Color color,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: context.vivordoColors.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: context.vivordoColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          height: 160,
+          child: Padding(
+            padding: const EdgeInsets.all(15),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 43,
+                  height: 43,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: .1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: color, size: 23),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, height: 1.2),
+                      ),
+                      const SizedBox(height: 5),
+                      SizedBox(
+                        height: 31,
+                        width: double.infinity,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              value,
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: color,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        detail,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.vivordoColors.textSecondary,
+                          fontSize: 12,
+                          height: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInsightsCard({
+    required List<double> steps,
+    required List<double> stress,
+    required double? wellness,
+    required List<String> labels,
+  }) {
+    String activityInsight;
+    if (steps.isEmpty) {
+      activityInsight = 'Sync steps to reveal your activity pattern';
+    } else {
+      var peak = 0;
+      for (var i = 1; i < steps.length; i++) {
+        if (steps[i] > steps[peak]) peak = i;
+      }
+      final day = labels.length == steps.length ? labels[peak] : 'recently';
+      activityInsight = 'Activity peaked on $day';
+    }
+
+    String recoveryInsight;
+    if (stress.length >= 3 &&
+        stress.last > stress[stress.length - 2] &&
+        stress[stress.length - 2] > stress[stress.length - 3]) {
+      recoveryInsight = 'Stress has increased for 3 days';
+    } else if (wellness != null && wellness < 50) {
+      recoveryInsight = 'Your wellness signals need attention';
+    } else {
+      recoveryInsight = 'Your recent stress trend is stable';
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.vivordoColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: context.vivordoColors.border),
+      ),
+      child: Column(
+        children: [
+          _insightRow(
+            icon: Icons.trending_up_rounded,
+            color: const Color(0xFF16B877),
+            text: activityInsight,
+          ),
+          Divider(height: 1, indent: 68, color: context.vivordoColors.border),
+          _insightRow(
+            icon: Icons.psychology_rounded,
+            color: accentPurple,
+            text: recoveryInsight,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _insightRow({
+    required IconData icon,
+    required Color color,
+    required String text,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 21),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 15))),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: context.vivordoColors.textSecondary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatCount(double value) {
+    final digits = value.round().toString();
+    return digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
+  }
+
+  String _comparisonText(List<double> values, {required bool lowerIsBetter}) {
+    if (values.length < 2) return 'Today';
+    final usual = _avg(values.sublist(0, values.length - 1));
+    if (usual == 0) return 'Today';
+    final percent = ((values.last - usual) / usual * 100).round();
+    if (percent == 0) return 'About usual';
+    final favorable = lowerIsBetter ? percent < 0 : percent > 0;
+    return '${percent > 0 ? '↑' : '↓'} ${percent.abs()}% vs usual${favorable ? '' : ''}';
+  }
+
+  String _heartRateStatus(double? bpm) {
+    if (bpm == null) return 'No recent reading';
+    if (bpm < 60) return 'Below typical resting range';
+    if (bpm <= 100) return 'Within typical resting range';
+    return 'Above typical resting range';
   }
 
   bool _isManualMetric(String key) =>
@@ -636,10 +1026,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return 'Active Calories (kcal)';
       case 'exercise_time':
         return 'Exercise Time (min)';
-      case 'distance':
-        return 'Distance (km)';
-      case 'flights_climbed':
-        return 'Flights Climbed';
       case 'heart_rate':
         return 'Heart Rate (bpm)';
       case 'heart_rate_scan':
@@ -658,8 +1044,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return 'Weight (kg)';
       case 'body_fat':
         return 'Body Fat (%)';
-      case 'mindfulness':
-        return 'Mindfulness (min)';
       case 'vo2max':
         return 'VO2 Max (ml/kg/min)';
       default:
@@ -681,10 +1065,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return const Color(0xFFF97316);
       case 'exercise_time':
         return const Color(0xFFFF9500);
-      case 'distance':
-        return const Color(0xFF3B82F6);
-      case 'flights_climbed':
-        return const Color(0xFF14B8A6);
       case 'heart_rate':
       case 'heart_rate_scan':
         return Colors.redAccent;
@@ -702,8 +1082,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return const Color(0xFFA78BFA);
       case 'body_fat':
         return const Color(0xFFFBBF24);
-      case 'mindfulness':
-        return const Color(0xFF7C3AED);
       case 'vo2max':
         return greenColor;
       default:
@@ -712,14 +1090,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   String _metricField(String key) {
-    const summed = {
-      'steps',
-      'active_calories',
-      'exercise_time',
-      'distance',
-      'flights_climbed',
-      'mindfulness',
-    };
+    const summed = {'steps', 'active_calories', 'exercise_time'};
     return summed.contains(key) ? 'sum' : 'avg';
   }
 
@@ -738,10 +1109,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'resting_heart_rate':
       case 'hrv':
         return 120;
-      case 'distance':
-        return 20;
-      case 'flights_climbed':
-        return 30;
       case 'heart_rate':
       case 'heart_rate_scan':
         return 200;
@@ -751,8 +1118,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return 12;
       case 'body_fat':
         return 50;
-      case 'mindfulness':
-        return 60;
       case 'vo2max':
         return 70;
       default:
@@ -782,106 +1147,149 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _showLayoutEditor() async {
-    Map<String, bool> consent;
-    try {
-      consent = await HealthService().getConsent();
-    } catch (e) {
-      debugPrint('DashboardScreen: failed to load layout permissions: $e');
-      consent = const {};
-    }
-    if (!mounted) return;
-
-    bool isVisibleOption(String metric) =>
-        _isManualMetric(metric) || consent[metric] == true;
-    final draftOrder = _metricOrder.where(isVisibleOption).toList();
-    final result = await showModalBottomSheet<List<String>>(
+    final draft = {..._enabledKeyMetrics};
+    final draftOrder = [..._keyMetricOrder];
+    final result = await showModalBottomSheet<_KeyMetricPreferences>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          height: MediaQuery.sizeOf(context).height * 0.78,
-          decoration: BoxDecoration(
-            color: context.vivordoColors.card,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 12, 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Edit dashboard layout',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: context.vivordoColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, draftOrder),
-                        child: const Text('Done'),
-                      ),
-                    ],
+        builder: (context, setModalState) => Material(
+          color: context.vivordoColors.card,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.82,
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 42,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: context.vivordoColors.border,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                   ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: ReorderableListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    buildDefaultDragHandles: false,
-                    itemCount: draftOrder.length,
-                    onReorderItem: (oldIndex, newIndex) {
-                      setModalState(() {
-                        final item = draftOrder.removeAt(oldIndex);
-                        draftOrder.insert(newIndex, item);
-                      });
-                    },
-                    itemBuilder: (context, index) {
-                      final metric = draftOrder[index];
-                      final color = _metricColor(metric);
-                      return ListTile(
-                        key: ValueKey(metric),
-                        leading: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: color.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            _metricIcon(metric),
-                            size: 18,
-                            color: color,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 12, 14),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Customize key metrics',
+                                style: TextStyle(
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              SizedBox(height: 3),
+                              Text(
+                                'Toggle metrics or hold and drag to reorder.',
+                                style: TextStyle(fontSize: 13, color: textGrey),
+                              ),
+                            ],
                           ),
                         ),
-                        title: Text(
-                          _metricTitle(metric),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                        TextButton(
+                          onPressed: () => Navigator.pop(
+                            context,
+                            _KeyMetricPreferences(draft, draftOrder),
                           ),
+                          child: const Text('Done'),
                         ),
-                        trailing: ReorderableDragStartListener(
-                          index: index,
-                          child: const Padding(
-                            padding: EdgeInsets.all(10),
-                            child: Icon(
-                              Icons.drag_handle_rounded,
-                              color: textGrey,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ReorderableListView.builder(
+                      buildDefaultDragHandles: false,
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+                      itemCount: draftOrder.length,
+                      onReorderItem: (oldIndex, newIndex) => setModalState(() {
+                        final metric = draftOrder.removeAt(oldIndex);
+                        draftOrder.insert(newIndex, metric);
+                      }),
+                      itemBuilder: (context, index) {
+                        final metric = draftOrder[index];
+                        final color = _metricColor(metric);
+                        final enabled = draft.contains(metric);
+                        return Material(
+                          key: ValueKey('customize-$metric'),
+                          color: context.vivordoColors.card,
+                          child: Column(
+                            children: [
+                              ReorderableDelayedDragStartListener(
+                                index: index,
+                                child: SwitchListTile.adaptive(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  value: enabled,
+                                  onChanged: (value) => setModalState(() {
+                                    if (value) {
+                                      draft.add(metric);
+                                    } else {
+                                      draft.remove(metric);
+                                    }
+                                  }),
+                                  activeTrackColor: accentPurple,
+                                  secondary: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: color.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(11),
+                                    ),
+                                    child: Icon(
+                                      _metricIcon(metric),
+                                      size: 20,
+                                      color: color,
+                                    ),
+                                  ),
+                                  title: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          _customizeMetricTitle(metric),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Icon(
+                                        Icons.drag_indicator_rounded,
+                                        color:
+                                            context.vivordoColors.textSecondary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Divider(
+                                height: 1,
+                                indent: 64,
+                                color: context.vivordoColors.border,
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -889,26 +1297,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (!mounted) return;
-    // A drag changes the layout even when the sheet is dismissed with Back,
-    // a swipe, or a tap outside instead of the Done button.
-    final visibleOrder = result ?? draftOrder;
-    final visibleIterator = visibleOrder.iterator;
-    final updatedOrder = _metricOrder.map((metric) {
-      if (!isVisibleOption(metric)) return metric;
-      visibleIterator.moveNext();
-      return visibleIterator.current;
-    }).toList();
-    if (listEquals(updatedOrder, _metricOrder)) return;
-    setState(() => _metricOrder = [...updatedOrder]);
+    if (result == null) return;
+    final enabledChanged = !setEquals(result.enabled, _enabledKeyMetrics);
+    final orderChanged = !listEquals(result.order, _keyMetricOrder);
+    if (!enabledChanged && !orderChanged) return;
+    setState(() {
+      _enabledKeyMetrics = {...result.enabled};
+      _keyMetricOrder = [...result.order];
+    });
     try {
-      await _saveMetricOrder(updatedOrder);
+      await _saveKeyMetrics(result.enabled, result.order);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save dashboard layout.')),
+        const SnackBar(content: Text('Could not save metric preferences.')),
       );
     }
   }
+
+  String _customizeMetricTitle(String metric) => switch (metric) {
+    'stress' => 'Stress',
+    'mood' => 'Mood',
+    'wellness' => 'Wellness',
+    'steps' => 'Steps',
+    'active_calories' => 'Active calories',
+    'exercise_time' => 'Exercise minutes',
+    'heart_rate_scan' => 'Heart rate',
+    'resting_heart_rate' => 'Resting heart rate',
+    'hrv' => 'Heart rate variability',
+    'blood_oxygen' => 'Blood oxygen',
+    'respiratory_rate' => 'Respiratory rate',
+    'sleep' => 'Sleep',
+    'weight' => 'Weight',
+    'body_fat' => 'Body fat',
+    'vo2max' => 'VO₂ max',
+    _ => metric,
+  };
 
   /// Returns a chart card if the metric has data, otherwise SizedBox.shrink().
   Widget _maybeChart(
@@ -1095,10 +1519,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'active_calories':
         return '${number()} kcal';
       case 'exercise_time':
-      case 'mindfulness':
-        return '${number()} min';
-      case 'distance':
-        return '${number(decimals: value >= 10 ? 1 : 2)} km';
+        return '${number(decimals: value >= 10 ? 1 : 2)} min';
       case 'heart_rate':
       case 'heart_rate_scan':
       case 'resting_heart_rate':
@@ -1134,10 +1555,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return Icons.local_fire_department_rounded;
       case 'exercise_time':
         return Icons.fitness_center_rounded;
-      case 'distance':
-        return Icons.straighten_rounded;
-      case 'flights_climbed':
-        return Icons.stairs_rounded;
       case 'heart_rate':
       case 'heart_rate_scan':
         return Icons.favorite_rounded;
@@ -1155,8 +1572,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return Icons.monitor_weight_rounded;
       case 'body_fat':
         return Icons.percent_rounded;
-      case 'mindfulness':
-        return Icons.self_improvement_rounded;
       case 'vo2max':
         return Icons.speed_rounded;
       case 'stress':
@@ -1639,6 +2054,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+}
+
+class _KeyMetricPreferences {
+  const _KeyMetricPreferences(this.enabled, this.order);
+
+  final Set<String> enabled;
+  final List<String> order;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

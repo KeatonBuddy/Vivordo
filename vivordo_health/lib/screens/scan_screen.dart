@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../theme/vivordo_theme.dart';
 import '../src/utils/ppg_algorithm.dart';
 import '../src/services/user_service.dart';
+import '../src/services/health_service.dart';
 
 enum ScanState { initializing, idle, scanning, processing, success, error }
 
@@ -547,6 +548,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
         debugPrint(
           'users/${user.uid}/metrics_daily/$dayKey updated with heart_rate scan',
         );
+        await HealthService().recomputeWellness();
         if (_isFirstScan && mounted) {
           setState(() {
             _isFirstScan = false;

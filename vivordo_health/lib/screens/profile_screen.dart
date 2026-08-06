@@ -771,11 +771,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           Expanded(
                             child: Text(
                               'Verify your new email: $pendingEmail\nCheck your inbox and tap the link.',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                
-                                height: 1.4,
-                              ),
+                              style: const TextStyle(fontSize: 13, height: 1.4),
                             ),
                           ),
                         ],
@@ -1926,10 +1922,6 @@ class _SettingsScreenState extends State<SettingsScreen>
         return Icons.local_fire_department_rounded;
       case 'exercise_time':
         return Icons.fitness_center_rounded;
-      case 'distance':
-        return Icons.straighten_rounded;
-      case 'flights_climbed':
-        return Icons.stairs_rounded;
       // Heart
       case 'heart_rate':
         return Icons.favorite_rounded;
@@ -1950,9 +1942,6 @@ class _SettingsScreenState extends State<SettingsScreen>
         return Icons.monitor_weight_rounded;
       case 'body_fat':
         return Icons.percent_rounded;
-      // Mind
-      case 'mindfulness':
-        return Icons.self_improvement_rounded;
       // Fitness
       case 'vo2max':
         return Icons.speed_rounded;

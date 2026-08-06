@@ -51,12 +51,6 @@ const List<HealthMetricDef> kHealthMetrics = [
     label: 'Distance',
     description: 'Distance walked or run (in km)',
   ),
-  HealthMetricDef(
-    key: 'flights_climbed',
-    type: HealthDataType.FLIGHTS_CLIMBED,
-    label: 'Flights Climbed',
-    description: 'Flights of stairs climbed',
-  ),
   // ── Heart ───────────────────────────────────────────────────────────────────
   HealthMetricDef(
     key: 'heart_rate',
@@ -108,13 +102,6 @@ const List<HealthMetricDef> kHealthMetrics = [
     type: HealthDataType.BODY_FAT_PERCENTAGE,
     label: 'Body Fat %',
     description: 'Body fat percentage from compatible devices',
-  ),
-  // ── Mind ────────────────────────────────────────────────────────────────────
-  HealthMetricDef(
-    key: 'mindfulness',
-    type: HealthDataType.MINDFULNESS,
-    label: 'Mindfulness',
-    description: 'Meditation and mindfulness session minutes',
   ),
   // ── Fitness ─────────────────────────────────────────────────────────────────
   // TODO: uncomment once HealthDataType.VO2MAX is confirmed available in this
@@ -515,12 +502,20 @@ class HealthService {
 
   Future<void> syncToday() => syncToFirestore(daysBack: 1);
 
+  /// Rebuilds the computed wellness score from data already stored in
+  /// Firestore. This is used after a camera scan so Wellness immediately uses
+  /// the same `heart_rate_scan` average shown by the Heart Rate key metric.
+  Future<void> recomputeWellness({int daysBack = 1}) =>
+      _computeAndWriteWellness(
+        uid: FirebaseAuth.instance.currentUser?.uid,
+        daysBack: daysBack,
+      );
+
   // ─── Internal helpers ──────────────────────────────────────────────────────
 
   bool _usesDailyTotals(HealthDataType type) {
     return type == HealthDataType.ACTIVE_ENERGY_BURNED ||
-        type == HealthDataType.DISTANCE_WALKING_RUNNING ||
-        type == HealthDataType.FLIGHTS_CLIMBED;
+        type == HealthDataType.DISTANCE_WALKING_RUNNING;
   }
 
   Future<void> _syncStepTotals(String uid, {int daysBack = 30}) async {
@@ -654,11 +649,26 @@ class HealthService {
     List<HealthDataPoint> dataPoints,
   ) async {
     final Map<String, List<double>> byDay = {};
+    final Map<String, List<Map<String, dynamic>>> heartRateEntriesByDay = {};
+    final Map<String, List<Map<String, dynamic>>> sleepEntriesByDay = {};
     for (final point in dataPoints) {
       if (point.value is! NumericHealthValue) continue;
       final day = _formatDate(point.dateFrom);
       final val = (point.value as NumericHealthValue).numericValue.toDouble();
       byDay.putIfAbsent(day, () => []).add(val);
+      if (def.type == HealthDataType.HEART_RATE) {
+        heartRateEntriesByDay.putIfAbsent(day, () => []).add({
+          'bpm': val,
+          'timestamp': Timestamp.fromDate(point.dateFrom),
+        });
+      }
+      if (def.type == HealthDataType.SLEEP_ASLEEP) {
+        sleepEntriesByDay.putIfAbsent(day, () => []).add({
+          'start': Timestamp.fromDate(point.dateFrom),
+          'end': Timestamp.fromDate(point.dateTo),
+          'minutes': val,
+        });
+      }
     }
 
     if (byDay.isEmpty) return {};
@@ -675,6 +685,30 @@ class HealthService {
           .collection('metrics_daily')
           .doc(day);
       final payload = _buildValueMap(def.type, vals);
+      if (def.type == HealthDataType.HEART_RATE) {
+        final entries = heartRateEntriesByDay[day] ?? const [];
+        entries.sort((a, b) {
+          final aTime = a['timestamp'] as Timestamp;
+          final bTime = b['timestamp'] as Timestamp;
+          return aTime.compareTo(bTime);
+        });
+        payload['entries'] = entries;
+      }
+      if (def.type == HealthDataType.SLEEP_ASLEEP) {
+        final entries = sleepEntriesByDay[day] ?? const [];
+        entries.sort((a, b) {
+          final aTime = a['start'] as Timestamp;
+          final bTime = b['start'] as Timestamp;
+          return aTime.compareTo(bTime);
+        });
+        if (entries.isNotEmpty) {
+          payload['entries'] = entries;
+          payload['bedtime'] = entries.first['start'];
+          payload['wakeTime'] = entries
+              .map((entry) => entry['end'] as Timestamp)
+              .reduce((a, b) => a.compareTo(b) >= 0 ? a : b);
+        }
+      }
 
       if (def.key == 'steps') {
         debugPrint('DEBUG STEPS: Preparing Firebase write for $day');
@@ -743,21 +777,6 @@ class HealthService {
           'unit': 'km',
           'dimension': 'activity',
         };
-      case HealthDataType.FLIGHTS_CLIMBED:
-        return {
-          'sum': sum(),
-          'avg': avg(),
-          'unit': 'flights',
-          'dimension': 'activity',
-        };
-      case HealthDataType.MINDFULNESS:
-        return {
-          'sum': sum(),
-          'avg': avg(),
-          'unit': 'min',
-          'dimension': 'mental',
-        };
-
       // ── Point-in-time averages ───────────────────────────────────────────────
       case HealthDataType.HEART_RATE:
       case HealthDataType.RESTING_HEART_RATE:
@@ -831,6 +850,12 @@ class HealthService {
 
   String _formatDate(DateTime dt) => DateFormat('yyyy-MM-dd').format(dt);
 
+  double _heartRateWellnessScore(double bpm) {
+    if (bpm >= 60 && bpm <= 80) return 100;
+    final distanceFromOptimal = bpm < 60 ? 60 - bpm : bpm - 80;
+    return (100 - distanceFromOptimal * 2.5).clamp(0.0, 100.0);
+  }
+
   Future<void> _computeAndWriteWellness({
     String? uid,
     int daysBack = 30,
@@ -854,10 +879,14 @@ class HealthService {
       final stress = (data?['stress']?['avg'] as num?)?.toDouble();
       final sleep = (data?['sleep']?['avg'] as num?)?.toDouble();
       final steps = (data?['steps']?['sum'] as num?)?.toDouble();
-      final hrv = (data?['hrv']?['avg'] as num?)?.toDouble();
+      final heartRate = (data?['heart_rate_scan']?['avg'] as num?)?.toDouble();
 
-      if (stress == null && sleep == null && steps == null && hrv == null)
+      if (stress == null &&
+          sleep == null &&
+          steps == null &&
+          heartRate == null) {
         continue;
+      }
 
       double wellness = 0;
       int weight = 0;
@@ -876,9 +905,8 @@ class HealthService {
         wellness += stepsScore * 0.20;
         weight += 20;
       }
-      if (hrv != null) {
-        final hrvScore = ((hrv / 100.0) * 100).clamp(0.0, 100.0);
-        wellness += hrvScore * 0.15;
+      if (heartRate != null) {
+        wellness += _heartRateWellnessScore(heartRate) * 0.15;
         weight += 15;
       }
 

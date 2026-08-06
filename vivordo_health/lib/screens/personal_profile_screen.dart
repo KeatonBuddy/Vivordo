@@ -6,9 +6,9 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
 
 import '../src/services/personal_profile_service.dart';
+import '../src/utils/smooth_chart_path.dart';
 
 const _purple = Color(0xFF6250E8);
-const _ink = Color(0xFF17172B);
 const _muted = Color(0xFF85859B);
 const _poundsPerKilogram = 2.2046226218;
 
@@ -55,12 +55,12 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
       surfaceTintColor: Colors.transparent,
       centerTitle: true,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, ),
+        icon: const Icon(Icons.arrow_back_ios_new_rounded),
         onPressed: () => Navigator.pop(context),
       ),
       title: const Text(
         'Personal Profile',
-        style: TextStyle(fontWeight: FontWeight.w800, ),
+        style: TextStyle(fontWeight: FontWeight.w800),
       ),
     ),
     body: StreamBuilder<PersonalProfile>(
@@ -642,6 +642,7 @@ class _InteractiveTrendChartState extends State<_InteractiveTrendChart> {
           minimumY: widget.minimumY,
           maximumY: widget.maximumY,
           selectedIndex: selectedIndex,
+          dark: Theme.of(context).brightness == Brightness.dark,
         ),
         child: const SizedBox.expand(),
       ),
@@ -657,6 +658,7 @@ class _TrendPainter extends CustomPainter {
     this.minimumY,
     this.maximumY,
     this.selectedIndex,
+    required this.dark,
   });
   final List<_ChartPoint> points;
   final Color color;
@@ -664,6 +666,7 @@ class _TrendPainter extends CustomPainter {
   final double? minimumY;
   final double? maximumY;
   final int? selectedIndex;
+  final bool dark;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -689,7 +692,7 @@ class _TrendPainter extends CustomPainter {
     final displayedRange = maxValue - minValue;
     final axisDecimals = displayedRange < 10 ? 1 : 0;
     final gridPaint = Paint()
-      ..color = const Color(0xFFE6E6ED)
+      ..color = (dark ? Colors.white : Colors.black).withValues(alpha: .08)
       ..strokeWidth = 1;
     for (var index = 0; index < 4; index++) {
       final y = top + height * index / 3;
@@ -701,7 +704,7 @@ class _TrendPainter extends CustomPainter {
         ),
         Offset(left + width + 8, y - 7),
         11,
-        _muted,
+        dark ? Colors.white54 : Colors.black45,
       );
     }
     final firstDate = points.first.date;
@@ -714,12 +717,8 @@ class _TrendPainter extends CustomPainter {
       left + width * point.date.difference(firstDate).inMilliseconds / dateSpan,
       top + height * (maxValue - point.value) / (maxValue - minValue),
     );
-    final path = Path()
-      ..moveTo(location(points.first).dx, location(points.first).dy);
-    for (final point in points.skip(1)) {
-      final offset = location(point);
-      path.lineTo(offset.dx, offset.dy);
-    }
+    final locations = points.map(location).toList(growable: false);
+    final path = smoothChartPath(locations);
     final fill = Path.from(path)
       ..lineTo(location(points.last).dx, top + height)
       ..lineTo(location(points.first).dx, top + height)
@@ -738,8 +737,9 @@ class _TrendPainter extends CustomPainter {
       Paint()
         ..color = color
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.2
-        ..strokeCap = StrokeCap.round,
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
     );
     for (final point in points) {
       final offset = location(point);
@@ -756,7 +756,7 @@ class _TrendPainter extends CustomPainter {
         DateFormat('MMM').format(point.date),
         Offset(offset.dx - 11, top + height + 7),
         11,
-        _muted,
+        dark ? Colors.white54 : Colors.black45,
       );
     }
     final selected = selectedIndex;
@@ -777,8 +777,8 @@ class _TrendPainter extends CustomPainter {
         text: TextSpan(
           text:
               '${point.value.toStringAsFixed(1)}$suffix  ·  ${DateFormat('MMM d, y').format(point.date)}',
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: dark ? Colors.white : Colors.black,
             fontSize: 11,
             fontWeight: FontWeight.w700,
           ),
@@ -804,7 +804,10 @@ class _TrendPainter extends CustomPainter {
         ),
         const Radius.circular(8),
       );
-      canvas.drawRRect(tooltipRect, Paint()..color = _ink);
+      canvas.drawRRect(
+        tooltipRect,
+        Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
+      );
       tooltip.paint(
         canvas,
         Offset(tooltipLeft + horizontalPadding, tooltipTop + verticalPadding),
@@ -836,7 +839,8 @@ class _TrendPainter extends CustomPainter {
       oldDelegate.suffix != suffix ||
       oldDelegate.minimumY != minimumY ||
       oldDelegate.maximumY != maximumY ||
-      oldDelegate.selectedIndex != selectedIndex;
+      oldDelegate.selectedIndex != selectedIndex ||
+      oldDelegate.dark != dark;
 }
 
 class _Panel extends StatelessWidget {
@@ -847,12 +851,12 @@ class _Panel extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: padding,
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(22),
-      border: Border.all(color: Colors.black.withValues(alpha: .06)),
+      border: Border.all(color: context.vivordoColors.border),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: .055),
+          color: context.vivordoColors.shadow,
           blurRadius: 10,
           offset: const Offset(0, 4),
         ),
