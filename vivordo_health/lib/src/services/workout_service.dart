@@ -31,6 +31,51 @@ class WorkoutExerciseRecord {
   };
 }
 
+class WorkoutTemplateExercise {
+  const WorkoutTemplateExercise({required this.name, required this.category});
+
+  final String name;
+  final String category;
+
+  Map<String, dynamic> toMap() => {'name': name, 'category': category};
+}
+
+class WorkoutTemplate {
+  const WorkoutTemplate({
+    required this.id,
+    required this.name,
+    required this.exercises,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String name;
+  final List<WorkoutTemplateExercise> exercises;
+  final DateTime? createdAt;
+
+  factory WorkoutTemplate.fromDocument(
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data() ?? const <String, dynamic>{};
+    final exercises = (data['exercises'] as List? ?? const [])
+        .whereType<Map>()
+        .map(
+          (exercise) => WorkoutTemplateExercise(
+            name: exercise['name'] as String? ?? '',
+            category: exercise['category'] as String? ?? 'Other',
+          ),
+        )
+        .where((exercise) => exercise.name.trim().isNotEmpty)
+        .toList(growable: false);
+    return WorkoutTemplate(
+      id: document.id,
+      name: data['name'] as String? ?? 'Saved Workout',
+      exercises: exercises,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+    );
+  }
+}
+
 class SavedWorkout {
   const SavedWorkout({
     required this.id,
@@ -131,6 +176,50 @@ class WorkoutService {
               .map(SavedWorkout.fromDocument)
               .toList(growable: false),
         );
+  }
+
+  static Stream<List<WorkoutTemplate>> watchTemplates() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Stream.value(const []);
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('workout_templates')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map(WorkoutTemplate.fromDocument)
+              .toList(growable: false),
+        );
+  }
+
+  static Future<String> saveTemplate({
+    required String name,
+    required List<WorkoutTemplateExercise> exercises,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError('Sign in before saving a workout.');
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) throw ArgumentError('Workout name is required.');
+    if (exercises.isEmpty) {
+      throw ArgumentError('Add at least one exercise before saving.');
+    }
+    final document = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('workout_templates')
+        .doc();
+    await document.set({
+      'name': cleanName,
+      'exerciseCount': exercises.length,
+      'exercises': exercises
+          .map((exercise) => exercise.toMap())
+          .toList(growable: false),
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    return document.id;
   }
 
   static Stream<List<SavedWorkout>> watchAll() {

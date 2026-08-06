@@ -1079,7 +1079,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text(
-                                  'Your Circle',
+                                  'Circle',
                                   style: TextStyle(
                                     color: textDark,
                                     fontSize: 18,

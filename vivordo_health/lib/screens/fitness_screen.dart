@@ -82,15 +82,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Expanded(
-                    child: _MetricCard(
-                      icon: Icons.directions_walk_rounded,
-                      iconColor: Color(0xFF22B879),
-                      label: 'STEPS',
-                      value: '1,169',
-                      detail: 'Goal: 10,000',
-                    ),
-                  ),
+                  const Expanded(child: _TodayStepsMetricCard()),
                   const SizedBox(width: 10),
                   const Expanded(child: _LatestHeartScanCard()),
                 ],
@@ -1857,6 +1849,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   Timer? timer;
   late final _ActiveWorkoutDraft draft;
   bool saving = false;
+  bool savingTemplate = false;
 
   DateTime get startedAt => draft.startedAt;
   List<_WorkoutExercise> get exercises => draft.exercises;
@@ -1888,6 +1881,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         );
     if (selected == null || selected.isEmpty || !mounted) return;
+    await _applyExerciseSelection(selected, replaceCurrent: true);
+  }
+
+  Future<void> _applyExerciseSelection(
+    List<_ExerciseDefinition> selected, {
+    required bool replaceCurrent,
+  }) async {
     final newDefinitions = selected
         .where(
           (definition) =>
@@ -1903,14 +1903,22 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       final existing = {
         for (final exercise in exercises) exercise.name: exercise,
       };
+      final updated = replaceCurrent
+          ? selected
+                .map(
+                  (definition) =>
+                      existing[definition.name] ?? _WorkoutExercise(definition),
+                )
+                .toList()
+          : [
+              ...exercises,
+              ...selected
+                  .where((definition) => !existing.containsKey(definition.name))
+                  .map(_WorkoutExercise.new),
+            ];
       exercises
         ..clear()
-        ..addAll(
-          selected.map(
-            (definition) =>
-                existing[definition.name] ?? _WorkoutExercise(definition),
-          ),
-        );
+        ..addAll(updated);
     });
 
     if (newDefinitions.isEmpty) return;
@@ -1935,6 +1943,95 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     } catch (error) {
       debugPrint('Could not load previous exercise sets: $error');
     }
+  }
+
+  Future<void> _saveWorkoutTemplate() async {
+    if (exercises.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add at least one exercise first.')),
+      );
+      return;
+    }
+    var workoutName = '';
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Save Workout'),
+        content: TextField(
+          autofocus: true,
+          maxLength: 40,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Workout name',
+            hintText: 'e.g. Push Day',
+            border: OutlineInputBorder(),
+          ),
+          onChanged: (value) => workoutName = value,
+          onSubmitted: (value) {
+            if (value.trim().isNotEmpty) Navigator.pop(dialogContext, value);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (workoutName.trim().isNotEmpty) {
+                Navigator.pop(dialogContext, workoutName);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || !mounted) return;
+
+    setState(() => savingTemplate = true);
+    try {
+      await WorkoutService.saveTemplate(
+        name: name,
+        exercises: exercises
+            .map(
+              (exercise) => WorkoutTemplateExercise(
+                name: exercise.name,
+                category: exercise.definition.category,
+              ),
+            )
+            .toList(growable: false),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$name saved.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not save workout: $error')));
+    } finally {
+      if (mounted) setState(() => savingTemplate = false);
+    }
+  }
+
+  Future<void> _addSavedWorkout() async {
+    final template = await Navigator.of(context).push<WorkoutTemplate>(
+      MaterialPageRoute(builder: (_) => const _SavedWorkoutsScreen()),
+    );
+    if (template == null || !mounted) return;
+    await _applyExerciseSelection(
+      template.exercises
+          .map(
+            (exercise) => _ExerciseDefinition(
+              name: exercise.name,
+              category: exercise.category,
+            ),
+          )
+          .toList(growable: false),
+      replaceCurrent: false,
+    );
   }
 
   Future<void> _finishWorkout() async {
@@ -2100,19 +2197,45 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   ],
                 ),
               ),
-              FilledButton(
-                onPressed: saving ? null : _finishWorkout,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFEDE8FF),
-                  foregroundColor: _purple,
-                ),
-                child: saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Finish'),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: saving || savingTemplate
+                        ? null
+                        : _saveWorkoutTemplate,
+                    style: TextButton.styleFrom(
+                      foregroundColor: _purple,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                    child: savingTemplate
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text(
+                            'Save Workout',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                  ),
+                  const SizedBox(width: 4),
+                  FilledButton(
+                    onPressed: saving || savingTemplate ? null : _finishWorkout,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFEDE8FF),
+                      foregroundColor: _purple,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                    ),
+                    child: saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Finish'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2153,10 +2276,268 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _addSavedWorkout,
+            icon: const Icon(Icons.playlist_add_rounded),
+            label: const Text('Add Workout'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(54),
+              foregroundColor: _purple,
+              side: BorderSide(color: _purple.withValues(alpha: .45)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+class _SavedWorkoutsScreen extends StatefulWidget {
+  const _SavedWorkoutsScreen();
+
+  @override
+  State<_SavedWorkoutsScreen> createState() => _SavedWorkoutsScreenState();
+}
+
+class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
+  String _search = '';
+  String? _selectedId;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<WorkoutTemplate>>(
+    stream: WorkoutService.watchTemplates(),
+    builder: (context, snapshot) {
+      final query = _search.trim().toLowerCase();
+      final templates = (snapshot.data ?? const <WorkoutTemplate>[])
+          .where(
+            (template) =>
+                query.isEmpty ||
+                template.name.toLowerCase().contains(query) ||
+                template.exercises.any(
+                  (exercise) => exercise.name.toLowerCase().contains(query),
+                ),
+          )
+          .toList(growable: false);
+      final selected = snapshot.data
+          ?.where((template) => template.id == _selectedId)
+          .firstOrNull;
+
+      return Scaffold(
+        backgroundColor: _background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+                child: Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    const Expanded(
+                      child: Text(
+                        'Add Workout',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: _ink,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 64),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Search saved workouts',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: const BorderSide(color: Color(0xFFE1E1E8)),
+                    ),
+                  ),
+                  onChanged: (value) => setState(() => _search = value),
+                  onTapOutside: (_) =>
+                      FocusManager.instance.primaryFocus?.unfocus(),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Expanded(
+                child: ListView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+                  children: [
+                    const _PickerSectionTitle('SAVED WORKOUTS'),
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData)
+                      const Padding(
+                        padding: EdgeInsets.all(40),
+                        child: Center(
+                          child: CircularProgressIndicator(color: _purple),
+                        ),
+                      )
+                    else if (templates.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Center(
+                          child: Text(
+                            query.isEmpty
+                                ? 'No saved workouts yet.'
+                                : 'No saved workouts found.',
+                            style: const TextStyle(color: _muted),
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFE1E1E8)),
+                        ),
+                        child: Column(
+                          children: [
+                            for (
+                              var index = 0;
+                              index < templates.length;
+                              index++
+                            ) ...[
+                              _SavedWorkoutPickerRow(
+                                template: templates[index],
+                                selected: templates[index].id == _selectedId,
+                                onTap: () => setState(
+                                  () => _selectedId =
+                                      templates[index].id == _selectedId
+                                      ? null
+                                      : templates[index].id,
+                                ),
+                              ),
+                              if (index < templates.length - 1)
+                                const Divider(height: 1, indent: 72),
+                            ],
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        bottomNavigationBar: SafeArea(
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0xFFE5E5EA))),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  selected == null
+                      ? '0 workouts selected'
+                      : '1 workout selected',
+                  style: const TextStyle(color: _muted),
+                ),
+                const SizedBox(height: 10),
+                FilledButton(
+                  onPressed: selected == null
+                      ? null
+                      : () => Navigator.pop(context, selected),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54),
+                    backgroundColor: _purple,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    'Add to Workout',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _SavedWorkoutPickerRow extends StatelessWidget {
+  const _SavedWorkoutPickerRow({
+    required this.template,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final WorkoutTemplate template;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: selected ? const Color(0xFFF5F1FF) : Colors.transparent,
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: _purple.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: const Icon(Icons.fitness_center_rounded, color: _purple),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    template.name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: _ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${template.exercises.length} ${template.exercises.length == 1 ? 'exercise' : 'exercises'} · ${template.exercises.map((exercise) => exercise.name).join(', ')}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: _muted, height: 1.3),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+              color: selected ? _purple : _muted,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _ExerciseDefinition {
@@ -3384,6 +3765,56 @@ class _MetricCard extends StatelessWidget {
       ],
     ),
   );
+}
+
+class _TodayStepsMetricCard extends StatelessWidget {
+  const _TodayStepsMetricCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return const _MetricCard(
+        icon: Icons.directions_walk_rounded,
+        iconColor: Color(0xFF22B879),
+        label: 'STEPS',
+        value: '--',
+        detail: 'Goal: --',
+      );
+    }
+    final dayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final stepsStream = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('metrics_daily')
+        .doc(dayKey)
+        .snapshots();
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: stepsStream,
+      builder: (context, stepsSnapshot) {
+        final data = stepsSnapshot.data?.data();
+        final steps = ((data?['steps'] as Map?)?['sum'] as num?)?.round();
+        return StreamBuilder<ActivityGoals>(
+          stream: ActivityGoalsService.watch(),
+          initialData: const ActivityGoals(),
+          builder: (context, goalsSnapshot) {
+            final goal =
+                goalsSnapshot.data?.steps ?? const ActivityGoals().steps;
+            return _MetricCard(
+              icon: Icons.directions_walk_rounded,
+              iconColor: const Color(0xFF22B879),
+              label: 'STEPS',
+              value: steps == null
+                  ? '--'
+                  : NumberFormat.decimalPattern().format(steps),
+              detail: 'Goal: ${NumberFormat.decimalPattern().format(goal)}',
+            );
+          },
+        );
+      },
+    );
+  }
 }
 
 class _SectionTitle extends StatelessWidget {

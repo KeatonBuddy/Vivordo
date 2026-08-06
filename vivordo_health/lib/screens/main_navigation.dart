@@ -405,14 +405,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             else
               Icon(
                 icon,
-                color: isActive ? Colors.white : Colors.grey,
+                color: isActive
+                    ? Colors.white
+                    : index == 2
+                    ? primaryPurple
+                    : Colors.grey,
                 size: 23,
               ),
             const SizedBox(height: 3),
             Text(
               label,
               style: TextStyle(
-                color: isActive ? Colors.white : Colors.grey,
+                color: isActive
+                    ? Colors.white
+                    : index == 2
+                    ? primaryPurple
+                    : Colors.grey,
                 fontSize: 9,
                 fontWeight: FontWeight.bold,
               ),

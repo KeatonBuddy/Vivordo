@@ -440,7 +440,7 @@ class _MyDayScreenState extends State<MyDayScreen> {
               ),
               const SizedBox(height: 24),
               const Text(
-                "TODAY'S SCHEDULE",
+                'JOURNAL',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
