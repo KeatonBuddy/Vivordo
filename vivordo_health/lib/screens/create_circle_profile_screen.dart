@@ -10,7 +10,9 @@ import '../src/services/circle_profile_service.dart';
 enum _UsernameStatus { idle, invalid, checking, available, taken, error }
 
 class CreateCircleProfileScreen extends StatefulWidget {
-  const CreateCircleProfileScreen({super.key});
+  const CreateCircleProfileScreen({super.key, this.initialProfile});
+
+  final CircleProfile? initialProfile;
 
   @override
   State<CreateCircleProfileScreen> createState() =>
@@ -33,9 +35,18 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
   bool saving = false;
   String? errorMessage;
 
+  bool get editing => widget.initialProfile != null;
+
   @override
   void initState() {
     super.initState();
+    final initialProfile = widget.initialProfile;
+    if (initialProfile != null) {
+      usernameController.text = initialProfile.username;
+      bioController.text = initialProfile.bio;
+      usernameStatus = _UsernameStatus.available;
+      return;
+    }
     final displayName = FirebaseAuth.instance.currentUser?.displayName?.trim();
     if (displayName?.isNotEmpty == true) {
       final suggested = displayName!.replaceAll(RegExp(r'[^A-Za-z0-9_ ]'), '');
@@ -145,7 +156,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
     }
   }
 
-  Future<void> _createProfile() async {
+  Future<void> _saveProfile() async {
     FocusScope.of(context).unfocus();
     if (!_validUsername(usernameController.text)) {
       setState(() {
@@ -163,12 +174,22 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
       errorMessage = null;
     });
     try {
-      await CircleProfileService.createProfile(
-        username: usernameController.text,
-        bio: bioController.text,
-        photoBytes: photoBytes,
-        photoName: photoName,
-      );
+      if (editing) {
+        await CircleProfileService.updateProfile(
+          currentProfile: widget.initialProfile!,
+          username: usernameController.text,
+          bio: bioController.text,
+          photoBytes: photoBytes,
+          photoName: photoName,
+        );
+      } else {
+        await CircleProfileService.createProfile(
+          username: usernameController.text,
+          bio: bioController.text,
+          photoBytes: photoBytes,
+          photoName: photoName,
+        );
+      }
       if (!mounted) return;
       Navigator.pop(context);
     } on CircleUsernameTakenException {
@@ -179,7 +200,11 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => errorMessage = 'Could not create your profile: $error');
+      setState(
+        () => errorMessage = editing
+            ? 'Could not update your profile: $error'
+            : 'Could not create your profile: $error',
+      );
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -192,9 +217,9 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
       backgroundColor: _background,
       surfaceTintColor: Colors.transparent,
       centerTitle: true,
-      title: const Text(
-        'Create Profile',
-        style: TextStyle(color: _ink, fontWeight: FontWeight.w800),
+      title: Text(
+        editing ? 'Edit Profile' : 'Create Profile',
+        style: const TextStyle(color: _ink, fontWeight: FontWeight.w800),
       ),
     ),
     body: SafeArea(
@@ -205,8 +230,10 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
           children: [
-            const Text(
-              'Help your circle recognize you.',
+            Text(
+              editing
+                  ? 'Update how your circle sees you.'
+                  : 'Help your circle recognize you.',
               textAlign: TextAlign.center,
               style: TextStyle(color: _muted, fontSize: 16),
             ),
@@ -226,14 +253,23 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                             shape: BoxShape.circle,
                             color: const Color(0xFFF0EEFF),
                             border: Border.all(color: Colors.white, width: 3),
-                            image: photoBytes == null
-                                ? null
-                                : DecorationImage(
+                            image: photoBytes != null
+                                ? DecorationImage(
                                     image: MemoryImage(photoBytes!),
                                     fit: BoxFit.cover,
-                                  ),
+                                  )
+                                : widget.initialProfile?.photoUrl != null
+                                ? DecorationImage(
+                                    image: NetworkImage(
+                                      widget.initialProfile!.photoUrl!,
+                                    ),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
                           ),
-                          child: photoBytes == null
+                          child:
+                              photoBytes == null &&
+                                  widget.initialProfile?.photoUrl == null
                               ? const Icon(
                                   Icons.person_rounded,
                                   color: Color(0xFFAFA5F5),
@@ -268,9 +304,9 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    const Text(
-                      'Choose Photo',
-                      style: TextStyle(
+                    Text(
+                      editing ? 'Change Photo' : 'Choose Photo',
+                      style: const TextStyle(
                         color: _purple,
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
@@ -291,7 +327,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const _FormLabel('USERNAME'),
+                  const _FormLabel('DISPLAY NAME'),
                   const SizedBox(height: 9),
                   TextField(
                     controller: usernameController,
@@ -301,7 +337,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                     autocorrect: false,
                     onChanged: _usernameChanged,
                     decoration: _inputDecoration(
-                      hint: 'Choose a username',
+                      hint: 'Choose a display name',
                       suffix: _usernameSuffix(),
                     ).copyWith(counterText: ''),
                   ),
@@ -317,7 +353,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                   ),
                   const SizedBox(height: 7),
                   const Text(
-                    'Your username helps friends recognize you.',
+                    'Your display name is unique and helps friends recognize you.',
                     style: TextStyle(color: _muted, fontSize: 12),
                   ),
                   const SizedBox(height: 22),
@@ -358,7 +394,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
             SizedBox(
               height: 56,
               child: FilledButton(
-                onPressed: saving ? null : _createProfile,
+                onPressed: saving ? null : _saveProfile,
                 style: FilledButton.styleFrom(
                   backgroundColor: _purple,
                   foregroundColor: Colors.white,
@@ -375,9 +411,9 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                           strokeWidth: 2.5,
                         ),
                       )
-                    : const Text(
-                        'Create Profile',
-                        style: TextStyle(
+                    : Text(
+                        editing ? 'Save Changes' : 'Create Profile',
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
                         ),

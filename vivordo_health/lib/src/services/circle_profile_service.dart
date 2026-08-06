@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 class CircleProfile {
   const CircleProfile({
@@ -66,6 +67,24 @@ class CircleActivity {
   final String? mood;
   final double? km;
   final int? sets;
+}
+
+class CircleDailyFitness {
+  const CircleDailyFitness({
+    required this.steps,
+    required this.stepsGoal,
+    required this.activeCalories,
+    required this.activeCaloriesGoal,
+    required this.exerciseMinutes,
+    required this.exerciseMinutesGoal,
+  });
+
+  final int steps;
+  final int stepsGoal;
+  final int activeCalories;
+  final int activeCaloriesGoal;
+  final int exerciseMinutes;
+  final int exerciseMinutesGoal;
 }
 
 class CircleActivityComment {
@@ -130,6 +149,56 @@ class CircleProfileService {
       final data = snapshot.data();
       return data == null ? null : CircleProfile.fromMap(user.uid, data);
     });
+  }
+
+  /// Warms the Firestore cache for the data used by the Circle landing page.
+  ///
+  /// Startup calls this while the splash screen is visible so opening Circle
+  /// can render from cached snapshots instead of waiting on its first network
+  /// round trip.
+  static Future<void> preload() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final profile = await watchCurrentProfile().first.timeout(
+        const Duration(seconds: 4),
+      );
+      if (profile == null) return;
+
+      final results = await Future.wait<Object?>([
+        watchFriends().first,
+        watchIncomingRequests().first,
+        watchMyRecentActivities(profile).first,
+        watchWorkoutStreak(profile.uid).first,
+        watchTodayFitness(profile.uid).first,
+        watchTodayEngagement().first,
+      ]).timeout(const Duration(seconds: 5));
+
+      final friends = results.first as List<CircleProfile>;
+      await Future.wait<void>([
+        for (final friend in friends) ...[
+          _preloadFirst(watchWorkoutStreak(friend.uid)),
+          _preloadFirst(watchTodayFitness(friend.uid)),
+          FirebaseFirestore.instance
+              .collection('users')
+              .doc(friend.uid)
+              .collection('circle_activity')
+              .orderBy('day', descending: true)
+              .limit(1)
+              .get()
+              .then<void>((_) {}),
+        ],
+      ]).timeout(const Duration(seconds: 5));
+    } catch (error) {
+      // Circle remains fully stream-driven, so a failed warm-up must never
+      // prevent startup. The screen will retry normally when it is opened.
+      debugPrint('CircleProfileService.preload: $error');
+    }
+  }
+
+  static Future<void> _preloadFirst<T>(Stream<T> stream) async {
+    await stream.first;
   }
 
   static String normalizeUsername(String username) =>
@@ -223,6 +292,82 @@ class CircleProfileService {
     throw StateError('Could not generate a unique friend code. Try again.');
   }
 
+  static Future<CircleProfile> updateProfile({
+    required CircleProfile currentProfile,
+    required String username,
+    required String bio,
+    Uint8List? photoBytes,
+    String? photoName,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.uid != currentProfile.uid) {
+      throw StateError('Sign in before updating your Circle profile.');
+    }
+
+    final cleanUsername = username.trim();
+    final normalizedUsername = normalizeUsername(cleanUsername);
+    var photoUrl = currentProfile.photoUrl;
+    if (photoBytes != null) {
+      final isPng = photoName?.toLowerCase().endsWith('.png') == true;
+      final extension = isPng ? 'png' : 'jpg';
+      final reference = FirebaseStorage.instance.ref().child(
+        'circle_profiles/${user.uid}/profile.$extension',
+      );
+      await reference.putData(
+        photoBytes,
+        SettableMetadata(contentType: isPng ? 'image/png' : 'image/jpeg'),
+      );
+      photoUrl = await reference.getDownloadURL();
+    }
+
+    final db = FirebaseFirestore.instance;
+    final profileReference = _profileReference(user.uid);
+    final newUsernameReference = db
+        .collection('circle_usernames')
+        .doc(normalizedUsername);
+    await db.runTransaction((transaction) async {
+      final profileSnapshot = await transaction.get(profileReference);
+      if (!profileSnapshot.exists) {
+        throw StateError('Your Circle profile could not be found.');
+      }
+      final currentNormalized =
+          profileSnapshot.data()?['usernameNormalized'] as String? ??
+          normalizeUsername(currentProfile.username);
+      final usernameSnapshot = await transaction.get(newUsernameReference);
+      if (usernameSnapshot.exists &&
+          usernameSnapshot.data()?['uid'] != user.uid) {
+        throw const CircleUsernameTakenException();
+      }
+
+      final now = FieldValue.serverTimestamp();
+      transaction.set(newUsernameReference, {
+        'uid': user.uid,
+        'createdAt': usernameSnapshot.data()?['createdAt'] ?? now,
+        'updatedAt': now,
+      }, SetOptions(merge: true));
+      transaction.update(profileReference, {
+        'username': cleanUsername,
+        'usernameNormalized': normalizedUsername,
+        'bio': bio.trim(),
+        'photoUrl': photoUrl,
+        'updatedAt': now,
+      });
+      if (currentNormalized != normalizedUsername) {
+        transaction.delete(
+          db.collection('circle_usernames').doc(currentNormalized),
+        );
+      }
+    });
+
+    return CircleProfile(
+      uid: user.uid,
+      username: cleanUsername,
+      friendCode: currentProfile.friendCode,
+      bio: bio.trim(),
+      photoUrl: photoUrl,
+    );
+  }
+
   static Future<CircleProfile?> findByFriendCode(String friendCode) async {
     final code = friendCode.trim().toUpperCase();
     if (code.length != 10) return null;
@@ -292,13 +437,91 @@ class CircleProfileService {
         .collection('circle')
         .doc('relationships')
         .collection('friends')
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .asyncMap((snapshot) async {
+          final documents = snapshot.docs.toList()
+            ..sort((a, b) {
+              final aDate = a.data()['createdAt'] as Timestamp?;
+              final bDate = b.data()['createdAt'] as Timestamp?;
+              if (aDate == null && bDate == null) {
+                return a.id.compareTo(b.id);
+              }
+              if (aDate == null) return 1;
+              if (bDate == null) return -1;
+              return bDate.compareTo(aDate);
+            });
           final profiles = await Future.wait(
-            snapshot.docs.map((document) => _loadProfile(document.id)),
+            documents.map((document) async {
+              final storedUid = document.data()['uid'] as String?;
+              final friendUid = storedUid?.trim().isNotEmpty == true
+                  ? storedUid!
+                  : document.id;
+              try {
+                return await _loadProfile(friendUid);
+              } catch (error) {
+                debugPrint(
+                  'Could not load Circle friend profile $friendUid: $error',
+                );
+                return null;
+              }
+            }),
           );
           return profiles.whereType<CircleProfile>().toList();
+        });
+  }
+
+  static String _dayKey(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  static Future<void> publishTodayFitness({
+    required int steps,
+    required int stepsGoal,
+    required int activeCalories,
+    required int activeCaloriesGoal,
+    required int exerciseMinutes,
+    required int exerciseMinutesGoal,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final now = DateTime.now();
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('circle_daily')
+        .doc(_dayKey(now))
+        .set({
+          'steps': steps,
+          'stepsGoal': stepsGoal,
+          'activeCalories': activeCalories,
+          'activeCaloriesGoal': activeCaloriesGoal,
+          'exerciseMinutes': exerciseMinutes,
+          'exerciseMinutesGoal': exerciseMinutesGoal,
+          'day': _dayKey(now),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+  }
+
+  static Stream<CircleDailyFitness?> watchTodayFitness(String uid) {
+    final now = DateTime.now();
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('circle_daily')
+        .doc(_dayKey(now))
+        .snapshots()
+        .map((snapshot) {
+          final data = snapshot.data();
+          if (data == null) return null;
+          return CircleDailyFitness(
+            steps: (data['steps'] as num?)?.round() ?? 0,
+            stepsGoal: (data['stepsGoal'] as num?)?.round() ?? 10000,
+            activeCalories: (data['activeCalories'] as num?)?.round() ?? 0,
+            activeCaloriesGoal:
+                (data['activeCaloriesGoal'] as num?)?.round() ?? 700,
+            exerciseMinutes: (data['exerciseMinutes'] as num?)?.round() ?? 0,
+            exerciseMinutesGoal:
+                (data['exerciseMinutesGoal'] as num?)?.round() ?? 40,
+          );
         });
   }
 
@@ -571,6 +794,7 @@ class CircleProfileService {
         'type': 'comment',
         'actorUid': user.uid,
         'activityId': activity.id,
+        'commentId': commentReference.id,
         'createdAt': now,
       });
     }

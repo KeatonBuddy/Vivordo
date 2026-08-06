@@ -206,13 +206,12 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
             borderRadius: BorderRadius.circular(14),
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
-              onTap: _showFriendCode,
-              child: const SizedBox(
+              onTap: _showProfile,
+              child: SizedBox(
                 width: 48,
                 height: 48,
-                child: Icon(
-                  Icons.person_add_alt_1_rounded,
-                  color: CircleScreen._purple,
+                child: Center(
+                  child: _ProfileAvatar(profile: profile, radius: 18),
                 ),
               ),
             ),
@@ -245,68 +244,127 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
     ),
   );
 
-  void _showFriendCode() {
+  void _showProfile() {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 34),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 42,
-              height: 5,
-              decoration: BoxDecoration(
-                color: const Color(0xFFDADAE4),
-                borderRadius: BorderRadius.circular(3),
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(14),
+          padding: const EdgeInsets.fromLTRB(24, 14, 24, 28),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDADAE4),
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            const Icon(
-              Icons.person_add_alt_1_rounded,
-              color: CircleScreen._purple,
-              size: 34,
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Add to your Circle',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Share your friend code so friends can find you.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: CircleScreen._muted),
-            ),
-            const SizedBox(height: 20),
-            Material(
-              color: const Color(0xFFF0EEFF),
-              borderRadius: BorderRadius.circular(18),
-              child: InkWell(
+              const SizedBox(height: 22),
+              _ProfileAvatar(profile: profile, radius: 42),
+              const SizedBox(height: 13),
+              Text(
+                profile.username,
+                style: const TextStyle(
+                  color: CircleScreen._ink,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (profile.bio.trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  profile.bio,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: CircleScreen._muted,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(sheetContext);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          CreateCircleProfileScreen(initialProfile: profile),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.edit_rounded, size: 18),
+                label: const Text('Edit Profile'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: CircleScreen._purple,
+                  minimumSize: const Size.fromHeight(46),
+                  side: const BorderSide(color: CircleScreen._purple),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 22),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'FRIEND CODE',
+                  style: TextStyle(
+                    color: CircleScreen._muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.3,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Material(
+                color: const Color(0xFFF0EEFF),
                 borderRadius: BorderRadius.circular(18),
-                onTap: () => _copyFriendCode(context, profile.friendCode),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  child: Text(
-                    profile.friendCode,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: CircleScreen._purple,
-                      fontSize: 25,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 3,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () =>
+                      _copyFriendCode(sheetContext, profile.friendCode),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 17),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          profile.friendCode,
+                          style: const TextStyle(
+                            color: CircleScreen._purple,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.5,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        const Icon(
+                          Icons.copy_rounded,
+                          color: CircleScreen._purple,
+                          size: 19,
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 10),
+              const Text(
+                'Tap your code to copy it',
+                style: TextStyle(color: CircleScreen._muted, fontSize: 12),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -601,19 +659,31 @@ class _YourCircleCardState extends State<_YourCircleCard> {
                           final person = isCurrentUser
                               ? widget.profile
                               : friends[index - 1];
-                          return SizedBox(
-                            width: 92,
-                            child: Column(
-                              children: [
-                                _ProfileAvatar(profile: person, radius: 27),
-                                const SizedBox(height: 7),
-                                _CircleMemberNameAndStreak(
-                                  profile: person,
-                                  label: isCurrentUser
-                                      ? 'You'
-                                      : person.username,
+                          return Semantics(
+                            button: !isCurrentUser,
+                            label: isCurrentUser
+                                ? 'You'
+                                : 'View ${person.username} activity rings',
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: isCurrentUser
+                                  ? null
+                                  : () => _openFriendFitness(context, person),
+                              child: SizedBox(
+                                width: 92,
+                                child: Column(
+                                  children: [
+                                    _ProfileAvatar(profile: person, radius: 27),
+                                    const SizedBox(height: 7),
+                                    _CircleMemberNameAndStreak(
+                                      profile: person,
+                                      label: isCurrentUser
+                                          ? 'You'
+                                          : person.username,
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           );
                         },
@@ -674,6 +744,168 @@ class _CircleMemberNameAndStreak extends StatelessWidget {
       );
     },
   );
+}
+
+void _openFriendFitness(BuildContext context, CircleProfile profile) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (_) => _FriendFitnessSheet(profile: profile),
+  );
+}
+
+class _FriendFitnessSheet extends StatelessWidget {
+  const _FriendFitnessSheet({required this.profile});
+
+  final CircleProfile profile;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Container(
+      margin: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      decoration: BoxDecoration(
+        color: CircleScreen._background,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: StreamBuilder<CircleDailyFitness?>(
+        stream: CircleProfileService.watchTodayFitness(profile.uid),
+        builder: (context, snapshot) {
+          final fitness = snapshot.data;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD6D6E0),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(height: 22),
+              _ProfileAvatar(profile: profile, radius: 34),
+              const SizedBox(height: 10),
+              Text(
+                profile.username,
+                style: const TextStyle(
+                  color: CircleScreen._ink,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Text(
+                "Today's Activity",
+                style: TextStyle(color: CircleScreen._muted),
+              ),
+              const SizedBox(height: 22),
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData)
+                const Padding(
+                  padding: EdgeInsets.all(35),
+                  child: CircularProgressIndicator(color: CircleScreen._purple),
+                )
+              else if (fitness == null)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 30),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.donut_large_rounded,
+                        color: CircleScreen._muted,
+                        size: 42,
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        'No activity ring shared today.',
+                        style: TextStyle(color: CircleScreen._muted),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                _FriendFitnessContent(fitness: fitness),
+            ],
+          );
+        },
+      ),
+    ),
+  );
+}
+
+class _FriendFitnessContent extends StatelessWidget {
+  const _FriendFitnessContent({required this.fitness});
+
+  final CircleDailyFitness fitness;
+
+  @override
+  Widget build(BuildContext context) {
+    final stepsProgress = (fitness.steps / fitness.stepsGoal).clamp(0.0, 1.0);
+    final caloriesProgress =
+        (fitness.activeCalories / fitness.activeCaloriesGoal).clamp(0.0, 1.0);
+    final exerciseProgress =
+        (fitness.exerciseMinutes / fitness.exerciseMinutesGoal).clamp(0.0, 1.0);
+    final percent =
+        ((stepsProgress + caloriesProgress + exerciseProgress) / 3 * 100)
+            .round();
+    return _CircleCard(
+      child: Row(
+        children: [
+          SizedBox(
+            width: 105,
+            height: 105,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CustomPaint(
+                  size: const Size.square(105),
+                  painter: ActivityRingsPainter(
+                    move: stepsProgress,
+                    exercise: caloriesProgress,
+                    stand: exerciseProgress,
+                  ),
+                ),
+                Text(
+                  '$percent%',
+                  style: const TextStyle(
+                    color: CircleScreen._ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _CircleMetricLine(
+                  color: CircleScreen._purple,
+                  text:
+                      '${NumberFormat.decimalPattern().format(fitness.steps)} / ${NumberFormat.decimalPattern().format(fitness.stepsGoal)}',
+                ),
+                const SizedBox(height: 9),
+                _CircleMetricLine(
+                  color: const Color(0xFFFB923C),
+                  text:
+                      '${fitness.activeCalories} / ${fitness.activeCaloriesGoal} cal',
+                ),
+                const SizedBox(height: 9),
+                _CircleMetricLine(
+                  color: const Color(0xFF34D399),
+                  text:
+                      '${fitness.exerciseMinutes} / ${fitness.exerciseMinutesGoal} min',
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _CircleRecentActivityFeed extends StatelessWidget {
@@ -1335,6 +1567,7 @@ class _CircleFitnessSummary extends StatefulWidget {
 
 class _CircleFitnessSummaryState extends State<_CircleFitnessSummary> {
   late final Stream<List<SavedWorkout>> _workoutsStream;
+  String? _lastPublishedFitness;
 
   @override
   void initState() {
@@ -1386,6 +1619,14 @@ class _CircleFitnessSummaryState extends State<_CircleFitnessSummary> {
                         3 *
                         100)
                     .round();
+            _publishFitnessSummary(
+              steps: steps,
+              stepsGoal: goals.steps,
+              calories: calories,
+              caloriesGoal: goals.activeCalories,
+              exercise: exercise,
+              exerciseGoal: goals.exerciseMinutes,
+            );
 
             return StreamBuilder<List<SavedWorkout>>(
               stream: _workoutsStream,
@@ -1497,6 +1738,32 @@ class _CircleFitnessSummaryState extends State<_CircleFitnessSummary> {
         );
       },
     );
+  }
+
+  void _publishFitnessSummary({
+    required int steps,
+    required int stepsGoal,
+    required int calories,
+    required int caloriesGoal,
+    required int exercise,
+    required int exerciseGoal,
+  }) {
+    final signature =
+        '$steps:$stepsGoal:$calories:$caloriesGoal:$exercise:$exerciseGoal';
+    if (_lastPublishedFitness == signature) return;
+    _lastPublishedFitness = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      CircleProfileService.publishTodayFitness(
+        steps: steps,
+        stepsGoal: stepsGoal,
+        activeCalories: calories,
+        activeCaloriesGoal: caloriesGoal,
+        exerciseMinutes: exercise,
+        exerciseMinutesGoal: exerciseGoal,
+      ).catchError((Object error) {
+        debugPrint('Circle fitness summary publish failed: $error');
+      });
+    });
   }
 }
 
@@ -1906,7 +2173,7 @@ class _FriendTile extends StatelessWidget {
     borderRadius: BorderRadius.circular(22),
     child: InkWell(
       borderRadius: BorderRadius.circular(22),
-      onTap: () {},
+      onTap: () => _showFriendProfile(context, profile),
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Row(
@@ -1936,6 +2203,99 @@ class _FriendTile extends StatelessWidget {
               ),
             ),
             const Icon(Icons.chevron_right_rounded, color: CircleScreen._muted),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+void _showFriendProfile(BuildContext context, CircleProfile profile) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (_) => SafeArea(
+      child: Container(
+        margin: const EdgeInsets.all(14),
+        padding: const EdgeInsets.fromLTRB(24, 14, 24, 28),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 42,
+              height: 5,
+              decoration: BoxDecoration(
+                color: const Color(0xFFDADAE4),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            const SizedBox(height: 24),
+            _ProfileAvatar(profile: profile, radius: 48),
+            const SizedBox(height: 14),
+            Text(
+              profile.username,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: CircleScreen._ink,
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              profile.bio.trim().isEmpty
+                  ? 'No bio added yet.'
+                  : profile.bio.trim(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: CircleScreen._muted,
+                fontSize: 15,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 22),
+            StreamBuilder<int>(
+              stream: CircleProfileService.watchWorkoutStreak(profile.uid),
+              initialData: 0,
+              builder: (context, snapshot) {
+                final streak = snapshot.data ?? 0;
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF5E9),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.local_fire_department_rounded,
+                        color: Color(0xFFFF7500),
+                        size: 28,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$streak-day streak',
+                        style: const TextStyle(
+                          color: CircleScreen._ink,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ],
         ),
       ),

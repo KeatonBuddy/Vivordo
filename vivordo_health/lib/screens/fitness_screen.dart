@@ -1876,16 +1876,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         );
     if (selected == null || selected.isEmpty || !mounted) return;
-    final newDefinitions = selected.where(
-      (definition) =>
-          !exercises.any((exercise) => exercise.name == definition.name) &&
-          definition.category != 'Cardio' &&
-          definition.category != 'Sports',
-    );
-    final previousSets = await WorkoutService.loadLatestExerciseSets(
-      newDefinitions.map((definition) => definition.name),
-    );
-    if (!mounted) return;
+    final newDefinitions = selected
+        .where(
+          (definition) =>
+              !exercises.any((exercise) => exercise.name == definition.name) &&
+              definition.category != 'Cardio' &&
+              definition.category != 'Sports',
+        )
+        .toList(growable: false);
+
+    // Reflect the selection immediately. Loading previous sets is a helpful
+    // enhancement, but it must never block or prevent adding an exercise.
     setState(() {
       final existing = {
         for (final exercise in exercises) exercise.name: exercise,
@@ -1895,16 +1896,33 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ..addAll(
           selected.map(
             (definition) =>
-                existing[definition.name] ??
-                _WorkoutExercise(
-                  definition,
-                  previousSets:
-                      previousSets[definition.name.trim().toLowerCase()] ??
-                      const [],
-                ),
+                existing[definition.name] ?? _WorkoutExercise(definition),
           ),
         );
     });
+
+    if (newDefinitions.isEmpty) return;
+    try {
+      final previousSets = await WorkoutService.loadLatestExerciseSets(
+        newDefinitions.map((definition) => definition.name),
+      );
+      if (!mounted) return;
+      setState(() {
+        for (final exercise in exercises) {
+          final saved = previousSets[exercise.name.trim().toLowerCase()];
+          if (saved == null) continue;
+          for (
+            var index = 0;
+            index < exercise.sets.length && index < saved.length;
+            index++
+          ) {
+            exercise.sets[index].previous = saved[index];
+          }
+        }
+      });
+    } catch (error) {
+      debugPrint('Could not load previous exercise sets: $error');
+    }
   }
 
   Future<void> _finishWorkout() async {
@@ -2140,7 +2158,7 @@ String _compactWorkoutNumber(double value) =>
 class _WorkoutSet {
   _WorkoutSet({this.previous});
 
-  final WorkoutSetRecord? previous;
+  WorkoutSetRecord? previous;
   String lbs = '';
   String reps = '';
 }

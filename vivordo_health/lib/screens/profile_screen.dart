@@ -36,6 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isUpdatingFitbit = false;
   bool _isUpdatingScanReminder = false;
   bool _isUpdatingCheckInReminder = false;
+  bool _isUpdatingCircleNotifications = false;
 
   // Bug report
   final TextEditingController _bugReportController = TextEditingController();
@@ -315,13 +316,21 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (uid == null) return;
 
     final isScanReminder = field == 'scanReminderEnabled';
-    if (isScanReminder ? _isUpdatingScanReminder : _isUpdatingCheckInReminder) {
+    final isCircleNotification = field == 'circleNotificationsEnabled';
+    final isUpdating = isScanReminder
+        ? _isUpdatingScanReminder
+        : isCircleNotification
+        ? _isUpdatingCircleNotifications
+        : _isUpdatingCheckInReminder;
+    if (isUpdating) {
       return;
     }
 
     setState(() {
       if (isScanReminder) {
         _isUpdatingScanReminder = true;
+      } else if (isCircleNotification) {
+        _isUpdatingCircleNotifications = true;
       } else {
         _isUpdatingCheckInReminder = true;
       }
@@ -333,7 +342,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       });
       if (isScanReminder) {
         await NotificationService().setDailyScanRemindersEnabled(enabled);
-      } else {
+      } else if (!isCircleNotification) {
         await NotificationService().setCalendarCheckInReminderEnabled(enabled);
       }
     } catch (e) {
@@ -347,6 +356,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         setState(() {
           if (isScanReminder) {
             _isUpdatingScanReminder = false;
+          } else if (isCircleNotification) {
+            _isUpdatingCircleNotifications = false;
           } else {
             _isUpdatingCheckInReminder = false;
           }
@@ -616,6 +627,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         final scanReminderEnabled = preferences['scanReminderEnabled'] != false;
         final checkInReminderEnabled =
             preferences['checkInReminderEnabled'] != false;
+        final circleNotificationsEnabled =
+            preferences['circleNotificationsEnabled'] != false;
         final savedReminderTimes =
             (preferences['scanReminderTimes'] as List?)
                 ?.whereType<num>()
@@ -1493,6 +1506,17 @@ class _SettingsScreenState extends State<SettingsScreen>
                         checkInReminderEnabled,
                         (val) => _updateReminderPreference(
                           field: 'checkInReminderEnabled',
+                          enabled: val,
+                        ),
+                      ),
+                      _buildDivider(),
+                      _buildToggleRow(
+                        Icons.group_outlined,
+                        'Circle Notifications',
+                        'Likes and comments on your activity',
+                        circleNotificationsEnabled,
+                        (val) => _updateReminderPreference(
+                          field: 'circleNotificationsEnabled',
                           enabled: val,
                         ),
                       ),

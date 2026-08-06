@@ -17,6 +17,100 @@ const client = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});
 const googleHealthClientId = defineSecret("GOOGLE_HEALTH_CLIENT_ID");
 const googleHealthClientSecret = defineSecret("GOOGLE_HEALTH_CLIENT_SECRET");
 
+// Sends a private push notification to an activity owner when a Circle friend
+// likes or comments. The engagement document is already created atomically
+// with the like/comment, making it a reliable, de-duplicated trigger source.
+exports.circleEngagementNotification = onDocumentCreated(
+    "users/{ownerUid}/circle_engagement/{eventId}",
+    async (event) => {
+      const engagement = event.data?.data();
+      const ownerUid = event.params.ownerUid;
+      const type = engagement?.type;
+      const actorUid = engagement?.actorUid;
+      const activityId = engagement?.activityId;
+
+      if (!engagement || !["like", "comment"].includes(type) ||
+          !actorUid || !activityId || actorUid === ownerUid) {
+        return;
+      }
+
+      const db = admin.firestore();
+      const owner = db.collection("users").doc(ownerUid);
+      const actorProfile = db.collection("users").doc(actorUid)
+          .collection("circle").doc("profile");
+      const activity = owner.collection("circle_activity").doc(activityId);
+      const tokens = owner.collection("notification_tokens");
+      const [ownerSnapshot, actorSnapshot, activitySnapshot, tokenSnapshot] =
+        await Promise.all([
+          owner.get(),
+          actorProfile.get(),
+          activity.get(),
+          tokens.get(),
+        ]);
+
+      if (ownerSnapshot.data()?.preferences?.circleNotificationsEnabled ===
+          false) {
+        return;
+      }
+      if (tokenSnapshot.empty) return;
+
+      const actorName = actorSnapshot.data()?.username || "A Circle friend";
+      const activityName = activitySnapshot.data()?.name || "your activity";
+      let title;
+      let body;
+
+      if (type === "like") {
+        title = `${actorName} liked your activity`;
+        body = `${actorName} liked ${activityName}.`;
+      } else {
+        title = `${actorName} commented on your activity`;
+        const commentId = engagement.commentId;
+        let commentText = "Open Circle to read their comment.";
+        if (commentId) {
+          const comment = await activity.collection("comments")
+              .doc(commentId).get();
+          const text = comment.data()?.text;
+          if (typeof text === "string" && text.trim()) {
+            commentText = text.trim().slice(0, 160);
+          }
+        }
+        body = commentText;
+      }
+
+      const tokenDocuments = tokenSnapshot.docs.filter((document) =>
+        typeof document.data().token === "string" &&
+        document.data().token.length > 0,
+      );
+      const invalidCodes = new Set([
+        "messaging/registration-token-not-registered",
+        "messaging/invalid-registration-token",
+      ]);
+
+      for (let start = 0; start < tokenDocuments.length; start += 500) {
+        const chunk = tokenDocuments.slice(start, start + 500);
+        const response = await admin.messaging().sendEachForMulticast({
+          tokens: chunk.map((document) => document.data().token),
+          notification: {title, body},
+          data: {
+            screen: "circle",
+            type: `circle_${type}`,
+            activityId,
+          },
+          apns: {payload: {aps: {sound: "default"}}},
+          android: {notification: {sound: "default"}},
+        });
+
+        const staleDeletes = [];
+        response.responses.forEach((result, index) => {
+          if (!result.success && invalidCodes.has(result.error?.code)) {
+            staleDeletes.push(chunk[index].ref.delete());
+          }
+        });
+        await Promise.all(staleDeletes);
+      }
+    },
+);
+
 // =============================================================================
 // pandaClaude — real-time HTTPS Callable proxy for Anthropic API
 // Security: API key stays server-side (VIV-309).

@@ -44,6 +44,15 @@ service cloud.firestore {
                           || request.auth.uid == friendId);
       }
 
+      // A privacy-safe daily activity-ring summary. Friends can see only the
+      // three ring totals and goals published here, never metrics_daily.
+      match /circle_daily/{dayId} {
+        allow read: if request.auth != null
+                    && (request.auth.uid == userId
+                        || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+
       // A Circle friend may read only the small activity summaries explicitly
       // published to the social feed. Full workouts and health metrics remain
       // private to their owner.
@@ -94,6 +103,14 @@ service cloud.firestore {
         allow delete: if request.auth != null
                       && (request.auth.uid == userId
                           || resource.data.actorUid == request.auth.uid);
+      }
+
+      // Push tokens are private device credentials. Only the signed-in owner
+      // can register or remove their devices; Cloud Functions uses Admin SDK
+      // access to deliver Circle notifications.
+      match /notification_tokens/{tokenId} {
+        allow read, write: if request.auth != null
+                           && request.auth.uid == userId;
       }
 
       match /{subcollection}/{document=**} {

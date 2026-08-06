@@ -10,6 +10,7 @@ import 'panda_screen.dart';
 import 'fitness_screen.dart';
 import 'my_day_screen.dart';
 import '../src/services/analytics_service.dart';
+import '../src/services/circle_profile_service.dart';
 import '../src/services/health_service.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -32,6 +33,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   bool _startupSplashMounted = true;
   Timer? _healthRefreshTimer;
   final List<Timer> _tabPreloadTimers = [];
+  Future<void>? _circlePreload;
   final Set<int> _loadedTabs = {};
   late final List<Widget> _tabPages;
   late final PandaScreen _persistentChatScreen;
@@ -76,6 +78,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     );
     _logScreenView(_selectedIndex);
     _refreshTodayFromHealth();
+    _circlePreload = CircleProfileService.preload();
     // HealthKit does not push new values into Firestore. Keep the shared data
     // source current for both Home and Dashboard while the app is in use.
     _healthRefreshTimer = Timer.periodic(
@@ -147,6 +150,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       // first snapshots before starting the transition. This prevents their
       // initial layout work from competing with the fade animation.
       Timer(Duration(milliseconds: delay + 1200), () async {
+        await _circlePreload?.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {},
+        );
         await WidgetsBinding.instance.endOfFrame;
         if (mounted) setState(() => _startupSplashMounted = false);
       }),
