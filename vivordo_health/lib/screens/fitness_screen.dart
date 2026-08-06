@@ -17,6 +17,16 @@ const _background = Color(0xFFF2F2F7);
 const _ink = Color(0xFF17172B);
 const _muted = Color(0xFF85859B);
 
+/// Shared in-memory workout timer state for navigation affordances.
+class FitnessWorkoutTimerState {
+  const FitnessWorkoutTimerState._();
+
+  static final ValueNotifier<bool> isRunning = ValueNotifier<bool>(false);
+
+  static void start() => isRunning.value = true;
+  static void stop() => isRunning.value = false;
+}
+
 class FitnessScreen extends StatefulWidget {
   const FitnessScreen({super.key});
 
@@ -297,6 +307,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
 
   Future<void> _startWorkout() async {
     _activeWorkoutDraft ??= _ActiveWorkoutDraft();
+    FitnessWorkoutTimerState.start();
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const ActiveWorkoutScreen()));
@@ -1855,6 +1866,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   void initState() {
     super.initState();
     draft = _activeWorkoutDraft ??= _ActiveWorkoutDraft();
+    FitnessWorkoutTimerState.start();
     timer = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
   }
 
@@ -1999,6 +2011,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       );
       timer?.cancel();
       _activeWorkoutDraft = null;
+      FitnessWorkoutTimerState.stop();
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
@@ -2032,6 +2045,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (cancel != true || !mounted) return;
     timer?.cancel();
     _activeWorkoutDraft = null;
+    FitnessWorkoutTimerState.stop();
     Navigator.pop(context, false);
   }
 

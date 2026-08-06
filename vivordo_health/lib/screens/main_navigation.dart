@@ -22,10 +22,11 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   late int _selectedIndex;
   late bool _pandaHasBeenOpened;
   late final AnimationController _chatRevealController;
+  late final AnimationController _fitnessPulseController;
   late final Animation<double> _chatRevealAnimation;
   final GlobalKey _chatBubbleKey = GlobalKey();
   Offset _chatRevealOrigin = Offset.zero;
@@ -71,6 +72,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       duration: const Duration(milliseconds: 480),
       reverseDuration: const Duration(milliseconds: 360),
     );
+    _fitnessPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 720),
+    );
+    FitnessWorkoutTimerState.isRunning.addListener(_syncFitnessPulse);
+    _syncFitnessPulse();
     _chatRevealAnimation = CurvedAnimation(
       parent: _chatRevealController,
       curve: Curves.easeOutCubic,
@@ -110,8 +117,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       timer.cancel();
     }
     _chatRevealController.dispose();
+    FitnessWorkoutTimerState.isRunning.removeListener(_syncFitnessPulse);
+    _fitnessPulseController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _syncFitnessPulse() {
+    if (FitnessWorkoutTimerState.isRunning.value) {
+      if (!_fitnessPulseController.isAnimating) {
+        _fitnessPulseController.repeat(reverse: true);
+      }
+    } else {
+      _fitnessPulseController.stop();
+      _fitnessPulseController.value = 0;
+    }
+    if (mounted) setState(() {});
   }
 
   /// Switches to [index] and records the screen view. All tab changes route
@@ -337,6 +358,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   Widget _navItem(IconData icon, String label, int index) {
     bool isActive = _selectedIndex == index;
+    final isWorkoutPulse =
+        index == 3 && FitnessWorkoutTimerState.isRunning.value;
     return InkWell(
       onTap: () => _selectTab(index),
       borderRadius: BorderRadius.circular(18),
@@ -350,7 +373,41 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: isActive ? Colors.white : Colors.grey, size: 23),
+            if (isWorkoutPulse)
+              AnimatedBuilder(
+                animation: _fitnessPulseController,
+                builder: (context, child) {
+                  final pulse = _fitnessPulseController.value;
+                  return Transform.scale(
+                    scale: 1 + (pulse * .18),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: primaryPurple.withValues(
+                              alpha: .16 + (pulse * .34),
+                            ),
+                            blurRadius: 5 + (pulse * 10),
+                            spreadRadius: pulse * 2,
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        icon,
+                        color: isActive ? Colors.white : primaryPurple,
+                        size: 23,
+                      ),
+                    ),
+                  );
+                },
+              )
+            else
+              Icon(
+                icon,
+                color: isActive ? Colors.white : Colors.grey,
+                size: 23,
+              ),
             const SizedBox(height: 3),
             Text(
               label,
