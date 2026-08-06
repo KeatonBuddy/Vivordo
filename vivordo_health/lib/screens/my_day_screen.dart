@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import 'home_screen.dart' show WeeklyCalendar;
+import 'journal_screen.dart';
 
 class MyDayScreen extends StatefulWidget {
   const MyDayScreen({super.key});
@@ -436,6 +437,113 @@ class _MyDayScreenState extends State<MyDayScreen> {
                   ),
                 ),
                 child: _buildEvents(),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                "TODAY'S SCHEDULE",
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.3,
+                  color: MyDayScreen.muted,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const JournalScreen(),
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.black.withValues(alpha: .07),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF2EDFF),
+                            borderRadius: BorderRadius.circular(13),
+                          ),
+                          child: const Icon(
+                            Icons.menu_book_rounded,
+                            color: MyDayScreen.purple,
+                          ),
+                        ),
+                        const SizedBox(width: 13),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Journal',
+                                style: TextStyle(
+                                  color: MyDayScreen.ink,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              SizedBox(height: 3),
+                              Text(
+                                'Reflect on your day',
+                                style: TextStyle(
+                                  color: MyDayScreen.muted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF7F3FF),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: MyDayScreen.purple.withValues(alpha: .18),
+                            ),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(
+                                Icons.edit_rounded,
+                                color: MyDayScreen.purple,
+                                size: 16,
+                              ),
+                              SizedBox(width: 5),
+                              Text(
+                                'Write',
+                                style: TextStyle(
+                                  color: MyDayScreen.purple,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: MyDayScreen.muted,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(height: 28),
               const Text(

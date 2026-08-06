@@ -201,7 +201,7 @@ class CalendarService {
     // sign-in has nothing to authenticate with, especially on Android.
     await GoogleSignIn.instance.initialize(
       clientId:
-          '226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj.apps.googleusercontent.com',
+          '226030806435-7a9a6m45j21jaefhduqf4ikqc1m81olu.apps.googleusercontent.com',
       serverClientId:
           '226030806435-51d18dlptiokmfejr5irqmjefq8han4g.apps.googleusercontent.com',
     );
