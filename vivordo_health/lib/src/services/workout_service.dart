@@ -222,6 +222,23 @@ class WorkoutService {
     return document.id;
   }
 
+  static Future<void> deleteTemplate(String templateId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw StateError('Sign in before deleting a workout.');
+    }
+    final cleanId = templateId.trim();
+    if (cleanId.isEmpty) {
+      throw ArgumentError('Workout template ID is required.');
+    }
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('workout_templates')
+        .doc(cleanId)
+        .delete();
+  }
+
   static Stream<List<SavedWorkout>> watchAll() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return Stream.value(const []);

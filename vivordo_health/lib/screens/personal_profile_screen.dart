@@ -1,8 +1,6 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -48,22 +46,6 @@ class PersonalProfileScreen extends StatefulWidget {
 
 class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
   _ProfileRange selectedRange = _ProfileRange.sixMonths;
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> metricsStream;
-
-  @override
-  void initState() {
-    super.initState();
-    final user = FirebaseAuth.instance.currentUser;
-    metricsStream = user == null
-        ? const Stream.empty()
-        : FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .collection('metrics_daily')
-              .orderBy(FieldPath.documentId)
-              .limitToLast(730)
-              .snapshots();
-  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -88,108 +70,101 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
           StreamBuilder<List<PersonalProfileMeasurement>>(
             stream: PersonalProfileService.watchMeasurements(),
             initialData: const [],
-            builder: (context, measurementSnapshot) =>
-                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: metricsStream,
-                  builder: (context, metricsSnapshot) {
-                    final profile =
-                        profileSnapshot.data ?? const PersonalProfile();
-                    final points = _buildPoints(
-                      profile,
-                      measurementSnapshot.data ?? const [],
-                      metricsSnapshot.data?.docs ?? const [],
-                    );
-                    final visible = _filter(points);
-                    final latest = points.isEmpty ? null : points.last;
-                    final height = profile.heightCm ?? latest?.height;
-                    final weight = profile.weightKg ?? latest?.weight;
-                    final bodyFat = profile.bodyFatPercent ?? latest?.bodyFat;
-                    final bmi = _bmi(height, weight);
-                    final updatedAt = profile.updatedAt ?? latest?.date;
+            builder: (context, measurementSnapshot) {
+              final profile = profileSnapshot.data ?? const PersonalProfile();
+              final points = _buildPoints(
+                profile,
+                measurementSnapshot.data ?? const [],
+              );
+              final visible = _filter(points);
+              final latest = points.isEmpty ? null : points.last;
+              final height = profile.heightCm ?? latest?.height;
+              final weight = profile.weightKg ?? latest?.weight;
+              final bodyFat = profile.bodyFatPercent ?? latest?.bodyFat;
+              final bmi = _bmi(height, weight);
+              final updatedAt = profile.updatedAt ?? latest?.date;
 
-                    return ListView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 34),
-                      children: [
-                        _SummaryCard(
-                          height: height,
-                          weight: weight,
-                          bmi: bmi,
-                          bodyFat: bodyFat,
-                          updatedAt: updatedAt,
-                        ),
-                        const SizedBox(height: 14),
-                        _RangeSelector(
-                          selected: selectedRange,
-                          onChanged: (range) =>
-                              setState(() => selectedRange = range),
-                        ),
-                        const SizedBox(height: 14),
-                        _TrendCard(
-                          title: 'Weight',
-                          value: weight == null
-                              ? null
-                              : _kilogramsToPounds(weight),
-                          suffix: ' lbs',
-                          range: selectedRange,
-                          points: _series(visible, (point) {
-                            final kilograms = point.weight;
-                            return kilograms == null
-                                ? null
-                                : _kilogramsToPounds(kilograms);
-                          }),
-                          color: _purple,
-                        ),
-                        const SizedBox(height: 14),
-                        _TrendCard(
-                          title: 'BMI',
-                          value: bmi,
-                          subtitle: 'Calculated from height and weight',
-                          range: selectedRange,
-                          points: _series(visible, (point) => point.bmi),
-                          color: const Color(0xFF1478FF),
-                        ),
-                        const SizedBox(height: 14),
-                        _TrendCard(
-                          title: 'Body Fat',
-                          value: bodyFat,
-                          suffix: '%',
-                          subtitle:
-                              '${_series(points, (point) => point.bodyFat).length} measurements',
-                          range: selectedRange,
-                          points: _series(visible, (point) => point.bodyFat),
-                          color: const Color(0xFFFF7417),
-                        ),
-                        const SizedBox(height: 16),
-                        OutlinedButton.icon(
-                          onPressed: () => _openMeasurementEditor(
-                            context,
-                            profile: PersonalProfile(
-                              heightCm: height,
-                              weightKg: weight,
-                              bodyFatPercent: bodyFat,
-                            ),
-                            title: 'Add Measurement',
-                          ),
-                          icon: const Icon(Icons.add_circle_outline_rounded),
-                          label: const Text('Add Measurement'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _purple,
-                            side: const BorderSide(color: _purple, width: 1.4),
-                            minimumSize: const Size.fromHeight(54),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            textStyle: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
+              return ListView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 34),
+                children: [
+                  _SummaryCard(
+                    height: height,
+                    weight: weight,
+                    bmi: bmi,
+                    bodyFat: bodyFat,
+                    updatedAt: updatedAt,
+                  ),
+                  const SizedBox(height: 14),
+                  _RangeSelector(
+                    selected: selectedRange,
+                    onChanged: (range) => setState(() => selectedRange = range),
+                  ),
+                  const SizedBox(height: 14),
+                  _TrendCard(
+                    title: 'Weight',
+                    value: weight == null ? null : _kilogramsToPounds(weight),
+                    suffix: ' lbs',
+                    minimumY: 0,
+                    maximumY: 300,
+                    range: selectedRange,
+                    points: _series(visible, (point) {
+                      final kilograms = point.weight;
+                      return kilograms == null
+                          ? null
+                          : _kilogramsToPounds(kilograms);
+                    }),
+                    color: _purple,
+                  ),
+                  const SizedBox(height: 14),
+                  _TrendCard(
+                    title: 'BMI',
+                    value: bmi,
+                    subtitle: 'Calculated from height and weight',
+                    range: selectedRange,
+                    points: _series(visible, (point) => point.bmi),
+                    color: const Color(0xFF1478FF),
+                  ),
+                  const SizedBox(height: 14),
+                  _TrendCard(
+                    title: 'Body Fat',
+                    value: bodyFat,
+                    suffix: '%',
+                    subtitle:
+                        '${_series(points, (point) => point.bodyFat).length} measurements',
+                    range: selectedRange,
+                    points: _series(visible, (point) => point.bodyFat),
+                    color: const Color(0xFFFF7417),
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: () => _openMeasurementEditor(
+                      context,
+                      profile: PersonalProfile(
+                        heightCm: height,
+                        weightKg: weight,
+                        bodyFatPercent: bodyFat,
+                      ),
+                      title: 'Add Measurement',
+                    ),
+                    icon: const Icon(Icons.add_circle_outline_rounded),
+                    label: const Text('Add Measurement'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _purple,
+                      side: const BorderSide(color: _purple, width: 1.4),
+                      minimumSize: const Size.fromHeight(54),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
     ),
   );
@@ -197,48 +172,35 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
   List<_ProfilePoint> _buildPoints(
     PersonalProfile profile,
     List<PersonalProfileMeasurement> measurements,
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> metricDocs,
   ) {
-    final byDay = <DateTime, _ProfilePoint>{};
-    for (final doc in metricDocs) {
-      final date = DateTime.tryParse(doc.id);
-      if (date == null) continue;
-      final data = doc.data();
-      final weight = ((data['weight'] as Map?)?['avg'] as num?)?.toDouble();
-      final bodyFat = ((data['body_fat'] as Map?)?['avg'] as num?)?.toDouble();
-      if (weight != null || bodyFat != null) {
-        byDay[DateUtils.dateOnly(date)] = _ProfilePoint(
-          date: DateUtils.dateOnly(date),
-          weight: weight,
-          bodyFat: bodyFat,
-        );
-      }
-    }
+    final points = <_ProfilePoint>[];
     for (final measurement in measurements) {
-      final day = DateUtils.dateOnly(measurement.recordedAt);
-      final prior = byDay[day];
-      byDay[day] = _ProfilePoint(
-        date: day,
-        height: measurement.heightCm ?? prior?.height,
-        weight: measurement.weightKg ?? prior?.weight,
-        bodyFat: measurement.bodyFatPercent ?? prior?.bodyFat,
+      points.add(
+        _ProfilePoint(
+          date: measurement.recordedAt,
+          height: measurement.heightCm,
+          weight: measurement.weightKg,
+          bodyFat: measurement.bodyFatPercent,
+        ),
       );
     }
-    if (profile.updatedAt != null) {
-      final day = DateUtils.dateOnly(profile.updatedAt!);
-      final prior = byDay[day];
-      byDay[day] = _ProfilePoint(
-        date: day,
-        height: profile.heightCm ?? prior?.height,
-        weight: profile.weightKg ?? prior?.weight,
-        bodyFat: profile.bodyFatPercent ?? prior?.bodyFat,
+    // Older profiles may only have the latest summary and no history document.
+    // Once history exists, that summary mirrors the newest measurement and
+    // should not be plotted as a duplicate point.
+    if (measurements.isEmpty && profile.updatedAt != null) {
+      points.add(
+        _ProfilePoint(
+          date: profile.updatedAt!,
+          height: profile.heightCm,
+          weight: profile.weightKg,
+          bodyFat: profile.bodyFatPercent,
+        ),
       );
     }
-    final sorted = byDay.values.toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
-    double? lastHeight = profile.heightCm;
+    points.sort((a, b) => a.date.compareTo(b.date));
+    double? lastHeight;
     return [
-      for (final point in sorted)
+      for (final point in points)
         _ProfilePoint(
           date: point.date,
           height: lastHeight = point.height ?? lastHeight,
@@ -258,8 +220,29 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
       _ProfileRange.year => 12,
       _ProfileRange.all => 1200,
     };
-    final start = DateTime(now.year, now.month - months, now.day);
-    return points.where((point) => !point.date.isBefore(start)).toList();
+    final start = _subtractCalendarMonths(now, months);
+    return points
+        .where(
+          (point) => !point.date.isBefore(start) && !point.date.isAfter(now),
+        )
+        .toList(growable: false);
+  }
+
+  DateTime _subtractCalendarMonths(DateTime date, int months) {
+    final targetMonthIndex = date.year * 12 + date.month - 1 - months;
+    final targetYear = targetMonthIndex ~/ 12;
+    final targetMonth = targetMonthIndex % 12 + 1;
+    final lastDay = DateTime(targetYear, targetMonth + 1, 0).day;
+    return DateTime(
+      targetYear,
+      targetMonth,
+      math.min(date.day, lastDay),
+      date.hour,
+      date.minute,
+      date.second,
+      date.millisecond,
+      date.microsecond,
+    );
   }
 
   List<_ChartPoint> _series(
@@ -483,11 +466,15 @@ class _TrendCard extends StatelessWidget {
     required this.color,
     this.suffix = '',
     this.subtitle,
+    this.minimumY,
+    this.maximumY,
   });
   final String title;
   final double? value;
   final String suffix;
   final String? subtitle;
+  final double? minimumY;
+  final double? maximumY;
   final _ProfileRange range;
   final List<_ChartPoint> points;
   final Color color;
@@ -576,6 +563,8 @@ class _TrendCard extends StatelessWidget {
                     points: points,
                     color: color,
                     suffix: suffix,
+                    minimumY: minimumY,
+                    maximumY: maximumY,
                   ),
           ),
         ],
@@ -597,11 +586,15 @@ class _InteractiveTrendChart extends StatefulWidget {
     required this.points,
     required this.color,
     required this.suffix,
+    this.minimumY,
+    this.maximumY,
   });
 
   final List<_ChartPoint> points;
   final Color color;
   final String suffix;
+  final double? minimumY;
+  final double? maximumY;
 
   @override
   State<_InteractiveTrendChart> createState() => _InteractiveTrendChartState();
@@ -610,20 +603,22 @@ class _InteractiveTrendChart extends StatefulWidget {
 class _InteractiveTrendChartState extends State<_InteractiveTrendChart> {
   int? selectedIndex;
 
+  double _elapsed(DateTime date, DateTime start) =>
+      date.difference(start).inMilliseconds.toDouble();
+
   void _select(Offset position, double width) {
     const chartLeft = 6.0;
     const chartRight = 42.0;
     final chartWidth = math.max(width - chartLeft - chartRight, 1);
     final firstDate = widget.points.first.date;
     final lastDate = widget.points.last.date;
-    final dateSpan = math.max(lastDate.difference(firstDate).inDays, 1);
+    final dateSpan = math.max(_elapsed(lastDate, firstDate), 1);
     var nearestIndex = 0;
     var nearestDistance = double.infinity;
     for (var index = 0; index < widget.points.length; index++) {
       final point = widget.points[index];
       final pointX =
-          chartLeft +
-          chartWidth * point.date.difference(firstDate).inDays / dateSpan;
+          chartLeft + chartWidth * _elapsed(point.date, firstDate) / dateSpan;
       final distance = (position.dx - pointX).abs();
       if (distance < nearestDistance) {
         nearestDistance = distance;
@@ -650,6 +645,8 @@ class _InteractiveTrendChartState extends State<_InteractiveTrendChart> {
           points: widget.points,
           color: widget.color,
           suffix: widget.suffix,
+          minimumY: widget.minimumY,
+          maximumY: widget.maximumY,
           selectedIndex: selectedIndex,
         ),
         child: const SizedBox.expand(),
@@ -663,11 +660,15 @@ class _TrendPainter extends CustomPainter {
     required this.points,
     required this.color,
     required this.suffix,
+    this.minimumY,
+    this.maximumY,
     this.selectedIndex,
   });
   final List<_ChartPoint> points;
   final Color color;
   final String suffix;
+  final double? minimumY;
+  final double? maximumY;
   final int? selectedIndex;
 
   @override
@@ -679,14 +680,20 @@ class _TrendPainter extends CustomPainter {
     final width = size.width - left - right;
     final height = size.height - top - bottom;
     final values = points.map((point) => point.value);
-    var minValue = values.reduce(math.min);
-    var maxValue = values.reduce(math.max);
-    final spread = math.max(
-      maxValue - minValue,
-      math.max(maxValue.abs() * .08, 1),
-    );
-    minValue -= spread * .25;
-    maxValue += spread * .25;
+    final dataMin = values.reduce(math.min);
+    final dataMax = values.reduce(math.max);
+    final dataRange = dataMax - dataMin;
+    final minimumRange = suffix == ' lbs'
+        ? 4.0
+        : suffix == '%'
+        ? 2.0
+        : .8;
+    final computedRange = math.max(dataRange * 1.3, minimumRange);
+    final midpoint = (dataMin + dataMax) / 2;
+    final minValue = minimumY ?? midpoint - computedRange / 2;
+    final maxValue = maximumY ?? midpoint + computedRange / 2;
+    final displayedRange = maxValue - minValue;
+    final axisDecimals = displayedRange < 10 ? 1 : 0;
     final gridPaint = Paint()
       ..color = const Color(0xFFE6E6ED)
       ..strokeWidth = 1;
@@ -695,7 +702,9 @@ class _TrendPainter extends CustomPainter {
       canvas.drawLine(Offset(left, y), Offset(left + width, y), gridPaint);
       _drawText(
         canvas,
-        (maxValue - (maxValue - minValue) * index / 3).toStringAsFixed(0),
+        (maxValue - (maxValue - minValue) * index / 3).toStringAsFixed(
+          axisDecimals,
+        ),
         Offset(left + width + 8, y - 7),
         11,
         _muted,
@@ -703,9 +712,12 @@ class _TrendPainter extends CustomPainter {
     }
     final firstDate = points.first.date;
     final lastDate = points.last.date;
-    final dateSpan = math.max(lastDate.difference(firstDate).inDays, 1);
+    final dateSpan = math.max(
+      lastDate.difference(firstDate).inMilliseconds.toDouble(),
+      1,
+    );
     Offset location(_ChartPoint point) => Offset(
-      left + width * point.date.difference(firstDate).inDays / dateSpan,
+      left + width * point.date.difference(firstDate).inMilliseconds / dateSpan,
       top + height * (maxValue - point.value) / (maxValue - minValue),
     );
     final path = Path()
@@ -828,6 +840,8 @@ class _TrendPainter extends CustomPainter {
       oldDelegate.points != points ||
       oldDelegate.color != color ||
       oldDelegate.suffix != suffix ||
+      oldDelegate.minimumY != minimumY ||
+      oldDelegate.maximumY != maximumY ||
       oldDelegate.selectedIndex != selectedIndex;
 }
 

@@ -2306,6 +2306,50 @@ class _SavedWorkoutsScreen extends StatefulWidget {
 class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
   String _search = '';
   String? _selectedId;
+  final Set<String> _deletingIds = {};
+
+  Future<void> _deleteTemplate(WorkoutTemplate template) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Saved Workout?'),
+        content: Text(
+          'Delete "${template.name}"? This will not delete workouts you already completed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deletingIds.add(template.id));
+    try {
+      await WorkoutService.deleteTemplate(template.id);
+      if (!mounted) return;
+      setState(() {
+        _deletingIds.remove(template.id);
+        if (_selectedId == template.id) _selectedId = null;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${template.name} deleted.')));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _deletingIds.remove(template.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete workout: $error')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<WorkoutTemplate>>(
@@ -2416,12 +2460,17 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                               _SavedWorkoutPickerRow(
                                 template: templates[index],
                                 selected: templates[index].id == _selectedId,
+                                deleting: _deletingIds.contains(
+                                  templates[index].id,
+                                ),
                                 onTap: () => setState(
                                   () => _selectedId =
                                       templates[index].id == _selectedId
                                       ? null
                                       : templates[index].id,
                                 ),
+                                onDelete: () =>
+                                    _deleteTemplate(templates[index]),
                               ),
                               if (index < templates.length - 1)
                                 const Divider(height: 1, indent: 72),
@@ -2481,12 +2530,16 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
   const _SavedWorkoutPickerRow({
     required this.template,
     required this.selected,
+    required this.deleting,
     required this.onTap,
+    required this.onDelete,
   });
 
   final WorkoutTemplate template;
   final bool selected;
+  final bool deleting;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -2529,10 +2582,24 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(
-              selected ? Icons.check_circle_rounded : Icons.circle_outlined,
-              color: selected ? _purple : _muted,
-            ),
+            if (deleting)
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else ...[
+              IconButton(
+                onPressed: onDelete,
+                tooltip: 'Delete saved workout',
+                icon: const Icon(Icons.delete_outline_rounded),
+                color: Colors.redAccent,
+              ),
+              Icon(
+                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                color: selected ? _purple : _muted,
+              ),
+            ],
           ],
         ),
       ),
@@ -3416,13 +3483,6 @@ class MonthlyRingsDialog extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             const _ThirtyDayActivityRings(),
-            const SizedBox(height: 18),
-            const _SectionTitle(
-              icon: Icons.info_outline_rounded,
-              title: 'DAILY GOALS',
-            ),
-            const SizedBox(height: 9),
-            const _ActivityGoalLegend(),
           ],
         ),
       ),
@@ -3430,8 +3490,22 @@ class MonthlyRingsDialog extends StatelessWidget {
   );
 }
 
-class _ThirtyDayActivityRings extends StatelessWidget {
+class _ThirtyDayActivityRings extends StatefulWidget {
   const _ThirtyDayActivityRings();
+
+  @override
+  State<_ThirtyDayActivityRings> createState() =>
+      _ThirtyDayActivityRingsState();
+}
+
+class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
+  late DateTime _selectedDay;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDay = DateUtils.dateOnly(DateTime.now());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3439,7 +3513,7 @@ class _ThirtyDayActivityRings extends StatelessWidget {
     final today = DateUtils.dateOnly(DateTime.now());
     final firstDay = today.subtract(const Duration(days: 29));
     if (user == null) {
-      return _buildGrid(today, firstDay, const {}, const ActivityGoals());
+      return _buildContent(today, firstDay, const {}, const ActivityGoals());
     }
 
     final startKey = DateFormat('yyyy-MM-dd').format(firstDay);
@@ -3471,7 +3545,7 @@ class _ThirtyDayActivityRings extends StatelessWidget {
         return StreamBuilder<ActivityGoals>(
           stream: ActivityGoalsService.watch(),
           initialData: const ActivityGoals(),
-          builder: (context, goalsSnapshot) => _buildGrid(
+          builder: (context, goalsSnapshot) => _buildContent(
             today,
             firstDay,
             days,
@@ -3482,53 +3556,118 @@ class _ThirtyDayActivityRings extends StatelessWidget {
     );
   }
 
-  Widget _buildGrid(
+  Widget _buildContent(
     DateTime today,
     DateTime firstDay,
     Map<String, Map<String, dynamic>> dataByDay,
     ActivityGoals goals,
   ) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 6,
-        mainAxisSpacing: 9,
-        crossAxisSpacing: 7,
-        childAspectRatio: .72,
-      ),
-      itemCount: 30,
-      itemBuilder: (_, index) {
-        final date = firstDay.add(Duration(days: index));
-        final dayKey = DateFormat('yyyy-MM-dd').format(date);
-        final data = dataByDay[dayKey];
-        final steps = _metricSum(data, 'steps');
-        final calories = _metricSum(data, 'active_calories');
-        final exercise = _metricSum(data, 'exercise_time');
-        final isToday = DateUtils.isSameDay(date, today);
-        return Column(
-          children: [
-            Expanded(
-              child: CustomPaint(
-                painter: ActivityRingsPainter(
-                  move: (steps / goals.steps).clamp(0.0, 1.0),
-                  exercise: (calories / goals.activeCalories).clamp(0.0, 1.0),
-                  stand: (exercise / goals.exerciseMinutes).clamp(0.0, 1.0),
+    final selectedKey = DateFormat('yyyy-MM-dd').format(_selectedDay);
+    final selectedData = dataByDay[selectedKey];
+    final selectedSteps = _metricSum(selectedData, 'steps');
+    final selectedCalories = _metricSum(selectedData, 'active_calories');
+    final selectedExercise = _metricSum(selectedData, 'exercise_time');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 6,
+            mainAxisSpacing: 9,
+            crossAxisSpacing: 7,
+            childAspectRatio: .72,
+          ),
+          itemCount: 30,
+          itemBuilder: (_, index) {
+            final date = firstDay.add(Duration(days: index));
+            final dayKey = DateFormat('yyyy-MM-dd').format(date);
+            final data = dataByDay[dayKey];
+            final steps = _metricSum(data, 'steps');
+            final calories = _metricSum(data, 'active_calories');
+            final exercise = _metricSum(data, 'exercise_time');
+            final isToday = DateUtils.isSameDay(date, today);
+            final isSelected = DateUtils.isSameDay(date, _selectedDay);
+            return InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => setState(() => _selectedDay = date),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? _purple.withValues(alpha: .08)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isSelected ? _purple : Colors.transparent,
+                    width: 1.4,
+                  ),
                 ),
-                child: const SizedBox.expand(),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: CustomPaint(
+                        painter: ActivityRingsPainter(
+                          move: (steps / goals.steps).clamp(0.0, 1.0),
+                          exercise: (calories / goals.activeCalories).clamp(
+                            0.0,
+                            1.0,
+                          ),
+                          stand: (exercise / goals.exerciseMinutes).clamp(
+                            0.0,
+                            1.0,
+                          ),
+                        ),
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                    Text(
+                      isToday ? 'Today' : '${date.day}',
+                      style: TextStyle(
+                        fontSize: 8,
+                        color: isSelected || isToday ? _purple : _muted,
+                        fontWeight: isSelected || isToday
+                            ? FontWeight.w800
+                            : null,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+            );
+          },
+        ),
+        const SizedBox(height: 18),
+        _SectionTitle(
+          icon: Icons.calendar_today_rounded,
+          title: DateUtils.isSameDay(_selectedDay, today)
+              ? "TODAY'S ACTIVITY"
+              : DateFormat('MMMM d, y').format(_selectedDay).toUpperCase(),
+        ),
+        const SizedBox(height: 9),
+        Wrap(
+          spacing: 14,
+          runSpacing: 8,
+          children: [
+            _RingLegend(
+              color: _purple,
+              text:
+                  'Steps ${NumberFormat.decimalPattern().format(selectedSteps.round())}',
             ),
-            Text(
-              isToday ? 'Today' : '${date.day}',
-              style: TextStyle(
-                fontSize: 8,
-                color: isToday ? _purple : _muted,
-                fontWeight: isToday ? FontWeight.w800 : null,
-              ),
+            _RingLegend(
+              color: const Color(0xFFFB923C),
+              text: 'Active calories ${_formatMetric(selectedCalories)}',
+            ),
+            _RingLegend(
+              color: const Color(0xFF34D399),
+              text: 'Exercise ${_formatMetric(selectedExercise)} min',
             ),
           ],
-        );
-      },
+        ),
+      ],
     );
   }
 
@@ -3536,37 +3675,9 @@ class _ThirtyDayActivityRings extends StatelessWidget {
     final metric = data?[key] as Map?;
     return (metric?['sum'] as num?)?.toDouble() ?? 0;
   }
-}
 
-class _ActivityGoalLegend extends StatelessWidget {
-  const _ActivityGoalLegend();
-
-  @override
-  Widget build(BuildContext context) => StreamBuilder<ActivityGoals>(
-    stream: ActivityGoalsService.watch(),
-    initialData: const ActivityGoals(),
-    builder: (context, snapshot) {
-      final goals = snapshot.data ?? const ActivityGoals();
-      return Wrap(
-        spacing: 14,
-        runSpacing: 8,
-        children: [
-          _RingLegend(
-            color: _purple,
-            text: 'Steps ${NumberFormat.decimalPattern().format(goals.steps)}',
-          ),
-          _RingLegend(
-            color: const Color(0xFFFB923C),
-            text: 'Active calories ${goals.activeCalories}',
-          ),
-          _RingLegend(
-            color: const Color(0xFF34D399),
-            text: 'Exercise ${goals.exerciseMinutes} min',
-          ),
-        ],
-      );
-    },
-  );
+  String _formatMetric(double value) =>
+      value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
 }
 
 class ActivityRingsPainter extends CustomPainter {

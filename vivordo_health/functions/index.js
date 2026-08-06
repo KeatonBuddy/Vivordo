@@ -31,6 +31,13 @@ exports.circleEngagementNotification = onDocumentCreated(
 
       if (!engagement || !["like", "comment"].includes(type) ||
           !actorUid || !activityId || actorUid === ownerUid) {
+        console.warn("Circle notification skipped: invalid engagement", {
+          ownerUid,
+          eventId: event.params.eventId,
+          type,
+          hasActorUid: Boolean(actorUid),
+          hasActivityId: Boolean(activityId),
+        });
         return;
       }
 
@@ -50,9 +57,19 @@ exports.circleEngagementNotification = onDocumentCreated(
 
       if (ownerSnapshot.data()?.preferences?.circleNotificationsEnabled ===
           false) {
+        console.info("Circle notification disabled by activity owner", {
+          ownerUid,
+          type,
+        });
         return;
       }
-      if (tokenSnapshot.empty) return;
+      if (tokenSnapshot.empty) {
+        console.warn("Circle notification skipped: owner has no FCM tokens", {
+          ownerUid,
+          type,
+        });
+        return;
+      }
 
       const actorName = actorSnapshot.data()?.username || "A Circle friend";
       const activityName = activitySnapshot.data()?.name || "your activity";
@@ -81,6 +98,13 @@ exports.circleEngagementNotification = onDocumentCreated(
         typeof document.data().token === "string" &&
         document.data().token.length > 0,
       );
+      if (tokenDocuments.length === 0) {
+        console.warn("Circle notification skipped: no valid token values", {
+          ownerUid,
+          tokenDocumentCount: tokenSnapshot.size,
+        });
+        return;
+      }
       const invalidCodes = new Set([
         "messaging/registration-token-not-registered",
         "messaging/invalid-registration-token",
@@ -96,17 +120,36 @@ exports.circleEngagementNotification = onDocumentCreated(
             type: `circle_${type}`,
             activityId,
           },
-          apns: {payload: {aps: {sound: "default"}}},
+          apns: {
+            headers: {"apns-priority": "10"},
+            payload: {aps: {sound: "default"}},
+          },
           android: {notification: {sound: "default"}},
         });
 
         const staleDeletes = [];
+        const deliveryErrors = [];
         response.responses.forEach((result, index) => {
           if (!result.success && invalidCodes.has(result.error?.code)) {
             staleDeletes.push(chunk[index].ref.delete());
           }
+          if (!result.success) {
+            deliveryErrors.push({
+              code: result.error?.code || "unknown",
+              message: result.error?.message || "Unknown messaging error",
+            });
+          }
         });
         await Promise.all(staleDeletes);
+        console.info("Circle notification delivery completed", {
+          ownerUid,
+          type,
+          activityId,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+          staleTokensRemoved: staleDeletes.length,
+          errors: deliveryErrors,
+        });
       }
     },
 );

@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
@@ -66,6 +64,18 @@ class MyApp extends StatelessWidget {
       navigatorKey: navigatorKey,
       title: 'Vivordo Health',
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => Actions(
+        actions: {
+          EditableTextTapOutsideIntent:
+              CallbackAction<EditableTextTapOutsideIntent>(
+                onInvoke: (_) {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  return null;
+                },
+              ),
+        },
+        child: child ?? const SizedBox.shrink(),
+      ),
       theme: ThemeData(
         fontFamily: 'DMSans',
         primaryColor: const Color(0xFF857DEA),
@@ -227,7 +237,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
                   'updatedAt': FieldValue.serverTimestamp(),
                 });
 
-            if (!mounted) return;
+            if (!context.mounted) return;
 
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(builder: (_) => const MainNavigationScreen()),

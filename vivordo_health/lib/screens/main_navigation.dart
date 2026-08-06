@@ -296,10 +296,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                       color: Color(0xFFFBFAFC),
                       child: Center(
                         child: Image.asset(
-                          'assets/vivordo_splash_logo_v2.png',
-                          width: double.infinity,
-                          fit: BoxFit.fitWidth,
-                          filterQuality: FilterQuality.medium,
+                          'assets/vivordo_splash_logo_full.png',
+                          width: 220,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.high,
                         ),
                       ),
                     ),
