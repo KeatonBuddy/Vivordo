@@ -10,6 +10,7 @@ import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -41,15 +42,20 @@ void main() async {
     // (consent). A second StreamProvider<UserModel?> reading User? at creation
     // time always got null (initialData) and created a broken/wasted Firestore
     // listener — removed to reduce concurrent listener count.
-    StreamProvider<User?>(
-      // userChanges() (not authStateChanges()) — it's the one Firebase
-      // guarantees re-emits after currentUser.reload(), which is how
-      // EmailVerificationScreen picks up a newly-verified email.
-      // authStateChanges() only fires on sign-in/out, so AuthGate would
-      // keep reading a stale, still-unverified User forever after
-      // verification, even though reload() elsewhere already saw it flip.
-      create: (_) => FirebaseAuth.instance.userChanges(),
-      initialData: null,
+    MultiProvider(
+      providers: [
+        StreamProvider<User?>(
+          // userChanges() (not authStateChanges()) — it's the one Firebase
+          // guarantees re-emits after currentUser.reload().
+          create: (_) => FirebaseAuth.instance.userChanges(),
+          initialData: null,
+        ),
+        ChangeNotifierProxyProvider<User?, ThemeController>(
+          create: (_) => ThemeController(),
+          update: (_, user, controller) =>
+              (controller ?? ThemeController())..bindUser(user),
+        ),
+      ],
       child: const MyApp(),
     ),
   );
@@ -60,6 +66,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeController = context.watch<ThemeController>();
     return MaterialApp(
       navigatorKey: navigatorKey,
       title: 'Vivordo Health',
@@ -76,16 +83,9 @@ class MyApp extends StatelessWidget {
         },
         child: child ?? const SizedBox.shrink(),
       ),
-      theme: ThemeData(
-        fontFamily: 'DMSans',
-        primaryColor: const Color(0xFF857DEA),
-        scaffoldBackgroundColor: const Color(0xFFFBFaff),
-        colorScheme: ColorScheme.fromSwatch().copyWith(
-          primary: const Color(0xFF857DEA),
-          secondary: const Color(0xFF857DEA),
-        ),
-        useMaterial3: true,
-      ),
+      theme: VivordoTheme.light,
+      darkTheme: VivordoTheme.dark,
+      themeMode: themeController.mode,
       initialRoute: '/',
       routes: {
         '/': (context) => const AuthGate(),

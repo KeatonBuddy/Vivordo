@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'profile_screen.dart';
@@ -136,8 +137,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<_ScheduleInsight?>? _scheduleInsightFuture;
   DateTime? _scheduleInsightDate;
 
-  static const Color bgColor = Color(0xFFF2F2F7);
-  static const Color cardWhite = Colors.white;
   static const Color accentPurple = Color(0xFF7B6EF6);
   static const Color textDark = Color(0xFF1C1C1E);
   static const Color textGrey = Color(0xFF8E8E93);
@@ -465,7 +464,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required double goalProgress,
   }) {
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
@@ -596,8 +595,8 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   _getFirstName(),
-                  style: const TextStyle(
-                    color: textDark,
+                  style: TextStyle(
+                    color: context.vivordoColors.textPrimary,
                     fontSize: 30,
                     fontWeight: FontWeight.bold,
                     letterSpacing: -0.5,
@@ -618,7 +617,7 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: cardWhite,
+              color: context.vivordoColors.card,
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
@@ -662,7 +661,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: cardWhite,
+              color: context.vivordoColors.card,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
             ),
@@ -706,10 +705,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       Text(
                         '$overallPercent%',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w800,
-                          color: textDark,
+                          color: context.vivordoColors.textPrimary,
                         ),
                       ),
                     ],
@@ -720,12 +719,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Today’s Activity',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
-                          color: textDark,
+                          color: context.vivordoColors.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -945,7 +944,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         child: Material(
-          color: cardWhite,
+          color: context.vivordoColors.card,
           borderRadius: BorderRadius.circular(16),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
@@ -974,13 +973,18 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: isEmpty ? const Color(0xFFC7C7CC) : textDark,
+                            color: isEmpty
+                                ? context.vivordoColors.textSecondary
+                                : context.vivordoColors.textPrimary,
                           ),
                         ),
                   const SizedBox(height: 2),
                   Text(
                     label,
-                    style: const TextStyle(fontSize: 10, color: textGrey),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: context.vivordoColors.textPrimary,
+                    ),
                   ),
                   if (isEmpty && showConnectHint) ...[
                     const SizedBox(height: 4),
@@ -995,7 +999,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                       child: Text(
                         emptyActionLabel,
-                        style: const TextStyle(fontSize: 10, color: textGrey),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: context.vivordoColors.textSecondary,
+                        ),
                       ),
                     ),
                   ],
@@ -1038,7 +1045,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       child: Material(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(20),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -1078,10 +1085,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
+                                Text(
                                   'Circle',
                                   style: TextStyle(
-                                    color: textDark,
+                                    color: context.vivordoColors.textPrimary,
                                     fontSize: 18,
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -1172,7 +1179,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -1200,8 +1207,8 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    color: textDark,
+                  style: TextStyle(
+                    color: context.vivordoColors.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                   ),
@@ -1670,13 +1677,13 @@ class _HomeScreenState extends State<HomeScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: cardWhite,
+              color: context.vivordoColors.card,
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFE5E5EA)),
+              border: Border.all(color: context.vivordoColors.border),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                SizedBox(
+                const SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(
@@ -1684,14 +1691,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: accentPurple,
                   ),
                 ),
-                SizedBox(width: 14),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Text(
                     'Analyzing your calendar for cognitive load windows…',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: textDark,
+                      color: context.vivordoColors.textPrimary,
                     ),
                   ),
                 ),
@@ -1823,12 +1830,12 @@ class _HomeScreenState extends State<HomeScreen> {
         return Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: cardWhite,
+            color: context.vivordoColors.card,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: const Color(0xFFE5E5EA)),
-            boxShadow: const [
+            border: Border.all(color: context.vivordoColors.border),
+            boxShadow: [
               BoxShadow(
-                color: Color(0x0A000000),
+                color: context.vivordoColors.shadow,
                 blurRadius: 10,
                 offset: Offset(0, 3),
               ),
@@ -1883,10 +1890,10 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: textDark,
+                  color: context.vivordoColors.textPrimary,
                   height: 1.25,
                 ),
               ),
@@ -1899,15 +1906,15 @@ class _HomeScreenState extends State<HomeScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFF7F7FA),
+              color: context.vivordoColors.cardMuted,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Text(
               emptyText,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color: textGrey,
+                color: context.vivordoColors.textSecondary,
               ),
             ),
           )
@@ -1919,7 +1926,7 @@ class _HomeScreenState extends State<HomeScreen> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Material(
-                color: const Color(0xFFF7F7FA),
+                color: context.vivordoColors.cardMuted,
                 borderRadius: BorderRadius.circular(16),
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
@@ -1938,10 +1945,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               Text(
                                 window['time'] as String,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
-                                  color: textDark,
+                                  color: context.vivordoColors.textPrimary,
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -1949,10 +1956,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 window['label'] as String,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
-                                  color: textGrey,
+                                  color: context.vivordoColors.textSecondary,
                                 ),
                               ),
                             ],
@@ -2247,9 +2254,9 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
+          decoration: BoxDecoration(
+            color: context.vivordoColors.card,
+            borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(40),
               topRight: Radius.circular(40),
             ),
@@ -3155,10 +3162,10 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                           children: [
                             Text(
                               title,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w800,
-                                color: _textDark,
+                                color: context.vivordoColors.textPrimary,
                                 height: 1.2,
                               ),
                             ),
@@ -3260,7 +3267,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -3277,8 +3284,13 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
             // Header
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: _border, width: 0.5)),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: context.vivordoColors.border,
+                    width: 0.5,
+                  ),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3296,10 +3308,10 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                           _monthLabel(dates),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: _textDark,
+                            color: context.vivordoColors.textPrimary,
                           ),
                         ),
                       ),
@@ -3392,12 +3404,17 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              border: Border.all(color: _border),
+                              border: Border.all(
+                                color: context.vivordoColors.border,
+                              ),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Text(
+                            child: Text(
                               'Today',
-                              style: TextStyle(fontSize: 12, color: _textDark),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: context.vivordoColors.textPrimary,
+                              ),
                             ),
                           ),
                         ),
@@ -3428,10 +3445,16 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                   return Expanded(
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         border: Border(
-                          bottom: BorderSide(color: _border, width: 0.5),
-                          right: BorderSide(color: _border, width: 0.5),
+                          bottom: BorderSide(
+                            color: context.vivordoColors.border,
+                            width: 0.5,
+                          ),
+                          right: BorderSide(
+                            color: context.vivordoColors.border,
+                            width: 0.5,
+                          ),
                         ),
                       ),
                       child: Column(
@@ -3460,7 +3483,9 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w500,
-                                  color: isToday ? Colors.white : _textDark,
+                                  color: isToday
+                                      ? Colors.white
+                                      : context.vivordoColors.textPrimary,
                                 ),
                               ),
                             ),
@@ -3483,18 +3508,18 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.calendar_month_rounded,
                         size: 48,
-                        color: Color(0xFFE5E5EA),
+                        color: context.vivordoColors.textSecondary,
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'No calendar connected',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: _textDark,
+                          color: context.vivordoColors.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -3661,9 +3686,12 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
 
                         return Expanded(
                           child: Container(
-                            decoration: const BoxDecoration(
+                            decoration: BoxDecoration(
                               border: Border(
-                                right: BorderSide(color: _border, width: 0.5),
+                                right: BorderSide(
+                                  color: context.vivordoColors.border,
+                                  width: 0.5,
+                                ),
                               ),
                             ),
                             child: Stack(
@@ -3685,10 +3713,12 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                               : null,
                                           child: Container(
                                             height: _cellH,
-                                            decoration: const BoxDecoration(
+                                            decoration: BoxDecoration(
                                               border: Border(
                                                 bottom: BorderSide(
-                                                  color: _border,
+                                                  color: context
+                                                      .vivordoColors
+                                                      .border,
                                                   width: 0.5,
                                                 ),
                                               ),
@@ -3729,7 +3759,13 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                             vertical: 3,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFe8f0fe),
+                                            color:
+                                                Theme.of(context).brightness ==
+                                                    Brightness.dark
+                                                ? context
+                                                      .vivordoColors
+                                                      .cardMuted
+                                                : const Color(0xFFe8f0fe),
                                             borderRadius: BorderRadius.circular(
                                               4,
                                             ),
@@ -3742,10 +3778,18 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                           ),
                                           child: Text(
                                             ev.summary ?? 'Event',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 10,
                                               fontWeight: FontWeight.w600,
-                                              color: Color(0xFF1557b0),
+                                              color:
+                                                  Theme.of(
+                                                        context,
+                                                      ).brightness ==
+                                                      Brightness.dark
+                                                  ? context
+                                                        .vivordoColors
+                                                        .textPrimary
+                                                  : const Color(0xFF1557b0),
                                             ),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
@@ -3781,7 +3825,13 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                             vertical: 3,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFE6F2FB),
+                                            color:
+                                                Theme.of(context).brightness ==
+                                                    Brightness.dark
+                                                ? context
+                                                      .vivordoColors
+                                                      .cardMuted
+                                                : const Color(0xFFE6F2FB),
                                             borderRadius: BorderRadius.circular(
                                               4,
                                             ),
@@ -3794,10 +3844,18 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                           ),
                                           child: Text(
                                             ev.subject,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 10,
                                               fontWeight: FontWeight.w600,
-                                              color: Color(0xFF005A9E),
+                                              color:
+                                                  Theme.of(
+                                                        context,
+                                                      ).brightness ==
+                                                      Brightness.dark
+                                                  ? context
+                                                        .vivordoColors
+                                                        .textPrimary
+                                                  : const Color(0xFF005A9E),
                                             ),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
@@ -3854,10 +3912,10 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
       child: Container(
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
-          border: Border.all(color: _border),
+          border: Border.all(color: context.vivordoColors.border),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Icon(icon, size: 15, color: _textDark),
+        child: Icon(icon, size: 15, color: context.vivordoColors.textPrimary),
       ),
     );
   }
@@ -4115,10 +4173,10 @@ class _EventDetailRow extends StatelessWidget {
                             : const BouncingScrollPhysics(),
                         child: Text(
                           value,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
-                            color: Color(0xFF1C1C1E),
+                            color: context.vivordoColors.textPrimary,
                             height: 1.35,
                           ),
                         ),

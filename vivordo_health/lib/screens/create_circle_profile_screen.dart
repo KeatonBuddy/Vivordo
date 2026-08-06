@@ -219,7 +219,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
       centerTitle: true,
       title: Text(
         editing ? 'Edit Profile' : 'Create Profile',
-        style: const TextStyle(color: _ink, fontWeight: FontWeight.w800),
+        style: const TextStyle(fontWeight: FontWeight.w800),
       ),
     ),
     body: SafeArea(

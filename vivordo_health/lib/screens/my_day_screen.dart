@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 
@@ -338,19 +339,19 @@ class _MyDayScreenState extends State<MyDayScreen> {
     final dayInsight = _calculateDayInsight();
 
     return Scaffold(
-      backgroundColor: MyDayScreen.background,
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadTodayEvents,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(18, 22, 18, 150),
             children: [
-              const Text(
+              Text(
                 'My Day',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
-                  color: MyDayScreen.ink,
+                  color: context.vivordoColors.textPrimary,
                 ),
               ),
               const SizedBox(height: 4),
@@ -430,7 +431,7 @@ class _MyDayScreenState extends State<MyDayScreen> {
               const SizedBox(height: 10),
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: context.vivordoColors.card,
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(
                     color: Colors.black.withValues(alpha: .07),
@@ -450,7 +451,7 @@ class _MyDayScreenState extends State<MyDayScreen> {
               ),
               const SizedBox(height: 10),
               Material(
-                color: Colors.white,
+                color: context.vivordoColors.card,
                 borderRadius: BorderRadius.circular(20),
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
@@ -482,14 +483,14 @@ class _MyDayScreenState extends State<MyDayScreen> {
                           ),
                         ),
                         const SizedBox(width: 13),
-                        const Expanded(
+                        Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 'Journal',
                                 style: TextStyle(
-                                  color: MyDayScreen.ink,
+                                  color: context.vivordoColors.textPrimary,
                                   fontSize: 17,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -571,7 +572,7 @@ class _MyDayScreenState extends State<MyDayScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: context.vivordoColors.card,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: Colors.black.withValues(alpha: .07),
@@ -591,9 +592,9 @@ class _MyDayScreenState extends State<MyDayScreen> {
                         children: [
                           Text(
                             dayInsight.title,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w800,
-                              color: MyDayScreen.ink,
+                              color: context.vivordoColors.textPrimary,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -680,9 +681,9 @@ class _DayEvent extends StatelessWidget {
                 children: [
                   Text(
                     event.title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      color: MyDayScreen.ink,
+                      color: context.vivordoColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 3),

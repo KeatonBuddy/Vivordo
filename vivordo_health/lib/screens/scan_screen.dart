@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../theme/vivordo_theme.dart';
 import '../src/utils/ppg_algorithm.dart';
 import '../src/services/user_service.dart';
 
@@ -604,7 +605,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
@@ -621,7 +622,6 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
-                        color: textDark,
                         letterSpacing: -0.5,
                       ),
                     ),
@@ -660,9 +660,12 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                 ],
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 '15-second physiological assessment',
-                style: TextStyle(fontSize: 14, color: textGrey),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: context.vivordoColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 40),
               if (!_hasTorch && _scanState != ScanState.initializing) ...[
@@ -708,7 +711,6 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               'No flash detected — scan quality may be lower. Use a bright, steady light source and press firmly.',
               style: TextStyle(
                 fontSize: 13,
-                color: textDark,
                 height: 1.4,
                 fontWeight: FontWeight.w500,
               ),
@@ -752,7 +754,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: accentPurple.withOpacity(0.22)),
         boxShadow: [
@@ -815,19 +817,18 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                       Text(
                         slide['title'] as String,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: textDark,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         slide['body'] as String,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
-                          color: textGrey,
+                          color: context.vivordoColors.textSecondary,
                           height: 1.35,
                         ),
                       ),
@@ -863,8 +864,8 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                 child: OutlinedButton(
                   onPressed: _dismissScannerTutorial,
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: textDark,
-                    side: const BorderSide(color: Color(0xFFE5E5EA)),
+                    foregroundColor: context.vivordoColors.textPrimary,
+                    side: BorderSide(color: context.vivordoColors.border),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -931,11 +932,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
         const Text(
           'Preparing camera...',
           textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: textDark,
-          ),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -987,10 +984,9 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
         Text(
           _scanArmed ? 'Place your finger on the camera' : 'Ready to scan?',
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
-            color: textDark,
             letterSpacing: -0.3,
           ),
         ),
@@ -1000,7 +996,11 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               ? 'Cover the rear camera and hold still. The scan begins when your finger is detected.'
               : 'Tap Start Scan to turn on the torch, then cover the rear camera with your fingertip.',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: textGrey, height: 1.6),
+          style: TextStyle(
+            fontSize: 14,
+            color: context.vivordoColors.textSecondary,
+            height: 1.6,
+          ),
         ),
         if (!_scanArmed && !_showTutorial) ...[
           const SizedBox(height: 24),
@@ -1044,9 +1044,9 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           width: double.infinity,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: context.vivordoColors.card,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFE5E5EA)),
+            border: Border.all(color: context.vivordoColors.border),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.04),
@@ -1162,7 +1162,6 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                   child: Container(
                     width: 168,
                     height: 168,
-                    color: Colors.black,
                     child:
                         _cameraController != null &&
                             _cameraController!.value.isInitialized
@@ -1223,11 +1222,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
         const SizedBox(height: 32),
         Text(
           '$secondsLeft seconds remaining',
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: textDark,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 24),
         ClipRRect(
@@ -1240,9 +1235,12 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: 16),
-        const Text(
+        Text(
           'Keep your finger still on the camera',
-          style: TextStyle(fontSize: 13, color: textGrey),
+          style: TextStyle(
+            fontSize: 13,
+            color: context.vivordoColors.textSecondary,
+          ),
         ),
       ],
     );
@@ -1271,11 +1269,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
         const SizedBox(height: 32),
         const Text(
           'Analysing your scan...',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: textDark,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -1340,7 +1334,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               const SizedBox(height: 8),
               Text(
                 '$bpm',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.white,
                   fontSize: 72,
                   fontWeight: FontWeight.bold,
@@ -1450,11 +1444,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                   SizedBox(width: 6),
                   Text(
                     'Insight',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: textDark,
-                    ),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -1465,9 +1455,9 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                     : bpm < 80
                     ? 'Your heart rate looks healthy. Take a few deep breaths to keep stress balanced.'
                     : 'Your heart rate is elevated. Consider a short break, breathing exercise, or a walk.',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: textGrey,
+                  color: context.vivordoColors.textSecondary,
                   height: 1.5,
                 ),
               ),
@@ -1484,8 +1474,8 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           child: OutlinedButton(
             onPressed: _reset,
             style: OutlinedButton.styleFrom(
-              foregroundColor: textDark,
-              side: const BorderSide(color: Color(0xFFE5E5EA)),
+              foregroundColor: context.vivordoColors.textPrimary,
+              side: BorderSide(color: context.vivordoColors.border),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
@@ -1525,17 +1515,17 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
         Text(
           _errorTitle,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: textDark,
-          ),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Text(
           _errorBody,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: textGrey, height: 1.6),
+          style: TextStyle(
+            fontSize: 14,
+            color: context.vivordoColors.textSecondary,
+            height: 1.6,
+          ),
         ),
         const SizedBox(height: 32),
         SizedBox(
@@ -1607,7 +1597,6 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: textDark,
                     ),
                   ),
                 ],
@@ -1615,9 +1604,9 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
               const SizedBox(height: 3),
               Text(
                 body,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: textGrey,
+                  color: context.vivordoColors.textSecondary,
                   height: 1.5,
                 ),
               ),
@@ -1634,7 +1623,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       children: [
         Icon(icon, size: 16, color: accentPurple),
         const SizedBox(width: 8),
-        Text(text, style: const TextStyle(fontSize: 13, color: textGrey)),
+        Text(text, style: const TextStyle(fontSize: 13, color: context.vivordoColors.textSecondary)),
       ],
     );
   }*/
@@ -1647,7 +1636,10 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(fontSize: 13, color: textGrey),
+            style: TextStyle(
+              fontSize: 13,
+              color: context.vivordoColors.textSecondary,
+            ),
           ),
         ),
       ],
@@ -1663,9 +1655,9 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
+        border: Border.all(color: context.vivordoColors.border),
       ),
       child: Column(
         children: [
@@ -1683,9 +1675,9 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           Text(
             label,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
-              color: textGrey,
+              color: context.vivordoColors.textSecondary,
               fontWeight: FontWeight.w500,
             ),
           ),

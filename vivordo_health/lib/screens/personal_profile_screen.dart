@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
 
 import '../src/services/personal_profile_service.dart';
@@ -9,7 +10,6 @@ import '../src/services/personal_profile_service.dart';
 const _purple = Color(0xFF6250E8);
 const _ink = Color(0xFF17172B);
 const _muted = Color(0xFF85859B);
-const _background = Color(0xFFF4F4F9);
 const _poundsPerKilogram = 2.2046226218;
 
 double _kilogramsToPounds(double kilograms) => kilograms * _poundsPerKilogram;
@@ -49,18 +49,18 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: _background,
+    backgroundColor: context.vivordoColors.page,
     appBar: AppBar(
-      backgroundColor: _background,
+      backgroundColor: context.vivordoColors.page,
       surfaceTintColor: Colors.transparent,
       centerTitle: true,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _ink),
+        icon: const Icon(Icons.arrow_back_ios_new_rounded, ),
         onPressed: () => Navigator.pop(context),
       ),
       title: const Text(
         'Personal Profile',
-        style: TextStyle(fontWeight: FontWeight.w800, color: _ink),
+        style: TextStyle(fontWeight: FontWeight.w800, ),
       ),
     ),
     body: StreamBuilder<PersonalProfile>(
@@ -392,11 +392,7 @@ class _SummaryMetric extends StatelessWidget {
         FittedBox(
           child: Text(
             value,
-            style: const TextStyle(
-              fontSize: 16,
-              color: _ink,
-              fontWeight: FontWeight.w800,
-            ),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
           ),
         ),
       ],
@@ -500,7 +496,6 @@ class _TrendCard extends StatelessWidget {
                       title,
                       style: const TextStyle(
                         fontSize: 17,
-                        color: _ink,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -511,7 +506,6 @@ class _TrendCard extends StatelessWidget {
                           : '${value!.toStringAsFixed(1)}$suffix',
                       style: const TextStyle(
                         fontSize: 29,
-                        color: _ink,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -1003,11 +997,7 @@ class _MeasurementLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     text,
-    style: const TextStyle(
-      color: _ink,
-      fontSize: 14,
-      fontWeight: FontWeight.w700,
-    ),
+    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
   );
 }
 

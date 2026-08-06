@@ -15,8 +15,8 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
   late Animation<Offset> _slideUp;
 
   static const accentPurple = Color(0xFF7B6EF6);
-  static const textDark     = Color(0xFF1C1C1E);
-  static const textGrey     = Color(0xFF8E8E93);
+  static const textDark = Color(0xFF1C1C1E);
+  static const textGrey = Color(0xFF8E8E93);
 
   @override
   void initState() {
@@ -25,9 +25,11 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _fadeIn  = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _slideUp = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _fadeIn = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _slideUp = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     _controller.forward();
   }
 
@@ -56,7 +58,10 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
 
                   // ── Badge ──────────────────────────────────────────────────
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
                       color: accentPurple.withOpacity(0.10),
                       borderRadius: BorderRadius.circular(20),
@@ -65,7 +70,11 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.science_rounded, size: 13, color: accentPurple),
+                        Icon(
+                          Icons.science_rounded,
+                          size: 13,
+                          color: accentPurple,
+                        ),
                         SizedBox(width: 6),
                         Text(
                           'BETA TESTER',
@@ -101,7 +110,6 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
-                      color: textDark,
                       letterSpacing: -0.5,
                     ),
                   ),
@@ -109,7 +117,11 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
                   const Text(
                     'You\'re one of our first users 🌟\nHelp us shape the future of health tech.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 15, color: textGrey, height: 1.6),
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: textGrey,
+                      height: 1.6,
+                    ),
                   ),
 
                   const SizedBox(height: 36),
@@ -167,8 +179,14 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
                         const SizedBox(height: 12),
                         _tipRow('👆', 'Tap Scan to measure your heart rate'),
                         _tipRow('📊', 'Check Metrics for your health trends'),
-                        _tipRow('🔗', 'Connect Apple Health in Profile for richer data'),
-                        _tipRow('🤖', 'Chat with the AI for personalised insights'),
+                        _tipRow(
+                          '🔗',
+                          'Connect Apple Health in Profile for richer data',
+                        ),
+                        _tipRow(
+                          '🤖',
+                          'Chat with the AI for personalised insights',
+                        ),
                       ],
                     ),
                   ),
@@ -181,14 +199,15 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
                     height: 54,
                     child: ElevatedButton(
                       onPressed: () => Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(builder: (_) => const SignupScreen()),
-                        ),
+                        MaterialPageRoute(builder: (_) => const SignupScreen()),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: accentPurple,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16)),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                         textStyle: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -250,19 +269,22 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: textDark,
-                    )),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 5),
-                Text(body,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: textGrey,
-                      height: 1.5,
-                    )),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: textGrey,
+                    height: 1.5,
+                  ),
+                ),
               ],
             ),
           ),
@@ -279,8 +301,14 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
           Text(emoji, style: const TextStyle(fontSize: 15)),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text,
-                style: const TextStyle(fontSize: 13, color: textGrey, height: 1.4)),
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 13,
+                color: textGrey,
+                height: 1.4,
+              ),
+            ),
           ),
         ],
       ),

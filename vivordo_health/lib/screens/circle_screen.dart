@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/activity_goals_service.dart';
 import '../src/services/circle_profile_service.dart';
@@ -26,9 +27,9 @@ class CircleScreen extends StatelessWidget {
     builder: (context, snapshot) {
       if (snapshot.connectionState == ConnectionState.waiting &&
           !snapshot.hasData) {
-        return const Scaffold(
-          backgroundColor: _background,
-          body: Center(child: CircularProgressIndicator(color: _purple)),
+        return Scaffold(
+          backgroundColor: context.vivordoColors.page,
+          body: const Center(child: CircularProgressIndicator(color: _purple)),
         );
       }
       final profile = snapshot.data;
@@ -39,16 +40,15 @@ class CircleScreen extends StatelessWidget {
   );
 
   Widget _buildOnboarding(BuildContext context) => Scaffold(
-    backgroundColor: _background,
+    backgroundColor: context.vivordoColors.page,
     appBar: AppBar(
-      backgroundColor: _background,
+      backgroundColor: context.vivordoColors.page,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       titleSpacing: 4,
       title: const Text(
         'Your Circle',
         style: TextStyle(
-          color: _ink,
           fontSize: 28,
           fontWeight: FontWeight.w800,
           letterSpacing: -.6,
@@ -64,9 +64,9 @@ class CircleScreen extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: context.vivordoColors.card,
             borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: Colors.black.withValues(alpha: .05)),
+            border: Border.all(color: context.vivordoColors.border),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x0D000000),
@@ -83,7 +83,6 @@ class CircleScreen extends StatelessWidget {
                 'Better together',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: _ink,
                   fontSize: 25,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -.4,
@@ -184,15 +183,14 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: CircleScreen._background,
+    backgroundColor: context.vivordoColors.page,
     appBar: AppBar(
-      backgroundColor: CircleScreen._background,
+      backgroundColor: context.vivordoColors.page,
       surfaceTintColor: Colors.transparent,
       titleSpacing: 20,
       title: const Text(
         'Your Circle',
         style: TextStyle(
-          color: CircleScreen._ink,
           fontSize: 30,
           fontWeight: FontWeight.w800,
           letterSpacing: -.7,
@@ -202,7 +200,7 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
         Padding(
           padding: const EdgeInsets.only(right: 18),
           child: Material(
-            color: Colors.white,
+            color: context.vivordoColors.card,
             borderRadius: BorderRadius.circular(14),
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
@@ -253,7 +251,7 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
           margin: const EdgeInsets.all(14),
           padding: const EdgeInsets.fromLTRB(24, 14, 24, 28),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: sheetContext.vivordoColors.card,
             borderRadius: BorderRadius.circular(28),
           ),
           child: Column(
@@ -273,7 +271,6 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
               Text(
                 profile.username,
                 style: const TextStyle(
-                  color: CircleScreen._ink,
                   fontSize: 24,
                   fontWeight: FontWeight.w900,
                 ),
@@ -382,9 +379,9 @@ class _CircleTabs extends StatelessWidget {
     height: 54,
     padding: const EdgeInsets.all(2),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(15),
-      border: Border.all(color: Colors.black.withValues(alpha: .06)),
+      border: Border.all(color: context.vivordoColors.border),
     ),
     child: Row(children: [_tab('Activity', 0), _tab('Friends', 1)]),
   );
@@ -519,7 +516,7 @@ class _MyActivityCard extends StatelessWidget {
         ? '${activity.sets} sets'
         : '${activity.minutes} min';
     return Material(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
@@ -563,7 +560,6 @@ class _MyActivityCard extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: CircleScreen._ink,
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
                 ),
@@ -615,11 +611,7 @@ class _YourCircleCardState extends State<_YourCircleCard> {
           children: [
             const Text(
               'Your Circle',
-              style: TextStyle(
-                color: CircleScreen._ink,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 4),
             Text(
@@ -723,7 +715,7 @@ class _CircleMemberNameAndStreak extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: CircleScreen._ink, fontSize: 13),
+              style: const TextStyle(fontSize: 13),
             ),
           ),
           const SizedBox(width: 3),
@@ -766,7 +758,7 @@ class _FriendFitnessSheet extends StatelessWidget {
       margin: const EdgeInsets.all(14),
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
       decoration: BoxDecoration(
-        color: CircleScreen._background,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(28),
       ),
       child: StreamBuilder<CircleDailyFitness?>(
@@ -780,7 +772,7 @@ class _FriendFitnessSheet extends StatelessWidget {
                 width: 42,
                 height: 5,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD6D6E0),
+                  color: context.vivordoColors.border,
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
@@ -790,7 +782,6 @@ class _FriendFitnessSheet extends StatelessWidget {
               Text(
                 profile.username,
                 style: const TextStyle(
-                  color: CircleScreen._ink,
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
                 ),
@@ -869,7 +860,6 @@ class _FriendFitnessContent extends StatelessWidget {
                 Text(
                   '$percent%',
                   style: const TextStyle(
-                    color: CircleScreen._ink,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
@@ -939,11 +929,7 @@ class _CircleRecentActivityFeed extends StatelessWidget {
                 Text(
                   'No recent friend activity',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: CircleScreen._ink,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
                 ),
                 SizedBox(height: 6),
                 Text(
@@ -987,7 +973,7 @@ class _CircleActivityTile extends StatelessWidget {
       details.add('${activity.sets} sets');
     }
     return Material(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
@@ -1005,7 +991,6 @@ class _CircleActivityTile extends StatelessWidget {
                     Text(
                       activity.profile.username,
                       style: const TextStyle(
-                        color: CircleScreen._ink,
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
                       ),
@@ -1098,9 +1083,9 @@ class _CircleActivityDetailsSheetState
       maxChildSize: .94,
       expand: false,
       builder: (context, scrollController) => Container(
-        decoration: const BoxDecoration(
-          color: CircleScreen._background,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        decoration: BoxDecoration(
+          color: context.vivordoColors.page,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: Column(
           children: [
@@ -1109,7 +1094,7 @@ class _CircleActivityDetailsSheetState
               width: 42,
               height: 5,
               decoration: BoxDecoration(
-                color: const Color(0xFFD6D6E0),
+                color: context.vivordoColors.border,
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
@@ -1136,7 +1121,6 @@ class _CircleActivityDetailsSheetState
                                   Text(
                                     activity.profile.username,
                                     style: const TextStyle(
-                                      color: CircleScreen._ink,
                                       fontSize: 18,
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -1157,7 +1141,6 @@ class _CircleActivityDetailsSheetState
                         Text(
                           activity.name,
                           style: const TextStyle(
-                            color: CircleScreen._ink,
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
                           ),
@@ -1235,9 +1218,11 @@ class _CircleActivityDetailsSheetState
               top: false,
               child: Container(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  border: Border(top: BorderSide(color: Color(0xFFE7E7EE))),
+                decoration: BoxDecoration(
+                  color: context.vivordoColors.card,
+                  border: Border(
+                    top: BorderSide(color: context.vivordoColors.border),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -1464,13 +1449,7 @@ class _ActivityDetailChip extends StatelessWidget {
       children: [
         Icon(icon, color: CircleScreen._purple, size: 17),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            color: CircleScreen._ink,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
       ],
     ),
   );
@@ -1485,7 +1464,7 @@ class _CircleCommentTile extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(18),
     ),
     child: Row(
@@ -1519,10 +1498,7 @@ class _CircleCommentTile extends StatelessWidget {
                   Expanded(
                     child: Text(
                       comment.authorName,
-                      style: const TextStyle(
-                        color: CircleScreen._ink,
-                        fontWeight: FontWeight.w800,
-                      ),
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
                   if (comment.createdAt != null)
@@ -1536,10 +1512,7 @@ class _CircleCommentTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 4),
-              Text(
-                comment.text,
-                style: const TextStyle(color: CircleScreen._ink, height: 1.35),
-              ),
+              Text(comment.text, style: const TextStyle(height: 1.35)),
             ],
           ),
         ),
@@ -1654,7 +1627,6 @@ class _CircleFitnessSummaryState extends State<_CircleFitnessSummary> {
                             Text(
                               '$overallPercent%',
                               style: const TextStyle(
-                                color: CircleScreen._ink,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w900,
                               ),
@@ -1670,7 +1642,6 @@ class _CircleFitnessSummaryState extends State<_CircleFitnessSummary> {
                             const Text(
                               "Today's Fitness",
                               style: TextStyle(
-                                color: CircleScreen._ink,
                                 fontSize: 18,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -1828,7 +1799,7 @@ class _FriendsTabState extends State<_FriendsTab> {
       Container(
         height: 58,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.vivordoColors.card,
           borderRadius: BorderRadius.circular(18),
           boxShadow: const [
             BoxShadow(
@@ -2088,11 +2059,7 @@ class _FriendSearchResult extends StatelessWidget {
         Expanded(
           child: Text(
             profile.username,
-            style: const TextStyle(
-              color: CircleScreen._ink,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-            ),
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
         ),
         FilledButton(
@@ -2134,7 +2101,6 @@ class _FriendRequestTile extends StatelessWidget {
               Text(
                 request.profile.username,
                 style: const TextStyle(
-                  color: CircleScreen._ink,
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                 ),
@@ -2169,7 +2135,7 @@ class _FriendTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: Colors.white,
+    color: context.vivordoColors.card,
     borderRadius: BorderRadius.circular(22),
     child: InkWell(
       borderRadius: BorderRadius.circular(22),
@@ -2187,7 +2153,6 @@ class _FriendTile extends StatelessWidget {
                   Text(
                     profile.username,
                     style: const TextStyle(
-                      color: CircleScreen._ink,
                       fontSize: 17,
                       fontWeight: FontWeight.w800,
                     ),
@@ -2220,7 +2185,7 @@ void _showFriendProfile(BuildContext context, CircleProfile profile) {
         margin: const EdgeInsets.all(14),
         padding: const EdgeInsets.fromLTRB(24, 14, 24, 28),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.vivordoColors.card,
           borderRadius: BorderRadius.circular(28),
         ),
         child: Column(
@@ -2230,7 +2195,7 @@ void _showFriendProfile(BuildContext context, CircleProfile profile) {
               width: 42,
               height: 5,
               decoration: BoxDecoration(
-                color: const Color(0xFFDADAE4),
+                color: context.vivordoColors.border,
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
@@ -2240,11 +2205,7 @@ void _showFriendProfile(BuildContext context, CircleProfile profile) {
             Text(
               profile.username,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: CircleScreen._ink,
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-              ),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
             Text(
@@ -2271,7 +2232,7 @@ void _showFriendProfile(BuildContext context, CircleProfile profile) {
                     vertical: 16,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFF5E9),
+                    color: context.vivordoColors.cardMuted,
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: Row(
@@ -2286,7 +2247,6 @@ void _showFriendProfile(BuildContext context, CircleProfile profile) {
                       Text(
                         '$streak-day streak',
                         style: const TextStyle(
-                          color: CircleScreen._ink,
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
                         ),
@@ -2314,7 +2274,7 @@ class _CircleEmptyRow extends StatelessWidget {
     width: double.infinity,
     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(20),
     ),
     child: Row(
@@ -2348,9 +2308,9 @@ class _CircleCard extends StatelessWidget {
     width: double.infinity,
     padding: const EdgeInsets.all(20),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(24),
-      border: Border.all(color: Colors.black.withValues(alpha: .05)),
+      border: Border.all(color: context.vivordoColors.border),
       boxShadow: const [
         BoxShadow(
           color: Color(0x0A000000),
@@ -2419,7 +2379,6 @@ class _CircleBenefit extends StatelessWidget {
               Text(
                 title,
                 style: const TextStyle(
-                  color: CircleScreen._ink,
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
                 ),

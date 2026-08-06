@@ -97,7 +97,11 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 24),
               const Text(
                 'Reset Password',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textDark),
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  
+                ),
               ),
               const SizedBox(height: 6),
               const Text(
@@ -163,7 +167,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         )
                       : const Text(
                           'Send Reset Link',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                 ),
               ),
@@ -206,7 +213,10 @@ class _LoginScreenState extends State<LoginScreen> {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 24,
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -221,7 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: OverflowBox(
                                 maxHeight: 300,
                                 child: Image.asset(
-                                  'assets/vivordo_logo.png',
+                                  'assets/vivordo_logo_long.png',
                                   width: 380,
                                   height: 300,
                                   fit: BoxFit.contain,
@@ -245,7 +255,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
-                        color: textDark,
                         letterSpacing: -0.3,
                       ),
                     ),
@@ -262,7 +271,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextField(
                       controller: _emailCtrl,
                       keyboardType: TextInputType.emailAddress,
-                      style: const TextStyle(fontSize: 15, color: textDark),
+                      style: const TextStyle(fontSize: 15, ),
                       decoration: _inputDecoration(
                         hintText: 'you@example.com',
                         icon: Icons.mail_outline_rounded,
@@ -276,23 +285,26 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextField(
                       controller: _passCtrl,
                       obscureText: _obscurePassword,
-                      style: const TextStyle(fontSize: 15, color: textDark),
+                      style: const TextStyle(fontSize: 15, ),
                       onSubmitted: (_) => _login(),
-                      decoration: _inputDecoration(
-                        hintText: '••••••••',
-                        icon: Icons.lock_outline_rounded,
-                      ).copyWith(
-                        suffixIcon: GestureDetector(
-                          onTap: () => setState(() => _obscurePassword = !_obscurePassword),
-                          child: Icon(
-                            _obscurePassword
-                                ? Icons.visibility_off_outlined
-                                : Icons.visibility_outlined,
-                            color: textGrey,
-                            size: 20,
+                      decoration:
+                          _inputDecoration(
+                            hintText: '••••••••',
+                            icon: Icons.lock_outline_rounded,
+                          ).copyWith(
+                            suffixIcon: GestureDetector(
+                              onTap: () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
+                              child: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                color: textGrey,
+                                size: 20,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
                     ),
 
                     const SizedBox(height: 10),
@@ -340,7 +352,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               )
                             : const Text(
                                 'Sign In',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                       ),
                     ),
@@ -355,7 +370,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           child: Text(
                             'or',
-                            style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                            style: TextStyle(
+                              color: Colors.grey.shade400,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                         Expanded(child: Divider(color: Colors.grey.shade200)),
@@ -381,7 +399,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? const SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2.5),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                ),
                               )
                             : Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -397,7 +417,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   SizedBox(width: 12),
                                   Text(
                                     'Continue with Google',
-                                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -414,7 +437,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           child: Text(
                             'New here?',
-                            style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                            style: TextStyle(
+                              color: Colors.grey.shade400,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                         Expanded(child: Divider(color: Colors.grey.shade200)),
@@ -430,18 +456,25 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: OutlinedButton(
                         onPressed: () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const WelcomeBetaScreen()),
+                          MaterialPageRoute(
+                            builder: (_) => const WelcomeBetaScreen(),
+                          ),
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: accentPurple,
-                          side: BorderSide(color: accentPurple.withOpacity(0.4)),
+                          side: BorderSide(
+                            color: accentPurple.withOpacity(0.4),
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
                         child: const Text(
                           'Create Account',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
@@ -453,11 +486,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.lock_outline_rounded, size: 13, color: Colors.grey.shade400),
+                          Icon(
+                            Icons.lock_outline_rounded,
+                            size: 13,
+                            color: Colors.grey.shade400,
+                          ),
                           const SizedBox(width: 5),
                           Text(
                             'All data is encrypted and securely stored.',
-                            style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
+                            style: TextStyle(
+                              color: Colors.grey.shade400,
+                              fontSize: 11,
+                            ),
                           ),
                         ],
                       ),
@@ -511,11 +551,7 @@ class _FieldLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: Color(0xFF1C1C1E),
-      ),
+      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
     );
   }
 }

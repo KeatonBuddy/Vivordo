@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
 
 import '../src/services/activity_goals_service.dart';
@@ -13,7 +14,6 @@ import '../src/services/personal_profile_service.dart';
 import 'personal_profile_screen.dart';
 
 const _purple = Color(0xFF6B5CE7);
-const _background = Color(0xFFF2F2F7);
 const _ink = Color(0xFF17172B);
 const _muted = Color(0xFF85859B);
 
@@ -48,7 +48,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _background,
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
@@ -58,13 +58,13 @@ class _FitnessScreenState extends State<FitnessScreen> {
             children: [
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Fitness',
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
-                        color: _ink,
+                        color: context.vivordoColors.textPrimary,
                       ),
                     ),
                   ),
@@ -125,9 +125,9 @@ class _FitnessScreenState extends State<FitnessScreen> {
               Container(
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: context.vivordoColors.card,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.black12),
+                  border: Border.all(color: context.vivordoColors.border),
                 ),
                 child: Row(
                   children: [
@@ -711,10 +711,10 @@ class _PersonalProfileCardState extends State<_PersonalProfileCard> {
                 ],
               ),
               child: Material(
-                color: Colors.white,
+                color: context.vivordoColors.card,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
-                  side: BorderSide(color: Colors.black.withValues(alpha: .07)),
+                  side: BorderSide(color: context.vivordoColors.border),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
@@ -730,7 +730,7 @@ class _PersonalProfileCardState extends State<_PersonalProfileCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Row(
+                        Row(
                           children: [
                             _IconBox(
                               icon: Icons.person_outline_rounded,
@@ -743,7 +743,7 @@ class _PersonalProfileCardState extends State<_PersonalProfileCard> {
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w800,
-                                  color: _ink,
+                                  color: context.vivordoColors.textPrimary,
                                 ),
                               ),
                             ),
@@ -1075,9 +1075,9 @@ class _AllWorkoutsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: _background,
+    backgroundColor: context.vivordoColors.page,
     appBar: AppBar(
-      backgroundColor: _background,
+      backgroundColor: context.vivordoColors.page,
       elevation: 0,
       title: const Text(
         'All Workouts',
@@ -1167,9 +1167,9 @@ class _RecentWorkoutRow extends StatelessWidget {
       builder: (context) => FractionallySizedBox(
         heightFactor: .82,
         child: Container(
-          decoration: const BoxDecoration(
-            color: _background,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          decoration: BoxDecoration(
+            color: context.vivordoColors.page,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: SafeArea(
             top: false,
@@ -1652,9 +1652,9 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: _background,
+    backgroundColor: context.vivordoColors.page,
     appBar: AppBar(
-      backgroundColor: _background,
+      backgroundColor: context.vivordoColors.page,
       elevation: 0,
       title: const Text(
         'Fitness Goals',
@@ -1790,7 +1790,7 @@ class _WorkoutStatusMessageState extends State<_WorkoutStatusMessage> {
   Widget build(BuildContext context) {
     final draft = widget.draft;
     if (draft == null) {
-      return const Column(
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
@@ -1798,7 +1798,7 @@ class _WorkoutStatusMessageState extends State<_WorkoutStatusMessage> {
             style: TextStyle(
               fontSize: 23,
               fontWeight: FontWeight.w800,
-              color: _ink,
+              color: context.vivordoColors.textPrimary,
             ),
           ),
           SizedBox(height: 5),
@@ -1822,10 +1822,10 @@ class _WorkoutStatusMessageState extends State<_WorkoutStatusMessage> {
       children: [
         Text(
           elapsed,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 23,
             fontWeight: FontWeight.w800,
-            color: _ink,
+            color: context.vivordoColors.textPrimary,
           ),
         ),
         const SizedBox(height: 5),
@@ -2155,9 +2155,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       (total, exercise) => total + exercise.sets.length,
     );
     return Scaffold(
-      backgroundColor: _background,
+      backgroundColor: context.vivordoColors.page,
       appBar: AppBar(
-        backgroundColor: _background,
+        backgroundColor: context.vivordoColors.page,
         elevation: 0,
         title: const Text(
           'New Workout',
@@ -2371,7 +2371,7 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
           .firstOrNull;
 
       return Scaffold(
-        backgroundColor: _background,
+        backgroundColor: context.vivordoColors.page,
         body: SafeArea(
           child: Column(
             children: [
@@ -2383,14 +2383,14 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                       onPressed: () => Navigator.pop(context),
                       child: const Text('Cancel'),
                     ),
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         'Add Workout',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
-                          color: _ink,
+                          color: context.vivordoColors.textPrimary,
                         ),
                       ),
                     ),
@@ -2405,10 +2405,12 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                     hintText: 'Search saved workouts',
                     prefixIcon: const Icon(Icons.search_rounded),
                     filled: true,
-                    fillColor: Colors.white,
+                    fillColor: context.vivordoColors.input,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(18),
-                      borderSide: const BorderSide(color: Color(0xFFE1E1E8)),
+                      borderSide: BorderSide(
+                        color: context.vivordoColors.border,
+                      ),
                     ),
                   ),
                   onChanged: (value) => setState(() => _search = value),
@@ -2446,9 +2448,11 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                     else
                       Container(
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: context.vivordoColors.card,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: const Color(0xFFE1E1E8)),
+                          border: Border.all(
+                            color: context.vivordoColors.border,
+                          ),
                         ),
                         child: Column(
                           children: [
@@ -2487,9 +2491,11 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
         bottomNavigationBar: SafeArea(
           child: Container(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: Color(0xFFE5E5EA))),
+            decoration: BoxDecoration(
+              color: context.vivordoColors.card,
+              border: Border(
+                top: BorderSide(color: context.vivordoColors.border),
+              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2543,7 +2549,7 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: selected ? const Color(0xFFF5F1FF) : Colors.transparent,
+    color: selected ? context.vivordoColors.cardMuted : Colors.transparent,
     child: InkWell(
       onTap: onTap,
       child: Padding(
@@ -2566,10 +2572,10 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
                 children: [
                   Text(
                     template.name,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: _ink,
+                      color: context.vivordoColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -2694,7 +2700,7 @@ class _WorkoutExerciseCard extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             decoration: BoxDecoration(
-              color: const Color(0xFFF5F3FF),
+              color: context.vivordoColors.cardMuted,
               borderRadius: BorderRadius.circular(14),
             ),
             child: const Row(
@@ -2867,7 +2873,6 @@ class _WorkoutSetRow extends StatelessWidget {
           textInputAction: TextInputAction.done,
           textAlign: TextAlign.center,
           decoration: const InputDecoration(
-            hintText: '0',
             isDense: true,
             border: OutlineInputBorder(),
           ),
@@ -2888,7 +2893,6 @@ class _WorkoutSetRow extends StatelessWidget {
           textInputAction: TextInputAction.done,
           textAlign: TextAlign.center,
           decoration: const InputDecoration(
-            hintText: '0',
             isDense: true,
             border: OutlineInputBorder(),
           ),
@@ -3170,7 +3174,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
     final exercises = _filteredExercises;
 
     return Scaffold(
-      backgroundColor: _background,
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: Column(
           children: [
@@ -3182,14 +3186,14 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                     onPressed: () => Navigator.pop(context),
                     child: const Text('Cancel'),
                   ),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Add Exercise',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w800,
-                        color: _ink,
+                        color: context.vivordoColors.textPrimary,
                       ),
                     ),
                   ),
@@ -3207,10 +3211,10 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                   hintText: 'Search exercises',
                   prefixIcon: const Icon(Icons.search_rounded),
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: context.vivordoColors.input,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(18),
-                    borderSide: const BorderSide(color: Color(0xFFE1E1E8)),
+                    borderSide: BorderSide(color: context.vivordoColors.border),
                   ),
                 ),
                 onChanged: (value) => setState(() => _search = value),
@@ -3267,9 +3271,11 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
       bottomNavigationBar: SafeArea(
         child: Container(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0xFFE5E5EA))),
+          decoration: BoxDecoration(
+            color: context.vivordoColors.card,
+            border: Border(
+              top: BorderSide(color: context.vivordoColors.border),
+            ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -3335,9 +3341,9 @@ class _ExercisePickerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: const Color(0xFFE1E1E8)),
+      border: Border.all(color: context.vivordoColors.border),
     ),
     child: Column(
       children: [
@@ -3368,7 +3374,7 @@ class _ExercisePickerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: selected ? const Color(0xFFF5F1FF) : Colors.transparent,
+    color: selected ? context.vivordoColors.cardMuted : Colors.transparent,
     child: InkWell(
       onTap: onTap,
       child: Padding(
@@ -3383,10 +3389,10 @@ class _ExercisePickerRow extends StatelessWidget {
                 children: [
                   Text(
                     exercise.name,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: _ink,
+                      color: context.vivordoColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -3759,12 +3765,12 @@ class _Card extends StatelessWidget {
     width: double.infinity,
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: Colors.black.withValues(alpha: .07)),
+      border: Border.all(color: context.vivordoColors.border),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: .035),
+          color: context.vivordoColors.shadow,
           blurRadius: 10,
           offset: const Offset(0, 3),
         ),
@@ -3792,9 +3798,9 @@ class _PillButton extends StatelessWidget {
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.black12),
+        border: Border.all(color: context.vivordoColors.border),
       ),
       child: Row(
         children: [
@@ -4189,7 +4195,7 @@ class _StrengthRow extends StatelessWidget {
           minHeight: 7,
           borderRadius: BorderRadius.circular(8),
           color: _purple,
-          backgroundColor: const Color(0xFFE8E8EE),
+          backgroundColor: context.vivordoColors.input,
         ),
       ),
       const SizedBox(width: 10),
@@ -4293,7 +4299,7 @@ class _GoalTile extends StatelessWidget {
             TextButton(
               onPressed: onEdit,
               style: TextButton.styleFrom(
-                backgroundColor: const Color(0xFFF0ECFF),
+                backgroundColor: context.vivordoColors.cardMuted,
                 foregroundColor: _purple,
               ),
               child: const Text(
@@ -4308,7 +4314,7 @@ class _GoalTile extends StatelessWidget {
           minHeight: 7,
           borderRadius: BorderRadius.circular(8),
           color: _purple,
-          backgroundColor: const Color(0xFFE8E8EE),
+          backgroundColor: context.vivordoColors.input,
         ),
       ],
     ),

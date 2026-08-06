@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
@@ -1220,7 +1221,7 @@ class _PandaScreenState extends State<PandaScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: context.vivordoColors.page,
       appBar: _buildAppBar(),
       body: TabBarView(
         controller: _tabCtrl,
@@ -1248,7 +1249,7 @@ class _PandaScreenState extends State<PandaScreen>
       leading: widget.onClose == null
           ? null
           : IconButton(
-              icon: const Icon(Icons.close_rounded, color: _ink),
+              icon: const Icon(Icons.close_rounded, ),
               tooltip: 'Close chat',
               onPressed: widget.onClose,
             ),
@@ -1262,11 +1263,7 @@ class _PandaScreenState extends State<PandaScreen>
             children: [
               const Text(
                 'AI Assistant',
-                style: TextStyle(
-                  color: _ink,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
               ),
               Text(
                 statusText,
@@ -1398,7 +1395,7 @@ class _PandaScreenState extends State<PandaScreen>
             const SizedBox(height: 14),
             const Text(
               'Analysing your data…',
-              style: TextStyle(color: Colors.black45, fontSize: 14),
+              style: TextStyle(fontSize: 14),
             ),
           ],
         ),
@@ -1415,13 +1412,13 @@ class _PandaScreenState extends State<PandaScreen>
               const Icon(
                 Icons.wifi_off_rounded,
                 size: 48,
-                color: Colors.black26,
+                
               ),
               const SizedBox(height: 16),
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.black54),
+                style: const TextStyle(),
               ),
               const SizedBox(height: 20),
               ElevatedButton.icon(
@@ -1618,7 +1615,7 @@ class _PandaScreenState extends State<PandaScreen>
                         Text(
                           text,
                           style: const TextStyle(
-                            color: Colors.black87,
+                            
                             fontSize: 15,
                             height: 1.45,
                           ),
@@ -1741,7 +1738,7 @@ class _PandaScreenState extends State<PandaScreen>
               ),
               child: Text(
                 text,
-                style: const TextStyle(color: _ink, fontSize: 15, height: 1.45),
+                style: const TextStyle(fontSize: 15, height: 1.45),
               ),
             ),
           ),
@@ -1802,7 +1799,7 @@ class _PandaScreenState extends State<PandaScreen>
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: Colors.black38,
+                
                 letterSpacing: 0.3,
               ),
             ),
@@ -1941,12 +1938,12 @@ class _PandaScreenState extends State<PandaScreen>
               Text(
                 '${_spikeAnswers.length} answer${_spikeAnswers.length == 1 ? '' : 's'} captured'
                 '${_sessionSlots.isNotEmpty ? ' · ${_sessionSlots.length} insights extracted' : ''}',
-                style: const TextStyle(color: Colors.black45, fontSize: 13),
+                style: const TextStyle(fontSize: 13),
               ),
               const SizedBox(height: 4),
               const Text(
                 'Tap a category above to explore, or start a new session.',
-                style: TextStyle(color: Colors.black38, fontSize: 12),
+                style: TextStyle(fontSize: 12),
               ),
               const SizedBox(height: 10),
               TextButton.icon(
@@ -2086,11 +2083,7 @@ class _PandaScreenState extends State<PandaScreen>
                 const Expanded(
                   child: Text(
                     'Past Sessions',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: _ink,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                 ),
               ],
@@ -2108,7 +2101,7 @@ class _PandaScreenState extends State<PandaScreen>
                             "No sessions yet.\nComplete a chat and it'll appear here.",
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.black45,
+                              
                               height: 1.5,
                             ),
                           ),
@@ -2216,7 +2209,6 @@ class _PandaScreenState extends State<PandaScreen>
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
-                          color: _ink,
                         ),
                       ),
                       const SizedBox(height: 3),
@@ -2224,7 +2216,7 @@ class _PandaScreenState extends State<PandaScreen>
                         headerLabel,
                         style: const TextStyle(
                           fontSize: 12,
-                          color: Colors.black45,
+                          
                         ),
                       ),
                     ],
@@ -2318,18 +2310,14 @@ class _PandaScreenState extends State<PandaScreen>
               const Expanded(
                 child: Text(
                   'Your Answers',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: _ink,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
               ),
               Text(
                 'tap ✏️ to correct',
                 style: TextStyle(
                   fontSize: 10,
-                  color: Colors.black38,
+                  
                   fontStyle: FontStyle.italic,
                 ),
               ),
@@ -2371,7 +2359,7 @@ class _PandaScreenState extends State<PandaScreen>
                                   e.key,
                                   style: const TextStyle(
                                     fontSize: 11,
-                                    color: Colors.black45,
+                                    
                                     height: 1.35,
                                   ),
                                 ),
@@ -2383,7 +2371,6 @@ class _PandaScreenState extends State<PandaScreen>
                                         displayAnswer,
                                         style: const TextStyle(
                                           fontSize: 13,
-                                          color: _ink,
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
@@ -2436,11 +2423,7 @@ class _PandaScreenState extends State<PandaScreen>
         if (hasSlots) ...[
           const Text(
             'Extracted Insights',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              color: _ink,
-            ),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -2479,11 +2462,7 @@ class _PandaScreenState extends State<PandaScreen>
           const SizedBox(height: 4),
           const Text(
             'Edit History',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              color: _ink,
-            ),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
           ),
           const SizedBox(height: 6),
           ...corrections.map(
@@ -2503,7 +2482,7 @@ class _PandaScreenState extends State<PandaScreen>
                       '${c.questionId}: "${c.oldAnswer}" → "${c.newAnswer}"',
                       style: const TextStyle(
                         fontSize: 11,
-                        color: Colors.black45,
+                        
                         height: 1.3,
                       ),
                     ),
@@ -2552,7 +2531,7 @@ class _PandaScreenState extends State<PandaScreen>
               questionId,
               style: const TextStyle(
                 fontSize: 13,
-                color: Colors.black54,
+                
                 height: 1.4,
                 fontStyle: FontStyle.italic,
               ),
@@ -2582,7 +2561,7 @@ class _PandaScreenState extends State<PandaScreen>
               '⚡ Correcting your answer helps Panda learn your stress patterns more accurately.',
               style: TextStyle(
                 fontSize: 11,
-                color: Colors.black38,
+                
                 height: 1.4,
               ),
             ),
@@ -2593,7 +2572,7 @@ class _PandaScreenState extends State<PandaScreen>
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text(
               'Cancel',
-              style: TextStyle(color: Colors.black45),
+              style: TextStyle(),
             ),
           ),
           ElevatedButton(
@@ -2917,7 +2896,7 @@ class _PandaScreenState extends State<PandaScreen>
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 11.5,
-                      color: Colors.black54,
+                      
                       height: 1.35,
                     ),
                   ),
@@ -3009,7 +2988,7 @@ class _PandaScreenState extends State<PandaScreen>
       );
     }
     if (turn.calendarStatus == _CalendarActionStatus.cancelled) {
-      return const Text('Cancelled', style: TextStyle(color: Colors.black54));
+      return const Text('Cancelled', style: TextStyle());
     }
     if (turn.calendarStatus == _CalendarActionStatus.failed) {
       return Text(

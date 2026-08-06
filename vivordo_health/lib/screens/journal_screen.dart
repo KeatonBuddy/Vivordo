@@ -1,13 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
 
 import '../src/services/metrics_service.dart';
 import '../src/services/journal_lock_service.dart';
 
 const _purple = Color(0xFF5B4CF4);
-const _background = Color(0xFFF4F4FA);
 const _ink = Color(0xFF17172B);
 const _muted = Color(0xFF7F8098);
 const _green = Color(0xFF05A956);
@@ -87,7 +87,7 @@ class _JournalScreenState extends State<JournalScreen> {
     if (!_accessChecked || !_accessGranted) return _buildAccessGate();
     final entries = _entries;
     return Scaffold(
-      backgroundColor: _background,
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         bottom: false,
         child: entries == null
@@ -135,8 +135,8 @@ class _JournalScreenState extends State<JournalScreen> {
         onPressed: () => Navigator.maybePop(context),
         icon: const Icon(Icons.chevron_left_rounded, size: 30),
         style: IconButton.styleFrom(
-          backgroundColor: Colors.white,
-          foregroundColor: _ink,
+          backgroundColor: context.vivordoColors.card,
+          foregroundColor: context.vivordoColors.textPrimary,
         ),
       ),
       const SizedBox(width: 8),
@@ -144,7 +144,6 @@ class _JournalScreenState extends State<JournalScreen> {
         child: Text(
           'Journal',
           style: TextStyle(
-            color: _ink,
             fontSize: 36,
             height: 1,
             fontWeight: FontWeight.w900,
@@ -155,7 +154,7 @@ class _JournalScreenState extends State<JournalScreen> {
         width: 54,
         height: 54,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: context.vivordoColors.card,
           borderRadius: BorderRadius.circular(17),
           boxShadow: const [
             BoxShadow(
@@ -178,7 +177,7 @@ class _JournalScreenState extends State<JournalScreen> {
   );
 
   Widget _buildAccessGate() => Scaffold(
-    backgroundColor: _background,
+    backgroundColor: context.vivordoColors.page,
     body: SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -196,7 +195,7 @@ class _JournalScreenState extends State<JournalScreen> {
               width: 86,
               height: 86,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: context.vivordoColors.card,
                 borderRadius: BorderRadius.circular(28),
               ),
               child: const Icon(Icons.lock_rounded, color: _purple, size: 42),
@@ -204,11 +203,7 @@ class _JournalScreenState extends State<JournalScreen> {
             const SizedBox(height: 22),
             Text(
               _accessChecked ? 'Journal Locked' : 'Opening Journal…',
-              style: const TextStyle(
-                color: _ink,
-                fontSize: 27,
-                fontWeight: FontWeight.w900,
-              ),
+              style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
             Text(
@@ -334,7 +329,7 @@ class _JournalScreenState extends State<JournalScreen> {
         title: const Text(
           'Protect your journal',
           textAlign: TextAlign.center,
-          style: TextStyle(color: _ink, fontWeight: FontWeight.w900),
+          style: TextStyle(fontWeight: FontWeight.w900),
         ),
         content: const Column(
           mainAxisSize: MainAxisSize.min,
@@ -390,7 +385,7 @@ class _JournalScreenState extends State<JournalScreen> {
         children: [
           IconButton(
             onPressed: () => setState(() => _weekOffset--),
-            icon: const Icon(Icons.chevron_left_rounded, color: _ink),
+            icon: const Icon(Icons.chevron_left_rounded),
           ),
           for (final day in days)
             Expanded(
@@ -419,7 +414,7 @@ class _JournalScreenState extends State<JournalScreen> {
                         style: TextStyle(
                           color: _sameDay(day, _selectedDate)
                               ? Colors.white
-                              : _ink,
+                              : context.vivordoColors.textPrimary,
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
                         ),
@@ -431,7 +426,7 @@ class _JournalScreenState extends State<JournalScreen> {
             ),
           IconButton(
             onPressed: () => setState(() => _weekOffset++),
-            icon: const Icon(Icons.chevron_right_rounded, color: _ink),
+            icon: const Icon(Icons.chevron_right_rounded),
           ),
         ],
       ),
@@ -462,11 +457,7 @@ class _JournalScreenState extends State<JournalScreen> {
                 children: [
                   const Text(
                     'How are you feeling?',
-                    style: TextStyle(
-                      color: _ink,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -531,7 +522,7 @@ class _JournalScreenState extends State<JournalScreen> {
             hintText: 'Start writing…',
             hintStyle: const TextStyle(color: Color(0xFFA1A2B8)),
             filled: true,
-            fillColor: const Color(0xFFF5F4FB),
+            fillColor: context.vivordoColors.cardMuted,
             contentPadding: const EdgeInsets.all(15),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
@@ -762,9 +753,9 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: padding,
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(22),
-      border: Border.all(color: Colors.black.withValues(alpha: .045)),
+      border: Border.all(color: context.vivordoColors.border),
       boxShadow: const [
         BoxShadow(
           color: Color(0x0B000000),
@@ -790,10 +781,7 @@ class _JournalLockInfoRow extends StatelessWidget {
       Icon(icon, color: _purple, size: 20),
       const SizedBox(width: 11),
       Expanded(
-        child: Text(
-          text,
-          style: const TextStyle(color: _ink, fontSize: 13, height: 1.35),
-        ),
+        child: Text(text, style: const TextStyle(fontSize: 13, height: 1.35)),
       ),
     ],
   );
@@ -859,10 +847,7 @@ class _JournalEntryCard extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text(
-                      '${date.day}',
-                      style: const TextStyle(color: _ink, fontSize: 24),
-                    ),
+                    Text('${date.day}', style: const TextStyle(fontSize: 24)),
                   ],
                 ),
               ),
@@ -876,7 +861,6 @@ class _JournalEntryCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: _ink,
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
                       ),
@@ -955,13 +939,13 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
     final emoji = data['moodEmoji'] as String? ?? '☺';
     final shared = data['shareToCircle'] as bool? ?? false;
     return Scaffold(
-      backgroundColor: _background,
+      backgroundColor: context.vivordoColors.page,
       appBar: AppBar(
-        backgroundColor: _background,
+        backgroundColor: context.vivordoColors.page,
         surfaceTintColor: Colors.transparent,
         title: const Text(
           'Journal Entry',
-          style: TextStyle(color: _ink, fontWeight: FontWeight.w800),
+          style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
       body: SafeArea(
@@ -1037,7 +1021,6 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
                   Text(
                     title,
                     style: const TextStyle(
-                      color: _ink,
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
                     ),
@@ -1045,11 +1028,7 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
                   const SizedBox(height: 12),
                   Text(
                     text,
-                    style: const TextStyle(
-                      color: _ink,
-                      fontSize: 16,
-                      height: 1.55,
-                    ),
+                    style: const TextStyle(fontSize: 16, height: 1.55),
                   ),
                 ],
               ),
@@ -1127,7 +1106,7 @@ class _EmptyJournal extends StatelessWidget {
         const SizedBox(height: 9),
         const Text(
           'No entries for this day',
-          style: TextStyle(color: _ink, fontWeight: FontWeight.w800),
+          style: TextStyle(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Text(

@@ -12,6 +12,7 @@ import 'my_day_screen.dart';
 import '../src/services/analytics_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/health_service.dart';
+import '../theme/vivordo_theme.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final int initialIndex;
@@ -38,7 +39,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   final Set<int> _loadedTabs = {};
   late final List<Widget> _tabPages;
   late final PandaScreen _persistentChatScreen;
-  final Color primaryPurple = const Color(0xFF7B6EF6);
+  final Color primaryPurple = VivordoTheme.brand;
 
   /// Analytics screen name per tab index, aligned with the nav bar order.
   static const List<String> _screenNames = [
@@ -293,7 +294,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 child: AbsorbPointer(
                   child: RepaintBoundary(
                     child: ColoredBox(
-                      color: Color(0xFFFBFAFC),
+                      color: context.vivordoColors.page,
                       child: Center(
                         child: Image.asset(
                           'assets/vivordo_splash_logo_full.png',
@@ -330,14 +331,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   );
 
   Widget _buildFloatingNavBar() {
+    final colors = context.vivordoColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colors.card,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
+            color: colors.shadow,
             blurRadius: 20,
             offset: const Offset(0, 5),
           ),
@@ -409,7 +411,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                     ? Colors.white
                     : index == 2
                     ? primaryPurple
-                    : Colors.grey,
+                    : context.vivordoColors.textSecondary,
                 size: 23,
               ),
             const SizedBox(height: 3),
@@ -420,7 +422,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                     ? Colors.white
                     : index == 2
                     ? primaryPurple
-                    : Colors.grey,
+                    : context.vivordoColors.textSecondary,
                 fontSize: 9,
                 fontWeight: FontWeight.bold,
               ),

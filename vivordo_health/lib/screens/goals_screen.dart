@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 enum ScanState { idle, scanning, complete }
@@ -45,7 +45,6 @@ class _GoalsScreenState extends State<GoalsScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
   }
-
 
   @override
   void dispose() {
@@ -99,7 +98,6 @@ class _GoalsScreenState extends State<GoalsScreen>
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: textDark,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -166,11 +164,7 @@ class _GoalsScreenState extends State<GoalsScreen>
         const Text(
           'Place your finger on the camera',
           textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: textDark,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 10),
         const Text(
@@ -229,8 +223,9 @@ class _GoalsScreenState extends State<GoalsScreen>
                     child: CircularProgressIndicator(
                       strokeWidth: 4,
                       backgroundColor: accentPurple.withOpacity(0.2),
-                      valueColor:
-                          const AlwaysStoppedAnimation<Color>(accentPurple),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        accentPurple,
+                      ),
                     ),
                   ),
                 ),
@@ -252,11 +247,7 @@ class _GoalsScreenState extends State<GoalsScreen>
         const SizedBox(height: 32),
         const Text(
           'Scanning...',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: textDark,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         const Text(
@@ -287,8 +278,7 @@ class _GoalsScreenState extends State<GoalsScreen>
       children: [
         Container(
           width: double.infinity,
-          padding:
-              const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+          padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
           decoration: BoxDecoration(
             color: accentPurple,
             borderRadius: BorderRadius.circular(24),
@@ -333,17 +323,29 @@ class _GoalsScreenState extends State<GoalsScreen>
           children: [
             Expanded(
               child: _buildMetricCard(
-                  Icons.favorite_rounded, 'Heart Rate', '68 bpm', redColor),
+                Icons.favorite_rounded,
+                'Heart Rate',
+                '68 bpm',
+                redColor,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: _buildMetricCard(
-                  Icons.show_chart_rounded, 'HRV', '52 ms', greenColor),
+                Icons.show_chart_rounded,
+                'HRV',
+                '52 ms',
+                greenColor,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: _buildMetricCard(
-                  Icons.psychology_outlined, 'Strain', 'Low', accentPurple),
+                Icons.psychology_outlined,
+                'Strain',
+                'Low',
+                accentPurple,
+              ),
             ),
           ],
         ),
@@ -361,11 +363,7 @@ class _GoalsScreenState extends State<GoalsScreen>
             children: [
               Text(
                 'AI Insight',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: textDark,
-                ),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
               SizedBox(height: 6),
               Text(
@@ -399,7 +397,11 @@ class _GoalsScreenState extends State<GoalsScreen>
   }
 
   Widget _buildMetricCard(
-      IconData icon, String label, String value, Color color) {
+    IconData icon,
+    String label,
+    String value,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
       decoration: BoxDecoration(
@@ -420,11 +422,7 @@ class _GoalsScreenState extends State<GoalsScreen>
           const SizedBox(height: 8),
           Text(
             value,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: textDark,
-            ),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 2),
           Text(

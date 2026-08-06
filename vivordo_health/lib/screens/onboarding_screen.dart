@@ -1,12 +1,7 @@
-
-
 import 'package:flutter/material.dart';
 
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({
-    super.key,
-    this.onFinished,
-  });
+  const OnboardingScreen({super.key, this.onFinished});
 
   /// Called when the user taps Skip or Get Started.
   ///
@@ -131,10 +126,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   },
                 ),
               ),
-              _PageDots(
-                count: _pages.length,
-                currentIndex: _currentPage,
-              ),
+              _PageDots(count: _pages.length, currentIndex: _currentPage),
               const SizedBox(height: 28),
               SizedBox(
                 width: double.infinity,
@@ -160,10 +152,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 }
 
 class _OnboardingPage extends StatelessWidget {
-  const _OnboardingPage({
-    required this.data,
-    required this.color,
-  });
+  const _OnboardingPage({required this.data, required this.color});
 
   final _OnboardingPageData data;
   final Color color;
@@ -182,11 +171,7 @@ class _OnboardingPage extends StatelessWidget {
             color: color.withValues(alpha: 0.12),
             shape: BoxShape.circle,
           ),
-          child: Icon(
-            data.icon,
-            size: 64,
-            color: color,
-          ),
+          child: Icon(data.icon, size: 64, color: color),
         ),
         const SizedBox(height: 44),
         Text(
@@ -211,10 +196,7 @@ class _OnboardingPage extends StatelessWidget {
 }
 
 class _PageDots extends StatelessWidget {
-  const _PageDots({
-    required this.count,
-    required this.currentIndex,
-  });
+  const _PageDots({required this.count, required this.currentIndex});
 
   final int count;
   final int currentIndex;
@@ -236,9 +218,7 @@ class _PageDots extends StatelessWidget {
           margin: const EdgeInsets.symmetric(horizontal: 4),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            color: isActive
-                ? colorScheme.primary
-                : colorScheme.outlineVariant,
+            color: isActive ? colorScheme.primary : colorScheme.outlineVariant,
           ),
         );
       }),

@@ -47,11 +47,10 @@ exports.circleEngagementNotification = onDocumentCreated(
           .collection("circle").doc("profile");
       const activity = owner.collection("circle_activity").doc(activityId);
       const tokens = owner.collection("notification_tokens");
-      const [ownerSnapshot, actorSnapshot, activitySnapshot, tokenSnapshot] =
+      const [ownerSnapshot, actorSnapshot, tokenSnapshot] =
         await Promise.all([
           owner.get(),
           actorProfile.get(),
-          activity.get(),
           tokens.get(),
         ]);
 
@@ -72,17 +71,14 @@ exports.circleEngagementNotification = onDocumentCreated(
       }
 
       const actorName = actorSnapshot.data()?.username || "A Circle friend";
-      const activityName = activitySnapshot.data()?.name || "your activity";
-      let title;
+      const title = "Circle";
       let body;
 
       if (type === "like") {
-        title = `${actorName} liked your activity`;
-        body = `${actorName} liked ${activityName}.`;
+        body = `${actorName} liked your post`;
       } else {
-        title = `${actorName} commented on your activity`;
         const commentId = engagement.commentId;
-        let commentText = "Open Circle to read their comment.";
+        let commentText = "on your post";
         if (commentId) {
           const comment = await activity.collection("comments")
               .doc(commentId).get();
@@ -91,7 +87,7 @@ exports.circleEngagementNotification = onDocumentCreated(
             commentText = text.trim().slice(0, 160);
           }
         }
-        body = commentText;
+        body = `${actorName} commented: ${commentText}`;
       }
 
       const tokenDocuments = tokenSnapshot.docs.filter((document) =>

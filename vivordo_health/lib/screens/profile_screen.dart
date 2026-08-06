@@ -12,6 +12,8 @@ import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -662,7 +664,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         final fitbitConnected = rawData['fitbitConnected'] == true;
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF2F2F7),
+          backgroundColor: context.vivordoColors.page,
           body: SafeArea(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -680,14 +682,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                           width: 38,
                           height: 38,
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: context.vivordoColors.card,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE5E5EA)),
+                            border: Border.all(
+                              color: context.vivordoColors.border,
+                            ),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.arrow_back_ios_new_rounded,
                             size: 16,
-                            color: Color(0xFF1C1C1E),
+                            color: context.vivordoColors.textPrimary,
                           ),
                         ),
                       ),
@@ -701,7 +705,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                               style: TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF1C1C1E),
                                 letterSpacing: -0.5,
                               ),
                             ),
@@ -770,7 +773,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               'Verify your new email: $pendingEmail\nCheck your inbox and tap the link.',
                               style: const TextStyle(
                                 fontSize: 13,
-                                color: Colors.black87,
+                                
                                 height: 1.4,
                               ),
                             ),
@@ -851,7 +854,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1C1C1E),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -1015,7 +1017,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1C1C1E),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -1173,7 +1174,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1C1C1E),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -1261,7 +1261,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1C1C1E),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -1454,6 +1453,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                   _buildCard(
                     children: [
                       _buildToggleRow(
+                        Icons.dark_mode_outlined,
+                        'Dark Mode',
+                        'Use Vivordo’s dark appearance',
+                        context.watch<ThemeController>().isDark,
+                        (value) =>
+                            context.read<ThemeController>().setDarkMode(value),
+                      ),
+                      _buildDivider(),
+                      _buildToggleRow(
                         Icons.monitor_heart_outlined,
                         'Scan Reminders',
                         '${scanReminderTimes.length} reminder${scanReminderTimes.length == 1 ? '' : 's'} each day',
@@ -1568,7 +1576,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                                         style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
-                                          color: Color(0xFF1C1C1E),
                                         ),
                                       ),
                                       Text(
@@ -1589,10 +1596,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               minLines: 3,
                               maxLines: 6,
                               textCapitalization: TextCapitalization.sentences,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF1C1C1E),
-                              ),
+                              style: const TextStyle(fontSize: 14),
                               decoration: InputDecoration(
                                 hintText: 'Describe the bug…',
                                 hintStyle: const TextStyle(
@@ -1712,10 +1716,10 @@ class _SettingsScreenState extends State<SettingsScreen>
       padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         title.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF8E8E93),
+          color: context.vivordoColors.textSecondary,
           letterSpacing: 0.8,
         ),
       ),
@@ -1724,21 +1728,22 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Widget _buildCard({required List<Widget> children}) {
     return Material(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(20),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFE5E5EA)),
+          border: Border.all(color: context.vivordoColors.border),
         ),
         child: Column(children: children),
       ),
     );
   }
 
-  Widget _buildDivider() => const Divider(height: 1, color: Color(0xFFF2F2F7));
+  Widget _buildDivider() =>
+      Divider(height: 1, color: context.vivordoColors.border);
 
   Widget _buildInfoRow(
     IconData icon,
@@ -1773,7 +1778,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF1C1C1E),
                     ),
                   ),
                 ],
@@ -1832,7 +1836,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1C1C1E),
                           ),
                         ),
                       ],
@@ -1887,17 +1890,17 @@ class _SettingsScreenState extends State<SettingsScreen>
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF1C1C1E),
+                    color: context.vivordoColors.textPrimary,
                   ),
                 ),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: Color(0xFF8E8E93),
+                    color: context.vivordoColors.textSecondary,
                   ),
                 ),
               ],

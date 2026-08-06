@@ -96,6 +96,7 @@ flutter:
     - assets/panda_home_icon.png
     - assets/finalLogo.png
     - assets/vivordo_logo.png
+    - assets/vivordo_logo_long.png
     - assets/vivordo_splash_logo_v2.png
     - assets/vivordo_splash_logo_full.png
     - assets/recommendations.json

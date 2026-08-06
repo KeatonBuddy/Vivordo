@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
@@ -28,7 +29,6 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   static const Color accentPurple = Color(0xFF7B6EF6);
   static const Color greenColor = Color(0xFF34C759);
-  static const Color bgColor = Color(0xFFF2F2F7);
   static const Color cardWhite = Colors.white;
   static const Color textDark = Color(0xFF1C1C1E);
   static const Color textGrey = Color(0xFF8E8E93);
@@ -406,7 +406,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
@@ -417,13 +417,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 48),
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Metrics',
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
-                        color: textDark,
+                        color: context.vivordoColors.textPrimary,
                         letterSpacing: -0.5,
                       ),
                     ),
@@ -801,9 +801,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Container(
           height: MediaQuery.sizeOf(context).height * 0.78,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          decoration: BoxDecoration(
+            color: context.vivordoColors.card,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: SafeArea(
             top: false,
@@ -813,13 +813,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding: const EdgeInsets.fromLTRB(20, 16, 12, 10),
                   child: Row(
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           'Edit dashboard layout',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w700,
-                            color: textDark,
+                            color: context.vivordoColors.textPrimary,
                           ),
                         ),
                       ),
@@ -1034,9 +1034,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
+        border: Border.all(color: context.vivordoColors.border),
       ),
       child: Row(
         children: [
@@ -1055,10 +1055,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: textDark,
+                    color: context.vivordoColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -1190,10 +1190,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               duration: const Duration(milliseconds: 250),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
               decoration: BoxDecoration(
-                color: active ? accentPurple : cardWhite,
+                color: active ? accentPurple : context.vivordoColors.cardMuted,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: active ? accentPurple : const Color(0xFFE5E5EA),
+                  color: active ? accentPurple : context.vivordoColors.border,
                 ),
               ),
               child: Text(
@@ -1222,16 +1222,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
+        border: Border.all(color: context.vivordoColors.border),
       ),
       child: Column(
         children: [
           Text(
             label.toUpperCase(),
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 9,
               color: textGrey,
               fontWeight: FontWeight.w600,
@@ -1241,10 +1241,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 6),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: textDark,
+              color: context.vivordoColors.textPrimary,
             ),
           ),
           const SizedBox(height: 4),
@@ -1299,9 +1299,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
+        border: Border.all(color: context.vivordoColors.border),
       ),
       child: Row(
         children: [
@@ -1333,10 +1333,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   children: [
                     Text(
                       avg == null ? '--' : avg.toInt().toString(),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: textDark,
+                        color: context.vivordoColors.textPrimary,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1399,24 +1399,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
+        border: Border.all(color: context.vivordoColors.border),
       ),
       child: Column(
         children: [
-          const Icon(
+          Icon(
             Icons.bar_chart_rounded,
             size: 48,
-            color: Color(0xFFE5E5EA),
+            color: context.vivordoColors.textSecondary,
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'No data for this period',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: textDark,
+              color: context.vivordoColors.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
@@ -1457,11 +1457,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
+        border: Border.all(color: context.vivordoColors.border),
       ),
-      child: const Row(
+      child: Row(
         children: [
           SizedBox(
             width: 22,
@@ -1481,7 +1481,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: textDark,
+                    color: context.vivordoColors.textPrimary,
                   ),
                 ),
                 SizedBox(height: 4),
@@ -1507,9 +1507,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         width: double.infinity,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: cardWhite,
+          color: context.vivordoColors.card,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFE5E5EA)),
+          border: Border.all(color: context.vivordoColors.border),
         ),
         child: Column(
           children: [
@@ -1519,12 +1519,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               color: Color(0xFF7B6EF6),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Apple Health not connected',
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: textDark,
+                color: context.vivordoColors.textPrimary,
               ),
             ),
             const SizedBox(height: 6),
@@ -1572,9 +1572,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
+        border: Border.all(color: context.vivordoColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1595,10 +1595,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: textDark,
+                    color: context.vivordoColors.textPrimary,
                   ),
                 ),
               ),
