@@ -1876,6 +1876,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         );
     if (selected == null || selected.isEmpty || !mounted) return;
+    final newDefinitions = selected.where(
+      (definition) =>
+          !exercises.any((exercise) => exercise.name == definition.name) &&
+          definition.category != 'Cardio' &&
+          definition.category != 'Sports',
+    );
+    final previousSets = await WorkoutService.loadLatestExerciseSets(
+      newDefinitions.map((definition) => definition.name),
+    );
+    if (!mounted) return;
     setState(() {
       final existing = {
         for (final exercise in exercises) exercise.name: exercise,
@@ -1885,7 +1895,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ..addAll(
           selected.map(
             (definition) =>
-                existing[definition.name] ?? _WorkoutExercise(definition),
+                existing[definition.name] ??
+                _WorkoutExercise(
+                  definition,
+                  previousSets:
+                      previousSets[definition.name.trim().toLowerCase()] ??
+                      const [],
+                ),
           ),
         );
     });
@@ -1901,6 +1917,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
     final records = <WorkoutExerciseRecord>[];
     for (final exercise in exercises) {
+      if (exercise.isSportsExercise) {
+        records.add(
+          WorkoutExerciseRecord(
+            name: exercise.definition.name,
+            category: exercise.definition.category,
+            sets: const [],
+          ),
+        );
+        continue;
+      }
       if (exercise.isDistanceExercise) {
         final distance = double.tryParse(exercise.distanceKm);
         if (distance == null || distance <= 0) {
@@ -2108,20 +2134,35 @@ class _ExerciseDefinition {
   final String category;
 }
 
+String _compactWorkoutNumber(double value) =>
+    value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
+
 class _WorkoutSet {
+  _WorkoutSet({this.previous});
+
+  final WorkoutSetRecord? previous;
   String lbs = '';
   String reps = '';
 }
 
 class _WorkoutExercise {
-  _WorkoutExercise(this.definition) : sets = [_WorkoutSet(), _WorkoutSet()];
+  _WorkoutExercise(
+    this.definition, {
+    List<WorkoutSetRecord> previousSets = const [],
+  }) : previousSets = previousSets,
+       sets = [
+         _WorkoutSet(previous: previousSets.firstOrNull),
+         _WorkoutSet(previous: previousSets.elementAtOrNull(1)),
+       ];
 
   final _ExerciseDefinition definition;
+  final List<WorkoutSetRecord> previousSets;
   final List<_WorkoutSet> sets;
   String distanceKm = '';
 
   String get name => definition.name;
   bool get isDistanceExercise => definition.category == 'Cardio';
+  bool get isSportsExercise => definition.category == 'Sports';
 }
 
 class _WorkoutExerciseCard extends StatelessWidget {
@@ -2168,7 +2209,31 @@ class _WorkoutExerciseCard extends StatelessWidget {
           ],
         ),
         const Divider(height: 26),
-        if (exercise.isDistanceExercise)
+        if (exercise.isSportsExercise)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F3FF),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.timer_outlined, color: _purple, size: 20),
+                SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'Time is tracked by the workout timer.',
+                    style: TextStyle(
+                      color: _muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else if (exercise.isDistanceExercise)
           TextFormField(
             initialValue: exercise.distanceKm,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -2190,6 +2255,17 @@ class _WorkoutExerciseCard extends StatelessWidget {
         else ...[
           const Row(
             children: [
+              SizedBox(
+                width: 70,
+                child: Text(
+                  'PREVIOUS',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: _muted,
+                  ),
+                ),
+              ),
               SizedBox(
                 width: 38,
                 child: Text(
@@ -2244,7 +2320,12 @@ class _WorkoutExerciseCard extends StatelessWidget {
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () {
-              exercise.sets.add(_WorkoutSet());
+              final index = exercise.sets.length;
+              exercise.sets.add(
+                _WorkoutSet(
+                  previous: exercise.previousSets.elementAtOrNull(index),
+                ),
+              );
               onChanged();
             },
             icon: const Icon(Icons.add_rounded),
@@ -2280,6 +2361,17 @@ class _WorkoutSetRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
     children: [
+      SizedBox(
+        width: 70,
+        child: Text(
+          set.previous == null
+              ? '—'
+              : '${_compactWorkoutNumber(set.previous!.weightLbs)} × ${set.previous!.reps}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: _muted, fontSize: 12),
+        ),
+      ),
       SizedBox(
         width: 38,
         child: Text(
@@ -2443,6 +2535,24 @@ const _exerciseLibrary = <_ExerciseDefinition>[
   _ExerciseDefinition(name: 'Run', category: 'Cardio'),
   _ExerciseDefinition(name: 'Walk', category: 'Cardio'),
   _ExerciseDefinition(name: 'Stairmaster', category: 'Cardio'),
+  _ExerciseDefinition(name: 'Soccer', category: 'Sports'),
+  _ExerciseDefinition(name: 'Basketball', category: 'Sports'),
+  _ExerciseDefinition(name: 'Football', category: 'Sports'),
+  _ExerciseDefinition(name: 'Pickleball', category: 'Sports'),
+  _ExerciseDefinition(name: 'Tennis', category: 'Sports'),
+  _ExerciseDefinition(name: 'Hockey', category: 'Sports'),
+  _ExerciseDefinition(name: 'Volleyball', category: 'Sports'),
+  _ExerciseDefinition(name: 'Baseball', category: 'Sports'),
+  _ExerciseDefinition(name: 'Golf', category: 'Sports'),
+  _ExerciseDefinition(name: 'Dance', category: 'Sports'),
+  _ExerciseDefinition(name: 'Squash', category: 'Sports'),
+  _ExerciseDefinition(name: 'Rugby', category: 'Sports'),
+  _ExerciseDefinition(name: 'Swimming', category: 'Sports'),
+  _ExerciseDefinition(name: 'Boxing', category: 'Sports'),
+  _ExerciseDefinition(name: 'Badminton', category: 'Sports'),
+  _ExerciseDefinition(name: 'Cycling', category: 'Sports'),
+  _ExerciseDefinition(name: 'Skiing', category: 'Sports'),
+  _ExerciseDefinition(name: 'Lacrosse', category: 'Sports'),
 ];
 
 class _AddExerciseScreen extends StatefulWidget {
@@ -2464,6 +2574,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
     'Legs',
     'Core',
     'Cardio',
+    'Sports',
   ];
 
   late final Set<String> _selected;
@@ -2830,6 +2941,7 @@ class _ExerciseIcon extends StatelessWidget {
       'Legs' => (Icons.directions_run_rounded, const Color(0xFFFF9500)),
       'Core' => (Icons.self_improvement_rounded, const Color(0xFFE94B9A)),
       'Cardio' => (Icons.directions_run_rounded, const Color(0xFFF43F5E)),
+      'Sports' => (Icons.sports_basketball_rounded, const Color(0xFF2563EB)),
       'Shoulders' => (Icons.accessibility_new_rounded, const Color(0xFF9B51E0)),
       _ => (Icons.fitness_center_rounded, _purple),
     };

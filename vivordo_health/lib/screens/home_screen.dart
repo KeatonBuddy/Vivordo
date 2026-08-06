@@ -11,7 +11,102 @@ import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
+import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
+import 'circle_screen.dart';
+
+class _CircleAvatarCluster extends StatelessWidget {
+  const _CircleAvatarCluster({required this.initial, this.photoUrl});
+
+  final String initial;
+  final String? photoUrl;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 72,
+    height: 66,
+    child: Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          left: 17,
+          top: 0,
+          child: _circle(
+            text: initial,
+            photoUrl: photoUrl,
+            background: const Color(0xFFE4E0FF),
+            foreground: const Color(0xFF6B5CE7),
+          ),
+        ),
+        Positioned(
+          left: 3,
+          bottom: 0,
+          child: _circle(
+            icon: Icons.person_add_alt_1_rounded,
+            background: const Color(0xFFDCF7EB),
+            foreground: const Color(0xFF16A874),
+          ),
+        ),
+        Positioned(
+          right: 3,
+          bottom: 0,
+          child: _circle(
+            icon: Icons.person_add_alt_1_rounded,
+            background: const Color(0xFFFFE7CE),
+            foreground: const Color(0xFFF28A18),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _circle({
+    String? text,
+    String? photoUrl,
+    IconData? icon,
+    required Color background,
+    required Color foreground,
+  }) => Container(
+    width: 42,
+    height: 42,
+    decoration: BoxDecoration(
+      color: background,
+      shape: BoxShape.circle,
+      border: Border.all(color: Colors.white.withValues(alpha: .82), width: 2),
+    ),
+    alignment: Alignment.center,
+    child: photoUrl?.isNotEmpty == true
+        ? ClipOval(
+            child: Image.network(
+              photoUrl!,
+              width: 42,
+              height: 42,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => _initialOrIcon(
+                text: text,
+                icon: icon,
+                foreground: foreground,
+              ),
+            ),
+          )
+        : _initialOrIcon(text: text, icon: icon, foreground: foreground),
+  );
+
+  Widget _initialOrIcon({
+    String? text,
+    IconData? icon,
+    required Color foreground,
+  }) => text != null
+      ? Text(
+          text,
+          style: TextStyle(
+            color: foreground,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        )
+      : Icon(icon, color: foreground, size: 17);
+}
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
@@ -435,6 +530,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 activeCalories: activeCalories,
                 exerciseMinutes: exerciseMinutes,
               ),
+              const SizedBox(height: 14),
+              _buildCircleCard(),
               const SizedBox(height: 28),
               _buildSectionTitle("TODAY'S INSIGHTS"),
               const SizedBox(height: 12),
@@ -919,6 +1016,148 @@ class _HomeScreenState extends State<HomeScreen> {
         fontSize: 12,
         fontWeight: FontWeight.w700,
         letterSpacing: 1.0,
+      ),
+    );
+  }
+
+  Widget _buildCircleCard() {
+    final user = FirebaseAuth.instance.currentUser;
+    final displayName = user?.displayName?.trim();
+    final initial = displayName?.isNotEmpty == true
+        ? displayName![0].toUpperCase()
+        : 'Y';
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x10000000),
+            blurRadius: 14,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: cardWhite,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute<void>(builder: (_) => const CircleScreen())),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            child: Row(
+              children: [
+                StreamBuilder<CircleProfile?>(
+                  stream: CircleProfileService.watchCurrentProfile(),
+                  builder: (context, snapshot) {
+                    final profile = snapshot.data;
+                    final profileInitial = profile?.username.isNotEmpty == true
+                        ? profile!.username[0].toUpperCase()
+                        : initial;
+                    return _CircleAvatarCluster(
+                      initial: profileInitial,
+                      photoUrl: profile?.photoUrl,
+                    );
+                  },
+                ),
+                const SizedBox(width: 14),
+                StreamBuilder<CircleDailyEngagement>(
+                  stream: CircleProfileService.watchTodayEngagement(),
+                  initialData: const CircleDailyEngagement(
+                    likes: 0,
+                    comments: 0,
+                  ),
+                  builder: (context, engagementSnapshot) {
+                    final engagement = engagementSnapshot.data!;
+                    return Expanded(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Your Circle',
+                                  style: TextStyle(
+                                    color: textDark,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                StreamBuilder<List<CircleProfile>>(
+                                  stream: CircleProfileService.watchFriends(),
+                                  builder: (context, snapshot) {
+                                    final friendCount =
+                                        snapshot.data?.length ?? 0;
+                                    final comments = engagement.comments;
+                                    return Text(
+                                      '$friendCount ${friendCount == 1 ? 'friend' : 'friends'} · '
+                                      '$comments ${comments == 1 ? 'update' : 'updates'}',
+                                      style: const TextStyle(
+                                        color: textGrey,
+                                        fontSize: 13,
+                                      ),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 3),
+                                const Text(
+                                  'No active challenges',
+                                  style: TextStyle(
+                                    color: textGrey,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: accentPurple.withValues(alpha: .08),
+                              borderRadius: BorderRadius.circular(13),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.favorite_border_rounded,
+                                  color: accentPurple,
+                                  size: 17,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  '${engagement.likes} new',
+                                  style: const TextStyle(
+                                    color: accentPurple,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 5),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: textGrey,
+                  size: 24,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -186,18 +186,60 @@ class WorkoutService {
     return snapshot.docs.map(SavedWorkout.fromDocument).toList(growable: false);
   }
 
+  static Future<Map<String, List<WorkoutSetRecord>>> loadLatestExerciseSets(
+    Iterable<String> exerciseNames,
+  ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const {};
+    final requested = {
+      for (final name in exerciseNames)
+        if (name.trim().isNotEmpty) name.trim().toLowerCase(),
+    };
+    if (requested.isEmpty) return const {};
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('workouts')
+        .orderBy('completedAt', descending: true)
+        .limit(100)
+        .get();
+    final latest = <String, List<WorkoutSetRecord>>{};
+    for (final document in snapshot.docs) {
+      final workout = SavedWorkout.fromDocument(document);
+      for (final exercise in workout.exercises) {
+        final key = exercise.name.trim().toLowerCase();
+        if (requested.contains(key) &&
+            !latest.containsKey(key) &&
+            exercise.sets.isNotEmpty) {
+          latest[key] = exercise.sets;
+        }
+      }
+      if (latest.length == requested.length) break;
+    }
+    return latest;
+  }
+
   static Future<void> delete(String workoutId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in before deleting a workout.');
     if (workoutId.trim().isEmpty) {
       throw ArgumentError('Workout ID is required.');
     }
-    await FirebaseFirestore.instance
+    final db = FirebaseFirestore.instance;
+    final workoutReference = db
         .collection('users')
         .doc(user.uid)
         .collection('workouts')
-        .doc(workoutId)
-        .delete();
+        .doc(workoutId);
+    final circleActivityReference = db
+        .collection('users')
+        .doc(user.uid)
+        .collection('circle_activity')
+        .doc(workoutId);
+    final batch = db.batch();
+    batch.delete(workoutReference);
+    batch.delete(circleActivityReference);
+    await batch.commit();
   }
 
   static Future<String> save({
@@ -209,25 +251,43 @@ class WorkoutService {
     if (user == null) throw StateError('Sign in before saving a workout.');
 
     final completedAt = DateTime.now();
-    final document = await FirebaseFirestore.instance
+    final db = FirebaseFirestore.instance;
+    final document = db
         .collection('users')
         .doc(user.uid)
         .collection('workouts')
-        .add({
-          'startedAt': Timestamp.fromDate(startedAt),
-          'completedAt': Timestamp.fromDate(completedAt),
-          'durationSeconds': durationSeconds,
-          'durationMinutes': durationSeconds / 60,
-          'exerciseCount': exercises.length,
-          'setCount': exercises.fold<int>(
-            0,
-            (total, exercise) => total + exercise.sets.length,
-          ),
-          'exercises': exercises
-              .map((exercise) => exercise.toMap())
-              .toList(growable: false),
-          'createdAt': FieldValue.serverTimestamp(),
-        });
+        .doc();
+    final setCount = exercises.fold<int>(
+      0,
+      (total, exercise) => total + exercise.sets.length,
+    );
+    final batch = db.batch();
+    batch.set(document, {
+      'startedAt': Timestamp.fromDate(startedAt),
+      'completedAt': Timestamp.fromDate(completedAt),
+      'durationSeconds': durationSeconds,
+      'durationMinutes': durationSeconds / 60,
+      'exerciseCount': exercises.length,
+      'setCount': setCount,
+      'exercises': exercises
+          .map((exercise) => exercise.toMap())
+          .toList(growable: false),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    final circleDocument = db
+        .collection('users')
+        .doc(user.uid)
+        .collection('circle_activity')
+        .doc(document.id);
+    batch.set(circleDocument, {
+      'name': 'Workout',
+      'minutes': (durationSeconds / 60).ceil(),
+      'day': Timestamp.fromDate(completedAt),
+      'sets': setCount,
+      'kind': 'workout',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
     return document.id;
   }
 }

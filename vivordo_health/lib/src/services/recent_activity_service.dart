@@ -74,13 +74,24 @@ class RecentActivityService {
     if (trimmedName.isEmpty) throw ArgumentError('Activity name is required.');
     if (minutes <= 0) throw ArgumentError('Minutes must be greater than zero.');
 
-    await collection.add({
+    final document = collection.doc();
+    final activityData = {
       'name': trimmedName,
       'minutes': minutes,
       'day': Timestamp.fromDate(day),
       'km': km,
       'sets': sets,
       'createdAt': FieldValue.serverTimestamp(),
-    });
+    };
+    final user = FirebaseAuth.instance.currentUser!;
+    final circleDocument = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('circle_activity')
+        .doc(document.id);
+    final batch = FirebaseFirestore.instance.batch();
+    batch.set(document, activityData);
+    batch.set(circleDocument, {...activityData, 'kind': 'activity'});
+    await batch.commit();
   }
 }

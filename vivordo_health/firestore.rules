@@ -11,9 +11,113 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
 
+      // Circle profiles are visible to authenticated users so a reserved
+      // friend code can resolve to the person it belongs to. Only the owner
+      // may create or update their profile.
+      match /circle/profile {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /circle/relationships/friend_requests/{requesterId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+                      && request.auth.uid == requesterId
+                      && request.resource.data.fromUid == requesterId
+                      && request.resource.data.toUid == userId;
+        allow update: if false;
+        allow delete: if request.auth != null
+                      && (request.auth.uid == userId
+                          || request.auth.uid == requesterId);
+      }
+
+      match /circle/relationships/friends/{friendId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+                      && request.resource.data.uid == friendId
+                      && (request.auth.uid == userId
+                          || (request.auth.uid == friendId
+                              && exists(/databases/$(database)/documents/users/$(friendId)/circle/relationships/friend_requests/$(userId))));
+        allow update: if false;
+        allow delete: if request.auth != null
+                      && (request.auth.uid == userId
+                          || request.auth.uid == friendId);
+      }
+
+      // A Circle friend may read only the small activity summaries explicitly
+      // published to the social feed. Full workouts and health metrics remain
+      // private to their owner.
+      match /circle_activity/{activityId} {
+        allow read: if request.auth != null
+                    && (request.auth.uid == userId
+                        || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+        allow write: if request.auth != null && request.auth.uid == userId;
+
+        match /comments/{commentId} {
+          allow read: if request.auth != null
+                      && (request.auth.uid == userId
+                          || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+          allow create: if request.auth != null
+                        && request.resource.data.authorUid == request.auth.uid
+                        && request.resource.data.text is string
+                        && request.resource.data.text.size() > 0
+                        && request.resource.data.text.size() <= 500
+                        && (request.auth.uid == userId
+                            || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+          allow update: if false;
+          allow delete: if request.auth != null
+                        && (request.auth.uid == userId
+                            || resource.data.authorUid == request.auth.uid);
+        }
+
+        match /likes/{likeId} {
+          allow read: if request.auth != null
+                      && (request.auth.uid == userId
+                          || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+          allow create: if request.auth != null
+                        && likeId == request.auth.uid
+                        && request.resource.data.userUid == request.auth.uid
+                        && (request.auth.uid == userId
+                            || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+          allow update: if false;
+          allow delete: if request.auth != null && likeId == request.auth.uid;
+        }
+      }
+
+      match /circle_engagement/{eventId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+                      && request.resource.data.actorUid == request.auth.uid
+                      && request.resource.data.type in ['like', 'comment']
+                      && exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid));
+        allow update: if false;
+        allow delete: if request.auth != null
+                      && (request.auth.uid == userId
+                          || resource.data.actorUid == request.auth.uid);
+      }
+
       match /{subcollection}/{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+    }
+
+    match /circle_friend_codes/{friendCode} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+                    && friendCode.size() == 10
+                    && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if request.auth != null
+                            && resource.data.uid == request.auth.uid;
+    }
+
+    match /circle_usernames/{username} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if request.auth != null
+                            && resource.data.uid == request.auth.uid;
     }
 
     // ── AI batch tracking (written by Cloud Functions only) ──────────────────
