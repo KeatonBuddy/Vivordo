@@ -8,9 +8,11 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
 
 import '../src/services/activity_goals_service.dart';
+import '../src/services/active_workout_storage.dart';
 import '../src/services/recent_activity_service.dart';
 import '../src/services/workout_service.dart';
 import '../src/services/personal_profile_service.dart';
+import '../src/utils/workout_activity_visual.dart';
 import 'personal_profile_screen.dart';
 
 const _purple = Color(0xFF6B5CE7);
@@ -22,6 +24,10 @@ class FitnessWorkoutTimerState {
   const FitnessWorkoutTimerState._();
 
   static final ValueNotifier<bool> isRunning = ValueNotifier<bool>(false);
+
+  static Future<void> restore() async {
+    isRunning.value = await ActiveWorkoutStorage.read() != null;
+  }
 
   static void start() => isRunning.value = true;
   static void stop() => isRunning.value = false;
@@ -44,6 +50,21 @@ class _FitnessScreenState extends State<FitnessScreen> {
     'Shoulders': 8,
     'Arms': 10,
   };
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreActiveWorkout());
+  }
+
+  Future<void> _restoreActiveWorkout() async {
+    if (_activeWorkoutDraft != null) return;
+    final restored = await _ActiveWorkoutDraft.restore();
+    if (restored == null) return;
+    _activeWorkoutDraft = restored;
+    FitnessWorkoutTimerState.start();
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -298,7 +319,10 @@ class _FitnessScreenState extends State<FitnessScreen> {
   }
 
   Future<void> _startWorkout() async {
+    _activeWorkoutDraft ??= await _ActiveWorkoutDraft.restore();
     _activeWorkoutDraft ??= _ActiveWorkoutDraft();
+    await _activeWorkoutDraft!.persist();
+    if (!mounted) return;
     FitnessWorkoutTimerState.start();
     await Navigator.of(
       context,
@@ -1125,6 +1149,10 @@ class _RecentWorkoutRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final dateLabel = DateFormat('EEEE, MMMM d, y').format(workout.completedAt);
     final durationLabel = _durationLabel(workout.durationSeconds);
+    final visual = workoutActivityVisual(
+      workout.displayName,
+      category: workout.displayCategory,
+    );
 
     return Material(
       color: Colors.transparent,
@@ -1134,16 +1162,13 @@ class _RecentWorkoutRow extends StatelessWidget {
         onTap: () => _showSummary(context),
         child: ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: const _IconBox(
-            icon: Icons.fitness_center_rounded,
-            color: _purple,
-          ),
+          leading: _IconBox(icon: visual.icon, color: visual.color),
           title: Text(
-            dateLabel,
+            workout.displayName,
             style: const TextStyle(fontWeight: FontWeight.w800),
           ),
           subtitle: Text(
-            '$durationLabel · ${workout.exerciseCount} exercises · ${workout.setCount} sets',
+            '$dateLabel · $durationLabel · ${workout.exerciseCount} exercises · ${workout.setCount} sets',
           ),
           trailing: const Icon(Icons.chevron_right_rounded, color: _muted),
         ),
@@ -1839,10 +1864,44 @@ class _WorkoutStatusMessageState extends State<_WorkoutStatusMessage> {
 }
 
 class _ActiveWorkoutDraft {
-  _ActiveWorkoutDraft() : startedAt = DateTime.now();
+  _ActiveWorkoutDraft({DateTime? startedAt, this.shareToCircle = false})
+    : startedAt = startedAt ?? DateTime.now();
 
   final DateTime startedAt;
   final List<_WorkoutExercise> exercises = [];
+  bool shareToCircle;
+
+  Map<String, dynamic> toJson() => {
+    'startedAt': startedAt.toUtc().toIso8601String(),
+    'shareToCircle': shareToCircle,
+    'exercises': exercises.map((exercise) => exercise.toJson()).toList(),
+  };
+
+  Future<void> persist() => ActiveWorkoutStorage.write(toJson());
+
+  static Future<_ActiveWorkoutDraft?> restore() async {
+    final json = await ActiveWorkoutStorage.read();
+    if (json == null) return null;
+    final startedAt = DateTime.tryParse(json['startedAt'] as String? ?? '');
+    if (startedAt == null) {
+      await ActiveWorkoutStorage.clear();
+      return null;
+    }
+    final draft = _ActiveWorkoutDraft(
+      startedAt: startedAt.toLocal(),
+      shareToCircle: json['shareToCircle'] as bool? ?? false,
+    );
+    final savedExercises = json['exercises'];
+    if (savedExercises is List) {
+      draft.exercises.addAll(
+        savedExercises.whereType<Map>().map(
+          (value) =>
+              _WorkoutExercise.fromJson(Map<String, dynamic>.from(value)),
+        ),
+      );
+    }
+    return draft;
+  }
 }
 
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
@@ -1855,12 +1914,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   List<_WorkoutExercise> get exercises => draft.exercises;
   int get seconds => DateTime.now().difference(startedAt).inSeconds;
 
+  Future<void> _toggleCircleSharing() async {
+    setState(() => draft.shareToCircle = !draft.shareToCircle);
+    await draft.persist();
+  }
+
   @override
   void initState() {
     super.initState();
     draft = _activeWorkoutDraft ??= _ActiveWorkoutDraft();
     FitnessWorkoutTimerState.start();
     timer = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+    unawaited(draft.persist());
   }
 
   @override
@@ -1920,6 +1985,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ..clear()
         ..addAll(updated);
     });
+    await draft.persist();
 
     if (newDefinitions.isEmpty) return;
     try {
@@ -1940,6 +2006,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           }
         }
       });
+      await draft.persist();
     } catch (error) {
       debugPrint('Could not load previous exercise sets: $error');
     }
@@ -2105,9 +2172,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         startedAt: startedAt,
         durationSeconds: seconds,
         exercises: records,
+        shareToCircle: draft.shareToCircle,
       );
       timer?.cancel();
       _activeWorkoutDraft = null;
+      await ActiveWorkoutStorage.clear();
       FitnessWorkoutTimerState.stop();
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
@@ -2142,6 +2211,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (cancel != true || !mounted) return;
     timer?.cancel();
     _activeWorkoutDraft = null;
+    await ActiveWorkoutStorage.clear();
+    if (!mounted) return;
     FitnessWorkoutTimerState.stop();
     Navigator.pop(context, false);
   }
@@ -2256,11 +2327,63 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
           const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: saving || savingTemplate ? null : _toggleCircleSharing,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _purple,
+              side: BorderSide(
+                color: draft.shareToCircle
+                    ? _purple
+                    : _purple.withValues(alpha: .45),
+              ),
+              backgroundColor: draft.shareToCircle
+                  ? _purple.withValues(alpha: .07)
+                  : Colors.transparent,
+              minimumSize: const Size.fromHeight(50),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+            ),
+            icon: Icon(
+              draft.shareToCircle
+                  ? Icons.check_circle_rounded
+                  : Icons.groups_rounded,
+            ),
+            label: Text(
+              draft.shareToCircle ? 'Sharing to Circle' : 'Share to Circle',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                draft.shareToCircle ? Icons.groups_rounded : Icons.lock_rounded,
+                color: _muted,
+                size: 14,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                draft.shareToCircle
+                    ? 'Your Circle can see this workout'
+                    : 'Private to you',
+                style: const TextStyle(color: _muted, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
           for (final exercise in exercises) ...[
             _WorkoutExerciseCard(
               exercise: exercise,
-              onChanged: () => setState(() {}),
-              onRemove: () => setState(() => exercises.remove(exercise)),
+              onChanged: () {
+                setState(() {});
+                unawaited(draft.persist());
+              },
+              onRemove: () {
+                setState(() => exercises.remove(exercise));
+                unawaited(draft.persist());
+              },
             ),
             const SizedBox(height: 10),
           ],
@@ -2629,6 +2752,8 @@ class _WorkoutSet {
   WorkoutSetRecord? previous;
   String lbs = '';
   String reps = '';
+
+  Map<String, dynamic> toJson() => {'lbs': lbs, 'reps': reps};
 }
 
 class _WorkoutExercise {
@@ -2649,6 +2774,38 @@ class _WorkoutExercise {
   String get name => definition.name;
   bool get isDistanceExercise => definition.category == 'Cardio';
   bool get isSportsExercise => definition.category == 'Sports';
+
+  Map<String, dynamic> toJson() => {
+    'name': definition.name,
+    'category': definition.category,
+    'distanceKm': distanceKm,
+    'sets': sets.map((set) => set.toJson()).toList(),
+  };
+
+  factory _WorkoutExercise.fromJson(Map<String, dynamic> json) {
+    final exercise = _WorkoutExercise(
+      _ExerciseDefinition(
+        name: json['name'] as String? ?? 'Exercise',
+        category: json['category'] as String? ?? 'Other',
+      ),
+    );
+    exercise.distanceKm = json['distanceKm'] as String? ?? '';
+    final savedSets = json['sets'];
+    if (savedSets is List) {
+      exercise.sets
+        ..clear()
+        ..addAll(
+          savedSets.whereType<Map>().map((value) {
+            final map = Map<String, dynamic>.from(value);
+            final set = _WorkoutSet();
+            set.lbs = map['lbs'] as String? ?? '';
+            set.reps = map['reps'] as String? ?? '';
+            return set;
+          }),
+        );
+    }
+    return exercise;
+  }
 }
 
 class _WorkoutExerciseCard extends StatelessWidget {
@@ -3018,6 +3175,7 @@ const _exerciseLibrary = <_ExerciseDefinition>[
   _ExerciseDefinition(name: 'Cable Crunch', category: 'Core'),
   _ExerciseDefinition(name: 'Run', category: 'Cardio'),
   _ExerciseDefinition(name: 'Walk', category: 'Cardio'),
+  _ExerciseDefinition(name: 'Hike', category: 'Cardio'),
   _ExerciseDefinition(name: 'Stairmaster', category: 'Cardio'),
   _ExerciseDefinition(name: 'Soccer', category: 'Sports'),
   _ExerciseDefinition(name: 'Basketball', category: 'Sports'),

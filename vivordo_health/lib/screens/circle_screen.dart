@@ -10,6 +10,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import '../src/services/activity_goals_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/workout_service.dart';
+import '../src/utils/workout_activity_visual.dart';
 import 'create_circle_profile_screen.dart';
 import 'fitness_screen.dart' show ActivityRingsPainter;
 
@@ -508,6 +509,10 @@ class _MyActivityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isJournal = activity.kind == 'journal';
+    final visual = workoutActivityVisual(
+      activity.name,
+      category: activity.activityCategory,
+    );
     final detail = isJournal
         ? activity.mood ?? 'Shared reflection'
         : activity.km != null
@@ -537,12 +542,8 @@ class _MyActivityCard extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      isJournal
-                          ? Icons.menu_book_rounded
-                          : activity.km != null
-                          ? Icons.directions_walk_rounded
-                          : Icons.fitness_center_rounded,
-                      color: CircleScreen._purple,
+                      isJournal ? Icons.menu_book_rounded : visual.icon,
+                      color: isJournal ? CircleScreen._purple : visual.color,
                       size: 20,
                     ),
                   ),
@@ -964,6 +965,10 @@ class _CircleActivityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isJournal = activity.kind == 'journal';
+    final visual = workoutActivityVisual(
+      activity.name,
+      category: activity.activityCategory,
+    );
     final details = <String>[];
     if (activity.km != null) {
       details.add('${activity.km!.toStringAsFixed(1)} km');
@@ -1022,16 +1027,8 @@ class _CircleActivityTile extends StatelessWidget {
                 ),
               ),
               Icon(
-                isJournal
-                    ? Icons.menu_book_rounded
-                    : activity.km != null
-                    ? Icons.directions_walk_rounded
-                    : Icons.fitness_center_rounded,
-                color: isJournal
-                    ? CircleScreen._purple
-                    : activity.km != null
-                    ? const Color(0xFF10B77A)
-                    : CircleScreen._purple,
+                isJournal ? Icons.menu_book_rounded : visual.icon,
+                color: isJournal ? CircleScreen._purple : visual.color,
               ),
             ],
           ),

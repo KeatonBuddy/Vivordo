@@ -84,6 +84,8 @@ class SavedWorkout {
     required this.exercises,
     required this.exerciseCount,
     required this.setCount,
+    this.activityName,
+    this.activityCategory,
   });
 
   final String id;
@@ -92,6 +94,28 @@ class SavedWorkout {
   final List<WorkoutExerciseRecord> exercises;
   final int exerciseCount;
   final int setCount;
+  final String? activityName;
+  final String? activityCategory;
+
+  WorkoutExerciseRecord? get primaryCardioOrSportExercise {
+    for (final exercise in exercises) {
+      if (exercise.category == 'Cardio' || exercise.category == 'Sports') {
+        return exercise;
+      }
+    }
+    return null;
+  }
+
+  String get displayName {
+    final savedName = activityName?.trim();
+    if (savedName?.isNotEmpty == true && savedName != 'Workout') {
+      return savedName!;
+    }
+    return primaryCardioOrSportExercise?.name ?? 'Workout';
+  }
+
+  String? get displayCategory =>
+      activityCategory ?? primaryCardioOrSportExercise?.category;
 
   List<String> get exerciseNames =>
       exercises.map((exercise) => exercise.name).toList(growable: false);
@@ -133,6 +157,8 @@ class SavedWorkout {
       exerciseCount:
           (data['exerciseCount'] as num?)?.round() ?? rawExercises.length,
       setCount: (data['setCount'] as num?)?.round() ?? calculatedSets,
+      activityName: data['activityName'] as String?,
+      activityCategory: data['activityCategory'] as String?,
     );
   }
 }
@@ -342,21 +368,65 @@ class WorkoutService {
         .doc(user.uid)
         .collection('circle_activity')
         .doc(workoutId);
-    final batch = db.batch();
-    batch.delete(workoutReference);
-    batch.delete(circleActivityReference);
-    await batch.commit();
+    await db.runTransaction((transaction) async {
+      final workoutSnapshot = await transaction.get(workoutReference);
+      final workoutData = workoutSnapshot.data();
+      final goalDay = workoutData?['exerciseGoalDay'] as String?;
+      final goalMinutes =
+          (workoutData?['exerciseGoalMinutes'] as num?)?.toInt() ?? 0;
+
+      if (goalDay != null && goalMinutes > 0) {
+        final dailyReference = db
+            .collection('users')
+            .doc(user.uid)
+            .collection('metrics_daily')
+            .doc(goalDay);
+        final dailySnapshot = await transaction.get(dailyReference);
+        final exerciseTime =
+            dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>? ??
+            const <String, dynamic>{};
+        final currentWorkoutMinutes =
+            (exerciseTime['workoutMinutes'] as num?)?.toDouble() ?? 0;
+        final healthMinutes =
+            (exerciseTime['healthSum'] as num?)?.toDouble() ??
+            (((exerciseTime['sum'] as num?)?.toDouble() ?? 0) -
+                    currentWorkoutMinutes)
+                .clamp(0, double.infinity);
+        final updatedWorkoutMinutes = (currentWorkoutMinutes - goalMinutes)
+            .clamp(0, double.infinity);
+        transaction.set(dailyReference, {
+          'exercise_time': {
+            ...exerciseTime,
+            'healthSum': healthMinutes,
+            'workoutMinutes': updatedWorkoutMinutes,
+            'sum': healthMinutes + updatedWorkoutMinutes,
+            'unit': 'min',
+            'dimension': 'activity',
+          },
+          'date': goalDay,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      transaction.delete(workoutReference);
+      transaction.delete(circleActivityReference);
+    });
   }
 
   static Future<String> save({
     required DateTime startedAt,
     required int durationSeconds,
     required List<WorkoutExerciseRecord> exercises,
+    bool shareToCircle = false,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in before saving a workout.');
 
     final completedAt = DateTime.now();
+    final goalMinutes = durationSeconds <= 0
+        ? 0
+        : (durationSeconds / 60).ceil();
+    final goalDay = _dayKey(completedAt);
     final db = FirebaseFirestore.instance;
     final document = db
         .collection('users')
@@ -367,33 +437,94 @@ class WorkoutService {
       0,
       (total, exercise) => total + exercise.sets.length,
     );
-    final batch = db.batch();
-    batch.set(document, {
-      'startedAt': Timestamp.fromDate(startedAt),
-      'completedAt': Timestamp.fromDate(completedAt),
-      'durationSeconds': durationSeconds,
-      'durationMinutes': durationSeconds / 60,
-      'exerciseCount': exercises.length,
-      'setCount': setCount,
-      'exercises': exercises
-          .map((exercise) => exercise.toMap())
-          .toList(growable: false),
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    WorkoutExerciseRecord? selectedActivity;
+    for (final exercise in exercises) {
+      if (exercise.category == 'Cardio' || exercise.category == 'Sports') {
+        selectedActivity = exercise;
+        break;
+      }
+    }
+    final activityName = selectedActivity?.name ?? 'Workout';
+    final activityCategory = selectedActivity?.category;
+    final activityFields = <String, dynamic>{'activityName': activityName};
+    if (activityCategory != null) {
+      activityFields['activityCategory'] = activityCategory;
+    }
+    final circleActivityFields = <String, dynamic>{
+      'name': activityName,
+      ...activityFields,
+    };
+    if (selectedActivity?.distanceKm != null) {
+      circleActivityFields['km'] = selectedActivity!.distanceKm;
+    }
     final circleDocument = db
         .collection('users')
         .doc(user.uid)
         .collection('circle_activity')
         .doc(document.id);
-    batch.set(circleDocument, {
-      'name': 'Workout',
-      'minutes': (durationSeconds / 60).ceil(),
-      'day': Timestamp.fromDate(completedAt),
-      'sets': setCount,
-      'kind': 'workout',
-      'createdAt': FieldValue.serverTimestamp(),
+    final dailyReference = db
+        .collection('users')
+        .doc(user.uid)
+        .collection('metrics_daily')
+        .doc(goalDay);
+    await db.runTransaction((transaction) async {
+      final dailySnapshot = await transaction.get(dailyReference);
+      final exerciseTime =
+          dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>? ??
+          const <String, dynamic>{};
+      final currentWorkoutMinutes =
+          (exerciseTime['workoutMinutes'] as num?)?.toDouble() ?? 0;
+      final healthMinutes =
+          (exerciseTime['healthSum'] as num?)?.toDouble() ??
+          (((exerciseTime['sum'] as num?)?.toDouble() ?? 0) -
+                  currentWorkoutMinutes)
+              .clamp(0, double.infinity);
+      final updatedWorkoutMinutes = currentWorkoutMinutes + goalMinutes;
+
+      transaction.set(document, {
+        'startedAt': Timestamp.fromDate(startedAt),
+        'completedAt': Timestamp.fromDate(completedAt),
+        'durationSeconds': durationSeconds,
+        'durationMinutes': durationSeconds / 60,
+        'exerciseGoalDay': goalDay,
+        'exerciseGoalMinutes': goalMinutes,
+        'shareToCircle': shareToCircle,
+        ...activityFields,
+        'exerciseCount': exercises.length,
+        'setCount': setCount,
+        'exercises': exercises
+            .map((exercise) => exercise.toMap())
+            .toList(growable: false),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      if (shareToCircle) {
+        transaction.set(circleDocument, {
+          ...circleActivityFields,
+          'minutes': goalMinutes,
+          'day': Timestamp.fromDate(completedAt),
+          'sets': setCount,
+          'kind': 'workout',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+      transaction.set(dailyReference, {
+        'exercise_time': {
+          ...exerciseTime,
+          'healthSum': healthMinutes,
+          'workoutMinutes': updatedWorkoutMinutes,
+          'sum': healthMinutes + updatedWorkoutMinutes,
+          'unit': 'min',
+          'dimension': 'activity',
+        },
+        'date': goalDay,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     });
-    await batch.commit();
     return document.id;
   }
+
+  static String _dayKey(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
 }

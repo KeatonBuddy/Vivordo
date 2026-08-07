@@ -226,7 +226,6 @@ class _PandaScreenState extends State<PandaScreen>
   static const Color _purple = Color(0xFF7B6EF6);
   static const Color _teal = Color(0xFF0ABFBC);
   static const Color _ink = Color(0xFF2D3142);
-  static const Color _bg = Color(0xFFF2F2F7);
 
   late AIService _svc;
   final InsightService _insightSvc = InsightService();
@@ -1243,13 +1242,15 @@ class _PandaScreenState extends State<PandaScreen>
     };
 
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: context.vivordoColors.card,
+      foregroundColor: context.vivordoColors.textPrimary,
+      surfaceTintColor: Colors.transparent,
       elevation: 0.5,
       automaticallyImplyLeading: false,
       leading: widget.onClose == null
           ? null
           : IconButton(
-              icon: const Icon(Icons.close_rounded, ),
+              icon: const Icon(Icons.close_rounded),
               tooltip: 'Close chat',
               onPressed: widget.onClose,
             ),
@@ -1393,10 +1394,7 @@ class _PandaScreenState extends State<PandaScreen>
               ),
             ),
             const SizedBox(height: 14),
-            const Text(
-              'Analysing your data…',
-              style: TextStyle(fontSize: 14),
-            ),
+            const Text('Analysing your data…', style: TextStyle(fontSize: 14)),
           ],
         ),
       );
@@ -1409,11 +1407,7 @@ class _PandaScreenState extends State<PandaScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.wifi_off_rounded,
-                size: 48,
-                
-              ),
+              const Icon(Icons.wifi_off_rounded, size: 48),
               const SizedBox(height: 16),
               Text(
                 _error!,
@@ -1531,6 +1525,7 @@ class _PandaScreenState extends State<PandaScreen>
     String? categoryLabel,
     bool showCategoryOptions = false,
   }) {
+    final colors = context.vivordoColors;
     Color bg;
     Color border;
     Widget? badge;
@@ -1545,7 +1540,7 @@ class _PandaScreenState extends State<PandaScreen>
         border = _purple.withOpacity(0.18);
         badge = _kindBadge(Icons.layers_rounded, 'deeper', _purple);
       case _TurnKind.recommend:
-        bg = Colors.white;
+        bg = colors.card;
         border = Colors.transparent;
         badge = _kindBadge(
           Icons.auto_awesome_rounded,
@@ -1553,15 +1548,15 @@ class _PandaScreenState extends State<PandaScreen>
           const Color(0xFFFF8C69),
         );
       case _TurnKind.categoryMenu:
-        bg = Colors.white;
+        bg = colors.card;
         border = (categoryColor ?? _purple).withOpacity(0.15);
         badge = null;
       case _TurnKind.normal:
-        bg = Colors.white;
+        bg = colors.card;
         border = Colors.transparent;
         badge = null;
       case _TurnKind.calendarAction:
-        bg = const Color(0xFFF4F1FF);
+        bg = colors.cardMuted;
         border = _purple.withOpacity(0.25);
         badge = _kindBadge(Icons.calendar_month_rounded, 'calendar', _purple);
     }
@@ -1614,8 +1609,8 @@ class _PandaScreenState extends State<PandaScreen>
                         ],
                         Text(
                           text,
-                          style: const TextStyle(
-                            
+                          style: TextStyle(
+                            color: colors.textPrimary,
                             fontSize: 15,
                             height: 1.45,
                           ),
@@ -1651,7 +1646,7 @@ class _PandaScreenState extends State<PandaScreen>
                             vertical: 9,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: colors.card,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
                               color: (categoryColor ?? _purple).withOpacity(
@@ -1717,6 +1712,7 @@ class _PandaScreenState extends State<PandaScreen>
   }
 
   Widget _userBubble(String text) {
+    final colors = context.vivordoColors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -1738,7 +1734,11 @@ class _PandaScreenState extends State<PandaScreen>
               ),
               child: Text(
                 text,
-                style: const TextStyle(fontSize: 15, height: 1.45),
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontSize: 15,
+                  height: 1.45,
+                ),
               ),
             ),
           ),
@@ -1748,6 +1748,7 @@ class _PandaScreenState extends State<PandaScreen>
   }
 
   Widget _typingBubble() {
+    final colors = context.vivordoColors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -1758,7 +1759,7 @@ class _PandaScreenState extends State<PandaScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: colors.card,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(20),
                 topRight: Radius.circular(20),
@@ -1799,7 +1800,7 @@ class _PandaScreenState extends State<PandaScreen>
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                
+
                 letterSpacing: 0.3,
               ),
             ),
@@ -1963,6 +1964,8 @@ class _PandaScreenState extends State<PandaScreen>
 
   Widget _buildInputArea() {
     final bool disabled = _loading || _pandaTyping;
+    final colors = context.vivordoColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     String hint;
     if (_sessionComplete) {
@@ -1985,8 +1988,8 @@ class _PandaScreenState extends State<PandaScreen>
         MediaQuery.of(context).padding.bottom + 10,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.black12, width: 0.5)),
+        color: colors.card,
+        border: Border(top: BorderSide(color: colors.border, width: 0.5)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2009,27 +2012,32 @@ class _PandaScreenState extends State<PandaScreen>
                 child: TextField(
                   controller: _inputCtrl,
                   enabled: !disabled,
+                  keyboardAppearance: isDark
+                      ? Brightness.dark
+                      : Brightness.light,
+                  style: TextStyle(color: colors.textPrimary),
+                  cursorColor: _purple,
                   textInputAction: TextInputAction.send,
                   maxLines: null,
                   decoration: InputDecoration(
                     hintText: hint,
                     hintStyle: TextStyle(
-                      color: Colors.grey.shade400,
+                      color: colors.textSecondary,
                       fontSize: 14,
                     ),
                     filled: true,
-                    fillColor: disabled ? Colors.grey.shade100 : _bg,
+                    fillColor: disabled ? colors.cardMuted : colors.input,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 12,
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
+                      borderSide: BorderSide(color: colors.border),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
+                      borderSide: BorderSide(color: colors.border),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
@@ -2037,7 +2045,7 @@ class _PandaScreenState extends State<PandaScreen>
                     ),
                     disabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide(color: Colors.grey.shade200),
+                      borderSide: BorderSide(color: colors.border),
                     ),
                   ),
                   onSubmitted: disabled ? null : (_) => _submit(),
@@ -2100,10 +2108,7 @@ class _PandaScreenState extends State<PandaScreen>
                           const Text(
                             "No sessions yet.\nComplete a chat and it'll appear here.",
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              
-                              height: 1.5,
-                            ),
+                            style: TextStyle(height: 1.5),
                           ),
                         ],
                       ),
@@ -2164,6 +2169,7 @@ class _PandaScreenState extends State<PandaScreen>
   // One History card per chat session. When a chat produced multiple distinct
   // insights they render as a split view — one section per insight.
   Widget _chatGroupCard(List<Insights> group) {
+    final colors = context.vivordoColors;
     final latest = group.first; // stream is newest-first
     final sessionDt = latest.sessionDate?.toDate() ?? latest.createdAt.toDate();
     final multi = group.length > 1;
@@ -2172,15 +2178,15 @@ class _PandaScreenState extends State<PandaScreen>
         : '${(latest.pandaLabeledAnswers ?? const {}).length} answers captured';
 
     return Material(
-      color: Colors.white,
+      color: colors.card,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.black.withOpacity(0.07)),
+          border: Border.all(color: colors.border),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: colors.shadow,
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -2212,13 +2218,7 @@ class _PandaScreenState extends State<PandaScreen>
                         ),
                       ),
                       const SizedBox(height: 3),
-                      Text(
-                        headerLabel,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          
-                        ),
-                      ),
+                      Text(headerLabel, style: const TextStyle(fontSize: 12)),
                     ],
                   ),
                 ),
@@ -2247,7 +2247,7 @@ class _PandaScreenState extends State<PandaScreen>
               for (int i = 0; i < group.length; i++) ...[
                 if (i > 0) ...[
                   const SizedBox(height: 6),
-                  Divider(color: Colors.black.withOpacity(0.06), height: 1),
+                  Divider(color: colors.border, height: 1),
                   const SizedBox(height: 10),
                 ],
                 _insightSection(group[i], showHeader: multi),
@@ -2261,6 +2261,7 @@ class _PandaScreenState extends State<PandaScreen>
 
   // The content for a single insight — used inside a chat-group split view.
   Widget _insightSection(Insights insight, {required bool showHeader}) {
+    final colors = context.vivordoColors;
     final slots = insight.pandaSlots;
     final labeledAnswers = insight.pandaLabeledAnswers ?? {};
     final corrections = insight.pandaCorrections ?? [];
@@ -2315,11 +2316,7 @@ class _PandaScreenState extends State<PandaScreen>
               ),
               Text(
                 'tap ✏️ to correct',
-                style: TextStyle(
-                  fontSize: 10,
-                  
-                  fontStyle: FontStyle.italic,
-                ),
+                style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic),
               ),
             ],
           ),
@@ -2339,9 +2336,9 @@ class _PandaScreenState extends State<PandaScreen>
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: colors.cardMuted,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.black.withOpacity(0.08)),
+                      border: Border.all(color: colors.border),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2359,7 +2356,7 @@ class _PandaScreenState extends State<PandaScreen>
                                   e.key,
                                   style: const TextStyle(
                                     fontSize: 11,
-                                    
+
                                     height: 1.35,
                                   ),
                                 ),
@@ -2480,11 +2477,7 @@ class _PandaScreenState extends State<PandaScreen>
                   Expanded(
                     child: Text(
                       '${c.questionId}: "${c.oldAnswer}" → "${c.newAnswer}"',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        
-                        height: 1.3,
-                      ),
+                      style: const TextStyle(fontSize: 11, height: 1.3),
                     ),
                   ),
                 ],
@@ -2531,7 +2524,7 @@ class _PandaScreenState extends State<PandaScreen>
               questionId,
               style: const TextStyle(
                 fontSize: 13,
-                
+
                 height: 1.4,
                 fontStyle: FontStyle.italic,
               ),
@@ -2559,21 +2552,14 @@ class _PandaScreenState extends State<PandaScreen>
             const SizedBox(height: 8),
             Text(
               '⚡ Correcting your answer helps Panda learn your stress patterns more accurately.',
-              style: TextStyle(
-                fontSize: 11,
-                
-                height: 1.4,
-              ),
+              style: TextStyle(fontSize: 11, height: 1.4),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(),
-            ),
+            child: const Text('Cancel', style: TextStyle()),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -2846,13 +2832,14 @@ class _PandaScreenState extends State<PandaScreen>
 
   Widget _RecCard({required PandaRec rec}) {
     final Color catColor = _recCategoryColor(rec.category);
+    final colors = context.vivordoColors;
     return GestureDetector(
       onTap: rec.deepLink != null ? () => _launchUrl(rec.deepLink!) : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: colors.card,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: catColor.withOpacity(0.25), width: 1.3),
           boxShadow: [
@@ -2894,11 +2881,7 @@ class _PandaScreenState extends State<PandaScreen>
                     rec.subtitle,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      
-                      height: 1.35,
-                    ),
+                    style: const TextStyle(fontSize: 11.5, height: 1.35),
                   ),
                 ],
               ),

@@ -79,6 +79,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     );
     FitnessWorkoutTimerState.isRunning.addListener(_syncFitnessPulse);
     _syncFitnessPulse();
+    unawaited(FitnessWorkoutTimerState.restore());
     _chatRevealAnimation = CurvedAnimation(
       parent: _chatRevealController,
       curve: Curves.easeOutCubic,

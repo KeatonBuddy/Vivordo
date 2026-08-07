@@ -77,16 +77,16 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
   }
 
   List<double> _previous(QuerySnapshot<Map<String, dynamic>>? snapshot) {
-    final end = DateUtils.dateOnly(
+    final currentStart = DateUtils.dateOnly(
       DateTime.now(),
-    ).subtract(Duration(days: _rangeDays));
-    final start = end.subtract(Duration(days: _rangeDays));
+    ).subtract(Duration(days: _rangeDays - 1));
+    final start = currentStart.subtract(Duration(days: _rangeDays));
     return (snapshot?.docs ?? const [])
         .map(_parse)
         .where(
           (day) =>
               !day.date.isBefore(start) &&
-              day.date.isBefore(end) &&
+              day.date.isBefore(currentStart) &&
               day.wellness != null,
         )
         .map((day) => day.wellness!)
@@ -131,8 +131,8 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
   Widget _content(List<_WellnessDay> days, List<double> previous) {
     final scoredDays = days.where((day) => day.wellness != null).toList();
     final latest = scoredDays.isEmpty ? days.last : scoredDays.last;
-    final score = latest.wellness;
     final currentAverage = _average(scoredDays.map((day) => day.wellness!));
+    final score = _rangeIndex == 0 ? latest.wellness : currentAverage;
     final previousAverage = _average(previous);
     final change =
         currentAverage == null ||
@@ -157,7 +157,7 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
           const SizedBox(height: 18),
           _rangeSelector(),
           const SizedBox(height: 18),
-          _scoreCard(score, change, latest),
+          _scoreCard(score, change, latest, _scoreLabel),
           if (_rangeIndex != 0) ...[
             _section('$_rangeName trend'),
             _chartCard(days, usual),
@@ -170,6 +170,12 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
       ),
     );
   }
+
+  String get _scoreLabel => switch (_rangeIndex) {
+    0 => 'TODAY\'S WELLNESS SCORE',
+    1 => 'WEEKLY AVERAGE WELLNESS SCORE',
+    _ => 'MONTHLY AVERAGE WELLNESS SCORE',
+  };
 
   Widget _rangeSelector() {
     const labels = ['Day', 'Week', 'Month'];
@@ -212,7 +218,12 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
     );
   }
 
-  Widget _scoreCard(double? score, int? change, _WellnessDay latest) {
+  Widget _scoreCard(
+    double? score,
+    int? change,
+    _WellnessDay latest,
+    String scoreLabel,
+  ) {
     final status = score == null
         ? 'Not enough data'
         : score >= 75
@@ -237,7 +248,7 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'YOUR WELLNESS SCORE',
+                  scoreLabel,
                   style: TextStyle(
                     color: context.vivordoColors.textSecondary,
                     fontSize: 13,

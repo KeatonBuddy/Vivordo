@@ -15,6 +15,8 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'circle_screen.dart';
+import 'heart_rate_detail_screen.dart';
+import 'steps_detail_screen.dart';
 
 class _CircleAvatarCluster extends StatelessWidget {
   const _CircleAvatarCluster({required this.initial, this.photoUrl});
@@ -495,6 +497,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icons.directions_walk_rounded,
                       greenColor,
                       loading: stepsLoading,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const StepsDetailScreen(),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -506,6 +513,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       const Color(0xFFFF3B30),
                       showConnectHint: false,
                       loading: hrLoading,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const HeartRateDetailScreen(),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -931,7 +943,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool isEmpty = value == '--';
     return Semantics(
       button: onTap != null,
-      label: onTap == null ? null : '$label, $value. Tap to check in.',
+      label: onTap == null ? null : '$label, $value. Tap to view details.',
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),

@@ -620,7 +620,35 @@ class HealthService {
           .doc(uid)
           .collection('metrics_daily')
           .doc(dayKey);
-      batch.set(ref, {metricKey: FieldValue.delete()}, SetOptions(merge: true));
+      if (metricKey == 'exercise_time') {
+        final snapshot = await ref.get();
+        final exerciseTime =
+            snapshot.data()?['exercise_time'] as Map<String, dynamic>?;
+        final workoutMinutes =
+            (exerciseTime?['workoutMinutes'] as num?)?.toDouble() ?? 0;
+        if (workoutMinutes > 0) {
+          batch.set(ref, {
+            'exercise_time': {
+              ...?exerciseTime,
+              'healthSum': 0,
+              'workoutMinutes': workoutMinutes,
+              'sum': workoutMinutes,
+              'unit': 'min',
+              'dimension': 'activity',
+            },
+            'date': dayKey,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } else {
+          batch.set(ref, {
+            metricKey: FieldValue.delete(),
+          }, SetOptions(merge: true));
+        }
+      } else {
+        batch.set(ref, {
+          metricKey: FieldValue.delete(),
+        }, SetOptions(merge: true));
+      }
       deletes++;
     }
 
@@ -685,6 +713,17 @@ class HealthService {
           .collection('metrics_daily')
           .doc(day);
       final payload = _buildValueMap(def.type, vals);
+      if (def.type == HealthDataType.EXERCISE_TIME) {
+        final existingSnapshot = await ref.get();
+        final existingExerciseTime =
+            existingSnapshot.data()?['exercise_time'] as Map<String, dynamic>?;
+        final healthMinutes = (payload['sum'] as num?)?.toDouble() ?? 0;
+        final workoutMinutes =
+            (existingExerciseTime?['workoutMinutes'] as num?)?.toDouble() ?? 0;
+        payload['healthSum'] = healthMinutes;
+        payload['workoutMinutes'] = workoutMinutes;
+        payload['sum'] = healthMinutes + workoutMinutes;
+      }
       if (def.type == HealthDataType.HEART_RATE) {
         final entries = heartRateEntriesByDay[day] ?? const [];
         entries.sort((a, b) {

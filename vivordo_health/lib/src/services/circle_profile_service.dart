@@ -55,6 +55,7 @@ class CircleActivity {
     this.mood,
     this.km,
     this.sets,
+    this.activityCategory,
   });
 
   final String id;
@@ -67,6 +68,7 @@ class CircleActivity {
   final String? mood;
   final double? km;
   final int? sets;
+  final String? activityCategory;
 }
 
 class CircleDailyFitness {
@@ -671,6 +673,7 @@ class CircleProfileService {
                   mood: data['mood'] as String?,
                   km: (data['km'] as num?)?.toDouble(),
                   sets: (data['sets'] as num?)?.round(),
+                  activityCategory: data['activityCategory'] as String?,
                 );
               }
               emit();
@@ -722,6 +725,7 @@ class CircleProfileService {
                   mood: data['mood'] as String?,
                   km: (data['km'] as num?)?.toDouble(),
                   sets: (data['sets'] as num?)?.round(),
+                  activityCategory: data['activityCategory'] as String?,
                 );
               })
               .toList(growable: false),
