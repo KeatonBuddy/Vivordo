@@ -502,6 +502,40 @@ class HealthService {
 
   Future<void> syncToday() => syncToFirestore(daysBack: 1);
 
+  /// Returns walking/running distance recorded by HealthKit in the supplied
+  /// interval. HealthKit reports these samples in metres, so the public value
+  /// is converted to kilometres for workout records.
+  ///
+  /// A null result means Health access is unavailable. A zero result means
+  /// access succeeded but HealthKit has not recorded distance for the interval.
+  Future<double?> readWalkingRunningDistanceKm({
+    required DateTime start,
+    DateTime? end,
+  }) async {
+    if (!await ensureHealthAuthorization()) return null;
+
+    try {
+      await _health.configure();
+      final points = await _health.getHealthDataFromTypes(
+        startTime: start,
+        endTime: end ?? DateTime.now(),
+        types: const [HealthDataType.DISTANCE_WALKING_RUNNING],
+      );
+      final uniquePoints = _health.removeDuplicates(points);
+      var metres = 0.0;
+      for (final point in uniquePoints) {
+        if (point.value is! NumericHealthValue) continue;
+        metres += (point.value as NumericHealthValue).numericValue.toDouble();
+      }
+      return metres / 1000;
+    } catch (error) {
+      debugPrint(
+        '[HealthService] Could not read workout distance from HealthKit: $error',
+      );
+      return null;
+    }
+  }
+
   /// Rebuilds the computed wellness score from data already stored in
   /// Firestore. This is used after a camera scan so Wellness immediately uses
   /// the same `heart_rate_scan` average shown by the Heart Rate key metric.

@@ -975,10 +975,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(width: 12),
           Expanded(child: Text(text, style: const TextStyle(fontSize: 15))),
-          Icon(
-            Icons.chevron_right_rounded,
-            color: context.vivordoColors.textSecondary,
-          ),
         ],
       ),
     );

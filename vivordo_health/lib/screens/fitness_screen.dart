@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../src/services/activity_goals_service.dart';
 import '../src/services/active_workout_storage.dart';
+import '../src/services/health_service.dart';
 import '../src/services/recent_activity_service.dart';
 import '../src/services/workout_service.dart';
 import '../src/services/personal_profile_service.dart';
@@ -1909,6 +1910,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   late final _ActiveWorkoutDraft draft;
   bool saving = false;
   bool savingTemplate = false;
+  bool refreshingDistance = false;
+  double? trackedDistanceKm;
+  DateTime? lastDistanceRefresh;
 
   DateTime get startedAt => draft.startedAt;
   List<_WorkoutExercise> get exercises => draft.exercises;
@@ -1924,14 +1928,47 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     super.initState();
     draft = _activeWorkoutDraft ??= _ActiveWorkoutDraft();
     FitnessWorkoutTimerState.start();
-    timer = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+    timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+      if (_hasCardioExercise &&
+          !refreshingDistance &&
+          (lastDistanceRefresh == null ||
+              DateTime.now().difference(lastDistanceRefresh!).inSeconds >=
+                  15)) {
+        unawaited(_refreshTrackedDistance());
+      }
+    });
     unawaited(draft.persist());
+    if (_hasCardioExercise) unawaited(_refreshTrackedDistance());
   }
 
   @override
   void dispose() {
     timer?.cancel();
     super.dispose();
+  }
+
+  bool get _hasCardioExercise =>
+      exercises.any((exercise) => exercise.isDistanceExercise);
+
+  Future<double?> _refreshTrackedDistance({bool force = false}) async {
+    if (!_hasCardioExercise || refreshingDistance) return trackedDistanceKm;
+    if (!force &&
+        lastDistanceRefresh != null &&
+        DateTime.now().difference(lastDistanceRefresh!).inSeconds < 15) {
+      return trackedDistanceKm;
+    }
+
+    refreshingDistance = true;
+    if (mounted) setState(() {});
+    final distance = await HealthService().readWalkingRunningDistanceKm(
+      start: startedAt,
+    );
+    lastDistanceRefresh = DateTime.now();
+    refreshingDistance = false;
+    if (distance != null) trackedDistanceKm = distance;
+    if (mounted) setState(() {});
+    return trackedDistanceKm;
   }
 
   Future<void> _addExercises() async {
@@ -1986,6 +2023,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ..addAll(updated);
     });
     await draft.persist();
+
+    if (_hasCardioExercise) unawaited(_refreshTrackedDistance(force: true));
 
     if (newDefinitions.isEmpty) return;
     try {
@@ -2109,6 +2148,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return;
     }
 
+    final finalTrackedDistance = _hasCardioExercise
+        ? await _refreshTrackedDistance(force: true)
+        : null;
+    if (!mounted) return;
+    var assignedTrackedDistance = false;
     final records = <WorkoutExerciseRecord>[];
     for (final exercise in exercises) {
       if (exercise.isSportsExercise) {
@@ -2122,15 +2166,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         continue;
       }
       if (exercise.isDistanceExercise) {
-        final distance = double.tryParse(exercise.distanceKm);
-        if (distance == null || distance <= 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Enter a valid distance for ${exercise.name}.'),
-            ),
-          );
-          return;
-        }
+        final distance =
+            !assignedTrackedDistance &&
+                finalTrackedDistance != null &&
+                finalTrackedDistance > 0
+            ? finalTrackedDistance
+            : null;
+        assignedTrackedDistance = true;
         records.add(
           WorkoutExerciseRecord(
             name: exercise.definition.name,
@@ -2376,6 +2418,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           for (final exercise in exercises) ...[
             _WorkoutExerciseCard(
               exercise: exercise,
+              trackedDistanceKm: trackedDistanceKm,
+              refreshingDistance: refreshingDistance,
               onChanged: () {
                 setState(() {});
                 unawaited(draft.persist());
@@ -2811,11 +2855,15 @@ class _WorkoutExercise {
 class _WorkoutExerciseCard extends StatelessWidget {
   const _WorkoutExerciseCard({
     required this.exercise,
+    required this.trackedDistanceKm,
+    required this.refreshingDistance,
     required this.onChanged,
     required this.onRemove,
   });
 
   final _WorkoutExercise exercise;
+  final double? trackedDistanceKm;
+  final bool refreshingDistance;
   final VoidCallback onChanged;
   final VoidCallback onRemove;
 
@@ -2877,23 +2925,48 @@ class _WorkoutExerciseCard extends StatelessWidget {
             ),
           )
         else if (exercise.isDistanceExercise)
-          TextFormField(
-            initialValue: exercise.distanceKm,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            textInputAction: TextInputAction.done,
-            decoration: const InputDecoration(
-              labelText: 'Distance',
-              suffixText: 'km',
-              hintText: '0',
-              border: OutlineInputBorder(),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              color: context.vivordoColors.cardMuted,
+              borderRadius: BorderRadius.circular(14),
             ),
-            onChanged: (value) {
-              exercise.distanceKm = value;
-              onChanged();
-            },
-            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-            onFieldSubmitted: (_) =>
-                FocusManager.instance.primaryFocus?.unfocus(),
+            child: Row(
+              children: [
+                if (refreshingDistance)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  const Icon(Icons.route_rounded, color: _purple, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        trackedDistanceKm == null
+                            ? 'Tracking distance automatically'
+                            : '${trackedDistanceKm!.toStringAsFixed(2)} km',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Using walking and running distance from Apple Health',
+                        style: TextStyle(
+                          color: _muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           )
         else ...[
           const Row(
