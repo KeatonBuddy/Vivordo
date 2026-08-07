@@ -1065,20 +1065,29 @@ class _CircleProfileActivityTab extends StatelessWidget {
     children: [
       const _CircleSectionTitle('ACTIVITY'),
       const SizedBox(height: 12),
-      _CircleProfileActivityList(profile: profile),
+      _CircleProfileActivityList(profile: profile, scrollable: true),
     ],
   );
 }
 
 class _CircleProfileActivityList extends StatelessWidget {
-  const _CircleProfileActivityList({required this.profile, this.limit});
+  const _CircleProfileActivityList({
+    required this.profile,
+    this.limit,
+    this.scrollable = false,
+  });
 
   final CircleProfile profile;
   final int? limit;
+  final bool scrollable;
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<CircleActivity>>(
-    stream: CircleProfileService.watchMyRecentActivities(profile, days: 30),
+    stream: CircleProfileService.watchMyRecentActivities(
+      profile,
+      days: scrollable ? null : 30,
+      limit: scrollable ? null : 20,
+    ),
     builder: (context, snapshot) {
       if (!snapshot.hasData &&
           snapshot.connectionState == ConnectionState.waiting) {
@@ -1096,6 +1105,20 @@ class _CircleProfileActivityList extends StatelessWidget {
           icon: Icons.directions_run_rounded,
           title: 'No recent activity',
           detail: 'Shared workouts and journal entries will appear here.',
+        );
+      }
+      if (scrollable) {
+        return SizedBox(
+          height: 340,
+          child: ListView.separated(
+            primary: false,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 4),
+            itemCount: activities.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (context, index) =>
+                _CircleProfileActivityTile(activity: activities[index]),
+          ),
         );
       }
       return Column(
@@ -1118,6 +1141,7 @@ class _CircleProfileActivityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isJournal = activity.kind == 'journal';
+    final isAchievement = activity.kind == 'achievement';
     final visual = workoutActivityVisual(
       activity.name,
       category: activity.activityCategory,
@@ -1132,26 +1156,33 @@ class _CircleProfileActivityTile extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: (isJournal ? CircleScreen._purple : visual.color)
-                      .withValues(alpha: .12),
-                  shape: BoxShape.circle,
+              if (isAchievement)
+                _AchievementActivityBadge(activity: activity, size: 50)
+              else
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: (isJournal ? CircleScreen._purple : visual.color)
+                        .withValues(alpha: .12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isJournal ? Icons.menu_book_rounded : visual.icon,
+                    color: isJournal ? CircleScreen._purple : visual.color,
+                  ),
                 ),
-                child: Icon(
-                  isJournal ? Icons.menu_book_rounded : visual.icon,
-                  color: isJournal ? CircleScreen._purple : visual.color,
-                ),
-              ),
               const SizedBox(width: 13),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isJournal ? 'Journal Entry' : activity.name,
+                      isJournal
+                          ? 'Journal Entry'
+                          : isAchievement
+                          ? 'Earned ${activity.name}'
+                          : activity.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -1163,6 +1194,8 @@ class _CircleProfileActivityTile extends StatelessWidget {
                     Text(
                       isJournal
                           ? activity.mood ?? 'Shared reflection'
+                          : isAchievement
+                          ? '${activity.achievementTier == null ? 'Achievement unlocked' : '${_tierLabel(activity.achievementTier!)} tier unlocked'}  •  ${_relativeActivityTime(activity.day)}'
                           : '${activity.minutes} min  •  ${_relativeActivityTime(activity.day)}',
                       style: const TextStyle(color: CircleScreen._muted),
                     ),
@@ -1370,11 +1403,7 @@ class _CircleTabs extends StatelessWidget {
       border: Border.all(color: context.vivordoColors.border),
     ),
     child: Row(
-      children: [
-        _tab('Activity', 0),
-        _tab('Friends', 1),
-        _tab('Challenges', 2),
-      ],
+      children: [_tab('Activity', 0), _tab('Goals', 2), _tab('Friends', 1)],
     ),
   );
 
@@ -1730,6 +1759,30 @@ class _ChallengesTabState extends State<_ChallengesTab> {
             },
             SetOptions(merge: true),
           );
+          if (newUnlock) {
+            final unlockedTier = achievement.tier;
+            final activityId = unlockedTier == null
+                ? 'achievement_${achievement.id}'
+                : 'achievement_${achievement.id}_$unlockedTier';
+            batch.set(
+              firestore
+                  .collection('users')
+                  .doc(user.uid)
+                  .collection('circle_activity')
+                  .doc(activityId),
+              {
+                'kind': 'achievement',
+                'name': achievement.name,
+                'summary': achievement.requirement,
+                'achievementId': achievement.id,
+                'achievementBadgeAsset': achievement.earnedBadgeAsset,
+                'achievementTier': ?unlockedTier,
+                'minutes': 0,
+                'day': FieldValue.serverTimestamp(),
+              },
+              SetOptions(merge: true),
+            );
+          }
           return achievement.copyWith(earned: isEarned, earnedAt: earnedAt);
         })
         .toList(growable: false);
@@ -1785,12 +1838,6 @@ class _ChallengesTabState extends State<_ChallengesTab> {
         );
       }
       final achievements = snapshot.data!;
-      final earned = achievements.where((item) => item.unlocked).toList()
-        ..sort(
-          (a, b) => (a.earnedAt ?? DateTime(1970)).compareTo(
-            b.earnedAt ?? DateTime(1970),
-          ),
-        );
       final nextCandidates = achievements.where((item) => !item.earned).toList()
         ..sort(
           (a, b) => (b.progress / b.target).compareTo(a.progress / a.target),
@@ -1826,7 +1873,7 @@ class _ChallengesTabState extends State<_ChallengesTab> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _CircleSectionTitle('YOUR PROGRESS'),
+          const _CircleSectionTitle('ACHIEVEMENTS'),
           const SizedBox(height: 14),
           Semantics(
             button: true,
@@ -1920,17 +1967,6 @@ class _ChallengesTabState extends State<_ChallengesTab> {
             )
           else
             _NextAchievementCard(achievement: next),
-          const SizedBox(height: 28),
-          const _CircleSectionTitle('RECENTLY EARNED'),
-          const SizedBox(height: 14),
-          if (earned.isEmpty)
-            const _ChallengeEmptyCard(
-              icon: Icons.workspace_premium_rounded,
-              title: 'Nothing earned yet',
-              detail: 'Completed achievements will appear here.',
-            )
-          else
-            _RecentlyEarnedCard(achievements: earned.reversed.take(3).toList()),
           const SizedBox(height: 28),
           const _CircleSectionTitle('ACTIVE CHALLENGES'),
           const SizedBox(height: 14),
@@ -2049,6 +2085,15 @@ class _AchievementsPageState extends State<_AchievementsPage> {
               (achievement.unlocked || achievement.progress > 0),
         )
         .length;
+    final recentlyEarned =
+        widget.achievements
+            .where((achievement) => achievement.unlocked)
+            .toList()
+          ..sort(
+            (a, b) => (b.earnedAt ?? DateTime(1970)).compareTo(
+              a.earnedAt ?? DateTime(1970),
+            ),
+          );
 
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
@@ -2065,6 +2110,19 @@ class _AchievementsPageState extends State<_AchievementsPage> {
               inProgress: inProgress,
               percent: percent,
             ),
+            const SizedBox(height: 28),
+            const _CircleSectionTitle('RECENTLY EARNED'),
+            const SizedBox(height: 12),
+            if (recentlyEarned.isEmpty)
+              const _ChallengeEmptyCard(
+                icon: Icons.workspace_premium_rounded,
+                title: 'Nothing earned yet',
+                detail: 'Completed achievements will appear here.',
+              )
+            else
+              _RecentlyEarnedCard(
+                achievements: recentlyEarned.take(3).toList(),
+              ),
             const SizedBox(height: 18),
             Row(
               children: [
@@ -3241,12 +3299,17 @@ class _MyActivityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isJournal = activity.kind == 'journal';
+    final isAchievement = activity.kind == 'achievement';
     final visual = workoutActivityVisual(
       activity.name,
       category: activity.activityCategory,
     );
     final detail = isJournal
         ? activity.mood ?? 'Shared reflection'
+        : isAchievement
+        ? activity.achievementTier == null
+              ? 'Achievement unlocked'
+              : '${_tierLabel(activity.achievementTier!)} tier'
         : activity.km != null
         ? '${activity.km!.toStringAsFixed(1)} km'
         : activity.sets != null && activity.sets! > 0
@@ -3266,19 +3329,22 @@ class _MyActivityCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFF0EEFF),
-                      shape: BoxShape.circle,
+                  if (isAchievement)
+                    _AchievementActivityBadge(activity: activity, size: 36)
+                  else
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF0EEFF),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isJournal ? Icons.menu_book_rounded : visual.icon,
+                        color: isJournal ? CircleScreen._purple : visual.color,
+                        size: 20,
+                      ),
                     ),
-                    child: Icon(
-                      isJournal ? Icons.menu_book_rounded : visual.icon,
-                      color: isJournal ? CircleScreen._purple : visual.color,
-                      size: 20,
-                    ),
-                  ),
                   const Spacer(),
                   const Icon(
                     Icons.chat_bubble_outline_rounded,
@@ -3289,7 +3355,7 @@ class _MyActivityCard extends StatelessWidget {
               ),
               const SizedBox(height: 11),
               Text(
-                activity.name,
+                isAchievement ? 'Earned ${activity.name}' : activity.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -3725,6 +3791,7 @@ class _CircleActivityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isJournal = activity.kind == 'journal';
+    final isAchievement = activity.kind == 'achievement';
     final visual = workoutActivityVisual(
       activity.name,
       category: activity.activityCategory,
@@ -3764,6 +3831,8 @@ class _CircleActivityTile extends StatelessWidget {
                     Text(
                       isJournal
                           ? 'shared a Journal Entry${activity.mood == null ? '' : ' · ${activity.mood}'}'
+                          : isAchievement
+                          ? 'earned ${activity.name}${activity.achievementTier == null ? '' : ' · ${_tierLabel(activity.achievementTier!)}'}'
                           : details.isEmpty
                           ? 'completed ${activity.name}'
                           : 'completed ${activity.name} · ${details.join(' · ')}',
@@ -3786,11 +3855,59 @@ class _CircleActivityTile extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
-                isJournal ? Icons.menu_book_rounded : visual.icon,
-                color: isJournal ? CircleScreen._purple : visual.color,
-              ),
+              if (isAchievement)
+                _AchievementActivityBadge(activity: activity, size: 42)
+              else
+                Icon(
+                  isJournal ? Icons.menu_book_rounded : visual.icon,
+                  color: isJournal ? CircleScreen._purple : visual.color,
+                ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AchievementActivityBadge extends StatelessWidget {
+  const _AchievementActivityBadge({required this.activity, required this.size});
+
+  final CircleActivity activity;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final asset = activity.achievementBadgeAsset;
+    if (asset == null || asset.trim().isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: CircleScreen._purple.withValues(alpha: .12),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          Icons.emoji_events_rounded,
+          color: CircleScreen._purple,
+          size: size * .52,
+        ),
+      );
+    }
+    return ClipOval(
+      child: Image.asset(
+        asset,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => Container(
+          width: size,
+          height: size,
+          color: CircleScreen._purple.withValues(alpha: .12),
+          child: Icon(
+            Icons.emoji_events_rounded,
+            color: CircleScreen._purple,
+            size: size * .52,
           ),
         ),
       ),
@@ -3895,14 +4012,26 @@ class _CircleActivityDetailsSheetState
                           ],
                         ),
                         const SizedBox(height: 18),
+                        if (activity.kind == 'achievement') ...[
+                          Center(
+                            child: _AchievementActivityBadge(
+                              activity: activity,
+                              size: 108,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                        ],
                         Text(
-                          activity.name,
+                          activity.kind == 'achievement'
+                              ? 'Earned ${activity.name}'
+                              : activity.name,
                           style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        if (activity.kind == 'journal' &&
+                        if ((activity.kind == 'journal' ||
+                                activity.kind == 'achievement') &&
                             activity.summary?.trim().isNotEmpty == true) ...[
                           const SizedBox(height: 10),
                           Text(
@@ -3933,6 +4062,13 @@ class _CircleActivityDetailsSheetState
                               _ActivityDetailChip(
                                 icon: Icons.fitness_center_rounded,
                                 label: '${activity.sets} sets',
+                              ),
+                            if (activity.kind == 'achievement')
+                              _ActivityDetailChip(
+                                icon: Icons.emoji_events_rounded,
+                                label: activity.achievementTier == null
+                                    ? 'Achievement unlocked'
+                                    : '${_tierLabel(activity.achievementTier!)} tier',
                               ),
                           ],
                         ),

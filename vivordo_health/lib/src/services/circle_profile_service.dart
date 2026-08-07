@@ -65,6 +65,8 @@ class CircleActivity {
     this.km,
     this.sets,
     this.activityCategory,
+    this.achievementBadgeAsset,
+    this.achievementTier,
   });
 
   final String id;
@@ -78,6 +80,8 @@ class CircleActivity {
   final double? km;
   final int? sets;
   final String? activityCategory;
+  final String? achievementBadgeAsset;
+  final String? achievementTier;
 }
 
 class CircleDailyFitness {
@@ -706,6 +710,9 @@ class CircleProfileService {
                   km: (data['km'] as num?)?.toDouble(),
                   sets: (data['sets'] as num?)?.round(),
                   activityCategory: data['activityCategory'] as String?,
+                  achievementBadgeAsset:
+                      data['achievementBadgeAsset'] as String?,
+                  achievementTier: data['achievementTier'] as String?,
                 );
               }
               emit();
@@ -731,37 +738,44 @@ class CircleProfileService {
 
   static Stream<List<CircleActivity>> watchMyRecentActivities(
     CircleProfile profile, {
-    int days = 7,
+    int? days = 7,
+    int? limit = 20,
   }) {
-    final cutoff = DateTime.now().subtract(Duration(days: days));
-    return FirebaseFirestore.instance
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
         .collection('users')
         .doc(profile.uid)
-        .collection('circle_activity')
-        .where('day', isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff))
-        .orderBy('day', descending: true)
-        .limit(20)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map((document) {
-                final data = document.data();
-                return CircleActivity(
-                  id: document.id,
-                  profile: profile,
-                  name: data['name'] as String? ?? 'Activity',
-                  minutes: (data['minutes'] as num?)?.round() ?? 0,
-                  day: (data['day'] as Timestamp?)?.toDate() ?? DateTime.now(),
-                  kind: data['kind'] as String? ?? 'activity',
-                  summary: data['summary'] as String?,
-                  mood: data['mood'] as String?,
-                  km: (data['km'] as num?)?.toDouble(),
-                  sets: (data['sets'] as num?)?.round(),
-                  activityCategory: data['activityCategory'] as String?,
-                );
-              })
-              .toList(growable: false),
-        );
+        .collection('circle_activity');
+    if (days != null) {
+      final cutoff = DateTime.now().subtract(Duration(days: days));
+      query = query.where(
+        'day',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff),
+      );
+    }
+    query = query.orderBy('day', descending: true);
+    if (limit != null) query = query.limit(limit);
+    return query.snapshots().map(
+      (snapshot) => snapshot.docs
+          .map((document) {
+            final data = document.data();
+            return CircleActivity(
+              id: document.id,
+              profile: profile,
+              name: data['name'] as String? ?? 'Activity',
+              minutes: (data['minutes'] as num?)?.round() ?? 0,
+              day: (data['day'] as Timestamp?)?.toDate() ?? DateTime.now(),
+              kind: data['kind'] as String? ?? 'activity',
+              summary: data['summary'] as String?,
+              mood: data['mood'] as String?,
+              km: (data['km'] as num?)?.toDouble(),
+              sets: (data['sets'] as num?)?.round(),
+              activityCategory: data['activityCategory'] as String?,
+              achievementBadgeAsset: data['achievementBadgeAsset'] as String?,
+              achievementTier: data['achievementTier'] as String?,
+            );
+          })
+          .toList(growable: false),
+    );
   }
 
   static Stream<List<CircleActivityComment>> watchActivityComments(
