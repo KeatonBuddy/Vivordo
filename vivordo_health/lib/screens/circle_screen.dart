@@ -787,62 +787,6 @@ class _ChallengesTabState extends State<_ChallengesTab> {
     }
   }
 
-  void _showAllAchievements(List<_Achievement> achievements) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => SafeArea(
-        child: Container(
-          margin: const EdgeInsets.all(14),
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(sheetContext).height * .78,
-          ),
-          decoration: BoxDecoration(
-            color: sheetContext.vivordoColors.card,
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 42,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: sheetContext.vivordoColors.border,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Achievements',
-                style: TextStyle(
-                  color: sheetContext.vivordoColors.textPrimary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: achievements.length,
-                  separatorBuilder: (_, _) => Divider(
-                    color: sheetContext.vivordoColors.border,
-                    height: 18,
-                  ),
-                  itemBuilder: (_, index) =>
-                      _AchievementListRow(achievement: achievements[index]),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) => FutureBuilder<List<_Achievement>>(
     future: _achievements,
@@ -870,93 +814,126 @@ class _ChallengesTabState extends State<_ChallengesTab> {
             b.earnedAt ?? DateTime(1970),
           ),
         );
-      final completed = achievements.where((item) => item.earned).toList();
       final nextCandidates = achievements.where((item) => !item.earned).toList()
         ..sort(
           (a, b) => (b.progress / b.target).compareTo(a.progress / a.target),
         );
       final next = nextCandidates.firstOrNull;
-      final percent = achievements.isEmpty
+      final oneTimeAchievements = achievements
+          .where((achievement) => achievement.target == 1)
+          .toList(growable: false);
+      final tieredAchievements = achievements
+          .where((achievement) => achievement.target > 1)
+          .toList(growable: false);
+      final earnedMilestoneCount =
+          oneTimeAchievements
+              .where((achievement) => achievement.earned)
+              .length +
+          tieredAchievements.fold<int>(
+            0,
+            (total, achievement) =>
+                total + _tierRankForDisplay(achievement.tier),
+          );
+      final totalMilestoneCount =
+          oneTimeAchievements.length + (tieredAchievements.length * 3);
+      final inProgressCount = achievements
+          .where(
+            (achievement) =>
+                !achievement.earned &&
+                (achievement.unlocked || achievement.progress > 0),
+          )
+          .length;
+      final percent = totalMilestoneCount == 0
           ? 0
-          : ((completed.length / achievements.length) * 100).round();
+          : ((earnedMilestoneCount / totalMilestoneCount) * 100).round();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _CircleSectionTitle('YOUR PROGRESS'),
           const SizedBox(height: 14),
-          _CircleCard(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  _ProfileAvatar(profile: widget.profile, radius: 34),
-                  const SizedBox(width: 18),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '${earned.length} achievements',
-                            maxLines: 1,
-                            softWrap: false,
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                              color: context.vivordoColors.textPrimary,
+          Semantics(
+            button: true,
+            label: 'Open achievements',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => _AchievementsPage(achievements: achievements),
+                ),
+              ),
+              child: _CircleCard(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Row(
+                    children: [
+                      _ProfileAvatar(profile: widget.profile, radius: 34),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                '$earnedMilestoneCount achievements',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                  color: context.vivordoColors.textPrimary,
+                                ),
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 4),
+                            Text(
+                              next == null
+                                  ? 'All achievements earned'
+                                  : '$inProgressCount in progress',
+                              style: const TextStyle(
+                                color: CircleScreen._muted,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 15),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: LinearProgressIndicator(
+                                value: totalMilestoneCount == 0
+                                    ? 0
+                                    : earnedMilestoneCount /
+                                          totalMilestoneCount,
+                                minHeight: 8,
+                                backgroundColor:
+                                    context.vivordoColors.cardMuted,
+                                color: CircleScreen._purple,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '$percent% complete',
+                              style: const TextStyle(
+                                color: CircleScreen._muted,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          next == null
-                              ? 'All achievements earned'
-                              : '${achievements.where((item) => !item.earned).length} in progress',
-                          style: const TextStyle(
-                            color: CircleScreen._muted,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 15),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: LinearProgressIndicator(
-                            value: achievements.isEmpty
-                                ? 0
-                                : completed.length / achievements.length,
-                            minHeight: 8,
-                            backgroundColor: context.vivordoColors.cardMuted,
-                            color: CircleScreen._purple,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '$percent% complete',
-                          style: const TextStyle(
-                            color: CircleScreen._muted,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 16),
+                      _ChallengeProgressRing(
+                        earned: earnedMilestoneCount,
+                        total: totalMilestoneCount,
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 16),
-                  _ChallengeProgressRing(
-                    earned: completed.length,
-                    total: achievements.length,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
           const SizedBox(height: 28),
-          _CircleSectionHeader(
-            label: 'NEXT ACHIEVEMENT',
-            actionLabel: 'View All',
-            onPressed: () => _showAllAchievements(achievements),
-          ),
+          const _CircleSectionTitle('NEXT ACHIEVEMENT'),
           const SizedBox(height: 14),
           if (next == null)
             const _ChallengeEmptyCard(
@@ -1039,41 +1016,849 @@ class _Achievement {
   );
 }
 
+enum _AchievementFilter { all, earned, inProgress, locked }
+
+class _AchievementsPage extends StatefulWidget {
+  const _AchievementsPage({required this.achievements});
+
+  final List<_Achievement> achievements;
+
+  @override
+  State<_AchievementsPage> createState() => _AchievementsPageState();
+}
+
+class _AchievementsPageState extends State<_AchievementsPage> {
+  var _filter = _AchievementFilter.all;
+
+  List<_Achievement> get _oneTime => widget.achievements
+      .where((achievement) => achievement.target == 1)
+      .toList(growable: false);
+
+  List<_Achievement> get _tiered => widget.achievements
+      .where((achievement) => achievement.target > 1)
+      .toList(growable: false);
+
+  bool _matchesFilter(_Achievement achievement) => switch (_filter) {
+    _AchievementFilter.all => true,
+    _AchievementFilter.earned => achievement.earned || achievement.tier != null,
+    _AchievementFilter.inProgress =>
+      !achievement.earned && (achievement.unlocked || achievement.progress > 0),
+    _AchievementFilter.locked =>
+      !achievement.unlocked && !achievement.earned && achievement.progress == 0,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final oneTime = _oneTime;
+    final tiered = _tiered;
+    final visibleOneTime = oneTime
+        .where(_matchesFilter)
+        .toList(growable: false);
+    final visibleTiered = tiered.where(_matchesFilter).toList(growable: false);
+    final oneTimeEarned = oneTime
+        .where((achievement) => achievement.earned)
+        .length;
+    final tieredEarned = tiered.fold<int>(
+      0,
+      (total, achievement) => total + _tierRankForDisplay(achievement.tier),
+    );
+    final earned = oneTimeEarned + tieredEarned;
+    final total = oneTime.length + (tiered.length * 3);
+    final percent = total == 0 ? 0 : ((earned / total) * 100).round();
+    final inProgress = widget.achievements
+        .where(
+          (achievement) =>
+              !achievement.earned &&
+              (achievement.unlocked || achievement.progress > 0),
+        )
+        .length;
+
+    return Scaffold(
+      backgroundColor: context.vivordoColors.page,
+      body: SafeArea(
+        child: ListView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 44),
+          children: [
+            _AchievementsHeader(onFilterPressed: _showFilterSheet),
+            const SizedBox(height: 24),
+            _AchievementSummaryCard(
+              earned: earned,
+              total: total,
+              inProgress: inProgress,
+              percent: percent,
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                for (final filter in _AchievementFilter.values) ...[
+                  if (filter != _AchievementFilter.all)
+                    const SizedBox(width: 8),
+                  Expanded(
+                    child: _AchievementFilterChip(
+                      filter: filter,
+                      selected: _filter == filter,
+                      onTap: () => setState(() => _filter = filter),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 28),
+            _AchievementPageSectionHeader(
+              title: 'ONE-TIME',
+              count: '$oneTimeEarned / ${oneTime.length}',
+            ),
+            const SizedBox(height: 12),
+            if (visibleOneTime.isEmpty)
+              const _AchievementFilteredEmpty()
+            else
+              _OneTimeAchievementGrid(achievements: visibleOneTime),
+            const SizedBox(height: 28),
+            _AchievementPageSectionHeader(
+              title: 'TIERED ACHIEVEMENTS',
+              count: '$tieredEarned / ${tiered.length * 3}',
+            ),
+            const SizedBox(height: 12),
+            if (visibleTiered.isEmpty)
+              const _AchievementFilteredEmpty()
+            else
+              for (var index = 0; index < visibleTiered.length; index++) ...[
+                if (index > 0) const SizedBox(height: 10),
+                _TieredAchievementCard(
+                  achievement: visibleTiered[index],
+                  showCompletedTiers: _filter == _AchievementFilter.earned,
+                  onTap: () => _showAchievementDetails(visibleTiered[index]),
+                ),
+              ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFilterSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(14),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+          decoration: BoxDecoration(
+            color: sheetContext.vivordoColors.card,
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: sheetContext.vivordoColors.border),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: sheetContext.vivordoColors.border,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Filter achievements',
+                style: TextStyle(
+                  color: sheetContext.vivordoColors.textPrimary,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (final filter in _AchievementFilter.values)
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  title: Text(_achievementFilterLabel(filter)),
+                  trailing: Icon(
+                    _filter == filter
+                        ? Icons.check_circle_rounded
+                        : Icons.circle_outlined,
+                    color: _filter == filter
+                        ? CircleScreen._purple
+                        : CircleScreen._muted,
+                  ),
+                  onTap: () {
+                    setState(() => _filter = filter);
+                    Navigator.of(sheetContext).pop();
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAchievementDetails(_Achievement achievement) {
+    final unit = achievement.progressUnit ?? 'activities';
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(14),
+          padding: const EdgeInsets.fromLTRB(24, 14, 24, 26),
+          decoration: BoxDecoration(
+            color: sheetContext.vivordoColors.card,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: sheetContext.vivordoColors.border),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: sheetContext.vivordoColors.border,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 20),
+              _AchievementCollectionBadge(achievement: achievement, size: 94),
+              const SizedBox(height: 14),
+              Text(
+                achievement.name,
+                style: TextStyle(
+                  color: sheetContext.vivordoColors.textPrimary,
+                  fontSize: 23,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                achievement.requirement,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                '${achievement.progress} / ${achievement.target} $unit',
+                style: const TextStyle(
+                  color: CircleScreen._purple,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(5),
+                child: LinearProgressIndicator(
+                  value: (achievement.progress / achievement.target).clamp(
+                    0,
+                    1,
+                  ),
+                  minHeight: 8,
+                  color: CircleScreen._purple,
+                  backgroundColor: sheetContext.vivordoColors.cardMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AchievementsHeader extends StatelessWidget {
+  const _AchievementsHeader({required this.onFilterPressed});
+
+  final VoidCallback onFilterPressed;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      _AchievementHeaderButton(
+        icon: Icons.chevron_left_rounded,
+        tooltip: 'Back',
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      const SizedBox(width: 16),
+      Expanded(
+        child: Text(
+          'Achievements',
+          style: TextStyle(
+            color: context.vivordoColors.textPrimary,
+            fontSize: 30,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -.7,
+          ),
+        ),
+      ),
+      _AchievementHeaderButton(
+        icon: Icons.tune_rounded,
+        tooltip: 'Filter achievements',
+        onPressed: onFilterPressed,
+      ),
+    ],
+  );
+}
+
+class _AchievementHeaderButton extends StatelessWidget {
+  const _AchievementHeaderButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: context.vivordoColors.card,
+    borderRadius: BorderRadius.circular(16),
+    child: InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(16),
+      child: Tooltip(
+        message: tooltip,
+        child: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            border: Border.all(color: context.vivordoColors.border),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(icon, color: context.vivordoColors.textPrimary, size: 28),
+        ),
+      ),
+    ),
+  );
+}
+
+class _AchievementSummaryCard extends StatelessWidget {
+  const _AchievementSummaryCard({
+    required this.earned,
+    required this.total,
+    required this.inProgress,
+    required this.percent,
+  });
+
+  final int earned;
+  final int total;
+  final int inProgress;
+  final int percent;
+
+  @override
+  Widget build(BuildContext context) => _CircleCard(
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '$earned of $total earned',
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: context.vivordoColors.textPrimary,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Keep building healthy habits',
+                style: TextStyle(color: CircleScreen._muted, fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(5),
+                child: LinearProgressIndicator(
+                  value: total == 0 ? 0 : earned / total,
+                  minHeight: 7,
+                  color: CircleScreen._purple,
+                  backgroundColor: context.vivordoColors.cardMuted,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '$inProgress in progress',
+                style: const TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 20),
+        _AchievementPercentRing(percent: percent),
+      ],
+    ),
+  );
+}
+
+class _AchievementPercentRing extends StatelessWidget {
+  const _AchievementPercentRing({required this.percent});
+
+  final int percent;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: 106,
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned.fill(
+          child: CircularProgressIndicator(
+            value: percent / 100,
+            strokeWidth: 9,
+            color: CircleScreen._purple,
+            backgroundColor: context.vivordoColors.cardMuted,
+          ),
+        ),
+        Text(
+          '$percent%',
+          textScaler: TextScaler.noScaling,
+          style: const TextStyle(
+            color: CircleScreen._purple,
+            fontSize: 27,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _AchievementFilterChip extends StatelessWidget {
+  const _AchievementFilterChip({
+    required this.filter,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _AchievementFilter filter;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: selected ? CircleScreen._purple : context.vivordoColors.card,
+    borderRadius: BorderRadius.circular(24),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: selected
+                ? CircleScreen._purple
+                : context.vivordoColors.border,
+          ),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            _achievementFilterLabel(filter),
+            maxLines: 1,
+            style: TextStyle(
+              color: selected ? Colors.white : CircleScreen._muted,
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+String _achievementFilterLabel(_AchievementFilter filter) => switch (filter) {
+  _AchievementFilter.all => 'All',
+  _AchievementFilter.earned => 'Earned',
+  _AchievementFilter.inProgress => 'In Progress',
+  _AchievementFilter.locked => 'Locked',
+};
+
+class _AchievementPageSectionHeader extends StatelessWidget {
+  const _AchievementPageSectionHeader({
+    required this.title,
+    required this.count,
+  });
+
+  final String title;
+  final String count;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(child: _CircleSectionTitle(title)),
+      Text(
+        count,
+        style: const TextStyle(color: CircleScreen._muted, fontSize: 14),
+      ),
+    ],
+  );
+}
+
+class _OneTimeAchievementGrid extends StatelessWidget {
+  const _OneTimeAchievementGrid({required this.achievements});
+
+  final List<_Achievement> achievements;
+
+  @override
+  Widget build(BuildContext context) => _CircleCard(
+    child: GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: achievements.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 18,
+        crossAxisSpacing: 8,
+        mainAxisExtent: 146,
+      ),
+      itemBuilder: (context, index) =>
+          _OneTimeAchievementItem(achievement: achievements[index]),
+    ),
+  );
+}
+
+class _OneTimeAchievementItem extends StatelessWidget {
+  const _OneTimeAchievementItem({required this.achievement});
+
+  final _Achievement achievement;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      _AchievementCollectionBadge(achievement: achievement, size: 72),
+      const SizedBox(height: 7),
+      Text(
+        achievement.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: context.vivordoColors.textPrimary,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      const SizedBox(height: 5),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            achievement.earned
+                ? Icons.check_circle_rounded
+                : Icons.lock_rounded,
+            size: 15,
+            color: achievement.earned
+                ? const Color(0xFF18B747)
+                : CircleScreen._muted,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            achievement.earned ? 'Earned' : 'Locked',
+            style: const TextStyle(color: CircleScreen._muted, fontSize: 11),
+          ),
+        ],
+      ),
+      if (achievement.earned && achievement.earnedAt != null) ...[
+        const SizedBox(height: 3),
+        Text(
+          DateFormat('MMM d').format(achievement.earnedAt!),
+          style: const TextStyle(color: CircleScreen._muted, fontSize: 10),
+        ),
+      ],
+    ],
+  );
+}
+
+class _AchievementCollectionBadge extends StatelessWidget {
+  const _AchievementCollectionBadge({
+    required this.achievement,
+    required this.size,
+  });
+
+  final _Achievement achievement;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final badge = _AchievementBadge(
+      assetPath: achievement.visibleBadgeAsset,
+      size: size,
+      locked: !achievement.unlocked && achievement.progress == 0,
+    );
+    if (achievement.unlocked || achievement.progress > 0) return badge;
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix([
+        .2126,
+        .7152,
+        .0722,
+        0,
+        0,
+        .2126,
+        .7152,
+        .0722,
+        0,
+        0,
+        .2126,
+        .7152,
+        .0722,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+      ]),
+      child: badge,
+    );
+  }
+}
+
+class _TieredAchievementCard extends StatelessWidget {
+  const _TieredAchievementCard({
+    required this.achievement,
+    required this.showCompletedTiers,
+    required this.onTap,
+  });
+
+  final _Achievement achievement;
+  final bool showCompletedTiers;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tier = achievement.tier ?? achievement.goalTier ?? 'bronze';
+    final tierColor = _achievementTierColor(tier);
+    final tierStatus = achievement.earned
+        ? 'Gold earned'
+        : achievement.tier != null
+        ? '${_tierLabel(achievement.tier!)} earned'
+        : '${_tierLabel(achievement.goalTier ?? 'bronze')} next';
+    return Material(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: context.vivordoColors.border),
+          ),
+          child: Row(
+            children: [
+              _AchievementCollectionBadge(achievement: achievement, size: 72),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            achievement.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: context.vivordoColors.textPrimary,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Text(
+                          '${achievement.progress} / ${achievement.target}',
+                          style: TextStyle(
+                            color: context.vivordoColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _tieredAchievementDescription(achievement),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: CircleScreen._muted,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (showCompletedTiers && achievement.tier != null) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 5,
+                        runSpacing: 5,
+                        children: [
+                          for (
+                            var rank = 1;
+                            rank <= _tierRankForDisplay(achievement.tier);
+                            rank++
+                          )
+                            _CompletedTierPill(tier: _tierForRank(rank)),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: (achievement.progress / achievement.target)
+                                  .clamp(0, 1),
+                              minHeight: 6,
+                              color: CircleScreen._purple,
+                              backgroundColor: context.vivordoColors.cardMuted,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: tierColor.withValues(alpha: .13),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            tierStatus,
+                            style: TextStyle(
+                              color: tierColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 5),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: CircleScreen._muted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompletedTierPill extends StatelessWidget {
+  const _CompletedTierPill({required this.tier});
+
+  final String tier;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _achievementTierColor(tier);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .13),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_rounded, color: color, size: 12),
+          const SizedBox(width: 3),
+          Text(
+            _tierLabel(tier),
+            style: TextStyle(
+              color: color,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _tierForRank(int rank) => switch (rank) {
+  1 => 'bronze',
+  2 => 'silver',
+  _ => 'gold',
+};
+
+String _tieredAchievementDescription(_Achievement achievement) =>
+    switch (achievement.id) {
+      'workout_momentum' => 'Complete strength workouts',
+      'endurance' => 'Complete cardio or sports activities',
+      'pulse_check' => 'Complete heart-rate scans',
+      _ => achievement.requirement,
+    };
+
+Color _achievementTierColor(String tier) => switch (tier) {
+  'gold' => const Color(0xFFD99A17),
+  'silver' => const Color(0xFF7F899B),
+  _ => const Color(0xFFC86A31),
+};
+
+int _tierRankForDisplay(String? tier) => switch (tier) {
+  'bronze' => 1,
+  'silver' => 2,
+  'gold' => 3,
+  _ => 0,
+};
+
+class _AchievementFilteredEmpty extends StatelessWidget {
+  const _AchievementFilteredEmpty();
+
+  @override
+  Widget build(BuildContext context) => _CircleCard(
+    child: const Padding(
+      padding: EdgeInsets.symmetric(vertical: 10),
+      child: Text(
+        'No achievements match this filter.',
+        textAlign: TextAlign.center,
+        style: TextStyle(color: CircleScreen._muted, fontSize: 13),
+      ),
+    ),
+  );
+}
+
 String _tierLabel(String tier) => switch (tier) {
   'bronze' => 'Bronze',
   'silver' => 'Silver',
   'gold' => 'Gold',
   _ => tier,
 };
-
-class _CircleSectionHeader extends StatelessWidget {
-  const _CircleSectionHeader({
-    required this.label,
-    required this.actionLabel,
-    required this.onPressed,
-  });
-
-  final String label;
-  final String actionLabel;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Expanded(child: _CircleSectionTitle(label)),
-      TextButton(
-        onPressed: onPressed,
-        child: Text(
-          actionLabel,
-          style: const TextStyle(
-            color: CircleScreen._purple,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-    ],
-  );
-}
 
 class _AchievementBadge extends StatelessWidget {
   const _AchievementBadge({
@@ -1243,84 +2028,6 @@ class _RecentlyEarnedCard extends StatelessWidget {
       ),
     ),
   );
-}
-
-class _AchievementListRow extends StatelessWidget {
-  const _AchievementListRow({required this.achievement});
-
-  final _Achievement achievement;
-
-  @override
-  Widget build(BuildContext context) {
-    final isAdvancingTier =
-        achievement.tier != null && achievement.goalTier != null;
-    final progressUnit = achievement.progressUnit ?? 'activities';
-    final subtitle = isAdvancingTier
-        ? '${_tierLabel(achievement.goalTier!)} tier · '
-              '${achievement.progress} / ${achievement.target} $progressUnit'
-        : achievement.tier != null
-        ? '${_tierLabel(achievement.tier!)} tier completed · '
-              '${achievement.progress} $progressUnit'
-        : achievement.requirement;
-
-    return Row(
-      children: [
-        _AchievementBadge(
-          assetPath: achievement.visibleBadgeAsset,
-          size: 58,
-          locked: !achievement.unlocked,
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                achievement.name,
-                style: TextStyle(
-                  color: context.vivordoColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  color: CircleScreen._muted,
-                  fontSize: 13,
-                ),
-              ),
-              if (isAdvancingTier) ...[
-                const SizedBox(height: 7),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: (achievement.progress / achievement.target).clamp(
-                      0,
-                      1,
-                    ),
-                    minHeight: 5,
-                    color: CircleScreen._purple,
-                    backgroundColor: context.vivordoColors.cardMuted,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Icon(
-          achievement.unlocked
-              ? Icons.check_circle_rounded
-              : Icons.lock_rounded,
-          color: achievement.unlocked
-              ? const Color(0xFF16B877)
-              : CircleScreen._muted,
-        ),
-      ],
-    );
-  }
 }
 
 class _CircleSectionTitle extends StatelessWidget {
