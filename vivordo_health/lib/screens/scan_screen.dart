@@ -21,10 +21,12 @@ class ScanScreen extends StatefulWidget {
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
+class _ScanScreenState extends State<ScanScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // ── Camera / PPG ──────────────────────────────────────────────────────────
   CameraController? _cameraController;
-  ScanState _scanState = ScanState.initializing;
+  Future<void>? _cameraInitialization;
+  ScanState _scanState = ScanState.idle;
   final List<double> _redValues = [];
   bool _isProcessingFrame = false;
   int _fingerDetectedFrames = 0;
@@ -62,6 +64,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _pulseController = AnimationController(
       vsync: this,
@@ -78,7 +81,16 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     );
 
     _checkFirstScanStatus();
-    _initCamera();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      unawaited(_deactivateCamera());
+    }
   }
 
   @override
@@ -149,6 +161,24 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   // ── Camera init ───────────────────────────────────────────────────────────
 
   Future<void> _initCamera() async {
+    final existing = _cameraController;
+    if (existing != null && existing.value.isInitialized) return;
+    final pending = _cameraInitialization;
+    if (pending != null) return pending;
+
+    final initialization = _initializeCameraController();
+    _cameraInitialization = initialization;
+    try {
+      await initialization;
+    } finally {
+      if (identical(_cameraInitialization, initialization)) {
+        _cameraInitialization = null;
+      }
+    }
+  }
+
+  Future<void> _initializeCameraController() async {
+    CameraController? controller;
     try {
       final cameras = await availableCameras();
       final backCameras = cameras
@@ -156,6 +186,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           .toList();
 
       if (backCameras.isEmpty) {
+        if (!mounted) return;
         setState(() {
           _errorTitle = 'Camera unavailable';
           _errorBody = 'No rear camera was found on this device.';
@@ -166,19 +197,24 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
       final selectedCamera = backCameras.first;
 
-      _cameraController = CameraController(
+      controller = CameraController(
         selectedCamera,
         ResolutionPreset.low,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.bgra8888,
       );
 
-      await _cameraController!.initialize();
+      await controller.initialize();
+      if (!mounted || !widget.isActive || !_scanArmed) {
+        await controller.dispose();
+        return;
+      }
+      _cameraController = controller;
       setState(() {
         _scanState = ScanState.idle;
       });
-      if (widget.isActive) await _activateCamera();
     } catch (e) {
+      await controller?.dispose().catchError((_) {});
       debugPrint('[PPG] Camera init failed: $e');
       if (mounted) {
         setState(() {
@@ -191,12 +227,10 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _activateCamera() async {
+    if (!widget.isActive || !_scanArmed) return;
+    await _initCamera();
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) return;
-    if (!_scanArmed) {
-      await controller.setFlashMode(FlashMode.off).catchError((_) {});
-      return;
-    }
     var hasTorch = true;
     try {
       await controller.setFlashMode(FlashMode.torch);
@@ -220,11 +254,13 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     _isStartingScan = false;
     if (_scanState == ScanState.scanning) _pauseScan();
     final controller = _cameraController;
+    _cameraController = null;
     if (controller == null || !controller.value.isInitialized) return;
     if (controller.value.isStreamingImages) {
       await controller.stopImageStream().catchError((_) {});
     }
     await controller.setFlashMode(FlashMode.off).catchError((_) {});
+    await controller.dispose().catchError((_) {});
   }
 
   Future<void> _beginScanSession() async {
@@ -341,11 +377,13 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     });
     _spinController.stop();
     final controller = _cameraController;
+    _cameraController = null;
     if (controller != null && controller.value.isInitialized) {
       if (controller.value.isStreamingImages) {
         await controller.stopImageStream().catchError((_) {});
       }
       await controller.setFlashMode(FlashMode.off).catchError((_) {});
+      await controller.dispose().catchError((_) {});
     }
 
     final durationSecs =
@@ -568,13 +606,21 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     _pulseController.repeat(reverse: true);
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) {
-      await _initCamera();
+      if (mounted) {
+        setState(() {
+          _scanArmed = false;
+          _isStartingScan = false;
+          _scanState = ScanState.idle;
+        });
+      }
       return;
     }
     if (controller.value.isStreamingImages) {
       await controller.stopImageStream().catchError((_) {});
     }
     await controller.setFlashMode(FlashMode.off).catchError((_) {});
+    _cameraController = null;
+    await controller.dispose().catchError((_) {});
     setState(() {
       _scanArmed = false;
       _isStartingScan = false;
@@ -590,6 +636,7 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pulseController.dispose();
     _spinController.dispose();
     _tutorialPageController.dispose();
@@ -1535,12 +1582,11 @@ class _ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
           height: 52,
           child: ElevatedButton(
             onPressed: () {
-              setState(() => _scanState = ScanState.initializing);
               if (_cameraController != null &&
                   _cameraController!.value.isInitialized) {
                 _reset();
               } else {
-                _initCamera();
+                setState(() => _scanState = ScanState.idle);
               }
             },
             style: ElevatedButton.styleFrom(
