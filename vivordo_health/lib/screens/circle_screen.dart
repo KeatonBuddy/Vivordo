@@ -8,7 +8,9 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/activity_goals_service.dart';
+import '../src/services/calendar_service.dart';
 import '../src/services/circle_profile_service.dart';
+import '../src/services/outlook_calendar_service.dart';
 import '../src/services/workout_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import 'create_circle_profile_screen.dart';
@@ -18,8 +20,6 @@ class CircleScreen extends StatelessWidget {
   const CircleScreen({super.key});
 
   static const _purple = Color(0xFF6250E8);
-  static const _background = Color(0xFFF4F4F9);
-  static const _ink = Color(0xFF17172B);
   static const _muted = Color(0xFF7F7F95);
 
   @override
@@ -231,12 +231,20 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
           const SizedBox(height: 26),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 220),
-            child: _selectedTab == 0
-                ? _ActivityTab(
-                    profile: profile,
-                    key: const ValueKey('activity'),
-                  )
-                : _FriendsTab(profile: profile, key: const ValueKey('friends')),
+            child: switch (_selectedTab) {
+              0 => _ActivityTab(
+                profile: profile,
+                key: const ValueKey('activity'),
+              ),
+              1 => _FriendsTab(
+                profile: profile,
+                key: const ValueKey('friends'),
+              ),
+              _ => _ChallengesTab(
+                profile: profile,
+                key: const ValueKey('challenges'),
+              ),
+            },
           ),
         ],
       ),
@@ -384,7 +392,13 @@ class _CircleTabs extends StatelessWidget {
       borderRadius: BorderRadius.circular(15),
       border: Border.all(color: context.vivordoColors.border),
     ),
-    child: Row(children: [_tab('Activity', 0), _tab('Friends', 1)]),
+    child: Row(
+      children: [
+        _tab('Activity', 0),
+        _tab('Friends', 1),
+        _tab('Challenges', 2),
+      ],
+    ),
   );
 
   Widget _tab(String label, int index) => Expanded(
@@ -405,6 +419,1040 @@ class _CircleTabs extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _ChallengesTab extends StatefulWidget {
+  const _ChallengesTab({required this.profile, super.key});
+
+  final CircleProfile profile;
+
+  @override
+  State<_ChallengesTab> createState() => _ChallengesTabState();
+}
+
+class _ChallengesTabState extends State<_ChallengesTab> {
+  late Future<List<_Achievement>> _achievements;
+
+  @override
+  void initState() {
+    super.initState();
+    _achievements = _loadAchievements();
+  }
+
+  Future<List<_Achievement>> _loadAchievements() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const [];
+
+    final firestore = FirebaseFirestore.instance;
+    final results = await Future.wait<Object>([
+      firestore.collection('users').doc(user.uid).collection('workouts').get(),
+      firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('metrics_daily')
+          .get(),
+      firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('journal_entries')
+          .limit(1)
+          .get(),
+      firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('achievements')
+          .get(),
+      CircleProfileService.watchFriends().first,
+      _hasGoogleCalendar(),
+      _hasOutlookCalendar(),
+    ]);
+
+    final workouts = results[0] as QuerySnapshot<Map<String, dynamic>>;
+    final metricDays = results[1] as QuerySnapshot<Map<String, dynamic>>;
+    final journalEntries = results[2] as QuerySnapshot<Map<String, dynamic>>;
+    final savedAchievements = results[3] as QuerySnapshot<Map<String, dynamic>>;
+    final friends = results[4] as List<CircleProfile>;
+    final googleCalendarConnected = results[5] as bool;
+    final outlookCalendarConnected = results[6] as bool;
+    final savedById = {
+      for (final document in savedAchievements.docs) document.id: document,
+    };
+    final heartRateScanCount = metricDays.docs.fold<int>(0, (total, document) {
+      final scan = document.data()['heart_rate_scan'];
+      if (scan is! Map) return total;
+      final entries = scan['entries'];
+      if (entries is List && entries.isNotEmpty) {
+        return total + entries.length;
+      }
+      // Older daily records stored only the aggregate camera reading.
+      if (scan['source'] == 'camera_ppg' || scan['avg'] is num) {
+        return total + 1;
+      }
+      return total;
+    });
+    final completedHeartScan = heartRateScanCount > 0;
+    final cardioOrSportsActivityCount = workouts.docs.where((document) {
+      final data = document.data();
+      final activityCategory = data['activityCategory'] as String?;
+      if (activityCategory == 'Cardio' || activityCategory == 'Sports') {
+        return true;
+      }
+      final exercises = (data['exercises'] as List? ?? const [])
+          .whereType<Map>()
+          .toList(growable: false);
+      if (exercises.isEmpty) return false;
+      return exercises.every((exercise) {
+        final category = exercise['category'] as String?;
+        return category == 'Cardio' || category == 'Sports';
+      });
+    }).length;
+    final strengthWorkoutCount =
+        workouts.docs.length - cardioOrSportsActivityCount;
+    final savedMomentumTier =
+        savedById['workout_momentum']?.data()['tier'] as String?;
+    final calculatedMomentumTier = strengthWorkoutCount >= 100
+        ? 'gold'
+        : strengthWorkoutCount >= 10
+        ? 'silver'
+        : strengthWorkoutCount >= 5
+        ? 'bronze'
+        : null;
+    final momentumTier = _highestTier(
+      savedMomentumTier,
+      calculatedMomentumTier,
+    );
+    final momentumTarget = switch (momentumTier) {
+      'gold' => 100,
+      'silver' => 100,
+      'bronze' => 10,
+      _ => 5,
+    };
+    final momentumGoalBadge = switch (momentumTier) {
+      'gold' => 'assets/achievements/workout_momentum_gold.png',
+      'silver' => 'assets/achievements/workout_momentum_gold.png',
+      'bronze' => 'assets/achievements/workout_momentum_silver.png',
+      _ => 'assets/achievements/workout_momentum_bronze.png',
+    };
+    final momentumEarnedBadge = switch (momentumTier) {
+      'gold' => 'assets/achievements/workout_momentum_gold.png',
+      'silver' => 'assets/achievements/workout_momentum_silver.png',
+      _ => 'assets/achievements/workout_momentum_bronze.png',
+    };
+    final momentumGoalTier = switch (momentumTier) {
+      'gold' => null,
+      'silver' => 'gold',
+      'bronze' => 'silver',
+      _ => 'bronze',
+    };
+    final savedEnduranceTier =
+        savedById['endurance']?.data()['tier'] as String?;
+    final calculatedEnduranceTier = cardioOrSportsActivityCount >= 100
+        ? 'gold'
+        : cardioOrSportsActivityCount >= 10
+        ? 'silver'
+        : cardioOrSportsActivityCount >= 5
+        ? 'bronze'
+        : null;
+    final enduranceTier = _highestTier(
+      savedEnduranceTier,
+      calculatedEnduranceTier,
+    );
+    final enduranceTarget = switch (enduranceTier) {
+      'gold' => 100,
+      'silver' => 100,
+      'bronze' => 10,
+      _ => 5,
+    };
+    final enduranceGoalBadge = switch (enduranceTier) {
+      'gold' => 'assets/achievements/endurance_gold.png',
+      'silver' => 'assets/achievements/endurance_gold.png',
+      'bronze' => 'assets/achievements/endurance_silver.png',
+      _ => 'assets/achievements/endurance_bronze.png',
+    };
+    final enduranceEarnedBadge = switch (enduranceTier) {
+      'gold' => 'assets/achievements/endurance_gold.png',
+      'silver' => 'assets/achievements/endurance_silver.png',
+      _ => 'assets/achievements/endurance_bronze.png',
+    };
+    final enduranceGoalTier = switch (enduranceTier) {
+      'gold' => null,
+      'silver' => 'gold',
+      'bronze' => 'silver',
+      _ => 'bronze',
+    };
+    final savedPulseCheckTier =
+        savedById['pulse_check']?.data()['tier'] as String?;
+    final calculatedPulseCheckTier = heartRateScanCount >= 1000
+        ? 'gold'
+        : heartRateScanCount >= 100
+        ? 'silver'
+        : heartRateScanCount >= 10
+        ? 'bronze'
+        : null;
+    final pulseCheckTier = _highestTier(
+      savedPulseCheckTier,
+      calculatedPulseCheckTier,
+    );
+    final pulseCheckTarget = switch (pulseCheckTier) {
+      'gold' => 1000,
+      'silver' => 1000,
+      'bronze' => 100,
+      _ => 10,
+    };
+    final pulseCheckGoalBadge = switch (pulseCheckTier) {
+      'gold' => 'assets/achievements/pulse_check_gold.png',
+      'silver' => 'assets/achievements/pulse_check_gold.png',
+      'bronze' => 'assets/achievements/pulse_check_silver.png',
+      _ => 'assets/achievements/pulse_check_bronze.png',
+    };
+    final pulseCheckEarnedBadge = switch (pulseCheckTier) {
+      'gold' => 'assets/achievements/pulse_check_gold.png',
+      'silver' => 'assets/achievements/pulse_check_silver.png',
+      _ => 'assets/achievements/pulse_check_bronze.png',
+    };
+    final pulseCheckGoalTier = switch (pulseCheckTier) {
+      'gold' => null,
+      'silver' => 'gold',
+      'bronze' => 'silver',
+      _ => 'bronze',
+    };
+
+    final achievementChecks = [
+      _Achievement(
+        id: 'in_motion',
+        name: 'In Motion',
+        requirement: 'Complete your first activity',
+        goalBadgeAsset: 'assets/achievements/in_motion.png',
+        earned: workouts.docs.isNotEmpty,
+        progress: workouts.docs.isNotEmpty ? 1 : 0,
+      ),
+      _Achievement(
+        id: 'first_pulse',
+        name: 'First Pulse',
+        requirement: 'Complete your first heart-rate scan',
+        goalBadgeAsset: 'assets/achievements/first_pulse.png',
+        earned: completedHeartScan,
+        progress: completedHeartScan ? 1 : 0,
+      ),
+      _Achievement(
+        id: 'dear_diary',
+        name: 'Dear Diary',
+        requirement: 'Write your first journal entry',
+        goalBadgeAsset: 'assets/achievements/dear_diary.png',
+        earned: journalEntries.docs.isNotEmpty,
+        progress: journalEntries.docs.isNotEmpty ? 1 : 0,
+      ),
+      _Achievement(
+        id: 'your_circle',
+        name: 'Your Circle',
+        requirement: 'Create your Circle profile',
+        goalBadgeAsset: 'assets/achievements/your_circle.png',
+        earned: widget.profile.username.trim().isNotEmpty,
+        progress: widget.profile.username.trim().isNotEmpty ? 1 : 0,
+      ),
+      _Achievement(
+        id: 'better_together',
+        name: 'Better Together',
+        requirement: 'Add your first friend',
+        goalBadgeAsset: 'assets/achievements/better_together.png',
+        earned: friends.isNotEmpty,
+        progress: friends.isNotEmpty ? 1 : 0,
+      ),
+      _Achievement(
+        id: 'day_planner',
+        name: 'Day Planner',
+        requirement: 'Connect your calendar',
+        goalBadgeAsset: 'assets/achievements/day_planner.png',
+        earned: googleCalendarConnected || outlookCalendarConnected,
+        progress: googleCalendarConnected || outlookCalendarConnected ? 1 : 0,
+      ),
+      _Achievement(
+        id: 'workout_momentum',
+        name: 'Workout Momentum',
+        requirement: 'Complete $momentumTarget strength workouts',
+        goalBadgeAsset: momentumGoalBadge,
+        earnedBadgeAsset: momentumEarnedBadge,
+        earned: momentumTier == 'gold',
+        progress: strengthWorkoutCount,
+        target: momentumTarget,
+        tier: momentumTier,
+        goalTier: momentumGoalTier,
+        progressUnit: 'workouts',
+      ),
+      _Achievement(
+        id: 'endurance',
+        name: 'Endurance',
+        requirement: 'Complete $enduranceTarget cardio or sports activities',
+        goalBadgeAsset: enduranceGoalBadge,
+        earnedBadgeAsset: enduranceEarnedBadge,
+        earned: enduranceTier == 'gold',
+        progress: cardioOrSportsActivityCount,
+        target: enduranceTarget,
+        tier: enduranceTier,
+        goalTier: enduranceGoalTier,
+        progressUnit: 'activities',
+      ),
+      _Achievement(
+        id: 'pulse_check',
+        name: 'Pulse Check',
+        requirement: 'Complete $pulseCheckTarget heart-rate scans',
+        goalBadgeAsset: pulseCheckGoalBadge,
+        earnedBadgeAsset: pulseCheckEarnedBadge,
+        earned: pulseCheckTier == 'gold',
+        progress: heartRateScanCount,
+        target: pulseCheckTarget,
+        tier: pulseCheckTier,
+        goalTier: pulseCheckGoalTier,
+        progressUnit: 'scans',
+      ),
+    ];
+    final batch = firestore.batch();
+    final now = DateTime.now();
+    final resolved = achievementChecks
+        .map((achievement) {
+          final saved = savedById[achievement.id];
+          final savedData = saved?.data();
+          final wasEarned = savedData?['completed'] == true;
+          final isEarned = achievement.earned || wasEarned;
+          final savedTier = savedData?['tier'] as String?;
+          final tierAdvanced =
+              _tierRank(achievement.tier) > _tierRank(savedTier);
+          final wasUnlocked = wasEarned || savedTier != null;
+          final newUnlock =
+              achievement.unlocked && (!wasUnlocked || tierAdvanced);
+          final earnedAt = newUnlock
+              ? now
+              : (savedData?['earnedAt'] as Timestamp?)?.toDate();
+          batch.set(
+            firestore
+                .collection('users')
+                .doc(user.uid)
+                .collection('achievements')
+                .doc(achievement.id),
+            {
+              'achievementId': achievement.id,
+              'name': achievement.name,
+              'requirement': achievement.requirement,
+              'badgeAsset': achievement.earnedBadgeAsset,
+              'progress': achievement.progress,
+              'target': achievement.target,
+              if (achievement.progressUnit != null)
+                'progressUnit': achievement.progressUnit,
+              'completed': isEarned,
+              if (achievement.tier != null) 'tier': achievement.tier,
+              if (achievement.goalTier != null)
+                'nextTier': achievement.goalTier,
+              if (newUnlock) 'earnedAt': FieldValue.serverTimestamp(),
+              if (tierAdvanced)
+                'earnedTiers': FieldValue.arrayUnion([achievement.tier]),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+          return achievement.copyWith(earned: isEarned, earnedAt: earnedAt);
+        })
+        .toList(growable: false);
+    await batch.commit();
+    return resolved;
+  }
+
+  String? _highestTier(String? saved, String? calculated) {
+    return _tierRank(saved) >= _tierRank(calculated) ? saved : calculated;
+  }
+
+  int _tierRank(String? tier) => switch (tier) {
+    'bronze' => 1,
+    'silver' => 2,
+    'gold' => 3,
+    _ => 0,
+  };
+
+  Future<bool> _hasGoogleCalendar() async {
+    try {
+      return await CalendarService.hasCalendarAccess();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _hasOutlookCalendar() async {
+    try {
+      return await OutlookCalendarService.isSignedIn();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _showAllAchievements(List<_Achievement> achievements) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.all(14),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * .78,
+          ),
+          decoration: BoxDecoration(
+            color: sheetContext.vivordoColors.card,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: sheetContext.vivordoColors.border,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Achievements',
+                style: TextStyle(
+                  color: sheetContext.vivordoColors.textPrimary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: achievements.length,
+                  separatorBuilder: (_, _) => Divider(
+                    color: sheetContext.vivordoColors.border,
+                    height: 18,
+                  ),
+                  itemBuilder: (_, index) =>
+                      _AchievementListRow(achievement: achievements[index]),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<List<_Achievement>>(
+    future: _achievements,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return _ChallengeEmptyCard(
+          icon: Icons.refresh_rounded,
+          title: 'Could not load achievements',
+          detail: 'Tap to try again.',
+          onTap: () => setState(() => _achievements = _loadAchievements()),
+        );
+      }
+      if (!snapshot.hasData) {
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 70),
+          child: Center(
+            child: CircularProgressIndicator(color: CircleScreen._purple),
+          ),
+        );
+      }
+      final achievements = snapshot.data!;
+      final earned = achievements.where((item) => item.unlocked).toList()
+        ..sort(
+          (a, b) => (a.earnedAt ?? DateTime(1970)).compareTo(
+            b.earnedAt ?? DateTime(1970),
+          ),
+        );
+      final completed = achievements.where((item) => item.earned).toList();
+      final nextCandidates = achievements.where((item) => !item.earned).toList()
+        ..sort(
+          (a, b) => (b.progress / b.target).compareTo(a.progress / a.target),
+        );
+      final next = nextCandidates.firstOrNull;
+      final percent = achievements.isEmpty
+          ? 0
+          : ((completed.length / achievements.length) * 100).round();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CircleSectionTitle('YOUR PROGRESS'),
+          const SizedBox(height: 14),
+          _CircleCard(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  _ProfileAvatar(profile: widget.profile, radius: 34),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '${earned.length} achievements',
+                            maxLines: 1,
+                            softWrap: false,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              color: context.vivordoColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          next == null
+                              ? 'All achievements earned'
+                              : '${achievements.where((item) => !item.earned).length} in progress',
+                          style: const TextStyle(
+                            color: CircleScreen._muted,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 15),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: achievements.isEmpty
+                                ? 0
+                                : completed.length / achievements.length,
+                            minHeight: 8,
+                            backgroundColor: context.vivordoColors.cardMuted,
+                            color: CircleScreen._purple,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '$percent% complete',
+                          style: const TextStyle(
+                            color: CircleScreen._muted,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  _ChallengeProgressRing(
+                    earned: completed.length,
+                    total: achievements.length,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 28),
+          _CircleSectionHeader(
+            label: 'NEXT ACHIEVEMENT',
+            actionLabel: 'View All',
+            onPressed: () => _showAllAchievements(achievements),
+          ),
+          const SizedBox(height: 14),
+          if (next == null)
+            const _ChallengeEmptyCard(
+              icon: Icons.emoji_events_rounded,
+              title: 'All achievements earned',
+              detail: 'You completed every available achievement.',
+            )
+          else
+            _NextAchievementCard(achievement: next),
+          const SizedBox(height: 28),
+          const _CircleSectionTitle('RECENTLY EARNED'),
+          const SizedBox(height: 14),
+          if (earned.isEmpty)
+            const _ChallengeEmptyCard(
+              icon: Icons.workspace_premium_rounded,
+              title: 'Nothing earned yet',
+              detail: 'Completed achievements will appear here.',
+            )
+          else
+            _RecentlyEarnedCard(achievements: earned.reversed.take(3).toList()),
+          const SizedBox(height: 28),
+          const _CircleSectionTitle('ACTIVE CHALLENGES'),
+          const SizedBox(height: 14),
+          const _ChallengeEmptyCard(
+            icon: Icons.groups_rounded,
+            title: 'No active challenges',
+            detail: 'Challenges with your Circle will appear here.',
+          ),
+        ],
+      );
+    },
+  );
+}
+
+class _Achievement {
+  const _Achievement({
+    required this.id,
+    required this.name,
+    required this.requirement,
+    required this.goalBadgeAsset,
+    required this.earned,
+    required this.progress,
+    this.target = 1,
+    this.earnedBadgeAsset,
+    this.tier,
+    this.goalTier,
+    this.progressUnit,
+    this.earnedAt,
+  });
+
+  final String id;
+  final String name;
+  final String requirement;
+  final String goalBadgeAsset;
+  final String? earnedBadgeAsset;
+  final bool earned;
+  final int progress;
+  final int target;
+  final String? tier;
+  final String? goalTier;
+  final String? progressUnit;
+  final DateTime? earnedAt;
+  bool get unlocked => earned || tier != null;
+  String get visibleBadgeAsset =>
+      unlocked ? earnedBadgeAsset ?? goalBadgeAsset : goalBadgeAsset;
+
+  _Achievement copyWith({bool? earned, DateTime? earnedAt}) => _Achievement(
+    id: id,
+    name: name,
+    requirement: requirement,
+    goalBadgeAsset: goalBadgeAsset,
+    earnedBadgeAsset: earnedBadgeAsset,
+    earned: earned ?? this.earned,
+    progress: progress,
+    target: target,
+    tier: tier,
+    goalTier: goalTier,
+    progressUnit: progressUnit,
+    earnedAt: earnedAt ?? this.earnedAt,
+  );
+}
+
+String _tierLabel(String tier) => switch (tier) {
+  'bronze' => 'Bronze',
+  'silver' => 'Silver',
+  'gold' => 'Gold',
+  _ => tier,
+};
+
+class _CircleSectionHeader extends StatelessWidget {
+  const _CircleSectionHeader({
+    required this.label,
+    required this.actionLabel,
+    required this.onPressed,
+  });
+
+  final String label;
+  final String actionLabel;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(child: _CircleSectionTitle(label)),
+      TextButton(
+        onPressed: onPressed,
+        child: Text(
+          actionLabel,
+          style: const TextStyle(
+            color: CircleScreen._purple,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class _AchievementBadge extends StatelessWidget {
+  const _AchievementBadge({
+    required this.assetPath,
+    required this.size,
+    this.locked = false,
+  });
+
+  final String assetPath;
+  final double size;
+  final bool locked;
+
+  @override
+  Widget build(BuildContext context) => Opacity(
+    opacity: locked ? .32 : 1,
+    child: SizedBox.square(
+      dimension: size,
+      child: ClipOval(
+        child: Image.asset(
+          assetPath,
+          width: size,
+          height: size,
+          alignment: Alignment.center,
+          fit: BoxFit.cover,
+        ),
+      ),
+    ),
+  );
+}
+
+class _NextAchievementCard extends StatelessWidget {
+  const _NextAchievementCard({required this.achievement});
+
+  final _Achievement achievement;
+
+  @override
+  Widget build(BuildContext context) => _CircleCard(
+    child: Padding(
+      padding: const EdgeInsets.all(18),
+      child: Row(
+        children: [
+          _AchievementBadge(assetPath: achievement.goalBadgeAsset, size: 74),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  achievement.name,
+                  style: TextStyle(
+                    color: context.vivordoColors.textPrimary,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (achievement.goalTier != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    '${_tierLabel(achievement.goalTier!).toUpperCase()} TIER',
+                    style: const TextStyle(
+                      color: CircleScreen._purple,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Text(
+                  achievement.requirement,
+                  style: const TextStyle(
+                    color: CircleScreen._muted,
+                    fontSize: 14,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Text(
+                      '${achievement.progress} / ${achievement.target}',
+                      style: const TextStyle(
+                        color: CircleScreen._purple,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (achievement.target > 1) ...[
+                      const SizedBox(width: 5),
+                      Text(
+                        achievement.progressUnit ?? 'activities',
+                        style: const TextStyle(
+                          color: CircleScreen._muted,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(5),
+                  child: LinearProgressIndicator(
+                    value: (achievement.progress / achievement.target).clamp(
+                      0,
+                      1,
+                    ),
+                    minHeight: 7,
+                    color: CircleScreen._purple,
+                    backgroundColor: context.vivordoColors.cardMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _RecentlyEarnedCard extends StatelessWidget {
+  const _RecentlyEarnedCard({required this.achievements});
+
+  final List<_Achievement> achievements;
+
+  @override
+  Widget build(BuildContext context) => _CircleCard(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var index = 0; index < achievements.length; index++) ...[
+            if (index > 0)
+              Container(
+                width: 1,
+                height: 92,
+                color: context.vivordoColors.border,
+              ),
+            Expanded(
+              child: Column(
+                children: [
+                  _AchievementBadge(
+                    assetPath: achievements[index].visibleBadgeAsset,
+                    size: 62,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    achievements[index].tier == null
+                        ? achievements[index].name
+                        : '${achievements[index].name} · ${_tierLabel(achievements[index].tier!)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: context.vivordoColors.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+class _AchievementListRow extends StatelessWidget {
+  const _AchievementListRow({required this.achievement});
+
+  final _Achievement achievement;
+
+  @override
+  Widget build(BuildContext context) {
+    final isAdvancingTier =
+        achievement.tier != null && achievement.goalTier != null;
+    final progressUnit = achievement.progressUnit ?? 'activities';
+    final subtitle = isAdvancingTier
+        ? '${_tierLabel(achievement.goalTier!)} tier · '
+              '${achievement.progress} / ${achievement.target} $progressUnit'
+        : achievement.tier != null
+        ? '${_tierLabel(achievement.tier!)} tier completed · '
+              '${achievement.progress} $progressUnit'
+        : achievement.requirement;
+
+    return Row(
+      children: [
+        _AchievementBadge(
+          assetPath: achievement.visibleBadgeAsset,
+          size: 58,
+          locked: !achievement.unlocked,
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                achievement.name,
+                style: TextStyle(
+                  color: context.vivordoColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 13,
+                ),
+              ),
+              if (isAdvancingTier) ...[
+                const SizedBox(height: 7),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: (achievement.progress / achievement.target).clamp(
+                      0,
+                      1,
+                    ),
+                    minHeight: 5,
+                    color: CircleScreen._purple,
+                    backgroundColor: context.vivordoColors.cardMuted,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Icon(
+          achievement.unlocked
+              ? Icons.check_circle_rounded
+              : Icons.lock_rounded,
+          color: achievement.unlocked
+              ? const Color(0xFF16B877)
+              : CircleScreen._muted,
+        ),
+      ],
+    );
+  }
+}
+
+class _CircleSectionTitle extends StatelessWidget {
+  const _CircleSectionTitle(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    label,
+    style: const TextStyle(
+      color: CircleScreen._muted,
+      fontSize: 14,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.5,
+    ),
+  );
+}
+
+class _ChallengeProgressRing extends StatelessWidget {
+  const _ChallengeProgressRing({required this.earned, required this.total});
+
+  final int earned;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: 96,
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned.fill(
+          child: CircularProgressIndicator(
+            value: total == 0 ? 0 : earned / total,
+            strokeWidth: 7,
+            backgroundColor: context.vivordoColors.cardMuted,
+            color: CircleScreen._purple,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.center,
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: '$earned',
+                    style: const TextStyle(
+                      color: CircleScreen._purple,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  TextSpan(
+                    text: ' / $total',
+                    style: const TextStyle(
+                      color: CircleScreen._muted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              textAlign: TextAlign.center,
+              textScaler: TextScaler.noScaling,
+              maxLines: 1,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ChallengeEmptyCard extends StatelessWidget {
+  const _ChallengeEmptyCard({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => _CircleCard(
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+        child: Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: context.vivordoColors.cardMuted,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: CircleScreen._muted, size: 27),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: context.vivordoColors.textPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    detail,
+                    style: const TextStyle(
+                      color: CircleScreen._muted,
+                      fontSize: 13,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     ),
@@ -2173,89 +3221,183 @@ class _FriendTile extends StatelessWidget {
 }
 
 void _showFriendProfile(BuildContext context, CircleProfile profile) {
+  var removing = false;
   showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
-    builder: (_) => SafeArea(
-      child: Container(
-        margin: const EdgeInsets.all(14),
-        padding: const EdgeInsets.fromLTRB(24, 14, 24, 28),
-        decoration: BoxDecoration(
-          color: context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(28),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 42,
-              height: 5,
-              decoration: BoxDecoration(
-                color: context.vivordoColors.border,
-                borderRadius: BorderRadius.circular(3),
-              ),
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (context, setModalState) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(24, 14, 24, 28),
+            decoration: BoxDecoration(
+              color: context.vivordoColors.card,
+              borderRadius: BorderRadius.circular(28),
             ),
-            const SizedBox(height: 24),
-            _ProfileAvatar(profile: profile, radius: 48),
-            const SizedBox(height: 14),
-            Text(
-              profile.username,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              profile.bio.trim().isEmpty
-                  ? 'No bio added yet.'
-                  : profile.bio.trim(),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: CircleScreen._muted,
-                fontSize: 15,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 22),
-            StreamBuilder<int>(
-              stream: CircleProfileService.watchWorkoutStreak(profile.uid),
-              initialData: 0,
-              builder: (context, snapshot) {
-                final streak = snapshot.data ?? 0;
-                return Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 16,
-                  ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 5,
                   decoration: BoxDecoration(
-                    color: context.vivordoColors.cardMuted,
-                    borderRadius: BorderRadius.circular(18),
+                    color: context.vivordoColors.border,
+                    borderRadius: BorderRadius.circular(3),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.local_fire_department_rounded,
-                        color: Color(0xFFFF7500),
-                        size: 28,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '$streak-day streak',
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
+                ),
+                const SizedBox(height: 24),
+                _ProfileAvatar(profile: profile, radius: 48),
+                const SizedBox(height: 14),
+                Text(
+                  profile.username,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
                   ),
-                );
-              },
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  profile.bio.trim().isEmpty
+                      ? 'No bio added yet.'
+                      : profile.bio.trim(),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: CircleScreen._muted,
+                    fontSize: 15,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                StreamBuilder<int>(
+                  stream: CircleProfileService.watchWorkoutStreak(profile.uid),
+                  initialData: 0,
+                  builder: (context, snapshot) {
+                    final streak = snapshot.data ?? 0;
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 16,
+                      ),
+                      decoration: BoxDecoration(
+                        color: context.vivordoColors.cardMuted,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.local_fire_department_rounded,
+                            color: Color(0xFFFF7500),
+                            size: 28,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '$streak-day streak',
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: removing
+                        ? null
+                        : () async {
+                            final confirmed = await showDialog<bool>(
+                              context: sheetContext,
+                              builder: (dialogContext) => AlertDialog(
+                                title: Text('Remove ${profile.username}?'),
+                                content: Text(
+                                  '${profile.username} will be removed from your Circle. '
+                                  "You won't see each other's shared activity unless you become friends again.",
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  FilledButton(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(true),
+                                    child: const Text('Remove'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed != true || !sheetContext.mounted) {
+                              return;
+                            }
+
+                            setModalState(() => removing = true);
+                            final messenger = ScaffoldMessenger.of(
+                              sheetContext,
+                            );
+                            try {
+                              await CircleProfileService.removeFriend(
+                                profile.uid,
+                              );
+                              if (!sheetContext.mounted) return;
+                              Navigator.of(sheetContext).pop();
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    '${profile.username} was removed from your Circle.',
+                                  ),
+                                ),
+                              );
+                            } catch (error) {
+                              if (!sheetContext.mounted) return;
+                              setModalState(() => removing = false);
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Could not remove friend: $error',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                    icon: removing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.person_remove_rounded),
+                    label: Text(removing ? 'Removing…' : 'Remove Friend'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: BorderSide(
+                        color: Colors.red.withValues(alpha: 0.5),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     ),
   );
 }

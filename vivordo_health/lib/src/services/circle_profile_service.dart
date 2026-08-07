@@ -994,6 +994,35 @@ class CircleProfileService {
         .delete();
   }
 
+  static Future<void> removeFriend(String friendUid) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError('Sign in to manage your Circle.');
+    if (friendUid == user.uid) {
+      throw StateError('You cannot remove your own profile.');
+    }
+
+    final db = FirebaseFirestore.instance;
+    final mine = db
+        .collection('users')
+        .doc(user.uid)
+        .collection('circle')
+        .doc('relationships')
+        .collection('friends')
+        .doc(friendUid);
+    final theirs = db
+        .collection('users')
+        .doc(friendUid)
+        .collection('circle')
+        .doc('relationships')
+        .collection('friends')
+        .doc(user.uid);
+
+    final batch = db.batch();
+    batch.delete(mine);
+    batch.delete(theirs);
+    await batch.commit();
+  }
+
   static Future<CircleProfile?> _loadProfile(String uid) async {
     final snapshot = await _profileReference(uid).get();
     final data = snapshot.data();

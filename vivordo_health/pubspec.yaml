@@ -100,6 +100,7 @@ flutter:
     - assets/vivordo_logo_long.png
     - assets/vivordo_splash_logo_v2.png
     - assets/vivordo_splash_logo_full.png
+    - assets/achievements/
     - assets/recommendations.json
     - assets/vivordo_robot.svg
 

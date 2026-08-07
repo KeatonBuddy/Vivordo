@@ -675,10 +675,10 @@ class _ExerciseBarPainter extends CustomPainter {
           ..color = _ExerciseDetailScreenState._purple.withValues(alpha: .65)
           ..strokeWidth = 1,
       );
-      _text(
+      _rightText(
         canvas,
         'Goal ${dailyGoal.round()} min',
-        Offset(size.width - 92, y - 17),
+        Offset(size.width - 8, top),
         10,
       );
     }
@@ -756,7 +756,7 @@ class _ExerciseBarPainter extends CustomPainter {
     }
   }
 
-  void _text(Canvas canvas, String text, Offset offset, double size) {
+  void _rightText(Canvas canvas, String text, Offset offset, double size) {
     final painter = TextPainter(
       text: TextSpan(
         text: text,
@@ -767,7 +767,7 @@ class _ExerciseBarPainter extends CustomPainter {
       ),
       textDirection: ui.TextDirection.ltr,
     )..layout();
-    painter.paint(canvas, offset);
+    painter.paint(canvas, Offset(offset.dx - painter.width, offset.dy));
   }
 
   void _center(Canvas canvas, String text, Offset offset, double size) {
