@@ -56,6 +56,22 @@ class _FitnessScreenState extends State<FitnessScreen> {
   void initState() {
     super.initState();
     unawaited(_restoreActiveWorkout());
+    unawaited(_backfillLegacyExerciseMinutes());
+  }
+
+  Future<void> _backfillLegacyExerciseMinutes() async {
+    try {
+      final migrated = await WorkoutService.migrateLegacyExerciseMinutesOnce();
+      if (migrated > 0) {
+        debugPrint(
+          'WorkoutService: added $migrated legacy workout(s) to exercise time.',
+        );
+      }
+    } catch (error) {
+      debugPrint(
+        'WorkoutService: legacy exercise-time backfill failed: $error',
+      );
+    }
   }
 
   Future<void> _restoreActiveWorkout() async {

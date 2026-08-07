@@ -163,13 +163,15 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
           _rangeSelector(),
           const SizedBox(height: 18),
           _summaryCard(total, average, change, goal, progress),
-          const SizedBox(height: 26),
-          Text(
-            '$_rangeName trend',
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-          _chartCard(data, usual),
+          if (_rangeIndex != 0) ...[
+            const SizedBox(height: 26),
+            Text(
+              '$_rangeName trend',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            _chartCard(data, usual),
+          ],
           const SizedBox(height: 16),
           _distanceCard(totalDistance),
           if (_rangeIndex != 0) ...[

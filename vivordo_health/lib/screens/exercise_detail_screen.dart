@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
@@ -176,13 +177,15 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             rangeWorkouts.length,
             restDays,
           ),
-          const SizedBox(height: 24),
-          const Text(
-            'Exercise time',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-          _minutesChart(days, goals.exerciseMinutes.toDouble()),
+          if (_rangeIndex != 0) ...[
+            const SizedBox(height: 24),
+            const Text(
+              'Exercise time',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            _minutesChart(days, goals.exerciseMinutes.toDouble()),
+          ],
           const SizedBox(height: 24),
           const Text(
             'Weight progression',
@@ -381,14 +384,11 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     padding: const EdgeInsets.fromLTRB(10, 16, 10, 8),
     child: SizedBox(
       height: 245,
-      child: CustomPaint(
-        painter: _ExerciseBarPainter(
-          values: days.map((day) => day.minutes.toDouble()).toList(),
-          labels: days.map((day) => _chartLabel(day.date)).toList(),
-          dailyGoal: dailyGoal,
-          dark: Theme.of(context).brightness == Brightness.dark,
-        ),
-        size: const Size(double.infinity, 245),
+      child: _ExerciseTimeChart(
+        values: days.map((day) => day.minutes.toDouble()).toList(),
+        labels: days.map((day) => _chartLabel(day.date)).toList(),
+        dates: days.map((day) => day.date).toList(),
+        dailyGoal: dailyGoal,
       ),
     ),
   );
@@ -571,16 +571,83 @@ class _WeightPoint {
   final double weight;
 }
 
+class _ExerciseTimeChart extends StatefulWidget {
+  const _ExerciseTimeChart({
+    required this.values,
+    required this.labels,
+    required this.dates,
+    required this.dailyGoal,
+  });
+
+  final List<double> values;
+  final List<String> labels;
+  final List<DateTime> dates;
+  final double dailyGoal;
+
+  @override
+  State<_ExerciseTimeChart> createState() => _ExerciseTimeChartState();
+}
+
+class _ExerciseTimeChartState extends State<_ExerciseTimeChart> {
+  int? selected;
+
+  void _select(double x, double width) {
+    if (widget.values.isEmpty) return;
+    const left = 34.0;
+    final slot = (width - left) / widget.values.length;
+    final index = ((x - left) / slot).floor().clamp(
+      0,
+      widget.values.length - 1,
+    );
+    if (selected != index) setState(() => selected = index);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ExerciseTimeChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.values, widget.values) ||
+        !listEquals(oldWidget.dates, widget.dates)) {
+      selected = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (event) =>
+          _select(event.localPosition.dx, constraints.maxWidth),
+      onHorizontalDragUpdate: (event) =>
+          _select(event.localPosition.dx, constraints.maxWidth),
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _ExerciseBarPainter(
+          values: widget.values,
+          labels: widget.labels,
+          dates: widget.dates,
+          dailyGoal: widget.dailyGoal,
+          selected: selected,
+          dark: Theme.of(context).brightness == Brightness.dark,
+        ),
+      ),
+    ),
+  );
+}
+
 class _ExerciseBarPainter extends CustomPainter {
   const _ExerciseBarPainter({
     required this.values,
     required this.labels,
+    required this.dates,
     required this.dailyGoal,
+    required this.selected,
     required this.dark,
   });
   final List<double> values;
   final List<String> labels;
+  final List<DateTime> dates;
   final double dailyGoal;
+  final int? selected;
   final bool dark;
 
   @override
@@ -633,9 +700,59 @@ class _ExerciseBarPainter extends CustomPainter {
         ),
         Paint()..color = _ExerciseDetailScreenState._purple,
       );
+      if (selected == i) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(
+              x - barWidth / 2 - 4,
+              top + height - barHeight - 4,
+              barWidth + 8,
+              barHeight + 8,
+            ),
+            const Radius.circular(12),
+          ),
+          Paint()
+            ..color = _ExerciseDetailScreenState._purple.withValues(alpha: .2)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3,
+        );
+      }
       if (values.length <= 10 || i % 5 == 0 || i == values.length - 1) {
         _center(canvas, labels[i], Offset(x, top + height + 8), 9);
       }
+    }
+
+    final index = selected;
+    if (index != null && index < values.length && index < dates.length) {
+      final x = left + slot * index + slot / 2;
+      final barHeight = values[index] / maxValue * height;
+      final barTop = top + height - barHeight;
+      final label =
+          '${DateFormat('MMM d').format(dates[index])}\n${values[index].round()} min';
+      final painter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(
+            color: dark ? Colors.white : Colors.black,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textAlign: TextAlign.center,
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      final boxWidth = painter.width + 18;
+      final boxHeight = painter.height + 14;
+      final boxX = (x - boxWidth / 2).clamp(0.0, size.width - boxWidth);
+      final boxY = (barTop - boxHeight - 10).clamp(0.0, height - boxHeight);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(boxX, boxY, boxWidth, boxHeight),
+          const Radius.circular(9),
+        ),
+        Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
+      );
+      painter.paint(canvas, Offset(boxX + 9, boxY + 7));
     }
   }
 
@@ -670,7 +787,9 @@ class _ExerciseBarPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ExerciseBarPainter oldDelegate) =>
       oldDelegate.values != values ||
+      oldDelegate.dates != dates ||
       oldDelegate.dailyGoal != dailyGoal ||
+      oldDelegate.selected != selected ||
       oldDelegate.dark != dark;
 }
 

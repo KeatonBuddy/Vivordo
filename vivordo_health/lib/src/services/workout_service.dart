@@ -166,6 +166,100 @@ class SavedWorkout {
 class WorkoutService {
   const WorkoutService._();
 
+  static Future<int>? _legacyExerciseMinutesMigration;
+
+  /// Adds legacy workout durations to the daily exercise-time metric.
+  ///
+  /// Workouts saved before exercise-goal integration do not contain
+  /// `exerciseGoalDay`. Each transaction re-checks that field and writes it
+  /// alongside the daily total, making this safe to retry without counting a
+  /// workout twice.
+  static Future<int> migrateLegacyExerciseMinutesOnce() {
+    return _legacyExerciseMinutesMigration ??= _migrateLegacyExerciseMinutes();
+  }
+
+  static Future<int> _migrateLegacyExerciseMinutes() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return 0;
+
+    final db = FirebaseFirestore.instance;
+    final workouts = await db
+        .collection('users')
+        .doc(user.uid)
+        .collection('workouts')
+        .get();
+    var migrated = 0;
+
+    for (final workout in workouts.docs) {
+      final data = workout.data();
+      if (data['exerciseGoalDay'] != null) continue;
+      final durationSeconds = (data['durationSeconds'] as num?)?.round() ?? 0;
+      final completedAt =
+          (data['completedAt'] as Timestamp?)?.toDate() ??
+          (data['startedAt'] as Timestamp?)?.toDate();
+      if (durationSeconds <= 0 || completedAt == null) continue;
+
+      final migratedWorkout = await db.runTransaction<bool>((
+        transaction,
+      ) async {
+        final freshWorkout = await transaction.get(workout.reference);
+        final freshData = freshWorkout.data();
+        if (freshData == null || freshData['exerciseGoalDay'] != null) {
+          return false;
+        }
+
+        final freshDurationSeconds =
+            (freshData['durationSeconds'] as num?)?.round() ?? 0;
+        final freshCompletedAt =
+            (freshData['completedAt'] as Timestamp?)?.toDate() ??
+            (freshData['startedAt'] as Timestamp?)?.toDate();
+        if (freshDurationSeconds <= 0 || freshCompletedAt == null) return false;
+
+        final goalMinutes = (freshDurationSeconds / 60).ceil();
+        final goalDay = _dayKey(freshCompletedAt);
+        final dailyReference = db
+            .collection('users')
+            .doc(user.uid)
+            .collection('metrics_daily')
+            .doc(goalDay);
+        final dailySnapshot = await transaction.get(dailyReference);
+        final exerciseTime =
+            dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>? ??
+            const <String, dynamic>{};
+        final currentWorkoutMinutes =
+            (exerciseTime['workoutMinutes'] as num?)?.toDouble() ?? 0;
+        final healthMinutes =
+            (exerciseTime['healthSum'] as num?)?.toDouble() ??
+            (((exerciseTime['sum'] as num?)?.toDouble() ?? 0) -
+                    currentWorkoutMinutes)
+                .clamp(0, double.infinity);
+        final updatedWorkoutMinutes = currentWorkoutMinutes + goalMinutes;
+
+        transaction.update(workout.reference, {
+          'exerciseGoalDay': goalDay,
+          'exerciseGoalMinutes': goalMinutes,
+          'exerciseMinutesBackfilledAt': FieldValue.serverTimestamp(),
+        });
+        transaction.set(dailyReference, {
+          'exercise_time': {
+            ...exerciseTime,
+            'healthSum': healthMinutes,
+            'workoutMinutes': updatedWorkoutMinutes,
+            'sum': healthMinutes + updatedWorkoutMinutes,
+            'unit': 'min',
+            'dimension': 'activity',
+          },
+          'date': goalDay,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        return true;
+      });
+      if (migratedWorkout) migrated++;
+    }
+
+    return migrated;
+  }
+
   static int calculateCurrentStreak(List<SavedWorkout> workouts) {
     if (workouts.isEmpty) return 0;
     final workoutDays = workouts.map((workout) {
