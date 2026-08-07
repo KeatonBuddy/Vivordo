@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/workout_live_activity_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
@@ -16,6 +17,7 @@ import 'screens/signup_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/email_verification_screen.dart';
 import 'screens/circle_screen.dart';
+import 'screens/fitness_screen.dart';
 
 // Global navigator key for notification navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -61,8 +63,51 @@ void main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _openingWorkout = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WorkoutLiveActivityService.configureLaunchHandler(_openActiveWorkout);
+    });
+  }
+
+  Future<void> _openActiveWorkout() async {
+    if (_openingWorkout) return;
+    _openingWorkout = true;
+    try {
+      if (FirebaseAuth.instance.currentUser == null) return;
+      final hasWorkout = await prepareActiveWorkoutForLaunch();
+      if (!hasWorkout) return;
+
+      NavigatorState? navigator;
+      for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
+        navigator = navigatorKey.currentState;
+        if (navigator == null) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+      }
+      if (navigator == null || !mounted) return;
+      await navigator.pushNamed('/active-workout');
+    } finally {
+      _openingWorkout = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    WorkoutLiveActivityService.clearLaunchHandler();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +139,7 @@ class MyApp extends StatelessWidget {
         '/scan': (context) => const MainNavigationScreen(initialIndex: 2),
         '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 5),
         '/circle': (context) => const CircleScreen(),
+        '/active-workout': (context) => const ActiveWorkoutScreen(),
       },
     );
   }

@@ -13,6 +13,7 @@ import '../src/services/health_service.dart';
 import '../src/services/recent_activity_service.dart';
 import '../src/services/workout_service.dart';
 import '../src/services/personal_profile_service.dart';
+import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import 'personal_profile_screen.dart';
 
@@ -27,11 +28,58 @@ class FitnessWorkoutTimerState {
   static final ValueNotifier<bool> isRunning = ValueNotifier<bool>(false);
 
   static Future<void> restore() async {
-    isRunning.value = await ActiveWorkoutStorage.read() != null;
+    final stored = await ActiveWorkoutStorage.read();
+    isRunning.value = stored != null;
+    if (stored == null) {
+      await WorkoutLiveActivityService.end();
+      return;
+    }
+    final startedAt = DateTime.tryParse(stored['startedAt'] as String? ?? '');
+    if (startedAt == null) return;
+    final exercises = stored['exercises'];
+    final exerciseList = exercises is List ? exercises : const [];
+    final first = exerciseList.isEmpty ? null : exerciseList.first;
+    final title = first is Map
+        ? (first['name'] as String? ?? 'Workout')
+        : 'Workout';
+    await WorkoutLiveActivityService.start(
+      startedAt: startedAt.toLocal(),
+      title: title,
+      exerciseCount: exerciseList.length,
+    );
   }
 
-  static void start() => isRunning.value = true;
-  static void stop() => isRunning.value = false;
+  static void start({
+    DateTime? startedAt,
+    String title = 'Workout',
+    int exerciseCount = 0,
+  }) {
+    isRunning.value = true;
+    if (startedAt != null) {
+      unawaited(
+        WorkoutLiveActivityService.start(
+          startedAt: startedAt,
+          title: title,
+          exerciseCount: exerciseCount,
+        ),
+      );
+    }
+  }
+
+  static void update({required String title, required int exerciseCount}) {
+    if (!isRunning.value) return;
+    unawaited(
+      WorkoutLiveActivityService.update(
+        title: title,
+        exerciseCount: exerciseCount,
+      ),
+    );
+  }
+
+  static void stop() {
+    isRunning.value = false;
+    unawaited(WorkoutLiveActivityService.end());
+  }
 }
 
 class FitnessScreen extends StatefulWidget {
@@ -79,7 +127,11 @@ class _FitnessScreenState extends State<FitnessScreen> {
     final restored = await _ActiveWorkoutDraft.restore();
     if (restored == null) return;
     _activeWorkoutDraft = restored;
-    FitnessWorkoutTimerState.start();
+    FitnessWorkoutTimerState.start(
+      startedAt: restored.startedAt,
+      title: restored.liveActivityTitle,
+      exerciseCount: restored.exercises.length,
+    );
     if (mounted) setState(() {});
   }
 
@@ -340,7 +392,12 @@ class _FitnessScreenState extends State<FitnessScreen> {
     _activeWorkoutDraft ??= _ActiveWorkoutDraft();
     await _activeWorkoutDraft!.persist();
     if (!mounted) return;
-    FitnessWorkoutTimerState.start();
+    final draft = _activeWorkoutDraft!;
+    FitnessWorkoutTimerState.start(
+      startedAt: draft.startedAt,
+      title: draft.liveActivityTitle,
+      exerciseCount: draft.exercises.length,
+    );
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const ActiveWorkoutScreen()));
@@ -1789,6 +1846,21 @@ class ActiveWorkoutScreen extends StatefulWidget {
 
 _ActiveWorkoutDraft? _activeWorkoutDraft;
 
+/// Restores the persisted workout before a Live Activity deep link opens the
+/// workout route. This prevents [ActiveWorkoutScreen] from creating a blank
+/// draft while the app is launching from a terminated state.
+Future<bool> prepareActiveWorkoutForLaunch() async {
+  final restored = await _ActiveWorkoutDraft.restore();
+  if (restored == null) return false;
+  _activeWorkoutDraft = restored;
+  FitnessWorkoutTimerState.start(
+    startedAt: restored.startedAt,
+    title: restored.liveActivityTitle,
+    exerciseCount: restored.exercises.length,
+  );
+  return true;
+}
+
 class _WorkoutStatusMessage extends StatefulWidget {
   const _WorkoutStatusMessage({required this.draft});
 
@@ -1888,6 +1960,9 @@ class _ActiveWorkoutDraft {
   final List<_WorkoutExercise> exercises = [];
   bool shareToCircle;
 
+  String get liveActivityTitle =>
+      exercises.isEmpty ? 'Workout' : exercises.first.name;
+
   Map<String, dynamic> toJson() => {
     'startedAt': startedAt.toUtc().toIso8601String(),
     'shareToCircle': shareToCircle,
@@ -1943,7 +2018,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   void initState() {
     super.initState();
     draft = _activeWorkoutDraft ??= _ActiveWorkoutDraft();
-    FitnessWorkoutTimerState.start();
+    FitnessWorkoutTimerState.start(
+      startedAt: draft.startedAt,
+      title: draft.liveActivityTitle,
+      exerciseCount: draft.exercises.length,
+    );
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
       if (_hasCardioExercise &&
@@ -2039,6 +2118,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ..addAll(updated);
     });
     await draft.persist();
+    FitnessWorkoutTimerState.update(
+      title: draft.liveActivityTitle,
+      exerciseCount: exercises.length,
+    );
 
     if (_hasCardioExercise) unawaited(_refreshTrackedDistance(force: true));
 
