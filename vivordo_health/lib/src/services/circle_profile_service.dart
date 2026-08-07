@@ -14,6 +14,8 @@ class CircleProfile {
     required this.friendCode,
     required this.bio,
     this.photoUrl,
+    this.createdAt,
+    this.featuredAchievementIds = const [],
   });
 
   final String uid;
@@ -21,6 +23,8 @@ class CircleProfile {
   final String friendCode;
   final String bio;
   final String? photoUrl;
+  final DateTime? createdAt;
+  final List<String> featuredAchievementIds;
 
   factory CircleProfile.fromMap(String uid, Map<String, dynamic> data) =>
       CircleProfile(
@@ -29,6 +33,11 @@ class CircleProfile {
         friendCode: data['friendCode'] as String? ?? '',
         bio: data['bio'] as String? ?? '',
         photoUrl: data['photoUrl'] as String?,
+        createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+        featuredAchievementIds:
+            (data['featuredAchievementIds'] as List? ?? const [])
+                .whereType<String>()
+                .toList(growable: false),
       );
 }
 
@@ -367,7 +376,30 @@ class CircleProfileService {
       friendCode: currentProfile.friendCode,
       bio: bio.trim(),
       photoUrl: photoUrl,
+      createdAt: currentProfile.createdAt,
+      featuredAchievementIds: currentProfile.featuredAchievementIds,
     );
+  }
+
+  static Future<void> updateFeaturedAchievements(
+    List<String> achievementIds,
+  ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw StateError('Sign in before updating featured achievements.');
+    }
+    final uniqueIds = achievementIds.toSet().toList(growable: false);
+    if (uniqueIds.length > 3) {
+      throw ArgumentError.value(
+        achievementIds,
+        'achievementIds',
+        'A profile can feature at most three achievements.',
+      );
+    }
+    await _profileReference(user.uid).update({
+      'featuredAchievementIds': uniqueIds,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   static Future<CircleProfile?> findByFriendCode(String friendCode) async {

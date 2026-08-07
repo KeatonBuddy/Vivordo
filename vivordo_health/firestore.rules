@@ -105,6 +105,16 @@ service cloud.firestore {
                           || resource.data.actorUid == request.auth.uid);
       }
 
+      // Achievement summaries are part of a Circle profile. Friends may read
+      // them for featured badges and progress, while only the owner can write
+      // or recalculate their achievement state.
+      match /achievements/{achievementId} {
+        allow read: if request.auth != null
+                    && (request.auth.uid == userId
+                        || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+
       // Push tokens are private device credentials. Only the signed-in owner
       // can register or remove their devices; Cloud Functions uses Admin SDK
       // access to deliver Circle notifications.

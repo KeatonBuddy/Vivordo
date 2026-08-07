@@ -15,6 +15,7 @@ import '../src/services/workout_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import 'create_circle_profile_screen.dart';
 import 'fitness_screen.dart' show ActivityRingsPainter;
+import 'profile_screen.dart';
 
 class CircleScreen extends StatelessWidget {
   const CircleScreen({super.key});
@@ -201,16 +202,16 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
         Padding(
           padding: const EdgeInsets.only(right: 18),
           child: Material(
-            color: context.vivordoColors.card,
-            borderRadius: BorderRadius.circular(14),
+            color: Colors.transparent,
+            shape: const CircleBorder(),
             child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: _showProfile,
+              customBorder: const CircleBorder(),
+              onTap: _openProfile,
               child: SizedBox(
                 width: 48,
                 height: 48,
                 child: Center(
-                  child: _ProfileAvatar(profile: profile, radius: 18),
+                  child: _ProfileAvatar(profile: profile, radius: 21),
                 ),
               ),
             ),
@@ -251,123 +252,926 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
     ),
   );
 
-  void _showProfile() {
-    showModalBottomSheet<void>(
+  void _openProfile() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => _CircleUserProfilePage(profile: profile, isOwner: true),
+    ),
+  );
+}
+
+class _CircleUserProfilePage extends StatefulWidget {
+  const _CircleUserProfilePage({required this.profile, required this.isOwner});
+
+  final CircleProfile profile;
+  final bool isOwner;
+
+  @override
+  State<_CircleUserProfilePage> createState() => _CircleUserProfilePageState();
+}
+
+class _CircleUserProfilePageState extends State<_CircleUserProfilePage> {
+  var _selectedTab = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isOwner) return _buildPage(context, widget.profile);
+    return StreamBuilder<CircleProfile?>(
+      stream: CircleProfileService.watchCurrentProfile(),
+      initialData: widget.profile,
+      builder: (context, snapshot) =>
+          _buildPage(context, snapshot.data ?? widget.profile),
+    );
+  }
+
+  Widget _buildPage(BuildContext context, CircleProfile profile) => Scaffold(
+    backgroundColor: context.vivordoColors.page,
+    body: SafeArea(
+      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(profile.uid)
+            .collection('achievements')
+            .snapshots(),
+        builder: (context, snapshot) {
+          final achievements = _profileAchievementsFromDocuments(
+            profile,
+            snapshot.data?.docs ?? const [],
+          );
+          return ListView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 42),
+            children: [
+              _CircleProfileHeader(isOwner: widget.isOwner),
+              const SizedBox(height: 22),
+              _CircleProfileHero(
+                profile: profile,
+                isOwner: widget.isOwner,
+                onEdit: () => _editProfile(profile),
+                onShare: () => _shareProfile(profile),
+              ),
+              const SizedBox(height: 26),
+              _CircleProfileFeaturedAchievements(
+                profile: profile,
+                achievements: achievements,
+                onEdit: widget.isOwner
+                    ? () => _editFeaturedAchievements(profile, achievements)
+                    : null,
+              ),
+              const SizedBox(height: 20),
+              _CircleProfileTabs(
+                selectedIndex: _selectedTab,
+                onChanged: (index) => setState(() => _selectedTab = index),
+              ),
+              const SizedBox(height: 26),
+              switch (_selectedTab) {
+                0 => _CircleProfileOverview(profile: profile),
+                1 => _CircleProfileAchievementsTab(
+                  achievements: achievements,
+                  onOpenAll: () => _openAchievements(achievements),
+                ),
+                _ => _CircleProfileActivityTab(profile: profile),
+              },
+              if (!widget.isOwner) ...[
+                const SizedBox(height: 26),
+                _RemoveCircleFriendButton(profile: profile),
+              ],
+            ],
+          );
+        },
+      ),
+    ),
+  );
+
+  void _editProfile(CircleProfile profile) {
+    if (!widget.isOwner) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CreateCircleProfileScreen(initialProfile: profile),
+      ),
+    );
+  }
+
+  Future<void> _shareProfile(CircleProfile profile) async {
+    final shareText =
+        'Join ${profile.username} on Vivordo Circle. Friend code: ${profile.friendCode}';
+    await Clipboard.setData(ClipboardData(text: shareText));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile invite copied to clipboard')),
+    );
+  }
+
+  void _openAchievements(List<_Achievement> achievements) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _AchievementsPage(achievements: achievements),
+      ),
+    );
+  }
+
+  Future<void> _editFeaturedAchievements(
+    CircleProfile profile,
+    List<_Achievement> achievements,
+  ) async {
+    final earned = achievements
+        .where((achievement) => achievement.unlocked)
+        .toList(growable: false);
+    if (earned.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Earn an achievement before featuring it.'),
+        ),
+      );
+      return;
+    }
+    final earnedIds = earned.map((achievement) => achievement.id).toSet();
+    final initial = profile.featuredAchievementIds
+        .where(earnedIds.contains)
+        .take(3)
+        .toList();
+    if (initial.isEmpty) {
+      initial.addAll(earned.take(3).map((achievement) => achievement.id));
+    }
+    final selected = await showModalBottomSheet<List<String>>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (sheetContext) => SafeArea(
-        child: Container(
-          margin: const EdgeInsets.all(14),
-          padding: const EdgeInsets.fromLTRB(24, 14, 24, 28),
-          decoration: BoxDecoration(
-            color: sheetContext.vivordoColors.card,
-            borderRadius: BorderRadius.circular(28),
+      isScrollControlled: true,
+      builder: (sheetContext) => _FeaturedAchievementPicker(
+        achievements: earned,
+        initialSelection: initial,
+      ),
+    );
+    if (selected == null) return;
+    try {
+      await CircleProfileService.updateFeaturedAchievements(selected);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not update featured achievements: $error'),
+        ),
+      );
+    }
+  }
+}
+
+class _CircleProfileHeader extends StatelessWidget {
+  const _CircleProfileHeader({required this.isOwner});
+
+  final bool isOwner;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      _ProfileHeaderButton(
+        icon: Icons.chevron_left_rounded,
+        onTap: () => Navigator.maybePop(context),
+      ),
+      const SizedBox(width: 18),
+      Expanded(
+        child: Text(
+          'Profile',
+          style: TextStyle(
+            color: context.vivordoColors.textPrimary,
+            fontSize: 31,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -.7,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+        ),
+      ),
+      if (isOwner)
+        _ProfileHeaderButton(
+          icon: Icons.settings_outlined,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+          ),
+        ),
+    ],
+  );
+}
+
+class _ProfileHeaderButton extends StatelessWidget {
+  const _ProfileHeaderButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: context.vivordoColors.card,
+    borderRadius: BorderRadius.circular(16),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: SizedBox(
+        width: 50,
+        height: 50,
+        child: Icon(icon, color: context.vivordoColors.textPrimary, size: 27),
+      ),
+    ),
+  );
+}
+
+class _CircleProfileHero extends StatelessWidget {
+  const _CircleProfileHero({
+    required this.profile,
+    required this.isOwner,
+    required this.onEdit,
+    required this.onShare,
+  });
+
+  final CircleProfile profile;
+  final bool isOwner;
+  final VoidCallback onEdit;
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    final authCreatedAt = isOwner
+        ? FirebaseAuth.instance.currentUser?.metadata.creationTime
+        : null;
+    final memberSince = profile.createdAt ?? authCreatedAt;
+    return _CircleCard(
+      child: Column(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
             children: [
-              Container(
-                width: 42,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDADAE4),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-              const SizedBox(height: 22),
-              _ProfileAvatar(profile: profile, radius: 42),
-              const SizedBox(height: 13),
-              Text(
-                profile.username,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              if (profile.bio.trim().isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  profile.bio,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: CircleScreen._muted,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 18),
-              OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pop(sheetContext);
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          CreateCircleProfileScreen(initialProfile: profile),
+              _ProfileAvatar(profile: profile, radius: 54),
+              if (isOwner)
+                Positioned(
+                  right: -4,
+                  bottom: 2,
+                  child: Material(
+                    color: CircleScreen._purple,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      onTap: onEdit,
+                      customBorder: const CircleBorder(),
+                      child: const SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: Icon(
+                          Icons.camera_alt_rounded,
+                          color: Colors.white,
+                          size: 19,
+                        ),
+                      ),
                     ),
-                  );
-                },
-                icon: const Icon(Icons.edit_rounded, size: 18),
-                label: const Text('Edit Profile'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: CircleScreen._purple,
-                  minimumSize: const Size.fromHeight(46),
-                  side: const BorderSide(color: CircleScreen._purple),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          Text(
+            profile.username,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: context.vivordoColors.textPrimary,
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            profile.bio.trim().isEmpty
+                ? 'Building healthier habits, one day at a time.'
+                : profile.bio.trim(),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: CircleScreen._muted,
+              fontSize: 14,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _CircleProfileStats(
+            profile: profile,
+            isOwner: isOwner,
+            memberSince: memberSince,
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              if (isOwner) ...[
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onEdit,
+                    icon: const Icon(Icons.edit_rounded, size: 18),
+                    label: const Text('Edit Profile'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: CircleScreen._purple,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onShare,
+                  icon: const Icon(Icons.ios_share_rounded, size: 18),
+                  label: const Text('Share Profile'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: CircleScreen._purple,
+                    minimumSize: const Size.fromHeight(48),
+                    side: const BorderSide(color: CircleScreen._purple),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 22),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'FRIEND CODE',
-                  style: TextStyle(
-                    color: CircleScreen._muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.3,
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CircleProfileStats extends StatelessWidget {
+  const _CircleProfileStats({
+    required this.profile,
+    required this.isOwner,
+    required this.memberSince,
+  });
+
+  final CircleProfile profile;
+  final bool isOwner;
+  final DateTime? memberSince;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<int>(
+    stream: isOwner
+        ? CircleProfileService.watchFriends().map((friends) => friends.length)
+        : CircleProfileService.watchWorkoutStreak(profile.uid),
+    initialData: 0,
+    builder: (context, snapshot) {
+      final count = snapshot.data ?? 0;
+      final firstStat = isOwner
+          ? '$count ${count == 1 ? 'friend' : 'friends'}'
+          : '$count-day streak';
+      final joined = memberSince == null
+          ? 'Vivordo member'
+          : 'Member since ${DateFormat('MMM yyyy').format(memberSince!)}';
+      return Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        children: [
+          Text(firstStat, style: const TextStyle(color: CircleScreen._muted)),
+          const Text('•', style: TextStyle(color: CircleScreen._muted)),
+          Text(joined, style: const TextStyle(color: CircleScreen._muted)),
+        ],
+      );
+    },
+  );
+}
+
+class _CircleProfileFeaturedAchievements extends StatelessWidget {
+  const _CircleProfileFeaturedAchievements({
+    required this.profile,
+    required this.achievements,
+    required this.onEdit,
+  });
+
+  final CircleProfile profile;
+  final List<_Achievement> achievements;
+  final VoidCallback? onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final earned = achievements.where((achievement) => achievement.unlocked);
+    final earnedById = {
+      for (final achievement in earned) achievement.id: achievement,
+    };
+    final selected = profile.featuredAchievementIds
+        .map((id) => earnedById[id])
+        .whereType<_Achievement>()
+        .take(3)
+        .toList(growable: false);
+    final featured = selected.isEmpty
+        ? earned.take(3).toList(growable: false)
+        : selected;
+    final oneTime = achievements.where((item) => item.target == 1).toList();
+    final tiered = achievements.where((item) => item.target > 1).toList();
+    final earnedCount =
+        oneTime.where((item) => item.earned).length +
+        tiered.fold<int>(
+          0,
+          (total, item) => total + _tierRankForDisplay(item.tier),
+        );
+    final total = oneTime.length + tiered.length * 3;
+    return Column(
+      children: [
+        Row(
+          children: [
+            const Expanded(child: _CircleSectionTitle('FEATURED ACHIEVEMENTS')),
+            if (onEdit != null)
+              TextButton.icon(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_rounded, size: 17),
+                label: const Text('Edit'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _CircleCard(
+          child: Column(
+            children: [
+              if (featured.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: Text(
+                    'Earn an achievement to feature it here.',
+                    style: TextStyle(color: CircleScreen._muted),
                   ),
+                )
+              else
+                Row(
+                  children: [
+                    for (var index = 0; index < featured.length; index++) ...[
+                      if (index > 0) const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            _AchievementBadge(
+                              assetPath: featured[index].visibleBadgeAsset,
+                              size: 72,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              featured[index].name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              const SizedBox(height: 15),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: total == 0 ? 0 : earnedCount / total,
+                  minHeight: 7,
+                  backgroundColor: context.vivordoColors.cardMuted,
+                  color: CircleScreen._purple,
                 ),
               ),
               const SizedBox(height: 8),
-              Material(
-                color: const Color(0xFFF0EEFF),
-                borderRadius: BorderRadius.circular(18),
-                child: InkWell(
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '$earnedCount of $total achievements earned',
+                  style: const TextStyle(
+                    color: CircleScreen._muted,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FeaturedAchievementPicker extends StatefulWidget {
+  const _FeaturedAchievementPicker({
+    required this.achievements,
+    required this.initialSelection,
+  });
+
+  final List<_Achievement> achievements;
+  final List<String> initialSelection;
+
+  @override
+  State<_FeaturedAchievementPicker> createState() =>
+      _FeaturedAchievementPickerState();
+}
+
+class _FeaturedAchievementPickerState
+    extends State<_FeaturedAchievementPicker> {
+  late final List<String> _selected;
+
+  int get _requiredCount => math.min(3, widget.achievements.length);
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initialSelection.toList();
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .82,
+      ),
+      margin: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+      decoration: BoxDecoration(
+        color: context.vivordoColors.card,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: context.vivordoColors.border),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 42,
+            height: 5,
+            decoration: BoxDecoration(
+              color: context.vivordoColors.border,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'Featured Achievements',
+            style: TextStyle(
+              color: context.vivordoColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Choose $_requiredCount earned ${_requiredCount == 1 ? 'achievement' : 'achievements'} to display on your profile.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: context.vivordoColors.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${_selected.length} / $_requiredCount selected',
+            style: const TextStyle(
+              color: CircleScreen._purple,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Flexible(
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const BouncingScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: .82,
+              ),
+              itemCount: widget.achievements.length,
+              itemBuilder: (context, index) {
+                final achievement = widget.achievements[index];
+                final selectedIndex = _selected.indexOf(achievement.id);
+                final isSelected = selectedIndex >= 0;
+                return Material(
+                  color: isSelected
+                      ? CircleScreen._purple.withValues(alpha: .12)
+                      : context.vivordoColors.cardMuted,
                   borderRadius: BorderRadius.circular(18),
-                  onTap: () =>
-                      _copyFriendCode(sheetContext, profile.friendCode),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 17),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          profile.friendCode,
-                          style: const TextStyle(
-                            color: CircleScreen._purple,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2.5,
+                  child: InkWell(
+                    onTap: () => _toggle(achievement.id),
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: isSelected
+                              ? CircleScreen._purple
+                              : context.vivordoColors.border,
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Stack(
+                        children: [
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _AchievementBadge(
+                                assetPath: achievement.visibleBadgeAsset,
+                                size: 58,
+                              ),
+                              const SizedBox(height: 7),
+                              SizedBox(
+                                width: double.infinity,
+                                child: Text(
+                                  achievement.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Icon(
-                          Icons.copy_rounded,
-                          color: CircleScreen._purple,
-                          size: 19,
-                        ),
-                      ],
+                          if (isSelected)
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: Container(
+                                width: 22,
+                                height: 22,
+                                decoration: const BoxDecoration(
+                                  color: CircleScreen._purple,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '${selectedIndex + 1}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _selected.length == _requiredCount
+                  ? () => Navigator.pop(context, _selected)
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: CircleScreen._purple,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
+              ),
+              child: const Text(
+                'Save Featured Achievements',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  void _toggle(String id) {
+    setState(() {
+      if (_selected.remove(id)) return;
+      if (_selected.length < _requiredCount) _selected.add(id);
+    });
+  }
+}
+
+class _CircleProfileTabs extends StatelessWidget {
+  const _CircleProfileTabs({
+    required this.selectedIndex,
+    required this.onChanged,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      for (var index = 0; index < 3; index++) ...[
+        if (index > 0) const SizedBox(width: 8),
+        Expanded(
+          child: Material(
+            color: selectedIndex == index
+                ? CircleScreen._purple
+                : context.vivordoColors.card,
+            borderRadius: BorderRadius.circular(15),
+            child: InkWell(
+              onTap: () => onChanged(index),
+              borderRadius: BorderRadius.circular(15),
+              child: SizedBox(
+                height: 50,
+                child: Center(
+                  child: Text(
+                    const ['Overview', 'Achievements', 'Activity'][index],
+                    style: TextStyle(
+                      color: selectedIndex == index
+                          ? Colors.white
+                          : CircleScreen._muted,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'Tap your code to copy it',
-                style: TextStyle(color: CircleScreen._muted, fontSize: 12),
+            ),
+          ),
+        ),
+      ],
+    ],
+  );
+}
+
+class _CircleProfileOverview extends StatelessWidget {
+  const _CircleProfileOverview({required this.profile});
+
+  final CircleProfile profile;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const _CircleSectionTitle('ACTIVE CHALLENGE'),
+      const SizedBox(height: 12),
+      const _ChallengeEmptyCard(
+        icon: Icons.groups_rounded,
+        title: 'No active challenge',
+        detail: 'Active Circle challenges will appear here later.',
+      ),
+      const SizedBox(height: 26),
+      const _CircleSectionTitle('RECENT ACTIVITY'),
+      const SizedBox(height: 12),
+      _CircleProfileActivityList(profile: profile, limit: 3),
+    ],
+  );
+}
+
+class _CircleProfileAchievementsTab extends StatelessWidget {
+  const _CircleProfileAchievementsTab({
+    required this.achievements,
+    required this.onOpenAll,
+  });
+
+  final List<_Achievement> achievements;
+  final VoidCallback onOpenAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final earned = achievements
+        .where((achievement) => achievement.unlocked)
+        .toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: _CircleSectionTitle('ACHIEVEMENTS')),
+            TextButton(onPressed: onOpenAll, child: const Text('View All')),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (earned.isEmpty)
+          const _ChallengeEmptyCard(
+            icon: Icons.emoji_events_rounded,
+            title: 'No achievements yet',
+            detail: 'Earned achievements will appear here.',
+          )
+        else
+          _RecentlyEarnedCard(achievements: earned.take(3).toList()),
+      ],
+    );
+  }
+}
+
+class _CircleProfileActivityTab extends StatelessWidget {
+  const _CircleProfileActivityTab({required this.profile});
+
+  final CircleProfile profile;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const _CircleSectionTitle('ACTIVITY'),
+      const SizedBox(height: 12),
+      _CircleProfileActivityList(profile: profile),
+    ],
+  );
+}
+
+class _CircleProfileActivityList extends StatelessWidget {
+  const _CircleProfileActivityList({required this.profile, this.limit});
+
+  final CircleProfile profile;
+  final int? limit;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<CircleActivity>>(
+    stream: CircleProfileService.watchMyRecentActivities(profile, days: 30),
+    builder: (context, snapshot) {
+      if (!snapshot.hasData &&
+          snapshot.connectionState == ConnectionState.waiting) {
+        return const Padding(
+          padding: EdgeInsets.all(32),
+          child: Center(
+            child: CircularProgressIndicator(color: CircleScreen._purple),
+          ),
+        );
+      }
+      final all = snapshot.data ?? const <CircleActivity>[];
+      final activities = limit == null ? all : all.take(limit!).toList();
+      if (activities.isEmpty) {
+        return const _ChallengeEmptyCard(
+          icon: Icons.directions_run_rounded,
+          title: 'No recent activity',
+          detail: 'Shared workouts and journal entries will appear here.',
+        );
+      }
+      return Column(
+        children: [
+          for (var index = 0; index < activities.length; index++) ...[
+            if (index > 0) const SizedBox(height: 10),
+            _CircleProfileActivityTile(activity: activities[index]),
+          ],
+        ],
+      );
+    },
+  );
+}
+
+class _CircleProfileActivityTile extends StatelessWidget {
+  const _CircleProfileActivityTile({required this.activity});
+
+  final CircleActivity activity;
+
+  @override
+  Widget build(BuildContext context) {
+    final isJournal = activity.kind == 'journal';
+    final visual = workoutActivityVisual(
+      activity.name,
+      category: activity.activityCategory,
+    );
+    return Material(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () => _openCircleActivityDetails(context, activity),
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: (isJournal ? CircleScreen._purple : visual.color)
+                      .withValues(alpha: .12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isJournal ? Icons.menu_book_rounded : visual.icon,
+                  color: isJournal ? CircleScreen._purple : visual.color,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isJournal ? 'Journal Entry' : activity.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isJournal
+                          ? activity.mood ?? 'Shared reflection'
+                          : '${activity.minutes} min  •  ${_relativeActivityTime(activity.day)}',
+                      style: const TextStyle(color: CircleScreen._muted),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: CircleScreen._muted,
               ),
             ],
           ),
@@ -375,6 +1179,179 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
       ),
     );
   }
+}
+
+class _RemoveCircleFriendButton extends StatefulWidget {
+  const _RemoveCircleFriendButton({required this.profile});
+
+  final CircleProfile profile;
+
+  @override
+  State<_RemoveCircleFriendButton> createState() =>
+      _RemoveCircleFriendButtonState();
+}
+
+class _RemoveCircleFriendButtonState extends State<_RemoveCircleFriendButton> {
+  var _removing = false;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: double.infinity,
+    child: OutlinedButton.icon(
+      onPressed: _removing ? null : _remove,
+      icon: _removing
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.person_remove_rounded),
+      label: Text(_removing ? 'Removing…' : 'Remove Friend'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.red,
+        side: BorderSide(color: Colors.red.withValues(alpha: .5)),
+        minimumSize: const Size.fromHeight(50),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      ),
+    ),
+  );
+
+  Future<void> _remove() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Remove ${widget.profile.username}?'),
+        content: Text(
+          '${widget.profile.username} will be removed from your Circle.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _removing = true);
+    try {
+      await CircleProfileService.removeFriend(widget.profile.uid);
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _removing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not remove friend: $error')),
+      );
+    }
+  }
+}
+
+List<_Achievement> _profileAchievementsFromDocuments(
+  CircleProfile profile,
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> documents,
+) {
+  final byId = {for (final document in documents) document.id: document.data()};
+  const oneTime = <(String, String, String, String)>[
+    (
+      'in_motion',
+      'In Motion',
+      'Complete your first activity',
+      'assets/achievements/in_motion.png',
+    ),
+    (
+      'first_pulse',
+      'First Pulse',
+      'Complete your first heart-rate scan',
+      'assets/achievements/first_pulse.png',
+    ),
+    (
+      'dear_diary',
+      'Dear Diary',
+      'Write your first journal entry',
+      'assets/achievements/dear_diary.png',
+    ),
+    (
+      'your_circle',
+      'Your Circle',
+      'Create your Circle profile',
+      'assets/achievements/your_circle.png',
+    ),
+    (
+      'better_together',
+      'Better Together',
+      'Add your first friend',
+      'assets/achievements/better_together.png',
+    ),
+    (
+      'day_planner',
+      'Day Planner',
+      'Connect your calendar',
+      'assets/achievements/day_planner.png',
+    ),
+  ];
+  final result = <_Achievement>[];
+  for (final definition in oneTime) {
+    final data = byId[definition.$1];
+    final earned =
+        data?['completed'] == true ||
+        (definition.$1 == 'your_circle' && profile.username.trim().isNotEmpty);
+    result.add(
+      _Achievement(
+        id: definition.$1,
+        name: data?['name'] as String? ?? definition.$2,
+        requirement: data?['requirement'] as String? ?? definition.$3,
+        goalBadgeAsset: definition.$4,
+        earned: earned,
+        progress: (data?['progress'] as num?)?.round() ?? (earned ? 1 : 0),
+        earnedAt: (data?['earnedAt'] as Timestamp?)?.toDate(),
+      ),
+    );
+  }
+  for (final definition in const [
+    ('workout_momentum', 'Workout Momentum', 'workouts'),
+    ('endurance', 'Endurance', 'activities'),
+    ('pulse_check', 'Pulse Check', 'scans'),
+  ]) {
+    final data = byId[definition.$1];
+    final tier = data?['tier'] as String?;
+    final nextTier =
+        data?['nextTier'] as String? ?? (tier == null ? 'bronze' : null);
+    final shownTier = nextTier ?? tier ?? 'bronze';
+    final assetPrefix = definition.$1;
+    final defaultTarget = shownTier == 'bronze'
+        ? (definition.$1 == 'pulse_check' ? 10 : 5)
+        : shownTier == 'silver'
+        ? (definition.$1 == 'pulse_check' ? 100 : 10)
+        : (definition.$1 == 'pulse_check' ? 1000 : 100);
+    result.add(
+      _Achievement(
+        id: definition.$1,
+        name: data?['name'] as String? ?? definition.$2,
+        requirement:
+            data?['requirement'] as String? ??
+            'Complete $defaultTarget ${definition.$3}',
+        goalBadgeAsset: 'assets/achievements/${assetPrefix}_$shownTier.png',
+        earnedBadgeAsset: tier == null
+            ? null
+            : 'assets/achievements/${assetPrefix}_$tier.png',
+        earned: data?['completed'] == true,
+        progress: (data?['progress'] as num?)?.round() ?? 0,
+        target: (data?['target'] as num?)?.round() ?? defaultTarget,
+        tier: tier,
+        goalTier: nextTier,
+        progressUnit: data?['progressUnit'] as String? ?? definition.$3,
+        earnedAt: (data?['earnedAt'] as Timestamp?)?.toDate(),
+      ),
+    );
+  }
+  return result;
 }
 
 class _CircleTabs extends StatelessWidget {
@@ -2573,6 +3550,34 @@ class _FriendFitnessSheet extends StatelessWidget {
                 )
               else
                 _FriendFitnessContent(fitness: fitness),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    final navigator = Navigator.of(context);
+                    navigator.pop();
+                    navigator.push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => _CircleUserProfilePage(
+                          profile: profile,
+                          isOwner: false,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.person_outline_rounded),
+                  label: const Text('View Profile'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: CircleScreen._purple,
+                    minimumSize: const Size.fromHeight(48),
+                    side: const BorderSide(color: CircleScreen._purple),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                  ),
+                ),
+              ),
             ],
           );
         },
@@ -3891,7 +4896,12 @@ class _FriendTile extends StatelessWidget {
     borderRadius: BorderRadius.circular(22),
     child: InkWell(
       borderRadius: BorderRadius.circular(22),
-      onTap: () => _showFriendProfile(context, profile),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              _CircleUserProfilePage(profile: profile, isOwner: false),
+        ),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Row(
@@ -3927,6 +4937,9 @@ class _FriendTile extends StatelessWidget {
   );
 }
 
+// Kept temporarily for compatibility with any in-flight route callbacks from
+// hot reload; new friend taps open the full profile page above.
+// ignore: unused_element
 void _showFriendProfile(BuildContext context, CircleProfile profile) {
   var removing = false;
   showModalBottomSheet<void>(

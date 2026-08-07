@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../src/services/circle_profile_service.dart';
+import '../theme/vivordo_theme.dart';
 
 enum _UsernameStatus { idle, invalid, checking, available, taken, error }
 
@@ -21,9 +22,6 @@ class CreateCircleProfileScreen extends StatefulWidget {
 
 class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
   static const _purple = Color(0xFF6250E8);
-  static const _background = Color(0xFFF4F4F9);
-  static const _ink = Color(0xFF17172B);
-  static const _muted = Color(0xFF7F7F95);
 
   final usernameController = TextEditingController();
   final bioController = TextEditingController();
@@ -212,9 +210,9 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: _background,
+    backgroundColor: context.vivordoColors.page,
     appBar: AppBar(
-      backgroundColor: _background,
+      backgroundColor: context.vivordoColors.page,
       surfaceTintColor: Colors.transparent,
       centerTitle: true,
       title: Text(
@@ -235,7 +233,10 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                   ? 'Update how your circle sees you.'
                   : 'Help your circle recognize you.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: _muted, fontSize: 16),
+              style: TextStyle(
+                color: context.vivordoColors.textSecondary,
+                fontSize: 16,
+              ),
             ),
             const SizedBox(height: 26),
             Center(
@@ -251,8 +252,11 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                           height: 154,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: const Color(0xFFF0EEFF),
-                            border: Border.all(color: Colors.white, width: 3),
+                            color: context.vivordoColors.cardMuted,
+                            border: Border.all(
+                              color: context.vivordoColors.card,
+                              width: 3,
+                            ),
                             image: photoBytes != null
                                 ? DecorationImage(
                                     image: MemoryImage(photoBytes!),
@@ -272,7 +276,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                                   widget.initialProfile?.photoUrl == null
                               ? const Icon(
                                   Icons.person_rounded,
-                                  color: Color(0xFFAFA5F5),
+                                  color: _purple,
                                   size: 78,
                                 )
                               : null,
@@ -286,12 +290,15 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                             decoration: BoxDecoration(
                               color: _purple,
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 3),
-                              boxShadow: const [
+                              border: Border.all(
+                                color: context.vivordoColors.card,
+                                width: 3,
+                              ),
+                              boxShadow: [
                                 BoxShadow(
-                                  color: Color(0x26000000),
+                                  color: context.vivordoColors.shadow,
                                   blurRadius: 8,
-                                  offset: Offset(0, 3),
+                                  offset: const Offset(0, 3),
                                 ),
                               ],
                             ),
@@ -320,9 +327,9 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: context.vivordoColors.card,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.black.withValues(alpha: .06)),
+                border: Border.all(color: context.vivordoColors.border),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -347,14 +354,20 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                       Expanded(child: _usernameStatusText()),
                       Text(
                         '${usernameController.text.length} / 24',
-                        style: const TextStyle(color: _muted, fontSize: 12),
+                        style: TextStyle(
+                          color: context.vivordoColors.textSecondary,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 7),
-                  const Text(
+                  Text(
                     'Your display name is unique and helps friends recognize you.',
-                    style: TextStyle(color: _muted, fontSize: 12),
+                    style: TextStyle(
+                      color: context.vivordoColors.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
                   const SizedBox(height: 22),
                   const _FormLabel('BIO'),
@@ -376,7 +389,10 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                     alignment: Alignment.centerRight,
                     child: Text(
                       '${bioController.text.length} / 120',
-                      style: const TextStyle(color: _muted, fontSize: 12),
+                      style: TextStyle(
+                        color: context.vivordoColors.textSecondary,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ],
@@ -421,14 +437,21 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const Row(
+            Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.lock_outline_rounded, color: _muted, size: 15),
-                SizedBox(width: 7),
+                Icon(
+                  Icons.lock_outline_rounded,
+                  color: context.vivordoColors.textSecondary,
+                  size: 15,
+                ),
+                const SizedBox(width: 7),
                 Text(
                   'You can edit this anytime.',
-                  style: TextStyle(color: _muted, fontSize: 13),
+                  style: TextStyle(
+                    color: context.vivordoColors.textSecondary,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -441,17 +464,17 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
   InputDecoration _inputDecoration({required String hint, Widget? suffix}) =>
       InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFFA0A0B1)),
+        hintStyle: TextStyle(color: context.vivordoColors.textSecondary),
         suffixIcon: suffix,
         filled: true,
-        fillColor: const Color(0xFFF7F7FA),
+        fillColor: context.vivordoColors.input,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 16,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide: const BorderSide(color: Color(0xFFE7E7ED)),
+          borderSide: BorderSide(color: context.vivordoColors.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
@@ -483,12 +506,15 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
         'Use 3–24 letters, numbers, spaces, or _',
         Colors.redAccent,
       ),
-      _UsernameStatus.checking => ('Checking availability…', _muted),
+      _UsernameStatus.checking => (
+        'Checking availability…',
+        context.vivordoColors.textSecondary,
+      ),
       _UsernameStatus.error => (
         'Availability will be checked when saved',
-        _muted,
+        context.vivordoColors.textSecondary,
       ),
-      _UsernameStatus.idle => ('', _muted),
+      _UsernameStatus.idle => ('', context.vivordoColors.textSecondary),
     };
     return Text(text, style: TextStyle(color: color, fontSize: 12));
   }
@@ -501,8 +527,8 @@ class _FormLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     text,
-    style: const TextStyle(
-      color: Color(0xFF77778D),
+    style: TextStyle(
+      color: context.vivordoColors.textSecondary,
       fontSize: 12,
       fontWeight: FontWeight.w800,
       letterSpacing: 1.5,
