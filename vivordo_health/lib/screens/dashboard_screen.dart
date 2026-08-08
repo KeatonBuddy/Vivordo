@@ -220,6 +220,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       )
       .toList();
 
+  double? _todayMetricValue(
+    QuerySnapshot<Map<String, dynamic>>? snap,
+    String metricType,
+    String field,
+  ) {
+    if (snap == null) return null;
+    final now = DateTime.now();
+    final todayKey =
+        '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+    for (final doc in snap.docs) {
+      if (doc.id != todayKey) continue;
+      return ((doc.data()[metricType] as Map?)?[field] as num?)?.toDouble();
+    }
+    return null;
+  }
+
   List<String> _dayLabels(
     QuerySnapshot<Map<String, dynamic>>? snap,
     String metricType,
@@ -738,6 +756,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       values = _vals(_docsFor(snap, metric), metric, _metricField(metric));
     }
 
+    // Key metric tiles describe the current day. Resolve summed daily metrics
+    // by today's document ID so a missing sync never falls back to yesterday.
+    final todaySummedValue =
+        metric == 'exercise_time' || metric == 'active_calories'
+        ? _todayMetricValue(snap, metric, 'sum') ?? 0
+        : null;
+
     final title = switch (metric) {
       'steps' => 'Steps',
       'active_calories' => 'Active calories',
@@ -750,12 +775,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       'vo2max' => 'VO₂ max',
       _ => _metricTitle(metric),
     };
-    final value = values.isEmpty
+    final value = todaySummedValue != null
+        ? _formatMetricValue(metric, todaySummedValue)
+        : values.isEmpty
         ? 'No data'
         : metric == 'steps'
         ? _formatCount(values.last)
         : _formatMetricValue(metric, values.last);
-    final detail = values.isEmpty
+    final detail = todaySummedValue != null
+        ? todaySummedValue > 0
+              ? _comparisonText(values, lowerIsBetter: false)
+              : metric == 'active_calories'
+              ? 'No active calories recorded today'
+              : 'No exercise recorded today'
+        : values.isEmpty
         ? 'Not synced recently'
         : metric == 'heart_rate_scan' || metric == 'resting_heart_rate'
         ? _heartRateStatus(values.last)
@@ -1940,7 +1973,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Tap to go to Profile → Health Data Permissions',
+              'Tap to go to App Settings → Health Data Permissions',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: textGrey, height: 1.5),
             ),

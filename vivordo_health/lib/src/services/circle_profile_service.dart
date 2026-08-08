@@ -16,6 +16,7 @@ class CircleProfile {
     this.photoUrl,
     this.createdAt,
     this.featuredAchievementIds = const [],
+    this.challengeMedalCount = 0,
   });
 
   final String uid;
@@ -25,6 +26,7 @@ class CircleProfile {
   final String? photoUrl;
   final DateTime? createdAt;
   final List<String> featuredAchievementIds;
+  final int challengeMedalCount;
 
   factory CircleProfile.fromMap(String uid, Map<String, dynamic> data) =>
       CircleProfile(
@@ -38,6 +40,8 @@ class CircleProfile {
             (data['featuredAchievementIds'] as List? ?? const [])
                 .whereType<String>()
                 .toList(growable: false),
+        challengeMedalCount:
+            (data['challengeMedalCount'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -160,9 +164,13 @@ class CircleProfileService {
   static Stream<CircleProfile?> watchCurrentProfile() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return Stream.value(null);
-    return _profileReference(user.uid).snapshots().map((snapshot) {
+    return watchProfile(user.uid);
+  }
+
+  static Stream<CircleProfile?> watchProfile(String uid) {
+    return _profileReference(uid).snapshots().map((snapshot) {
       final data = snapshot.data();
-      return data == null ? null : CircleProfile.fromMap(user.uid, data);
+      return data == null ? null : CircleProfile.fromMap(uid, data);
     });
   }
 
@@ -289,6 +297,7 @@ class CircleProfileService {
             'bio': bio.trim(),
             'friendCode': friendCode,
             'photoUrl': photoUrl,
+            'challengeMedalCount': 0,
             'createdAt': now,
             'updatedAt': now,
           });
@@ -382,6 +391,7 @@ class CircleProfileService {
       photoUrl: photoUrl,
       createdAt: currentProfile.createdAt,
       featuredAchievementIds: currentProfile.featuredAchievementIds,
+      challengeMedalCount: currentProfile.challengeMedalCount,
     );
   }
 
@@ -464,6 +474,19 @@ class CircleProfileService {
           );
           return requests.whereType<CircleFriendRequest>().toList();
         });
+  }
+
+  static Stream<int> watchIncomingRequestCount() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Stream.value(0);
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('circle')
+        .doc('relationships')
+        .collection('friend_requests')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
   }
 
   static Stream<List<CircleProfile>> watchFriends() {

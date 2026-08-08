@@ -10,6 +10,11 @@ const crypto = require("crypto");
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
 
+// Circle challenge callables, progress triggers, and expiration scheduler.
+// Loading this module after Firebase Admin initialization keeps all functions
+// on the same shared Admin app and Firestore connection pool.
+Object.assign(exports, require("./challenges"));
+
 // Single shared client — reused across all function invocations on the same
 // container instance (connection pooling, no per-call allocation overhead).
 const client = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});

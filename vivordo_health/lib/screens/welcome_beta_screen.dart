@@ -152,7 +152,7 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
                     iconColor: accentPurple,
                     title: 'Spotted a bug? Tell us!',
                     body:
-                        'If anything looks off, crashes, or doesn\'t work as expected, please let us know. You can reach us at contact@vivordo.com or through the Profile page.',
+                        'If anything looks off, crashes, or doesn\'t work as expected, please let us know. You can reach us at contact@vivordo.com or through App Settings.',
                   ),
                   const SizedBox(height: 32),
 
@@ -181,7 +181,7 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
                         _tipRow('📊', 'Check Metrics for your health trends'),
                         _tipRow(
                           '🔗',
-                          'Connect Apple Health in Profile for richer data',
+                          'Connect Apple Health in App Settings for richer data',
                         ),
                         _tipRow(
                           '🤖',

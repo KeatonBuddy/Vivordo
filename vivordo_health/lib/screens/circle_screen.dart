@@ -9,12 +9,17 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/activity_goals_service.dart';
 import '../src/services/calendar_service.dart';
+import '../src/services/circle_challenge_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import '../src/services/workout_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import 'create_circle_profile_screen.dart';
-import 'fitness_screen.dart' show ActivityRingsPainter;
+import 'fitness_screen.dart'
+    show
+        ActivityRingsPainter,
+        WorkoutExerciseCatalogItem,
+        workoutExerciseCatalog;
 import 'profile_screen.dart';
 
 class CircleScreen extends StatelessWidget {
@@ -180,8 +185,18 @@ class _CircleProfileHome extends StatefulWidget {
 
 class _CircleProfileHomeState extends State<_CircleProfileHome> {
   var _selectedTab = 0;
+  late final Stream<List<CircleChallengeMembership>> _challengeMemberships;
+  late final Stream<int> _incomingFriendRequestCount;
 
   CircleProfile get profile => widget.profile;
+
+  @override
+  void initState() {
+    super.initState();
+    _challengeMemberships = CircleChallengeService.watchMemberships();
+    _incomingFriendRequestCount =
+        CircleProfileService.watchIncomingRequestCount();
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -221,67 +236,88 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
     ),
     body: SafeArea(
       top: false,
-      child: ListView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 40),
-        children: [
-          _CircleTabs(
-            selectedIndex: _selectedTab,
-            onChanged: (index) => setState(() => _selectedTab = index),
-          ),
-          const SizedBox(height: 26),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            child: switch (_selectedTab) {
-              0 => _ActivityTab(
-                profile: profile,
-                key: const ValueKey('activity'),
+      child: StreamBuilder<List<CircleChallengeMembership>>(
+        stream: _challengeMemberships,
+        builder: (context, challengeSnapshot) {
+          final memberships = challengeSnapshot.data ?? const [];
+          return ListView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 40),
+            children: [
+              StreamBuilder<int>(
+                stream: _incomingFriendRequestCount,
+                initialData: 0,
+                builder: (context, friendRequestSnapshot) => _CircleTabs(
+                  selectedIndex: _selectedTab,
+                  challengeInviteCount: memberships
+                      .where((membership) => membership.isInvite)
+                      .length,
+                  friendRequestCount: friendRequestSnapshot.data ?? 0,
+                  onChanged: (index) => setState(() => _selectedTab = index),
+                ),
               ),
-              1 => _FriendsTab(
-                profile: profile,
-                key: const ValueKey('friends'),
+              const SizedBox(height: 26),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: switch (_selectedTab) {
+                  0 => _ActivityTab(
+                    profile: profile,
+                    key: const ValueKey('activity'),
+                  ),
+                  1 => _FriendsTab(
+                    profile: profile,
+                    key: const ValueKey('friends'),
+                  ),
+                  _ => _ChallengesTab(
+                    profile: profile,
+                    memberships: memberships,
+                    membershipsLoading:
+                        challengeSnapshot.connectionState ==
+                            ConnectionState.waiting &&
+                        !challengeSnapshot.hasData,
+                    membershipsError: challengeSnapshot.error,
+                    key: const ValueKey('challenges'),
+                  ),
+                },
               ),
-              _ => _ChallengesTab(
-                profile: profile,
-                key: const ValueKey('challenges'),
-              ),
-            },
-          ),
-        ],
+            ],
+          );
+        },
       ),
     ),
   );
 
   void _openProfile() => Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => _CircleUserProfilePage(profile: profile, isOwner: true),
+      builder: (_) => CircleUserProfilePage(profile: profile, isOwner: true),
     ),
   );
 }
 
-class _CircleUserProfilePage extends StatefulWidget {
-  const _CircleUserProfilePage({required this.profile, required this.isOwner});
+class CircleUserProfilePage extends StatefulWidget {
+  const CircleUserProfilePage({
+    required this.profile,
+    required this.isOwner,
+    super.key,
+  });
 
   final CircleProfile profile;
   final bool isOwner;
 
   @override
-  State<_CircleUserProfilePage> createState() => _CircleUserProfilePageState();
+  State<CircleUserProfilePage> createState() => _CircleUserProfilePageState();
 }
 
-class _CircleUserProfilePageState extends State<_CircleUserProfilePage> {
+class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
   var _selectedTab = 0;
 
   @override
-  Widget build(BuildContext context) {
-    if (!widget.isOwner) return _buildPage(context, widget.profile);
-    return StreamBuilder<CircleProfile?>(
-      stream: CircleProfileService.watchCurrentProfile(),
-      initialData: widget.profile,
-      builder: (context, snapshot) =>
-          _buildPage(context, snapshot.data ?? widget.profile),
-    );
-  }
+  Widget build(BuildContext context) => StreamBuilder<CircleProfile?>(
+    stream: CircleProfileService.watchProfile(widget.profile.uid),
+    initialData: widget.profile,
+    builder: (context, snapshot) =>
+        _buildPage(context, snapshot.data ?? widget.profile),
+  );
 
   Widget _buildPage(BuildContext context, CircleProfile profile) => Scaffold(
     backgroundColor: context.vivordoColors.page,
@@ -545,6 +581,8 @@ class _CircleProfileHero extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
+          _ChallengeMedalCount(count: profile.challengeMedalCount),
+          const SizedBox(height: 14),
           _CircleProfileStats(
             profile: profile,
             isOwner: isOwner,
@@ -592,6 +630,42 @@ class _CircleProfileHero extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ChallengeMedalCount extends StatelessWidget {
+  const _ChallengeMedalCount({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(7, 6, 14, 6),
+    decoration: BoxDecoration(
+      color: CircleScreen._purple.withValues(alpha: .08),
+      borderRadius: BorderRadius.circular(28),
+      border: Border.all(color: CircleScreen._purple.withValues(alpha: .18)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Image.asset(
+          'assets/achievements/challenge_medal.png',
+          width: 40,
+          height: 40,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$count ${count == 1 ? 'challenge medal' : 'challenge medals'}',
+          style: TextStyle(
+            color: context.vivordoColors.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _CircleProfileStats extends StatelessWidget {
@@ -1388,9 +1462,16 @@ List<_Achievement> _profileAchievementsFromDocuments(
 }
 
 class _CircleTabs extends StatelessWidget {
-  const _CircleTabs({required this.selectedIndex, required this.onChanged});
+  const _CircleTabs({
+    required this.selectedIndex,
+    required this.challengeInviteCount,
+    required this.friendRequestCount,
+    required this.onChanged,
+  });
 
   final int selectedIndex;
+  final int challengeInviteCount;
+  final int friendRequestCount;
   final ValueChanged<int> onChanged;
 
   @override
@@ -1403,11 +1484,15 @@ class _CircleTabs extends StatelessWidget {
       border: Border.all(color: context.vivordoColors.border),
     ),
     child: Row(
-      children: [_tab('Activity', 0), _tab('Goals', 2), _tab('Friends', 1)],
+      children: [
+        _tab('Activity', 0),
+        _tab('Goals', 2, badgeCount: challengeInviteCount),
+        _tab('Friends', 1, badgeCount: friendRequestCount),
+      ],
     ),
   );
 
-  Widget _tab(String label, int index) => Expanded(
+  Widget _tab(String label, int index, {int badgeCount = 0}) => Expanded(
     child: Material(
       color: selectedIndex == index ? CircleScreen._purple : Colors.transparent,
       borderRadius: BorderRadius.circular(13),
@@ -1415,15 +1500,29 @@ class _CircleTabs extends StatelessWidget {
         borderRadius: BorderRadius.circular(13),
         onTap: () => onChanged(index),
         child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selectedIndex == index
-                  ? Colors.white
-                  : CircleScreen._muted,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(right: badgeCount > 0 ? 12 : 0),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: selectedIndex == index
+                        ? Colors.white
+                        : CircleScreen._muted,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (badgeCount > 0)
+                Positioned(
+                  right: -8,
+                  top: -8,
+                  child: _ChallengeInviteBadge(count: badgeCount),
+                ),
+            ],
           ),
         ),
       ),
@@ -1431,10 +1530,46 @@ class _CircleTabs extends StatelessWidget {
   );
 }
 
+class _ChallengeInviteBadge extends StatelessWidget {
+  const _ChallengeInviteBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+    padding: const EdgeInsets.symmetric(horizontal: 5),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFF5264),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: context.vivordoColors.card, width: 1.5),
+    ),
+    alignment: Alignment.center,
+    child: Text(
+      count > 99 ? '99+' : '$count',
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 10,
+        fontWeight: FontWeight.w900,
+        height: 1,
+      ),
+    ),
+  );
+}
+
 class _ChallengesTab extends StatefulWidget {
-  const _ChallengesTab({required this.profile, super.key});
+  const _ChallengesTab({
+    required this.profile,
+    required this.memberships,
+    required this.membershipsLoading,
+    required this.membershipsError,
+    super.key,
+  });
 
   final CircleProfile profile;
+  final List<CircleChallengeMembership> memberships;
+  final bool membershipsLoading;
+  final Object? membershipsError;
 
   @override
   State<_ChallengesTab> createState() => _ChallengesTabState();
@@ -1888,68 +2023,79 @@ class _ChallengesTabState extends State<_ChallengesTab> {
               child: _CircleCard(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _ProfileAvatar(profile: widget.profile, radius: 34),
-                      const SizedBox(width: 18),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                '$earnedMilestoneCount achievements',
-                                maxLines: 1,
-                                softWrap: false,
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w900,
-                                  color: context.vivordoColors.textPrimary,
+                      Row(
+                        children: [
+                          _ProfileAvatar(profile: widget.profile, radius: 34),
+                          const SizedBox(width: 18),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    '$earnedMilestoneCount achievements',
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
+                                      color: context.vivordoColors.textPrimary,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  next == null
+                                      ? 'All achievements earned'
+                                      : '$inProgressCount in progress',
+                                  style: const TextStyle(
+                                    color: CircleScreen._muted,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 15),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: LinearProgressIndicator(
+                                    value: totalMilestoneCount == 0
+                                        ? 0
+                                        : earnedMilestoneCount /
+                                              totalMilestoneCount,
+                                    minHeight: 8,
+                                    backgroundColor:
+                                        context.vivordoColors.cardMuted,
+                                    color: CircleScreen._purple,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '$percent% complete',
+                                  style: const TextStyle(
+                                    color: CircleScreen._muted,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              next == null
-                                  ? 'All achievements earned'
-                                  : '$inProgressCount in progress',
-                              style: const TextStyle(
-                                color: CircleScreen._muted,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 15),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: LinearProgressIndicator(
-                                value: totalMilestoneCount == 0
-                                    ? 0
-                                    : earnedMilestoneCount /
-                                          totalMilestoneCount,
-                                minHeight: 8,
-                                backgroundColor:
-                                    context.vivordoColors.cardMuted,
-                                color: CircleScreen._purple,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '$percent% complete',
-                              style: const TextStyle(
-                                color: CircleScreen._muted,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 16),
+                          _ChallengeProgressRing(
+                            earned: earnedMilestoneCount,
+                            total: totalMilestoneCount,
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 16),
-                      _ChallengeProgressRing(
-                        earned: earnedMilestoneCount,
-                        total: totalMilestoneCount,
-                      ),
+                      if (next != null) ...[
+                        const SizedBox(height: 18),
+                        Divider(color: context.vivordoColors.border),
+                        const SizedBox(height: 14),
+                        _NextAchievementSummary(achievement: next),
+                      ],
                     ],
                   ),
                 ),
@@ -1957,27 +2103,3614 @@ class _ChallengesTabState extends State<_ChallengesTab> {
             ),
           ),
           const SizedBox(height: 28),
-          const _CircleSectionTitle('NEXT ACHIEVEMENT'),
-          const SizedBox(height: 14),
-          if (next == null)
-            const _ChallengeEmptyCard(
-              icon: Icons.emoji_events_rounded,
-              title: 'All achievements earned',
-              detail: 'You completed every available achievement.',
-            )
-          else
-            _NextAchievementCard(achievement: next),
-          const SizedBox(height: 28),
-          const _CircleSectionTitle('ACTIVE CHALLENGES'),
-          const SizedBox(height: 14),
-          const _ChallengeEmptyCard(
-            icon: Icons.groups_rounded,
-            title: 'No active challenges',
-            detail: 'Challenges with your Circle will appear here.',
+          Row(
+            children: [
+              const _CircleSectionTitle('CHALLENGES'),
+              const Spacer(),
+              TextButton(
+                onPressed: _openChallenges,
+                child: const Text(
+                  'View All',
+                  style: TextStyle(
+                    color: CircleScreen._purple,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 14),
+          _buildChallengesCard(context),
         ],
       );
     },
+  );
+
+  Widget _buildChallengesCard(BuildContext context) {
+    if (widget.membershipsLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 42),
+        child: Center(
+          child: CircularProgressIndicator(color: CircleScreen._purple),
+        ),
+      );
+    }
+    if (widget.membershipsError != null) {
+      debugPrint(
+        'Circle challenges: membership stream failed: '
+        '${widget.membershipsError}',
+      );
+      return _ChallengeEmptyCard(
+        icon: Icons.cloud_off_rounded,
+        title: 'Could not load challenges',
+        detail: 'Tap to open Challenges and try again.',
+        onTap: _openChallenges,
+      );
+    }
+
+    final invites = widget.memberships
+        .where((membership) => membership.isInvite)
+        .toList(growable: false);
+    final ongoing = widget.memberships
+        .where((membership) => membership.isOngoing)
+        .toList(growable: false);
+    if (invites.isEmpty && ongoing.isEmpty) {
+      return _ChallengeEmptyCard(
+        icon: Icons.groups_rounded,
+        title: 'No active challenges',
+        detail: 'Tap to challenge a friend and build a healthy habit.',
+        onTap: _openChallenges,
+      );
+    }
+    return _GoalsChallengesCard(
+      profile: widget.profile,
+      activeChallenge: ongoing.firstOrNull,
+      invite: invites.firstOrNull,
+      inviteCount: invites.length,
+      onOpenActive: _openChallenges,
+      onOpenInvites: () => _openChallenges(initialTab: 1),
+    );
+  }
+
+  void _openChallenges({int initialTab = 0}) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => _CircleChallengesPage(
+        profile: widget.profile,
+        initialTab: initialTab,
+      ),
+    ),
+  );
+}
+
+class _GoalsChallengesCard extends StatefulWidget {
+  const _GoalsChallengesCard({
+    required this.profile,
+    required this.activeChallenge,
+    required this.invite,
+    required this.inviteCount,
+    required this.onOpenActive,
+    required this.onOpenInvites,
+  });
+
+  final CircleProfile profile;
+  final CircleChallengeMembership? activeChallenge;
+  final CircleChallengeMembership? invite;
+  final int inviteCount;
+  final VoidCallback onOpenActive;
+  final VoidCallback onOpenInvites;
+
+  @override
+  State<_GoalsChallengesCard> createState() => _GoalsChallengesCardState();
+}
+
+class _GoalsChallengesCardState extends State<_GoalsChallengesCard> {
+  bool _responding = false;
+
+  @override
+  Widget build(BuildContext context) => _CircleCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.activeChallenge case final active?)
+          _activeChallenge(context, active),
+        if (widget.activeChallenge != null && widget.invite != null) ...[
+          const SizedBox(height: 20),
+          Divider(color: context.vivordoColors.border, height: 1),
+          const SizedBox(height: 18),
+        ],
+        if (widget.invite case final invite?) _invite(context, invite),
+      ],
+    ),
+  );
+
+  Widget _activeChallenge(
+    BuildContext context,
+    CircleChallengeMembership challenge,
+  ) {
+    final progress = challenge.goal <= 0
+        ? 0.0
+        : (challenge.progress / challenge.goal).clamp(0.0, 1.0);
+    final waiting = challenge.status == 'waiting';
+    final daysLeft = _daysLeft(challenge);
+    return InkWell(
+      onTap: widget.onOpenActive,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: CircleScreen._purple,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  waiting ? 'WAITING' : 'ACTIVE',
+                  style: const TextStyle(
+                    color: CircleScreen._muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF0E5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    '$daysLeft day${daysLeft == 1 ? '' : 's'} left',
+                    style: const TextStyle(
+                      color: Color(0xFFE97922),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                _ChallengeParticipantCluster(
+                  profile: widget.profile,
+                  challenge: challenge,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        challenge.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.vivordoColors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${NumberFormat.decimalPattern().format(challenge.progress)} / '
+                        '${NumberFormat.decimalPattern().format(challenge.goal)} '
+                        '${challenge.unit}',
+                        style: const TextStyle(
+                          color: CircleScreen._muted,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(5),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 6,
+                          color: CircleScreen._purple,
+                          backgroundColor: context.vivordoColors.cardMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        waiting
+                            ? 'Waiting for friends to respond'
+                            : '${challenge.participantUids.length} participants',
+                        style: const TextStyle(
+                          color: CircleScreen._muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: CircleScreen._muted,
+                  size: 28,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _invite(BuildContext context, CircleChallengeMembership challenge) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: widget.onOpenInvites,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  const Text(
+                    'NEW INVITE',
+                    style: TextStyle(
+                      color: CircleScreen._purple,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _ChallengeInviteBadge(count: widget.inviteCount),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _ChallengeInitialAvatar(name: challenge.creatorName, size: 54),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      challenge.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: context.vivordoColors.textPrimary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${challenge.creatorName} invited you · '
+                      '${challenge.durationDays} days',
+                      style: const TextStyle(
+                        color: CircleScreen._muted,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (challenge.message.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '“${challenge.message}”',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.vivordoColors.textPrimary,
+                          fontSize: 13,
+                          fontStyle: FontStyle.italic,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Spacer(),
+              SizedBox(
+                width: 104,
+                height: 44,
+                child: OutlinedButton(
+                  onPressed: _responding ? null : () => _respond(false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: CircleScreen._muted,
+                    side: const BorderSide(color: CircleScreen._muted),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                  ),
+                  child: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Decline',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 112,
+                height: 44,
+                child: FilledButton(
+                  onPressed: _responding ? null : () => _respond(true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: CircleScreen._purple,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                  ),
+                  child: _responding
+                      ? const SizedBox.square(
+                          dimension: 17,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Accept',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+
+  int _daysLeft(CircleChallengeMembership challenge) {
+    final endAt = challenge.endAt;
+    if (endAt == null) return challenge.durationDays;
+    final hours = endAt.difference(DateTime.now()).inHours;
+    if (hours <= 0) return 0;
+    return (hours + 23) ~/ 24;
+  }
+
+  Future<void> _respond(bool accept) async {
+    final invite = widget.invite;
+    if (invite == null || _responding) return;
+    setState(() => _responding = true);
+    try {
+      await CircleChallengeService.respond(
+        challengeId: invite.challengeId,
+        accept: accept,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(accept ? 'Challenge accepted.' : 'Challenge declined.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update challenge: $error')),
+      );
+      setState(() => _responding = false);
+    }
+  }
+}
+
+class _ChallengeParticipantCluster extends StatelessWidget {
+  const _ChallengeParticipantCluster({
+    required this.profile,
+    required this.challenge,
+  });
+
+  final CircleProfile profile;
+  final CircleChallengeMembership challenge;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = challenge.participantUids.length;
+    final width = count <= 1
+        ? 50.0
+        : count == 2
+        ? 82.0
+        : 112.0;
+    return SizedBox(
+      width: width,
+      height: 54,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            child: _ChallengeAvatarBorder(
+              child: _ProfileAvatar(profile: profile, radius: 24),
+            ),
+          ),
+          if (count > 1)
+            Positioned(
+              left: 32,
+              child: _ChallengeInitialAvatar(
+                name: challenge.creatorUid == profile.uid
+                    ? 'Friend'
+                    : challenge.creatorName,
+                size: 50,
+              ),
+            ),
+          if (count > 2)
+            Positioned(
+              left: 64,
+              child: _ChallengeInitialAvatar(name: '+${count - 2}', size: 50),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChallengeAvatarBorder extends StatelessWidget {
+  const _ChallengeAvatarBorder({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(2),
+    decoration: BoxDecoration(
+      color: context.vivordoColors.card,
+      shape: BoxShape.circle,
+    ),
+    child: child,
+  );
+}
+
+class _ChallengeInitialAvatar extends StatelessWidget {
+  const _ChallengeInitialAvatar({required this.name, required this.size});
+
+  final String name;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = name.trim();
+    final label = trimmed.startsWith('+')
+        ? trimmed
+        : trimmed.isEmpty
+        ? '?'
+        : trimmed.characters.first.toUpperCase();
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE2E4),
+        shape: BoxShape.circle,
+        border: Border.all(color: context.vivordoColors.card, width: 2),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: const Color(0xFFFF5264),
+          fontSize: size * .4,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _CircleChallengesPage extends StatefulWidget {
+  const _CircleChallengesPage({required this.profile, this.initialTab = 0});
+
+  final CircleProfile profile;
+  final int initialTab;
+
+  @override
+  State<_CircleChallengesPage> createState() => _CircleChallengesPageState();
+}
+
+class _CircleChallengesPageState extends State<_CircleChallengesPage> {
+  late int _selectedTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTab = widget.initialTab == 1 ? 1 : 0;
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: context.vivordoColors.page,
+    body: SafeArea(
+      child: ListView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 44),
+        children: [
+          Row(
+            children: [
+              _ProfileHeaderButton(
+                icon: Icons.chevron_left_rounded,
+                onTap: () => Navigator.maybePop(context),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Text(
+                  'Challenges',
+                  style: TextStyle(
+                    color: context.vivordoColors.textPrimary,
+                    fontSize: 31,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -.7,
+                  ),
+                ),
+              ),
+              _ProfileHeaderButton(
+                icon: Icons.history_rounded,
+                onTap: () =>
+                    _showComingSoon('Completed challenges will appear here.'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _ChallengeHero(
+            profile: widget.profile,
+            onCreate: _openCustomChallenge,
+          ),
+          const SizedBox(height: 16),
+          _ChallengePageTabs(
+            selectedIndex: _selectedTab,
+            onChanged: (index) => setState(() => _selectedTab = index),
+          ),
+          const SizedBox(height: 28),
+          _CircleSectionTitle(
+            _selectedTab == 0 ? 'ACTIVE CHALLENGES' : 'CHALLENGE INVITES',
+          ),
+          const SizedBox(height: 12),
+          StreamBuilder<List<CircleChallengeMembership>>(
+            stream: CircleChallengeService.watchMemberships(),
+            builder: (context, snapshot) => _ChallengeMembershipList(
+              memberships: (snapshot.data ?? const [])
+                  .where(
+                    (membership) => _selectedTab == 0
+                        ? membership.isOngoing
+                        : membership.isInvite,
+                  )
+                  .toList(growable: false),
+              loading:
+                  snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData,
+              error: snapshot.error,
+              invites: _selectedTab == 1,
+              onRespond: _respondToChallenge,
+            ),
+          ),
+          const SizedBox(height: 28),
+          const _CircleSectionTitle('QUICK CHALLENGES'),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _QuickChallengeCard(
+                  icon: Icons.fitness_center_rounded,
+                  color: CircleScreen._purple,
+                  title: 'Workout Streak',
+                  onTap: () => _openQuickChallenge(
+                    const _QuickChallengeDefinition.workoutStreak(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _QuickChallengeCard(
+                  icon: Icons.directions_walk_rounded,
+                  color: const Color(0xFF0FB986),
+                  title: 'Step Sprint',
+                  onTap: () => _openQuickChallenge(
+                    const _QuickChallengeDefinition.stepSprint(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _QuickChallengeCard(
+                  icon: Icons.monitor_heart_rounded,
+                  color: const Color(0xFFFF5264),
+                  title: 'Pulse Check',
+                  onTap: () => _openQuickChallenge(
+                    const _QuickChallengeDefinition.pulseCheck(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+
+  void _showComingSoon(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openCustomChallenge() async {
+    final draft = await showModalBottomSheet<_CustomChallengeDraft>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: .54),
+      builder: (_) => const _CreateCustomChallengeSheet(),
+    );
+    if (!mounted || draft == null) return;
+    final recipientLabel = draft.friends.length == 1
+        ? draft.friends.first.username
+        : '${draft.friends.length} friends';
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(
+        duration: Duration(minutes: 1),
+        content: Row(
+          children: [
+            SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 12),
+            Text('Sending challenge…'),
+          ],
+        ),
+      ),
+    );
+    try {
+      await CircleChallengeService.create(
+        type: draft.definition.backendType,
+        goal: draft.goal,
+        durationDays: draft.durationDays,
+        participantUids: draft.friends
+            .map((friend) => friend.uid)
+            .toList(growable: false),
+        targetName: draft.specificExercise,
+        message: draft.message,
+      );
+      if (!mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text('${draft.title} sent to $recipientLabel.')),
+        );
+    } catch (error) {
+      if (!mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text('Could not send challenge: $error')),
+        );
+    }
+  }
+
+  Future<void> _openQuickChallenge(_QuickChallengeDefinition challenge) async {
+    final draft = await showModalBottomSheet<_QuickChallengeDraft>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: .54),
+      builder: (_) => _CreateQuickChallengeSheet(challenge: challenge),
+    );
+    if (!mounted || draft == null) return;
+    final recipientLabel = draft.friends.length == 1
+        ? draft.friends.first.username
+        : '${draft.friends.length} friends';
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(
+        duration: Duration(minutes: 1),
+        content: Row(
+          children: [
+            SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 12),
+            Text('Sending challenge…'),
+          ],
+        ),
+      ),
+    );
+    try {
+      await CircleChallengeService.create(
+        type: draft.challenge.backendType,
+        goal: draft.goal,
+        durationDays: draft.durationDays,
+        participantUids: draft.friends.map((friend) => friend.uid).toList(),
+        message: draft.message,
+      );
+      if (!mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('${draft.challenge.title} sent to $recipientLabel.'),
+          ),
+        );
+    } catch (error) {
+      if (!mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text('Could not send challenge: $error')),
+        );
+    }
+  }
+
+  Future<void> _respondToChallenge(
+    CircleChallengeMembership membership,
+    bool accept,
+  ) async {
+    try {
+      await CircleChallengeService.respond(
+        challengeId: membership.challengeId,
+        accept: accept,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(accept ? 'Challenge accepted.' : 'Challenge declined.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update challenge: $error')),
+      );
+    }
+  }
+}
+
+class _ChallengeHero extends StatelessWidget {
+  const _ChallengeHero({required this.profile, required this.onCreate});
+
+  final CircleProfile profile;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<CircleProfile>>(
+    stream: CircleProfileService.watchFriends(),
+    builder: (context, snapshot) {
+      final friend = snapshot.data?.firstOrNull;
+      return Container(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF7C75FF), Color(0xFF4D32ED)],
+          ),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x334D32ED),
+              blurRadius: 24,
+              offset: Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              right: 0,
+              top: 30,
+              child: Icon(
+                Icons.emoji_events_rounded,
+                color: Colors.white.withValues(alpha: .26),
+                size: 112,
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 104,
+                  height: 58,
+                  child: Stack(
+                    children: [
+                      _ProfileAvatar(profile: profile, radius: 29),
+                      Positioned(
+                        left: 45,
+                        child: friend == null
+                            ? CircleAvatar(
+                                radius: 29,
+                                backgroundColor: const Color(0xFFFFE2E6),
+                                child: const Icon(
+                                  Icons.person_add_alt_1_rounded,
+                                  color: Color(0xFFFF5264),
+                                ),
+                              )
+                            : _ProfileAvatar(profile: friend, radius: 29),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Challenge a friend',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                const SizedBox(
+                  width: 225,
+                  child: Text(
+                    'Pick a goal, choose a friend, and build healthy habits together.',
+                    style: TextStyle(
+                      color: Color(0xFFE9E7FF),
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: FilledButton.icon(
+                    onPressed: onCreate,
+                    icon: const Icon(Icons.add_circle_outline_rounded),
+                    label: const Text('Create Challenge'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: CircleScreen._purple,
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _ChallengePageTabs extends StatelessWidget {
+  const _ChallengePageTabs({
+    required this.selectedIndex,
+    required this.onChanged,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 56,
+    padding: const EdgeInsets.all(3),
+    decoration: BoxDecoration(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(17),
+      border: Border.all(color: context.vivordoColors.border),
+    ),
+    child: Row(
+      children: [
+        _tab('Active', 0),
+        const SizedBox(width: 4),
+        _tab('Invites', 1),
+      ],
+    ),
+  );
+
+  Widget _tab(String label, int index) => Expanded(
+    child: Material(
+      color: selectedIndex == index ? CircleScreen._purple : Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: () => onChanged(index),
+        borderRadius: BorderRadius.circular(14),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selectedIndex == index
+                  ? Colors.white
+                  : CircleScreen._muted,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _ChallengeMembershipList extends StatelessWidget {
+  const _ChallengeMembershipList({
+    required this.memberships,
+    required this.loading,
+    required this.error,
+    required this.invites,
+    required this.onRespond,
+  });
+
+  final List<CircleChallengeMembership> memberships;
+  final bool loading;
+  final Object? error;
+  final bool invites;
+  final Future<void> Function(CircleChallengeMembership, bool) onRespond;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 42),
+        child: Center(
+          child: CircularProgressIndicator(color: CircleScreen._purple),
+        ),
+      );
+    }
+    if (error != null) {
+      return _ChallengeEmptyCard(
+        icon: Icons.cloud_off_rounded,
+        title: 'Could not load challenges',
+        detail: 'Check your connection, then reopen this screen.',
+      );
+    }
+    if (memberships.isEmpty) {
+      return _ChallengeEmptyCard(
+        icon: invites ? Icons.mail_outline_rounded : Icons.flag_rounded,
+        title: invites ? 'No challenge invites' : 'No active challenges',
+        detail: invites
+            ? 'Invitations from your friends will appear here.'
+            : 'Create a challenge and invite a friend to join you.',
+      );
+    }
+    return Column(
+      children: [
+        for (var index = 0; index < memberships.length; index++) ...[
+          _ChallengeMembershipCard(
+            membership: memberships[index],
+            invite: invites,
+            onRespond: onRespond,
+            onOpen: invites
+                ? null
+                : () =>
+                      _showActiveChallengeDetails(context, memberships[index]),
+          ),
+          if (index != memberships.length - 1) const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+}
+
+class _ChallengeMembershipCard extends StatefulWidget {
+  const _ChallengeMembershipCard({
+    required this.membership,
+    required this.invite,
+    required this.onRespond,
+    required this.onOpen,
+  });
+
+  final CircleChallengeMembership membership;
+  final bool invite;
+  final Future<void> Function(CircleChallengeMembership, bool) onRespond;
+  final VoidCallback? onOpen;
+
+  @override
+  State<_ChallengeMembershipCard> createState() =>
+      _ChallengeMembershipCardState();
+}
+
+class _ChallengeMembershipCardState extends State<_ChallengeMembershipCard> {
+  var _responding = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final membership = widget.membership;
+    final color = switch (membership.type) {
+      'step_total' => const Color(0xFF0FB986),
+      'activity_count' => const Color(0xFF0FB986),
+      'journal_count' => const Color(0xFF08A7AA),
+      'scan_count' => const Color(0xFFFF5264),
+      _ => CircleScreen._purple,
+    };
+    final icon = switch (membership.type) {
+      'step_total' => Icons.directions_walk_rounded,
+      'activity_count' => Icons.directions_run_rounded,
+      'journal_count' => Icons.menu_book_rounded,
+      'scan_count' => Icons.monitor_heart_rounded,
+      _ => Icons.fitness_center_rounded,
+    };
+    final progress = membership.goal <= 0
+        ? 0.0
+        : (membership.progress / membership.goal).clamp(0.0, 1.0);
+    final progressLabel =
+        '${NumberFormat.decimalPattern().format(membership.progress)} / '
+        '${NumberFormat.decimalPattern().format(membership.goal)} '
+        '${membership.unit}';
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onOpen,
+      child: _CircleCard(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      membership.title,
+                      style: TextStyle(
+                        color: context.vivordoColors.textPrimary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      widget.invite
+                          ? '${membership.creatorName} invited you'
+                          : membership.status == 'waiting'
+                          ? 'Waiting for friends to respond'
+                          : '${membership.participantUids.length} participants',
+                      style: const TextStyle(
+                        color: CircleScreen._muted,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (widget.invite && membership.message.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: context.vivordoColors.cardMuted,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '“${membership.message}”',
+                          style: TextStyle(
+                            color: context.vivordoColors.textPrimary,
+                            fontSize: 13,
+                            fontStyle: FontStyle.italic,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Text(
+                      progressLabel,
+                      style: TextStyle(
+                        color: context.vivordoColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 6,
+                        backgroundColor: context.vivordoColors.cardMuted,
+                        color: color,
+                      ),
+                    ),
+                    if (widget.invite) ...[
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _responding
+                                  ? null
+                                  : () => _respond(false),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                              ),
+                              child: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  'Decline',
+                                  maxLines: 1,
+                                  softWrap: false,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: _responding
+                                  ? null
+                                  : () => _respond(true),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: CircleScreen._purple,
+                              ),
+                              child: _responding
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('Accept'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _respond(bool accept) async {
+    setState(() => _responding = true);
+    await widget.onRespond(widget.membership, accept);
+    if (mounted) setState(() => _responding = false);
+  }
+}
+
+Future<void> _showActiveChallengeDetails(
+  BuildContext context,
+  CircleChallengeMembership membership,
+) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  backgroundColor: Colors.transparent,
+  barrierColor: Colors.black54,
+  builder: (sheetContext) => AnimatedPadding(
+    duration: const Duration(milliseconds: 220),
+    curve: Curves.easeOutCubic,
+    padding: EdgeInsets.only(
+      bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+    ),
+    child: _ActiveChallengeDetailSheet(membership: membership),
+  ),
+);
+
+class _ActiveChallengeDetailSheet extends StatefulWidget {
+  const _ActiveChallengeDetailSheet({required this.membership});
+
+  final CircleChallengeMembership membership;
+
+  @override
+  State<_ActiveChallengeDetailSheet> createState() =>
+      _ActiveChallengeDetailSheetState();
+}
+
+class _ActiveChallengeDetailSheetState
+    extends State<_ActiveChallengeDetailSheet> {
+  late Future<CircleChallengeDetails> _details;
+  final _commentController = TextEditingController();
+  final _commentFocusNode = FocusNode();
+  ScrollController? _sheetScrollController;
+  var _postingComment = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _details = CircleChallengeService.loadDetails(
+      widget.membership.challengeId,
+    );
+    _commentFocusNode.addListener(_handleCommentFocus);
+  }
+
+  @override
+  void dispose() {
+    _commentFocusNode.removeListener(_handleCommentFocus);
+    _commentController.dispose();
+    _commentFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => DraggableScrollableSheet(
+    initialChildSize: .92,
+    minChildSize: .62,
+    maxChildSize: .97,
+    expand: false,
+    builder: (context, scrollController) {
+      _sheetScrollController = scrollController;
+      return Container(
+        decoration: BoxDecoration(
+          color: context.vivordoColors.page,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        ),
+        child: ListView(
+          controller: scrollController,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(22, 10, 22, 34),
+          children: [
+            Center(
+              child: Container(
+                width: 46,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: CircleScreen._muted.withValues(alpha: .42),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _buildHeading(context)),
+                IconButton.filled(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: IconButton.styleFrom(
+                    backgroundColor: context.vivordoColors.cardMuted,
+                    foregroundColor: CircleScreen._muted,
+                  ),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            FutureBuilder<CircleChallengeDetails>(
+              future: _details,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 80),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: CircleScreen._purple,
+                      ),
+                    ),
+                  );
+                }
+                if (snapshot.hasError || !snapshot.hasData) {
+                  return _ChallengeEmptyCard(
+                    icon: Icons.cloud_off_rounded,
+                    title: 'Could not load challenge details',
+                    detail: 'Check your connection and try again.',
+                    onTap: _reload,
+                  );
+                }
+                return _buildDetails(context, snapshot.requireData);
+              },
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  void _handleCommentFocus() {
+    if (!_commentFocusNode.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCommentBox());
+    Future<void>.delayed(
+      const Duration(milliseconds: 280),
+      _scrollToCommentBox,
+    );
+  }
+
+  void _scrollToCommentBox() {
+    final controller = _sheetScrollController;
+    if (!mounted ||
+        !_commentFocusNode.hasFocus ||
+        controller == null ||
+        !controller.hasClients) {
+      return;
+    }
+    controller.animateTo(
+      controller.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _buildHeading(BuildContext context) {
+    final membership = widget.membership;
+    final waiting = membership.status == 'waiting';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            gradient: waiting
+                ? null
+                : const LinearGradient(
+                    colors: [Color(0xFF5341EF), Color(0xFF6B4EF2)],
+                  ),
+            color: waiting ? context.vivordoColors.cardMuted : null,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            waiting ? 'WAITING' : 'ACTIVE',
+            style: TextStyle(
+              color: waiting ? CircleScreen._muted : Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          membership.title,
+          style: TextStyle(
+            color: context.vivordoColors.textPrimary,
+            fontSize: 30,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -.6,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          'Complete ${NumberFormat.decimalPattern().format(membership.goal)} '
+          '${membership.unit}',
+          style: const TextStyle(color: CircleScreen._muted, fontSize: 15),
+        ),
+        const SizedBox(height: 13),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF0E5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            '${_daysLeft(membership)} days left',
+            style: const TextStyle(
+              color: Color(0xFFE97922),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDetails(BuildContext context, CircleChallengeDetails details) {
+    final participants = [...details.participants]
+      ..sort((a, b) => b.progress.compareTo(a.progress));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ChallengeStandingsCard(
+          membership: widget.membership,
+          participants: participants,
+        ),
+        if (widget.membership.message.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          const _CircleSectionTitle('CHALLENGE MESSAGE'),
+          const SizedBox(height: 12),
+          _ChallengeCreatorMessageCard(
+            creatorName: widget.membership.creatorName,
+            message: widget.membership.message,
+          ),
+        ],
+        const SizedBox(height: 24),
+        const _CircleSectionTitle('RECENT PROGRESS'),
+        const SizedBox(height: 12),
+        _ChallengeRecentProgressCard(
+          participants: participants,
+          contributions: details.contributions.take(4).toList(),
+        ),
+        const SizedBox(height: 24),
+        const _CircleSectionTitle('COMMENTS'),
+        const SizedBox(height: 12),
+        _ChallengeCommentsSection(
+          challengeId: widget.membership.challengeId,
+          participants: participants,
+          controller: _commentController,
+          focusNode: _commentFocusNode,
+          posting: _postingComment,
+          onSend: _postComment,
+          onDelete: _deleteComment,
+        ),
+      ],
+    );
+  }
+
+  void _reload() => setState(() {
+    _details = CircleChallengeService.loadDetails(
+      widget.membership.challengeId,
+    );
+  });
+
+  Future<void> _postComment() async {
+    final text = _commentController.text.trim();
+    if (text.isEmpty || _postingComment) return;
+    setState(() => _postingComment = true);
+    try {
+      await CircleChallengeService.addComment(
+        challengeId: widget.membership.challengeId,
+        text: text,
+      );
+      _commentController.clear();
+      _commentFocusNode.unfocus();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not post comment: $error')));
+    } finally {
+      if (mounted) setState(() => _postingComment = false);
+    }
+  }
+
+  Future<void> _deleteComment(CircleChallengeComment comment) async {
+    try {
+      await CircleChallengeService.deleteComment(
+        challengeId: widget.membership.challengeId,
+        commentId: comment.id,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete comment: $error')),
+      );
+    }
+  }
+
+  int _daysLeft(CircleChallengeMembership membership) {
+    final endAt = membership.endAt;
+    if (endAt == null) return membership.durationDays;
+    final hours = endAt.difference(DateTime.now()).inHours;
+    return hours <= 0 ? 0 : (hours + 23) ~/ 24;
+  }
+}
+
+class _ChallengeCommentsSection extends StatefulWidget {
+  const _ChallengeCommentsSection({
+    required this.challengeId,
+    required this.participants,
+    required this.controller,
+    required this.focusNode,
+    required this.posting,
+    required this.onSend,
+    required this.onDelete,
+  });
+
+  final String challengeId;
+  final List<CircleChallengeParticipant> participants;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool posting;
+  final VoidCallback onSend;
+  final ValueChanged<CircleChallengeComment> onDelete;
+
+  @override
+  State<_ChallengeCommentsSection> createState() =>
+      _ChallengeCommentsSectionState();
+}
+
+class _ChallengeCommentsSectionState extends State<_ChallengeCommentsSection> {
+  late Stream<List<CircleChallengeComment>> _comments;
+
+  @override
+  void initState() {
+    super.initState();
+    _comments = CircleChallengeService.watchComments(widget.challengeId);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChallengeCommentsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.challengeId != widget.challengeId) {
+      _comments = CircleChallengeService.watchComments(widget.challengeId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    decoration: BoxDecoration(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: context.vivordoColors.border),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        StreamBuilder<List<CircleChallengeComment>>(
+          stream: _comments,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const Padding(
+                padding: EdgeInsets.all(18),
+                child: Text(
+                  'Comments could not be loaded.',
+                  style: TextStyle(color: CircleScreen._muted),
+                ),
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.all(22),
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: CircleScreen._purple,
+                    ),
+                  ),
+                ),
+              );
+            }
+            final comments = snapshot.requireData;
+            if (comments.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.fromLTRB(18, 18, 18, 16),
+                child: Text(
+                  'No comments yet. Start the conversation.',
+                  style: TextStyle(color: CircleScreen._muted, fontSize: 14),
+                ),
+              );
+            }
+            return Column(
+              children: [
+                for (var index = 0; index < comments.length; index++) ...[
+                  _ChallengeCommentRow(
+                    comment: comments[index],
+                    participant: _participantFor(comments[index].authorUid),
+                    onDelete: widget.onDelete,
+                  ),
+                  if (index != comments.length - 1)
+                    Divider(
+                      height: 1,
+                      indent: 62,
+                      color: context.vivordoColors.border,
+                    ),
+                ],
+              ],
+            );
+          },
+        ),
+        Divider(height: 1, color: context.vivordoColors.border),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: widget.controller,
+                  focusNode: widget.focusNode,
+                  minLines: 1,
+                  maxLines: 4,
+                  maxLength: 500,
+                  textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.newline,
+                  scrollPadding: const EdgeInsets.only(bottom: 110),
+                  style: TextStyle(color: context.vivordoColors.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Add a comment…',
+                    counterText: '',
+                    filled: true,
+                    fillColor: context.vivordoColors.cardMuted,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 11,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: widget.posting ? null : widget.onSend,
+                style: IconButton.styleFrom(
+                  backgroundColor: CircleScreen._purple,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: CircleScreen._purple.withValues(
+                    alpha: .45,
+                  ),
+                ),
+                icon: widget.posting
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.send_rounded, size: 20),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
+  CircleChallengeParticipant? _participantFor(String uid) {
+    for (final participant in widget.participants) {
+      if (participant.uid == uid) return participant;
+    }
+    return null;
+  }
+}
+
+class _ChallengeCommentRow extends StatelessWidget {
+  const _ChallengeCommentRow({
+    required this.comment,
+    required this.participant,
+    required this.onDelete,
+  });
+
+  final CircleChallengeComment comment;
+  final CircleChallengeParticipant? participant;
+  final ValueChanged<CircleChallengeComment> onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = participant == null
+        ? 'Circle member'
+        : _challengeDisplayName(participant!);
+    final isMine = comment.authorUid == FirebaseAuth.instance.currentUser?.uid;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 13, 8, 13),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ChallengeInitialAvatar(name: name, size: 38),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.vivordoColors.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      _challengeCommentTime(comment.createdAt),
+                      style: const TextStyle(
+                        color: CircleScreen._muted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  comment.text,
+                  style: TextStyle(
+                    color: context.vivordoColors.textPrimary,
+                    fontSize: 14,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isMine)
+            PopupMenuButton<String>(
+              tooltip: 'Comment options',
+              icon: const Icon(
+                Icons.more_horiz_rounded,
+                size: 20,
+                color: CircleScreen._muted,
+              ),
+              onSelected: (value) {
+                if (value == 'delete') onDelete(comment);
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem<String>(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.delete_outline_rounded,
+                        color: Colors.redAccent,
+                      ),
+                      SizedBox(width: 10),
+                      Text('Delete'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String _challengeCommentTime(DateTime? createdAt) {
+  if (createdAt == null) return 'Just now';
+  final difference = DateTime.now().difference(createdAt);
+  if (difference.inMinutes < 1) return 'Just now';
+  if (difference.inMinutes < 60) return '${difference.inMinutes}m';
+  if (difference.inHours < 24) return '${difference.inHours}h';
+  if (difference.inDays < 7) return '${difference.inDays}d';
+  return DateFormat.MMMd().format(createdAt);
+}
+
+class _ChallengeCreatorMessageCard extends StatelessWidget {
+  const _ChallengeCreatorMessageCard({
+    required this.creatorName,
+    required this.message,
+  });
+
+  final String creatorName;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: context.vivordoColors.border),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ChallengeInitialAvatar(name: creatorName, size: 48),
+        const SizedBox(width: 13),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                creatorName,
+                style: TextStyle(
+                  color: context.vivordoColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '“$message”',
+                style: TextStyle(
+                  color: context.vivordoColors.textPrimary,
+                  fontSize: 14,
+                  fontStyle: FontStyle.italic,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ChallengeStandingsCard extends StatelessWidget {
+  const _ChallengeStandingsCard({
+    required this.membership,
+    required this.participants,
+  });
+
+  final CircleChallengeMembership membership;
+  final List<CircleChallengeParticipant> participants;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: context.vivordoColors.border),
+    ),
+    child: Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+          child: Row(
+            children: [
+              const Text(
+                'GROUP PROGRESS',
+                style: TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${participants.length} participants',
+                style: const TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        for (var index = 0; index < participants.length; index++)
+          _ChallengeStandingRow(
+            rank: index + 1,
+            participant: participants[index],
+            goal: membership.goal,
+            color: _challengeParticipantColor(index),
+            leading: index == 0,
+          ),
+        Divider(height: 1, color: context.vivordoColors.border),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: _ChallengeInfoItem(
+                  icon: Icons.calendar_month_rounded,
+                  text: _challengeDateRange(membership),
+                ),
+              ),
+              Expanded(
+                child: _ChallengeInfoItem(
+                  icon: _challengeTypeIcon(membership.type),
+                  text: membership.title,
+                ),
+              ),
+              Expanded(
+                child: _ChallengeInfoItem(
+                  icon: Icons.groups_rounded,
+                  text: '${participants.length} participants',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ChallengeStandingRow extends StatelessWidget {
+  const _ChallengeStandingRow({
+    required this.rank,
+    required this.participant,
+    required this.goal,
+    required this.color,
+    required this.leading,
+  });
+
+  final int rank;
+  final CircleChallengeParticipant participant;
+  final int goal;
+  final Color color;
+  final bool leading;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCurrent = participant.uid == FirebaseAuth.instance.currentUser?.uid;
+    final value = goal <= 0
+        ? 0.0
+        : (participant.progress / goal).clamp(0.0, 1.0);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: context.vivordoColors.border)),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 26,
+            child: Text(
+              '$rank',
+              style: TextStyle(
+                color: context.vivordoColors.textPrimary,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          _ChallengeInitialAvatar(name: participant.username, size: 46),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        participant.username,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.vivordoColors.textPrimary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    if (isCurrent) ...[
+                      const SizedBox(width: 6),
+                      _ChallengePill(label: 'You', color: CircleScreen._purple),
+                    ],
+                    if (leading) ...[
+                      const Spacer(),
+                      _ChallengePill(
+                        label: 'Leading',
+                        color: CircleScreen._purple,
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${participant.progress} of $goal',
+                  style: const TextStyle(
+                    color: CircleScreen._muted,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: value,
+                    minHeight: 5,
+                    color: color,
+                    backgroundColor: context.vivordoColors.cardMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChallengePill extends StatelessWidget {
+  const _ChallengePill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .1),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800),
+    ),
+  );
+}
+
+class _ChallengeInfoItem extends StatelessWidget {
+  const _ChallengeInfoItem({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Icon(icon, color: CircleScreen._purple, size: 22),
+      const SizedBox(height: 5),
+      Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: context.vivordoColors.textPrimary,
+          fontSize: 11,
+        ),
+      ),
+    ],
+  );
+}
+
+class _ChallengeRecentProgressCard extends StatelessWidget {
+  const _ChallengeRecentProgressCard({
+    required this.participants,
+    required this.contributions,
+  });
+
+  final List<CircleChallengeParticipant> participants;
+  final List<CircleChallengeContribution> contributions;
+
+  @override
+  Widget build(BuildContext context) {
+    if (contributions.isEmpty) {
+      return _ChallengeEmptyCard(
+        icon: Icons.hourglass_empty_rounded,
+        title: 'No progress yet',
+        detail: 'Completed activities will appear here.',
+      );
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: context.vivordoColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: context.vivordoColors.border),
+      ),
+      child: Column(
+        children: [
+          for (var index = 0; index < contributions.length; index++) ...[
+            _ChallengeContributionRow(
+              contribution: contributions[index],
+              participant: participants.firstWhere(
+                (participant) => participant.uid == contributions[index].uid,
+                orElse: () => const CircleChallengeParticipant(
+                  uid: '',
+                  username: 'Circle member',
+                  role: 'participant',
+                  status: 'active',
+                  progress: 0,
+                ),
+              ),
+            ),
+            if (index != contributions.length - 1)
+              Divider(
+                height: 1,
+                indent: 70,
+                color: context.vivordoColors.border,
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ChallengeContributionRow extends StatelessWidget {
+  const _ChallengeContributionRow({
+    required this.contribution,
+    required this.participant,
+  });
+
+  final CircleChallengeContribution contribution;
+  final CircleChallengeParticipant participant;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+    child: Row(
+      children: [
+        _ChallengeInitialAvatar(name: participant.username, size: 46),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${_challengeDisplayName(participant)} '
+                '${_challengeContributionLabel(contribution)}',
+                style: TextStyle(
+                  color: context.vivordoColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                _challengeContributionTime(contribution),
+                style: const TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Color _challengeParticipantColor(int index) => const [
+  CircleScreen._purple,
+  Color(0xFFFF5264),
+  Color(0xFF0FB986),
+  Color(0xFF2684FF),
+][index % 4];
+
+IconData _challengeTypeIcon(String type) => switch (type) {
+  'step_total' => Icons.directions_walk_rounded,
+  'activity_count' => Icons.directions_run_rounded,
+  'journal_count' => Icons.menu_book_rounded,
+  'scan_count' => Icons.monitor_heart_rounded,
+  _ => Icons.fitness_center_rounded,
+};
+
+String _challengeDateRange(CircleChallengeMembership membership) {
+  final start = membership.startAt ?? membership.createdAt;
+  final end =
+      membership.endAt ?? start.add(Duration(days: membership.durationDays));
+  if (start.month == end.month) {
+    return '${DateFormat.MMM().format(start)} ${start.day}–${end.day}';
+  }
+  return '${DateFormat.MMMd().format(start)}–${DateFormat.MMMd().format(end)}';
+}
+
+String _challengeDisplayName(CircleChallengeParticipant participant) =>
+    participant.uid == FirebaseAuth.instance.currentUser?.uid
+    ? 'You'
+    : participant.username;
+
+String _challengeContributionLabel(
+  CircleChallengeContribution contribution,
+) => switch (contribution.sourceType) {
+  'workout' => 'completed a workout',
+  'activity' => 'completed an activity',
+  'journal_day' => 'added a journal entry',
+  'steps_day' =>
+    'added ${NumberFormat.decimalPattern().format(contribution.value)} steps',
+  'scans_day' =>
+    'completed ${contribution.value} heart scan${contribution.value == 1 ? '' : 's'}',
+  _ => 'made challenge progress',
+};
+
+String _challengeContributionTime(CircleChallengeContribution contribution) {
+  final occurredAt = contribution.occurredAt;
+  if (occurredAt == null) return '+${contribution.value} progress';
+  final now = DateTime.now();
+  final difference = now.difference(occurredAt);
+  final when = difference.inHours < 24
+      ? difference.inHours <= 0
+            ? 'Just now'
+            : '${difference.inHours}h ago'
+      : DateFormat.MMMd().format(occurredAt);
+  return '$when · +${NumberFormat.decimalPattern().format(contribution.value)} progress';
+}
+
+class _QuickChallengeCard extends StatelessWidget {
+  const _QuickChallengeCard({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: context.vivordoColors.card,
+    borderRadius: BorderRadius.circular(22),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        height: 180,
+        padding: const EdgeInsets.fromLTRB(12, 15, 12, 13),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: context.vivordoColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 21),
+            ),
+            const SizedBox(height: 11),
+            Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: context.vivordoColors.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                height: 1.15,
+              ),
+            ),
+            const Spacer(),
+            Align(
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.add_circle_outline_rounded,
+                color: CircleScreen._purple,
+                size: 28,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+enum _CustomChallengeCount { workout, activity, journal, heartScans }
+
+class _CustomChallengeDefinition {
+  const _CustomChallengeDefinition({
+    required this.kind,
+    required this.title,
+    required this.detail,
+    required this.icon,
+    required this.color,
+    required this.unit,
+  });
+
+  final _CustomChallengeCount kind;
+  final String title;
+  final String detail;
+  final IconData icon;
+  final Color color;
+  final String unit;
+
+  String get backendType => switch (kind) {
+    _CustomChallengeCount.workout => 'workout_count',
+    _CustomChallengeCount.activity => 'activity_count',
+    _CustomChallengeCount.journal => 'journal_count',
+    _CustomChallengeCount.heartScans => 'scan_count',
+  };
+
+  static const values = [
+    _CustomChallengeDefinition(
+      kind: _CustomChallengeCount.workout,
+      title: 'Workout',
+      detail: 'Any or specific',
+      icon: Icons.fitness_center_rounded,
+      color: CircleScreen._purple,
+      unit: 'workouts',
+    ),
+    _CustomChallengeDefinition(
+      kind: _CustomChallengeCount.activity,
+      title: 'Activity',
+      detail: 'Run, walk & more',
+      icon: Icons.directions_run_rounded,
+      color: Color(0xFF0FB986),
+      unit: 'sessions',
+    ),
+    _CustomChallengeDefinition(
+      kind: _CustomChallengeCount.journal,
+      title: 'Journal Streak',
+      detail: 'Daily entries',
+      icon: Icons.menu_book_rounded,
+      color: Color(0xFF08A7AA),
+      unit: 'days',
+    ),
+    _CustomChallengeDefinition(
+      kind: _CustomChallengeCount.heartScans,
+      title: 'Heart Scans',
+      detail: 'Completed scans',
+      icon: Icons.monitor_heart_rounded,
+      color: Color(0xFFFF5264),
+      unit: 'scans',
+    ),
+  ];
+}
+
+class _CustomChallengeDraft {
+  const _CustomChallengeDraft({
+    required this.definition,
+    required this.specificExercise,
+    required this.goal,
+    required this.friends,
+    required this.durationDays,
+    required this.message,
+  });
+
+  final _CustomChallengeDefinition definition;
+  final String? specificExercise;
+  final int goal;
+  final List<CircleProfile> friends;
+  final int durationDays;
+  final String message;
+
+  String get title => specificExercise ?? definition.title;
+}
+
+class _CreateCustomChallengeSheet extends StatefulWidget {
+  const _CreateCustomChallengeSheet();
+
+  @override
+  State<_CreateCustomChallengeSheet> createState() =>
+      _CreateCustomChallengeSheetState();
+}
+
+class _CreateCustomChallengeSheetState
+    extends State<_CreateCustomChallengeSheet> {
+  final Set<String> _selectedFriendUids = {};
+  final TextEditingController _messageController = TextEditingController();
+  var _definition = _CustomChallengeDefinition.values[0];
+  String? _specificExercise;
+  var _goal = 5;
+  var _durationDays = 7;
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => DraggableScrollableSheet(
+    initialChildSize: .94,
+    minChildSize: .72,
+    maxChildSize: .98,
+    expand: false,
+    builder: (context, scrollController) => Container(
+      decoration: BoxDecoration(
+        color: context.vivordoColors.page,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+      ),
+      child: StreamBuilder<List<CircleProfile>>(
+        stream: CircleProfileService.watchFriends(),
+        builder: (context, snapshot) {
+          final friends = snapshot.data ?? const <CircleProfile>[];
+          final selectedFriends = friends
+              .where((friend) => _selectedFriendUids.contains(friend.uid))
+              .toList(growable: false);
+          return ListView(
+            controller: scrollController,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(22, 10, 22, 30),
+            children: [
+              Center(
+                child: Container(
+                  width: 48,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: context.vivordoColors.border,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Create Challenge',
+                      style: TextStyle(
+                        color: context.vivordoColors.textPrimary,
+                        fontSize: 29,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -.5,
+                      ),
+                    ),
+                  ),
+                  _ChallengeSheetCloseButton(
+                    onTap: () => Navigator.maybePop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              const _ChallengeSheetLabel('WHAT COUNTS?'),
+              const SizedBox(height: 12),
+              for (var row = 0; row < 2; row++) ...[
+                Row(
+                  children: [
+                    for (var column = 0; column < 2; column++) ...[
+                      if (column > 0) const SizedBox(width: 10),
+                      Expanded(
+                        child: _CustomChallengeCountTile(
+                          definition: _CustomChallengeDefinition
+                              .values[row * 2 + column],
+                          selected:
+                              _definition.kind ==
+                              _CustomChallengeDefinition
+                                  .values[row * 2 + column]
+                                  .kind,
+                          onTap: () => setState(() {
+                            _definition = _CustomChallengeDefinition
+                                .values[row * 2 + column];
+                            _specificExercise = null;
+                            _goal = 5;
+                          }),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (row == 0) const SizedBox(height: 10),
+              ],
+              if (_definition.kind == _CustomChallengeCount.workout ||
+                  _definition.kind == _CustomChallengeCount.activity) ...[
+                const SizedBox(height: 22),
+                _ChallengeSheetLabel(
+                  _definition.kind == _CustomChallengeCount.workout
+                      ? 'SPECIFIC WORKOUT'
+                      : 'SPECIFIC ACTIVITY',
+                ),
+                const SizedBox(height: 10),
+                _CustomActivityPicker(
+                  value: _specificExercise,
+                  exercises: _availableSpecificExercises,
+                  anyLabel: _definition.kind == _CustomChallengeCount.workout
+                      ? 'Any workout'
+                      : 'Any activity',
+                  fallbackIcon: _definition.icon,
+                  fallbackColor: _definition.color,
+                  onChanged: (value) =>
+                      setState(() => _specificExercise = value),
+                ),
+              ],
+              const SizedBox(height: 22),
+              _CustomChallengeSlider(
+                sectionLabel: 'GOAL',
+                valueLabel: '$_goal ${_definition.unit}',
+                minimumLabel: '1',
+                maximumLabel: '20',
+                value: _goal,
+                minimum: 1,
+                maximum: 20,
+                onChanged: (value) => setState(() => _goal = value),
+              ),
+              const SizedBox(height: 22),
+              const _ChallengeSheetLabel('CHALLENGE FRIENDS'),
+              const SizedBox(height: 12),
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData)
+                const SizedBox(
+                  height: 105,
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: CircleScreen._purple,
+                    ),
+                  ),
+                )
+              else if (friends.isEmpty)
+                _ChallengeNoFriendsCard(
+                  onClose: () => Navigator.maybePop(context),
+                )
+              else
+                SizedBox(
+                  height: 112,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    itemCount: friends.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 20),
+                    itemBuilder: (context, index) {
+                      final friend = friends[index];
+                      return _ChallengeFriendChoice(
+                        profile: friend,
+                        selected: _selectedFriendUids.contains(friend.uid),
+                        onTap: () => setState(() {
+                          if (!_selectedFriendUids.add(friend.uid)) {
+                            _selectedFriendUids.remove(friend.uid);
+                          }
+                        }),
+                      );
+                    },
+                  ),
+                ),
+              const SizedBox(height: 20),
+              _CustomChallengeSlider(
+                sectionLabel: 'DURATION',
+                valueLabel:
+                    '$_durationDays day${_durationDays == 1 ? '' : 's'}',
+                minimumLabel: '1 day',
+                maximumLabel: '30 days',
+                value: _durationDays,
+                minimum: 1,
+                maximum: 30,
+                onChanged: (value) => setState(() => _durationDays = value),
+              ),
+              const SizedBox(height: 22),
+              _ChallengeMessageField(controller: _messageController),
+              const SizedBox(height: 18),
+              _CustomChallengeSummary(
+                definition: _definition,
+                specificExercise: _specificExercise,
+                goal: _goal,
+                friends: selectedFriends,
+                durationDays: _durationDays,
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: selectedFriends.isEmpty
+                      ? null
+                      : () => Navigator.pop(
+                          context,
+                          _CustomChallengeDraft(
+                            definition: _definition,
+                            specificExercise: _specificExercise,
+                            goal: _goal,
+                            friends: List.unmodifiable(selectedFriends),
+                            durationDays: _durationDays,
+                            message: _messageController.text.trim(),
+                          ),
+                        ),
+                  icon: const Icon(Icons.send_rounded, size: 22),
+                  label: const Text('Send Challenge'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: CircleScreen._purple,
+                    disabledBackgroundColor: context.vivordoColors.cardMuted,
+                    foregroundColor: Colors.white,
+                    disabledForegroundColor: CircleScreen._muted,
+                    textStyle: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
+
+  List<WorkoutExerciseCatalogItem> get _availableSpecificExercises {
+    if (_definition.kind == _CustomChallengeCount.activity) {
+      return workoutExerciseCatalog
+          .where(
+            (exercise) =>
+                exercise.category == 'Cardio' || exercise.category == 'Sports',
+          )
+          .toList(growable: false);
+    }
+    return workoutExerciseCatalog;
+  }
+}
+
+class _CustomChallengeCountTile extends StatelessWidget {
+  const _CustomChallengeCountTile({
+    required this.definition,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _CustomChallengeDefinition definition;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: context.vivordoColors.card,
+    borderRadius: BorderRadius.circular(18),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        height: 100,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected
+                ? CircleScreen._purple
+                : context.vivordoColors.border,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: definition.color.withValues(alpha: .12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(definition.icon, color: definition.color, size: 25),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    definition.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.vivordoColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    definition.detail,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: CircleScreen._muted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _CustomActivityPicker extends StatelessWidget {
+  const _CustomActivityPicker({
+    required this.value,
+    required this.exercises,
+    required this.anyLabel,
+    required this.fallbackIcon,
+    required this.fallbackColor,
+    required this.onChanged,
+  });
+
+  final String? value;
+  final List<WorkoutExerciseCatalogItem> exercises;
+  final String anyLabel;
+  final IconData fallbackIcon;
+  final Color fallbackColor;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedExercise = exercises
+        .where((exercise) => exercise.name == value)
+        .firstOrNull;
+    final visual = selectedExercise == null
+        ? WorkoutActivityVisual(fallbackIcon, fallbackColor)
+        : workoutActivityVisual(
+            selectedExercise.name,
+            category: selectedExercise.category,
+          );
+    return Container(
+      height: 68,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: context.vivordoColors.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: context.vivordoColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: visual.color.withValues(alpha: .12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(visual.icon, color: visual.color, size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: value ?? '',
+                isExpanded: true,
+                menuMaxHeight: 390,
+                dropdownColor: context.vivordoColors.card,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                style: TextStyle(
+                  color: context.vivordoColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+                items: [
+                  DropdownMenuItem(value: '', child: Text(anyLabel)),
+                  ...exercises.map(
+                    (exercise) => DropdownMenuItem(
+                      value: exercise.name,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              exercise.name,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            exercise.category,
+                            style: const TextStyle(
+                              color: CircleScreen._muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                onChanged: (selection) {
+                  onChanged(
+                    selection == null || selection.isEmpty ? null : selection,
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CustomChallengeSlider extends StatelessWidget {
+  const _CustomChallengeSlider({
+    required this.sectionLabel,
+    required this.valueLabel,
+    required this.minimumLabel,
+    required this.maximumLabel,
+    required this.value,
+    required this.minimum,
+    required this.maximum,
+    required this.onChanged,
+  });
+
+  final String sectionLabel;
+  final String valueLabel;
+  final String minimumLabel;
+  final String maximumLabel;
+  final int value;
+  final int minimum;
+  final int maximum;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Row(
+        children: [
+          _ChallengeSheetLabel(sectionLabel),
+          const Spacer(),
+          Text(
+            valueLabel,
+            style: TextStyle(
+              color: context.vivordoColors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 5),
+      SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          activeTrackColor: CircleScreen._purple,
+          inactiveTrackColor: context.vivordoColors.cardMuted,
+          thumbColor: CircleScreen._purple,
+          overlayColor: CircleScreen._purple.withValues(alpha: .13),
+          trackHeight: 4,
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+          overlayShape: const RoundSliderOverlayShape(overlayRadius: 19),
+        ),
+        child: Slider(
+          value: value.toDouble(),
+          min: minimum.toDouble(),
+          max: maximum.toDouble(),
+          divisions: maximum - minimum,
+          label: valueLabel,
+          semanticFormatterCallback: (_) => valueLabel,
+          onChanged: (rawValue) => onChanged(rawValue.round()),
+        ),
+      ),
+      Row(
+        children: [
+          Text(
+            minimumLabel,
+            style: const TextStyle(color: CircleScreen._muted, fontSize: 11),
+          ),
+          const Spacer(),
+          Text(
+            maximumLabel,
+            style: const TextStyle(color: CircleScreen._muted, fontSize: 11),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+class _CustomChallengeSummary extends StatelessWidget {
+  const _CustomChallengeSummary({
+    required this.definition,
+    required this.specificExercise,
+    required this.goal,
+    required this.friends,
+    required this.durationDays,
+  });
+
+  final _CustomChallengeDefinition definition;
+  final String? specificExercise;
+  final int goal;
+  final List<CircleProfile> friends;
+  final int durationDays;
+
+  @override
+  Widget build(BuildContext context) {
+    final subject = specificExercise ?? definition.title;
+    final friendLabel = switch (friends.length) {
+      0 => 'Select friends',
+      1 => friends.first.username,
+      _ => '${friends.first.username} + ${friends.length - 1}',
+    };
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.vivordoColors.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: context.vivordoColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: definition.color.withValues(alpha: .12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(definition.icon, color: definition.color, size: 23),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$subject with $friendLabel',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.vivordoColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Complete $goal ${definition.unit} · $durationDays day${durationDays == 1 ? '' : 's'}',
+                  maxLines: 2,
+                  style: const TextStyle(
+                    color: CircleScreen._muted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _QuickChallengeKind { workoutStreak, stepSprint, pulseCheck }
+
+class _QuickChallengeDefinition {
+  const _QuickChallengeDefinition.workoutStreak()
+    : kind = _QuickChallengeKind.workoutStreak,
+      title = 'Workout Streak',
+      description = 'Complete workouts together',
+      icon = Icons.fitness_center_rounded,
+      color = CircleScreen._purple,
+      initialGoal = 5,
+      goalStep = 1,
+      minimumGoal = 1,
+      maximumGoal = 100;
+
+  const _QuickChallengeDefinition.stepSprint()
+    : kind = _QuickChallengeKind.stepSprint,
+      title = 'Step Sprint',
+      description = 'Reach a step goal together',
+      icon = Icons.directions_walk_rounded,
+      color = const Color(0xFF0FB986),
+      initialGoal = 30000,
+      goalStep = 5000,
+      minimumGoal = 5000,
+      maximumGoal = 1000000;
+
+  const _QuickChallengeDefinition.pulseCheck()
+    : kind = _QuickChallengeKind.pulseCheck,
+      title = 'Pulse Check',
+      description = 'Complete heart-rate scans together',
+      icon = Icons.monitor_heart_rounded,
+      color = const Color(0xFFFF5264),
+      initialGoal = 5,
+      goalStep = 1,
+      minimumGoal = 1,
+      maximumGoal = 100;
+
+  final _QuickChallengeKind kind;
+  final String title;
+  final String description;
+  final IconData icon;
+  final Color color;
+  final int initialGoal;
+  final int goalStep;
+  final int minimumGoal;
+  final int maximumGoal;
+
+  String get backendType => switch (kind) {
+    _QuickChallengeKind.workoutStreak => 'workout_count',
+    _QuickChallengeKind.stepSprint => 'step_total',
+    _QuickChallengeKind.pulseCheck => 'scan_count',
+  };
+
+  String goalLabel(int goal) => switch (kind) {
+    _QuickChallengeKind.workoutStreak => '$goal workout${goal == 1 ? '' : 's'}',
+    _QuickChallengeKind.stepSprint =>
+      '${NumberFormat.decimalPattern().format(goal)} steps',
+    _QuickChallengeKind.pulseCheck => '$goal scan${goal == 1 ? '' : 's'}',
+  };
+}
+
+class _QuickChallengeDraft {
+  const _QuickChallengeDraft({
+    required this.challenge,
+    required this.friends,
+    required this.goal,
+    required this.durationDays,
+    required this.message,
+  });
+
+  final _QuickChallengeDefinition challenge;
+  final List<CircleProfile> friends;
+  final int goal;
+  final int durationDays;
+  final String message;
+}
+
+class _CreateQuickChallengeSheet extends StatefulWidget {
+  const _CreateQuickChallengeSheet({required this.challenge});
+
+  final _QuickChallengeDefinition challenge;
+
+  @override
+  State<_CreateQuickChallengeSheet> createState() =>
+      _CreateQuickChallengeSheetState();
+}
+
+class _CreateQuickChallengeSheetState
+    extends State<_CreateQuickChallengeSheet> {
+  final Set<String> _selectedFriendUids = {};
+  final TextEditingController _messageController = TextEditingController();
+  late int _goal;
+  var _durationDays = 7;
+
+  @override
+  void initState() {
+    super.initState();
+    _goal = widget.challenge.initialGoal;
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => DraggableScrollableSheet(
+    initialChildSize: .9,
+    minChildSize: .68,
+    maxChildSize: .96,
+    expand: false,
+    builder: (context, scrollController) => Container(
+      decoration: BoxDecoration(
+        color: context.vivordoColors.page,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+      ),
+      child: StreamBuilder<List<CircleProfile>>(
+        stream: CircleProfileService.watchFriends(),
+        builder: (context, snapshot) {
+          final friends = snapshot.data ?? const <CircleProfile>[];
+          final selectedFriends = friends
+              .where((friend) => _selectedFriendUids.contains(friend.uid))
+              .toList(growable: false);
+          return ListView(
+            controller: scrollController,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(22, 10, 22, 28),
+            children: [
+              Center(
+                child: Container(
+                  width: 48,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: context.vivordoColors.border,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Create Challenge',
+                      style: TextStyle(
+                        color: context.vivordoColors.textPrimary,
+                        fontSize: 29,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -.5,
+                      ),
+                    ),
+                  ),
+                  _ChallengeSheetCloseButton(
+                    onTap: () => Navigator.maybePop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _ChallengeTypeSummary(challenge: widget.challenge),
+              const SizedBox(height: 22),
+              const _ChallengeSheetLabel('CHALLENGE FRIENDS'),
+              const SizedBox(height: 12),
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData)
+                const SizedBox(
+                  height: 105,
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: CircleScreen._purple,
+                    ),
+                  ),
+                )
+              else if (friends.isEmpty)
+                _ChallengeNoFriendsCard(
+                  onClose: () => Navigator.maybePop(context),
+                )
+              else
+                SizedBox(
+                  height: 112,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    itemCount: friends.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 20),
+                    itemBuilder: (context, index) {
+                      final friend = friends[index];
+                      return _ChallengeFriendChoice(
+                        profile: friend,
+                        selected: _selectedFriendUids.contains(friend.uid),
+                        onTap: () => setState(() {
+                          if (!_selectedFriendUids.add(friend.uid)) {
+                            _selectedFriendUids.remove(friend.uid);
+                          }
+                        }),
+                      );
+                    },
+                  ),
+                ),
+              const SizedBox(height: 20),
+              const _ChallengeSheetLabel('GOAL'),
+              const SizedBox(height: 10),
+              _ChallengeValueSlider(
+                label: widget.challenge.goalLabel(_goal),
+                minimumLabel: widget.challenge.goalLabel(
+                  widget.challenge.minimumGoal,
+                ),
+                maximumLabel: widget.challenge.goalLabel(
+                  widget.challenge.maximumGoal,
+                ),
+                value: _goal,
+                minimum: widget.challenge.minimumGoal,
+                maximum: widget.challenge.maximumGoal,
+                step: widget.challenge.goalStep,
+                onChanged: (value) => setState(() => _goal = value),
+              ),
+              const SizedBox(height: 22),
+              const _ChallengeSheetLabel('DURATION'),
+              const SizedBox(height: 10),
+              _ChallengeValueSlider(
+                label: '$_durationDays day${_durationDays == 1 ? '' : 's'}',
+                minimumLabel: '1 day',
+                maximumLabel: '14 days',
+                value: _durationDays,
+                minimum: 1,
+                maximum: 14,
+                step: 1,
+                onChanged: (value) => setState(() => _durationDays = value),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.calendar_month_outlined,
+                    color: CircleScreen._muted,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 7),
+                  Text(
+                    'Ends ${DateFormat('MMMM d').format(DateTime.now().add(Duration(days: _durationDays)))}',
+                    style: const TextStyle(
+                      color: CircleScreen._muted,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              _ChallengeMessageField(controller: _messageController),
+              const SizedBox(height: 24),
+              SizedBox(
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: selectedFriends.isEmpty
+                      ? null
+                      : () => Navigator.pop(
+                          context,
+                          _QuickChallengeDraft(
+                            challenge: widget.challenge,
+                            friends: List.unmodifiable(selectedFriends),
+                            goal: _goal,
+                            durationDays: _durationDays,
+                            message: _messageController.text.trim(),
+                          ),
+                        ),
+                  icon: const Icon(Icons.send_rounded, size: 21),
+                  label: const Text('Send Challenge'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: CircleScreen._purple,
+                    disabledBackgroundColor: context.vivordoColors.cardMuted,
+                    foregroundColor: Colors.white,
+                    disabledForegroundColor: CircleScreen._muted,
+                    textStyle: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                selectedFriends.isEmpty
+                    ? 'Select at least one friend to continue.'
+                    : '${_acceptanceLabel(selectedFriends)} will need to accept before it starts.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
+
+  String _acceptanceLabel(List<CircleProfile> friends) {
+    if (friends.length == 1) return friends.first.username;
+    if (friends.length == 2) {
+      return '${friends.first.username} and ${friends.last.username}';
+    }
+    return '${friends.first.username} and ${friends.length - 1} others';
+  }
+}
+
+class _ChallengeSheetCloseButton extends StatelessWidget {
+  const _ChallengeSheetCloseButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: context.vivordoColors.cardMuted,
+    shape: const CircleBorder(),
+    child: InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: SizedBox(
+        width: 46,
+        height: 46,
+        child: Icon(
+          Icons.close_rounded,
+          color: context.vivordoColors.textPrimary,
+        ),
+      ),
+    ),
+  );
+}
+
+class _ChallengeTypeSummary extends StatelessWidget {
+  const _ChallengeTypeSummary({required this.challenge});
+
+  final _QuickChallengeDefinition challenge;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: context.vivordoColors.border),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 58,
+          height: 58,
+          decoration: BoxDecoration(
+            color: challenge.color.withValues(alpha: .12),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(challenge.icon, color: challenge.color, size: 28),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                challenge.title,
+                style: TextStyle(
+                  color: context.vivordoColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                challenge.description,
+                style: const TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ChallengeMessageField extends StatelessWidget {
+  const _ChallengeMessageField({required this.controller});
+
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const _ChallengeSheetLabel('MESSAGE (OPTIONAL)'),
+      const SizedBox(height: 10),
+      TextField(
+        controller: controller,
+        minLines: 2,
+        maxLines: 3,
+        maxLength: 200,
+        textCapitalization: TextCapitalization.sentences,
+        keyboardType: TextInputType.multiline,
+        textInputAction: TextInputAction.newline,
+        onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+        style: TextStyle(
+          color: context.vivordoColors.textPrimary,
+          fontSize: 15,
+          height: 1.35,
+        ),
+        decoration: InputDecoration(
+          hintText: 'Add a note for your friends…',
+          hintStyle: const TextStyle(color: CircleScreen._muted),
+          filled: true,
+          fillColor: context.vivordoColors.card,
+          counterStyle: const TextStyle(
+            color: CircleScreen._muted,
+            fontSize: 11,
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(17),
+            borderSide: BorderSide(color: context.vivordoColors.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(17),
+            borderSide: const BorderSide(
+              color: CircleScreen._purple,
+              width: 1.5,
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class _ChallengeSheetLabel extends StatelessWidget {
+  const _ChallengeSheetLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    label,
+    style: const TextStyle(
+      color: CircleScreen._muted,
+      fontSize: 13,
+      fontWeight: FontWeight.w800,
+      letterSpacing: .45,
+    ),
+  );
+}
+
+class _ChallengeFriendChoice extends StatelessWidget {
+  const _ChallengeFriendChoice({
+    required this.profile,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final CircleProfile profile;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 70,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(34),
+      child: Column(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected ? CircleScreen._purple : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+                child: _ProfileAvatar(profile: profile, radius: 28),
+              ),
+              if (selected)
+                const Positioned(
+                  right: -1,
+                  bottom: 1,
+                  child: CircleAvatar(
+                    radius: 10,
+                    backgroundColor: CircleScreen._purple,
+                    child: Icon(
+                      Icons.check_rounded,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            profile.username,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: selected
+                  ? context.vivordoColors.textPrimary
+                  : CircleScreen._muted,
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _ChallengeNoFriendsCard extends StatelessWidget {
+  const _ChallengeNoFriendsCard({required this.onClose});
+
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: context.vivordoColors.border),
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.person_add_alt_1_rounded, color: CircleScreen._purple),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'Add a Circle friend before creating a challenge.',
+            style: TextStyle(
+              color: context.vivordoColors.textPrimary,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        TextButton(onPressed: onClose, child: const Text('Close')),
+      ],
+    ),
+  );
+}
+
+class _ChallengeValueSlider extends StatelessWidget {
+  const _ChallengeValueSlider({
+    required this.label,
+    required this.minimumLabel,
+    required this.maximumLabel,
+    required this.value,
+    required this.minimum,
+    required this.maximum,
+    required this.step,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String minimumLabel;
+  final String maximumLabel;
+  final int value;
+  final int minimum;
+  final int maximum;
+  final int step;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(16, 13, 16, 10),
+    decoration: BoxDecoration(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: context.vivordoColors.border),
+    ),
+    child: Column(
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: context.vivordoColors.textPrimary,
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 4),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: CircleScreen._purple,
+            inactiveTrackColor: context.vivordoColors.cardMuted,
+            thumbColor: CircleScreen._purple,
+            overlayColor: CircleScreen._purple.withValues(alpha: .13),
+            trackHeight: 5,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+          ),
+          child: Slider(
+            value: value.toDouble(),
+            min: minimum.toDouble(),
+            max: maximum.toDouble(),
+            divisions: (maximum - minimum) ~/ step,
+            label: label,
+            semanticFormatterCallback: (_) => label,
+            onChanged: (rawValue) {
+              final steppedValue =
+                  minimum + (((rawValue - minimum) / step).round() * step);
+              onChanged(steppedValue.clamp(minimum, maximum));
+            },
+          ),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                minimumLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                maximumLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
   );
 }
 
@@ -2924,94 +6657,68 @@ class _AchievementBadge extends StatelessWidget {
   );
 }
 
-class _NextAchievementCard extends StatelessWidget {
-  const _NextAchievementCard({required this.achievement});
+class _NextAchievementSummary extends StatelessWidget {
+  const _NextAchievementSummary({required this.achievement});
 
   final _Achievement achievement;
 
   @override
-  Widget build(BuildContext context) => _CircleCard(
-    child: Padding(
-      padding: const EdgeInsets.all(18),
-      child: Row(
-        children: [
-          _AchievementBadge(assetPath: achievement.goalBadgeAsset, size: 74),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => Row(
+    children: [
+      _AchievementBadge(assetPath: achievement.goalBadgeAsset, size: 52),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Text(
-                  achievement.name,
-                  style: TextStyle(
-                    color: context.vivordoColors.textPrimary,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                if (achievement.goalTier != null) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    '${_tierLabel(achievement.goalTier!).toUpperCase()} TIER',
-                    style: const TextStyle(
-                      color: CircleScreen._purple,
-                      fontSize: 11,
+                Expanded(
+                  child: Text(
+                    'Next: ${achievement.name}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.vivordoColors.textPrimary,
+                      fontSize: 15,
                       fontWeight: FontWeight.w900,
-                      letterSpacing: 1,
                     ),
                   ),
-                ],
-                const SizedBox(height: 4),
+                ),
+                const SizedBox(width: 8),
                 Text(
-                  achievement.requirement,
+                  '${achievement.progress}/${achievement.target}',
                   style: const TextStyle(
-                    color: CircleScreen._muted,
-                    fontSize: 14,
-                    height: 1.3,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Text(
-                      '${achievement.progress} / ${achievement.target}',
-                      style: const TextStyle(
-                        color: CircleScreen._purple,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (achievement.target > 1) ...[
-                      const SizedBox(width: 5),
-                      Text(
-                        achievement.progressUnit ?? 'activities',
-                        style: const TextStyle(
-                          color: CircleScreen._muted,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(5),
-                  child: LinearProgressIndicator(
-                    value: (achievement.progress / achievement.target).clamp(
-                      0,
-                      1,
-                    ),
-                    minHeight: 7,
                     color: CircleScreen._purple,
-                    backgroundColor: context.vivordoColors.cardMuted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 3),
+            Text(
+              achievement.goalTier == null
+                  ? achievement.requirement
+                  : '${_tierLabel(achievement.goalTier!)} tier · ${achievement.requirement}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: CircleScreen._muted, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(5),
+              child: LinearProgressIndicator(
+                value: (achievement.progress / achievement.target).clamp(0, 1),
+                minHeight: 6,
+                color: CircleScreen._purple,
+                backgroundColor: context.vivordoColors.cardMuted,
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
+    ],
   );
 }
 
@@ -3625,7 +7332,7 @@ class _FriendFitnessSheet extends StatelessWidget {
                     navigator.pop();
                     navigator.push(
                       MaterialPageRoute<void>(
-                        builder: (_) => _CircleUserProfilePage(
+                        builder: (_) => CircleUserProfilePage(
                           profile: profile,
                           isOwner: false,
                         ),
@@ -5035,7 +8742,7 @@ class _FriendTile extends StatelessWidget {
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) =>
-              _CircleUserProfilePage(profile: profile, isOwner: false),
+              CircleUserProfilePage(profile: profile, isOwner: false),
         ),
       ),
       child: Padding(

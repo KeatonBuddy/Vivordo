@@ -3369,6 +3369,17 @@ const _exerciseLibrary = <_ExerciseDefinition>[
   _ExerciseDefinition(name: 'Lacrosse', category: 'Sports'),
 ];
 
+typedef WorkoutExerciseCatalogItem = ({String name, String category});
+
+/// Shared read-only view of the exercises offered by the Fitness workout
+/// builder. Other screens should consume this instead of duplicating names.
+final List<WorkoutExerciseCatalogItem> workoutExerciseCatalog =
+    List.unmodifiable(
+      _exerciseLibrary.map(
+        (exercise) => (name: exercise.name, category: exercise.category),
+      ),
+    );
+
 class _AddExerciseScreen extends StatefulWidget {
   const _AddExerciseScreen({this.initiallySelected = const []});
 

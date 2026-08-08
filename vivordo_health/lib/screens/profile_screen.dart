@@ -701,7 +701,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Profile',
+                              'App Settings',
                               style: TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.bold,

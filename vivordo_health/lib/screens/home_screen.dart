@@ -111,6 +111,74 @@ class _CircleAvatarCluster extends StatelessWidget {
       : Icon(icon, color: foreground, size: 17);
 }
 
+class _HomeCircleProfileButton extends StatelessWidget {
+  const _HomeCircleProfileButton({required this.profile, required this.onTap});
+
+  final CircleProfile? profile;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final username = profile?.username.trim() ?? '';
+    final photoUrl = profile?.photoUrl;
+    final fallback = username.isNotEmpty
+        ? Text(
+            username[0].toUpperCase(),
+            style: const TextStyle(
+              color: _HomeScreenState.accentPurple,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          )
+        : const Icon(
+            Icons.person_rounded,
+            color: _HomeScreenState.accentPurple,
+            size: 22,
+          );
+
+    return Tooltip(
+      message: 'Circle profile',
+      child: Material(
+        color: context.vivordoColors.card,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Container(
+            width: 46,
+            height: 46,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 3),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(3),
+            child: ClipOval(
+              child: photoUrl?.isNotEmpty == true
+                  ? Image.network(
+                      photoUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Center(child: fallback),
+                    )
+                  : ColoredBox(
+                      color: _HomeScreenState.accentPurple.withValues(
+                        alpha: .12,
+                      ),
+                      child: Center(child: fallback),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
   final VoidCallback? onFitnessTap;
@@ -134,6 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late Stream<DocumentSnapshot<Map<String, dynamic>>> _todayStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _latestScanStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
+  late final Stream<CircleProfile?> _circleProfileStream;
   Future<List<gcal.Event>>? _reachableWindowEventsFuture;
   DateTime? _reachableWindowEventsDate;
   Future<_ScheduleInsight?>? _scheduleInsightFuture;
@@ -172,6 +241,7 @@ class _HomeScreenState extends State<HomeScreen> {
               .collection('metrics_daily')
               .snapshots()
         : const Stream.empty();
+    _circleProfileStream = CircleProfileService.watchCurrentProfile();
     _goalsStreamCached = _goalsStream();
   }
 
@@ -590,57 +660,97 @@ class _HomeScreenState extends State<HomeScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${_getGreeting()},',
-              style: const TextStyle(
-                color: textGrey,
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${_getGreeting()},',
+                style: const TextStyle(
+                  color: textGrey,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
+              const SizedBox(height: 2),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      _getFirstName(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: context.vivordoColors.textPrimary,
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text('👋', style: TextStyle(fontSize: 26)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            StreamBuilder<CircleProfile?>(
+              stream: _circleProfileStream,
+              builder: (context, snapshot) {
+                final profile = snapshot.data;
+                return _HomeCircleProfileButton(
+                  profile: profile,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => profile == null
+                          ? const CircleScreen()
+                          : CircleUserProfilePage(
+                              profile: profile,
+                              isOwner: true,
+                            ),
+                    ),
+                  ),
+                );
+              },
             ),
-            const SizedBox(height: 2),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  _getFirstName(),
-                  style: TextStyle(
-                    color: context.vivordoColors.textPrimary,
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.5,
+            const SizedBox(width: 10),
+            Tooltip(
+              message: 'App Settings',
+              child: GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                ),
+                child: Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: context.vivordoColors.card,
+                    shape: BoxShape.circle,
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x14000000),
+                        blurRadius: 12,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.settings_rounded,
+                    color: accentPurple,
+                    size: 22,
                   ),
                 ),
-                const SizedBox(width: 6),
-                const Text('👋', style: TextStyle(fontSize: 26)),
-              ],
+              ),
             ),
           ],
-        ),
-        GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SettingsScreen()),
-          ),
-          child: Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: context.vivordoColors.card,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0x14000000),
-                  blurRadius: 12,
-                  offset: Offset(0, 3),
-                ),
-              ],
-            ),
-            child: const Icon(Icons.person, color: accentPurple, size: 22),
-          ),
         ),
       ],
     );
@@ -1069,7 +1179,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               children: [
                 StreamBuilder<CircleProfile?>(
-                  stream: CircleProfileService.watchCurrentProfile(),
+                  stream: _circleProfileStream,
                   builder: (context, snapshot) {
                     final profile = snapshot.data;
                     final profileInitial = profile?.username.isNotEmpty == true
