@@ -1,19 +1,26 @@
 import ActivityKit
 import Flutter
 import UIKit
+import WidgetKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private let workoutActivities = WorkoutLiveActivityManager()
   private var workoutActivityChannel: FlutterMethodChannel?
+  private var homeWidgetChannel: FlutterMethodChannel?
   private var pendingWorkoutLaunch = false
+  private var pendingWidgetDestination: String?
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    if let url = launchOptions?[.url] as? URL, isWorkoutActivityURL(url) {
-      pendingWorkoutLaunch = true
+    if let url = launchOptions?[.url] as? URL {
+      if isWorkoutActivityURL(url) {
+        pendingWorkoutLaunch = true
+      } else if let destination = widgetDestination(from: url) {
+        pendingWidgetDestination = destination
+      }
     }
     GeneratedPluginRegistrant.register(with: self)
     let launched = super.application(
@@ -33,6 +40,30 @@ import UIKit
       channel.setMethodCallHandler { [weak self] call, result in
         self?.handleWorkoutActivity(call, result: result)
       }
+
+      let widgetChannel = FlutterMethodChannel(
+        name: "com.vivordo.health/home_widgets",
+        binaryMessenger: controller.binaryMessenger
+      )
+      homeWidgetChannel = widgetChannel
+      widgetChannel.setMethodCallHandler { [weak self] call, result in
+        if call.method == "consumeWidgetLaunch" {
+          let destination = self?.pendingWidgetDestination
+          self?.pendingWidgetDestination = nil
+          result(destination)
+          return
+        }
+        if call.method == "updateSnapshot",
+           let values = call.arguments as? [String: Any],
+           let defaults = UserDefaults(suiteName: "group.com.vivordo.health") {
+          values.forEach { defaults.set($0.value, forKey: $0.key) }
+          defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
+          WidgetCenter.shared.reloadAllTimelines()
+          result(nil)
+          return
+        }
+        result(FlutterMethodNotImplemented)
+      }
     }
 
     return launched
@@ -43,6 +74,11 @@ import UIKit
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
+    if let destination = widgetDestination(from: url) {
+      pendingWidgetDestination = destination
+      homeWidgetChannel?.invokeMethod("widgetTapped", arguments: destination)
+      return true
+    }
     guard isWorkoutActivityURL(url) else {
       return super.application(app, open: url, options: options)
     }
@@ -54,6 +90,15 @@ import UIKit
   private func isWorkoutActivityURL(_ url: URL) -> Bool {
     url.scheme?.lowercased() == "com.vivordo.health" &&
       url.host?.lowercased() == "fitness"
+  }
+
+  private func widgetDestination(from url: URL) -> String? {
+    guard url.scheme?.lowercased() == "com.vivordo.health",
+          url.host?.lowercased() == "widget" else {
+      return nil
+    }
+    let destination = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+    return ["home", "wellness", "fitness", "calendar"].contains(destination) ? destination : nil
   }
 
   private func handleWorkoutActivity(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

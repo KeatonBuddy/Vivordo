@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +16,7 @@ import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
+import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'steps_detail_screen.dart';
@@ -423,6 +426,25 @@ class _HomeScreenState extends State<HomeScreen> {
                         ?.toDouble() ??
                     0;
                 final goalProgress = (rawPercent / 100).clamp(0.0, 1.0);
+
+                if (data != null) {
+                  final wellnessScore = (wellnessMap?['avg'] as num?)
+                      ?.toDouble();
+                  ActivityGoalsService.load()
+                      .then((goals) {
+                        HomeWidgetService.publish(
+                          stressScore: stressScore,
+                          wellnessScore: wellnessScore,
+                          steps: steps ?? 0,
+                          activeCalories: activeCalories,
+                          exerciseMinutes: exerciseMinutes,
+                          goals: goals,
+                        );
+                      })
+                      .catchError((Object error) {
+                        debugPrint('Home widget snapshot failed: $error');
+                      });
+                }
 
                 return _buildScaffold(
                   stressScore: stressScore,
@@ -2771,6 +2793,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
           _isGoogleConnected = false;
           _isLoading = false;
         });
+        _publishCalendarWidgetSnapshot();
         return;
       }
 
@@ -2786,6 +2809,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
         _isGoogleConnected = CalendarService.connectionNotifier.value;
         _isLoading = false;
       });
+      _publishCalendarWidgetSnapshot();
       _scrollToFirstTodayEvent();
     } catch (e) {
       debugPrint('Calendar silent load error: $e');
@@ -2811,6 +2835,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
           _outlookEvents = [];
           _isOutlookConnected = false;
         });
+        _publishCalendarWidgetSnapshot();
         return;
       }
 
@@ -2825,6 +2850,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
         _outlookEvents = events;
         _isOutlookConnected = true;
       });
+      _publishCalendarWidgetSnapshot();
       _scrollToFirstTodayEvent();
     } catch (e) {
       debugPrint('Existing Outlook calendar load failed: $e');
@@ -2833,6 +2859,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
         _outlookEvents = [];
         _isOutlookConnected = false;
       });
+      _publishCalendarWidgetSnapshot();
     }
   }
 
@@ -2864,6 +2891,16 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
       _lastGoogleCalendarFailure = null;
       _lastGoogleCalendarWeekOffset = null;
     });
+    _publishCalendarWidgetSnapshot();
+  }
+
+  void _publishCalendarWidgetSnapshot() {
+    unawaited(
+      HomeWidgetService.publishCalendarEvents(
+        googleEvents: _googleEvents,
+        outlookEvents: _outlookEvents,
+      ),
+    );
   }
 
   Future<void> _connectGoogle() async {
@@ -2881,6 +2918,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
         _googleEvents = events;
         _isGoogleConnected = true;
       });
+      _publishCalendarWidgetSnapshot();
       _scrollToFirstTodayEvent();
     } catch (e) {
       debugPrint('Calendar error: $e');
@@ -2902,6 +2940,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
         _outlookEvents = events;
         _isOutlookConnected = true;
       });
+      _publishCalendarWidgetSnapshot();
       _scrollToFirstTodayEvent();
     } catch (e) {
       debugPrint('Outlook calendar connect error: $e');

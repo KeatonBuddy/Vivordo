@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/workout_live_activity_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
@@ -18,6 +19,7 @@ import 'screens/onboarding_screen.dart';
 import 'screens/email_verification_screen.dart';
 import 'screens/circle_screen.dart';
 import 'screens/fitness_screen.dart';
+import 'screens/wellness_detail_screen.dart';
 
 // Global navigator key for notification navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -72,13 +74,56 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   bool _openingWorkout = false;
+  bool _openingWidget = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WorkoutLiveActivityService.configureLaunchHandler(_openActiveWorkout);
+      HomeWidgetService.configureLaunchHandler(_openWidgetDestination);
     });
+  }
+
+  Future<void> _openWidgetDestination(String destination) async {
+    if (_openingWidget || FirebaseAuth.instance.currentUser == null) return;
+    if (!const {
+      'home',
+      'wellness',
+      'fitness',
+      'calendar',
+    }.contains(destination)) {
+      return;
+    }
+    _openingWidget = true;
+    try {
+      NavigatorState? navigator;
+      for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
+        navigator = navigatorKey.currentState;
+        if (navigator == null) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+      }
+      if (navigator == null || !mounted) return;
+
+      if (destination == 'fitness') {
+        navigator.pushNamedAndRemoveUntil('/fitness', (_) => false);
+        return;
+      }
+
+      if (destination == 'calendar') {
+        navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
+        return;
+      }
+
+      navigator.pushNamedAndRemoveUntil('/home', (_) => false);
+      if (destination == 'wellness') {
+        await WidgetsBinding.instance.endOfFrame;
+        if (mounted) unawaited(navigator.pushNamed('/wellness'));
+      }
+    } finally {
+      _openingWidget = false;
+    }
   }
 
   Future<void> _openActiveWorkout() async {
@@ -106,6 +151,7 @@ class _MyAppState extends State<MyApp> {
   @override
   void dispose() {
     WorkoutLiveActivityService.clearLaunchHandler();
+    HomeWidgetService.clearLaunchHandler();
     super.dispose();
   }
 
@@ -136,6 +182,9 @@ class _MyAppState extends State<MyApp> {
         '/': (context) => const AuthGate(),
         '/signup': (context) => const SignupScreen(),
         '/home': (context) => const MainNavigationScreen(),
+        '/calendar': (context) => const MainNavigationScreen(initialIndex: 1),
+        '/fitness': (context) => const MainNavigationScreen(initialIndex: 3),
+        '/wellness': (context) => const WellnessDetailScreen(),
         '/scan': (context) => const MainNavigationScreen(initialIndex: 2),
         '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 5),
         '/circle': (context) => const CircleScreen(),
@@ -196,6 +245,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         HealthService().syncToday().whenComplete(
           () => FitbitService.instance.syncInBackground(),
         );
+        unawaited(HomeWidgetService.refreshCalendarSnapshot());
         AnalyticsService().startSession();
       }
     } else if (state == AppLifecycleState.paused ||
@@ -215,6 +265,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
           () => FitbitService.instance.syncInBackground(daysBack: 30),
         );
     NotificationService().configureForUser(uid);
+    unawaited(HomeWidgetService.refreshCalendarSnapshot(force: true));
     AnalyticsService().logLogin();
   }
 
