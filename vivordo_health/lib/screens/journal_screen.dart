@@ -8,7 +8,6 @@ import '../src/services/metrics_service.dart';
 import '../src/services/journal_lock_service.dart';
 
 const _purple = Color(0xFF5B4CF4);
-const _ink = Color(0xFF17172B);
 const _muted = Color(0xFF7F8098);
 const _green = Color(0xFF05A956);
 const _orange = Color(0xFFFF7A00);
@@ -611,20 +610,20 @@ class _JournalScreenState extends State<JournalScreen> {
   Widget _buildEntries(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> documents,
   ) {
-    final selectedEntries = documents
+    final entriesForSelectedDay = documents
         .where((document) {
           final timestamp = document.data()['entryDate'] as Timestamp?;
           return timestamp != null &&
               _sameDay(timestamp.toDate(), _selectedDate);
         })
         .toList(growable: false);
-    if (selectedEntries.isEmpty) {
-      return _EmptyJournal(date: _selectedDate);
+    final visibleEntries = _showAll ? documents : entriesForSelectedDay.take(3);
+    if (visibleEntries.isEmpty) {
+      return _EmptyJournal(date: _selectedDate, showingAll: _showAll);
     }
-    final visible = _showAll ? selectedEntries : selectedEntries.take(3);
     return Column(
       children: [
-        for (final document in visible) ...[
+        for (final document in visibleEntries) ...[
           _JournalEntryCard(
             document: document,
             onTap: () => _openEntry(document),
@@ -1093,9 +1092,10 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
 }
 
 class _EmptyJournal extends StatelessWidget {
-  const _EmptyJournal({required this.date});
+  const _EmptyJournal({required this.date, this.showingAll = false});
 
   final DateTime date;
+  final bool showingAll;
 
   @override
   Widget build(BuildContext context) => _Card(
@@ -1104,13 +1104,15 @@ class _EmptyJournal extends StatelessWidget {
       children: [
         const Icon(Icons.auto_stories_outlined, color: _muted, size: 34),
         const SizedBox(height: 9),
-        const Text(
-          'No entries for this day',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        Text(
+          showingAll ? 'No journal entries yet' : 'No entries for this day',
+          style: const TextStyle(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Text(
-          'Write a reflection for ${DateFormat('MMMM d').format(date)}.',
+          showingAll
+              ? 'Your saved reflections will appear here.'
+              : 'Write a reflection for ${DateFormat('MMMM d').format(date)}.',
           textAlign: TextAlign.center,
           style: const TextStyle(color: _muted),
         ),
