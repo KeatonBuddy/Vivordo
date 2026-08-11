@@ -741,6 +741,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  /// "52–71 across 8 readings today" for the most recent BaaS-scored day.
+  ///
+  /// The stress score now accumulates through the day and resets each morning
+  /// to the user's personal anchor, so a single number throws away most of
+  /// what happened. `min`/`max`/`readings` have been on this document since
+  /// v1, but every one of them held the same value because there was only
+  /// ever one score per day — see StressScoreService._saveScore.
+  ///
+  /// Returns null when the day has fewer than two readings or no real spread,
+  /// so pre-intraday history falls through to the usual comparison text
+  /// instead of rendering a meaningless "61–61".
+  String? _stressIntradayDetail(QuerySnapshot<Map<String, dynamic>>? snap) {
+    final docs = _docsFor(snap, 'stress');
+    if (docs.isEmpty) return null;
+
+    final stress = docs.last.data()['stress'] as Map?;
+    if (stress == null) return null;
+
+    final lo = (stress['min'] as num?)?.toDouble();
+    final hi = (stress['max'] as num?)?.toDouble();
+    final n = (stress['readings'] as num?)?.toInt() ?? 0;
+    if (lo == null || hi == null || n < 2) return null;
+    if (hi - lo < 1.0) return 'Steady across $n readings today';
+
+    return '${lo.round()}–${hi.round()} across $n readings today';
+  }
+
   Widget _buildKeyMetricFor(
     String metric,
     QuerySnapshot<Map<String, dynamic>>? snap,
@@ -792,6 +819,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ? 'Not synced recently'
         : metric == 'heart_rate_scan' || metric == 'resting_heart_rate'
         ? _heartRateStatus(values.last)
+        : metric == 'stress'
+        ? (_stressIntradayDetail(snap) ??
+              _comparisonText(values, lowerIsBetter: true))
         : _comparisonText(values, lowerIsBetter: metric == 'stress');
 
     return _buildKeyMetricTile(

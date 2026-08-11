@@ -371,8 +371,18 @@ class _HomeScreenState extends State<HomeScreen> {
         final moodMap = data?['mood'] as Map?;
         final wellnessMap = data?['wellness'] as Map?;
 
-        // Stress: prefer BaaS result, fall back to HRV-derived score
+        // Stress: prefer the LIVE accumulating BaaS value, then the day's
+        // mean, then the HRV-derived fallback.
+        //
+        // `current` is where the score stands right now — it opens each day at
+        // the user's personal anchor and builds through the day. `avg` is that
+        // day's mean across every reading, which is the right number for the
+        // history chart but lags the live one here: at 9 PM after a hard day
+        // the mean still carries the calm morning. Documents written before
+        // the intraday layer have no `current` and fall through to `avg`,
+        // rendering exactly as they did before.
         final double? stressScore =
+            (stressMap?['current'] as num?)?.toDouble() ??
             (stressMap?['avg'] as num?)?.toDouble() ??
             (hrvMap?['stressScore'] as num?)?.toDouble();
 

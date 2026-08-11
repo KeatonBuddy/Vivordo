@@ -32,6 +32,16 @@ class MetricsService {
               'label': moodLabel,
               'unit': 'score',
               'source': source,
+              // WHEN the tap happened. The BaaS decays the self-report by its
+              // age (decay_self_report in baas_scorer.py); without a real
+              // timestamp it had to assume every check-in landed at 09:00
+              // local. For a once-daily composite that guess cost little. For
+              // the intraday score it is most of the signal — whether someone
+              // tapped "Awful" at 08:00 or at 22:00 changes the shape of their
+              // whole day. Uses checkInTime rather than now(), so a journal
+              // entry back-dated to the day it reflects on is timestamped to
+              // that day rather than to when it was written.
+              'checkInAt': Timestamp.fromDate(checkInTime),
               'entries': FieldValue.arrayUnion([
                 {
                   'score': moodScore,
