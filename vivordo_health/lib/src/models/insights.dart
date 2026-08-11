@@ -59,48 +59,50 @@ class PandaSlots {
 
   Map<String, dynamic> toMap() {
     final m = <String, dynamic>{};
-    if (stressor?.isNotEmpty == true)        m['stressor']         = stressor;
-    if (emotion?.isNotEmpty == true)         m['emotion']          = emotion;
-    if (intensity?.isNotEmpty == true)       m['intensity']        = intensity;
-    if (physicalSymptom?.isNotEmpty == true) m['physical_symptom'] = physicalSymptom;
-    if (activity?.isNotEmpty == true)        m['activity']         = activity;
-    if (location?.isNotEmpty == true)        m['location']         = location;
-    if (timeContext?.isNotEmpty == true)     m['time_context']     = timeContext;
-    if (copingStrategy?.isNotEmpty == true)  m['coping_strategy']  = copingStrategy;
-    if (sleepQuality?.isNotEmpty == true)    m['sleep_quality']    = sleepQuality;
-    if (socialContext?.isNotEmpty == true)   m['social_context']   = socialContext;
-    if (other?.isNotEmpty == true)           m['other']            = other;
+    if (stressor?.isNotEmpty == true) m['stressor'] = stressor;
+    if (emotion?.isNotEmpty == true) m['emotion'] = emotion;
+    if (intensity?.isNotEmpty == true) m['intensity'] = intensity;
+    if (physicalSymptom?.isNotEmpty == true)
+      m['physical_symptom'] = physicalSymptom;
+    if (activity?.isNotEmpty == true) m['activity'] = activity;
+    if (location?.isNotEmpty == true) m['location'] = location;
+    if (timeContext?.isNotEmpty == true) m['time_context'] = timeContext;
+    if (copingStrategy?.isNotEmpty == true)
+      m['coping_strategy'] = copingStrategy;
+    if (sleepQuality?.isNotEmpty == true) m['sleep_quality'] = sleepQuality;
+    if (socialContext?.isNotEmpty == true) m['social_context'] = socialContext;
+    if (other?.isNotEmpty == true) m['other'] = other;
     return m;
   }
 
   factory PandaSlots.fromMap(Map<String, dynamic> m) => PandaSlots(
-        stressor:        m['stressor']         as String?,
-        emotion:         m['emotion']          as String?,
-        intensity:       m['intensity']        as String?,
-        physicalSymptom: m['physical_symptom'] as String?,
-        activity:        m['activity']         as String?,
-        location:        m['location']         as String?,
-        timeContext:     m['time_context']     as String?,
-        copingStrategy:  m['coping_strategy']  as String?,
-        sleepQuality:    m['sleep_quality']    as String?,
-        socialContext:   m['social_context']   as String?,
-        other:           m['other']            as String?,
-      );
+    stressor: m['stressor'] as String?,
+    emotion: m['emotion'] as String?,
+    intensity: m['intensity'] as String?,
+    physicalSymptom: m['physical_symptom'] as String?,
+    activity: m['activity'] as String?,
+    location: m['location'] as String?,
+    timeContext: m['time_context'] as String?,
+    copingStrategy: m['coping_strategy'] as String?,
+    sleepQuality: m['sleep_quality'] as String?,
+    socialContext: m['social_context'] as String?,
+    other: m['other'] as String?,
+  );
 
   /// Build from the raw Map<String,String> accumulated in PandaScreen.
   factory PandaSlots.fromSessionSlots(Map<String, String> slots) => PandaSlots(
-        stressor:        slots['stressor'],
-        emotion:         slots['emotion'],
-        intensity:       slots['intensity'],
-        physicalSymptom: slots['physical_symptom'],
-        activity:        slots['activity'],
-        location:        slots['location'],
-        timeContext:     slots['time_context'],
-        copingStrategy:  slots['coping_strategy'],
-        sleepQuality:    slots['sleep_quality'],
-        socialContext:   slots['social_context'],
-        other:           slots['other'],
-      );
+    stressor: slots['stressor'],
+    emotion: slots['emotion'],
+    intensity: slots['intensity'],
+    physicalSymptom: slots['physical_symptom'],
+    activity: slots['activity'],
+    location: slots['location'],
+    timeContext: slots['time_context'],
+    copingStrategy: slots['coping_strategy'],
+    sleepQuality: slots['sleep_quality'],
+    socialContext: slots['social_context'],
+    other: slots['other'],
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -121,18 +123,18 @@ class PandaCorrection {
   final Timestamp correctedAt;
 
   Map<String, dynamic> toMap() => {
-        'question_id':  questionId,
-        'old_answer':   oldAnswer,
-        'new_answer':   newAnswer,
-        'corrected_at': correctedAt,
-      };
+    'question_id': questionId,
+    'old_answer': oldAnswer,
+    'new_answer': newAnswer,
+    'corrected_at': correctedAt,
+  };
 
   factory PandaCorrection.fromMap(Map<String, dynamic> m) => PandaCorrection(
-        questionId:  m['question_id']  as String,
-        oldAnswer:   m['old_answer']   as String,
-        newAnswer:   m['new_answer']   as String,
-        correctedAt: m['corrected_at'] as Timestamp,
-      );
+    questionId: m['question_id'] as String,
+    oldAnswer: m['old_answer'] as String,
+    newAnswer: m['new_answer'] as String,
+    correctedAt: m['corrected_at'] as Timestamp,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +163,9 @@ class Insights {
     this.pandaSlots,
     this.pandaLabeledAnswers,
     this.pandaCorrections,
+    this.conversation,
     this.summary,
+    this.importantPoints,
     this.frequency = 1,
     this.stressorKey,
     this.chatSessionId,
@@ -213,10 +217,20 @@ class Insights {
   /// Append-only audit trail of corrections made from the History tab.
   List<PandaCorrection>? pandaCorrections;
 
+  /// Full Panda transcript for this chat session. Each entry contains a
+  /// `role` (`user` or `assistant`) and the rendered `text`.
+  List<Map<String, String>>? conversation;
+
   /// Compact natural-language recap of the session (chat + extracted context).
   /// Bounded to ~160 chars so it is cheap to feed back into future sessions'
   /// user context (see GeminiService.fetchRealUserPayload + aggregateSummary).
   String? summary;
+
+  /// Compact, structured details worth retaining from the session, such as
+  /// notable events, plans, triggers, people, or changes. Unlike
+  /// [conversation], these are intentionally small and safe to show in a
+  /// summary-first History view.
+  List<String>? importantPoints;
 
   /// How many times this stressor has been recorded. Repeated stressors
   /// increment this on the existing doc instead of creating duplicates
@@ -244,6 +258,7 @@ class Insights {
     required Map<String, String> labeledAnswers,
     List<Map<String, String>>? conversation,
     String? summary,
+    List<String>? importantPoints,
     String? chatSessionId,
   }) {
     final slots = PandaSlots.fromSessionSlots(sessionSlots);
@@ -252,7 +267,7 @@ class Insights {
     // Derive a readable title from the top slot values
     final titleParts = <String>[];
     if (slots.stressor?.isNotEmpty == true) titleParts.add(slots.stressor!);
-    if (slots.emotion?.isNotEmpty == true)  titleParts.add(slots.emotion!);
+    if (slots.emotion?.isNotEmpty == true) titleParts.add(slots.emotion!);
     final title = titleParts.isNotEmpty
         ? titleParts.map(_capitalise).join(' · ')
         : 'Panda Check-In';
@@ -273,32 +288,40 @@ class Insights {
 
     // Map intensity to severity
     final severity = switch (slots.intensity?.toLowerCase()) {
-      'high'   => 'warning',
+      'high' => 'warning',
       'medium' => 'info',
-      _        => 'info',
+      _ => 'info',
     };
 
     return Insights(
-      userId:               userId,
-      source:               'panda',
-      title:                title,
-      body:                 body,
-      severity:             severity,
-      category:             'stress',
-      sessionDate:          Timestamp.fromDate(sessionDate),
-      pandaSlots:           slots,
-      pandaLabeledAnswers:  Map<String, String>.from(labeledAnswers),
-      pandaCorrections:     [],
+      userId: userId,
+      source: 'panda',
+      title: title,
+      body: body,
+      severity: severity,
+      category: 'stress',
+      sessionDate: Timestamp.fromDate(sessionDate),
+      pandaSlots: slots,
+      pandaLabeledAnswers: Map<String, String>.from(labeledAnswers),
+      pandaCorrections: [],
+      conversation: conversation == null
+          ? null
+          : conversation.map((turn) => Map<String, String>.from(turn)).toList(),
       // Prefer the LLM-generated continuity note; fall back to the
       // deterministic recap when it is unavailable (offline / call failed).
-      summary:              (summary != null && summary.trim().isNotEmpty)
+      summary: (summary != null && summary.trim().isNotEmpty)
           ? summary.trim()
           : _buildSessionSummary(slots, labeledAnswers, conversation),
-      stressorKey:          canonicalStressor(slots.stressor),
-      chatSessionId:        chatSessionId,
-      acknowledged:         false,
-      createdAt:            now,
-      updatedAt:            now,
+      importantPoints: importantPoints
+          ?.map((point) => point.trim())
+          .where((point) => point.isNotEmpty)
+          .take(6)
+          .toList(),
+      stressorKey: canonicalStressor(slots.stressor),
+      chatSessionId: chatSessionId,
+      acknowledged: false,
+      createdAt: now,
+      updatedAt: now,
     );
   }
 
@@ -319,34 +342,104 @@ class Insights {
   // → work). Order matters only for overlap; keep buckets distinct.
   static const Map<String, List<String>> _stressorCanon = {
     'academia': [
-      'academ', 'school', 'exam', 'study', 'studies', 'class', 'homework',
-      'assignment', 'test', 'grade', 'university', 'college', 'course',
-      'thesis', 'lecture', 'tuition', 'semester', 'midterm', 'final',
+      'academ',
+      'school',
+      'exam',
+      'study',
+      'studies',
+      'class',
+      'homework',
+      'assignment',
+      'test',
+      'grade',
+      'university',
+      'college',
+      'course',
+      'thesis',
+      'lecture',
+      'tuition',
+      'semester',
+      'midterm',
+      'final',
     ],
     'work': [
-      'work', 'job', 'deadline', 'meeting', 'boss', 'project', 'career',
-      'office', 'workload', 'coworker', 'colleague', 'client', 'shift',
-      'manager', 'promotion', 'interview',
+      'work',
+      'job',
+      'deadline',
+      'meeting',
+      'boss',
+      'project',
+      'career',
+      'office',
+      'workload',
+      'coworker',
+      'colleague',
+      'client',
+      'shift',
+      'manager',
+      'promotion',
+      'interview',
     ],
     'financial': [
-      'money', 'financ', 'bill', 'rent', 'debt', 'budget', 'salary', 'loan',
-      'expense', 'afford',
+      'money',
+      'financ',
+      'bill',
+      'rent',
+      'debt',
+      'budget',
+      'salary',
+      'loan',
+      'expense',
+      'afford',
     ],
     'family': [
-      'family', 'parent', 'mom', 'dad', 'mother', 'father', 'sibling',
-      'brother', 'sister', 'child', 'kid', 'caregiv',
+      'family',
+      'parent',
+      'mom',
+      'dad',
+      'mother',
+      'father',
+      'sibling',
+      'brother',
+      'sister',
+      'child',
+      'kid',
+      'caregiv',
     ],
     'relationship': [
-      'partner', 'relationship', 'boyfriend', 'girlfriend', 'spouse', 'wife',
-      'husband', 'marriage', 'dating', 'breakup', 'divorce',
+      'partner',
+      'relationship',
+      'boyfriend',
+      'girlfriend',
+      'spouse',
+      'wife',
+      'husband',
+      'marriage',
+      'dating',
+      'breakup',
+      'divorce',
     ],
     'social': [
-      'social', 'friend', 'argument', 'conflict', 'people', 'crowd', 'party',
-      'lonel', 'isolation',
+      'social',
+      'friend',
+      'argument',
+      'conflict',
+      'people',
+      'crowd',
+      'party',
+      'lonel',
+      'isolation',
     ],
     'health': [
-      'health', 'sick', 'illness', 'pain', 'injury', 'symptom', 'doctor',
-      'medical', 'diagnos',
+      'health',
+      'sick',
+      'illness',
+      'pain',
+      'injury',
+      'symptom',
+      'doctor',
+      'medical',
+      'diagnos',
     ],
     'sleep': ['sleep', 'insomnia', 'rest', 'fatigue', 'tired', 'exhaust'],
   };
@@ -411,36 +504,38 @@ class Insights {
 
   Map<String, dynamic> toMap() {
     return {
-      'userId':                   userId,
-      'source':                   source,
-      'title':                    title,
-      'body':                     body,
-      'severity':                 severity,
-      'category':                 category,
-      'relatedMetrics':           relatedMetrics,
-      'relatedMetricsPeriods':    relatedMetricsPeriods,
-      'relatedQuestionnareIds':   relatedQuestionnareIds,
-      'goalId':                   goalId,
-      'acknowledged':             acknowledged,
-      'acknowledgedAt':           acknowledgedAt,
-      'createdAt':                createdAt,
-      'updatedAt':                updatedAt,
+      'userId': userId,
+      'source': source,
+      'title': title,
+      'body': body,
+      'severity': severity,
+      'category': category,
+      'relatedMetrics': relatedMetrics,
+      'relatedMetricsPeriods': relatedMetricsPeriods,
+      'relatedQuestionnareIds': relatedQuestionnareIds,
+      'goalId': goalId,
+      'acknowledged': acknowledged,
+      'acknowledgedAt': acknowledgedAt,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
       // Panda fields — only written when source == "panda"
-      if (sessionDate != null)
-        'sessionDate':            sessionDate,
+      if (sessionDate != null) 'sessionDate': sessionDate,
       if (pandaSlots != null && !pandaSlots!.isEmpty)
-        'pandaSlots':             pandaSlots!.toMap(),
+        'pandaSlots': pandaSlots!.toMap(),
       if (pandaLabeledAnswers != null && pandaLabeledAnswers!.isNotEmpty)
-        'pandaLabeledAnswers':    pandaLabeledAnswers,
+        'pandaLabeledAnswers': pandaLabeledAnswers,
       if (pandaCorrections != null && pandaCorrections!.isNotEmpty)
-        'pandaCorrections':       pandaCorrections!.map((c) => c.toMap()).toList(),
-      if (summary != null && summary!.isNotEmpty)
-        'summary':                summary,
-      'frequency':                frequency,
+        'pandaCorrections': pandaCorrections!.map((c) => c.toMap()).toList(),
+      if (conversation != null && conversation!.isNotEmpty)
+        'conversation': conversation,
+      if (summary != null && summary!.isNotEmpty) 'summary': summary,
+      if (importantPoints != null && importantPoints!.isNotEmpty)
+        'importantPoints': importantPoints,
+      'frequency': frequency,
       if (stressorKey != null && stressorKey!.isNotEmpty)
-        'stressorKey':            stressorKey,
+        'stressorKey': stressorKey,
       if (chatSessionId != null && chatSessionId!.isNotEmpty)
-        'chatSessionId':          chatSessionId,
+        'chatSessionId': chatSessionId,
     };
   }
 
@@ -449,59 +544,90 @@ class Insights {
     List<PandaCorrection>? corrections;
     if (map['pandaCorrections'] is List) {
       corrections = (map['pandaCorrections'] as List)
-          .map((c) => PandaCorrection.fromMap(Map<String, dynamic>.from(c as Map)))
+          .map(
+            (c) => PandaCorrection.fromMap(Map<String, dynamic>.from(c as Map)),
+          )
           .toList();
     }
 
     // Parse optional panda slots
     PandaSlots? slots;
     if (map['pandaSlots'] is Map) {
-      slots = PandaSlots.fromMap(Map<String, dynamic>.from(map['pandaSlots'] as Map));
+      slots = PandaSlots.fromMap(
+        Map<String, dynamic>.from(map['pandaSlots'] as Map),
+      );
     }
 
     // Parse optional labeled answers
     Map<String, String>? labeledAnswers;
     if (map['pandaLabeledAnswers'] is Map) {
       labeledAnswers = Map<String, String>.from(
-          map['pandaLabeledAnswers'] as Map);
+        map['pandaLabeledAnswers'] as Map,
+      );
+    }
+
+    List<Map<String, String>>? conversation;
+    if (map['conversation'] is List) {
+      conversation = (map['conversation'] as List)
+          .whereType<Map>()
+          .map(
+            (turn) => turn.map(
+              (key, value) => MapEntry(key.toString(), value.toString()),
+            ),
+          )
+          .where(
+            (turn) =>
+                turn['text']?.trim().isNotEmpty == true &&
+                (turn['role'] == 'user' || turn['role'] == 'assistant'),
+          )
+          .toList();
     }
 
     return Insights(
-      userId:                   map['userId']    as String? ?? '',
-      source:                   map['source']    as String?,
-      title:                    map['title']     as String?,
-      body:                     map['body']      as String?,
-      severity:                 map['severity']  as String?,
-      category:                 map['category']  as String?,
-      relatedMetrics:           map['relatedMetrics'] != null
+      userId: map['userId'] as String? ?? '',
+      source: map['source'] as String?,
+      title: map['title'] as String?,
+      body: map['body'] as String?,
+      severity: map['severity'] as String?,
+      category: map['category'] as String?,
+      relatedMetrics: map['relatedMetrics'] != null
           ? List<String>.from(map['relatedMetrics'] as List)
           : null,
-      relatedMetricsPeriods:    map['relatedMetricsPeriods'] != null
+      relatedMetricsPeriods: map['relatedMetricsPeriods'] != null
           ? List<String>.from(map['relatedMetricsPeriods'] as List)
           : null,
-      relatedQuestionnareIds:   map['relatedQuestionnareIds'] != null
+      relatedQuestionnareIds: map['relatedQuestionnareIds'] != null
           ? List<String>.from(map['relatedQuestionnareIds'] as List)
           : null,
-      goalId:                   map['goalId']        as String?,
-      acknowledged:             map['acknowledged']  as bool?,
-      acknowledgedAt:           map['acknowledgedAt'] as Timestamp?,
+      goalId: map['goalId'] as String?,
+      acknowledged: map['acknowledged'] as bool?,
+      acknowledgedAt: map['acknowledgedAt'] as Timestamp?,
       // createdAt/updatedAt can be transiently null in a LOCAL snapshot while a
       // FieldValue.serverTimestamp() write is pending (hasPendingWrites). Fall
       // back so deserialisation never throws on the optimistic local update.
-      createdAt:                (map['createdAt'] as Timestamp?) ??
-                                (map['updatedAt'] as Timestamp?) ??
-                                Timestamp.now(),
-      updatedAt:                (map['updatedAt'] as Timestamp?) ??
-                                (map['createdAt'] as Timestamp?) ??
-                                Timestamp.now(),
-      sessionDate:              map['sessionDate']   as Timestamp?,
-      pandaSlots:               slots,
-      pandaLabeledAnswers:      labeledAnswers,
-      pandaCorrections:         corrections,
-      summary:                  map['summary']       as String?,
-      frequency:                (map['frequency'] as num?)?.toInt() ?? 1,
-      stressorKey:              map['stressorKey']   as String?,
-      chatSessionId:            map['chatSessionId'] as String?,
+      createdAt:
+          (map['createdAt'] as Timestamp?) ??
+          (map['updatedAt'] as Timestamp?) ??
+          Timestamp.now(),
+      updatedAt:
+          (map['updatedAt'] as Timestamp?) ??
+          (map['createdAt'] as Timestamp?) ??
+          Timestamp.now(),
+      sessionDate: map['sessionDate'] as Timestamp?,
+      pandaSlots: slots,
+      pandaLabeledAnswers: labeledAnswers,
+      pandaCorrections: corrections,
+      conversation: conversation,
+      summary: map['summary'] as String?,
+      importantPoints: map['importantPoints'] is List
+          ? (map['importantPoints'] as List)
+                .map((point) => point.toString().trim())
+                .where((point) => point.isNotEmpty)
+                .toList()
+          : null,
+      frequency: (map['frequency'] as num?)?.toInt() ?? 1,
+      stressorKey: map['stressorKey'] as String?,
+      chatSessionId: map['chatSessionId'] as String?,
     );
   }
 
@@ -515,7 +641,8 @@ class Insights {
   // ── Firestore write (original API preserved) ───────────────────────────────
 
   Future<DocumentReference<Map<String, dynamic>>> toFirestore(
-      String userId) async {
+    String userId,
+  ) async {
     return FirebaseFirestore.instance
         .collection('users')
         .doc(userId)
@@ -538,10 +665,12 @@ class Insights {
     List<Map<String, String>>? conversation,
   ) {
     final ctx = <String>[];
-    if (slots.stressor?.isNotEmpty == true)       ctx.add(slots.stressor!);
-    if (slots.emotion?.isNotEmpty == true)        ctx.add('felt ${slots.emotion}');
-    if (slots.intensity?.isNotEmpty == true)      ctx.add('${slots.intensity} intensity');
-    if (slots.copingStrategy?.isNotEmpty == true) ctx.add('tried ${slots.copingStrategy}');
+    if (slots.stressor?.isNotEmpty == true) ctx.add(slots.stressor!);
+    if (slots.emotion?.isNotEmpty == true) ctx.add('felt ${slots.emotion}');
+    if (slots.intensity?.isNotEmpty == true)
+      ctx.add('${slots.intensity} intensity');
+    if (slots.copingStrategy?.isNotEmpty == true)
+      ctx.add('tried ${slots.copingStrategy}');
 
     // The user's own words — the "chat" part. Keep the last two user turns.
     final userWords = (conversation ?? const <Map<String, String>>[])
@@ -549,8 +678,9 @@ class Insights {
         .map((t) => t['text']?.trim() ?? '')
         .where((t) => t.isNotEmpty)
         .toList();
-    final recentUserWords =
-        userWords.length > 2 ? userWords.sublist(userWords.length - 2) : userWords;
+    final recentUserWords = userWords.length > 2
+        ? userWords.sublist(userWords.length - 2)
+        : userWords;
 
     final parts = <String>[];
     if (ctx.isNotEmpty) parts.add(ctx.join(', '));
@@ -559,8 +689,10 @@ class Insights {
     }
     // Fall back to labeled answers when neither slots nor chat were captured.
     if (parts.isEmpty && labeledAnswers.isNotEmpty) {
-      final answers =
-          labeledAnswers.values.where((v) => v.isNotEmpty).take(2).join('; ');
+      final answers = labeledAnswers.values
+          .where((v) => v.isNotEmpty)
+          .take(2)
+          .join('; ');
       if (answers.isNotEmpty) parts.add(answers);
     }
 

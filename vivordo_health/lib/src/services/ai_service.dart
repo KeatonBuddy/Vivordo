@@ -85,10 +85,9 @@ abstract class AIService {
     String? workoutContext,
   });
 
-  /// Produce a brief (≤55 word) third-person insight recap of a completed
-  /// session, written as durable context for a FUTURE session — capturing the
-  /// main stressor + trigger, emotional state + intensity, relevant context,
-  /// what coping helped, and any pattern. NOT a restatement of the Q&A.
+  /// Produce a compact third-person recap plus a short list of important
+  /// details/events from a completed session. The result is durable context
+  /// for a FUTURE session, not a transcript or a restatement of the Q&A.
   /// Returns '' on failure so the caller can fall back to a deterministic
   /// summary.
   Future<String> summarizeSession({

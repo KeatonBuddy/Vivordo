@@ -308,6 +308,7 @@ class _PandaScreenState extends State<PandaScreen>
   final List<_Turn> _turns = [];
   bool _sessionComplete = false;
   bool _pandaTyping = false;
+  bool _startingNewSession = false;
 
   final TextEditingController _inputCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
@@ -1156,7 +1157,7 @@ class _PandaScreenState extends State<PandaScreen>
           _doneCardVisible = true;
         });
         _saveLocalHistory(_sessionStart ?? DateTime.now(), success: true);
-        await _persistCompletedSession();
+        await _persistCurrentSession();
       }
     }
   }
@@ -1165,8 +1166,93 @@ class _PandaScreenState extends State<PandaScreen>
   /// so the History tab can render them together (split view).
   String? get _chatSessionId => _sessionStart?.toIso8601String();
 
-  Future<void> _persistCompletedSession() async {
+  _SessionRecap _parseSessionRecap(
+    String raw, {
+    required Map<String, String> slots,
+    required Map<String, String> labeledAnswers,
+  }) {
+    var summary = '';
+    final points = <String>[];
+    var readingImportant = false;
+
+    for (final originalLine in raw.trim().split('\n')) {
+      final line = originalLine.trim();
+      if (line.isEmpty || line.startsWith('```')) continue;
+      if (line.toUpperCase().startsWith('SUMMARY:')) {
+        summary = line.substring(line.indexOf(':') + 1).trim();
+        readingImportant = false;
+        continue;
+      }
+      if (line.toUpperCase().startsWith('IMPORTANT:')) {
+        readingImportant = true;
+        continue;
+      }
+      if (readingImportant && (line.startsWith('-') || line.startsWith('•'))) {
+        final point = line.substring(1).trim();
+        if (point.isNotEmpty) points.add(point);
+      } else if (!readingImportant && summary.isNotEmpty) {
+        summary = '$summary $line';
+      }
+    }
+
+    // Backwards-compatible fallback if a model returns plain prose instead of
+    // the requested SUMMARY/IMPORTANT shape.
+    if (summary.isEmpty && raw.trim().isNotEmpty) {
+      summary = raw
+          .replaceAll(RegExp(r'```(?:text|json)?', caseSensitive: false), '')
+          .replaceAll('```', '')
+          .trim();
+    }
+
+    // Extracted slots are reliable structured facts, so retain them even if
+    // the summary model is unavailable or omits an important detail.
+    const labels = <String, String>{
+      'stressor': 'Stressor',
+      'emotion': 'Emotion',
+      'intensity': 'Intensity',
+      'physical_symptom': 'Physical symptom',
+      'activity': 'Activity',
+      'location': 'Location',
+      'time_context': 'Time context',
+      'coping_strategy': 'Coping strategy',
+      'sleep_quality': 'Sleep quality',
+      'social_context': 'Social context',
+      'other': 'Other context',
+    };
+    for (final entry in slots.entries) {
+      final value = entry.value.trim();
+      if (value.isEmpty) continue;
+      final point = '${labels[entry.key] ?? entry.key}: $value';
+      if (!points.any(
+        (existing) => existing.toLowerCase() == point.toLowerCase(),
+      )) {
+        points.add(point);
+      }
+    }
+    if (points.isEmpty) {
+      points.addAll(
+        labeledAnswers.values
+            .map((answer) => answer.trim())
+            .where((answer) => answer.isNotEmpty)
+            .take(3),
+      );
+    }
+
+    return _SessionRecap(
+      summary: summary.trim(),
+      importantPoints: points
+          .map(
+            (point) =>
+                point.length <= 120 ? point : '${point.substring(0, 119)}…',
+          )
+          .take(6)
+          .toList(),
+    );
+  }
+
+  Future<bool> _persistCurrentSession() async {
     final resolvedUserId = _currentUserId;
+    if (resolvedUserId.isEmpty) return false;
     final labeledAnswers = {..._spikeAnswers, ..._categoryInsights};
     final conversation = _turns
         .map(
@@ -1191,25 +1277,78 @@ class _PandaScreenState extends State<PandaScreen>
     } catch (_) {
       // Non-fatal — saveSessionInsight will use the deterministic fallback.
     }
+    final recap = _parseSessionRecap(
+      llmSummary,
+      slots: _sessionSlots,
+      labeledAnswers: labeledAnswers,
+    );
 
     try {
-      final insight = await _insightSvc.saveSessionInsight(
-        userId: resolvedUserId,
-        sessionDate: _sessionStart ?? DateTime.now(),
-        sessionSlots: Map<String, String>.from(_sessionSlots),
-        labeledAnswers: labeledAnswers,
-        conversation: conversation,
-        summary: llmSummary.isNotEmpty ? llmSummary : null,
-        chatSessionId: _chatSessionId,
-      );
-      if (mounted) setState(() => _currentInsightId = insight.id);
-      // Surface this session's recap to subsequent free-conversation turns.
-      if (llmSummary.isNotEmpty && mounted) {
-        _sessionInsightNotes.add(llmSummary);
+      final sessionDate = _sessionStart ?? DateTime.now();
+      final existingInsightId = _currentInsightId;
+      if (existingInsightId != null && existingInsightId.isNotEmpty) {
+        await _insightSvc.updateSessionArchive(
+          userId: resolvedUserId,
+          insightId: existingInsightId,
+          sessionDate: sessionDate,
+          sessionSlots: Map<String, String>.from(_sessionSlots),
+          labeledAnswers: labeledAnswers,
+          summary: recap.summary.isNotEmpty ? recap.summary : null,
+          importantPoints: recap.importantPoints,
+        );
+      } else {
+        final insight = await _insightSvc.saveSessionInsight(
+          userId: resolvedUserId,
+          sessionDate: sessionDate,
+          sessionSlots: Map<String, String>.from(_sessionSlots),
+          labeledAnswers: labeledAnswers,
+          conversation: conversation,
+          archiveConversation: false,
+          deduplicateAcrossChats: false,
+          summary: recap.summary.isNotEmpty ? recap.summary : null,
+          importantPoints: recap.importantPoints,
+          chatSessionId: _chatSessionId,
+        );
+        if (mounted) setState(() => _currentInsightId = insight.id);
       }
+      // Surface this session's recap to subsequent free-conversation turns.
+      if (recap.summary.isNotEmpty && mounted) {
+        _sessionInsightNotes.add(recap.summary);
+      }
+      return true;
     } catch (e) {
       // ignore: avoid_print
       print('[PandaScreen] saveSessionInsight failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> _startNewChat() async {
+    if (_startingNewSession || _loading || _pandaTyping) return;
+    setState(() => _startingNewSession = true);
+
+    try {
+      final hasUserMessages = _turns.any((turn) => turn.role == _Role.user);
+      if (hasUserMessages) {
+        final saved = await _persistCurrentSession();
+        if (!saved) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'This chat could not be saved. Please try again before starting a new chat.',
+                ),
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      await _loadSession();
+      if (mounted) _tabCtrl.animateTo(0);
+    } finally {
+      if (mounted) setState(() => _startingNewSession = false);
     }
   }
 
@@ -1288,9 +1427,16 @@ class _PandaScreenState extends State<PandaScreen>
       actions: [
         if (!_loading && _error == null)
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.grey),
-            tooltip: 'New session',
-            onPressed: _loadSession,
+            icon: _startingNewSession
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.add_comment_outlined, color: Colors.grey),
+            tooltip: 'New chat',
+            onPressed: _startingNewSession || _pandaTyping
+                ? null
+                : _startNewChat,
           ),
         IconButton(
           icon: const Icon(Icons.info_outline, color: Colors.blueAccent),
@@ -1943,14 +2089,19 @@ class _PandaScreenState extends State<PandaScreen>
               ),
               const SizedBox(height: 4),
               const Text(
-                'Tap a category above to explore, or start a new session.',
+                'Tap a category above to explore, or start a new chat.',
                 style: TextStyle(fontSize: 12),
               ),
               const SizedBox(height: 10),
               TextButton.icon(
-                onPressed: _loadSession,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('New session'),
+                onPressed: _startingNewSession ? null : _startNewChat,
+                icon: _startingNewSession
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.add_comment_outlined, size: 16),
+                label: const Text('New chat'),
                 style: TextButton.styleFrom(foregroundColor: _purple),
               ),
             ],
@@ -2106,7 +2257,7 @@ class _PandaScreenState extends State<PandaScreen>
                           _avatar(),
                           const SizedBox(height: 16),
                           const Text(
-                            "No sessions yet.\nComplete a chat and it'll appear here.",
+                            "No saved chats yet.\nStart a new chat after messaging and your current chat will appear here.",
                             textAlign: TextAlign.center,
                             style: TextStyle(height: 1.5),
                           ),
@@ -2173,9 +2324,15 @@ class _PandaScreenState extends State<PandaScreen>
     final latest = group.first; // stream is newest-first
     final sessionDt = latest.sessionDate?.toDate() ?? latest.createdAt.toDate();
     final multi = group.length > 1;
-    final headerLabel = multi
+    final importantCount = group.fold<int>(
+      0,
+      (count, insight) => count + (insight.importantPoints?.length ?? 0),
+    );
+    final headerLabel = importantCount > 0
+        ? '$importantCount important details saved'
+        : multi
         ? '${group.length} insights this chat'
-        : '${(latest.pandaLabeledAnswers ?? const {}).length} answers captured';
+        : 'Conversation summary saved';
 
     return Material(
       color: colors.card,
@@ -2233,7 +2390,7 @@ class _PandaScreenState extends State<PandaScreen>
                     border: Border.all(color: Colors.green.withOpacity(0.3)),
                   ),
                   child: const Text(
-                    'Complete',
+                    'Saved',
                     style: TextStyle(
                       color: Colors.green,
                       fontSize: 11,
@@ -2265,6 +2422,7 @@ class _PandaScreenState extends State<PandaScreen>
     final slots = insight.pandaSlots;
     final labeledAnswers = insight.pandaLabeledAnswers ?? {};
     final corrections = insight.pandaCorrections ?? [];
+    final importantPoints = insight.importantPoints ?? const <String>[];
     final hasSlots = slots != null && !slots.isEmpty;
     final hasAnswers = labeledAnswers.entries.any(
       (e) => !e.key.startsWith('category::'),
@@ -2297,6 +2455,46 @@ class _PandaScreenState extends State<PandaScreen>
           ),
           const SizedBox(height: 8),
         ],
+        if (insight.summary?.trim().isNotEmpty == true) ...[
+          const Text(
+            'Conversation Summary',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          _noteBox(insight.summary!.trim()),
+          const SizedBox(height: 12),
+        ],
+
+        if (importantPoints.isNotEmpty) ...[
+          const Text(
+            'Important Details & Events',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          ...importantPoints.map(
+            (point) => Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 5),
+                    child: Icon(Icons.circle, size: 6, color: _purple),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      point,
+                      style: const TextStyle(fontSize: 12.5, height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 5),
+        ],
+
         // Overall notes
         if (insight.body != null && insight.body!.isNotEmpty) ...[
           _noteBox(insight.body!),
@@ -2593,8 +2791,8 @@ class _PandaScreenState extends State<PandaScreen>
       // The Firestore stream will push the updated insight automatically.
 
       // Regenerate the continuity note so the fed-back summary reflects the
-      // corrected answer. No conversation is stored on the insight, so this
-      // synthesises from the (updated) slots + labeled answers. Non-fatal.
+      // corrected answer. New archives include their transcript; legacy
+      // records still synthesize from slots and labeled answers. Non-fatal.
       unawaited(_regenerateSummary(resolvedUserId, updated));
     } catch (e) {
       // ignore: avoid_print
@@ -2614,14 +2812,24 @@ class _PandaScreenState extends State<PandaScreen>
 
       final summary = await _svc
           .summarizeSession(
-            conversation: const [],
+            conversation: updated.conversation ?? const <Map<String, String>>[],
             slots: slots,
             labeledAnswers: answers,
           )
           .timeout(const Duration(seconds: 20));
 
       if (summary.isNotEmpty) {
-        await _insightSvc.updateSummary(userId, updated.id!, summary);
+        final recap = _parseSessionRecap(
+          summary,
+          slots: slots,
+          labeledAnswers: answers,
+        );
+        await _insightSvc.updateSummary(
+          userId,
+          updated.id!,
+          recap.summary,
+          importantPoints: recap.importantPoints,
+        );
       }
     } catch (e) {
       // ignore: avoid_print
@@ -2737,6 +2945,11 @@ class _PandaScreenState extends State<PandaScreen>
       } catch (_) {
         // Non-fatal — saveSessionInsight falls back to a deterministic summary.
       }
+      final recap = _parseSessionRecap(
+        summary,
+        slots: slots,
+        labeledAnswers: labeled,
+      );
 
       await _insightSvc.saveSessionInsight(
         userId: userId,
@@ -2744,12 +2957,15 @@ class _PandaScreenState extends State<PandaScreen>
         sessionSlots: slots,
         labeledAnswers: labeled,
         conversation: conversation,
-        summary: summary.isNotEmpty ? summary : null,
+        summary: recap.summary.isNotEmpty ? recap.summary : null,
+        importantPoints: recap.importantPoints,
         chatSessionId: _chatSessionId,
       );
 
       // Make this finding usable on the next dialogue turn immediately.
-      if (summary.isNotEmpty && mounted) _sessionInsightNotes.add(summary);
+      if (recap.summary.isNotEmpty && mounted) {
+        _sessionInsightNotes.add(recap.summary);
+      }
     } catch (e) {
       // ignore: avoid_print
       print('[PandaScreen] saveChatInsight failed: $e');
@@ -3162,6 +3378,13 @@ class _DigressionFrame {
 }
 
 /// Kept for session graph display only (not persisted to Firestore).
+class _SessionRecap {
+  const _SessionRecap({required this.summary, required this.importantPoints});
+
+  final String summary;
+  final List<String> importantPoints;
+}
+
 class _HistoryRecord {
   _HistoryRecord({
     required this.startedAt,

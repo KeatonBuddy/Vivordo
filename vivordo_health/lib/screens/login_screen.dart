@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'welcome_beta_screen.dart';
 
@@ -11,7 +12,6 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   static const Color accentPurple = Color(0xFF7B6EF6);
-  static const Color textDark = Color(0xFF1C1C1E);
   static const Color textGrey = Color(0xFF8E8E93);
 
   final _emailCtrl = TextEditingController();
@@ -97,11 +97,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 24),
               const Text(
                 'Reset Password',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  
-                ),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 6),
               const Text(
@@ -271,7 +267,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextField(
                       controller: _emailCtrl,
                       keyboardType: TextInputType.emailAddress,
-                      style: const TextStyle(fontSize: 15, ),
+                      style: const TextStyle(fontSize: 15),
                       decoration: _inputDecoration(
                         hintText: 'you@example.com',
                         icon: Icons.mail_outline_rounded,
@@ -285,7 +281,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextField(
                       controller: _passCtrl,
                       obscureText: _obscurePassword,
-                      style: const TextStyle(fontSize: 15, ),
+                      style: const TextStyle(fontSize: 15),
                       onSubmitted: (_) => _login(),
                       decoration:
                           _inputDecoration(
@@ -386,11 +382,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     SizedBox(
                       width: double.infinity,
                       height: 54,
-                      child: OutlinedButton(
+                      child: ElevatedButton(
                         onPressed: _isGoogleLoading ? null : _loginWithGoogle,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: textDark,
-                          side: BorderSide(color: Colors.grey.shade300),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4285F4),
+                          disabledBackgroundColor: const Color(
+                            0xFF4285F4,
+                          ).withValues(alpha: 0.62),
+                          foregroundColor: Colors.white,
+                          disabledForegroundColor: Colors.white,
+                          elevation: 0,
+                          overlayColor: const Color(0xFF3367D6),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -400,26 +402,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                 width: 22,
                                 height: 22,
                                 child: CircularProgressIndicator(
+                                  color: Colors.white,
                                   strokeWidth: 2.5,
                                 ),
                               )
                             : Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: const [
-                                  Text(
-                                    'G',
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w900,
-                                      color: Color(0xFF4285F4),
-                                    ),
-                                  ),
+                                  _GoogleLogoBadge(),
                                   SizedBox(width: 12),
                                   Text(
                                     'Continue with Google',
                                     style: TextStyle(
                                       fontSize: 15,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ],
@@ -536,6 +533,29 @@ class _LoginScreenState extends State<LoginScreen> {
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: accentPurple, width: 1.5),
+      ),
+    );
+  }
+}
+
+class _GoogleLogoBadge extends StatelessWidget {
+  const _GoogleLogoBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      alignment: Alignment.center,
+      child: SvgPicture.asset(
+        'assets/google_g_logo.svg',
+        width: 20,
+        height: 20,
+        fit: BoxFit.contain,
       ),
     );
   }

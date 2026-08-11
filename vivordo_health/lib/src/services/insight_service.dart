@@ -26,7 +26,7 @@ import '../models/insights.dart';
 
 class InsightService {
   InsightService({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+    : _db = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _db;
 
@@ -55,27 +55,31 @@ class InsightService {
     required Map<String, String> sessionSlots,
     required Map<String, String> labeledAnswers,
     List<Map<String, String>>? conversation,
+    bool archiveConversation = false,
+    bool deduplicateAcrossChats = true,
     String? summary,
+    List<String>? importantPoints,
     String? chatSessionId,
   }) async {
     final insight = Insights.fromPandaSession(
-      userId:         userId,
-      sessionDate:    sessionDate,
-      sessionSlots:   sessionSlots,
+      userId: userId,
+      sessionDate: sessionDate,
+      sessionSlots: sessionSlots,
       labeledAnswers: labeledAnswers,
-      conversation:   conversation,
-      summary:        summary,
-      chatSessionId:  chatSessionId,
+      conversation: conversation,
+      summary: summary,
+      importantPoints: importantPoints,
+      chatSessionId: chatSessionId,
     );
+    if (!archiveConversation) insight.conversation = null;
 
     final newStressor = sessionSlots['stressor'];
     if (newStressor != null && newStressor.trim().isNotEmpty) {
       // Fetch this user's panda insights and match in-memory (canonical/fuzzy
       // matching can't be expressed as a Firestore query). Capped for cost.
-      final existing = await _col(userId)
-          .where('source', isEqualTo: 'panda')
-          .limit(60)
-          .get();
+      final existing = await _col(
+        userId,
+      ).where('source', isEqualTo: 'panda').limit(60).get();
 
       // (1) SAME-CHAT accumulation — facets of ONE stressor raised across a
       // chat merge into a single record (e.g. "missing sports", "risk of
@@ -86,29 +90,39 @@ class InsightService {
         for (final d in existing.docs) {
           final data = d.data();
           if (data['chatSessionId'] != chatSessionId) continue;
-          final candStressor =
-              (data['pandaSlots'] as Map?)?['stressor']?.toString();
+          final candStressor = (data['pandaSlots'] as Map?)?['stressor']
+              ?.toString();
           if (Insights.clearlyDifferentStressors(newStressor, candStressor)) {
             continue; // genuinely different stressor → keep separate
           }
           final mergedSlots = <String, String>{
-            ...?(data['pandaSlots'] as Map?)
-                ?.map((k, v) => MapEntry(k.toString(), v.toString())),
+            ...?(data['pandaSlots'] as Map?)?.map(
+              (k, v) => MapEntry(k.toString(), v.toString()),
+            ),
             if (insight.pandaSlots != null)
-              ...insight.pandaSlots!.toMap()
-                  .map((k, v) => MapEntry(k, v.toString())),
+              ...insight.pandaSlots!.toMap().map(
+                (k, v) => MapEntry(k, v.toString()),
+              ),
           };
           await d.reference.update({
             'pandaSlots': mergedSlots,
-            'title':      insight.title,
-            'body':       insight.body,
-            'severity':   insight.severity,
-            'pandaLabeledAnswers':
-                _mergeAnswers(data['pandaLabeledAnswers'] as Map?, labeledAnswers),
+            'title': insight.title,
+            'body': insight.body,
+            'severity': insight.severity,
+            'pandaLabeledAnswers': _mergeAnswers(
+              data['pandaLabeledAnswers'] as Map?,
+              labeledAnswers,
+            ),
             if (insight.summary != null && insight.summary!.isNotEmpty)
-              'summary':  insight.summary,
+              'summary': insight.summary,
+            if (insight.importantPoints?.isNotEmpty == true)
+              'importantPoints': insight.importantPoints,
+            if (archiveConversation &&
+                conversation != null &&
+                conversation.isNotEmpty)
+              'conversation': conversation,
             'sessionDate': Timestamp.fromDate(sessionDate),
-            'updatedAt':  FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
           });
           _touchUserHistory(userId, sessionDate, insight);
           insight.id = d.id;
@@ -117,36 +131,47 @@ class InsightService {
         }
       }
 
-      // (2) CROSS-CHAT frequency dedup — the SAME stressor (canonical/fuzzy
-      // match) seen in a DIFFERENT chat bumps frequency instead of duplicating.
-      for (final d in existing.docs) {
-        final data = d.data();
-        if (chatSessionId != null && data['chatSessionId'] == chatSessionId) {
-          continue;
-        }
-        final candStressor =
-            (data['pandaSlots'] as Map?)?['stressor']?.toString();
-        if (Insights.stressorsMatch(newStressor, candStressor)) {
-          await d.reference.update({
-            'frequency':  FieldValue.increment(1),
-            'updatedAt':  FieldValue.serverTimestamp(),
-            'sessionDate': Timestamp.fromDate(sessionDate),
-            if (chatSessionId != null) 'chatSessionId': chatSessionId,
-            'title':      insight.title,
-            'body':       insight.body,
-            'severity':   insight.severity,
-            if (insight.pandaSlots != null && !insight.pandaSlots!.isEmpty)
-              'pandaSlots': insight.pandaSlots!.toMap(),
-            'pandaLabeledAnswers':
-                _mergeAnswers(data['pandaLabeledAnswers'] as Map?, labeledAnswers),
-            if (insight.summary != null && insight.summary!.isNotEmpty)
-              'summary':  insight.summary,
-          });
-          _touchUserHistory(userId, sessionDate, insight);
-          insight.id = d.id;
-          insight.frequency =
-              ((data['frequency'] as num?)?.toInt() ?? 1) + 1;
-          return insight;
+      if (deduplicateAcrossChats) {
+        // (2) CROSS-CHAT frequency dedup — the SAME stressor
+        // (canonical/fuzzy match) seen in a DIFFERENT chat bumps frequency
+        // instead of duplicating. Full chat archives disable this so every
+        // chat remains independently available in History.
+        for (final d in existing.docs) {
+          final data = d.data();
+          if (chatSessionId != null && data['chatSessionId'] == chatSessionId) {
+            continue;
+          }
+          final candStressor = (data['pandaSlots'] as Map?)?['stressor']
+              ?.toString();
+          if (Insights.stressorsMatch(newStressor, candStressor)) {
+            await d.reference.update({
+              'frequency': FieldValue.increment(1),
+              'updatedAt': FieldValue.serverTimestamp(),
+              'sessionDate': Timestamp.fromDate(sessionDate),
+              if (chatSessionId != null) 'chatSessionId': chatSessionId,
+              'title': insight.title,
+              'body': insight.body,
+              'severity': insight.severity,
+              if (insight.pandaSlots != null && !insight.pandaSlots!.isEmpty)
+                'pandaSlots': insight.pandaSlots!.toMap(),
+              'pandaLabeledAnswers': _mergeAnswers(
+                data['pandaLabeledAnswers'] as Map?,
+                labeledAnswers,
+              ),
+              if (insight.summary != null && insight.summary!.isNotEmpty)
+                'summary': insight.summary,
+              if (insight.importantPoints?.isNotEmpty == true)
+                'importantPoints': insight.importantPoints,
+              if (archiveConversation &&
+                  conversation != null &&
+                  conversation.isNotEmpty)
+                'conversation': conversation,
+            });
+            _touchUserHistory(userId, sessionDate, insight);
+            insight.id = d.id;
+            insight.frequency = ((data['frequency'] as num?)?.toInt() ?? 1) + 1;
+            return insight;
+          }
         }
       }
     }
@@ -157,20 +182,57 @@ class InsightService {
     return insight;
   }
 
+  /// Refreshes an already-persisted Panda session before a new chat starts.
+  /// Only the compact recap and structured details are archived; the raw
+  /// transcript is deliberately removed.
+  Future<void> updateSessionArchive({
+    required String userId,
+    required String insightId,
+    required DateTime sessionDate,
+    required Map<String, String> sessionSlots,
+    required Map<String, String> labeledAnswers,
+    String? summary,
+    List<String>? importantPoints,
+  }) async {
+    final update = <String, dynamic>{
+      'sessionDate': Timestamp.fromDate(sessionDate),
+      'pandaLabeledAnswers': labeledAnswers,
+      'conversation': FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      if (sessionSlots.isNotEmpty) 'pandaSlots': sessionSlots,
+      if (summary != null && summary.trim().isNotEmpty)
+        'summary': summary.trim(),
+      if (importantPoints != null)
+        'importantPoints': importantPoints
+            .map((point) => point.trim())
+            .where((point) => point.isNotEmpty)
+            .take(6)
+            .toList(),
+    };
+    await _doc(userId, insightId).set(update, SetOptions(merge: true));
+  }
+
   /// Fire-and-forget lightweight summary on the parent users/{userId} doc so the
   /// HomeScreen and recommendation engine can read recent stressors cheaply.
   void _touchUserHistory(
-      String userId, DateTime sessionDate, Insights insight) {
-    _unawaited(_db.collection('users').doc(userId).set({
-      'last_panda_session': Timestamp.fromDate(sessionDate),
-      'updated_at': FieldValue.serverTimestamp(),
-      if (insight.pandaSlots?.stressor?.isNotEmpty == true)
-        'stressor_history': FieldValue.arrayUnion(
-            [insight.pandaSlots!.stressor!]),
-      if (insight.pandaSlots?.emotion?.isNotEmpty == true)
-        'emotion_history': FieldValue.arrayUnion(
-            [insight.pandaSlots!.emotion!]),
-    }, SetOptions(merge: true)));
+    String userId,
+    DateTime sessionDate,
+    Insights insight,
+  ) {
+    _unawaited(
+      _db.collection('users').doc(userId).set({
+        'last_panda_session': Timestamp.fromDate(sessionDate),
+        'updated_at': FieldValue.serverTimestamp(),
+        if (insight.pandaSlots?.stressor?.isNotEmpty == true)
+          'stressor_history': FieldValue.arrayUnion([
+            insight.pandaSlots!.stressor!,
+          ]),
+        if (insight.pandaSlots?.emotion?.isNotEmpty == true)
+          'emotion_history': FieldValue.arrayUnion([
+            insight.pandaSlots!.emotion!,
+          ]),
+      }, SetOptions(merge: true)),
+    );
   }
 
   // ===========================================================================
@@ -191,17 +253,18 @@ class InsightService {
     required String newAnswer,
   }) async {
     final correction = PandaCorrection(
-      questionId:  questionId,
-      oldAnswer:   oldAnswer,
-      newAnswer:   newAnswer,
+      questionId: questionId,
+      oldAnswer: oldAnswer,
+      newAnswer: newAnswer,
       correctedAt: Timestamp.now(),
     );
 
     final ref = _doc(userId, insightId);
     final snap = await ref.get();
     final answers = <String, String>{
-      ...?(snap.data()?['pandaLabeledAnswers'] as Map?)
-          ?.map((k, v) => MapEntry(k.toString(), v.toString())),
+      ...?(snap.data()?['pandaLabeledAnswers'] as Map?)?.map(
+        (k, v) => MapEntry(k.toString(), v.toString()),
+      ),
     };
     answers[questionId] = newAnswer;
 
@@ -224,9 +287,14 @@ class InsightService {
   // ===========================================================================
 
   Future<void> updateSummary(
-      String userId, String insightId, String summary) async {
+    String userId,
+    String insightId,
+    String summary, {
+    List<String>? importantPoints,
+  }) async {
     await _doc(userId, insightId).update({
       'summary': summary,
+      if (importantPoints != null) 'importantPoints': importantPoints,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
@@ -239,14 +307,16 @@ class InsightService {
   // ===========================================================================
 
   Future<Insights?> findBySessionDate(
-      String userId, DateTime sessionDate) async {
+    String userId,
+    DateTime sessionDate,
+  ) async {
     final lo = Timestamp.fromDate(
-        sessionDate.subtract(const Duration(minutes: 1)));
-    final hi = Timestamp.fromDate(
-        sessionDate.add(const Duration(minutes: 1)));
+      sessionDate.subtract(const Duration(minutes: 1)),
+    );
+    final hi = Timestamp.fromDate(sessionDate.add(const Duration(minutes: 1)));
 
     final snap = await _col(userId)
-        .where('source',      isEqualTo: 'panda')
+        .where('source', isEqualTo: 'panda')
         .where('sessionDate', isGreaterThanOrEqualTo: lo)
         .where('sessionDate', isLessThanOrEqualTo: hi)
         .limit(1)
@@ -260,10 +330,7 @@ class InsightService {
   // streamPandaInsights — real-time stream of Panda insights, newest first.
   // ===========================================================================
 
-  Stream<List<Insights>> streamPandaInsights(
-    String userId, {
-    int limit = 50,
-  }) {
+  Stream<List<Insights>> streamPandaInsights(String userId, {int limit = 50}) {
     return _col(userId)
         .where('source', isEqualTo: 'panda')
         .orderBy('sessionDate', descending: true)
@@ -276,10 +343,7 @@ class InsightService {
   // streamAllInsights — unified feed across all insight sources.
   // ===========================================================================
 
-  Stream<List<Insights>> streamAllInsights(
-    String userId, {
-    int limit = 100,
-  }) {
+  Stream<List<Insights>> streamAllInsights(String userId, {int limit = 100}) {
     return _col(userId)
         .orderBy('createdAt', descending: true)
         .limit(limit)
@@ -303,9 +367,9 @@ class InsightService {
 
   Future<void> acknowledgeInsight(String userId, String insightId) async {
     await _doc(userId, insightId).update({
-      'acknowledged':   true,
+      'acknowledged': true,
       'acknowledgedAt': FieldValue.serverTimestamp(),
-      'updatedAt':      FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -346,9 +410,9 @@ class InsightService {
 
     final insights = snap.docs.map(Insights.fromDoc).toList();
 
-    final stressorCounts  = <String, int>{};
-    final emotionCounts   = <String, int>{};
-    final copingCounts    = <String, int>{};
+    final stressorCounts = <String, int>{};
+    final emotionCounts = <String, int>{};
+    final copingCounts = <String, int>{};
     final intensityCounts = <String, int>{};
 
     // Weight by frequency: a stressor recorded 5× counts 5, so the most
@@ -357,10 +421,10 @@ class InsightService {
       final s = insight.pandaSlots;
       if (s == null) continue;
       final w = insight.frequency < 1 ? 1 : insight.frequency;
-      _addWeighted(stressorCounts,  s.stressor,       w);
-      _addWeighted(emotionCounts,   s.emotion,        w);
-      _addWeighted(copingCounts,    s.copingStrategy, w);
-      _addWeighted(intensityCounts, s.intensity,      w);
+      _addWeighted(stressorCounts, s.stressor, w);
+      _addWeighted(emotionCounts, s.emotion, w);
+      _addWeighted(copingCounts, s.copingStrategy, w);
+      _addWeighted(intensityCounts, s.intensity, w);
     }
 
     // Most recent session recaps (newest first) — chat + context fed back into
@@ -376,8 +440,8 @@ class InsightService {
 
     return {
       'top_stressors': topStressors,
-      'top_emotions':  _topN(emotionCounts,   3),
-      'top_coping':    _topN(copingCounts,    3),
+      'top_emotions': _topN(emotionCounts, 3),
+      'top_coping': _topN(copingCounts, 3),
       'avg_intensity': _modal(intensityCounts),
       'session_count': insights.length,
       'recent_summaries': recentSummaries,
@@ -404,8 +468,7 @@ class InsightService {
 
   String? _modal(Map<String, int> counts) {
     if (counts.isEmpty) return null;
-    return (counts.entries.toList()
-          ..sort((a, b) => b.value.compareTo(a.value)))
+    return (counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value)))
         .first
         .key;
   }
@@ -413,7 +476,9 @@ class InsightService {
   /// Merges incoming labeled answers into existing ones, giving colliding keys
   /// a unique suffix so multiple "You shared" notes from one chat are all kept.
   Map<String, String> _mergeAnswers(
-      Map? existingRaw, Map<String, String> incoming) {
+    Map? existingRaw,
+    Map<String, String> incoming,
+  ) {
     final merged = <String, String>{
       ...?existingRaw?.map((k, v) => MapEntry(k.toString(), v.toString())),
     };

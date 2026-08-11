@@ -95,17 +95,23 @@ class GeminiService implements AIService {
   // System prompt for the end-of-session insight summary (summarizeSession).
   // Shared by GeminiService and ClaudeService so both produce the same shape.
   static const String summarySystemPrompt = '''
-You are condensing a completed Vivordo wellness check-in into a CONTINUITY NOTE
-for a future session. Write ONE compact paragraph — 2-3 sentences, max 55 words,
-third person, plain prose.
+You are condensing a completed Vivordo wellness check-in into a compact archive
+for a future session. Do not preserve the conversation verbatim.
 
 Capture, when present: the main stressor and what triggered it; the user's emotion
 and intensity; relevant context (time of day, activity, location, social, sleep);
-and what coping was tried or actually helped. Add ONE durable insight or recurring
-pattern if it is evident from the data.
+what coping was tried or actually helped; and concrete events, plans, dates, people,
+or changes the user may want remembered. Include one durable pattern when evident.
 
 Do NOT restate the questions or answers verbatim, give advice, greet, or use
-emojis. If very little was shared, say so in one short sentence.''';
+emojis. Never invent a detail. If very little was shared, say so briefly.
+
+Return exactly this plain-text shape:
+SUMMARY: <one compact paragraph, 2-3 sentences, max 55 words>
+IMPORTANT:
+- <important detail or event, max 16 words>
+
+Include 0-4 IMPORTANT bullets. Omit bullets when no reliable detail exists.''';
 
   static const String spikeSystemPrompt = '''
 You are Vivordo Stress Labeling Assistant.
