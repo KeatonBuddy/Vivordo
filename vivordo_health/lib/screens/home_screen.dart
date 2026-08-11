@@ -20,6 +20,7 @@ import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'steps_detail_screen.dart';
+import 'stress_detail_screen.dart';
 
 class _CircleAvatarCluster extends StatelessWidget {
   const _CircleAvatarCluster({required this.initial, this.photoUrl});
@@ -578,7 +579,13 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildHeader(),
               const SizedBox(height: 24),
-              _buildStressCard(stressScore, loading: stressLoading),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const StressDetailScreen()),
+                ),
+                child: _buildStressCard(stressScore, loading: stressLoading),
+              ),
               const SizedBox(height: 16),
               Row(
                 children: [

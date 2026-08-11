@@ -5841,7 +5841,7 @@ class _AchievementsPageState extends State<_AchievementsPage> {
       .where((achievement) => achievement.target > 1)
       .toList(growable: false);
 
-  bool _matchesFilter(_Achievement achievement) => switch (_filter) {
+  bool _matchesOneTimeFilter(_Achievement achievement) => switch (_filter) {
     _AchievementFilter.all => true,
     _AchievementFilter.earned => achievement.earned || achievement.tier != null,
     _AchievementFilter.inProgress =>
@@ -5850,14 +5850,25 @@ class _AchievementsPageState extends State<_AchievementsPage> {
       !achievement.unlocked && !achievement.earned && achievement.progress == 0,
   };
 
+  bool _matchesTieredFilter(_Achievement achievement) => switch (_filter) {
+    _AchievementFilter.all => true,
+    _AchievementFilter.earned => achievement.tier != null,
+    _AchievementFilter.inProgress =>
+      !achievement.earned && (achievement.unlocked || achievement.progress > 0),
+    _AchievementFilter.locked =>
+      !achievement.earned && achievement.goalTier != null,
+  };
+
   @override
   Widget build(BuildContext context) {
     final oneTime = _oneTime;
     final tiered = _tiered;
     final visibleOneTime = oneTime
-        .where(_matchesFilter)
+        .where(_matchesOneTimeFilter)
         .toList(growable: false);
-    final visibleTiered = tiered.where(_matchesFilter).toList(growable: false);
+    final visibleTiered = tiered
+        .where(_matchesTieredFilter)
+        .toList(growable: false);
     final oneTimeEarned = oneTime
         .where((achievement) => achievement.earned)
         .length;
@@ -5953,7 +5964,11 @@ class _AchievementsPageState extends State<_AchievementsPage> {
                 _TieredAchievementCard(
                   achievement: visibleTiered[index],
                   showCompletedTiers: _filter == _AchievementFilter.earned,
-                  onTap: () => _showAchievementDetails(visibleTiered[index]),
+                  showNextTier: _filter == _AchievementFilter.locked,
+                  onTap: () => _showAchievementDetails(
+                    visibleTiered[index],
+                    showNextTier: _filter == _AchievementFilter.locked,
+                  ),
                 ),
               ],
           ],
@@ -6022,7 +6037,10 @@ class _AchievementsPageState extends State<_AchievementsPage> {
     );
   }
 
-  void _showAchievementDetails(_Achievement achievement) {
+  void _showAchievementDetails(
+    _Achievement achievement, {
+    bool showNextTier = false,
+  }) {
     final unit = achievement.progressUnit ?? 'activities';
     showModalBottomSheet<void>(
       context: context,
@@ -6048,7 +6066,11 @@ class _AchievementsPageState extends State<_AchievementsPage> {
                 ),
               ),
               const SizedBox(height: 20),
-              _AchievementCollectionBadge(achievement: achievement, size: 94),
+              _AchievementCollectionBadge(
+                achievement: achievement,
+                size: 94,
+                showGoalTier: showNextTier,
+              ),
               const SizedBox(height: 14),
               Text(
                 achievement.name,
@@ -6419,19 +6441,25 @@ class _AchievementCollectionBadge extends StatelessWidget {
   const _AchievementCollectionBadge({
     required this.achievement,
     required this.size,
+    this.showGoalTier = false,
   });
 
   final _Achievement achievement;
   final double size;
+  final bool showGoalTier;
 
   @override
   Widget build(BuildContext context) {
+    final locked =
+        showGoalTier || (!achievement.unlocked && achievement.progress == 0);
     final badge = _AchievementBadge(
-      assetPath: achievement.visibleBadgeAsset,
+      assetPath: showGoalTier
+          ? achievement.goalBadgeAsset
+          : achievement.visibleBadgeAsset,
       size: size,
-      locked: !achievement.unlocked && achievement.progress == 0,
+      locked: locked,
     );
-    if (achievement.unlocked || achievement.progress > 0) return badge;
+    if (!locked) return badge;
     return ColorFiltered(
       colorFilter: const ColorFilter.matrix([
         .2126,
@@ -6464,18 +6492,24 @@ class _TieredAchievementCard extends StatelessWidget {
   const _TieredAchievementCard({
     required this.achievement,
     required this.showCompletedTiers,
+    this.showNextTier = false,
     required this.onTap,
   });
 
   final _Achievement achievement;
   final bool showCompletedTiers;
+  final bool showNextTier;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final tier = achievement.tier ?? achievement.goalTier ?? 'bronze';
+    final tier = showNextTier
+        ? achievement.goalTier ?? 'bronze'
+        : achievement.tier ?? achievement.goalTier ?? 'bronze';
     final tierColor = _achievementTierColor(tier);
-    final tierStatus = achievement.earned
+    final tierStatus = showNextTier
+        ? '${_tierLabel(achievement.goalTier ?? 'bronze')} next'
+        : achievement.earned
         ? 'Gold earned'
         : achievement.tier != null
         ? '${_tierLabel(achievement.tier!)} earned'
@@ -6494,7 +6528,11 @@ class _TieredAchievementCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              _AchievementCollectionBadge(achievement: achievement, size: 72),
+              _AchievementCollectionBadge(
+                achievement: achievement,
+                size: 72,
+                showGoalTier: showNextTier,
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(

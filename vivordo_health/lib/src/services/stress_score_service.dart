@@ -64,7 +64,7 @@ class StressScoreService {
   /// accumulating score wants readings across the day, just not duplicates.
   static const _minMinutesBetweenReadings = 10;
 
-/// Computes a BaaS stress score from the user's Firestore metrics and saves
+  /// Computes a BaaS stress score from the user's Firestore metrics and saves
   /// the result to metrics_daily/{uid}_stress_{today}.
   ///
   /// [force] — set true when fresh data was just written (mood check-in,
@@ -89,12 +89,15 @@ class StressScoreService {
             .get();
         final stressData = snap.data()?['stress'] as Map?;
         if (stressData?['source'] == 'baas_api') {
-          final computedAt = (stressData?['computedAt'] as Timestamp?)?.toDate();
+          final computedAt = (stressData?['computedAt'] as Timestamp?)
+              ?.toDate();
           if (computedAt != null &&
               DateTime.now().difference(computedAt).inMinutes <
                   _minMinutesBetweenReadings) {
-            debugPrint('StressScoreService: score is fresh '
-                '(${DateTime.now().difference(computedAt).inMinutes} min old), skipping');
+            debugPrint(
+              'StressScoreService: score is fresh '
+              '(${DateTime.now().difference(computedAt).inMinutes} min old), skipping',
+            );
             return;
           }
         }
@@ -103,7 +106,7 @@ class StressScoreService {
 
     try {
       final payload = await _buildPayload(uid, today);
-      final result  = await _callApi(payload);
+      final result = await _callApi(payload);
       if (result != null) await _saveScore(uid, today, result);
     } catch (e, st) {
       debugPrint('StressScoreService.computeAndSave: $e\n$st');
@@ -154,23 +157,30 @@ class StressScoreService {
     try {
       final today = _formatDate(DateTime.now());
       final snap = await FirebaseFirestore.instance
-          .collection('users').doc(uid).collection('metrics_daily').get();
+          .collection('users')
+          .doc(uid)
+          .collection('metrics_daily')
+          .get();
 
       final earliest = _formatDate(
-          DateTime.now().subtract(Duration(days: lookbackDays)));
+        DateTime.now().subtract(Duration(days: lookbackDays)),
+      );
 
       final pending = <String>[];
       for (final doc in snap.docs) {
         final date = doc.id;
-        if (date.compareTo(today) >= 0) continue;    // today isn't complete yet
-        if (date.compareTo(earliest) < 0) continue;  // too old to bother
+        if (date.compareTo(today) >= 0) continue; // today isn't complete yet
+        if (date.compareTo(earliest) < 0) continue; // too old to bother
 
         final data = doc.data();
         final mood = data['mood'] as Map?;
-        if (mood == null || mood['label'] == null) continue;   // no label
-        if (data['baasFeedbackSentAt'] != null) continue;      // already sent
+        if (mood == null || mood['label'] == null) continue; // no label
+        if (data['baasFeedbackSentAt'] != null) continue; // already sent
         if (!_moodLabelToRating.containsKey(
-            (mood['label'] as String).toLowerCase())) continue;
+          (mood['label'] as String).toLowerCase(),
+        )) {
+          continue;
+        }
         pending.add(date);
       }
 
@@ -185,8 +195,10 @@ class StressScoreService {
       final batch = pending.length > maxPerRun
           ? pending.sublist(pending.length - maxPerRun)
           : pending;
-      debugPrint('StressScoreService.submitPendingFeedback: '
-          '${pending.length} pending, submitting ${batch.length}');
+      debugPrint(
+        'StressScoreService.submitPendingFeedback: '
+        '${pending.length} pending, submitting ${batch.length}',
+      );
 
       // One payload of history, reused for every labelled day — the BaaS needs
       // the full window regardless of which day it is being asked to label,
@@ -194,9 +206,10 @@ class StressScoreService {
       final basePayload = await _buildPayload(uid, today);
 
       for (final date in batch) {
-        final moodLabel = (snap.docs
-            .firstWhere((d) => d.id == date)
-            .data()['mood'] as Map)['label'] as String;
+        final moodLabel =
+            (snap.docs.firstWhere((d) => d.id == date).data()['mood']
+                    as Map)['label']
+                as String;
         final rating = _moodLabelToRating[moodLabel.toLowerCase()]!;
 
         final ok = await _postFeedback({
@@ -212,9 +225,13 @@ class StressScoreService {
 
         if (ok) {
           await FirebaseFirestore.instance
-              .collection('users').doc(uid).collection('metrics_daily').doc(date)
-              .set({'baasFeedbackSentAt': FieldValue.serverTimestamp()},
-                   SetOptions(merge: true));
+              .collection('users')
+              .doc(uid)
+              .collection('metrics_daily')
+              .doc(date)
+              .set({
+                'baasFeedbackSentAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
         }
       }
     } catch (e, st) {
@@ -226,17 +243,21 @@ class StressScoreService {
   static Future<bool> _postFeedback(Map<String, dynamic> payload) async {
     try {
       final res = await http
-          .post(Uri.parse(kFeedbackUrl),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode(payload))
+          .post(
+            Uri.parse(kFeedbackUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(payload),
+          )
           .timeout(const Duration(seconds: _timeoutSeconds));
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body) as Map<String, dynamic>;
-        debugPrint('StressScoreService.feedback[${payload['date']}]: '
-            'applied=${body['applied']} n=${body['n_samples']} '
-            'predicted=${body['predicted_stress']} target=${body['target_stress']} '
-            '— ${body['reason']}');
+        debugPrint(
+          'StressScoreService.feedback[${payload['date']}]: '
+          'applied=${body['applied']} n=${body['n_samples']} '
+          'predicted=${body['predicted_stress']} target=${body['target_stress']} '
+          '— ${body['reason']}',
+        );
         // A rejected-but-understood day (e.g. thin coverage) still counts as
         // handled: the sample was stored server-side and re-sending it would
         // only burn another cold start for the same answer.
@@ -245,16 +266,20 @@ class StressScoreService {
       // 422 = this day is not usable as a label (no metrics for it, bad
       // rating). Retrying will never change that, so mark it done.
       if (res.statusCode == 422) {
-        debugPrint('StressScoreService.feedback[${payload['date']}]: '
-            '422 — ${res.body}');
+        debugPrint(
+          'StressScoreService.feedback[${payload['date']}]: '
+          '422 — ${res.body}',
+        );
         return true;
       }
-      debugPrint('StressScoreService.feedback[${payload['date']}]: '
-          '${res.statusCode} — ${res.body}');
+      debugPrint(
+        'StressScoreService.feedback[${payload['date']}]: '
+        '${res.statusCode} — ${res.body}',
+      );
       return false;
     } catch (e) {
       debugPrint('StressScoreService.feedback[${payload['date']}]: $e');
-      return false;  // transient — retry on the next launch
+      return false; // transient — retry on the next launch
     }
   }
 
@@ -274,11 +299,15 @@ class StressScoreService {
     if (uid == null) return null;
     final today = _formatDate(DateTime.now());
 
-    final raw     = jsonDecode(await rootBundle.loadString(assetPath)) as Map<String, dynamic>;
+    final raw =
+        jsonDecode(await rootBundle.loadString(assetPath))
+            as Map<String, dynamic>;
     final payload = _patchTestPayload(raw, uid);
-    debugPrint('StressScoreService.test[$assetPath]: '
-        '${(payload['samples'] as List).length} samples, '
-        'shift → today=$today');
+    debugPrint(
+      'StressScoreService.test[$assetPath]: '
+      '${(payload['samples'] as List).length} samples, '
+      'shift → today=$today',
+    );
 
     final result = await _callApi(payload);
     if (result != null) await _saveScore(uid, today, result);
@@ -289,12 +318,17 @@ class StressScoreService {
   /// day in the file lands on today.  Preserves the +00:00 suffix so
   /// Python's datetime.fromisoformat() (pre-3.11) doesn't reject it.
   static Map<String, dynamic> _patchTestPayload(
-      Map<String, dynamic> raw, String uid) {
+    Map<String, dynamic> raw,
+    String uid,
+  ) {
     final samples = List<Map<String, dynamic>>.from(
-        (raw['samples'] as List).map((e) => Map<String, dynamic>.from(e as Map)));
+      (raw['samples'] as List).map((e) => Map<String, dynamic>.from(e as Map)),
+    );
     final context = List<Map<String, dynamic>>.from(
-        ((raw['daily_context'] as List?) ?? [])
-            .map((e) => Map<String, dynamic>.from(e as Map)));
+      ((raw['daily_context'] as List?) ?? []).map(
+        (e) => Map<String, dynamic>.from(e as Map),
+      ),
+    );
 
     // Collect every date mentioned in the payload to find the latest one
     DateTime? latest;
@@ -317,31 +351,39 @@ class StressScoreService {
       };
     }
 
-    final todayUtc   = DateTime.utc(DateTime.now().year, DateTime.now().month, DateTime.now().day);
-    final latestUtc  = DateTime.utc(latest.year, latest.month, latest.day);
-    final shiftDays  = todayUtc.difference(latestUtc).inDays;
+    final todayUtc = DateTime.utc(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+    final latestUtc = DateTime.utc(latest.year, latest.month, latest.day);
+    final shiftDays = todayUtc.difference(latestUtc).inDays;
 
     for (final s in samples) {
       final ts = s['timestamp'] as String?;
       if (ts == null) continue;
       try {
-        s['timestamp'] = _fmtTimestamp(DateTime.parse(ts).add(Duration(days: shiftDays)));
+        s['timestamp'] = _fmtTimestamp(
+          DateTime.parse(ts).add(Duration(days: shiftDays)),
+        );
       } catch (_) {}
     }
     for (final c in context) {
       final d = c['date'] as String?;
       if (d == null) continue;
       try {
-        c['date'] = _formatDate(DateTime.parse(d).add(Duration(days: shiftDays)));
+        c['date'] = _formatDate(
+          DateTime.parse(d).add(Duration(days: shiftDays)),
+        );
       } catch (_) {}
     }
 
     return {
       ...raw,
-      'user_id':       uid,
-      'as_of':         DateTime.now().toUtc().toIso8601String(),
-      'profile':       {...(raw['profile'] as Map? ?? {}), 'user_id': uid},
-      'samples':       samples,
+      'user_id': uid,
+      'as_of': DateTime.now().toUtc().toIso8601String(),
+      'profile': {...(raw['profile'] as Map? ?? {}), 'user_id': uid},
+      'samples': samples,
       'daily_context': context,
     };
   }
@@ -361,8 +403,15 @@ class StressScoreService {
   // Metric types that feed the BaaS. Excludes output types (stress, wellness)
   // so the scorer never reads its own previous output as input.
   static const _inputMetrics = {
-    'heart_rate', 'hrv', 'resting_heart_rate', 'sleep',
-    'steps', 'blood_oxygen', 'respiratory_rate', 'mood',
+    'heart_rate',
+    'heart_rate_scan',
+    'hrv',
+    'resting_heart_rate',
+    'sleep',
+    'steps',
+    'blood_oxygen',
+    'respiratory_rate',
+    'mood',
   };
 
   /// How many days of REAL intraday HealthKit samples to send.
@@ -380,8 +429,10 @@ class StressScoreService {
   static const kRawSampleDays = 3;
 
   static Future<Map<String, dynamic>> _buildPayload(
-      String uid, String today) async {
-    final db     = FirebaseFirestore.instance;
+    String uid,
+    String today,
+  ) async {
+    final db = FirebaseFirestore.instance;
     final nowUtc = DateTime.now().toUtc();
 
     // Single query for ALL historical metrics — no hard date cap.
@@ -393,18 +444,21 @@ class StressScoreService {
     ]);
 
     final metricsSnap = results[0] as QuerySnapshot<Map<String, dynamic>>;
-    final userSnap    = results[1] as DocumentSnapshot<Map<String, dynamic>>;
+    final userSnap = results[1] as DocumentSnapshot<Map<String, dynamic>>;
 
     // Raw intraday samples for the recent window. Never fatal: if HealthKit is
     // unavailable or unauthorised we fall back to the synthetic reconstruction
     // for every day, which is exactly the pre-existing behaviour.
     List<Map<String, dynamic>> rawSamples = const [];
     try {
-      rawSamples =
-          await HealthService().getRawSamplesForBaas(daysBack: kRawSampleDays);
+      rawSamples = await HealthService().getRawSamplesForBaas(
+        daysBack: kRawSampleDays,
+      );
     } catch (e) {
-      debugPrint('StressScoreService._buildPayload: raw sample read failed, '
-          'falling back to daily aggregates: $e');
+      debugPrint(
+        'StressScoreService._buildPayload: raw sample read failed, '
+        'falling back to daily aggregates: $e',
+      );
     }
 
     // (date|metric) pairs the raw read already covered, so the synthetic
@@ -429,13 +483,15 @@ class StressScoreService {
 
     // Sort oldest → newest so BaaS receives chronological samples.
     final dates = docsMap.keys.toList()..sort();
-    debugPrint('StressScoreService._buildPayload: '
-        '${dates.length} day(s) of history for $uid');
+    debugPrint(
+      'StressScoreService._buildPayload: '
+      '${dates.length} day(s) of history for $uid',
+    );
 
     // User profile — falls back to safe defaults if fields not yet set
     final userData = userSnap.data();
-    final age      = (userData?['age']      as num?)?.toInt() ?? 30;
-    final gender   = (userData?['gender']   as String?)      ?? 'Other';
+    final age = (userData?['age'] as num?)?.toInt() ?? 30;
+    final gender = (userData?['gender'] as String?) ?? 'Other';
     // The DEVICE's current UTC offset — deliberately, even when the profile
     // carries an IANA name.
     //
@@ -459,8 +515,10 @@ class StressScoreService {
 
     // ── samples ──────────────────────────────────────────────────────────────
 
-    // Raw first, then the synthetic reconstruction for whatever the raw read
-    // did not cover.
+    // Raw HealthKit samples first. Camera PPG scans are added independently
+    // below from `heart_rate_scan`; they must not depend on the convenience
+    // mirror in `heart_rate`, because a later HealthKit sync may replace that
+    // mirror while the original scan history remains intact.
     final samples = <Map<String, dynamic>>[...rawSamples];
 
     bool covered(String date, String metric) =>
@@ -469,97 +527,159 @@ class StressScoreService {
     for (final date in dates) {
       final day = docsMap[date]!;
 
-      if (!covered(date, 'heart_rate')) {
-        _addPointSample(samples, day['heart_rate'] as Map?,
-            metricType: 'heart_rate', date: date, timeUtc: '12:00', unit: 'bpm');
+      final cameraScanCount = _addCameraHeartRateSamples(
+        samples,
+        day['heart_rate_scan'] as Map?,
+        date: date,
+      );
+
+      // A camera scan is also mirrored into `heart_rate` for older consumers.
+      // Do not submit that daily average in addition to its real scan entries,
+      // or a single scan would influence the scorer twice. HealthKit heart-rate
+      // aggregates remain valid alongside camera scans and are still included.
+      final heartRate = day['heart_rate'] as Map?;
+      final heartRateIsCameraMirror =
+          cameraScanCount > 0 && heartRate?['source'] == 'camera_ppg';
+
+      if (!covered(date, 'heart_rate') && !heartRateIsCameraMirror) {
+        _addPointSample(
+          samples,
+          heartRate,
+          metricType: 'heart_rate',
+          date: date,
+          timeUtc: '12:00',
+          unit: 'bpm',
+        );
       }
 
       if (!covered(date, 'hrv')) {
-        _addPointSample(samples, day['hrv'] as Map?,
-            metricType: 'hrv', date: date, timeUtc: '06:00', unit: 'ms');
+        _addPointSample(
+          samples,
+          day['hrv'] as Map?,
+          metricType: 'hrv',
+          date: date,
+          timeUtc: '06:00',
+          unit: 'ms',
+        );
       }
 
       if (!covered(date, 'resting_heart_rate')) {
-        _addPointSample(samples, day['resting_heart_rate'] as Map?,
-            metricType: 'resting_heart_rate', date: date, timeUtc: '04:00', unit: 'bpm');
+        _addPointSample(
+          samples,
+          day['resting_heart_rate'] as Map?,
+          metricType: 'resting_heart_rate',
+          date: date,
+          timeUtc: '04:00',
+          unit: 'bpm',
+        );
       }
 
       if (!covered(date, 'blood_oxygen')) {
-        _addPointSample(samples, day['blood_oxygen'] as Map?,
-            metricType: 'blood_oxygen', date: date, timeUtc: '07:00', unit: '%');
+        _addPointSample(
+          samples,
+          day['blood_oxygen'] as Map?,
+          metricType: 'blood_oxygen',
+          date: date,
+          timeUtc: '07:00',
+          unit: '%',
+        );
       }
 
       if (!covered(date, 'respiratory_rate')) {
-        _addPointSample(samples, day['respiratory_rate'] as Map?,
-            metricType: 'respiratory_rate', date: date, timeUtc: '05:00', unit: 'brpm');
+        _addPointSample(
+          samples,
+          day['respiratory_rate'] as Map?,
+          metricType: 'respiratory_rate',
+          date: date,
+          timeUtc: '05:00',
+          unit: 'brpm',
+        );
       }
 
-      final sleepMap   = day['sleep'] as Map?;
+      final sleepMap = day['sleep'] as Map?;
       final sleepHours = (sleepMap?['avg'] as num?)?.toDouble();
       if (!covered(date, 'sleep') && sleepHours != null && sleepHours > 0) {
         samples.add({
-          'metric_type':      'sleep',
-          'timestamp':        '${date}T23:00:00+00:00',
-          'value':            sleepHours,
-          'unit':             'hours',
-          'source':           sleepMap?['source'] ?? 'apple_health',
+          'metric_type': 'sleep',
+          'timestamp': '${date}T23:00:00+00:00',
+          'value': sleepHours,
+          'unit': 'hours',
+          'source': sleepMap?['source'] ?? 'apple_health',
           'duration_seconds': sleepHours * 3600,
         });
       }
 
       // Distribute daily step total across active hours so the BaaS can
       // classify sedentary vs. active windows for the activity score.
-      final stepsMap   = day['steps'] as Map?;
+      final stepsMap = day['steps'] as Map?;
       final stepsTotal = (stepsMap?['sum'] as num?)?.toDouble();
       if (!covered(date, 'steps') && stepsTotal != null && stepsTotal > 0) {
         const fractions = {
-          6: 0.03, 7: 0.05, 8: 0.08, 9: 0.05, 10: 0.04, 11: 0.03,
-          12: 0.04, 13: 0.04, 14: 0.05, 15: 0.04, 16: 0.04,
-          17: 0.15, 18: 0.20, 19: 0.08, 20: 0.05, 21: 0.05,
-          22: 0.04, 23: 0.02,
+          6: 0.03,
+          7: 0.05,
+          8: 0.08,
+          9: 0.05,
+          10: 0.04,
+          11: 0.03,
+          12: 0.04,
+          13: 0.04,
+          14: 0.05,
+          15: 0.04,
+          16: 0.04,
+          17: 0.15,
+          18: 0.20,
+          19: 0.08,
+          20: 0.05,
+          21: 0.05,
+          22: 0.04,
+          23: 0.02,
         };
         for (final e in fractions.entries) {
           samples.add({
-            'metric_type':      'steps',
-            'timestamp':        '${date}T${e.key.toString().padLeft(2, '0')}:00:00+00:00',
-            'value':            (stepsTotal * e.value).roundToDouble(),
-            'unit':             'steps',
-            'source':           stepsMap?['source'] ?? 'apple_health',
+            'metric_type': 'steps',
+            'timestamp':
+                '${date}T${e.key.toString().padLeft(2, '0')}:00:00+00:00',
+            'value': (stepsTotal * e.value).roundToDouble(),
+            'unit': 'steps',
+            'source': stepsMap?['source'] ?? 'apple_health',
             'duration_seconds': 3600,
           });
         }
       }
     }
 
-    debugPrint('StressScoreService._buildPayload: ${samples.length} sample(s) '
-        '(${rawSamples.length} raw intraday, tz=$timezone)');
+    debugPrint(
+      'StressScoreService._buildPayload: ${samples.length} sample(s) '
+      '(${rawSamples.length} raw intraday, tz=$timezone)',
+    );
 
     // ── daily_context ─────────────────────────────────────────────────────────
 
     final dailyContext = <Map<String, dynamic>>[];
 
     for (final date in dates) {
-      final day      = docsMap[date]!;
-      final moodMap  = day['mood']  as Map?;
+      final day = docsMap[date]!;
+      final moodMap = day['mood'] as Map?;
       final sleepMap = day['sleep'] as Map?;
       final stepsMap = day['steps'] as Map?;
 
       if (moodMap == null && sleepMap == null) continue;
 
       final journalMood = moodMap?['label'] as String?;
-      final moodScore   = (moodMap?['avg']  as num?)?.toDouble();
-      final selfStress  = moodScore != null
-          ? (100.0 - moodScore).clamp(0.0, 100.0) : null;
-      final sleepHours  = (sleepMap?['avg'] as num?)?.toDouble();
-      final stepsTotal  = (stepsMap?['sum'] as num?)?.toDouble();
+      final moodScore = (moodMap?['avg'] as num?)?.toDouble();
+      final selfStress = moodScore != null
+          ? (100.0 - moodScore).clamp(0.0, 100.0)
+          : null;
+      final sleepHours = (sleepMap?['avg'] as num?)?.toDouble();
+      final stepsTotal = (stepsMap?['sum'] as num?)?.toDouble();
 
       final ctx = <String, dynamic>{
-        'date':              date,
+        'date': date,
         'exercise_sessions': (stepsTotal != null && stepsTotal > 6000) ? 1 : 0,
       };
-      if (journalMood != null) ctx['journal_mood']         = journalMood;
-      if (selfStress  != null) ctx['self_reported_stress'] = selfStress;
-      if (sleepHours  != null) ctx['sleep_duration_hours'] = sleepHours;
+      if (journalMood != null) ctx['journal_mood'] = journalMood;
+      if (selfStress != null) ctx['self_reported_stress'] = selfStress;
+      if (sleepHours != null) ctx['sleep_duration_hours'] = sleepHours;
 
       // When the mood tap actually happened. The BaaS decays the self-report
       // by its age; without this it assumes 09:00 local for every check-in.
@@ -574,21 +694,21 @@ class StressScoreService {
     }
 
     return {
-      'user_id':       uid,
-      'as_of':         nowUtc.toIso8601String(),
+      'user_id': uid,
+      'as_of': nowUtc.toIso8601String(),
       // The accumulating path: the BaaS folds this reading into the user's
       // running state instead of recomputing a standalone daily composite.
       // The score it returns starts each local day at the user's personalised
       // anchor and builds from there. `daily` remains supported server-side
       // and is what the feedback/learning payloads still use.
-      'granularity':   'intraday',
+      'granularity': 'intraday',
       'profile': {
-        'user_id':  uid,
-        'age':      age,
-        'gender':   gender,
+        'user_id': uid,
+        'age': age,
+        'gender': gender,
         'timezone': timezone,
       },
-      'samples':       samples,
+      'samples': samples,
       'daily_context': dailyContext,
     };
   }
@@ -602,10 +722,10 @@ class StressScoreService {
   /// daytime.resolve_tz and which still beats the ~7-hour error of assuming
   /// UTC. Prefer a real IANA name on the user profile when one is available.
   static String _deviceUtcOffset() {
-    final off  = DateTime.now().timeZoneOffset;
+    final off = DateTime.now().timeZoneOffset;
     final sign = off.isNegative ? '-' : '+';
-    final h    = off.inHours.abs().toString().padLeft(2, '0');
-    final m    = (off.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    final h = off.inHours.abs().toString().padLeft(2, '0');
+    final m = (off.inMinutes.abs() % 60).toString().padLeft(2, '0');
     return 'UTC$sign$h:$m';
   }
 
@@ -616,7 +736,9 @@ class StressScoreService {
   static const _timeoutSeconds = 65;
 
   static Future<Map<String, dynamic>?> _callApi(
-      Map<String, dynamic> payload, {int retries = 1}) async {
+    Map<String, dynamic> payload, {
+    int retries = 1,
+  }) async {
     final body = jsonEncode(payload);
     for (int attempt = 0; attempt <= retries; attempt++) {
       try {
@@ -635,8 +757,10 @@ class StressScoreService {
         final preview = response.body.length > 300
             ? '${response.body.substring(0, 300)}…'
             : response.body;
-        debugPrint('StressScoreService._callApi [${attempt + 1}]: '
-            '${response.statusCode} — $preview');
+        debugPrint(
+          'StressScoreService._callApi [${attempt + 1}]: '
+          '${response.statusCode} — $preview',
+        );
         // 4xx = bad payload, no point retrying
         if (response.statusCode >= 400 && response.statusCode < 500) break;
       } catch (e) {
@@ -672,14 +796,18 @@ class StressScoreService {
   /// Writes the local date the BaaS resolved rather than the device's, so a
   /// late-evening score lands on the day the server folded it into.
   static Future<void> _saveScore(
-      String uid, String today, Map<String, dynamic> result) async {
+    String uid,
+    String today,
+    Map<String, dynamic> result,
+  ) async {
     final lean = result['lean'] as Map<String, dynamic>?;
-    final day  = result['day']  as Map<String, dynamic>?;
+    final day = result['day'] as Map<String, dynamic>?;
 
     // Accumulating value when present; otherwise the single reading, so a
     // daily/hourly response still persists exactly as it always did.
-    final current = (result['score'] as num?)?.toDouble()
-        ?? (lean?['score'] as num?)?.toDouble();
+    final current =
+        (result['score'] as num?)?.toDouble() ??
+        (lean?['score'] as num?)?.toDouble();
     if (current == null) return;
 
     final date = (result['local_date'] as String?) ?? today;
@@ -687,33 +815,45 @@ class StressScoreService {
     double? n(String key) => (day?[key] as num?)?.toDouble();
 
     await FirebaseFirestore.instance
-        .collection('users').doc(uid).collection('metrics_daily').doc(date)
+        .collection('users')
+        .doc(uid)
+        .collection('metrics_daily')
+        .doc(date)
         .set({
-      'stress': {
-        // The day's distribution. Falls back to `current` for all three when
-        // there is no rollup, preserving the pre-intraday behaviour.
-        'avg':               n('mean')   ?? current,
-        'min':               n('min')    ?? current,
-        'max':               n('max')    ?? current,
-        'median':            n('median') ?? current,
-        // The live value and where the day started, so the UI can show
-        // "62, up from 57 this morning" without recomputing anything.
-        'current':           current,
-        'anchor':            (result['anchor'] as num?)?.toDouble(),
-        'readings':          (day?['n'] as num?)?.toInt() ?? 1,
-        'unit':              'score',
-        'label':             result['band'] ?? lean?['band'],
-        'confidence':        lean?['confidence'],
-        'coverage_pct':      lean?['coverage_pct'],
-        'algorithm_version': lean?['algorithm_version'],
-        'justification':     lean?['justification'],
-        'top_drivers':       lean?['top_drivers'],
-        'source':            'baas_api',
-        'computedAt':        FieldValue.serverTimestamp(),
-      },
-      'date':      date,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+          'stress': {
+            // The day's distribution. Falls back to `current` for all three when
+            // there is no rollup, preserving the pre-intraday behaviour.
+            'avg': n('mean') ?? current,
+            'min': n('min') ?? current,
+            'max': n('max') ?? current,
+            'median': n('median') ?? current,
+            // The live value and where the day started, so the UI can show
+            // "62, up from 57 this morning" without recomputing anything.
+            'current': current,
+            'anchor': (result['anchor'] as num?)?.toDouble(),
+            'readings': (day?['n'] as num?)?.toInt() ?? 1,
+            'unit': 'score',
+            'label': result['band'] ?? lean?['band'],
+            'confidence': lean?['confidence'],
+            'coverage_pct': lean?['coverage_pct'],
+            'algorithm_version': lean?['algorithm_version'],
+            'justification': lean?['justification'],
+            'top_drivers': lean?['top_drivers'],
+            // Keep each successful score so the detail screen can render a real
+            // intraday trend. The service already coalesces nearby readings.
+            'entries': FieldValue.arrayUnion([
+              {
+                'score': current,
+                'timestamp': Timestamp.now(),
+                'label': result['band'] ?? lean?['band'],
+              },
+            ]),
+            'source': 'baas_api',
+            'computedAt': FieldValue.serverTimestamp(),
+          },
+          'date': date,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -724,20 +864,82 @@ class StressScoreService {
     Map? doc, {
     required String metricType,
     required String date,
-    required String timeUtc,  // "HH:MM"
+    required String timeUtc, // "HH:MM"
     required String unit,
   }) {
     if (doc == null) return;
     final value = (doc['avg'] as num?)?.toDouble();
     if (value == null) return;
     samples.add({
-      'metric_type':      metricType,
-      'timestamp':        '${date}T$timeUtc:00+00:00',
-      'value':            value,
-      'unit':             unit,
-      'source':           doc['source'] ?? 'apple_health',
+      'metric_type': metricType,
+      'timestamp': '${date}T$timeUtc:00+00:00',
+      'value': value,
+      'unit': unit,
+      'source': doc['source'] ?? 'apple_health',
       'duration_seconds': null,
     });
+  }
+
+  /// Adds the user's camera PPG scans as real timestamped heart-rate samples.
+  ///
+  /// New documents contain an `entries` list. For scans saved before that
+  /// history existed, the daily `avg` plus `syncedAt` is retained as one
+  /// fallback sample. Returns the number of samples added so callers can avoid
+  /// also submitting the legacy `heart_rate` mirror for the same scan.
+  static int _addCameraHeartRateSamples(
+    List<Map<String, dynamic>> samples,
+    Map? scan, {
+    required String date,
+  }) {
+    if (scan == null) return 0;
+
+    final seen = <String>{};
+    var added = 0;
+
+    void add(num bpm, Object? rawTimestamp) {
+      final value = bpm.toDouble();
+      if (value <= 0) return;
+
+      final timestamp =
+          _firestoreTimestamp(rawTimestamp) ??
+          DateTime.tryParse('${date}T12:00:00Z');
+      if (timestamp == null) return;
+
+      final formatted = _fmtTimestamp(timestamp);
+      final key = '$formatted|${value.toStringAsFixed(3)}';
+      if (!seen.add(key)) return;
+
+      samples.add({
+        'metric_type': 'heart_rate',
+        'timestamp': formatted,
+        'value': value,
+        'unit': 'bpm',
+        'source': 'camera_ppg',
+        'duration_seconds': null,
+      });
+      added++;
+    }
+
+    final entries = scan['entries'];
+    if (entries is List) {
+      for (final entry in entries) {
+        if (entry is! Map) continue;
+        final bpm = entry['bpm'];
+        if (bpm is num) add(bpm, entry['timestamp']);
+      }
+    }
+
+    if (added == 0 && scan['avg'] is num) {
+      add(scan['avg'] as num, scan['syncedAt']);
+    }
+    return added;
+  }
+
+  static DateTime? _firestoreTimestamp(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 
   static String _formatDate(DateTime d) =>
