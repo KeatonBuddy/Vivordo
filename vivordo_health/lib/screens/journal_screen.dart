@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../src/services/metrics_service.dart';
 import '../src/services/journal_lock_service.dart';
+import '../src/services/achievement_service.dart';
 
 const _purple = Color(0xFF5B4CF4);
 const _muted = Color(0xFF7F8098);
@@ -661,6 +662,7 @@ class _JournalScreenState extends State<JournalScreen> {
     batch.delete(journalEntry);
     batch.delete(circleEntry);
     await batch.commit();
+    await _refreshStoryKeeperProgress();
   }
 
   Future<void> _saveEntry(
@@ -711,6 +713,7 @@ class _JournalScreenState extends State<JournalScreen> {
         });
       }
       await batch.commit();
+      await _refreshStoryKeeperProgress();
       await MetricsService.saveMoodCheckIn(
         mood.label,
         occurredAt: entryDate,
@@ -739,6 +742,17 @@ class _JournalScreenState extends State<JournalScreen> {
     final firstLine = text.split('\n').first.trim();
     if (firstLine.length <= 42) return firstLine;
     return '${firstLine.substring(0, 39).trimRight()}…';
+  }
+
+  Future<void> _refreshStoryKeeperProgress() async {
+    try {
+      await AchievementService.reconcileStoryKeeper();
+    } catch (error) {
+      // The journal write has already succeeded. Goals performs the same
+      // reconciliation later, so an unavailable network must not make a
+      // successful save or deletion look like it failed.
+      debugPrint('Could not refresh Story Keeper progress: $error');
+    }
   }
 }
 

@@ -1425,6 +1425,7 @@ List<_Achievement> _profileAchievementsFromDocuments(
     ('workout_momentum', 'Workout Momentum', 'workouts'),
     ('endurance', 'Endurance', 'activities'),
     ('pulse_check', 'Pulse Check', 'scans'),
+    ('story_keeper', 'Story Keeper', 'entries'),
   ]) {
     final data = byId[definition.$1];
     final tier = data?['tier'] as String?;
@@ -1432,11 +1433,17 @@ List<_Achievement> _profileAchievementsFromDocuments(
         data?['nextTier'] as String? ?? (tier == null ? 'bronze' : null);
     final shownTier = nextTier ?? tier ?? 'bronze';
     final assetPrefix = definition.$1;
-    final defaultTarget = shownTier == 'bronze'
-        ? (definition.$1 == 'pulse_check' ? 10 : 5)
-        : shownTier == 'silver'
-        ? (definition.$1 == 'pulse_check' ? 100 : 10)
-        : (definition.$1 == 'pulse_check' ? 1000 : 100);
+    final defaultTarget = switch ((definition.$1, shownTier)) {
+      ('pulse_check', 'bronze') => 10,
+      ('pulse_check', 'silver') => 100,
+      ('pulse_check', _) => 1000,
+      ('story_keeper', 'bronze') => 5,
+      ('story_keeper', 'silver') => 20,
+      ('story_keeper', _) => 100,
+      (_, 'bronze') => 5,
+      (_, 'silver') => 10,
+      _ => 100,
+    };
     result.add(
       _Achievement(
         id: definition.$1,
@@ -1600,7 +1607,7 @@ class _ChallengesTabState extends State<_ChallengesTab> {
           .collection('users')
           .doc(user.uid)
           .collection('journal_entries')
-          .limit(1)
+          .count()
           .get(),
       firestore
           .collection('users')
@@ -1614,7 +1621,8 @@ class _ChallengesTabState extends State<_ChallengesTab> {
 
     final workouts = results[0] as QuerySnapshot<Map<String, dynamic>>;
     final metricDays = results[1] as QuerySnapshot<Map<String, dynamic>>;
-    final journalEntries = results[2] as QuerySnapshot<Map<String, dynamic>>;
+    final journalEntryCount =
+        (results[2] as AggregateQuerySnapshot).count?.toInt() ?? 0;
     final savedAchievements = results[3] as QuerySnapshot<Map<String, dynamic>>;
     final friends = results[4] as List<CircleProfile>;
     final googleCalendarConnected = results[5] as bool;
@@ -1761,6 +1769,42 @@ class _ChallengesTabState extends State<_ChallengesTab> {
       'bronze' => 'silver',
       _ => 'bronze',
     };
+    final savedStoryKeeperTier =
+        savedById['story_keeper']?.data()['tier'] as String?;
+    final calculatedStoryKeeperTier = journalEntryCount >= 100
+        ? 'gold'
+        : journalEntryCount >= 20
+        ? 'silver'
+        : journalEntryCount >= 5
+        ? 'bronze'
+        : null;
+    final storyKeeperTier = _highestTier(
+      savedStoryKeeperTier,
+      calculatedStoryKeeperTier,
+    );
+    final storyKeeperTarget = switch (storyKeeperTier) {
+      'gold' => 100,
+      'silver' => 100,
+      'bronze' => 20,
+      _ => 5,
+    };
+    final storyKeeperGoalBadge = switch (storyKeeperTier) {
+      'gold' => 'assets/achievements/story_keeper_gold.png',
+      'silver' => 'assets/achievements/story_keeper_gold.png',
+      'bronze' => 'assets/achievements/story_keeper_silver.png',
+      _ => 'assets/achievements/story_keeper_bronze.png',
+    };
+    final storyKeeperEarnedBadge = switch (storyKeeperTier) {
+      'gold' => 'assets/achievements/story_keeper_gold.png',
+      'silver' => 'assets/achievements/story_keeper_silver.png',
+      _ => 'assets/achievements/story_keeper_bronze.png',
+    };
+    final storyKeeperGoalTier = switch (storyKeeperTier) {
+      'gold' => null,
+      'silver' => 'gold',
+      'bronze' => 'silver',
+      _ => 'bronze',
+    };
 
     final achievementChecks = [
       _Achievement(
@@ -1784,8 +1828,8 @@ class _ChallengesTabState extends State<_ChallengesTab> {
         name: 'Dear Diary',
         requirement: 'Write your first journal entry',
         goalBadgeAsset: 'assets/achievements/dear_diary.png',
-        earned: journalEntries.docs.isNotEmpty,
-        progress: journalEntries.docs.isNotEmpty ? 1 : 0,
+        earned: journalEntryCount > 0,
+        progress: journalEntryCount > 0 ? 1 : 0,
       ),
       _Achievement(
         id: 'your_circle',
@@ -1849,6 +1893,19 @@ class _ChallengesTabState extends State<_ChallengesTab> {
         tier: pulseCheckTier,
         goalTier: pulseCheckGoalTier,
         progressUnit: 'scans',
+      ),
+      _Achievement(
+        id: 'story_keeper',
+        name: 'Story Keeper',
+        requirement: 'Write $storyKeeperTarget journal entries',
+        goalBadgeAsset: storyKeeperGoalBadge,
+        earnedBadgeAsset: storyKeeperEarnedBadge,
+        earned: storyKeeperTier == 'gold',
+        progress: journalEntryCount,
+        target: storyKeeperTarget,
+        tier: storyKeeperTier,
+        goalTier: storyKeeperGoalTier,
+        progressUnit: 'entries',
       ),
     ];
     final batch = firestore.batch();
@@ -6589,6 +6646,7 @@ String _tieredAchievementDescription(_Achievement achievement) =>
       'workout_momentum' => 'Complete strength workouts',
       'endurance' => 'Complete cardio or sports activities',
       'pulse_check' => 'Complete heart-rate scans',
+      'story_keeper' => 'Write journal entries',
       _ => achievement.requirement,
     };
 
