@@ -545,6 +545,235 @@ class HealthService {
         daysBack: daysBack,
       );
 
+  // ─── Raw intraday samples for the BaaS ─────────────────────────────────────
+
+  /// Metrics the BaaS actually reads, with the unit string its loader expects.
+  /// Anything not in this map is not worth the payload bytes.
+  static const _baasRawMetrics = <String, String>{
+    'heart_rate': 'bpm',
+    'resting_heart_rate': 'bpm',
+    'hrv': 'ms',
+    'respiratory_rate': 'brpm',
+    'blood_oxygen': '%',
+    'steps': 'steps',
+    'mindfulness': 'min',
+    'exercise_time': 'min',
+    'sleep': 'hours',
+  };
+
+  /// Metrics where the hour's value is a TOTAL, not a reading.
+  ///
+  /// These must be summed per hour, never subsampled. The BaaS does
+  /// `steps_sum = sum(values in the window)`, so handing it 6 of an hour's 120
+  /// step samples would not thin the data, it would silently report a
+  /// twentieth of the user's activity — and the activity channel is
+  /// protective, so under-reporting movement inflates the stress score.
+  /// Point-in-time metrics (HR, HRV, SpO2, RR) have the opposite requirement:
+  /// summing them is meaningless, and the spread within the hour is real
+  /// signal, so those get thinned instead.
+  static const _cumulativeMetrics = {
+    'steps',
+    'mindfulness',
+    'exercise_time',
+    'active_calories',
+  };
+
+  /// Cap on samples kept per metric per hour.
+  ///
+  /// Not arbitrary: the BaaS preprocessor buckets everything into one-hour
+  /// windows, requires >= 3 HR samples/hour to pass its quality gate, and
+  /// derives its sleep-fragmentation channel from the SD of HR *within* the
+  /// hour. Six preserves both — a real SD and a comfortable margin over the
+  /// gate — while cutting an Apple Watch's ~120 readings/hour by 20x.
+  /// Collapsing to one sample per hour would silently kill the fragmentation
+  /// channel, because SD is undefined for a single value.
+  static const _maxSamplesPerHour = 6;
+
+  /// Reads raw intraday HealthKit points and returns them in the BaaS sample
+  /// shape, sorted oldest first.
+  ///
+  /// WHY THIS EXISTS
+  /// ───────────────
+  /// `_writeDataPoints` aggregates every reading into one daily bucket and
+  /// throws the timestamps away, so StressScoreService had to *reconstruct*
+  /// fake intraday samples from those daily averages — one HR point pinned at
+  /// 12:00, HRV at 06:00, steps smeared across the day by fixed fractions.
+  /// That was survivable while the score was a single daily composite. It is
+  /// fatal to an intraday score: scoring at 09:00 and at 21:00 produced
+  /// byte-identical payloads, so an accumulating score would have had nothing
+  /// to accumulate. The raw points were always there — HealthKit returns them
+  /// on the very same call the aggregator uses — they were just discarded.
+  ///
+  /// Only [daysBack] days are read. Raw resolution matters for the days being
+  /// scored; the older history behind it exists purely to seed 14-day rolling
+  /// baselines, and daily aggregates are sufficient for that (see
+  /// StressScoreService._buildPayload, which stitches the two together).
+  Future<List<Map<String, dynamic>>> getRawSamplesForBaas({
+    int daysBack = 3,
+  }) async {
+    final consent = await getConsent();
+    final now = DateTime.now();
+    final start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: daysBack - 1));
+
+    try {
+      await _health.configure();
+    } catch (e) {
+      debugPrint('[HealthService] getRawSamplesForBaas configure failed: $e');
+      return [];
+    }
+
+    final out = <Map<String, dynamic>>[];
+
+    for (final entry in _baasRawMetrics.entries) {
+      final def = kMetricByKey[entry.key];
+      if (def == null) continue;
+      if (consent[entry.key] != true) continue;
+
+      List<HealthDataPoint> points;
+      try {
+        points = await _health.getHealthDataFromTypes(
+          startTime: start,
+          endTime: now,
+          types: [def.type],
+        );
+      } catch (e) {
+        // One metric failing must not cost us the rest of the payload.
+        debugPrint('[HealthService] getRawSamplesForBaas(${entry.key}): $e');
+        continue;
+      }
+      if (points.isEmpty) continue;
+
+      out.addAll(
+        _pointsToBaasSamples(
+          entry.key,
+          entry.value,
+          _health.removeDuplicates(points),
+        ),
+      );
+    }
+
+    out.sort(
+      (a, b) => (a['timestamp'] as String).compareTo(b['timestamp'] as String),
+    );
+    debugPrint(
+      '[HealthService] getRawSamplesForBaas: ${out.length} raw sample(s) '
+      'across $daysBack day(s)',
+    );
+    return out;
+  }
+
+  /// Converts HealthKit points for one metric into BaaS samples: summed per
+  /// hour for cumulative metrics, thinned per hour for point-in-time ones, and
+  /// passed through intact for sleep intervals.
+  List<Map<String, dynamic>> _pointsToBaasSamples(
+    String metricKey,
+    String unit,
+    List<HealthDataPoint> points,
+  ) {
+    // Group by UTC hour so the per-window rules apply per window, rather than
+    // letting a busy morning starve the evening of samples.
+    final byHour = <DateTime, List<HealthDataPoint>>{};
+
+    for (final p in points) {
+      if (p.value is! NumericHealthValue) continue;
+      final from = p.dateFrom.toUtc();
+      final hour = DateTime.utc(from.year, from.month, from.day, from.hour);
+      byHour.putIfAbsent(hour, () => []).add(p);
+    }
+
+    double valueOf(HealthDataPoint p) =>
+        (p.value as NumericHealthValue).numericValue.toDouble();
+
+    final samples = <Map<String, dynamic>>[];
+    final hours = byHour.keys.toList()..sort();
+
+    for (final hour in hours) {
+      final bucket = byHour[hour]!
+        ..sort((a, b) => a.dateFrom.compareTo(b.dateFrom));
+
+      // ── Cumulative: one summed sample per hour ──────────────────────────
+      if (_cumulativeMetrics.contains(metricKey)) {
+        final total = bucket.fold<double>(0.0, (a, p) => a + valueOf(p));
+        if (total <= 0) continue;
+        samples.add({
+          'metric_type': metricKey,
+          'timestamp': _fmtUtcTimestamp(hour),
+          'value': total,
+          'unit': unit,
+          'source': 'apple_health',
+          'duration_seconds': 3600.0,
+        });
+        continue;
+      }
+
+      // ── Sleep: intervals pass through intact ────────────────────────────
+      // The BaaS derives which hours count as sleep windows from
+      // timestamp + duration_seconds, and a night is only a handful of
+      // intervals, so there is nothing here worth thinning.
+      if (metricKey == 'sleep') {
+        for (final p in bucket) {
+          final secs = p.dateTo.difference(p.dateFrom).inSeconds.toDouble();
+          final duration = secs > 0 ? secs : valueOf(p) * 60.0;
+          samples.add({
+            'metric_type': metricKey,
+            'timestamp': _fmtUtcTimestamp(p.dateFrom),
+            'value': duration / 3600.0, // hours, matching the unit
+            'unit': unit,
+            'source': 'apple_health',
+            'duration_seconds': duration,
+          });
+        }
+        continue;
+      }
+
+      // ── Point-in-time: thin, preserving the within-hour spread ──────────
+      for (final p in _thin(bucket, _maxSamplesPerHour)) {
+        var value = valueOf(p);
+        if (metricKey == 'blood_oxygen') {
+          // Mirrors _buildValueMap: HealthKit reports SpO2 as a 0-1 fraction
+          // on some sources and 0-100 on others. The BaaS range-checks this
+          // against 70-100 and would silently drop every fractional reading.
+          value = value <= 1 ? value * 100 : value;
+        }
+        samples.add({
+          'metric_type': metricKey,
+          'timestamp': _fmtUtcTimestamp(p.dateFrom),
+          'value': value,
+          'unit': unit,
+          'source': 'apple_health',
+          'duration_seconds': null,
+        });
+      }
+    }
+
+    return samples;
+  }
+
+  /// Evenly spaced subsample of [items], preserving the first element.
+  List<T> _thin<T>(List<T> items, int max) {
+    if (items.length <= max) return items;
+    final step = items.length / max;
+    final out = <T>[];
+    for (var i = 0; i < max; i++) {
+      out.add(items[(i * step).floor().clamp(0, items.length - 1)]);
+    }
+    return out;
+  }
+
+  /// "YYYY-MM-DDTHH:MM:SS+00:00" — Python's datetime.fromisoformat rejects a
+  /// bare "Z" before 3.11, and the BaaS payload contract predates its move
+  /// to 3.12.
+  static String _fmtUtcTimestamp(DateTime dt) {
+    final u = dt.toUtc();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${u.year}-${two(u.month)}-${two(u.day)}T'
+        '${two(u.hour)}:${two(u.minute)}:${two(u.second)}+00:00';
+  }
+
   // ─── Internal helpers ──────────────────────────────────────────────────────
 
   bool _usesDailyTotals(HealthDataType type) {

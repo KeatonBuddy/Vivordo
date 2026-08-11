@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import 'health_service.dart';
+
 /// Posts a BAAS v1 payload to https://vivordo-baas.onrender.com/baas/score
 /// and saves the returned score to metrics_daily/{uid}_stress_{date}.
 ///
@@ -52,14 +54,24 @@ class StressScoreService {
   /// See weight_learning.py in the BaaS repo for the full rationale.
   static const kFeedbackUrl = 'https://vivordo-baas.onrender.com/baas/feedback';
 
+  /// Minimum gap between two unforced readings.
+  ///
+  /// Matches COALESCE_MINUTES in baas_state.py deliberately. The server merges
+  /// any two readings that arrive closer together than that window, so calling
+  /// more often than this buys nothing and costs a cold-start-prone round trip
+  /// on every home screen build. Was 30 minutes, which was fine when the score
+  /// was recomputed from scratch once a day and is now too coarse — the
+  /// accumulating score wants readings across the day, just not duplicates.
+  static const _minMinutesBetweenReadings = 10;
+
 /// Computes a BaaS stress score from the user's Firestore metrics and saves
   /// the result to metrics_daily/{uid}_stress_{today}.
   ///
   /// [force] — set true when fresh data was just written (mood check-in,
   ///   HealthKit sync) so the score always recomputes regardless of age.
   ///   Default false: skips the API call if a BaaS score already exists for
-  ///   today and was computed within the last 30 minutes, avoiding unnecessary
-  ///   cold-start hits on every home screen load.
+  ///   today and was computed within the last [_minMinutesBetweenReadings],
+  ///   avoiding unnecessary cold-start hits on every home screen load.
   ///
   /// Call fire-and-forget: `StressScoreService.computeAndSave().catchError((_) {})`.
   static Future<void> computeAndSave({String? uid, bool force = false}) async {
@@ -79,7 +91,8 @@ class StressScoreService {
         if (stressData?['source'] == 'baas_api') {
           final computedAt = (stressData?['computedAt'] as Timestamp?)?.toDate();
           if (computedAt != null &&
-              DateTime.now().difference(computedAt).inMinutes < 30) {
+              DateTime.now().difference(computedAt).inMinutes <
+                  _minMinutesBetweenReadings) {
             debugPrint('StressScoreService: score is fresh '
                 '(${DateTime.now().difference(computedAt).inMinutes} min old), skipping');
             return;
@@ -352,6 +365,20 @@ class StressScoreService {
     'steps', 'blood_oxygen', 'respiratory_rate', 'mood',
   };
 
+  /// How many days of REAL intraday HealthKit samples to send.
+  ///
+  /// The payload is deliberately hybrid. These recent days carry raw
+  /// timestamps because they are the days being scored, and an accumulating
+  /// score is only as good as the time resolution underneath it. Everything
+  /// older is sent as the existing daily-aggregate reconstruction: its only
+  /// job is to seed the BaaS's 14-day rolling baselines, and a baseline does
+  /// not care when within the hour a reading happened.
+  ///
+  /// Sending raw samples for the full history instead would multiply the
+  /// payload roughly thirtyfold for no gain in the score, on a mobile
+  /// connection, against a free-tier container that cold-starts.
+  static const kRawSampleDays = 3;
+
   static Future<Map<String, dynamic>> _buildPayload(
       String uid, String today) async {
     final db     = FirebaseFirestore.instance;
@@ -359,7 +386,7 @@ class StressScoreService {
 
     // Single query for ALL historical metrics — no hard date cap.
     // BaaS builds rolling 14-day baselines, so more history = stronger z-scores.
-    // Run in parallel with the user profile fetch.
+    // Run in parallel with the user profile fetch and the raw HealthKit read.
     final results = await Future.wait([
       db.collection('users').doc(uid).collection('metrics_daily').get(),
       db.collection('users').doc(uid).get(),
@@ -367,6 +394,28 @@ class StressScoreService {
 
     final metricsSnap = results[0] as QuerySnapshot<Map<String, dynamic>>;
     final userSnap    = results[1] as DocumentSnapshot<Map<String, dynamic>>;
+
+    // Raw intraday samples for the recent window. Never fatal: if HealthKit is
+    // unavailable or unauthorised we fall back to the synthetic reconstruction
+    // for every day, which is exactly the pre-existing behaviour.
+    List<Map<String, dynamic>> rawSamples = const [];
+    try {
+      rawSamples =
+          await HealthService().getRawSamplesForBaas(daysBack: kRawSampleDays);
+    } catch (e) {
+      debugPrint('StressScoreService._buildPayload: raw sample read failed, '
+          'falling back to daily aggregates: $e');
+    }
+
+    // (date|metric) pairs the raw read already covered, so the synthetic
+    // reconstruction below can skip them instead of emitting a competing
+    // fabricated point at a hardcoded hour for the same metric and day.
+    final rawCovered = <String>{};
+    for (final s in rawSamples) {
+      final ts = s['timestamp'] as String?;
+      if (ts == null || ts.length < 10) continue;
+      rawCovered.add('${ts.substring(0, 10)}|${s['metric_type']}');
+    }
 
     // Build lookup: date → full day doc (only days with at least one input metric).
     final docsMap = <String, Map<String, dynamic>>{};
@@ -387,33 +436,67 @@ class StressScoreService {
     final userData = userSnap.data();
     final age      = (userData?['age']      as num?)?.toInt() ?? 30;
     final gender   = (userData?['gender']   as String?)      ?? 'Other';
-    final timezone = (userData?['timezone'] as String?)      ?? 'UTC';
+    // The DEVICE's current UTC offset — deliberately, even when the profile
+    // carries an IANA name.
+    //
+    // The BaaS needs this to know when the user's day starts; without it an
+    // Edmonton user's score would reset at 5 PM local. The reason to prefer
+    // the device over the stored profile is that the whole app keys its
+    // documents on the device's local date — home_screen and dashboard both
+    // stream metrics_daily/{deviceToday}. If the profile said
+    // America/Toronto while the user is in Vancouver, the server would resolve
+    // a different local_date, _saveScore would write to that day's document,
+    // and the score would silently vanish from a home screen still watching
+    // the device's day. Sending the device offset makes server and client
+    // agree on the day boundary by construction.
+    //
+    // The cost is that a fixed offset does not know about DST. It is
+    // recomputed on every call, so it is always right about *now*; the only
+    // error is applying today's offset when grouping historical days, which
+    // shifts a baseline window by an hour twice a year. That is a far smaller
+    // price than a score that disappears.
+    final timezone = _deviceUtcOffset();
 
     // ── samples ──────────────────────────────────────────────────────────────
 
-    final samples = <Map<String, dynamic>>[];
+    // Raw first, then the synthetic reconstruction for whatever the raw read
+    // did not cover.
+    final samples = <Map<String, dynamic>>[...rawSamples];
+
+    bool covered(String date, String metric) =>
+        rawCovered.contains('$date|$metric');
 
     for (final date in dates) {
       final day = docsMap[date]!;
 
-      _addPointSample(samples, day['heart_rate'] as Map?,
-          metricType: 'heart_rate', date: date, timeUtc: '12:00', unit: 'bpm');
+      if (!covered(date, 'heart_rate')) {
+        _addPointSample(samples, day['heart_rate'] as Map?,
+            metricType: 'heart_rate', date: date, timeUtc: '12:00', unit: 'bpm');
+      }
 
-      _addPointSample(samples, day['hrv'] as Map?,
-          metricType: 'hrv', date: date, timeUtc: '06:00', unit: 'ms');
+      if (!covered(date, 'hrv')) {
+        _addPointSample(samples, day['hrv'] as Map?,
+            metricType: 'hrv', date: date, timeUtc: '06:00', unit: 'ms');
+      }
 
-      _addPointSample(samples, day['resting_heart_rate'] as Map?,
-          metricType: 'resting_heart_rate', date: date, timeUtc: '04:00', unit: 'bpm');
+      if (!covered(date, 'resting_heart_rate')) {
+        _addPointSample(samples, day['resting_heart_rate'] as Map?,
+            metricType: 'resting_heart_rate', date: date, timeUtc: '04:00', unit: 'bpm');
+      }
 
-      _addPointSample(samples, day['blood_oxygen'] as Map?,
-          metricType: 'blood_oxygen', date: date, timeUtc: '07:00', unit: '%');
+      if (!covered(date, 'blood_oxygen')) {
+        _addPointSample(samples, day['blood_oxygen'] as Map?,
+            metricType: 'blood_oxygen', date: date, timeUtc: '07:00', unit: '%');
+      }
 
-      _addPointSample(samples, day['respiratory_rate'] as Map?,
-          metricType: 'respiratory_rate', date: date, timeUtc: '05:00', unit: 'brpm');
+      if (!covered(date, 'respiratory_rate')) {
+        _addPointSample(samples, day['respiratory_rate'] as Map?,
+            metricType: 'respiratory_rate', date: date, timeUtc: '05:00', unit: 'brpm');
+      }
 
       final sleepMap   = day['sleep'] as Map?;
       final sleepHours = (sleepMap?['avg'] as num?)?.toDouble();
-      if (sleepHours != null && sleepHours > 0) {
+      if (!covered(date, 'sleep') && sleepHours != null && sleepHours > 0) {
         samples.add({
           'metric_type':      'sleep',
           'timestamp':        '${date}T23:00:00+00:00',
@@ -428,7 +511,7 @@ class StressScoreService {
       // classify sedentary vs. active windows for the activity score.
       final stepsMap   = day['steps'] as Map?;
       final stepsTotal = (stepsMap?['sum'] as num?)?.toDouble();
-      if (stepsTotal != null && stepsTotal > 0) {
+      if (!covered(date, 'steps') && stepsTotal != null && stepsTotal > 0) {
         const fractions = {
           6: 0.03, 7: 0.05, 8: 0.08, 9: 0.05, 10: 0.04, 11: 0.03,
           12: 0.04, 13: 0.04, 14: 0.05, 15: 0.04, 16: 0.04,
@@ -447,6 +530,9 @@ class StressScoreService {
         }
       }
     }
+
+    debugPrint('StressScoreService._buildPayload: ${samples.length} sample(s) '
+        '(${rawSamples.length} raw intraday, tz=$timezone)');
 
     // ── daily_context ─────────────────────────────────────────────────────────
 
@@ -474,13 +560,28 @@ class StressScoreService {
       if (journalMood != null) ctx['journal_mood']         = journalMood;
       if (selfStress  != null) ctx['self_reported_stress'] = selfStress;
       if (sleepHours  != null) ctx['sleep_duration_hours'] = sleepHours;
+
+      // When the mood tap actually happened. The BaaS decays the self-report
+      // by its age; without this it assumes 09:00 local for every check-in.
+      // Absent on days recorded before this field shipped — the BaaS falls
+      // back to the old assumption for those, rather than rejecting them.
+      final checkInAt = (moodMap?['checkInAt'] as Timestamp?)?.toDate();
+      if (checkInAt != null) {
+        ctx['check_in_at'] = _fmtTimestamp(checkInAt.toUtc());
+      }
+
       dailyContext.add(ctx);
     }
 
     return {
       'user_id':       uid,
       'as_of':         nowUtc.toIso8601String(),
-      'granularity':   'daily',
+      // The accumulating path: the BaaS folds this reading into the user's
+      // running state instead of recomputing a standalone daily composite.
+      // The score it returns starts each local day at the user's personalised
+      // anchor and builds from there. `daily` remains supported server-side
+      // and is what the feedback/learning payloads still use.
+      'granularity':   'intraday',
       'profile': {
         'user_id':  uid,
         'age':      age,
@@ -490,6 +591,22 @@ class StressScoreService {
       'samples':       samples,
       'daily_context': dailyContext,
     };
+  }
+
+  /// The device's current UTC offset as "UTC±HH:MM".
+  ///
+  /// Dart cannot report an IANA zone name without an extra platform plugin,
+  /// and `DateTime.timeZoneName` yields abbreviations ("MDT") that are
+  /// ambiguous across regions. The offset is unambiguous today and wrong by an
+  /// hour after a DST transition — a trade the BaaS documents in
+  /// daytime.resolve_tz and which still beats the ~7-hour error of assuming
+  /// UTC. Prefer a real IANA name on the user profile when one is available.
+  static String _deviceUtcOffset() {
+    final off  = DateTime.now().timeZoneOffset;
+    final sign = off.isNegative ? '-' : '+';
+    final h    = off.inHours.abs().toString().padLeft(2, '0');
+    final m    = (off.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    return 'UTC$sign$h:$m';
   }
 
   // ── HTTP call ───────────────────────────────────────────────────────────────
@@ -537,25 +654,55 @@ class StressScoreService {
 
   /// Parses the BaaS response and persists to metrics_daily.
   ///
-  /// Response shape (build_lean_doc in firestore_writer.py):
-  ///   { "lean": { "score": 42.3, "band": "moderate", "confidence": "high",
-  ///               "coverage_pct": 87.5, "algorithm_version": "baas-v1.0",
-  ///               "top_drivers": [...], "justification": "..." } }
+  /// INTRADAY response (main.py, granularity=intraday):
+  ///   { "score": 61.4,        // the accumulating value — what the home
+  ///                           //   screen shows; resets each local day to
+  ///                           //   `anchor` and builds from there
+  ///     "strain": 68.1,       // the single reading just folded in
+  ///     "anchor": 57.3,       // this user's personalised reset point
+  ///     "local_date": "2026-08-11",
+  ///     "day": { "mean", "median", "min", "max", "n", "final" },
+  ///     "lean": { ...the reading's breakdown, unchanged shape... } }
+  ///
+  /// `avg`/`min`/`max` have been on this document since v1 but every one of
+  /// them was written the same single number, because there was only ever one
+  /// score per day. They now carry the real distribution across the day, which
+  /// is what makes the metrics tab's range and trend meaningful.
+  ///
+  /// Writes the local date the BaaS resolved rather than the device's, so a
+  /// late-evening score lands on the day the server folded it into.
   static Future<void> _saveScore(
       String uid, String today, Map<String, dynamic> result) async {
-    final lean  = result['lean'] as Map<String, dynamic>?;
-    final score = (lean?['score'] as num?)?.toDouble();
-    if (score == null) return;
+    final lean = result['lean'] as Map<String, dynamic>?;
+    final day  = result['day']  as Map<String, dynamic>?;
+
+    // Accumulating value when present; otherwise the single reading, so a
+    // daily/hourly response still persists exactly as it always did.
+    final current = (result['score'] as num?)?.toDouble()
+        ?? (lean?['score'] as num?)?.toDouble();
+    if (current == null) return;
+
+    final date = (result['local_date'] as String?) ?? today;
+
+    double? n(String key) => (day?[key] as num?)?.toDouble();
 
     await FirebaseFirestore.instance
-        .collection('users').doc(uid).collection('metrics_daily').doc(today)
+        .collection('users').doc(uid).collection('metrics_daily').doc(date)
         .set({
       'stress': {
-        'avg':               score,
-        'min':               score,
-        'max':               score,
+        // The day's distribution. Falls back to `current` for all three when
+        // there is no rollup, preserving the pre-intraday behaviour.
+        'avg':               n('mean')   ?? current,
+        'min':               n('min')    ?? current,
+        'max':               n('max')    ?? current,
+        'median':            n('median') ?? current,
+        // The live value and where the day started, so the UI can show
+        // "62, up from 57 this morning" without recomputing anything.
+        'current':           current,
+        'anchor':            (result['anchor'] as num?)?.toDouble(),
+        'readings':          (day?['n'] as num?)?.toInt() ?? 1,
         'unit':              'score',
-        'label':             lean?['band'],
+        'label':             result['band'] ?? lean?['band'],
         'confidence':        lean?['confidence'],
         'coverage_pct':      lean?['coverage_pct'],
         'algorithm_version': lean?['algorithm_version'],
@@ -564,7 +711,7 @@ class StressScoreService {
         'source':            'baas_api',
         'computedAt':        FieldValue.serverTimestamp(),
       },
-      'date':      today,
+      'date':      date,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
