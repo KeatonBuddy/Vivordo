@@ -321,6 +321,35 @@ class _HomeScreenState extends State<HomeScreen> {
     return null;
   }
 
+  /// Returns the personalized value a new stress day should open at while the
+  /// first BaaS reading is still being computed.
+  ///
+  /// The accumulating stress scorer persists an `anchor` with every successful
+  /// response. That anchor is the user's learned reset point for the start of a
+  /// local day, so it is a better midnight fallback than yesterday's final
+  /// score. Older documents predate anchors and fall back to their last live or
+  /// daily value instead.
+  double? _latestStressAnchorFrom(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
+
+    for (final doc in sortedDocs) {
+      final stress = doc.data()['stress'] as Map?;
+      if (stress == null) continue;
+
+      final anchor = stress['anchor'];
+      if (anchor is num) return anchor.toDouble();
+
+      final current = stress['current'];
+      if (current is num) return current.toDouble();
+
+      final average = stress['avg'];
+      if (average is num) return average.toDouble();
+    }
+    return null;
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStream() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
@@ -420,8 +449,16 @@ class _HomeScreenState extends State<HomeScreen> {
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _latestScanStream,
           builder: (context, scanSnap) {
-            final latestScanBpm = _latestBpmFrom(scanSnap.data?.docs ?? []);
+            final metricDocs = scanSnap.data?.docs ?? [];
+            final latestScanBpm = _latestBpmFrom(metricDocs);
             final hrVal = latestScanBpm == null ? '--' : '$latestScanBpm bpm';
+            final displayedStressScore =
+                stressScore ?? _latestStressAnchorFrom(metricDocs);
+            final stressStillLoading =
+                loading ||
+                (stressScore == null &&
+                    scanSnap.connectionState == ConnectionState.waiting &&
+                    !scanSnap.hasData);
 
             return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: _goalsStreamCached,
@@ -444,7 +481,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ActivityGoalsService.load()
                       .then((goals) {
                         HomeWidgetService.publish(
-                          stressScore: stressScore,
+                          stressScore: displayedStressScore,
                           wellnessScore: wellnessScore,
                           steps: steps ?? 0,
                           activeCalories: activeCalories,
@@ -458,8 +495,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
 
                 return _buildScaffold(
-                  stressScore: stressScore,
-                  stressLoading: loading,
+                  stressScore: displayedStressScore,
+                  stressLoading: stressStillLoading,
                   sleepVal: sleepVal,
                   sleepLoading: loading,
                   stepsVal: stepsVal,
