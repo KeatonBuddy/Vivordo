@@ -6,7 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'ai_service.dart';
 import 'gemini_service.dart';
 
-export 'ai_service.dart' show kMaxInputTokens, kMaxOutputTokensChat, kMaxOutputTokensSpike;
+export 'ai_service.dart'
+    show kMaxInputTokens, kMaxOutputTokensChat, kMaxOutputTokensSpike;
 
 // =============================================================================
 // ClaudeService
@@ -24,8 +25,7 @@ export 'ai_service.dart' show kMaxInputTokens, kMaxOutputTokensChat, kMaxOutputT
 // =============================================================================
 
 class ClaudeService implements AIService {
-  static final _fn =
-      FirebaseFunctions.instance.httpsCallable('pandaClaude');
+  static final _fn = FirebaseFunctions.instance.httpsCallable('pandaClaude');
 
   // Appended to GeminiService.spikeSystemPrompt for Claude calls.
   // Together they must exceed 1,024 tokens so Anthropic caches the prefix.
@@ -185,7 +185,9 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '    "social_context": string,\n'
       '    "other": string\n'
       '  },\n'
-      '  "rec_hint": string\n'
+      '  "rec_hint": string,\n'
+      '  "calendar_action": {"operation": string, "title": string, '
+      '"target_title": string, "start": string, "end": string, "recurrence": string}\n'
       '}\n'
       '\n'
       'INTENT VALUES — choose exactly one:\n'
@@ -208,6 +210,10 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '                        the recommendation cards.\n'
       '"chitchat"            — General chat not requiring structured slot capture.\n'
       '"skip"                — User explicitly declines to engage on a topic.\n'
+      '"calendar_action"     — User asks to create, update, or delete a Google Calendar event.\n'
+      '                        Fill calendar_action; use local ISO-8601 start/end. title is the\n'
+      '                        new title and target_title identifies an existing event. Never\n'
+      '                        guess missing title/date/time; ask a chitchat clarification.\n'
       '\n'
       'TONE PRINCIPLES\n'
       '• Warm peer, never clinical. Say "may be related to" — never diagnose.\n'
@@ -249,6 +255,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '• Do NOT invent context, journal entries, events, or stressors not stated\n'
       '  by the user or present in Apple Health data.\n'
       '• Do NOT use words like "diagnose", "disorder", "condition", "therapy".\n'
+      '• Do NOT use the 💜 emoji or ANY heart emoji (❤️🩷💜💙 etc.) anywhere.\n'
       '• Do NOT produce prose outside the JSON object.\n'
       '\n'
       'REC_HINT VOCABULARY — use these keywords for the rec engine:\n'
@@ -306,16 +313,18 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '"location":"","time_context":"","coping_strategy":"","sleep_quality":"poor",'
       '"social_context":"","other":""},"rec_hint":""}';
 
-  static String _buildAppleHealthContext(List<Map<String, dynamic>> spikeContext) {
+  static String _buildAppleHealthContext(
+    List<Map<String, dynamic>> spikeContext,
+  ) {
     final trimmed = GeminiService.trimSpikeContext(spikeContext);
     return 'APPLE HEALTH CONTEXT\n${jsonEncode(trimmed)}';
   }
 
   static Map<String, dynamic> _cacheBlock(String text) => {
-        'type': 'text',
-        'text': text,
-        'cache_control': {'type': 'ephemeral'},
-      };
+    'type': 'text',
+    'text': text,
+    'cache_control': {'type': 'ephemeral'},
+  };
 
   // ---------------------------------------------------------------------------
   // analyzePandaSession
@@ -337,22 +346,89 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     }
 
     final compact = GeminiService.buildCompactPayload(payload, topK: 1);
+
+    // Nothing to analyze (no spike candidates — e.g. every detected spike day
+    // was already surfaced once). Skip the LLM round trip entirely: it would
+    // just return `spikes: []` after several seconds. Opens the chat instantly.
+    if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
+      if (kDebugMode) {
+        debugPrint('[Claude][spike] no spike candidates — skipping LLM call');
+      }
+      return GeminiService.noSpikesSession(payload, overrideName: userName);
+    }
+
+    return _runSpikeAnalysis(
+      userId: userId,
+      payload: payload,
+      compact: compact,
+      userName: userName,
+      extraUserContext: extraUserContext,
+    );
+  }
+
+  @override
+  Future<PandaSessionBootstrap> startSession({
+    String? extraUserContext,
+    String? userName,
+    String? userId,
+  }) async {
+    if (userId == null || userId.isEmpty) {
+      return PandaSessionBootstrap(
+        session: GeminiService.emptyStateSession(userName ?? 'there'),
+      );
+    }
+
+    final payload = await GeminiService.fetchRealUserPayload(userId);
+    if (payload == null) {
+      return PandaSessionBootstrap(
+        session: GeminiService.emptyStateSession(userName ?? 'there'),
+      );
+    }
+
+    final compact = GeminiService.buildCompactPayload(payload, topK: 1);
+
+    // Nothing to analyze → no LLM call at all; the chat is already final.
+    if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
+      if (kDebugMode) {
+        debugPrint('[Claude][spike] no spike candidates — skipping LLM call');
+      }
+      return PandaSessionBootstrap(
+        session: GeminiService.noSpikesSession(payload, overrideName: userName),
+      );
+    }
+
+    // Opener NOW; the labeling questions stream in behind it.
+    return PandaSessionBootstrap(
+      session: GeminiService.bootstrapSession(
+        payload,
+        overrideName: userName,
+        hasSpikes: true,
+      ),
+      spikeAnalysis: _runSpikeAnalysis(
+        userId: userId,
+        payload: payload,
+        compact: compact,
+        userName: userName,
+        extraUserContext: extraUserContext,
+      ),
+    );
+  }
+
+  /// The spike-analysis LLM round trip — shared by analyzePandaSession (await)
+  /// and startSession (background).
+  Future<PandaSessionData> _runSpikeAnalysis({
+    required String userId,
+    required Map<String, dynamic> payload,
+    required Map<String, dynamic> compact,
+    String? userName,
+    String? extraUserContext,
+  }) async {
     compact['user_context'] = extraUserContext?.trim() ?? '';
     compact['_variability_seed'] =
         DateTime.now().millisecondsSinceEpoch % 100000;
 
     final userPrompt = GeminiService.buildSpikeUserPrompt(compact);
-    final systemPrompt =
-        '${GeminiService.spikeSystemPrompt}$_spikeJsonSuffix';
-
-    // Token guard — check BEFORE calling the Cloud Function.
-    final estimated = GeminiService.estimateTokens(systemPrompt + userPrompt);
-    if (estimated > kMaxInputTokens) {
-      if (kDebugMode) {
-        debugPrint('[Claude][spike] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
-      }
-      return GeminiService.emptyStateSession(userName ?? 'there');
-    }
+    final systemPrompt = '${GeminiService.spikeSystemPrompt}$_spikeJsonSuffix';
 
     final result = await _fn.call<dynamic>({
       'system': [_cacheBlock(systemPrompt)],
@@ -366,18 +442,27 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     final usage = (result.data as Map?)?['usage'] as Map?;
     if (kDebugMode) {
       debugPrint('[Claude][spike] response length: ${raw.length} chars');
-      debugPrint('[Claude][spike] usage — input: ${usage?['input_tokens'] ?? 0}, '
-          'output: ${usage?['output_tokens'] ?? 0}, '
-          'cache_create: ${usage?['cache_creation_input_tokens'] ?? 0}, '
-          'cache_read: ${usage?['cache_read_input_tokens'] ?? 0}');
+      debugPrint(
+        '[Claude][spike] usage — input: ${usage?['input_tokens'] ?? 0}, '
+        'output: ${usage?['output_tokens'] ?? 0}, '
+        'cache_create: ${usage?['cache_creation_input_tokens'] ?? 0}, '
+        'cache_read: ${usage?['cache_read_input_tokens'] ?? 0}',
+      );
     }
 
-    final session = GeminiService.parsePandaSession(raw, payload,
-        overrideName: userName);
+    final session = GeminiService.parsePandaSession(
+      raw,
+      payload,
+      overrideName: userName,
+    );
     // Record the surfaced spike's day so Panda doesn't re-ask about it.
     if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
-      unawaited(GeminiService.markSpikeDaysAnalyzed(
-          userId, GeminiService.spikeDaysFromCompact(compact)));
+      unawaited(
+        GeminiService.markSpikeDaysAnalyzed(
+          userId,
+          GeminiService.spikeDaysFromCompact(compact),
+        ),
+      );
     }
     return session;
   }
@@ -400,47 +485,32 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     Map<String, String>? accumulatedSlots,
     String? scheduleContext,
     String? insightsContext,
+    String? dashboardContext,
+    String? workoutContext,
   }) async {
-    // Token guard on the CAPPED payload — estimate what's actually sent to the
-    // API after buildDialoguePrompt applies its 6-item history cap.
-    // _dialogueSystem is now ~1,800 tokens, so guarding on raw history would
-    // fire after only 6 turns (budget: 2500 - 1800 = 700 tokens).  The 6-item
-    // cap is the primary defence against runaway histories; this guard catches
-    // unexpectedly large health context or user messages.
-    // Cap history once — reused for both the token guard and the prompt builder
-    // so buildDialoguePrompt doesn't duplicate the cap internally.
-    final cappedHistory = conversationHistory.length > 6
-        ? conversationHistory.sublist(conversationHistory.length - 6)
-        : conversationHistory;
-    // Build health context once — reused in token guard and cached system block.
+    // Trim the conversation to fit rather than REFUSING the turn. The old guard
+    // returned a canned "we've covered a lot of ground — let's wrap up" reply,
+    // which ended the chat before the user was finished. Panda now always
+    // answers, so the conversation reaches its own natural conclusion.
+    final fitted = GeminiService.fitConversation(
+      conversationHistory,
+      userMessage,
+    );
+    final cappedHistory = fitted.history;
+    final effectiveMessage = fitted.message;
+
+    // Build health context once — reused in the cached system block.
     final healthCtx = _buildAppleHealthContext(spikeContext);
     // Schedule digest is stable for the session → goes in a cached system block.
     final scheduleCtx = (scheduleContext != null && scheduleContext.isNotEmpty)
         ? 'SCHEDULE (next 7 days, local time):\n$scheduleContext'
         : null;
-    final cappedHistoryText = cappedHistory
-        .map((t) => '${t['role']}: ${t['text']}')
-        .join('\n');
-    final estimated = GeminiService.estimateTokens(
-        _dialogueSystem + healthCtx + (scheduleCtx ?? '') +
-        (insightsContext ?? '') + cappedHistoryText + userMessage);
-    if (estimated > kMaxInputTokens) {
-      if (kDebugMode) {
-        debugPrint('[Claude][dialogue] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)');
-      }
-      return PandaTurnReply(
-        intent: PandaIntent.chitchat,
-        message: "We've covered a lot of ground! Our conversation is getting "
-            "quite long — let's wrap up here and you can start a fresh session "
-            "anytime",
-      );
-    }
 
     // embedSpikeContext/embedPersona/embedTaskInstructions: false — all three
     // are already in the cached system blocks (_dialogueSystem + healthCtx),
     // so omitting them from the user prompt saves ~110–130 uncached tokens/turn.
     final userPrompt = GeminiService.buildDialoguePrompt(
-      userMessage: userMessage,
+      userMessage: effectiveMessage,
       conversationHistory: cappedHistory,
       spikeContext: spikeContext,
       isOnPredefinedPath: isOnPredefinedPath,
@@ -453,6 +523,8 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       // Insights can change mid-session (a just-saved finding), so they are NOT
       // cached — embed them in the uncached user prompt so they're always fresh.
       insightsContext: insightsContext,
+      dashboardContext: dashboardContext,
+      workoutContext: workoutContext,
       embedSpikeContext: false,
       embedPersona: false,
       embedTaskInstructions: false,
@@ -485,10 +557,12 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     final usage = (result.data as Map?)?['usage'] as Map?;
     if (kDebugMode) {
       debugPrint('[Claude][dialogue] response length: ${raw.length} chars');
-      debugPrint('[Claude][dialogue] usage — input: ${usage?['input_tokens'] ?? 0}, '
-          'output: ${usage?['output_tokens'] ?? 0}, '
-          'cache_create: ${usage?['cache_creation_input_tokens'] ?? 0}, '
-          'cache_read: ${usage?['cache_read_input_tokens'] ?? 0}');
+      debugPrint(
+        '[Claude][dialogue] usage — input: ${usage?['input_tokens'] ?? 0}, '
+        'output: ${usage?['output_tokens'] ?? 0}, '
+        'cache_create: ${usage?['cache_creation_input_tokens'] ?? 0}, '
+        'cache_read: ${usage?['cache_read_input_tokens'] ?? 0}',
+      );
     }
 
     return GeminiService.parseTurnReply(raw);
@@ -517,7 +591,8 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       );
 
       final estimated = GeminiService.estimateTokens(
-          GeminiService.summarySystemPrompt + userPrompt);
+        GeminiService.summarySystemPrompt + userPrompt,
+      );
       if (estimated > kMaxInputTokens) return '';
 
       final result = await _fn.call<dynamic>({
@@ -533,9 +608,11 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       final raw = (result.data as Map?)?['text']?.toString() ?? '';
       if (kDebugMode) {
         final usage = (result.data as Map?)?['usage'] as Map?;
-        debugPrint('[Claude][summary] length: ${raw.length} chars, '
-            'input: ${usage?['input_tokens'] ?? 0}, '
-            'output: ${usage?['output_tokens'] ?? 0}');
+        debugPrint(
+          '[Claude][summary] length: ${raw.length} chars, '
+          'input: ${usage?['input_tokens'] ?? 0}, '
+          'output: ${usage?['output_tokens'] ?? 0}',
+        );
       }
       return raw.trim();
     } catch (e) {

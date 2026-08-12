@@ -16,7 +16,8 @@ class EmailVerificationScreen extends StatefulWidget {
   const EmailVerificationScreen({super.key, this.onVerified});
 
   @override
-  State<EmailVerificationScreen> createState() => _EmailVerificationScreenState();
+  State<EmailVerificationScreen> createState() =>
+      _EmailVerificationScreenState();
 }
 
 class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
@@ -65,7 +66,8 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     if (!silent) setState(() => _checking = true);
     try {
       await FirebaseAuth.instance.currentUser?.reload();
-      if (_verifiedHandled) return; // another in-flight check already won the race
+      if (_verifiedHandled)
+        return; // another in-flight check already won the race
       final user = FirebaseAuth.instance.currentUser;
       if (user != null && user.emailVerified) {
         _verifiedHandled = true;
@@ -74,7 +76,9 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
           if (widget.onVerified != null) {
             widget.onVerified!();
           } else {
-            Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+            Navigator.of(
+              context,
+            ).pushNamedAndRemoveUntil('/', (route) => false);
           }
         }
         return;
@@ -165,11 +169,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               const SizedBox(height: 28),
               const Text(
                 'Verify your email',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: textDark,
-                ),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
               Text(
@@ -177,7 +177,11 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 'your account — this page will continue automatically once '
                 "you're verified.",
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 14, color: textGrey, height: 1.5),
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: textGrey,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 32),
               SizedBox(
@@ -204,7 +208,10 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                         )
                       : const Text(
                           "I've verified",
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                 ),
               ),
@@ -215,16 +222,16 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                   _resendCooldown > 0
                       ? 'Resend available in ${_resendCooldown}s'
                       : 'Resend verification email',
-                  style: const TextStyle(color: accentPurple, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    color: accentPurple,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: _logout,
-                child: const Text(
-                  'Log out',
-                  style: TextStyle(color: textGrey),
-                ),
+                child: const Text('Log out', style: TextStyle(color: textGrey)),
               ),
             ],
           ),

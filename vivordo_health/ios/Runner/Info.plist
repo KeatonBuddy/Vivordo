@@ -30,23 +30,34 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.vivordo.health</string>
+				<string>vivordo-fitbit</string>
 				<string>msauth.com.vivordo.health</string>
-				<string>com.googleusercontent.apps.226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj</string>
+				<string>com.googleusercontent.apps.226030806435-7a9a6m45j21jaefhduqf4ikqc1m81olu</string>
 			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Vivordo Health uses the camera and flash to measure your heart rate via PPG (photoplethysmography). Place your finger over the lens to scan.</string>
+	<string>Vivordo uses the rear camera and flash for heart-rate scans and the front camera when you choose to take a Circle profile picture.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Vivordo uses Face ID to protect access to your private journal.</string>
 	<key>NSHealthClinicalHealthRecordsShareUsageDescription</key>
 	<string>Vivordo Health uses background delivery to keep your health data up to date. This allows the app to securely receive updates in the background and ensure your insights and trends are always current.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Vivordo Health reads your steps, heart rate, sleep, and HRV to display personalized health insights. You control which data types are shared.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Vivordo Health may write workout summaries back to Apple Health.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Vivordo uses your photo library so you can choose a Circle profile picture.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

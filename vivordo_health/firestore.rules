@@ -5,14 +5,213 @@ service cloud.firestore {
 
     // ── User document + ALL subcollections ───────────────────────────────────
     // Subcollections covered: metrics_daily, preferences, questionnaire_responses,
-    // insights, weekly_trends, insight_summaries, analytics_events.
+    // insights, weekly_trends, insight_summaries, analytics_events,
+    // recent_activities, workouts.
     // Only the owning user may read or write their own data.
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
 
+      // Circle profiles are visible to authenticated users so a reserved
+      // friend code can resolve to the person it belongs to. Only the owner
+      // may create or update their profile. Challenge medal totals are
+      // server-awarded and cannot be changed by a client.
+      match /circle/profile {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+                      && request.auth.uid == userId
+                      && request.resource.data.get('challengeMedalCount', 0) == 0;
+        allow update: if request.auth != null
+                      && request.auth.uid == userId
+                      && request.resource.data.get('challengeMedalCount', 0)
+                         == resource.data.get('challengeMedalCount', 0);
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /circle/relationships/friend_requests/{requesterId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+                      && request.auth.uid == requesterId
+                      && request.resource.data.fromUid == requesterId
+                      && request.resource.data.toUid == userId;
+        allow update: if false;
+        allow delete: if request.auth != null
+                      && (request.auth.uid == userId
+                          || request.auth.uid == requesterId);
+      }
+
+      match /circle/relationships/friends/{friendId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+                      && request.resource.data.uid == friendId
+                      && (request.auth.uid == userId
+                          || (request.auth.uid == friendId
+                              && exists(/databases/$(database)/documents/users/$(friendId)/circle/relationships/friend_requests/$(userId))));
+        allow update: if false;
+        allow delete: if request.auth != null
+                      && (request.auth.uid == userId
+                          || request.auth.uid == friendId);
+      }
+
+      // A privacy-safe daily activity-ring summary. Friends can see only the
+      // three ring totals and goals published here, never metrics_daily.
+      match /circle_daily/{dayId} {
+        allow read: if request.auth != null
+                    && (request.auth.uid == userId
+                        || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // A Circle friend may read only the small activity summaries explicitly
+      // published to the social feed. Full workouts and health metrics remain
+      // private to their owner.
+      match /circle_activity/{activityId} {
+        allow read: if request.auth != null
+                    && (request.auth.uid == userId
+                        || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+        allow write: if request.auth != null && request.auth.uid == userId;
+
+        match /comments/{commentId} {
+          allow read: if request.auth != null
+                      && (request.auth.uid == userId
+                          || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+          allow create: if request.auth != null
+                        && request.resource.data.authorUid == request.auth.uid
+                        && request.resource.data.text is string
+                        && request.resource.data.text.size() > 0
+                        && request.resource.data.text.size() <= 500
+                        && (request.auth.uid == userId
+                            || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+          allow update: if false;
+          allow delete: if request.auth != null
+                        && (request.auth.uid == userId
+                            || resource.data.authorUid == request.auth.uid);
+        }
+
+        match /likes/{likeId} {
+          allow read: if request.auth != null
+                      && (request.auth.uid == userId
+                          || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+          allow create: if request.auth != null
+                        && likeId == request.auth.uid
+                        && request.resource.data.userUid == request.auth.uid
+                        && (request.auth.uid == userId
+                            || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+          allow update: if false;
+          allow delete: if request.auth != null && likeId == request.auth.uid;
+        }
+      }
+
+      match /circle_engagement/{eventId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+                      && request.resource.data.actorUid == request.auth.uid
+                      && request.resource.data.type in ['like', 'comment']
+                      && exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid));
+        allow update: if false;
+        allow delete: if request.auth != null
+                      && (request.auth.uid == userId
+                          || resource.data.actorUid == request.auth.uid);
+      }
+
+      // Achievement summaries are part of a Circle profile. Friends may read
+      // them for featured badges and progress, while only the owner can write
+      // or recalculate their achievement state.
+      match /achievements/{achievementId} {
+        allow read: if request.auth != null
+                    && (request.auth.uid == userId
+                        || exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friends/$(request.auth.uid)));
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Push tokens are private device credentials. Only the signed-in owner
+      // can register or remove their devices; Cloud Functions uses Admin SDK
+      // access to deliver Circle notifications.
+      match /notification_tokens/{tokenId} {
+        allow read, write: if request.auth != null
+                           && request.auth.uid == userId;
+      }
+
       match /{subcollection}/{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+    }
+
+    match /circle_friend_codes/{friendCode} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+                    && friendCode.size() == 10
+                    && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if request.auth != null
+                            && resource.data.uid == request.auth.uid;
+    }
+
+    match /circle_usernames/{username} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if request.auth != null
+                            && resource.data.uid == request.auth.uid;
+    }
+
+    // ── Circle challenges (Cloud Functions are the only writers) ────────────
+    // The canonical challenge contains the complete participant list and is
+    // readable only by those participants. All mutations flow through callable
+    // functions so clients cannot forge invitations or progress.
+    match /challenges/{challengeId} {
+      allow read: if request.auth != null
+                  && request.auth.uid in resource.data.participantUids;
+      allow create, update, delete: if false;
+
+      match /participants/{participantId} {
+        allow read: if request.auth != null
+                    && request.auth.uid in get(/databases/$(database)/documents/challenges/$(challengeId)).data.participantUids;
+        allow write: if false;
+      }
+
+      match /contributions/{contributionId} {
+        allow read: if request.auth != null
+                    && request.auth.uid in get(/databases/$(database)/documents/challenges/$(challengeId)).data.participantUids;
+        allow write: if false;
+      }
+
+      // Accepted challenge participants can discuss the challenge in real time.
+      // Comment authorship is immutable and users may delete only their own
+      // comments.
+      match /comments/{commentId} {
+        allow read: if request.auth != null
+                    && request.auth.uid in get(/databases/$(database)/documents/challenges/$(challengeId)).data.acceptedUids;
+        allow create: if request.auth != null
+                      && request.auth.uid in get(/databases/$(database)/documents/challenges/$(challengeId)).data.acceptedUids
+                      && request.resource.data.keys().hasOnly([
+                        'authorUid',
+                        'text',
+                        'createdAt'
+                      ])
+                      && request.resource.data.authorUid == request.auth.uid
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() > 0
+                      && request.resource.data.text.size() <= 500
+                      && request.resource.data.createdAt == request.time;
+        allow update: if false;
+        allow delete: if request.auth != null
+                      && resource.data.authorUid == request.auth.uid;
+      }
+    }
+
+    // Per-user query mirror used by the Challenges screen. A user can see only
+    // their own memberships; Cloud Functions keeps each mirror synchronized.
+    match /challenge_memberships/{userId}/items/{challengeId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create, update, delete: if false;
+    }
+
+    // Immutable proof of each challenge medal award. Cloud Functions creates
+    // these records transactionally; users may inspect only their own history.
+    match /challenge_medal_awards/{userId}/items/{challengeId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create, update, delete: if false;
     }
 
     // ── AI batch tracking (written by Cloud Functions only) ──────────────────

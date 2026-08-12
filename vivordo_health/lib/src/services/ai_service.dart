@@ -33,7 +33,7 @@ class AppFlags {
   /// (`analyzed_spike_days`) and excluded from future sessions, so Panda never
   /// re-asks about the same spike. Set to false to analyze every detected spike
   /// on every session.
-  static bool dedupeAnalyzedSpikes = false;
+  static bool dedupeAnalyzedSpikes = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -47,6 +47,17 @@ abstract class AIService {
   /// [userId] — real Firebase uid; when null/empty, an empty-state session
   /// is returned (no data to analyze).
   Future<PandaSessionData> analyzePandaSession({
+    String? extraUserContext,
+    String? userName,
+    String? userId,
+  });
+
+  /// Fast session bootstrap for progressive loading: does the Firestore reads
+  /// only (NO calendar, NO LLM) and returns the opener + contexts immediately so
+  /// the chat opens without a wait. The returned bootstrap's `spikeAnalysis`
+  /// future resolves later with the labeling questions — or is null when there
+  /// is no new spike to analyze, in which case no LLM call is made at all.
+  Future<PandaSessionBootstrap> startSession({
     String? extraUserContext,
     String? userName,
     String? userId,
@@ -70,12 +81,13 @@ abstract class AIService {
     Map<String, String>? accumulatedSlots,
     String? scheduleContext,
     String? insightsContext,
+    String? dashboardContext,
+    String? workoutContext,
   });
 
-  /// Produce a brief (≤55 word) third-person insight recap of a completed
-  /// session, written as durable context for a FUTURE session — capturing the
-  /// main stressor + trigger, emotional state + intensity, relevant context,
-  /// what coping helped, and any pattern. NOT a restatement of the Q&A.
+  /// Produce a compact third-person recap plus a short list of important
+  /// details/events from a completed session. The result is durable context
+  /// for a FUTURE session, not a transcript or a restatement of the Q&A.
   /// Returns '' on failure so the caller can fall back to a deterministic
   /// summary.
   Future<String> summarizeSession({

@@ -1,16 +1,387 @@
 const {setGlobalOptions} = require("firebase-functions");
-const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
-const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {
+  onDocumentCreated,
+  onDocumentWritten,
+} = require("firebase-functions/v2/firestore");
+const {defineSecret} = require("firebase-functions/params");
 const Anthropic = require("@anthropic-ai/sdk");
 const admin = require("firebase-admin");
+const crypto = require("crypto");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
 
+// Circle challenge callables, progress triggers, and expiration scheduler.
+// Loading this module after Firebase Admin initialization keeps all functions
+// on the same shared Admin app and Firestore connection pool.
+Object.assign(exports, require("./challenges"));
+
 // Single shared client — reused across all function invocations on the same
 // container instance (connection pooling, no per-call allocation overhead).
 const client = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});
+
+const googleHealthClientId = defineSecret("GOOGLE_HEALTH_CLIENT_ID");
+const googleHealthClientSecret = defineSecret("GOOGLE_HEALTH_CLIENT_SECRET");
+
+// Sends a private push notification to an activity owner when a Circle friend
+// likes or comments. The engagement document is already created atomically
+// with the like/comment, making it a reliable, de-duplicated trigger source.
+exports.circleEngagementNotification = onDocumentCreated(
+    "users/{ownerUid}/circle_engagement/{eventId}",
+    async (event) => {
+      const engagement = event.data?.data();
+      const ownerUid = event.params.ownerUid;
+      const type = engagement?.type;
+      const actorUid = engagement?.actorUid;
+      const activityId = engagement?.activityId;
+
+      if (!engagement || !["like", "comment"].includes(type) ||
+          !actorUid || !activityId || actorUid === ownerUid) {
+        console.warn("Circle notification skipped: invalid engagement", {
+          ownerUid,
+          eventId: event.params.eventId,
+          type,
+          hasActorUid: Boolean(actorUid),
+          hasActivityId: Boolean(activityId),
+        });
+        return;
+      }
+
+      const db = admin.firestore();
+      const owner = db.collection("users").doc(ownerUid);
+      const actorProfile = db.collection("users").doc(actorUid)
+          .collection("circle").doc("profile");
+      const activity = owner.collection("circle_activity").doc(activityId);
+      const tokens = owner.collection("notification_tokens");
+      const [ownerSnapshot, actorSnapshot, tokenSnapshot] =
+        await Promise.all([
+          owner.get(),
+          actorProfile.get(),
+          tokens.get(),
+        ]);
+
+      if (ownerSnapshot.data()?.preferences?.circleNotificationsEnabled ===
+          false) {
+        console.info("Circle notification disabled by activity owner", {
+          ownerUid,
+          type,
+        });
+        return;
+      }
+      if (tokenSnapshot.empty) {
+        console.warn("Circle notification skipped: owner has no FCM tokens", {
+          ownerUid,
+          type,
+        });
+        return;
+      }
+
+      const actorName = actorSnapshot.data()?.username || "A Circle friend";
+      const title = "Circle";
+      let body;
+
+      if (type === "like") {
+        body = `${actorName} liked your post`;
+      } else {
+        const commentId = engagement.commentId;
+        let commentText = "on your post";
+        if (commentId) {
+          const comment = await activity.collection("comments")
+              .doc(commentId).get();
+          const text = comment.data()?.text;
+          if (typeof text === "string" && text.trim()) {
+            commentText = text.trim().slice(0, 160);
+          }
+        }
+        body = `${actorName} commented: ${commentText}`;
+      }
+
+      const tokenDocuments = tokenSnapshot.docs.filter((document) =>
+        typeof document.data().token === "string" &&
+        document.data().token.length > 0,
+      );
+      if (tokenDocuments.length === 0) {
+        console.warn("Circle notification skipped: no valid token values", {
+          ownerUid,
+          tokenDocumentCount: tokenSnapshot.size,
+        });
+        return;
+      }
+      const invalidCodes = new Set([
+        "messaging/registration-token-not-registered",
+        "messaging/invalid-registration-token",
+      ]);
+
+      for (let start = 0; start < tokenDocuments.length; start += 500) {
+        const chunk = tokenDocuments.slice(start, start + 500);
+        const response = await admin.messaging().sendEachForMulticast({
+          tokens: chunk.map((document) => document.data().token),
+          notification: {title, body},
+          data: {
+            screen: "circle",
+            type: `circle_${type}`,
+            activityId,
+          },
+          apns: {
+            headers: {"apns-priority": "10"},
+            payload: {aps: {sound: "default"}},
+          },
+          android: {notification: {sound: "default"}},
+        });
+
+        const staleDeletes = [];
+        const deliveryErrors = [];
+        response.responses.forEach((result, index) => {
+          if (!result.success && invalidCodes.has(result.error?.code)) {
+            staleDeletes.push(chunk[index].ref.delete());
+          }
+          if (!result.success) {
+            deliveryErrors.push({
+              code: result.error?.code || "unknown",
+              message: result.error?.message || "Unknown messaging error",
+            });
+          }
+        });
+        await Promise.all(staleDeletes);
+        console.info("Circle notification delivery completed", {
+          ownerUid,
+          type,
+          activityId,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+          staleTokensRemoved: staleDeletes.length,
+          errors: deliveryErrors,
+        });
+      }
+    },
+);
+
+// Sends a push notification when a new incoming Circle friend request is
+// created. A requester can only have one pending document per recipient, so
+// using an on-create trigger also prevents duplicate notifications when the
+// same request document is updated.
+exports.friendRequestNotification = onDocumentCreated(
+    "users/{recipientUid}/circle/relationships/friend_requests/{requesterUid}",
+    async (event) => {
+      const request = event.data?.data();
+      const recipientUid = event.params.recipientUid;
+      const requesterUid = event.params.requesterUid;
+
+      if (!request || request.fromUid !== requesterUid ||
+          request.toUid !== recipientUid || requesterUid === recipientUid) {
+        console.warn("Friend request notification skipped: invalid request", {
+          recipientUid,
+          requesterUid,
+          fromUid: request?.fromUid,
+          toUid: request?.toUid,
+        });
+        return;
+      }
+
+      const db = admin.firestore();
+      const recipient = db.collection("users").doc(recipientUid);
+      const requester = db.collection("users").doc(requesterUid);
+      const requesterProfile = requester.collection("circle").doc("profile");
+      const tokens = recipient.collection("notification_tokens");
+      const [recipientSnapshot, requesterSnapshot, profileSnapshot,
+        tokenSnapshot] = await Promise.all([
+        recipient.get(),
+        requester.get(),
+        requesterProfile.get(),
+        tokens.get(),
+      ]);
+
+      if (recipientSnapshot.data()?.preferences
+          ?.circleNotificationsEnabled === false) {
+        console.info("Friend request notification disabled by recipient", {
+          recipientUid,
+          requesterUid,
+        });
+        return;
+      }
+
+      const tokenDocuments = tokenSnapshot.docs.filter((document) =>
+        typeof document.data().token === "string" &&
+        document.data().token.length > 0,
+      );
+      if (tokenDocuments.length === 0) {
+        console.warn(
+            "Friend request notification skipped: recipient has no FCM tokens",
+            {recipientUid, requesterUid},
+        );
+        return;
+      }
+
+      const profile = profileSnapshot.data();
+      const requesterData = requesterSnapshot.data();
+      const requesterName = profile?.username ||
+        requesterData?.displayName || requesterData?.username ||
+        "A Vivordo user";
+      const title = "New Friend Request";
+      const body = `from ${requesterName}`;
+      const invalidCodes = new Set([
+        "messaging/registration-token-not-registered",
+        "messaging/invalid-registration-token",
+      ]);
+
+      for (let start = 0; start < tokenDocuments.length; start += 500) {
+        const chunk = tokenDocuments.slice(start, start + 500);
+        const response = await admin.messaging().sendEachForMulticast({
+          tokens: chunk.map((document) => document.data().token),
+          notification: {title, body},
+          data: {
+            screen: "circle",
+            tab: "friends",
+            type: "circle_friend_request",
+            requesterUid,
+          },
+          apns: {
+            headers: {"apns-priority": "10"},
+            payload: {aps: {sound: "default"}},
+          },
+          android: {notification: {sound: "default"}},
+        });
+
+        const staleDeletes = [];
+        const deliveryErrors = [];
+        response.responses.forEach((result, index) => {
+          if (!result.success && invalidCodes.has(result.error?.code)) {
+            staleDeletes.push(chunk[index].ref.delete());
+          }
+          if (!result.success) {
+            deliveryErrors.push({
+              code: result.error?.code || "unknown",
+              message: result.error?.message || "Unknown messaging error",
+            });
+          }
+        });
+        await Promise.all(staleDeletes);
+        console.info("Friend request notification delivery completed", {
+          recipientUid,
+          requesterUid,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+          staleTokensRemoved: staleDeletes.length,
+          errors: deliveryErrors,
+        });
+      }
+    },
+);
+
+// Sends a personal push notification only when an achievement is newly
+// unlocked. Progress-only writes are ignored; tiered achievements notify
+// again when the user advances from bronze to silver or silver to gold.
+exports.achievementUnlockNotification = onDocumentWritten(
+    "users/{userUid}/achievements/{achievementId}",
+    async (event) => {
+      const before = event.data?.before.data();
+      const after = event.data?.after.data();
+      const userUid = event.params.userUid;
+      const achievementId = event.params.achievementId;
+
+      if (!after) return;
+
+      const tierRank = (tier) => ({bronze: 1, silver: 2, gold: 3})[tier] || 0;
+      const completedNow = after.completed === true &&
+        before?.completed !== true;
+      const tierAdvanced = tierRank(after.tier) > tierRank(before?.tier);
+      const beforeTiers = new Set(Array.isArray(before?.earnedTiers) ?
+        before.earnedTiers : []);
+      const newlyEarnedTier = Array.isArray(after.earnedTiers) &&
+        after.earnedTiers.some((tier) => !beforeTiers.has(tier));
+
+      if (!completedNow && !tierAdvanced && !newlyEarnedTier) {
+        return;
+      }
+
+      const db = admin.firestore();
+      const user = db.collection("users").doc(userUid);
+      const [userSnapshot, tokenSnapshot] = await Promise.all([
+        user.get(),
+        user.collection("notification_tokens").get(),
+      ]);
+
+      if (userSnapshot.data()?.preferences?.notificationsEnabled === false) {
+        console.info("Achievement notification disabled by user", {
+          userUid,
+          achievementId,
+        });
+        return;
+      }
+
+      const tokenDocuments = tokenSnapshot.docs.filter((document) =>
+        typeof document.data().token === "string" &&
+        document.data().token.length > 0,
+      );
+      if (tokenDocuments.length === 0) {
+        console.warn("Achievement notification skipped: user has no tokens", {
+          userUid,
+          achievementId,
+        });
+        return;
+      }
+
+      const achievementName = typeof after.name === "string" &&
+        after.name.trim() ? after.name.trim() : achievementId;
+      const invalidCodes = new Set([
+        "messaging/registration-token-not-registered",
+        "messaging/invalid-registration-token",
+      ]);
+
+      for (let start = 0; start < tokenDocuments.length; start += 500) {
+        const chunk = tokenDocuments.slice(start, start + 500);
+        const data = {
+          screen: "circle",
+          tab: "goals",
+          type: "achievement_unlocked",
+          achievementId,
+        };
+        if (typeof after.tier === "string" && after.tier) {
+          data.achievementTier = after.tier;
+        }
+        const response = await admin.messaging().sendEachForMulticast({
+          tokens: chunk.map((document) => document.data().token),
+          notification: {
+            title: "New Achievement",
+            body: achievementName,
+          },
+          data,
+          apns: {
+            headers: {"apns-priority": "10"},
+            payload: {aps: {sound: "default"}},
+          },
+          android: {notification: {sound: "default"}},
+        });
+
+        const staleDeletes = [];
+        const deliveryErrors = [];
+        response.responses.forEach((result, index) => {
+          if (!result.success && invalidCodes.has(result.error?.code)) {
+            staleDeletes.push(chunk[index].ref.delete());
+          }
+          if (!result.success) {
+            deliveryErrors.push({
+              code: result.error?.code || "unknown",
+              message: result.error?.message || "Unknown messaging error",
+            });
+          }
+        });
+        await Promise.all(staleDeletes);
+        console.info("Achievement notification delivery completed", {
+          userUid,
+          achievementId,
+          achievementName,
+          tier: after.tier || null,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+          staleTokensRemoved: staleDeletes.length,
+          errors: deliveryErrors,
+        });
+      }
+    },
+);
 
 // =============================================================================
 // pandaClaude — real-time HTTPS Callable proxy for Anthropic API
@@ -74,13 +445,592 @@ exports.pandaClaude = onCall(async (request) => {
 });
 
 // =============================================================================
+// Fitbit metric sync through the Google Health API
+//
+// Tokens are stored in a top-level collection that has no client Firestore
+// rule, so only Admin SDK code can read them. The user document contains only
+// connection status and timestamps.
+// =============================================================================
+
+const _GOOGLE_HEALTH_SECRETS = [
+  googleHealthClientId,
+  googleHealthClientSecret,
+];
+const _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const _GOOGLE_HEALTH_API = "https://health.googleapis.com/v4";
+const _GOOGLE_SCOPES = [
+  "https://www.googleapis.com/auth/" +
+      "googlehealth.activity_and_fitness.readonly",
+  "https://www.googleapis.com/auth/" +
+      "googlehealth.health_metrics_and_measurements.readonly",
+  "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+];
+const _IOS_CALLBACK = "vivordo-fitbit://oauth2redirect";
+
+/* eslint-disable require-jsdoc */
+function requireAuth(request) {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+  return request.auth.uid;
+}
+
+function googleHealthCallbackUrl() {
+  const project = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT;
+  if (!project) {
+    throw new HttpsError("internal", "Firebase project ID is unavailable.");
+  }
+  return `https://us-central1-${project}.cloudfunctions.net/` +
+      "googleHealthOAuthCallback";
+}
+
+async function requestGoogleToken(parameters) {
+  const response = await fetch(_GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      ...parameters,
+      client_id: googleHealthClientId.value(),
+      client_secret: googleHealthClientSecret.value(),
+    }),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    console.error(
+        "[Google Health] token request failed",
+        response.status,
+        body,
+    );
+    throw new HttpsError(
+        "failed-precondition",
+        "Google Health could not complete authorization.",
+    );
+  }
+  return body;
+}
+
+async function saveGoogleHealthTokens(uid, tokens) {
+  const expiresIn = Number(tokens.expires_in || 3600);
+  const expiresAt = admin.firestore.Timestamp.fromMillis(
+      Date.now() + expiresIn * 1000,
+  );
+  const values = {
+    accessToken: tokens.access_token,
+    scope: tokens.scope || "",
+    tokenType: tokens.token_type || "Bearer",
+    expiresAt,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  if (tokens.refresh_token) values.refreshToken = tokens.refresh_token;
+  await admin.firestore()
+      .collection("google_health_credentials")
+      .doc(uid)
+      .set(values, {merge: true});
+}
+
+async function getGoogleHealthAccessToken(uid) {
+  const reference =
+      admin.firestore().collection("google_health_credentials").doc(uid);
+  const snapshot = await reference.get();
+  if (!snapshot.exists) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Connect Fitbit through Google Health before syncing.",
+    );
+  }
+
+  const credentials = snapshot.data();
+  const expiresAt = credentials.expiresAt?.toMillis?.() || 0;
+  if (expiresAt > Date.now() + 5 * 60 * 1000) {
+    return credentials.accessToken;
+  }
+
+  if (!credentials.refreshToken) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Reconnect Fitbit to grant offline access.",
+    );
+  }
+  const tokens = await requestGoogleToken({
+    grant_type: "refresh_token",
+    refresh_token: credentials.refreshToken,
+  });
+  await saveGoogleHealthTokens(uid, tokens);
+  return tokens.access_token;
+}
+
+async function googleHealthDailyRollup(accessToken, dataType, start, end) {
+  const response = await fetch(
+      `${_GOOGLE_HEALTH_API}/users/me/dataTypes/${dataType}/` +
+      "dataPoints:dailyRollUp",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          range: {
+            start: civilDate(start),
+            end: civilDate(end),
+          },
+          windowSizeDays: 1,
+          pageSize: 90,
+          dataSourceFamily:
+              "users/me/dataSourceFamilies/google-wearables",
+        }),
+      },
+  );
+  if (response.status === 403 || response.status === 404) {
+    console.warn(`[Google Health] optional data unavailable: ${dataType}`);
+    return [];
+  }
+  if (!response.ok) {
+    const body = await response.text();
+    console.error(
+        "[Google Health] API request failed",
+        response.status,
+        dataType,
+        body,
+    );
+    throwGoogleHealthError(response.status, body);
+  }
+  const body = await response.json();
+  return body.rollupDataPoints || [];
+}
+
+function throwGoogleHealthError(status, body) {
+  let googleError;
+  try {
+    googleError = JSON.parse(body)?.error;
+  } catch (_) {
+    // Preserve the generic error below when Google returns a non-JSON body.
+  }
+  const accountDetail = googleError?.details?.find(
+      (detail) => detail?.reason === "ACCOUNT_NOT_LINKED",
+  );
+  if (accountDetail) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Finish setting up Google Health before syncing Fitbit.",
+        {
+          reason: "ACCOUNT_NOT_LINKED",
+          setupUrl:
+              accountDetail.metadata?.redirect_uri ||
+              "https://fitbit.google.com/auth/signup",
+        },
+    );
+  }
+  throw new HttpsError(
+      status === 401 ? "unauthenticated" : "unavailable",
+      "Fitbit data could not be synced from Google Health.",
+  );
+}
+
+async function googleHealthSleep(accessToken, start, end) {
+  const dataPoints = [];
+  let pageToken;
+  const filter =
+      `sleep.interval.civil_end_time >= "${dateKey(start)}" AND ` +
+      `sleep.interval.civil_end_time < "${dateKey(end)}"`;
+  do {
+    const query = new URLSearchParams({
+      filter,
+      pageSize: "25",
+    });
+    if (pageToken) query.set("pageToken", pageToken);
+    const response = await fetch(
+        `${_GOOGLE_HEALTH_API}/users/me/dataTypes/sleep/dataPoints?${query}`,
+        {
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Accept": "application/json",
+          },
+        },
+    );
+    if (response.status === 403 || response.status === 404) {
+      console.warn("[Google Health] optional data unavailable: sleep");
+      return [];
+    }
+    if (!response.ok) {
+      const body = await response.text();
+      console.error(
+          "[Google Health] sleep request failed",
+          response.status,
+          body,
+      );
+      throwGoogleHealthError(response.status, body);
+    }
+    const body = await response.json();
+    dataPoints.push(...(body.dataPoints || []));
+    pageToken = body.nextPageToken;
+  } while (pageToken);
+  return dataPoints.filter((point) => {
+    const platform = point.dataSource?.platform;
+    return platform === "FITBIT" || platform === "FITBIT_WEB_API";
+  });
+}
+
+function civilDate(date) {
+  return {
+    date: {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+    },
+    time: {hours: 0, minutes: 0, seconds: 0, nanos: 0},
+  };
+}
+
+function civilDateKey(value) {
+  const date = value?.date || value;
+  if (!date?.year || !date?.month || !date?.day) return null;
+  return [
+    String(date.year).padStart(4, "0"),
+    String(date.month).padStart(2, "0"),
+    String(date.day).padStart(2, "0"),
+  ].join("-");
+}
+
+function dateKey(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function metricPayload(values) {
+  const payload = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined && value !== null && Number.isFinite(value)) {
+      payload[key] = value;
+    }
+  }
+  return payload;
+}
+
+function addMetric(days, day, key, values) {
+  if (!day || Object.keys(values).length === 0) return;
+  if (!days[day]) days[day] = {};
+  days[day][key] = {
+    ...values,
+    source: "fitbit",
+    syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+async function fetchGoogleHealthData(accessToken, start, end) {
+  const types = [
+    "steps",
+    "distance",
+    "floors",
+    "active-energy-burned",
+    "heart-rate",
+    "weight",
+  ];
+  const results = await Promise.all(types.map(async (type) => {
+    if (type !== "heart-rate") {
+      return googleHealthDailyRollup(accessToken, type, start, end);
+    }
+    const entries = [];
+    const chunkStart = new Date(start);
+    while (chunkStart < end) {
+      const chunkEnd = new Date(chunkStart);
+      chunkEnd.setUTCDate(chunkEnd.getUTCDate() + 14);
+      if (chunkEnd > end) chunkEnd.setTime(end.getTime());
+      entries.push(...await googleHealthDailyRollup(
+          accessToken,
+          type,
+          chunkStart,
+          chunkEnd,
+      ));
+      chunkStart.setTime(chunkEnd.getTime());
+    }
+    return entries;
+  }));
+  const data = Object.fromEntries(types.map((type, index) => [
+    type,
+    results[index],
+  ]));
+  data.sleep = await googleHealthSleep(accessToken, start, end);
+  return data;
+}
+
+function sleepMinutes(sleep) {
+  const summaryMinutes = Number(sleep.summary?.minutesAsleep);
+  if (Number.isFinite(summaryMinutes)) return summaryMinutes;
+  return (sleep.stages || []).reduce((total, stage) => {
+    if (!["LIGHT", "DEEP", "REM", "ASLEEP"].includes(stage.type)) {
+      return total;
+    }
+    const start = Date.parse(stage.startTime);
+    const end = Date.parse(stage.endTime);
+    return Number.isFinite(start) && Number.isFinite(end) && end > start ?
+      total + (end - start) / 60000 :
+      total;
+  }, 0);
+}
+
+function normalizeGoogleHealthData(data) {
+  const days = {};
+  for (const [type, entries] of Object.entries(data)) {
+    if (type === "sleep") continue;
+    for (const entry of entries) {
+      const day = civilDateKey(entry.civilStartTime);
+      addMetric(days, day, "steps", metricPayload({
+        sum: Number(entry.steps?.countSum),
+        avg: Number(entry.steps?.countSum),
+        unit: "steps",
+        dimension: "activity",
+      }));
+      addMetric(days, day, "distance", metricPayload({
+        sum: Number(entry.distance?.millimetersSum) / 1000000,
+        avg: Number(entry.distance?.millimetersSum) / 1000000,
+        unit: "km",
+        dimension: "activity",
+      }));
+      addMetric(days, day, "flights_climbed", metricPayload({
+        sum: Number(entry.floors?.countSum),
+        avg: Number(entry.floors?.countSum),
+        unit: "flights",
+        dimension: "activity",
+      }));
+      addMetric(days, day, "active_calories", metricPayload({
+        sum: Number(entry.activeEnergyBurned?.kcalSum),
+        avg: Number(entry.activeEnergyBurned?.kcalSum),
+        unit: "kcal",
+        dimension: "activity",
+      }));
+      addMetric(days, day, "heart_rate", metricPayload({
+        avg: Number(entry.heartRate?.beatsPerMinuteAvg),
+        min: Number(entry.heartRate?.beatsPerMinuteMin),
+        max: Number(entry.heartRate?.beatsPerMinuteMax),
+        unit: "bpm",
+        dimension: "cardiovascular",
+      }));
+      addMetric(days, day, "weight", metricPayload({
+        avg: Number(entry.weight?.weightGramsAvg) / 1000,
+        unit: "kg",
+        dimension: "body",
+      }));
+    }
+  }
+  const sleepByDay = {};
+  for (const point of data.sleep || []) {
+    const sleep = point.sleep;
+    const day = civilDateKey(sleep?.interval?.civilEndTime);
+    const minutes = sleepMinutes(sleep || {});
+    if (day && minutes > 0) {
+      sleepByDay[day] = (sleepByDay[day] || 0) + minutes;
+    }
+  }
+  for (const [day, minutes] of Object.entries(sleepByDay)) {
+    const hours = minutes / 60;
+    addMetric(days, day, "sleep", metricPayload({
+      avg: hours,
+      min: hours,
+      max: hours,
+      unit: "hours",
+      dimension: "sleep",
+    }));
+  }
+  return days;
+}
+
+function addFitbitWellness(days) {
+  for (const metrics of Object.values(days)) {
+    let weightedScore = 0;
+    let totalWeight = 0;
+    const sleep = metrics.sleep?.avg;
+    const steps = metrics.steps?.sum;
+    const heartRate = metrics.heart_rate_scan?.avg;
+    if (Number.isFinite(sleep)) {
+      weightedScore += Math.max(0, Math.min(100, sleep / 8 * 100)) * 0.30;
+      totalWeight += 30;
+    }
+    if (Number.isFinite(steps)) {
+      weightedScore += Math.max(0, Math.min(100, steps / 10000 * 100)) * 0.20;
+      totalWeight += 20;
+    }
+    if (Number.isFinite(heartRate)) {
+      const distanceFromOptimal = heartRate < 60 ?
+        60 - heartRate : heartRate > 80 ? heartRate - 80 : 0;
+      const heartRateScore = Math.max(
+          0,
+          Math.min(100, 100 - distanceFromOptimal * 2.5),
+      );
+      weightedScore += heartRateScore * 0.15;
+      totalWeight += 15;
+    }
+    if (totalWeight > 0) {
+      metrics.wellness = {
+        avg: weightedScore / totalWeight * 100,
+        unit: "score",
+        source: "computed",
+        computedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+    }
+  }
+}
+
+exports.beginFitbitConnection = onCall(
+    {secrets: [googleHealthClientId]},
+    async (request) => {
+      const uid = requireAuth(request);
+      const state = crypto.randomBytes(32).toString("base64url");
+      await admin.firestore()
+          .collection("google_health_oauth_states")
+          .doc(state)
+          .set({
+            uid,
+            expiresAt: admin.firestore.Timestamp.fromMillis(
+                Date.now() + 10 * 60 * 1000,
+            ),
+          });
+      const authorizationUrl = new URL(
+          "https://accounts.google.com/o/oauth2/v2/auth",
+      );
+      authorizationUrl.search = new URLSearchParams({
+        response_type: "code",
+        client_id: googleHealthClientId.value(),
+        redirect_uri: googleHealthCallbackUrl(),
+        scope: _GOOGLE_SCOPES.join(" "),
+        access_type: "offline",
+        prompt: "consent",
+        include_granted_scopes: "true",
+        state,
+      }).toString();
+      return {authorizationUrl: authorizationUrl.toString()};
+    },
+);
+
+exports.googleHealthOAuthCallback = onRequest(
+    {secrets: _GOOGLE_HEALTH_SECRETS},
+    async (request, response) => {
+      const state = request.query.state;
+      const code = request.query.code;
+      const oauthError = request.query.error;
+      const fail = (message) => response.redirect(
+          `${_IOS_CALLBACK}?error=authorization_failed&` +
+          `error_description=${encodeURIComponent(message)}`,
+      );
+      if (typeof state !== "string") return fail("Missing OAuth state.");
+      const reference = admin.firestore()
+          .collection("google_health_oauth_states")
+          .doc(state);
+      const snapshot = await reference.get();
+      await reference.delete();
+      const values = snapshot.data();
+      if (!snapshot.exists ||
+          (values?.expiresAt?.toMillis?.() || 0) < Date.now()) {
+        return fail("The authorization request expired.");
+      }
+      if (oauthError || typeof code !== "string") {
+        return fail("Google Health authorization was cancelled.");
+      }
+      try {
+        const tokens = await requestGoogleToken({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: googleHealthCallbackUrl(),
+        });
+        await saveGoogleHealthTokens(values.uid, tokens);
+        await admin.firestore().collection("users").doc(values.uid).set({
+          fitbitConnected: true,
+          fitbitConnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+        return response.redirect(`${_IOS_CALLBACK}?status=success`);
+      } catch (error) {
+        console.error("[Google Health] OAuth callback failed", error);
+        return fail("Google Health could not complete authorization.");
+      }
+    },
+);
+
+exports.syncFitbit = onCall(
+    {secrets: _GOOGLE_HEALTH_SECRETS, timeoutSeconds: 120},
+    async (request) => {
+      const uid = requireAuth(request);
+      const requestedDays = Number(request.data?.daysBack || 30);
+      const daysBack = Math.max(1, Math.min(30, Math.floor(requestedDays)));
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setUTCDate(endDate.getUTCDate() - daysBack + 1);
+      const exclusiveEndDate = new Date(endDate);
+      exclusiveEndDate.setUTCDate(exclusiveEndDate.getUTCDate() + 1);
+
+      const accessToken = await getGoogleHealthAccessToken(uid);
+      const raw = await fetchGoogleHealthData(
+          accessToken,
+          startDate,
+          exclusiveEndDate,
+      );
+      const days = normalizeGoogleHealthData(raw);
+      addFitbitWellness(days);
+      const batch = admin.firestore().batch();
+      for (const [day, metrics] of Object.entries(days)) {
+        const reference = admin.firestore()
+            .collection("users")
+            .doc(uid)
+            .collection("metrics_daily")
+            .doc(day);
+        batch.set(reference, {
+          ...metrics,
+          date: day,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+      }
+      batch.set(admin.firestore().collection("users").doc(uid), {
+        fitbitConnected: true,
+        lastFitbitSync: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+      await batch.commit();
+      return {daysSynced: Object.keys(days).length};
+    },
+);
+
+exports.disconnectFitbit = onCall(
+    {secrets: _GOOGLE_HEALTH_SECRETS},
+    async (request) => {
+      const uid = requireAuth(request);
+      const reference =
+          admin.firestore().collection("google_health_credentials").doc(uid);
+      const snapshot = await reference.get();
+      if (snapshot.exists) {
+        const token = snapshot.data()?.refreshToken ||
+            snapshot.data()?.accessToken;
+        if (token) {
+          await fetch("https://oauth2.googleapis.com/revoke", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({token}),
+          }).catch((error) => {
+            console.warn("[Google Health] revoke request failed", error);
+          });
+        }
+      }
+      await reference.delete();
+      await admin.firestore().collection("users").doc(uid).set({
+        fitbitConnected: false,
+        fitbitDisconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+      return {connected: false};
+    },
+);
+/* eslint-enable require-jsdoc */
+
+// =============================================================================
 // Batch API helpers
 // Model: claude-haiku-4-5-20251001 (cheapest; batch gives additional 50% off)
 //
 // Workloads:
-//   1. weekly-trend-{userId}      nightly       → users/{userId}/weekly_trends/{weekOf}
-//   2. insight-summary-{userId}   nightly       → users/{userId}/insight_summaries/{weekOf}
-//   3. questionnaire-{insightId}  on submission → users/{userId}/insights/{insightId}
+//   1. weekly-trend-{userId}      nightly
+//      → users/{userId}/weekly_trends/{weekOf}
+//   2. insight-summary-{userId}   nightly
+//      → users/{userId}/insight_summaries/{weekOf}
+//   3. questionnaire-{insightId}  on submission
+//      → users/{userId}/insights/{insightId}
 //
 // All batch jobs tracked top-level in batch_jobs/{batchId} — a single nightly
 // batch spans many users, so job tracking isn't nested under any one user.
@@ -289,7 +1239,8 @@ exports.pandaQuestionnaireBatch = onDocumentCreated(
  * Routing by custom_id prefix:
  *   weekly-trend-{userId}      → users/{userId}/weekly_trends/{weekOf}
  *   insight-summary-{userId}   → users/{userId}/insight_summaries/{weekOf}
- *   questionnaire-{insightId}  → users/{userId}/insights/{insightId}.questionnaireAnalysis
+ *   questionnaire-{insightId}
+ *     → users/{userId}/insights/{insightId}.questionnaireAnalysis
  *     (userId for the questionnaire route comes from the batch_jobs doc
  *     itself, since unlike the other two, its custom_id only carries the
  *     insightId.)

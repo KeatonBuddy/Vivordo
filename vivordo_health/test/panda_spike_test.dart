@@ -350,4 +350,34 @@ void main() {
               'PandaScreen then calls _persistCompletedSession once all are answered');
     });
   });
+
+  group('On-demand dashboard context', () {
+    test('dialogue prompt includes only the supplied metric context', () {
+      final prompt = GeminiService.buildDialoguePrompt(
+        userMessage: 'How were my steps?',
+        conversationHistory: const [],
+        spikeContext: const [],
+        isOnPredefinedPath: false,
+        isInDigression: false,
+        digressionTurnCount: 0,
+        dashboardContext: 'steps:2026-07-16=7241,2026-07-15=6810',
+      );
+
+      expect(prompt, contains('DASHBOARD METRICS'));
+      expect(prompt, contains('2026-07-16=7241'));
+    });
+
+    test('dialogue prompt has no dashboard block for ordinary chat', () {
+      final prompt = GeminiService.buildDialoguePrompt(
+        userMessage: 'I had a difficult meeting.',
+        conversationHistory: const [],
+        spikeContext: const [],
+        isOnPredefinedPath: false,
+        isInDigression: false,
+        digressionTurnCount: 0,
+      );
+
+      expect(prompt, isNot(contains('DASHBOARD METRICS')));
+    });
+  });
 }

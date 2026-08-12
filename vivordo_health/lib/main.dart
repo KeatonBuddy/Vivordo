@@ -1,23 +1,33 @@
 import 'dart:async';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/home_widget_service.dart';
+import 'package:vivordo_health/src/services/workout_live_activity_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
+import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/version_gate_service.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/email_verification_screen.dart';
 import 'screens/force_update_screen.dart';
+import 'screens/circle_screen.dart';
+import 'screens/fitness_screen.dart';
+import 'screens/wellness_detail_screen.dart';
+import 'screens/whats_new_screen.dart';
+
+// Change this identifier whenever a new release should display a fresh
+// What's New screen. It is stored per user in Firestore.
+const _whatsNewReleaseId = 'major_refresh_2026_08';
 
 // Global navigator key for notification navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -44,15 +54,31 @@ void main() async {
     // (consent). A second StreamProvider<UserModel?> reading User? at creation
     // time always got null (initialData) and created a broken/wasted Firestore
     // listener — removed to reduce concurrent listener count.
-    StreamProvider<User?>(
-      // userChanges() (not authStateChanges()) — it's the one Firebase
-      // guarantees re-emits after currentUser.reload(), which is how
-      // EmailVerificationScreen picks up a newly-verified email.
-      // authStateChanges() only fires on sign-in/out, so AuthGate would
-      // keep reading a stale, still-unverified User forever after
-      // verification, even though reload() elsewhere already saw it flip.
-      create: (_) => FirebaseAuth.instance.userChanges(),
-      initialData: null,
+    MultiProvider(
+      providers: [
+        StreamProvider<User?>(
+          // userChanges() (not authStateChanges()) — it's the one Firebase
+          // guarantees re-emits after currentUser.reload(), which is how
+          // EmailVerificationScreen picks up a newly-verified email.
+          // authStateChanges() only fires on sign-in/out, so AuthGate would
+          // keep reading a stale, still-unverified User forever after
+          // verification, even though reload() elsewhere already saw it flip.
+          create: (_) => FirebaseAuth.instance.userChanges(),
+          // Seed the provider from Firebase's restored session so an already
+          // signed-in user does not briefly see LoginScreen while waiting for
+          // the first stream event.
+          initialData: FirebaseAuth.instance.currentUser,
+        ),
+        ChangeNotifierProxyProvider<User?, ThemeController>(
+          create: (_) => ThemeController(),
+          update: (_, user, controller) =>
+              (controller ?? ThemeController())..bindUser(user),
+        ),
+      ],
+      // VersionGate checks Remote Config before anything else renders, then
+      // falls through to MyApp — kept as the provider's child (not wrapping
+      // the providers) so VersionGate's descendants still have User?/
+      // ThemeController available via context.
       child: const VersionGate(),
     ),
   );
@@ -104,32 +130,130 @@ class _VersionGateState extends State<VersionGate> {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _openingWorkout = false;
+  bool _openingWidget = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WorkoutLiveActivityService.configureLaunchHandler(_openActiveWorkout);
+      HomeWidgetService.configureLaunchHandler(_openWidgetDestination);
+    });
+  }
+
+  Future<void> _openWidgetDestination(String destination) async {
+    if (_openingWidget || FirebaseAuth.instance.currentUser == null) return;
+    if (!const {
+      'home',
+      'wellness',
+      'fitness',
+      'calendar',
+    }.contains(destination)) {
+      return;
+    }
+    _openingWidget = true;
+    try {
+      NavigatorState? navigator;
+      for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
+        navigator = navigatorKey.currentState;
+        if (navigator == null) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+      }
+      if (navigator == null || !mounted) return;
+
+      if (destination == 'fitness') {
+        navigator.pushNamedAndRemoveUntil('/fitness', (_) => false);
+        return;
+      }
+
+      if (destination == 'calendar') {
+        navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
+        return;
+      }
+
+      navigator.pushNamedAndRemoveUntil('/home', (_) => false);
+      if (destination == 'wellness') {
+        await WidgetsBinding.instance.endOfFrame;
+        if (mounted) unawaited(navigator.pushNamed('/wellness'));
+      }
+    } finally {
+      _openingWidget = false;
+    }
+  }
+
+  Future<void> _openActiveWorkout() async {
+    if (_openingWorkout) return;
+    _openingWorkout = true;
+    try {
+      if (FirebaseAuth.instance.currentUser == null) return;
+      final hasWorkout = await prepareActiveWorkoutForLaunch();
+      if (!hasWorkout) return;
+
+      NavigatorState? navigator;
+      for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
+        navigator = navigatorKey.currentState;
+        if (navigator == null) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+      }
+      if (navigator == null || !mounted) return;
+      await navigator.pushNamed('/active-workout');
+    } finally {
+      _openingWorkout = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    WorkoutLiveActivityService.clearLaunchHandler();
+    HomeWidgetService.clearLaunchHandler();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final themeController = context.watch<ThemeController>();
     return MaterialApp(
       navigatorKey: navigatorKey,
       title: 'Vivordo Health',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        fontFamily: 'DMSans',
-        primaryColor: const Color(0xFF857DEA),
-        scaffoldBackgroundColor: const Color(0xFFFBFaff),
-        colorScheme: ColorScheme.fromSwatch().copyWith(
-          primary: const Color(0xFF857DEA),
-          secondary: const Color(0xFF857DEA),
-        ),
-        useMaterial3: true,
+      builder: (context, child) => Actions(
+        actions: {
+          EditableTextTapOutsideIntent:
+              CallbackAction<EditableTextTapOutsideIntent>(
+                onInvoke: (_) {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  return null;
+                },
+              ),
+        },
+        child: child ?? const SizedBox.shrink(),
       ),
+      theme: VivordoTheme.light,
+      darkTheme: VivordoTheme.dark,
+      themeMode: themeController.mode,
       initialRoute: '/',
       routes: {
         '/': (context) => const AuthGate(),
         '/signup': (context) => const SignupScreen(),
         '/home': (context) => const MainNavigationScreen(),
-        '/scan': (context) => const MainNavigationScreen(initialIndex: 1),
-        '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 3),
+        '/calendar': (context) => const MainNavigationScreen(initialIndex: 1),
+        '/fitness': (context) => const MainNavigationScreen(initialIndex: 3),
+        '/wellness': (context) => const WellnessDetailScreen(),
+        '/scan': (context) => const MainNavigationScreen(initialIndex: 2),
+        '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 5),
+        '/circle': (context) => const CircleScreen(),
+        '/active-workout': (context) => const ActiveWorkoutScreen(),
       },
     );
   }
@@ -154,6 +278,24 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   // user actually changes.
   String? _userDocUid;
   Future<DocumentSnapshot>? _userDocFuture;
+  String? _locallyDismissedWhatsNewUid;
+
+  void _dismissWhatsNew(String uid) {
+    if (!mounted) return;
+    setState(() => _locallyDismissedWhatsNewUid = uid);
+    unawaited(_persistWhatsNewSeen(uid));
+  }
+
+  Future<void> _persistWhatsNewSeen(String uid) async {
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'preferences.whatsNewSeenRelease': _whatsNewReleaseId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      debugPrint('Unable to persist What\'s New state: $error');
+    }
+  }
 
   @override
   void initState() {
@@ -170,6 +312,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     _syncTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
       if (FirebaseAuth.instance.currentUser != null) {
         await HealthService().syncToday();
+        FitbitService.instance.syncInBackground();
         StressScoreService.computeAndSave().catchError((_) {});
       }
     });
@@ -189,7 +332,10 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       if (FirebaseAuth.instance.currentUser != null) {
-        HealthService().syncToday();
+        HealthService().syncToday().whenComplete(
+          () => FitbitService.instance.syncInBackground(),
+        );
+        unawaited(HomeWidgetService.refreshCalendarSnapshot());
         AnalyticsService().startSession();
       }
     } else if (state == AppLifecycleState.paused ||
@@ -203,8 +349,13 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void _triggerFullSync(String uid) {
     if (_lastSyncedUid == uid) return;
     _lastSyncedUid = uid;
-    HealthService().syncToFirestore(daysBack: 30);
+    HealthService()
+        .syncToFirestore(daysBack: 30)
+        .whenComplete(
+          () => FitbitService.instance.syncInBackground(daysBack: 30),
+        );
     NotificationService().configureForUser(uid);
+    unawaited(HomeWidgetService.refreshCalendarSnapshot(force: true));
     AnalyticsService().logLogin();
   }
 
@@ -219,6 +370,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       _lastSyncedUid = null;
       _userDocUid = null;
       _userDocFuture = null;
+      _locallyDismissedWhatsNewUid = null;
       // Clear the cached consent broadcast so the next login gets a fresh stream
       HealthService().clearConsentCache();
       return const LoginScreen();
@@ -236,8 +388,10 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
 
     if (_userDocUid != user.uid) {
       _userDocUid = user.uid;
-      _userDocFuture =
-          FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      _userDocFuture = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
     }
 
     return FutureBuilder<DocumentSnapshot>(
@@ -256,8 +410,17 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final preferences = data?['preferences'] as Map<String, dynamic>?;
         final onboardingSeen = preferences?['onboardingSeen'] == true;
+        final onboardingCompleted = data?['onboardingCompleted'] == true;
 
-        if (onboardingSeen) {
+        // The signup questionnaire records `onboardingCompleted`, while the
+        // lightweight introductory carousel records `onboardingSeen`. Either
+        // means the user has already completed an onboarding path.
+        if (onboardingSeen || onboardingCompleted) {
+          final seenRelease = preferences?['whatsNewSeenRelease'] as String?;
+          final dismissedLocally = _locallyDismissedWhatsNewUid == user.uid;
+          if (!dismissedLocally && seenRelease != _whatsNewReleaseId) {
+            return WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid));
+          }
           return const MainNavigationScreen();
         }
 
@@ -266,12 +429,18 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
             await FirebaseFirestore.instance
                 .collection('users')
                 .doc(user.uid)
-                .update({
+                .set({
                   'preferences.onboardingSeen': true,
+                  'onboardingCompleted': true,
+                  'onboardingCompletedAt': FieldValue.serverTimestamp(),
                   'updatedAt': FieldValue.serverTimestamp(),
-                });
+                }, SetOptions(merge: true));
 
-            if (!mounted) return;
+            // New users have just seen onboarding for this release, so do not
+            // immediately follow it with an update recap on their next launch.
+            await _persistWhatsNewSeen(user.uid);
+
+            if (!context.mounted) return;
 
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(builder: (_) => const MainNavigationScreen()),

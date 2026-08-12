@@ -4,23 +4,29 @@ import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../theme/vivordo_theme.dart';
 import '../src/utils/ppg_algorithm.dart';
 import '../src/services/user_service.dart';
+import '../src/services/health_service.dart';
 
 enum ScanState { initializing, idle, scanning, processing, success, error }
 
 class ScanScreen extends StatefulWidget {
-  const ScanScreen({super.key});
+  const ScanScreen({super.key, this.onBackToHome, this.isActive = true});
+
+  final VoidCallback? onBackToHome;
+  final bool isActive;
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
 class _ScanScreenState extends State<ScanScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // ── Camera / PPG ──────────────────────────────────────────────────────────
   CameraController? _cameraController;
-  ScanState _scanState = ScanState.initializing;
+  Future<void>? _cameraInitialization;
+  ScanState _scanState = ScanState.idle;
   final List<double> _redValues = [];
   bool _isProcessingFrame = false;
   int _fingerDetectedFrames = 0;
@@ -32,6 +38,8 @@ class _ScanScreenState extends State<ScanScreen>
   double _progress = 0.0;
   double _finalBpm = 0.0;
   bool _hasTorch = true;
+  bool _scanArmed = false;
+  bool _isStartingScan = false;
   bool _isFirstScan = false;
   bool _showTutorial = false;
   String _errorTitle = 'Camera unavailable';
@@ -46,16 +54,17 @@ class _ScanScreenState extends State<ScanScreen>
   bool _dismissedFirstScanTutorial = false;
 
   static const Color accentPurple = Color(0xFF7B6EF6);
-  static const Color bgColor     = Color(0xFFF2F2F7);
-  static const Color cardWhite   = Colors.white;
-  static const Color textDark    = Color(0xFF1C1C1E);
-  static const Color textGrey    = Color(0xFF8E8E93);
-  static const Color greenColor  = Color(0xFF34C759);
-  static const Color redColor    = Color(0xFFFF3B30);
+  static const Color bgColor = Color(0xFFF2F2F7);
+  static const Color cardWhite = Colors.white;
+  static const Color textDark = Color(0xFF1C1C1E);
+  static const Color textGrey = Color(0xFF8E8E93);
+  static const Color greenColor = Color(0xFF34C759);
+  static const Color redColor = Color(0xFFFF3B30);
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _pulseController = AnimationController(
       vsync: this,
@@ -72,7 +81,27 @@ class _ScanScreenState extends State<ScanScreen>
     );
 
     _checkFirstScanStatus();
-    _initCamera();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      unawaited(_deactivateCamera());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ScanScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive == widget.isActive) return;
+    if (widget.isActive) {
+      unawaited(_activateCamera());
+    } else {
+      unawaited(_deactivateCamera());
+    }
   }
 
   Future<void> _checkFirstScanStatus() async {
@@ -132,6 +161,24 @@ class _ScanScreenState extends State<ScanScreen>
   // ── Camera init ───────────────────────────────────────────────────────────
 
   Future<void> _initCamera() async {
+    final existing = _cameraController;
+    if (existing != null && existing.value.isInitialized) return;
+    final pending = _cameraInitialization;
+    if (pending != null) return pending;
+
+    final initialization = _initializeCameraController();
+    _cameraInitialization = initialization;
+    try {
+      await initialization;
+    } finally {
+      if (identical(_cameraInitialization, initialization)) {
+        _cameraInitialization = null;
+      }
+    }
+  }
+
+  Future<void> _initializeCameraController() async {
+    CameraController? controller;
     try {
       final cameras = await availableCameras();
       final backCameras = cameras
@@ -139,6 +186,7 @@ class _ScanScreenState extends State<ScanScreen>
           .toList();
 
       if (backCameras.isEmpty) {
+        if (!mounted) return;
         setState(() {
           _errorTitle = 'Camera unavailable';
           _errorBody = 'No rear camera was found on this device.';
@@ -149,29 +197,24 @@ class _ScanScreenState extends State<ScanScreen>
 
       final selectedCamera = backCameras.first;
 
-      _cameraController = CameraController(
+      controller = CameraController(
         selectedCamera,
         ResolutionPreset.low,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.bgra8888,
       );
 
-      await _cameraController!.initialize();
-      bool hasTorch = true;
-      try {
-        await _cameraController!.setFlashMode(FlashMode.torch);
-        hasTorch = _cameraController!.value.flashMode == FlashMode.torch;
-      } catch (e) {
-        hasTorch = false;
-        debugPrint('[PPG] Could not enable torch: $e');
+      await controller.initialize();
+      if (!mounted || !widget.isActive || !_scanArmed) {
+        await controller.dispose();
+        return;
       }
-
+      _cameraController = controller;
       setState(() {
-        _hasTorch = hasTorch;
         _scanState = ScanState.idle;
       });
-      _startImageStream();
     } catch (e) {
+      await controller?.dispose().catchError((_) {});
       debugPrint('[PPG] Camera init failed: $e');
       if (mounted) {
         setState(() {
@@ -183,44 +226,99 @@ class _ScanScreenState extends State<ScanScreen>
     }
   }
 
+  Future<void> _activateCamera() async {
+    if (!widget.isActive || !_scanArmed) return;
+    await _initCamera();
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+    var hasTorch = true;
+    try {
+      await controller.setFlashMode(FlashMode.torch);
+      hasTorch = controller.value.flashMode == FlashMode.torch;
+    } catch (e) {
+      hasTorch = false;
+      debugPrint('[PPG] Could not enable torch: $e');
+    }
+    if (!mounted) return;
+    if (!widget.isActive) {
+      await controller.setFlashMode(FlashMode.off).catchError((_) {});
+      return;
+    }
+    setState(() => _hasTorch = hasTorch);
+    _startImageStream();
+  }
+
+  Future<void> _deactivateCamera() async {
+    _fingerDetectedFrames = 0;
+    _scanArmed = false;
+    _isStartingScan = false;
+    if (_scanState == ScanState.scanning) _pauseScan();
+    final controller = _cameraController;
+    _cameraController = null;
+    if (controller == null || !controller.value.isInitialized) return;
+    if (controller.value.isStreamingImages) {
+      await controller.stopImageStream().catchError((_) {});
+    }
+    await controller.setFlashMode(FlashMode.off).catchError((_) {});
+    await controller.dispose().catchError((_) {});
+  }
+
+  Future<void> _beginScanSession() async {
+    if (_isStartingScan || _showTutorial) return;
+    if (!mounted) return;
+    setState(() {
+      _scanArmed = true;
+      _isStartingScan = true;
+      _fingerDetectedFrames = 0;
+    });
+    await _activateCamera();
+    if (!mounted) return;
+    setState(() => _isStartingScan = false);
+  }
+
   // ── Image stream / PPG ────────────────────────────────────────────────────
 
   void _startImageStream() {
     final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized || controller.value.isStreamingImages) {
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        controller.value.isStreamingImages) {
       return;
     }
 
-    controller.startImageStream((CameraImage image) {
-      if (!mounted || _isProcessingFrame || _showTutorial) {
-        _fingerDetectedFrames = 0;
-        return;
-      }
-      _isProcessingFrame = true;
-      try {
-        final redMean = _extractAverageRed(image);
-        final fingerDetected = redMean > _fingerRedThreshold;
-
-        if (fingerDetected) {
-          _fingerDetectedFrames++;
-
-          if (_scanState == ScanState.idle && _fingerDetectedFrames >= _requiredFingerFrames) {
-            _startScan();
+    controller
+        .startImageStream((CameraImage image) {
+          if (!mounted || _isProcessingFrame || _showTutorial) {
+            _fingerDetectedFrames = 0;
+            return;
           }
+          _isProcessingFrame = true;
+          try {
+            final redMean = _extractAverageRed(image);
+            final fingerDetected = redMean > _fingerRedThreshold;
 
-          if (_scanState == ScanState.scanning) {
-            _redValues.add(redMean);
+            if (fingerDetected) {
+              _fingerDetectedFrames++;
+
+              if (_scanState == ScanState.idle &&
+                  _fingerDetectedFrames >= _requiredFingerFrames) {
+                _startScan();
+              }
+
+              if (_scanState == ScanState.scanning) {
+                _redValues.add(redMean);
+              }
+            } else {
+              _fingerDetectedFrames = 0;
+              if (_scanState == ScanState.scanning) _pauseScan();
+            }
+          } finally {
+            _isProcessingFrame = false;
           }
-        } else {
-          _fingerDetectedFrames = 0;
-          if (_scanState == ScanState.scanning) _pauseScan();
-        }
-      } finally {
-        _isProcessingFrame = false;
-      }
-    }).catchError((e) {
-      debugPrint('[PPG] Failed to start image stream: $e');
-    });
+        })
+        .catchError((e) {
+          debugPrint('[PPG] Failed to start image stream: $e');
+        });
   }
 
   double _extractAverageRed(CameraImage image) {
@@ -252,8 +350,7 @@ class _ScanScreenState extends State<ScanScreen>
         timer.cancel();
         return;
       }
-      final elapsed =
-          DateTime.now().difference(_scanStartTime!).inMilliseconds;
+      final elapsed = DateTime.now().difference(_scanStartTime!).inMilliseconds;
       setState(() => _progress = elapsed / (_scanDurationSeconds * 1000));
       if (elapsed >= _scanDurationSeconds * 1000) {
         timer.cancel();
@@ -274,14 +371,19 @@ class _ScanScreenState extends State<ScanScreen>
 
   Future<void> _completeScan() async {
     if (!mounted) return;
-    setState(() => _scanState = ScanState.processing);
+    setState(() {
+      _scanArmed = false;
+      _scanState = ScanState.processing;
+    });
     _spinController.stop();
     final controller = _cameraController;
+    _cameraController = null;
     if (controller != null && controller.value.isInitialized) {
       if (controller.value.isStreamingImages) {
         await controller.stopImageStream().catchError((_) {});
       }
       await controller.setFlashMode(FlashMode.off).catchError((_) {});
+      await controller.dispose().catchError((_) {});
     }
 
     final durationSecs =
@@ -291,7 +393,9 @@ class _ScanScreenState extends State<ScanScreen>
       final minRed = _redValues.reduce(min);
       final maxRed = _redValues.reduce(max);
       final avgRed = _redValues.reduce((a, b) => a + b) / _redValues.length;
-      debugPrint('[PPG] samples=${_redValues.length}, duration=$durationSecs, minRed=$minRed, maxRed=$maxRed, avgRed=$avgRed');
+      debugPrint(
+        '[PPG] samples=${_redValues.length}, duration=$durationSecs, minRed=$minRed, maxRed=$maxRed, avgRed=$avgRed',
+      );
     }
 
     //final bpmResult = (60 + Random().nextInt(41)).toDouble(); <-- demo
@@ -301,8 +405,13 @@ class _ScanScreenState extends State<ScanScreen>
     final bpmResult = peakBpm > 0
         ? peakBpm
         : (algorithmBpm > minAcceptableBpm ? algorithmBpm : 0.0);
-    final qualityScore = PpgAlgorithm.calculateQuality(_redValues, durationSecs);
-    debugPrint('[PPG] algorithmBpm=$algorithmBpm, peakBpm=$peakBpm, finalBpm=$bpmResult, qualityScore=$qualityScore');
+    final qualityScore = PpgAlgorithm.calculateQuality(
+      _redValues,
+      durationSecs,
+    );
+    debugPrint(
+      '[PPG] algorithmBpm=$algorithmBpm, peakBpm=$peakBpm, finalBpm=$bpmResult, qualityScore=$qualityScore',
+    );
 
     if (bpmResult > 0) {
       await _saveToFirestore(bpmResult.round(), qualityScore);
@@ -316,7 +425,8 @@ class _ScanScreenState extends State<ScanScreen>
       if (mounted) {
         setState(() {
           _errorTitle = 'Poor signal detected';
-          _errorBody = 'Try again with your fingertip fully covering the camera and flash. Keep your hand still and use light, steady pressure.';
+          _errorBody =
+              'Try again with your fingertip fully covering the camera and flash. Keep your hand still and use light, steady pressure.';
           _scanState = ScanState.error;
         });
       }
@@ -330,9 +440,8 @@ class _ScanScreenState extends State<ScanScreen>
     if (sampleRate <= 0) return 0.0;
 
     final mean = values.reduce((a, b) => a + b) / values.length;
-    final variance = values
-            .map((v) => (v - mean) * (v - mean))
-            .reduce((a, b) => a + b) /
+    final variance =
+        values.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) /
         values.length;
     final sd = sqrt(variance);
     if (sd < 0.5) return 0.0;
@@ -359,7 +468,8 @@ class _ScanScreenState extends State<ScanScreen>
     int lastPeak = -9999;
 
     for (int i = 1; i < smoothed.length - 1; i++) {
-      final isLocalMax = smoothed[i] > smoothed[i - 1] && smoothed[i] >= smoothed[i + 1];
+      final isLocalMax =
+          smoothed[i] > smoothed[i - 1] && smoothed[i] >= smoothed[i + 1];
       final isTallEnough = smoothed[i] > threshold;
       final isFarEnough = i - lastPeak >= minGap;
 
@@ -378,7 +488,9 @@ class _ScanScreenState extends State<ScanScreen>
     }
 
     if (intervals.length < 2) {
-      debugPrint('[PPG] peak detector rejected: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, minGap=$minGap, maxGap=$maxGap');
+      debugPrint(
+        '[PPG] peak detector rejected: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, minGap=$minGap, maxGap=$maxGap',
+      );
       return 0.0;
     }
 
@@ -386,7 +498,9 @@ class _ScanScreenState extends State<ScanScreen>
     final medianInterval = intervals[intervals.length ~/ 2];
     final bpm = 60.0 / medianInterval;
 
-    debugPrint('[PPG] peak detector: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, bpm=$bpm');
+    debugPrint(
+      '[PPG] peak detector: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, bpm=$bpm',
+    );
 
     if (bpm < 45 || bpm > 160) return 0.0;
     return bpm;
@@ -397,7 +511,8 @@ class _ScanScreenState extends State<ScanScreen>
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         final now = DateTime.now();
-        final dayKey = '${now.year.toString().padLeft(4, '0')}-'
+        final dayKey =
+            '${now.year.toString().padLeft(4, '0')}-'
             '${now.month.toString().padLeft(2, '0')}-'
             '${now.day.toString().padLeft(2, '0')}';
 
@@ -407,6 +522,11 @@ class _ScanScreenState extends State<ScanScreen>
             .collection('metrics_daily')
             .doc(dayKey);
 
+        final scanEntry = {
+          'bpm': bpm.toDouble(),
+          'timestamp': Timestamp.fromDate(now),
+          'signalQuality': signalQuality,
+        };
         final heartRateScan = {
           'avg': bpm.toDouble(),
           'unit': 'bpm',
@@ -417,22 +537,56 @@ class _ScanScreenState extends State<ScanScreen>
           'syncedAt': FieldValue.serverTimestamp(),
         };
 
-        await ref.set({
-          'heart_rate': heartRateScan,
-          // Keep camera scans separate from HealthKit's daily heart-rate data.
-          'heart_rate_scan': heartRateScan,
-          'signal_quality': {
-            'avg': signalQuality,
-            'unit': 'score',
-            'dimension': 'vitals',
-            'source': 'camera_ppg',
-            'syncedAt': FieldValue.serverTimestamp(),
-          },
-          'date': dayKey,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        await FirebaseFirestore.instance.runTransaction((transaction) async {
+          final snapshot = await transaction.get(ref);
+          final existingScan = snapshot.data()?['heart_rate_scan'] as Map?;
+          final rawEntries = existingScan?['entries'];
+          final entries = <Map<String, dynamic>>[];
+          if (rawEntries is List) {
+            for (final entry in rawEntries) {
+              if (entry is Map) {
+                entries.add(Map<String, dynamic>.from(entry));
+              }
+            }
+          } else if (existingScan?['avg'] is num) {
+            // Preserve a scan saved before per-scan history was introduced.
+            entries.add({
+              'bpm': (existingScan!['avg'] as num).toDouble(),
+              'timestamp': existingScan['syncedAt'],
+            });
+          }
+          entries.add(scanEntry);
+          final average =
+              entries
+                  .map((entry) => entry['bpm'])
+                  .whereType<num>()
+                  .fold<double>(0, (total, value) => total + value.toDouble()) /
+              entries.length;
 
-        debugPrint('users/${user.uid}/metrics_daily/$dayKey updated with heart_rate scan');
+          transaction.set(ref, {
+            'heart_rate': heartRateScan,
+            // Keep camera scans separate from HealthKit's daily heart-rate data.
+            'heart_rate_scan': {
+              ...heartRateScan,
+              'avg': average,
+              'entries': entries,
+            },
+            'signal_quality': {
+              'avg': signalQuality,
+              'unit': 'score',
+              'dimension': 'vitals',
+              'source': 'camera_ppg',
+              'syncedAt': FieldValue.serverTimestamp(),
+            },
+            'date': dayKey,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        });
+
+        debugPrint(
+          'users/${user.uid}/metrics_daily/$dayKey updated with heart_rate scan',
+        );
+        await HealthService().recomputeWellness();
         if (_isFirstScan && mounted) {
           setState(() {
             _isFirstScan = false;
@@ -452,19 +606,24 @@ class _ScanScreenState extends State<ScanScreen>
     _pulseController.repeat(reverse: true);
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) {
-      await _initCamera();
+      if (mounted) {
+        setState(() {
+          _scanArmed = false;
+          _isStartingScan = false;
+          _scanState = ScanState.idle;
+        });
+      }
       return;
     }
-    bool hasTorch = _hasTorch;
-    try {
-      await controller.setFlashMode(FlashMode.torch);
-      hasTorch = controller.value.flashMode == FlashMode.torch;
-    } catch (e) {
-      hasTorch = false;
-      debugPrint('[PPG] Could not enable torch during reset: $e');
+    if (controller.value.isStreamingImages) {
+      await controller.stopImageStream().catchError((_) {});
     }
+    await controller.setFlashMode(FlashMode.off).catchError((_) {});
+    _cameraController = null;
+    await controller.dispose().catchError((_) {});
     setState(() {
-      _hasTorch = hasTorch;
+      _scanArmed = false;
+      _isStartingScan = false;
       _scanState = ScanState.idle;
       _progress = 0.0;
       _finalBpm = 0.0;
@@ -473,11 +632,11 @@ class _ScanScreenState extends State<ScanScreen>
       _errorTitle = 'Camera unavailable';
       _errorBody = 'Please allow camera access in Settings\nand try again.';
     });
-    _startImageStream();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pulseController.dispose();
     _spinController.dispose();
     _tutorialPageController.dispose();
@@ -495,7 +654,7 @@ class _ScanScreenState extends State<ScanScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
@@ -512,14 +671,14 @@ class _ScanScreenState extends State<ScanScreen>
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
-                        color: textDark,
                         letterSpacing: -0.5,
                       ),
                     ),
                   ),
                   IconButton(
                     tooltip: 'Show tutorial',
-                  onPressed: () {
+                    onPressed: () {
+                      unawaited(_deactivateCamera());
                       _scanTimer?.cancel();
                       _spinController.stop();
                       setState(() {
@@ -550,9 +709,12 @@ class _ScanScreenState extends State<ScanScreen>
                 ],
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 '15-second physiological assessment',
-                style: TextStyle(fontSize: 14, color: textGrey),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: context.vivordoColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 40),
               if (!_hasTorch && _scanState != ScanState.initializing) ...[
@@ -564,11 +726,11 @@ class _ScanScreenState extends State<ScanScreen>
                 const SizedBox(height: 20),
               ],
               if (_scanState == ScanState.initializing) _buildInitializing(),
-              if (_scanState == ScanState.idle)         _buildIdle(),
-              if (_scanState == ScanState.scanning)     _buildScanning(),
-              if (_scanState == ScanState.processing)   _buildProcessing(),
-              if (_scanState == ScanState.success)      _buildSuccess(),
-              if (_scanState == ScanState.error)        _buildError(),
+              if (_scanState == ScanState.idle) _buildIdle(),
+              if (_scanState == ScanState.scanning) _buildScanning(),
+              if (_scanState == ScanState.processing) _buildProcessing(),
+              if (_scanState == ScanState.success) _buildSuccess(),
+              if (_scanState == ScanState.error) _buildError(),
               const SizedBox(height: 120),
             ],
           ),
@@ -591,18 +753,13 @@ class _ScanScreenState extends State<ScanScreen>
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.warning_amber_rounded,
-            color: Color(0xFFFF9500),
-            size: 20,
-          ),
+          Icon(Icons.warning_amber_rounded, color: Color(0xFFFF9500), size: 20),
           SizedBox(width: 10),
           Expanded(
             child: Text(
               'No flash detected — scan quality may be lower. Use a bright, steady light source and press firmly.',
               style: TextStyle(
                 fontSize: 13,
-                color: textDark,
                 height: 1.4,
                 fontWeight: FontWeight.w500,
               ),
@@ -625,17 +782,20 @@ class _ScanScreenState extends State<ScanScreen>
       {
         'icon': Icons.touch_app_outlined,
         'title': 'Use light, steady pressure',
-        'body': 'Press firmly enough to cover the lens, but avoid squeezing too hard. Too much pressure can weaken the pulse signal.',
+        'body':
+            'Press firmly enough to cover the lens, but avoid squeezing too hard. Too much pressure can weaken the pulse signal.',
       },
       {
         'icon': Icons.back_hand_outlined,
         'title': 'Cup with your other hand',
-        'body': 'Use your other hand to gently shield the rear camera area. This helps block outside light and keeps your finger steady for a cleaner reading.',
+        'body':
+            'Use your other hand to gently shield the rear camera area. This helps block outside light and keeps your finger steady for a cleaner reading.',
       },
       {
         'icon': Icons.pan_tool_alt_outlined,
         'title': 'Hold still for 15 seconds',
-        'body': 'Keep your phone and hand steady. The scan starts automatically once your finger is detected.',
+        'body':
+            'Keep your phone and hand steady. The scan starts automatically once your finger is detected.',
       },
     ];
 
@@ -643,7 +803,7 @@ class _ScanScreenState extends State<ScanScreen>
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: accentPurple.withOpacity(0.22)),
         boxShadow: [
@@ -706,19 +866,18 @@ class _ScanScreenState extends State<ScanScreen>
                       Text(
                         slide['title'] as String,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: textDark,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         slide['body'] as String,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
-                          color: textGrey,
+                          color: context.vivordoColors.textSecondary,
                           height: 1.35,
                         ),
                       ),
@@ -739,7 +898,9 @@ class _ScanScreenState extends State<ScanScreen>
                 width: isActive ? 18 : 7,
                 height: 7,
                 decoration: BoxDecoration(
-                  color: isActive ? accentPurple : accentPurple.withOpacity(0.22),
+                  color: isActive
+                      ? accentPurple
+                      : accentPurple.withOpacity(0.22),
                   borderRadius: BorderRadius.circular(10),
                 ),
               );
@@ -752,8 +913,8 @@ class _ScanScreenState extends State<ScanScreen>
                 child: OutlinedButton(
                   onPressed: _dismissScannerTutorial,
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: textDark,
-                    side: const BorderSide(color: Color(0xFFE5E5EA)),
+                    foregroundColor: context.vivordoColors.textPrimary,
+                    side: BorderSide(color: context.vivordoColors.border),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -820,11 +981,7 @@ class _ScanScreenState extends State<ScanScreen>
         const Text(
           'Preparing camera...',
           textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: textDark,
-          ),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -873,22 +1030,62 @@ class _ScanScreenState extends State<ScanScreen>
           ),
         ),
         const SizedBox(height: 28),
-        const Text(
-          'Place your finger on the camera',
+        Text(
+          _scanArmed ? 'Place your finger on the camera' : 'Ready to scan?',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
-            color: textDark,
             letterSpacing: -0.3,
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Your camera + flash measures your heart rate\nthrough your fingertip in 15 seconds.',
+        Text(
+          _scanArmed
+              ? 'Cover the rear camera and hold still. The scan begins when your finger is detected.'
+              : 'Tap Start Scan to turn on the torch, then cover the rear camera with your fingertip.',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: textGrey, height: 1.6),
+          style: TextStyle(
+            fontSize: 14,
+            color: context.vivordoColors.textSecondary,
+            height: 1.6,
+          ),
         ),
+        if (!_scanArmed && !_showTutorial) ...[
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: FilledButton.icon(
+              onPressed: _isStartingScan ? null : _beginScanSession,
+              style: FilledButton.styleFrom(
+                backgroundColor: accentPurple,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: accentPurple.withValues(alpha: .55),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: _isStartingScan
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.flashlight_on_rounded),
+              label: Text(
+                _isStartingScan ? 'Starting...' : 'Start Scan',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 28),
 
         // ── How it works card ─────────────────────────────────────────
@@ -896,9 +1093,9 @@ class _ScanScreenState extends State<ScanScreen>
           width: double.infinity,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: context.vivordoColors.card,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFE5E5EA)),
+            border: Border.all(color: context.vivordoColors.border),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.04),
@@ -912,7 +1109,11 @@ class _ScanScreenState extends State<ScanScreen>
             children: [
               const Row(
                 children: [
-                  Icon(Icons.info_outline_rounded, size: 15, color: accentPurple),
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 15,
+                    color: accentPurple,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'How it works',
@@ -931,18 +1132,30 @@ class _ScanScreenState extends State<ScanScreen>
                 Icons.wb_sunny_outlined,
                 _hasTorch ? 'Enable torch' : 'Find bright light',
                 _hasTorch
-                    ? 'The flash turns on automatically to illuminate your fingertip.'
+                    ? 'Tap Start Scan to turn on the flash and illuminate your fingertip.'
                     : 'Find a bright light source and press your fingertip firmly over the lens.',
               ),
               const SizedBox(height: 14),
-              _buildStep('2', Icons.touch_app_outlined,
-                  'Cover the lens', 'Gently press your fingertip over the rear camera and flash — no need to press hard.'),
+              _buildStep(
+                '2',
+                Icons.touch_app_outlined,
+                'Cover the camera and flash',
+                'Gently place your fingertip over the rear camera and flash, then use your other hand to cover the entire camera and flash module. No need to press hard.',
+              ),
               const SizedBox(height: 14),
-              _buildStep('3', Icons.favorite_outline_rounded,
-                  'Hold still', 'Keep steady for 15 seconds. Scanning starts the moment your finger is detected.'),
+              _buildStep(
+                '3',
+                Icons.favorite_outline_rounded,
+                'Hold still',
+                'After pressing Start Scan, keep steady for 15 seconds. Scanning begins when your finger is detected.',
+              ),
               const SizedBox(height: 14),
-              _buildStep('4', Icons.bar_chart_rounded,
-                  'Get your results', 'Your heart rate and stress level are calculated and saved automatically.'),
+              _buildStep(
+                '4',
+                Icons.bar_chart_rounded,
+                'Get your results',
+                'Your heart rate and stress level are calculated and saved automatically.',
+              ),
             ],
           ),
         ),
@@ -960,11 +1173,20 @@ class _ScanScreenState extends State<ScanScreen>
           ),
           child: Column(
             children: [
-              _buildTipRow(Icons.do_not_touch_outlined, 'Avoid pressing too hard — light contact works best'),
+              _buildTipRow(
+                Icons.do_not_touch_outlined,
+                'Avoid pressing too hard — light contact works best',
+              ),
               const SizedBox(height: 10),
-              _buildTipRow(Icons.straighten_outlined, 'Keep your hand and phone level'),
+              _buildTipRow(
+                Icons.straighten_outlined,
+                'Keep your hand and phone level',
+              ),
               const SizedBox(height: 10),
-              _buildTipRow(Icons.timer_outlined, 'Scanning starts automatically — just wait'),
+              _buildTipRow(
+                Icons.timer_outlined,
+                'After Start Scan, scanning begins when your finger is detected',
+              ),
             ],
           ),
         ),
@@ -989,14 +1211,21 @@ class _ScanScreenState extends State<ScanScreen>
                   child: Container(
                     width: 168,
                     height: 168,
-                    color: Colors.black,
-                    child: _cameraController != null &&
+                    child:
+                        _cameraController != null &&
                             _cameraController!.value.isInitialized
                         ? FittedBox(
                             fit: BoxFit.cover,
                             child: SizedBox(
-                              width: _cameraController!.value.previewSize?.height ?? 168,
-                              height: _cameraController!.value.previewSize?.width ?? 168,
+                              width:
+                                  _cameraController!
+                                      .value
+                                      .previewSize
+                                      ?.height ??
+                                  168,
+                              height:
+                                  _cameraController!.value.previewSize?.width ??
+                                  168,
                               child: CameraPreview(_cameraController!),
                             ),
                           )
@@ -1016,7 +1245,9 @@ class _ScanScreenState extends State<ScanScreen>
                     value: _progress,
                     strokeWidth: 6,
                     backgroundColor: accentPurple.withOpacity(0.15),
-                    valueColor: const AlwaysStoppedAnimation<Color>(accentPurple),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      accentPurple,
+                    ),
                   ),
                 ),
                 RotationTransition(
@@ -1040,11 +1271,7 @@ class _ScanScreenState extends State<ScanScreen>
         const SizedBox(height: 32),
         Text(
           '$secondsLeft seconds remaining',
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: textDark,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 24),
         ClipRRect(
@@ -1057,9 +1284,12 @@ class _ScanScreenState extends State<ScanScreen>
           ),
         ),
         const SizedBox(height: 16),
-        const Text(
+        Text(
           'Keep your finger still on the camera',
-          style: TextStyle(fontSize: 13, color: textGrey),
+          style: TextStyle(
+            fontSize: 13,
+            color: context.vivordoColors.textSecondary,
+          ),
         ),
       ],
     );
@@ -1088,11 +1318,7 @@ class _ScanScreenState extends State<ScanScreen>
         const SizedBox(height: 32),
         const Text(
           'Analysing your scan...',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: textDark,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -1103,13 +1329,13 @@ class _ScanScreenState extends State<ScanScreen>
     final stressLabel = bpm < 65
         ? 'Low Stress'
         : bpm < 80
-            ? 'Moderate'
-            : 'Elevated';
+        ? 'Moderate'
+        : 'Elevated';
     final stressColor = bpm < 65
         ? greenColor
         : bpm < 80
-            ? const Color(0xFFFF9500)
-            : redColor;
+        ? const Color(0xFFFF9500)
+        : redColor;
     final qualityScore = PpgAlgorithm.calculateQuality(
       _redValues,
       _scanDurationSeconds.toDouble(),
@@ -1148,12 +1374,16 @@ class _ScanScreenState extends State<ScanScreen>
             children: [
               const Text(
                 'Heart Rate',
-                style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
                 '$bpm',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.white,
                   fontSize: 72,
                   fontWeight: FontWeight.bold,
@@ -1163,11 +1393,18 @@ class _ScanScreenState extends State<ScanScreen>
               ),
               const Text(
                 'BPM',
-                style: TextStyle(color: Colors.white60, fontSize: 16, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                  color: Colors.white60,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.18),
                   borderRadius: BorderRadius.circular(20),
@@ -1203,11 +1440,32 @@ class _ScanScreenState extends State<ScanScreen>
         // Metric pills
         Row(
           children: [
-            Expanded(child: _buildMetricCard(Icons.favorite_rounded, 'Heart Rate', '$bpm bpm', redColor)),
+            Expanded(
+              child: _buildMetricCard(
+                Icons.favorite_rounded,
+                'Heart Rate',
+                '$bpm bpm',
+                redColor,
+              ),
+            ),
             const SizedBox(width: 10),
-            Expanded(child: _buildMetricCard(Icons.show_chart_rounded, 'Signal Quality', qualityLabel, qualityColor)),
+            Expanded(
+              child: _buildMetricCard(
+                Icons.show_chart_rounded,
+                'Signal Quality',
+                qualityLabel,
+                qualityColor,
+              ),
+            ),
             const SizedBox(width: 10),
-            Expanded(child: _buildMetricCard(Icons.psychology_outlined, 'Strain', stressLabel, stressColor)),
+            Expanded(
+              child: _buildMetricCard(
+                Icons.psychology_outlined,
+                'Strain',
+                stressLabel,
+                stressColor,
+              ),
+            ),
           ],
         ),
 
@@ -1227,11 +1485,15 @@ class _ScanScreenState extends State<ScanScreen>
             children: [
               const Row(
                 children: [
-                  Icon(Icons.auto_awesome_rounded, size: 15, color: accentPurple),
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 15,
+                    color: accentPurple,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'Insight',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textDark),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -1240,9 +1502,13 @@ class _ScanScreenState extends State<ScanScreen>
                 bpm < 65
                     ? 'Your heart rate is low and relaxed — great time for focused work or important conversations.'
                     : bpm < 80
-                        ? 'Your heart rate looks healthy. Take a few deep breaths to keep stress balanced.'
-                        : 'Your heart rate is elevated. Consider a short break, breathing exercise, or a walk.',
-                style: const TextStyle(fontSize: 13, color: textGrey, height: 1.5),
+                    ? 'Your heart rate looks healthy. Take a few deep breaths to keep stress balanced.'
+                    : 'Your heart rate is elevated. Consider a short break, breathing exercise, or a walk.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: context.vivordoColors.textSecondary,
+                  height: 1.5,
+                ),
               ),
             ],
           ),
@@ -1257,9 +1523,11 @@ class _ScanScreenState extends State<ScanScreen>
           child: OutlinedButton(
             onPressed: _reset,
             style: OutlinedButton.styleFrom(
-              foregroundColor: textDark,
-              side: const BorderSide(color: Color(0xFFE5E5EA)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              foregroundColor: context.vivordoColors.textPrimary,
+              side: BorderSide(color: context.vivordoColors.border),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
             ),
             child: const Text(
               'Scan Again',
@@ -1296,13 +1564,17 @@ class _ScanScreenState extends State<ScanScreen>
         Text(
           _errorTitle,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: textDark),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Text(
           _errorBody,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: textGrey, height: 1.6),
+          style: TextStyle(
+            fontSize: 14,
+            color: context.vivordoColors.textSecondary,
+            height: 1.6,
+          ),
         ),
         const SizedBox(height: 32),
         SizedBox(
@@ -1310,20 +1582,25 @@ class _ScanScreenState extends State<ScanScreen>
           height: 52,
           child: ElevatedButton(
             onPressed: () {
-              setState(() => _scanState = ScanState.initializing);
-              if (_cameraController != null && _cameraController!.value.isInitialized) {
+              if (_cameraController != null &&
+                  _cameraController!.value.isInitialized) {
                 _reset();
               } else {
-                _initCamera();
+                setState(() => _scanState = ScanState.idle);
               }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: accentPurple,
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
             ),
-            child: const Text('Try Again', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            child: const Text(
+              'Try Again',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
           ),
         ),
       ],
@@ -1368,7 +1645,6 @@ class _ScanScreenState extends State<ScanScreen>
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: textDark,
                     ),
                   ),
                 ],
@@ -1376,7 +1652,11 @@ class _ScanScreenState extends State<ScanScreen>
               const SizedBox(height: 3),
               Text(
                 body,
-                style: const TextStyle(fontSize: 12, color: textGrey, height: 1.5),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.vivordoColors.textSecondary,
+                  height: 1.5,
+                ),
               ),
             ],
           ),
@@ -1391,33 +1671,41 @@ class _ScanScreenState extends State<ScanScreen>
       children: [
         Icon(icon, size: 16, color: accentPurple),
         const SizedBox(width: 8),
-        Text(text, style: const TextStyle(fontSize: 13, color: textGrey)),
+        Text(text, style: const TextStyle(fontSize: 13, color: context.vivordoColors.textSecondary)),
       ],
     );
   }*/
   Widget _buildTipRow(IconData icon, String text) {
-  return Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Icon(icon, size: 16, color: accentPurple),
-      const SizedBox(width: 8),
-      Expanded(
-        child: Text(
-          text,
-          style: const TextStyle(fontSize: 13, color: textGrey),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: accentPurple),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 13,
+              color: context.vivordoColors.textSecondary,
+            ),
+          ),
         ),
-      ),
-    ],
-  );
-}
+      ],
+    );
+  }
 
-  Widget _buildMetricCard(IconData icon, String label, String value, Color color) {
+  Widget _buildMetricCard(
+    IconData icon,
+    String label,
+    String value,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
       decoration: BoxDecoration(
-        color: cardWhite,
+        color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE5E5EA)),
+        border: Border.all(color: context.vivordoColors.border),
       ),
       child: Column(
         children: [
@@ -1425,13 +1713,21 @@ class _ScanScreenState extends State<ScanScreen>
           const SizedBox(height: 6),
           Text(
             value,
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10, color: textGrey, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              fontSize: 10,
+              color: context.vivordoColors.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),

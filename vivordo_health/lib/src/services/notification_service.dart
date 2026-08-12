@@ -45,17 +45,21 @@ class NotificationService {
 
   Future<void> configureForUser(String uid) async {
     if (_configuredUid != uid) {
+      await _removeCurrentFcmToken();
       await cancelCalendarCheckIn();
       _lastCalendarEventEnd = null;
       _configuredUid = uid;
     }
+
+    await _persistCurrentFcmToken();
 
     final snapshot = await FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
         .get();
     final preferences = snapshot.data()?['preferences'] as Map?;
-    final savedTimes = (preferences?['scanReminderTimes'] as List?)
+    final savedTimes =
+        (preferences?['scanReminderTimes'] as List?)
             ?.whereType<num>()
             .map((value) => value.toInt().clamp(0, 1439).toInt())
             .toSet()
@@ -86,6 +90,7 @@ class NotificationService {
   }
 
   Future<void> clearUserReminders() async {
+    await _removeCurrentFcmToken();
     _configuredUid = null;
     _lastCalendarEventEnd = null;
     _dailyScanRemindersEnabled = false;
@@ -116,12 +121,13 @@ class NotificationService {
     if (reminderTimes.isEmpty) {
       throw ArgumentError('At least one scan reminder is required.');
     }
-    _scanReminderMinutes = reminderTimes
-        .map((minutes) => minutes.clamp(0, 1439).toInt())
-        .toSet()
-        .take(_maxDailyScanReminders)
-        .toList()
-      ..sort();
+    _scanReminderMinutes =
+        reminderTimes
+            .map((minutes) => minutes.clamp(0, 1439).toInt())
+            .toSet()
+            .take(_maxDailyScanReminders)
+            .toList()
+          ..sort();
     if (_dailyScanRemindersEnabled) {
       await setDailyScanRemindersEnabled(true);
     }
@@ -213,8 +219,13 @@ class NotificationService {
       }
 
       // Listen for token refresh
-      _firebaseMessaging.onTokenRefresh.listen((newToken) {
+      _firebaseMessaging.onTokenRefresh.listen((newToken) async {
         print('NotificationService: FCM Token refreshed: $newToken');
+        try {
+          await _persistFcmToken(newToken);
+        } catch (error) {
+          print('NotificationService: Could not store refreshed token: $error');
+        }
       });
 
       // Get and log FCM token after APNs token is available on iOS.
@@ -243,10 +254,12 @@ class NotificationService {
           } else {
             final token = await _firebaseMessaging.getToken();
             print('NotificationService: FCM Token: $token');
+            await _persistFcmToken(token);
           }
         } else {
           final token = await _firebaseMessaging.getToken();
           print('NotificationService: FCM Token: $token');
+          await _persistFcmToken(token);
         }
       } catch (e) {
         print('NotificationService: Warning - Could not get FCM token: $e');
@@ -287,7 +300,7 @@ class NotificationService {
       showLocalNotification(
         title: message.notification?.title ?? 'New Notification',
         body: message.notification?.body ?? '',
-        payload: message.data.toString(),
+        payload: jsonEncode(message.data),
       );
     }
   }
@@ -333,6 +346,7 @@ class NotificationService {
     final route = switch (screen) {
       'scan' => '/scan',
       'ai_chat' => '/ai-chat',
+      'circle' => '/circle',
       _ => '/home',
     };
     final navigator = navigatorKey.currentState;
@@ -347,6 +361,49 @@ class NotificationService {
         (route) => false,
       );
     });
+  }
+
+  Future<void> _persistCurrentFcmToken() async {
+    try {
+      await _persistFcmToken(await _firebaseMessaging.getToken());
+    } catch (error) {
+      print('NotificationService: Could not refresh stored FCM token: $error');
+    }
+  }
+
+  Future<void> _persistFcmToken(String? token) async {
+    final uid = _configuredUid;
+    if (uid == null || token == null || token.isEmpty) return;
+
+    final tokenId = base64Url.encode(utf8.encode(token)).replaceAll('=', '');
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('notification_tokens')
+        .doc(tokenId)
+        .set({
+          'token': token,
+          'platform': Platform.operatingSystem,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+  }
+
+  Future<void> _removeCurrentFcmToken() async {
+    final uid = _configuredUid;
+    if (uid == null || kIsWeb) return;
+    try {
+      final token = await _firebaseMessaging.getToken();
+      if (token == null || token.isEmpty) return;
+      final tokenId = base64Url.encode(utf8.encode(token)).replaceAll('=', '');
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('notification_tokens')
+          .doc(tokenId)
+          .delete();
+    } catch (error) {
+      print('NotificationService: Could not remove signed-out token: $error');
+    }
   }
 
   /// Show a local notification for testing purposes

@@ -75,7 +75,9 @@ class AuthService {
     required BuildContext context,
   }) async {
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: emailAddress.trim());
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: emailAddress.trim(),
+      );
       return true;
     } on FirebaseAuthException catch (e) {
       if (context.mounted) {
@@ -114,13 +116,16 @@ class AuthService {
       }
 
       final googleUser = await GoogleSignIn.instance.authenticate();
+      CalendarService.registerSignedInAccount(googleUser);
       final idToken = googleUser.authentication.idToken;
       if (idToken == null) {
         throw Exception('Google Sign-In did not return an ID token');
       }
 
       final credential = GoogleAuthProvider.credential(idToken: idToken);
-      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
       final user = userCredential.user;
       if (user == null) {
         throw Exception('Error signing in with Google');
@@ -129,6 +134,11 @@ class AuthService {
       if (userCredential.additionalUserInfo?.isNewUser ?? false) {
         await UserService.createUser(user);
       }
+
+      // Google identity authentication does not automatically grant access to
+      // Google Calendar. Request it before navigating to the home screen so
+      // the first calendar load does not race the authentication event stream.
+      await CalendarService.authorizeCalendarAccess();
       return true;
     } on GoogleSignInException catch (e) {
       // Don't show an error toast for a plain cancel — that's not a failure.
@@ -161,10 +171,7 @@ class AuthService {
   }) async {
     try {
       final userCredential = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(
-            email: emailAddress,
-            password: password,
-          );
+          .signInWithEmailAndPassword(email: emailAddress, password: password);
 
       final currentUser = userCredential.user;
       if (currentUser == null) {
@@ -175,7 +182,6 @@ class AuthService {
       // so the profile screen never sees stale pending state.
       await UserService.syncEmailWithAuth();
       return true;
-
     } on FirebaseAuthException catch (e) {
       if (context.mounted) {
         if (e.code == 'invalid-credential') {
@@ -191,4 +197,4 @@ class AuthService {
       return false;
     }
   }
-} 
+}

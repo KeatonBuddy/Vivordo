@@ -20,8 +20,14 @@ class _PasswordRequirement {
 
 final List<_PasswordRequirement> _passwordRequirements = [
   _PasswordRequirement('At least 6 characters', (p) => p.length >= 6),
-  _PasswordRequirement('One uppercase letter', (p) => RegExp(r'[A-Z]').hasMatch(p)),
-  _PasswordRequirement('One lowercase letter', (p) => RegExp(r'[a-z]').hasMatch(p)),
+  _PasswordRequirement(
+    'One uppercase letter',
+    (p) => RegExp(r'[A-Z]').hasMatch(p),
+  ),
+  _PasswordRequirement(
+    'One lowercase letter',
+    (p) => RegExp(r'[a-z]').hasMatch(p),
+  ),
   _PasswordRequirement('One number', (p) => RegExp(r'[0-9]').hasMatch(p)),
   _PasswordRequirement(
     'One special character',
@@ -38,9 +44,9 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _isLoading = false; // prevents double-tap triggering emailSignup twice
 
   static const accentPurple = Color(0xFF7B6EF6);
-  static const bgColor      = Color(0xFFF2F2F7);
-  static const textDark     = Color(0xFF1C1C1E);
-  static const textGrey     = Color(0xFF8E8E93);
+  static const bgColor = Color(0xFFF2F2F7);
+  static const textDark = Color(0xFF1C1C1E);
+  static const textGrey = Color(0xFF8E8E93);
 
   // Centralized data map for future database integration
   final Map<String, dynamic> _userData = {'responses': <String, dynamic>{}};
@@ -107,7 +113,9 @@ class _SignupScreenState extends State<SignupScreen> {
       // surfaces through the single _passwordError label instead of some
       // showing as inline field errors and others as toasts.
       if (_passController.text.isEmpty || !_passwordMeetsRequirements) {
-        setState(() => _passwordError = 'Password does not meet all requirements');
+        setState(
+          () => _passwordError = 'Password does not meet all requirements',
+        );
         return;
       }
       if (_confirmPassController.text.isEmpty) {
@@ -131,7 +139,8 @@ class _SignupScreenState extends State<SignupScreen> {
           password: _passController.text,
           displayName: _nameController.text,
           context: context,
-          onPasswordError: (message) => setState(() => _passwordError = message),
+          onPasswordError: (message) =>
+              setState(() => _passwordError = message),
         );
         if (mounted) setState(() => _isLoading = false);
         if (success && mounted) {
@@ -179,10 +188,7 @@ class _SignupScreenState extends State<SignupScreen> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        await UserService.submitQuestionnaire(
-          user: user,
-          userdata: _userData,
-        );
+        await UserService.submitQuestionnaire(user: user, userdata: _userData);
       }
     } catch (e) {
       debugPrint("Error submitting questionnaire: $e");
@@ -203,188 +209,242 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    double progress = _currentPage == 0 
-        ? 0.5 
-        : (_currentPage > _totalQuestions ? 1.0 : _currentPage / _totalQuestions);
+    double progress = _currentPage == 0
+        ? 0.5
+        : (_currentPage > _totalQuestions
+              ? 1.0
+              : _currentPage / _totalQuestions);
 
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(
         child: Column(
           children: [
-          // ── Top bar ──────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: _currentPage > 0
-                      ? () => _pageController.previousPage(
+            // ── Top bar ──────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: _currentPage > 0
+                        ? () => _pageController.previousPage(
                             duration: const Duration(milliseconds: 350),
                             curve: Curves.easeInOut,
                           )
-                      : () => Navigator.pop(context),
-                  child: Container(
-                    width: 38, height: 38,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE5E5EA)),
-                    ),
-                    child: const Icon(Icons.arrow_back_ios_new_rounded, size: 15, color: textDark),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _currentPage == 0 ? 'Create Account' : 'Stress Assessment',
-                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textDark),
+                        : () => Navigator.pop(context),
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE5E5EA)),
                       ),
-                      Text(
-                        _currentPage == 0
-                            ? 'Set up your profile'
-                            : _currentPage > _totalQuestions
-                                ? 'All done!'
-                                : 'Question $_currentPage of $_totalQuestions',
-                        style: const TextStyle(fontSize: 12, color: textGrey),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 15,
+                        
                       ),
-                    ],
-                  ),
-                ),
-                // Step badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: accentPurple.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _currentPage == 0 ? 'Step 1' : '${(progress * 100).toInt()}%',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: accentPurple),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          // ── Progress bar ─────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: progress,
-                backgroundColor: const Color(0xFFE5E5EA),
-                valueColor: const AlwaysStoppedAnimation<Color>(accentPurple),
-                minHeight: 4,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          Expanded(
-            child: PageView(
-              controller: _pageController,
-              onPageChanged: (page) => setState(() => _currentPage = page),
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _buildAccountSetup(), // Page 0
-                // ── 9 corporate-professional stress questions ─────────────
-                _buildMultipleChoiceQuestion(
-                  q: 'q1',
-                  emoji: '🏢',
-                  title: 'How do you typically work day-to-day?',
-                  options: ['Full-time office', 'Fully remote', 'Hybrid', 'Frequent travel', 'Varies a lot'],
-                ),
-                _buildSliderQuestion(
-                  q: 'q2',
-                  emoji: '🧠',
-                  title: 'How mentally drained do you feel at the end of a typical workday?',
-                  lowLabel: 'Barely drained', highLabel: 'Completely exhausted',
-                ),
-                _buildMultipleChoiceQuestion(
-                  q: 'q3',
-                  emoji: '⏰',
-                  title: 'How many hours do you typically work per day?',
-                  options: ['Under 7h', '7–9h', '9–11h', '11h+', 'It varies'],
-                ),
-                _buildSliderQuestion(
-                  q: 'q4',
-                  emoji: '📵',
-                  title: 'How well can you disconnect from work after hours?',
-                  lowLabel: 'Always checking in', highLabel: 'Fully switched off',
-                ),
-                _buildMultipleChoiceQuestion(
-                  q: 'q5',
-                  emoji: '🍽️',
-                  title: 'How often do you skip meals to focus on work?',
-                  options: ['Never', 'Rarely', 'Sometimes', 'Often', 'Almost every day'],
-                ),
-                _buildSliderQuestion(
-                  q: 'q6',
-                  emoji: '📬',
-                  title: 'How pressured do you feel to respond to messages outside work hours?',
-                  lowLabel: 'Not at all', highLabel: 'Constant pressure',
-                ),
-                _buildMultipleChoiceQuestion(
-                  q: 'q7',
-                  emoji: '😴',
-                  title: 'On a typical work night, how much sleep do you get?',
-                  options: ['Under 5h', '5–6h', '6–7h', '7–8h', '8h+'],
-                ),
-                _buildSliderQuestion(
-                  q: 'q8',
-                  emoji: '💓',
-                  title: 'How often do deadlines or meetings cause you anxiety?',
-                  lowLabel: 'Very rarely', highLabel: 'Nearly every day',
-                ),
-                _buildMultipleChoiceQuestion(
-                  q: 'q9',
-                  emoji: '📋',
-                  title: 'How would you describe your current workload?',
-                  options: ['Very manageable', 'Manageable', 'Heavy', 'Very heavy', 'Overwhelming'],
-                ),
-                _buildThankYouSlide(),
-              ],
-            ),
-          ),
-
-          // ── Action button ───────────────────────────────────────────────
-          if (_currentPage <= _totalQuestions)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-              child: SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: ElevatedButton(
-                  onPressed: (_isCurrentQuestionAnswered() && !_isLoading) ? _nextPage : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: accentPurple,
-                    disabledBackgroundColor: const Color(0xFFD1CEFF),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20, width: 20,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                        )
-                      : Text(
-                          _currentPage == 0 ? 'Create Account' : 'Next →',
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _currentPage == 0
+                              ? 'Create Account'
+                              : 'Stress Assessment',
                           style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            
                           ),
                         ),
+                        Text(
+                          _currentPage == 0
+                              ? 'Set up your profile'
+                              : _currentPage > _totalQuestions
+                              ? 'All done!'
+                              : 'Question $_currentPage of $_totalQuestions',
+                          style: const TextStyle(fontSize: 12, color: textGrey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Step badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accentPurple.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _currentPage == 0
+                          ? 'Step 1'
+                          : '${(progress * 100).toInt()}%',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: accentPurple,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            // ── Progress bar ─────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  backgroundColor: const Color(0xFFE5E5EA),
+                  valueColor: const AlwaysStoppedAnimation<Color>(accentPurple),
+                  minHeight: 4,
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (page) => setState(() => _currentPage = page),
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildAccountSetup(), // Page 0
+                  // ── 9 corporate-professional stress questions ─────────────
+                  _buildMultipleChoiceQuestion(
+                    q: 'q1',
+                    emoji: '🏢',
+                    title: 'How do you typically work day-to-day?',
+                    options: [
+                      'Full-time office',
+                      'Fully remote',
+                      'Hybrid',
+                      'Frequent travel',
+                      'Varies a lot',
+                    ],
+                  ),
+                  _buildSliderQuestion(
+                    q: 'q2',
+                    emoji: '🧠',
+                    title:
+                        'How mentally drained do you feel at the end of a typical workday?',
+                    lowLabel: 'Barely drained',
+                    highLabel: 'Completely exhausted',
+                  ),
+                  _buildMultipleChoiceQuestion(
+                    q: 'q3',
+                    emoji: '⏰',
+                    title: 'How many hours do you typically work per day?',
+                    options: ['Under 7h', '7–9h', '9–11h', '11h+', 'It varies'],
+                  ),
+                  _buildSliderQuestion(
+                    q: 'q4',
+                    emoji: '📵',
+                    title: 'How well can you disconnect from work after hours?',
+                    lowLabel: 'Always checking in',
+                    highLabel: 'Fully switched off',
+                  ),
+                  _buildMultipleChoiceQuestion(
+                    q: 'q5',
+                    emoji: '🍽️',
+                    title: 'How often do you skip meals to focus on work?',
+                    options: [
+                      'Never',
+                      'Rarely',
+                      'Sometimes',
+                      'Often',
+                      'Almost every day',
+                    ],
+                  ),
+                  _buildSliderQuestion(
+                    q: 'q6',
+                    emoji: '📬',
+                    title:
+                        'How pressured do you feel to respond to messages outside work hours?',
+                    lowLabel: 'Not at all',
+                    highLabel: 'Constant pressure',
+                  ),
+                  _buildMultipleChoiceQuestion(
+                    q: 'q7',
+                    emoji: '😴',
+                    title:
+                        'On a typical work night, how much sleep do you get?',
+                    options: ['Under 5h', '5–6h', '6–7h', '7–8h', '8h+'],
+                  ),
+                  _buildSliderQuestion(
+                    q: 'q8',
+                    emoji: '💓',
+                    title:
+                        'How often do deadlines or meetings cause you anxiety?',
+                    lowLabel: 'Very rarely',
+                    highLabel: 'Nearly every day',
+                  ),
+                  _buildMultipleChoiceQuestion(
+                    q: 'q9',
+                    emoji: '📋',
+                    title: 'How would you describe your current workload?',
+                    options: [
+                      'Very manageable',
+                      'Manageable',
+                      'Heavy',
+                      'Very heavy',
+                      'Overwhelming',
+                    ],
+                  ),
+                  _buildThankYouSlide(),
+                ],
+              ),
+            ),
+
+            // ── Action button ───────────────────────────────────────────────
+            if (_currentPage <= _totalQuestions)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: ElevatedButton(
+                    onPressed: (_isCurrentQuestionAnswered() && !_isLoading)
+                        ? _nextPage
+                        : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accentPurple,
+                      disabledBackgroundColor: const Color(0xFFD1CEFF),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            _currentPage == 0 ? 'Create Account' : 'Next →',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -402,16 +462,49 @@ class _SignupScreenState extends State<SignupScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Your details',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textDark, letterSpacing: -0.3)),
+            const Text(
+              'Your details',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: -0.3,
+              ),
+            ),
             const SizedBox(height: 4),
-            const Text('Takes less than a minute', style: TextStyle(fontSize: 13, color: textGrey)),
+            const Text(
+              'Takes less than a minute',
+              style: TextStyle(fontSize: 13, color: textGrey),
+            ),
             const SizedBox(height: 24),
-            _buildField('Full Name', _nameController, Icons.person_outline_rounded, 'First Last'),
-            _buildField('Work Email', _emailController, Icons.mail_outline_rounded, 'you@company.com', keyboardType: TextInputType.emailAddress),
-            _buildField('Password', _passController, Icons.lock_outline_rounded, 'Min 6 characters', isPass: true),
+            _buildField(
+              'Full Name',
+              _nameController,
+              Icons.person_outline_rounded,
+              'First Last',
+            ),
+            _buildField(
+              'Work Email',
+              _emailController,
+              Icons.mail_outline_rounded,
+              'you@company.com',
+              keyboardType: TextInputType.emailAddress,
+            ),
+            _buildField(
+              'Password',
+              _passController,
+              Icons.lock_outline_rounded,
+              'Min 6 characters',
+              isPass: true,
+            ),
             _buildPasswordRequirementsChecklist(),
-            _buildField('Confirm Password', _confirmPassController, Icons.lock_outline_rounded, 'Repeat password', isPass: true, isConfirm: true),
+            _buildField(
+              'Confirm Password',
+              _confirmPassController,
+              Icons.lock_outline_rounded,
+              'Repeat password',
+              isPass: true,
+              isConfirm: true,
+            ),
             _buildPasswordErrorLabel(),
             const SizedBox(height: 4),
             // Security notice
@@ -429,7 +522,11 @@ class _SignupScreenState extends State<SignupScreen> {
                   Expanded(
                     child: Text(
                       'Your data is encrypted and never shared with third parties.',
-                      style: TextStyle(fontSize: 12, color: textGrey, height: 1.4),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: textGrey,
+                        height: 1.4,
+                      ),
                     ),
                   ),
                 ],
@@ -487,7 +584,11 @@ class _SignupScreenState extends State<SignupScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline_rounded, size: 15, color: Color(0xFFFF3B30)),
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 15,
+            color: Color(0xFFFF3B30),
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
@@ -515,25 +616,37 @@ class _SignupScreenState extends State<SignupScreen> {
   }) {
     final isVisible = isConfirm ? _showConfirmPassword : _showPassword;
     final showValidCheckmark =
-        isPass && !isConfirm && ctrl.text.isNotEmpty && _passwordMeetsRequirements;
+        isPass &&
+        !isConfirm &&
+        ctrl.text.isNotEmpty &&
+        _passwordMeetsRequirements;
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
-                  color: textGrey, letterSpacing: 0.3)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: textGrey,
+              letterSpacing: 0.3,
+            ),
+          ),
           const SizedBox(height: 6),
           TextFormField(
             controller: ctrl,
             obscureText: isPass && !isVisible,
             keyboardType: keyboardType,
-            style: const TextStyle(fontSize: 15, color: textDark),
+            style: const TextStyle(fontSize: 15, ),
             decoration: InputDecoration(
               prefixIcon: Icon(icon, color: const Color(0xFFC7C7CC), size: 18),
               hintText: hint,
-              hintStyle: const TextStyle(color: Color(0xFFC7C7CC), fontSize: 14),
+              hintStyle: const TextStyle(
+                color: Color(0xFFC7C7CC),
+                fontSize: 14,
+              ),
               filled: true,
               fillColor: Colors.white,
               border: OutlineInputBorder(
@@ -567,8 +680,11 @@ class _SignupScreenState extends State<SignupScreen> {
                           ),
                         IconButton(
                           icon: Icon(
-                            isVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                            color: const Color(0xFFC7C7CC), size: 18,
+                            isVisible
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            color: const Color(0xFFC7C7CC),
+                            size: 18,
                           ),
                           onPressed: () => setState(() {
                             if (isConfirm) {
@@ -581,7 +697,10 @@ class _SignupScreenState extends State<SignupScreen> {
                       ],
                     )
                   : null,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
             ),
             validator: (v) {
               // Password/confirm-password errors are surfaced through the
@@ -625,17 +744,27 @@ class _SignupScreenState extends State<SignupScreen> {
             child: Text(emoji, style: const TextStyle(fontSize: 30)),
           ),
           const SizedBox(height: 20),
-          Text(title,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
-                  color: textDark, height: 1.35, letterSpacing: -0.3)),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              height: 1.35,
+              letterSpacing: -0.3,
+            ),
+          ),
           const SizedBox(height: 8),
-          const Text('Slide to answer', style: TextStyle(fontSize: 13, color: textGrey)),
+          const Text(
+            'Slide to answer',
+            style: TextStyle(fontSize: 13, color: textGrey),
+          ),
           const SizedBox(height: 40),
           // Current value bubble
           Center(
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              width: 72, height: 72,
+              width: 72,
+              height: 72,
               decoration: BoxDecoration(
                 color: val == null ? const Color(0xFFE5E5EA) : accentPurple,
                 shape: BoxShape.circle,
@@ -644,7 +773,8 @@ class _SignupScreenState extends State<SignupScreen> {
                 child: Text(
                   val == null ? '?' : val.toInt().toString(),
                   style: TextStyle(
-                    fontSize: 26, fontWeight: FontWeight.bold,
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
                     color: val == null ? textGrey : Colors.white,
                   ),
                 ),
@@ -663,7 +793,9 @@ class _SignupScreenState extends State<SignupScreen> {
             ),
             child: Slider(
               value: val ?? 5.0,
-              min: 1, max: 10, divisions: 9,
+              min: 1,
+              max: 10,
+              divisions: 9,
               onChanged: (v) => setState(() => _userData['responses'][q] = v),
             ),
           ),
@@ -672,8 +804,14 @@ class _SignupScreenState extends State<SignupScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(lowLabel, style: const TextStyle(fontSize: 11, color: textGrey)),
-                Text(highLabel, style: const TextStyle(fontSize: 11, color: textGrey)),
+                Text(
+                  lowLabel,
+                  style: const TextStyle(fontSize: 11, color: textGrey),
+                ),
+                Text(
+                  highLabel,
+                  style: const TextStyle(fontSize: 11, color: textGrey),
+                ),
               ],
             ),
           ),
@@ -704,11 +842,20 @@ class _SignupScreenState extends State<SignupScreen> {
             child: Text(emoji, style: const TextStyle(fontSize: 30)),
           ),
           const SizedBox(height: 20),
-          Text(title,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
-                  color: textDark, height: 1.35, letterSpacing: -0.3)),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              height: 1.35,
+              letterSpacing: -0.3,
+            ),
+          ),
           const SizedBox(height: 8),
-          const Text('Choose one', style: TextStyle(fontSize: 13, color: textGrey)),
+          const Text(
+            'Choose one',
+            style: TextStyle(fontSize: 13, color: textGrey),
+          ),
           const SizedBox(height: 24),
           ...options.map((opt) {
             final isSelected = selected == opt;
@@ -728,7 +875,10 @@ class _SignupScreenState extends State<SignupScreen> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 16,
+                ),
                 decoration: BoxDecoration(
                   color: isSelected ? accentPurple : Colors.white,
                   borderRadius: BorderRadius.circular(16),
@@ -750,7 +900,11 @@ class _SignupScreenState extends State<SignupScreen> {
                       ),
                     ),
                     if (isSelected)
-                      const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                      const Icon(
+                        Icons.check_circle_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                   ],
                 ),
               ),
@@ -788,13 +942,17 @@ class _SignupScreenState extends State<SignupScreen> {
         const SizedBox(height: 40),
         ElevatedButton(
           onPressed: () {
-            Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+            Navigator.of(
+              context,
+            ).pushNamedAndRemoveUntil('/', (route) => false);
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF7C69EF),
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
           child: const Text("Go to Dashboard", style: TextStyle(fontSize: 16)),
         ),

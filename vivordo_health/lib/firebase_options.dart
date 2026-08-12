@@ -66,12 +66,12 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyCFzLeHFVO2jNbwBEHarMnF0rHu25IetMs',
-    appId: '1:226030806435:ios:4e505f002fb984eda36616',
+    appId: '1:226030806435:ios:243588da0d346f6aa36616',
     messagingSenderId: '226030806435',
     projectId: 'vivordo-health',
     storageBucket: 'vivordo-health.firebasestorage.app',
-    iosClientId: '226030806435-d4nqtstrlhtm1cltipnat2bpo5eqn0mj.apps.googleusercontent.com',
-    iosBundleId: 'com.example.vivordoHealth',
+    iosClientId:
+        '226030806435-7a9a6m45j21jaefhduqf4ikqc1m81olu.apps.googleusercontent.com',
+    iosBundleId: 'com.vivordo.health',
   );
-
 }

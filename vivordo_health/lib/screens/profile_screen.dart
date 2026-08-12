@@ -5,22 +5,22 @@ import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
+import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
-
+import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
-
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
-
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
@@ -29,14 +29,16 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isEmailVerificationSignOut = false;
 
   // Loading states for HealthKit actions
-  bool _isConnectingAll = false;           // "Connect Apple Health" button
-  String? _togglingMetric;                 // key of metric currently being toggled
+  bool _isConnectingAll = false; // "Connect Apple Health" button
+  String? _togglingMetric; // key of metric currently being toggled
   bool _isGoogleCalendarConnected = false;
   bool _isUpdatingGoogleCalendar = false;
   bool _isOutlookCalendarConnected = false;
   bool _isUpdatingOutlookCalendar = false;
+  bool _isUpdatingFitbit = false;
   bool _isUpdatingScanReminder = false;
   bool _isUpdatingCheckInReminder = false;
+  bool _isUpdatingCircleNotifications = false;
 
   // Bug report
   final TextEditingController _bugReportController = TextEditingController();
@@ -57,16 +59,14 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _userDocStream = uid != null
-        ? FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .snapshots()
+        ? FirebaseFirestore.instance.collection('users').doc(uid).snapshots()
         : const Stream.empty();
 
-    CalendarService.connectionNotifier.addListener(_handleGoogleCalendarConnectionChange);
+    CalendarService.connectionNotifier.addListener(
+      _handleGoogleCalendarConnectionChange,
+    );
     _refreshGoogleCalendarConnection();
     _refreshOutlookCalendarConnection();
-
 
     // Skip the first emission — it just reflects current login state, not a change
     bool isFirstEmission = true;
@@ -79,7 +79,6 @@ class _SettingsScreenState extends State<SettingsScreen>
         final message = _isEmailVerificationSignOut
             ? 'Email verified! Please log in again with your new email.'
             : 'You have been signed out.';
-
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -94,28 +93,29 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
     });
 
-
     // NOTE: We do NOT call _checkEmailSync() here anymore.
     // Cleanup of pendingEmail now happens in AuthService.emailLogin,
     // so by the time the user reaches this screen it is already clean.
   }
 
-
   @override
   void dispose() {
     _authSubscription?.cancel();
     _bugReportController.dispose();
-    CalendarService.connectionNotifier.removeListener(_handleGoogleCalendarConnectionChange);
+    CalendarService.connectionNotifier.removeListener(
+      _handleGoogleCalendarConnectionChange,
+    );
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
-
 
   Future<void> _submitBugReport() async {
     final message = _bugReportController.text.trim();
     if (message.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please describe the bug before sending.')),
+        const SnackBar(
+          content: Text('Please describe the bug before sending.'),
+        ),
       );
       return;
     }
@@ -127,14 +127,16 @@ class _SettingsScreenState extends State<SettingsScreen>
         _bugReportController.clear();
         FocusScope.of(context).unfocus();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Thanks! Your bug report has been sent.')),
+          const SnackBar(
+            content: Text('Thanks! Your bug report has been sent.'),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not send report: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not send report: $e')));
       }
     } finally {
       if (mounted) setState(() => _isSubmittingBugReport = false);
@@ -234,6 +236,80 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  Future<void> _updateFitbitConnection(bool isConnected) async {
+    if (_isUpdatingFitbit) return;
+    setState(() => _isUpdatingFitbit = true);
+    try {
+      if (isConnected) {
+        await FitbitService.instance.disconnect();
+      } else {
+        await FitbitService.instance.connect();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isConnected
+                  ? 'Fitbit has been disconnected.'
+                  : 'Fitbit connected and the last 30 days were synced.',
+            ),
+          ),
+        );
+      }
+    } on FitbitAccountNotLinkedException catch (error) {
+      if (mounted) await _showGoogleHealthSetupDialog(error.setupUrl);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Fitbit could not be updated. Please try again shortly.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdatingFitbit = false);
+    }
+  }
+
+  Future<void> _showGoogleHealthSetupDialog(Uri setupUrl) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Finish Google Health setup'),
+        content: const Text(
+          'This Google account is not linked to Google Health yet. Complete '
+          'the setup using the same account that owns your Fitbit data, then '
+          'return to Vivordo and sync again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              final opened = await launchUrl(
+                setupUrl,
+                mode: LaunchMode.externalApplication,
+              );
+              if (!opened && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not open Google Health setup.'),
+                  ),
+                );
+              }
+            },
+            child: const Text('Open setup'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _updateReminderPreference({
     required String field,
     required bool enabled,
@@ -242,13 +318,21 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (uid == null) return;
 
     final isScanReminder = field == 'scanReminderEnabled';
-    if (isScanReminder ? _isUpdatingScanReminder : _isUpdatingCheckInReminder) {
+    final isCircleNotification = field == 'circleNotificationsEnabled';
+    final isUpdating = isScanReminder
+        ? _isUpdatingScanReminder
+        : isCircleNotification
+        ? _isUpdatingCircleNotifications
+        : _isUpdatingCheckInReminder;
+    if (isUpdating) {
       return;
     }
 
     setState(() {
       if (isScanReminder) {
         _isUpdatingScanReminder = true;
+      } else if (isCircleNotification) {
+        _isUpdatingCircleNotifications = true;
       } else {
         _isUpdatingCheckInReminder = true;
       }
@@ -260,7 +344,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       });
       if (isScanReminder) {
         await NotificationService().setDailyScanRemindersEnabled(enabled);
-      } else {
+      } else if (!isCircleNotification) {
         await NotificationService().setCalendarCheckInReminderEnabled(enabled);
       }
     } catch (e) {
@@ -274,6 +358,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         setState(() {
           if (isScanReminder) {
             _isUpdatingScanReminder = false;
+          } else if (isCircleNotification) {
+            _isUpdatingCircleNotifications = false;
           } else {
             _isUpdatingCheckInReminder = false;
           }
@@ -355,7 +441,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Only check when the user returns to the app — this handles the case
@@ -366,7 +451,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
-
   Future<void> _checkEmailSync() async {
     final didLogout = await UserService.syncEmailWithAuth();
     if (didLogout) {
@@ -374,7 +458,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
     // Navigation handled by authStateChanges listener
   }
-
 
   void _showEditDialog(
     BuildContext context,
@@ -409,8 +492,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                     TextField(
                       controller: controller,
                       obscureText: true,
-                      decoration:
-                          const InputDecoration(labelText: 'New Password'),
+                      decoration: const InputDecoration(
+                        labelText: 'New Password',
+                      ),
                     ),
                   ],
                 )
@@ -443,19 +527,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                     await UserService.updatePassword(controller.text);
                   }
 
-
                   if (mounted) {
                     Navigator.pop(context);
-
 
                     final message = field == "Email"
                         ? 'Verification email sent to ${controller.text}. Tap the link to confirm your new email.'
                         : '$field updated successfully!';
 
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(message)),
-                    );
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(message)));
                   }
                 } on FirebaseAuthException catch (e) {
                   String errorMessage = 'Error: ${e.message}';
@@ -469,9 +550,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                     errorMessage = e.message ?? 'Password is too weak.';
                   }
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(errorMessage)),
-                    );
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(errorMessage)));
                   }
                 } catch (e) {
                   if (mounted) {
@@ -488,7 +569,6 @@ class _SettingsScreenState extends State<SettingsScreen>
       },
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -541,35 +621,31 @@ class _SettingsScreenState extends State<SettingsScreen>
           );
         }
 
-
         // Extract everything from the ONE snapshot — no extra Firestore listeners.
-        final rawData     = snapshot.data!.data() as Map<String, dynamic>;
-        final userData    = UserModel.fromMap(rawData, snapshot.data!.id);
+        final rawData = snapshot.data!.data() as Map<String, dynamic>;
+        final userData = UserModel.fromMap(rawData, snapshot.data!.id);
         final pendingEmail = rawData['pendingEmail'] as String?;
         final preferences = rawData['preferences'] as Map? ?? {};
-        final scanReminderEnabled =
-            preferences['scanReminderEnabled'] != false;
+        final scanReminderEnabled = preferences['scanReminderEnabled'] != false;
         final checkInReminderEnabled =
             preferences['checkInReminderEnabled'] != false;
+        final circleNotificationsEnabled =
+            preferences['circleNotificationsEnabled'] != false;
         final savedReminderTimes =
             (preferences['scanReminderTimes'] as List?)
-                    ?.whereType<num>()
-                    .map(
-                      (value) => value.toInt().clamp(0, 1439).toInt(),
-                    )
-                    .toSet()
-                    .toList() ??
-                [];
+                ?.whereType<num>()
+                .map((value) => value.toInt().clamp(0, 1439).toInt())
+                .toSet()
+                .toList() ??
+            [];
         final scanReminderTimes = savedReminderTimes.isNotEmpty
             ? savedReminderTimes
             : <int>[
-                ((preferences['scanReminderMorningMinutes'] as num?)
-                            ?.toInt() ??
+                ((preferences['scanReminderMorningMinutes'] as num?)?.toInt() ??
                         9 * 60)
                     .clamp(0, 1439)
                     .toInt(),
-                ((preferences['scanReminderEveningMinutes'] as num?)
-                            ?.toInt() ??
+                ((preferences['scanReminderEveningMinutes'] as num?)?.toInt() ??
                         17 * 60)
                     .clamp(0, 1439)
                     .toInt(),
@@ -577,16 +653,18 @@ class _SettingsScreenState extends State<SettingsScreen>
         scanReminderTimes.sort();
 
         // Read consent from the same doc — avoids opening extra listeners.
-        final consentRaw   = rawData['healthKitConsent'] as Map? ?? {};
-        final consent      = consentRaw.map((k, v) => MapEntry(k.toString(), v == true));
+        final consentRaw = rawData['healthKitConsent'] as Map? ?? {};
+        final consent = consentRaw.map(
+          (k, v) => MapEntry(k.toString(), v == true),
+        );
         final anyConsented = consent.values.any((v) => v);
         final selectedMetricCount = kHealthMetrics
             .where((metric) => consent[metric.key] == true)
             .length;
-
+        final fitbitConnected = rawData['fitbitConnected'] == true;
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF2F2F7),
+          backgroundColor: context.vivordoColors.page,
           body: SafeArea(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -604,11 +682,17 @@ class _SettingsScreenState extends State<SettingsScreen>
                           width: 38,
                           height: 38,
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: context.vivordoColors.card,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE5E5EA)),
+                            border: Border.all(
+                              color: context.vivordoColors.border,
+                            ),
                           ),
-                          child: const Icon(Icons.arrow_back_ios_new_rounded, size: 16, color: Color(0xFF1C1C1E)),
+                          child: Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            size: 16,
+                            color: context.vivordoColors.textPrimary,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -617,18 +701,20 @@ class _SettingsScreenState extends State<SettingsScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Profile',
+                              'App Settings',
                               style: TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF1C1C1E),
                                 letterSpacing: -0.5,
                               ),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               userData.email ?? '',
-                              style: const TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF8E8E93),
+                              ),
                             ),
                           ],
                         ),
@@ -640,11 +726,25 @@ class _SettingsScreenState extends State<SettingsScreen>
                         decoration: BoxDecoration(
                           color: const Color(0xFF7B6EF6).withOpacity(0.12),
                           shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFF7B6EF6).withOpacity(0.25), width: 2),
+                          border: Border.all(
+                            color: const Color(0xFF7B6EF6).withOpacity(0.25),
+                            width: 2,
+                          ),
                         ),
-                        child: userData.photoUrl != null && userData.photoUrl!.startsWith('http')
-                            ? ClipOval(child: Image.network(userData.photoUrl!, fit: BoxFit.cover))
-                            : const Icon(Icons.person_outline_rounded, size: 26, color: Color(0xFF7B6EF6)),
+                        child:
+                            userData.photoUrl != null &&
+                                userData.photoUrl!.startsWith('http')
+                            ? ClipOval(
+                                child: Image.network(
+                                  userData.photoUrl!,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.person_outline_rounded,
+                                size: 26,
+                                color: Color(0xFF7B6EF6),
+                              ),
                       ),
                     ],
                   ),
@@ -662,12 +762,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.mail_outline, color: Colors.amber, size: 18),
+                          const Icon(
+                            Icons.mail_outline,
+                            color: Colors.amber,
+                            size: 18,
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               'Verify your new email: $pendingEmail\nCheck your inbox and tap the link.',
-                              style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+                              style: const TextStyle(fontSize: 13, height: 1.4),
                             ),
                           ),
                         ],
@@ -684,14 +788,22 @@ class _SettingsScreenState extends State<SettingsScreen>
                         Icons.person_outline_rounded,
                         'Name',
                         userData.displayName ?? 'Set your name',
-                        onTap: () => _showEditDialog(context, 'Name', userData.displayName ?? ''),
+                        onTap: () => _showEditDialog(
+                          context,
+                          'Name',
+                          userData.displayName ?? '',
+                        ),
                       ),
                       _buildDivider(),
                       _buildInfoRow(
                         Icons.mail_outline_rounded,
                         'Email',
                         userData.email ?? 'Set your email',
-                        onTap: () => _showEditDialog(context, 'Email', userData.email ?? ''),
+                        onTap: () => _showEditDialog(
+                          context,
+                          'Email',
+                          userData.email ?? '',
+                        ),
                       ),
                       _buildDivider(),
                       _buildInfoRow(
@@ -723,7 +835,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                               child: Icon(
                                 Icons.favorite_rounded,
                                 size: 18,
-                                color: anyConsented ? Colors.pinkAccent : const Color(0xFF8E8E93),
+                                color: anyConsented
+                                    ? Colors.pinkAccent
+                                    : const Color(0xFF8E8E93),
                               ),
                             ),
                             const SizedBox(width: 14),
@@ -736,7 +850,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1C1C1E),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -746,14 +859,19 @@ class _SettingsScreenState extends State<SettingsScreen>
                                         : 'No metrics selected',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: anyConsented ? const Color(0xFF34C759) : const Color(0xFF8E8E93),
+                                      color: anyConsented
+                                          ? const Color(0xFF34C759)
+                                          : const Color(0xFF8E8E93),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: anyConsented
                                     ? const Color(0xFFE9FAF0)
@@ -765,7 +883,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
-                                  color: anyConsented ? const Color(0xFF34C759) : const Color(0xFF8E8E93),
+                                  color: anyConsented
+                                      ? const Color(0xFF34C759)
+                                      : const Color(0xFF8E8E93),
                                 ),
                               ),
                             ),
@@ -782,30 +902,51 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 : () async {
                                     setState(() => _isConnectingAll = true);
                                     try {
-                                      final granted = await HealthService().enableAll();
+                                      final granted = await HealthService()
+                                          .enableAll();
                                       if (mounted && !granted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           const SnackBar(
-                                            content: Text('Apple Health permissions were not granted.'),
+                                            content: Text(
+                                              'Apple Health permissions were not granted.',
+                                            ),
                                           ),
                                         );
                                       }
                                     } catch (e) {
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('Could not connect: $e')),
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Could not connect: $e',
+                                            ),
+                                          ),
                                         );
                                       }
                                     } finally {
-                                      if (mounted) setState(() => _isConnectingAll = false);
+                                      if (mounted)
+                                        setState(
+                                          () => _isConnectingAll = false,
+                                        );
                                     }
                                   },
                             icon: _isConnectingAll
                                 ? const SizedBox(
-                                    width: 16, height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
                                   )
-                                : const Icon(Icons.health_and_safety_outlined, size: 18),
+                                : const Icon(
+                                    Icons.health_and_safety_outlined,
+                                    size: 18,
+                                  ),
                             label: Text(
                               _isConnectingAll
                                   ? 'Requesting access…'
@@ -816,8 +957,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                               foregroundColor: Colors.white,
                               elevation: 0,
                               padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ),
@@ -825,7 +971,167 @@ class _SettingsScreenState extends State<SettingsScreen>
                         const Text(
                           'Apple controls access. Vivordo only reads the metrics you approve.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 11, color: Color(0xFF8E8E93)),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF8E8E93),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ── Fitbit ────────────────────────────────────────────────
+                  _buildSectionLabel('Connected Wearables'),
+                  _buildCard(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFF00B0B9,
+                                ).withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.watch_rounded,
+                                size: 18,
+                                color: Color(0xFF00B0B9),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Fitbit',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    fitbitConnected
+                                        ? 'Connected — health data sync enabled'
+                                        : 'Connect your Fitbit account',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: fitbitConnected
+                                          ? const Color(0xFF34C759)
+                                          : const Color(0xFF8E8E93),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: _isUpdatingFitbit
+                                  ? null
+                                  : () => _updateFitbitConnection(
+                                      fitbitConnected,
+                                    ),
+                              icon: _isUpdatingFitbit
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Color(0xFF00B0B9),
+                                      ),
+                                    )
+                                  : Icon(
+                                      fitbitConnected
+                                          ? Icons.link_off_rounded
+                                          : Icons.link_rounded,
+                                      size: 16,
+                                    ),
+                              label: Text(
+                                _isUpdatingFitbit
+                                    ? (fitbitConnected
+                                          ? 'Disconnecting…'
+                                          : 'Connecting…')
+                                    : (fitbitConnected
+                                          ? 'Disconnect'
+                                          : 'Connect'),
+                              ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: fitbitConnected
+                                    ? const Color(0xFFFF3B30)
+                                    : const Color(0xFF00B0B9),
+                                textStyle: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (fitbitConnected) ...[
+                        _buildDivider(),
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton.icon(
+                            onPressed: _isUpdatingFitbit
+                                ? null
+                                : () async {
+                                    setState(() => _isUpdatingFitbit = true);
+                                    try {
+                                      await FitbitService.instance.sync(
+                                        daysBack: 30,
+                                      );
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Fitbit data is up to date.',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    } on FitbitAccountNotLinkedException catch (
+                                      error
+                                    ) {
+                                      if (mounted) {
+                                        await _showGoogleHealthSetupDialog(
+                                          error.setupUrl,
+                                        );
+                                      }
+                                    } catch (_) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Fitbit could not be synced. '
+                                              'Please try again shortly.',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    } finally {
+                                      if (mounted) {
+                                        setState(
+                                          () => _isUpdatingFitbit = false,
+                                        );
+                                      }
+                                    }
+                                  },
+                            icon: const Icon(Icons.sync_rounded, size: 17),
+                            label: const Text('Sync last 30 days'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF00B0B9),
+                            ),
+                          ),
                         ),
                       ],
                     ],
@@ -843,7 +1149,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF7B6EF6).withValues(alpha: 0.1),
+                                color: const Color(
+                                  0xFF7B6EF6,
+                                ).withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(
@@ -862,7 +1170,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1C1C1E),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -881,7 +1188,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                               ),
                             ),
                             TextButton.icon(
-                              onPressed: _isUpdatingGoogleCalendar ? null : _updateGoogleCalendarConnection,
+                              onPressed: _isUpdatingGoogleCalendar
+                                  ? null
+                                  : _updateGoogleCalendarConnection,
                               icon: _isUpdatingGoogleCalendar
                                   ? const SizedBox(
                                       width: 14,
@@ -899,8 +1208,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     ),
                               label: Text(
                                 _isUpdatingGoogleCalendar
-                                    ? (_isGoogleCalendarConnected ? 'Logging out…' : 'Signing in…')
-                                    : (_isGoogleCalendarConnected ? 'Log Out' : 'Sign In'),
+                                    ? (_isGoogleCalendarConnected
+                                          ? 'Logging out…'
+                                          : 'Signing in…')
+                                    : (_isGoogleCalendarConnected
+                                          ? 'Log Out'
+                                          : 'Sign In'),
                               ),
                               style: TextButton.styleFrom(
                                 foregroundColor: _isGoogleCalendarConnected
@@ -923,8 +1236,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF0078D4)
-                                    .withValues(alpha: 0.1),
+                                color: const Color(
+                                  0xFF0078D4,
+                                ).withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(
@@ -943,7 +1257,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1C1C1E),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -983,11 +1296,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                               label: Text(
                                 _isUpdatingOutlookCalendar
                                     ? (_isOutlookCalendarConnected
-                                        ? 'Logging out...'
-                                        : 'Signing in...')
+                                          ? 'Logging out...'
+                                          : 'Signing in...')
                                     : (_isOutlookCalendarConnected
-                                        ? 'Log Out'
-                                        : 'Sign In'),
+                                          ? 'Log Out'
+                                          : 'Sign In'),
                               ),
                               style: TextButton.styleFrom(
                                 foregroundColor: _isOutlookCalendarConnected
@@ -1030,12 +1343,14 @@ class _SettingsScreenState extends State<SettingsScreen>
                               contentPadding: EdgeInsets.zero,
                               value: enabled,
                               thumbColor: WidgetStateProperty.resolveWith(
-                                (states) => states.contains(WidgetState.selected)
+                                (states) =>
+                                    states.contains(WidgetState.selected)
                                     ? Colors.white
                                     : const Color(0xFFFFFFFF),
                               ),
                               trackColor: WidgetStateProperty.resolveWith(
-                                (states) => states.contains(WidgetState.selected)
+                                (states) =>
+                                    states.contains(WidgetState.selected)
                                     ? const Color(0xFF7B6EF6)
                                     : const Color(0xFFD1D1D6),
                               ),
@@ -1043,65 +1358,79 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 Colors.transparent,
                               ),
                               onChanged: (val) async {
-                                    if (isToggling) return;
-                                    setState(() => _togglingMetric = metric.key);
-                                    try {
-                                      if (val) {
-                                        final granted = await HealthService()
-                                            .enableMetric(metric.key);
-                                        if (!granted && mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                '${metric.label} was not enabled. Review Vivordo permissions in Apple Health.',
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      } else {
-                                        await HealthService().disableMetric(metric.key);
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('Error: $e')),
-                                        );
-                                      }
-                                    } finally {
-                                      if (mounted) setState(() => _togglingMetric = null);
+                                if (isToggling) return;
+                                setState(() => _togglingMetric = metric.key);
+                                try {
+                                  if (val) {
+                                    final granted = await HealthService()
+                                        .enableMetric(metric.key);
+                                    if (!granted && mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '${metric.label} was not enabled. Review Vivordo permissions in Apple Health.',
+                                          ),
+                                        ),
+                                      );
                                     }
-                                  },
-                            title: Text(
-                              metric.label,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                                color: isToggling ? const Color(0xFF8E8E93) : const Color(0xFF1C1C1E),
+                                  } else {
+                                    await HealthService().disableMetric(
+                                      metric.key,
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Error: $e')),
+                                    );
+                                  }
+                                } finally {
+                                  if (mounted)
+                                    setState(() => _togglingMetric = null);
+                                }
+                              },
+                              title: Text(
+                                metric.label,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: isToggling
+                                      ? const Color(0xFF8E8E93)
+                                      : const Color(0xFF1C1C1E),
+                                ),
                               ),
-                            ),
-                            subtitle: Text(
-                              isToggling
-                                  ? (enabled
-                                      ? 'Removing saved Vivordo data…'
-                                      : 'Requesting Apple Health access…')
-                                  : metric.description,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isToggling ? const Color(0xFF7B6EF6) : const Color(0xFF8E8E93),
+                              subtitle: Text(
+                                isToggling
+                                    ? (enabled
+                                          ? 'Removing saved Vivordo data…'
+                                          : 'Requesting Apple Health access…')
+                                    : metric.description,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isToggling
+                                      ? const Color(0xFF7B6EF6)
+                                      : const Color(0xFF8E8E93),
+                                ),
                               ),
+                              secondary: isToggling
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Color(0xFF7B6EF6),
+                                      ),
+                                    )
+                                  : Icon(
+                                      _metricIcon(metric.key),
+                                      color: enabled
+                                          ? const Color(0xFF7B6EF6)
+                                          : const Color(0xFF8E8E93),
+                                      size: 20,
+                                    ),
                             ),
-                            secondary: isToggling
-                                ? const SizedBox(
-                                    width: 20, height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7B6EF6)),
-                                  )
-                                : Icon(
-                                    _metricIcon(metric.key),
-                                    color: enabled ? const Color(0xFF7B6EF6) : const Color(0xFF8E8E93),
-                                    size: 20,
-                                  ),
-                          ),
                             if (metric != kHealthMetrics.last)
                               const Divider(
                                 height: 1,
@@ -1120,6 +1449,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                   _buildCard(
                     children: [
                       _buildToggleRow(
+                        Icons.dark_mode_outlined,
+                        'Dark Mode',
+                        'Use Vivordo’s dark appearance',
+                        context.watch<ThemeController>().isDark,
+                        (value) =>
+                            context.read<ThemeController>().setDarkMode(value),
+                      ),
+                      _buildDivider(),
+                      _buildToggleRow(
                         Icons.monitor_heart_outlined,
                         'Scan Reminders',
                         '${scanReminderTimes.length} reminder${scanReminderTimes.length == 1 ? '' : 's'} each day',
@@ -1130,9 +1468,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                         ),
                       ),
                       if (scanReminderEnabled) ...[
-                        for (var index = 0;
-                            index < scanReminderTimes.length;
-                            index++) ...[
+                        for (
+                          var index = 0;
+                          index < scanReminderTimes.length;
+                          index++
+                        ) ...[
                           _buildDivider(),
                           _buildReminderTimeRow(
                             index: index,
@@ -1175,6 +1515,17 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       _buildDivider(),
                       _buildToggleRow(
+                        Icons.group_outlined,
+                        'Circle Notifications',
+                        'Likes and comments on your activity',
+                        circleNotificationsEnabled,
+                        (val) => _updateReminderPreference(
+                          field: 'circleNotificationsEnabled',
+                          enabled: val,
+                        ),
+                      ),
+                      _buildDivider(),
+                      _buildToggleRow(
                         Icons.sync_rounded,
                         'Auto Sync Health Data',
                         'Syncs every 3 minutes in background',
@@ -1199,25 +1550,37 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 Container(
                                   padding: const EdgeInsets.all(7),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF7B6EF6).withOpacity(0.1),
+                                    color: const Color(
+                                      0xFF7B6EF6,
+                                    ).withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: const Icon(Icons.bug_report_outlined,
-                                      size: 16, color: Color(0xFF7B6EF6)),
+                                  child: const Icon(
+                                    Icons.bug_report_outlined,
+                                    size: 16,
+                                    color: Color(0xFF7B6EF6),
+                                  ),
                                 ),
                                 const SizedBox(width: 14),
                                 const Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text('Found a problem?',
-                                          style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: Color(0xFF1C1C1E))),
-                                      Text('Tell us what went wrong and we’ll look into it',
-                                          style: TextStyle(
-                                              fontSize: 12, color: Color(0xFF8E8E93))),
+                                      Text(
+                                        'Found a problem?',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Tell us what went wrong and we’ll look into it',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF8E8E93),
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -1229,10 +1592,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                               minLines: 3,
                               maxLines: 6,
                               textCapitalization: TextCapitalization.sentences,
-                              style: const TextStyle(fontSize: 14, color: Color(0xFF1C1C1E)),
+                              style: const TextStyle(fontSize: 14),
                               decoration: InputDecoration(
                                 hintText: 'Describe the bug…',
-                                hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF8E8E93)),
+                                hintStyle: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xFF8E8E93),
+                                ),
                                 filled: true,
                                 fillColor: const Color(0xFFF2F2F7),
                                 contentPadding: const EdgeInsets.all(14),
@@ -1246,7 +1612,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(color: Color(0xFF7B6EF6), width: 1.5),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFF7B6EF6),
+                                    width: 1.5,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1254,24 +1623,38 @@ class _SettingsScreenState extends State<SettingsScreen>
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton.icon(
-                                onPressed: _isSubmittingBugReport ? null : _submitBugReport,
+                                onPressed: _isSubmittingBugReport
+                                    ? null
+                                    : _submitBugReport,
                                 icon: _isSubmittingBugReport
                                     ? const SizedBox(
-                                        width: 16, height: 16,
+                                        width: 16,
+                                        height: 16,
                                         child: CircularProgressIndicator(
-                                            strokeWidth: 2, color: Colors.white),
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
                                       )
                                     : const Icon(Icons.send_rounded, size: 18),
-                                label: Text(_isSubmittingBugReport ? 'Sending…' : 'Send Report'),
+                                label: Text(
+                                  _isSubmittingBugReport
+                                      ? 'Sending…'
+                                      : 'Send Report',
+                                ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF7B6EF6),
                                   foregroundColor: Colors.white,
                                   elevation: 0,
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                   shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14)),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
                                   textStyle: const TextStyle(
-                                      fontSize: 14, fontWeight: FontWeight.w600),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1292,14 +1675,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                         await AnalyticsService().logLogout();
                         await FirebaseAuth.instance.signOut();
                       },
-                      icon: const Icon(Icons.logout_rounded, size: 18, color: Color(0xFFFF3B30)),
+                      icon: const Icon(
+                        Icons.logout_rounded,
+                        size: 18,
+                        color: Color(0xFFFF3B30),
+                      ),
                       label: const Text('Log Out'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFFE5E5),
                         foregroundColor: const Color(0xFFFF3B30),
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
@@ -1313,7 +1705,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-
   // ── Helper Widgets ─────────────────────────────────────────────────────────
 
   Widget _buildSectionLabel(String title) {
@@ -1321,10 +1712,10 @@ class _SettingsScreenState extends State<SettingsScreen>
       padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         title.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF8E8E93),
+          color: context.vivordoColors.textSecondary,
           letterSpacing: 0.8,
         ),
       ),
@@ -1333,14 +1724,14 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Widget _buildCard({required List<Widget> children}) {
     return Material(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(20),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFE5E5EA)),
+          border: Border.all(color: context.vivordoColors.border),
         ),
         child: Column(children: children),
       ),
@@ -1348,9 +1739,14 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Widget _buildDivider() =>
-      const Divider(height: 1, color: Color(0xFFF2F2F7));
+      Divider(height: 1, color: context.vivordoColors.border);
 
-  Widget _buildInfoRow(IconData icon, String label, String value, {VoidCallback? onTap}) {
+  Widget _buildInfoRow(
+    IconData icon,
+    String label,
+    String value, {
+    VoidCallback? onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1364,16 +1760,31 @@ class _SettingsScreenState extends State<SettingsScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF8E8E93), fontWeight: FontWeight.w500)),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF8E8E93),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(value,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF1C1C1E))),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
             if (onTap != null)
-              const Icon(Icons.chevron_right_rounded, size: 20, color: Color(0xFFC7C7CC)),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: Color(0xFFC7C7CC),
+              ),
           ],
         ),
       ),
@@ -1421,7 +1832,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1C1C1E),
                           ),
                         ),
                       ],
@@ -1450,7 +1860,13 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _buildToggleRow(IconData icon, String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
+  Widget _buildToggleRow(
+    IconData icon,
+    String title,
+    String subtitle,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1468,10 +1884,21 @@ class _SettingsScreenState extends State<SettingsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1C1C1E))),
-                Text(subtitle,
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: context.vivordoColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.vivordoColors.textSecondary,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1489,28 +1916,37 @@ class _SettingsScreenState extends State<SettingsScreen>
   IconData _metricIcon(String key) {
     switch (key) {
       // Activity
-      case 'steps':              return Icons.directions_walk_rounded;
-      case 'active_calories':    return Icons.local_fire_department_rounded;
-      case 'exercise_time':      return Icons.fitness_center_rounded;
-      case 'distance':           return Icons.straighten_rounded;
-      case 'flights_climbed':    return Icons.stairs_rounded;
+      case 'steps':
+        return Icons.directions_walk_rounded;
+      case 'active_calories':
+        return Icons.local_fire_department_rounded;
+      case 'exercise_time':
+        return Icons.fitness_center_rounded;
       // Heart
-      case 'heart_rate':         return Icons.favorite_rounded;
-      case 'resting_heart_rate': return Icons.favorite_border_rounded;
-      case 'hrv':                return Icons.show_chart_rounded;
+      case 'heart_rate':
+        return Icons.favorite_rounded;
+      case 'resting_heart_rate':
+        return Icons.favorite_border_rounded;
+      case 'hrv':
+        return Icons.show_chart_rounded;
       // Breathing / Vitals
-      case 'blood_oxygen':       return Icons.air_rounded;
-      case 'respiratory_rate':   return Icons.wind_power_rounded;
+      case 'blood_oxygen':
+        return Icons.air_rounded;
+      case 'respiratory_rate':
+        return Icons.wind_power_rounded;
       // Sleep
-      case 'sleep':              return Icons.bedtime_rounded;
+      case 'sleep':
+        return Icons.bedtime_rounded;
       // Body
-      case 'weight':             return Icons.monitor_weight_rounded;
-      case 'body_fat':           return Icons.percent_rounded;
-      // Mind
-      case 'mindfulness':        return Icons.self_improvement_rounded;
+      case 'weight':
+        return Icons.monitor_weight_rounded;
+      case 'body_fat':
+        return Icons.percent_rounded;
       // Fitness
-      case 'vo2max':             return Icons.speed_rounded;
-      default:                   return Icons.monitor_heart_outlined;
+      case 'vo2max':
+        return Icons.speed_rounded;
+      default:
+        return Icons.monitor_heart_outlined;
     }
   }
 }
