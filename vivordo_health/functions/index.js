@@ -1,7 +1,10 @@
 const {setGlobalOptions} = require("firebase-functions");
 const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
-const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {
+  onDocumentCreated,
+  onDocumentWritten,
+} = require("firebase-functions/v2/firestore");
 const {defineSecret} = require("firebase-functions/params");
 const Anthropic = require("@anthropic-ai/sdk");
 const admin = require("firebase-admin");
@@ -146,6 +149,231 @@ exports.circleEngagementNotification = onDocumentCreated(
           ownerUid,
           type,
           activityId,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+          staleTokensRemoved: staleDeletes.length,
+          errors: deliveryErrors,
+        });
+      }
+    },
+);
+
+// Sends a push notification when a new incoming Circle friend request is
+// created. A requester can only have one pending document per recipient, so
+// using an on-create trigger also prevents duplicate notifications when the
+// same request document is updated.
+exports.friendRequestNotification = onDocumentCreated(
+    "users/{recipientUid}/circle/relationships/friend_requests/{requesterUid}",
+    async (event) => {
+      const request = event.data?.data();
+      const recipientUid = event.params.recipientUid;
+      const requesterUid = event.params.requesterUid;
+
+      if (!request || request.fromUid !== requesterUid ||
+          request.toUid !== recipientUid || requesterUid === recipientUid) {
+        console.warn("Friend request notification skipped: invalid request", {
+          recipientUid,
+          requesterUid,
+          fromUid: request?.fromUid,
+          toUid: request?.toUid,
+        });
+        return;
+      }
+
+      const db = admin.firestore();
+      const recipient = db.collection("users").doc(recipientUid);
+      const requester = db.collection("users").doc(requesterUid);
+      const requesterProfile = requester.collection("circle").doc("profile");
+      const tokens = recipient.collection("notification_tokens");
+      const [recipientSnapshot, requesterSnapshot, profileSnapshot,
+        tokenSnapshot] = await Promise.all([
+        recipient.get(),
+        requester.get(),
+        requesterProfile.get(),
+        tokens.get(),
+      ]);
+
+      if (recipientSnapshot.data()?.preferences
+          ?.circleNotificationsEnabled === false) {
+        console.info("Friend request notification disabled by recipient", {
+          recipientUid,
+          requesterUid,
+        });
+        return;
+      }
+
+      const tokenDocuments = tokenSnapshot.docs.filter((document) =>
+        typeof document.data().token === "string" &&
+        document.data().token.length > 0,
+      );
+      if (tokenDocuments.length === 0) {
+        console.warn(
+            "Friend request notification skipped: recipient has no FCM tokens",
+            {recipientUid, requesterUid},
+        );
+        return;
+      }
+
+      const profile = profileSnapshot.data();
+      const requesterData = requesterSnapshot.data();
+      const requesterName = profile?.username ||
+        requesterData?.displayName || requesterData?.username ||
+        "A Vivordo user";
+      const title = "New Friend Request";
+      const body = `from ${requesterName}`;
+      const invalidCodes = new Set([
+        "messaging/registration-token-not-registered",
+        "messaging/invalid-registration-token",
+      ]);
+
+      for (let start = 0; start < tokenDocuments.length; start += 500) {
+        const chunk = tokenDocuments.slice(start, start + 500);
+        const response = await admin.messaging().sendEachForMulticast({
+          tokens: chunk.map((document) => document.data().token),
+          notification: {title, body},
+          data: {
+            screen: "circle",
+            tab: "friends",
+            type: "circle_friend_request",
+            requesterUid,
+          },
+          apns: {
+            headers: {"apns-priority": "10"},
+            payload: {aps: {sound: "default"}},
+          },
+          android: {notification: {sound: "default"}},
+        });
+
+        const staleDeletes = [];
+        const deliveryErrors = [];
+        response.responses.forEach((result, index) => {
+          if (!result.success && invalidCodes.has(result.error?.code)) {
+            staleDeletes.push(chunk[index].ref.delete());
+          }
+          if (!result.success) {
+            deliveryErrors.push({
+              code: result.error?.code || "unknown",
+              message: result.error?.message || "Unknown messaging error",
+            });
+          }
+        });
+        await Promise.all(staleDeletes);
+        console.info("Friend request notification delivery completed", {
+          recipientUid,
+          requesterUid,
+          successCount: response.successCount,
+          failureCount: response.failureCount,
+          staleTokensRemoved: staleDeletes.length,
+          errors: deliveryErrors,
+        });
+      }
+    },
+);
+
+// Sends a personal push notification only when an achievement is newly
+// unlocked. Progress-only writes are ignored; tiered achievements notify
+// again when the user advances from bronze to silver or silver to gold.
+exports.achievementUnlockNotification = onDocumentWritten(
+    "users/{userUid}/achievements/{achievementId}",
+    async (event) => {
+      const before = event.data?.before.data();
+      const after = event.data?.after.data();
+      const userUid = event.params.userUid;
+      const achievementId = event.params.achievementId;
+
+      if (!after) return;
+
+      const tierRank = (tier) => ({bronze: 1, silver: 2, gold: 3})[tier] || 0;
+      const completedNow = after.completed === true &&
+        before?.completed !== true;
+      const tierAdvanced = tierRank(after.tier) > tierRank(before?.tier);
+      const beforeTiers = new Set(Array.isArray(before?.earnedTiers) ?
+        before.earnedTiers : []);
+      const newlyEarnedTier = Array.isArray(after.earnedTiers) &&
+        after.earnedTiers.some((tier) => !beforeTiers.has(tier));
+
+      if (!completedNow && !tierAdvanced && !newlyEarnedTier) {
+        return;
+      }
+
+      const db = admin.firestore();
+      const user = db.collection("users").doc(userUid);
+      const [userSnapshot, tokenSnapshot] = await Promise.all([
+        user.get(),
+        user.collection("notification_tokens").get(),
+      ]);
+
+      if (userSnapshot.data()?.preferences?.notificationsEnabled === false) {
+        console.info("Achievement notification disabled by user", {
+          userUid,
+          achievementId,
+        });
+        return;
+      }
+
+      const tokenDocuments = tokenSnapshot.docs.filter((document) =>
+        typeof document.data().token === "string" &&
+        document.data().token.length > 0,
+      );
+      if (tokenDocuments.length === 0) {
+        console.warn("Achievement notification skipped: user has no tokens", {
+          userUid,
+          achievementId,
+        });
+        return;
+      }
+
+      const achievementName = typeof after.name === "string" &&
+        after.name.trim() ? after.name.trim() : achievementId;
+      const invalidCodes = new Set([
+        "messaging/registration-token-not-registered",
+        "messaging/invalid-registration-token",
+      ]);
+
+      for (let start = 0; start < tokenDocuments.length; start += 500) {
+        const chunk = tokenDocuments.slice(start, start + 500);
+        const data = {
+          screen: "circle",
+          tab: "goals",
+          type: "achievement_unlocked",
+          achievementId,
+        };
+        if (typeof after.tier === "string" && after.tier) {
+          data.achievementTier = after.tier;
+        }
+        const response = await admin.messaging().sendEachForMulticast({
+          tokens: chunk.map((document) => document.data().token),
+          notification: {
+            title: "New Achievement",
+            body: achievementName,
+          },
+          data,
+          apns: {
+            headers: {"apns-priority": "10"},
+            payload: {aps: {sound: "default"}},
+          },
+          android: {notification: {sound: "default"}},
+        });
+
+        const staleDeletes = [];
+        const deliveryErrors = [];
+        response.responses.forEach((result, index) => {
+          if (!result.success && invalidCodes.has(result.error?.code)) {
+            staleDeletes.push(chunk[index].ref.delete());
+          }
+          if (!result.success) {
+            deliveryErrors.push({
+              code: result.error?.code || "unknown",
+              message: result.error?.message || "Unknown messaging error",
+            });
+          }
+        });
+        await Promise.all(staleDeletes);
+        console.info("Achievement notification delivery completed", {
+          userUid,
+          achievementId,
+          achievementName,
+          tier: after.tier || null,
           successCount: response.successCount,
           failureCount: response.failureCount,
           staleTokensRemoved: staleDeletes.length,

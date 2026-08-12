@@ -15,6 +15,7 @@ import '../src/services/workout_service.dart';
 import '../src/services/personal_profile_service.dart';
 import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
+import 'exercise_detail_screen.dart';
 import 'personal_profile_screen.dart';
 
 const _purple = Color(0xFF6B5CE7);
@@ -956,7 +957,7 @@ class _ThisWeekActivityCard extends StatelessWidget {
     final today = DateUtils.dateOnly(DateTime.now());
     final monday = today.subtract(Duration(days: today.weekday - 1));
     final sunday = monday.add(const Duration(days: 6));
-    if (user == null) return _buildCard(monday, today, const {});
+    if (user == null) return _buildCard(context, monday, today, const {});
 
     final startKey = DateFormat('yyyy-MM-dd').format(monday);
     final endKey = DateFormat('yyyy-MM-dd').format(sunday);
@@ -978,12 +979,13 @@ class _ThisWeekActivityCard extends StatelessWidget {
                   const <QueryDocumentSnapshot<Map<String, dynamic>>>[])
             doc.id: doc.data(),
         };
-        return _buildCard(monday, today, dataByDay);
+        return _buildCard(context, monday, today, dataByDay);
       },
     );
   }
 
   Widget _buildCard(
+    BuildContext context,
     DateTime monday,
     DateTime today,
     Map<String, Map<String, dynamic>> dataByDay,
@@ -1018,95 +1020,101 @@ class _ThisWeekActivityCard extends StatelessWidget {
       (largest, day) => math.max(largest, day.calories),
     );
 
-    return _Card(
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'THIS WEEK',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2,
-                    color: _muted,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const ExerciseDetailScreen())),
+      child: _Card(
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'THIS WEEK',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2,
+                      color: _muted,
+                    ),
                   ),
                 ),
-              ),
-              Text(
-                '$activeDays active ${activeDays == 1 ? 'day' : 'days'}',
-                style: const TextStyle(fontSize: 12, color: _muted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: _ActivityStat(
-                  value: '${activeMinutes.round()} min',
-                  label: 'Active',
+                Text(
+                  '$activeDays active ${activeDays == 1 ? 'day' : 'days'}',
+                  style: const TextStyle(fontSize: 12, color: _muted),
                 ),
-              ),
-              Expanded(
-                child: _ActivityStat(
-                  value: '${distance.toStringAsFixed(1)} km',
-                  label: 'Distance',
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: _ActivityStat(
+                    value: '${activeMinutes.round()} min',
+                    label: 'Active',
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _ActivityStat(
-                  value:
-                      '${NumberFormat.decimalPattern().format(calories.round())} kcal',
-                  label: 'Burned',
+                Expanded(
+                  child: _ActivityStat(
+                    value: '${distance.toStringAsFixed(1)} km',
+                    label: 'Distance',
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 88,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(7, (index) {
-                final day = days[index];
-                final hasActivity = day.calories > 0;
-                final height = maxCalories == 0
-                    ? 4.0
-                    : math.max(4.0, day.calories / maxCalories * 64);
-                final isToday = DateUtils.isSameDay(day.date, today);
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Container(
-                      width: 14,
-                      height: height,
-                      decoration: BoxDecoration(
-                        color: hasActivity
-                            ? _purple.withValues(alpha: isToday ? 1 : .55)
-                            : Colors.black12,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(4),
+                Expanded(
+                  child: _ActivityStat(
+                    value:
+                        '${NumberFormat.decimalPattern().format(calories.round())} kcal',
+                    label: 'Burned',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 88,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: List.generate(7, (index) {
+                  final day = days[index];
+                  final hasActivity = day.calories > 0;
+                  final height = maxCalories == 0
+                      ? 4.0
+                      : math.max(4.0, day.calories / maxCalories * 64);
+                  final isToday = DateUtils.isSameDay(day.date, today);
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Container(
+                        width: 14,
+                        height: height,
+                        decoration: BoxDecoration(
+                          color: hasActivity
+                              ? _purple.withValues(alpha: isToday ? 1 : .55)
+                              : Colors.black12,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(4),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      'MTWTFSS'[index],
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: isToday ? _purple : _muted,
-                        fontWeight: isToday ? FontWeight.w800 : null,
+                      const SizedBox(height: 5),
+                      Text(
+                        'MTWTFSS'[index],
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isToday ? _purple : _muted,
+                          fontWeight: isToday ? FontWeight.w800 : null,
+                        ),
                       ),
-                    ),
-                  ],
-                );
-              }),
+                    ],
+                  );
+                }),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -4460,55 +4468,61 @@ class _WeeklyStrengthProgress extends StatelessWidget {
             }
           }
         }
-        return _Card(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'THIS WEEK',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 2,
-                        color: _muted,
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ExerciseDetailScreen()),
+          ),
+          child: _Card(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'THIS WEEK',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 2,
+                          color: _muted,
+                        ),
                       ),
                     ),
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData)
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      Text(
+                        '${workouts.length} ${workouts.length == 1 ? 'workout' : 'workouts'}',
+                        style: const TextStyle(fontSize: 12, color: _muted),
+                      ),
+                  ],
+                ),
+                if (snapshot.hasError) ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Could not load this week’s workouts.',
+                    style: TextStyle(fontSize: 12, color: Colors.redAccent),
                   ),
-                  if (snapshot.connectionState == ConnectionState.waiting &&
-                      !snapshot.hasData)
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  else
-                    Text(
-                      '${workouts.length} ${workouts.length == 1 ? 'workout' : 'workouts'}',
-                      style: const TextStyle(fontSize: 12, color: _muted),
-                    ),
                 ],
-              ),
-              if (snapshot.hasError) ...[
-                const SizedBox(height: 10),
-                const Text(
-                  'Could not load this week’s workouts.',
-                  style: TextStyle(fontSize: 12, color: Colors.redAccent),
-                ),
+                const SizedBox(height: 16),
+                for (final entry in setsByCategory.entries) ...[
+                  _StrengthRow(
+                    label: entry.key,
+                    value: entry.value,
+                    goal: goals[entry.key]!,
+                  ),
+                  if (entry.key != setsByCategory.keys.last)
+                    const SizedBox(height: 13),
+                ],
               ],
-              const SizedBox(height: 16),
-              for (final entry in setsByCategory.entries) ...[
-                _StrengthRow(
-                  label: entry.key,
-                  value: entry.value,
-                  goal: goals[entry.key]!,
-                ),
-                if (entry.key != setsByCategory.keys.last)
-                  const SizedBox(height: 13),
-              ],
-            ],
+            ),
           ),
         );
       },
