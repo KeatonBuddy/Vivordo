@@ -60,7 +60,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _refreshingHealthMetrics = false;
   DateTime? _lastManualHealthRefresh;
   static const List<String> _defaultKeyMetrics = [
+    'mood',
     'steps',
+    'active_calories',
+    'exercise_time',
     'heart_rate_scan',
     'sleep',
   ];

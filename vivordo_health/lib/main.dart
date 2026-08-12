@@ -20,6 +20,11 @@ import 'screens/email_verification_screen.dart';
 import 'screens/circle_screen.dart';
 import 'screens/fitness_screen.dart';
 import 'screens/wellness_detail_screen.dart';
+import 'screens/whats_new_screen.dart';
+
+// Change this identifier whenever a new release should display a fresh
+// What's New screen. It is stored per user in Firestore.
+const _whatsNewReleaseId = 'major_refresh_2026_08';
 
 // Global navigator key for notification navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -52,7 +57,10 @@ void main() async {
           // userChanges() (not authStateChanges()) — it's the one Firebase
           // guarantees re-emits after currentUser.reload().
           create: (_) => FirebaseAuth.instance.userChanges(),
-          initialData: null,
+          // Seed the provider from Firebase's restored session so an already
+          // signed-in user does not briefly see LoginScreen while waiting for
+          // the first stream event.
+          initialData: FirebaseAuth.instance.currentUser,
         ),
         ChangeNotifierProxyProvider<User?, ThemeController>(
           create: (_) => ThemeController(),
@@ -213,6 +221,24 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   // user actually changes.
   String? _userDocUid;
   Future<DocumentSnapshot>? _userDocFuture;
+  String? _locallyDismissedWhatsNewUid;
+
+  void _dismissWhatsNew(String uid) {
+    if (!mounted) return;
+    setState(() => _locallyDismissedWhatsNewUid = uid);
+    unawaited(_persistWhatsNewSeen(uid));
+  }
+
+  Future<void> _persistWhatsNewSeen(String uid) async {
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'preferences.whatsNewSeenRelease': _whatsNewReleaseId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      debugPrint('Unable to persist What\'s New state: $error');
+    }
+  }
 
   @override
   void initState() {
@@ -280,6 +306,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       _lastSyncedUid = null;
       _userDocUid = null;
       _userDocFuture = null;
+      _locallyDismissedWhatsNewUid = null;
       // Clear the cached consent broadcast so the next login gets a fresh stream
       HealthService().clearConsentCache();
       return const LoginScreen();
@@ -319,8 +346,17 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final preferences = data?['preferences'] as Map<String, dynamic>?;
         final onboardingSeen = preferences?['onboardingSeen'] == true;
+        final onboardingCompleted = data?['onboardingCompleted'] == true;
 
-        if (onboardingSeen) {
+        // The signup questionnaire records `onboardingCompleted`, while the
+        // lightweight introductory carousel records `onboardingSeen`. Either
+        // means the user has already completed an onboarding path.
+        if (onboardingSeen || onboardingCompleted) {
+          final seenRelease = preferences?['whatsNewSeenRelease'] as String?;
+          final dismissedLocally = _locallyDismissedWhatsNewUid == user.uid;
+          if (!dismissedLocally && seenRelease != _whatsNewReleaseId) {
+            return WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid));
+          }
           return const MainNavigationScreen();
         }
 
@@ -329,10 +365,16 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
             await FirebaseFirestore.instance
                 .collection('users')
                 .doc(user.uid)
-                .update({
+                .set({
                   'preferences.onboardingSeen': true,
+                  'onboardingCompleted': true,
+                  'onboardingCompletedAt': FieldValue.serverTimestamp(),
                   'updatedAt': FieldValue.serverTimestamp(),
-                });
+                }, SetOptions(merge: true));
+
+            // New users have just seen onboarding for this release, so do not
+            // immediately follow it with an update recap on their next launch.
+            await _persistWhatsNewSeen(user.uid);
 
             if (!context.mounted) return;
 

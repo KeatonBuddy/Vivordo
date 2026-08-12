@@ -87,20 +87,32 @@ private struct VivordoWidgetProvider: TimelineProvider {
 
 private enum VivordoWidgetPalette {
   static let purple = Color(red: 0.34, green: 0.26, blue: 0.93)
+  static let darkModePurple = Color(red: 0.69, green: 0.62, blue: 1.00)
   static let blue = Color(red: 0.20, green: 0.45, blue: 0.98)
   static let coral = Color(red: 1.00, green: 0.39, blue: 0.36)
   static let mint = Color(red: 0.31, green: 0.82, blue: 0.68)
-  static let ink = Color(red: 0.08, green: 0.10, blue: 0.27)
-  static let secondary = Color(red: 0.37, green: 0.38, blue: 0.58)
-  static let track = Color(red: 0.91, green: 0.90, blue: 0.97)
+  static let ink = Color.primary
+  static let secondary = Color.secondary
+  static let track = Color.primary.opacity(0.10)
 }
 
 private struct VivordoWidgetBackground: View {
+  @Environment(\.colorScheme) private var colorScheme
+
   var body: some View {
     ZStack {
-      Color.white
+      if colorScheme == .dark {
+        Color(red: 0.055, green: 0.050, blue: 0.085)
+      } else {
+        Color.white
+      }
       RadialGradient(
-        colors: [VivordoWidgetPalette.purple.opacity(0.08), .clear],
+        colors: [
+          (colorScheme == .dark
+            ? VivordoWidgetPalette.darkModePurple.opacity(0.20)
+            : VivordoWidgetPalette.purple.opacity(0.08)),
+          .clear,
+        ],
         center: .topLeading,
         startRadius: 4,
         endRadius: 220
@@ -110,14 +122,28 @@ private struct VivordoWidgetBackground: View {
 }
 
 private struct VivordoBrand: View {
+  @Environment(\.colorScheme) private var colorScheme
+
   var compact = false
+
+  private var brandPrimary: Color {
+    colorScheme == .dark
+      ? VivordoWidgetPalette.darkModePurple
+      : Color(red: 0.20, green: 0.12, blue: 0.43)
+  }
+
+  private var brandSecondary: Color {
+    colorScheme == .dark
+      ? Color(red: 0.48, green: 0.39, blue: 0.82)
+      : Color(red: 0.46, green: 0.35, blue: 0.72)
+  }
 
   var body: some View {
     HStack(spacing: compact ? 5 : 7) {
       VivordoMark()
         .fill(
           LinearGradient(
-            colors: [Color(red: 0.46, green: 0.35, blue: 0.72), Color(red: 0.20, green: 0.12, blue: 0.43)],
+            colors: [brandSecondary, brandPrimary],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
           )
@@ -126,7 +152,7 @@ private struct VivordoBrand: View {
       Text("vivordo")
         .font(.system(size: compact ? 17 : 21, weight: .medium, design: .rounded))
         .tracking(compact ? 2.2 : 2.8)
-        .foregroundStyle(Color(red: 0.20, green: 0.12, blue: 0.43))
+        .foregroundStyle(brandPrimary)
     }
   }
 }
@@ -191,6 +217,8 @@ private struct ScoreRing: View {
 }
 
 private struct WidgetScoreView: View {
+  @Environment(\.colorScheme) private var colorScheme
+
   let title: String
   let score: Int
   let status: String
@@ -229,7 +257,13 @@ private struct WidgetScoreView: View {
         .frame(width: compact ? 70 : 118, height: compact ? 70 : 118)
         Text(status)
           .font(.system(size: compact ? 12 : 16, weight: .semibold, design: .rounded))
-          .foregroundStyle(stressStyle ? VivordoWidgetPalette.blue : Color(red: 0.02, green: 0.42, blue: 0.28))
+          .foregroundStyle(
+            stressStyle
+              ? (colorScheme == .dark ? VivordoWidgetPalette.darkModePurple : VivordoWidgetPalette.blue)
+              : (colorScheme == .dark
+                ? VivordoWidgetPalette.mint
+                : Color(red: 0.02, green: 0.42, blue: 0.28))
+          )
           .padding(.horizontal, compact ? 10 : 16)
           .padding(.vertical, compact ? 2 : 5)
           .background(
@@ -302,6 +336,8 @@ private struct WellnessScoreWidgetView: View {
 }
 
 private struct FitnessRingWidgetView: View {
+  @Environment(\.colorScheme) private var colorScheme
+
   let entry: VivordoWidgetEntry
 
   private var stepsProgress: Double { Double(entry.steps) / Double(entry.stepsGoal) }
@@ -333,7 +369,11 @@ private struct FitnessRingWidgetView: View {
             .padding(compact ? 26 : 40)
           Text("\(overall)%")
             .font(.system(size: compact ? 23 : 32, weight: .bold, design: .rounded))
-            .foregroundStyle(Color(red: 0.20, green: 0.12, blue: 0.43))
+            .foregroundStyle(
+              colorScheme == .dark
+                ? VivordoWidgetPalette.darkModePurple
+                : Color(red: 0.20, green: 0.12, blue: 0.43)
+            )
         }
         .frame(width: compact ? 82 : 138, height: compact ? 82 : 138)
         Text("\(entry.calories) cal · \(entry.exerciseMinutes) min")
@@ -511,7 +551,13 @@ private struct VivordoCalendarProvider: TimelineProvider {
 }
 
 private struct CalendarWidgetView: View {
+  @Environment(\.colorScheme) private var colorScheme
+
   let entry: VivordoCalendarEntry
+
+  private var eventSurface: Color {
+    colorScheme == .dark ? Color.white.opacity(0.07) : Color.white.opacity(0.72)
+  }
 
   private var isToday: Bool {
     VivordoCalendarDates.calendar.isDateInToday(entry.selectedDate)
@@ -607,7 +653,7 @@ private struct CalendarWidgetView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
         .padding(.horizontal, 8)
-        .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
+        .background(eventSurface, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(VivordoWidgetPalette.track, lineWidth: 0.7))
       } else {
         ForEach(Array(entry.selectedEvents.prefix(2))) { event in
@@ -646,7 +692,7 @@ private struct CalendarWidgetView: View {
     }
     .frame(height: 36)
     .padding(.horizontal, 8)
-    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
+    .background(eventSurface, in: RoundedRectangle(cornerRadius: 10))
     .overlay(RoundedRectangle(cornerRadius: 10).stroke(VivordoWidgetPalette.track, lineWidth: 0.7))
   }
 

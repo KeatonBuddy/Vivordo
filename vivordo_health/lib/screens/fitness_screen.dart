@@ -249,58 +249,62 @@ class _FitnessScreenState extends State<FitnessScreen> {
 
   Widget _buildStrength() => Column(
     children: [
-      _Card(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'START A WORKOUT',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 2,
-                color: _muted,
-              ),
-            ),
-            const SizedBox(height: 18),
-            Row(
+      ValueListenableBuilder<bool>(
+        valueListenable: FitnessWorkoutTimerState.isRunning,
+        builder: (context, isWorkoutRunning, _) {
+          final activeDraft = isWorkoutRunning ? _activeWorkoutDraft : null;
+          return _Card(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _IconBox(
-                  icon: _activeWorkoutDraft == null
-                      ? Icons.fitness_center_rounded
-                      : Icons.timer_outlined,
-                  color: _purple,
-                  size: 68,
+                const Text(
+                  'START A WORKOUT',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
+                    color: _muted,
+                  ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _WorkoutStatusMessage(draft: _activeWorkoutDraft),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    _IconBox(
+                      icon: activeDraft == null
+                          ? Icons.fitness_center_rounded
+                          : Icons.timer_outlined,
+                      color: _purple,
+                      size: 68,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(child: _WorkoutStatusMessage(draft: activeDraft)),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: FilledButton.icon(
+                    onPressed: _startWorkout,
+                    icon: const Icon(Icons.add),
+                    label: Text(
+                      activeDraft == null
+                          ? 'Start New Workout'
+                          : 'Resume Workout',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _purple,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: FilledButton.icon(
-                onPressed: _startWorkout,
-                icon: const Icon(Icons.add),
-                label: Text(
-                  _activeWorkoutDraft == null
-                      ? 'Start New Workout'
-                      : 'Resume Workout',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _purple,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
       const SizedBox(height: 12),
       _WeeklyStrengthProgress(goals: _strengthGoals),

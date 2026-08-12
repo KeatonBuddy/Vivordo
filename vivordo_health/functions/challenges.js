@@ -168,6 +168,34 @@ function utcDayKey(timestamp) {
   ].join("-");
 }
 
+function dayKeyInTimeZone(timestamp, timeZone) {
+  if (!timestamp?.toDate) return null;
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: typeof timeZone === "string" && timeZone.trim() ?
+        timeZone.trim() : "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(timestamp.toDate());
+    const values = Object.fromEntries(
+        parts.map((part) => [part.type, part.value]),
+    );
+    if (values.year && values.month && values.day) {
+      return `${values.year}-${values.month}-${values.day}`;
+    }
+  } catch (error) {
+    console.warn(`Invalid challenge timezone ${timeZone}; using UTC.`, error);
+  }
+  return utcDayKey(timestamp);
+}
+
+function userTimeZone(user) {
+  const candidate = user?.preferences?.timezone;
+  return typeof candidate === "string" && candidate.trim() ?
+    candidate.trim() : "UTC";
+}
+
 function membershipData({
   challengeId,
   creatorUid,
@@ -368,14 +396,31 @@ exports.respondToChallenge = onCall(async (request) => {
     ) : null;
     const startDay = startAt ? utcDayKey(startAt) : null;
     const endDay = endAt ? utcDayKey(endAt) : null;
+    const participantWindows = {};
     const stepBaselines = {};
-    if (activated && challenge.type === "step_total" && startDay) {
+    if (activated) {
+      for (const participantUid of acceptedUids) {
+        const userSnapshot = await transaction.get(
+            db.collection("users").doc(participantUid),
+        );
+        const timeZone = userTimeZone(userSnapshot.data());
+        participantWindows[participantUid] = {
+          timeZone,
+          startDay: dayKeyInTimeZone(startAt, timeZone),
+          endDay: dayKeyInTimeZone(endAt, timeZone),
+        };
+      }
+    }
+    if (activated && challenge.type === "step_total") {
       // A daily steps document includes steps taken before the challenge began.
       // Capture each participant's current total inside the activation
       // transaction so only subsequent steps contribute to the challenge.
       for (const participantUid of acceptedUids) {
+        const participantStartDay =
+          participantWindows[participantUid]?.startDay;
+        if (!participantStartDay) continue;
         const dailyReference = db.collection("users").doc(participantUid)
-            .collection("metrics_daily").doc(startDay);
+            .collection("metrics_daily").doc(participantStartDay);
         const dailySnapshot = await transaction.get(dailyReference);
         stepBaselines[participantUid] = stepTotal(dailySnapshot.data());
       }
@@ -402,13 +447,14 @@ exports.respondToChallenge = onCall(async (request) => {
 
     for (const [participantUid, baseline] of
       Object.entries(stepBaselines)) {
+      const participantStartDay = participantWindows[participantUid]?.startDay;
       transaction.set(
           challengeReference.collection("contributions")
-              .doc(`${participantUid}__steps__${startDay}`),
+              .doc(`${participantUid}__steps__${participantStartDay}`),
           {
             uid: participantUid,
             sourceType: "steps_day",
-            sourceId: startDay,
+            sourceId: participantStartDay,
             baseline,
             value: 0,
             occurredAt: startAt,
@@ -441,8 +487,9 @@ exports.respondToChallenge = onCall(async (request) => {
             status: membershipStatus,
             startAt,
             endAt,
-            startDay,
-            endDay,
+            startDay: participantWindows[participantUid]?.startDay ?? startDay,
+            endDay: participantWindows[participantUid]?.endDay ?? endDay,
+            timeZone: participantWindows[participantUid]?.timeZone ?? null,
             activeParticipantUids: activated ? acceptedUids : [],
             updatedAt: now,
           },
@@ -624,6 +671,12 @@ exports.challengeMetricProgress = onDocumentWritten(
       const metrics = event.data?.after.exists ? event.data.after.data() : null;
       const memberships = await activeMemberships(uid);
       if (memberships.empty) return;
+      const hasStepChallenge = memberships.docs.some((membership) =>
+        membership.data().type === "step_total",
+      );
+      const userSnapshot = hasStepChallenge ? await admin.firestore()
+          .collection("users").doc(uid).get() : null;
+      const profileTimeZone = userTimeZone(userSnapshot?.data());
       await Promise.all(memberships.docs
           .filter((membership) =>
             ["step_total", "scan_count"].includes(membership.data().type),
@@ -631,9 +684,22 @@ exports.challengeMetricProgress = onDocumentWritten(
           .map((membership) => {
             const data = membership.data();
             if (data.type === "step_total") {
-              const dayIsActive = typeof data.startDay === "string" &&
-                typeof data.endDay === "string" &&
-                dayId >= data.startDay && dayId <= data.endDay;
+              const timeZone = typeof data.timeZone === "string" ?
+                data.timeZone : profileTimeZone;
+              const localStartDay = dayKeyInTimeZone(data.startAt, timeZone) ??
+                data.startDay;
+              const localEndDay = dayKeyInTimeZone(data.endAt, timeZone) ??
+                data.endDay;
+              const dayIsActive = typeof localStartDay === "string" &&
+                typeof localEndDay === "string" &&
+                dayId >= localStartDay && dayId <= localEndDay;
+              const isStartDay = dayId === localStartDay;
+              // Older active challenges stored their baseline under the UTC
+              // start day. Reuse that contribution key so they recover after
+              // this timezone fix without counting pre-challenge steps.
+              const legacyBaselineKey = isStartDay &&
+                typeof data.startDay === "string" ?
+                `${uid}__steps__${data.startDay}` : null;
               return applyContribution({
                 challengeId: membership.id,
                 uid,
@@ -642,7 +708,8 @@ exports.challengeMetricProgress = onDocumentWritten(
                 sourceId: dayId,
                 occurredAt: null,
                 value: dayIsActive ? stepTotal(metrics) : 0,
-                subtractBaseline: dayId === data.startDay,
+                subtractBaseline: isStartDay,
+                baselineSourceKey: legacyBaselineKey,
               });
             }
             return applyContribution({
@@ -777,6 +844,7 @@ async function applyContribution({
   occurredAt,
   value,
   subtractBaseline = false,
+  baselineSourceKey = null,
 }) {
   const db = admin.firestore();
   const challengeReference = db.collection("challenges").doc(challengeId);
@@ -784,11 +852,16 @@ async function applyContribution({
       .collection("participants").doc(uid);
   const contributionReference = challengeReference
       .collection("contributions").doc(sourceKey);
+  const baselineReference = baselineSourceKey &&
+      baselineSourceKey !== sourceKey ? challengeReference
+          .collection("contributions").doc(baselineSourceKey) : null;
   const medalReference = challengeMedalReference(db, uid, challengeId);
   const completion = await db.runTransaction(async (transaction) => {
     const challengeSnapshot = await transaction.get(challengeReference);
     const participantSnapshot = await transaction.get(participantReference);
     const contributionSnapshot = await transaction.get(contributionReference);
+    const baselineSnapshot = baselineReference ?
+      await transaction.get(baselineReference) : contributionSnapshot;
     if (!challengeSnapshot.exists || !participantSnapshot.exists) return null;
     const challenge = challengeSnapshot.data();
     if (challenge.status !== "active" ||
@@ -796,7 +869,7 @@ async function applyContribution({
     const medalSnapshot = await transaction.get(medalReference);
     const previousValue = Number(contributionSnapshot.data()?.value || 0);
     const baseline = subtractBaseline ?
-      Number(contributionSnapshot.data()?.baseline || 0) : 0;
+      Number(baselineSnapshot.data()?.baseline || 0) : 0;
     const nextValue = Math.max(
         0,
         Math.round(Number(value) || 0) - baseline,
