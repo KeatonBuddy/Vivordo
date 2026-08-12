@@ -11,10 +11,13 @@ import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
+import 'package:vivordo_health/src/services/stress_score_service.dart';
+import 'package:vivordo_health/src/services/version_gate_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/email_verification_screen.dart';
+import 'screens/force_update_screen.dart';
 
 // Global navigator key for notification navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -50,9 +53,55 @@ void main() async {
       // verification, even though reload() elsewhere already saw it flip.
       create: (_) => FirebaseAuth.instance.userChanges(),
       initialData: null,
-      child: const MyApp(),
+      child: const VersionGate(),
     ),
   );
+}
+
+/// Checks the installed app version against Remote Config exactly once per
+/// app launch, before any real screen (including LoginScreen) is reachable.
+/// Deliberately NOT built as part of the '/' route inside MyApp — AuthGate
+/// is reached via pushNamedAndRemoveUntil('/', ...) repeatedly during normal
+/// use (after login, signup, email verification), and re-running this check
+/// on every one of those would flash a loading spinner each time.
+class VersionGate extends StatefulWidget {
+  const VersionGate({super.key});
+
+  @override
+  State<VersionGate> createState() => _VersionGateState();
+}
+
+class _VersionGateState extends State<VersionGate> {
+  late final Future<VersionCheckResult> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = VersionGateService.check();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<VersionCheckResult>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: Scaffold(body: Center(child: CircularProgressIndicator())),
+          );
+        }
+        final result = snapshot.data;
+        if (result != null && result.updateRequired) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: ForceUpdateScreen(updateUrl: result.updateUrl),
+          );
+        }
+        return const MyApp();
+      },
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -110,10 +159,18 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Sync HealthKit data every 3 minutes while the app is open.
-    _syncTimer = Timer.periodic(const Duration(minutes: 3), (_) {
+    // Sync HealthKit data every 3 minutes while the app is open, then retry
+    // the stress score. computeAndSave() is otherwise only triggered from
+    // HomeScreen.initState(), which only reruns when the user navigates
+    // back to the Home tab — if the one attempt on app open fails (BaaS
+    // cold start, network blip), nothing else ever retries it. This timer
+    // is what makes the score keep trying in the background, same as any
+    // other continuously-tracked metric, instead of getting stuck on
+    // whatever the first attempt of the day happened to return.
+    _syncTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
       if (FirebaseAuth.instance.currentUser != null) {
-        HealthService().syncToday();
+        await HealthService().syncToday();
+        StressScoreService.computeAndSave().catchError((_) {});
       }
     });
   }

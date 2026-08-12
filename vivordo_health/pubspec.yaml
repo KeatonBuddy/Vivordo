@@ -63,6 +63,7 @@ dependencies:
   camera: ^0.10.5+9          # For accessing the device camera
   firebase_remote_config: ^6.0.0
   cloud_functions: ^6.0.6
+  package_info_plus: ^8.1.2 # Reads the installed app version for the update gate
 dev_dependencies:
   flutter_test:
     sdk: flutter

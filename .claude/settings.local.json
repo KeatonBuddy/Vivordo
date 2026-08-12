@@ -15,7 +15,12 @@
       "Bash(cd /home/kbanik3/Downloads/github/Vivordo/vivordo_health && grep -n \"platforms\" ../firebase.json -A 20 2>/dev/null; cat pubspec.yaml | grep -iE \"google_sign_in|sign_in_with_apple|flutter_facebook\")",
       "Read(//home/kbanik3/Downloads/github/**)",
       "Bash(python3 -c ' *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(time curl -s -o /dev/null -w \"HTTP %{http_code}, time_total=%{time_total}s, time_connect=%{time_connect}s\\\\n\" --max-time 90 https://vivordo-baas.onrender.com/)",
+      "Bash(time curl -s -o /dev/null -w \"HTTP %{http_code}, time_total=%{time_total}s\\\\n\" --max-time 90 https://vivordo-baas.onrender.com/)",
+      "Bash(git ls-remote *)",
+      "Bash(git fetch *)"
     ]
   }
 }

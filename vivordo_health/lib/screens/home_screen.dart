@@ -96,6 +96,18 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
+  /// "as of yesterday" / "as of Jul 4" caption for a fallback (non-today)
+  /// stress score, given a "YYYY-MM-DD" metrics_daily doc id.
+  String _asOfLabel(String dateStr) {
+    final parts = dateStr.split('-');
+    if (parts.length != 3) return 'as of $dateStr';
+    final date = DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+    final todayDate = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    if (todayDate.difference(date).inDays == 1) return 'as of yesterday';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return 'as of ${months[date.month - 1]} ${date.day}';
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStream() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
@@ -172,6 +184,27 @@ class _HomeScreenState extends State<HomeScreen> {
             final latestScanBpm = (latestScan?['avg'] as num?)?.round();
             final hrVal = latestScanBpm == null ? '--' : '$latestScanBpm bpm';
 
+            // Fallback: today's BaaS score may not exist yet (new day just
+            // started, cold-start retry still in flight) — show the most
+            // recent prior day's score instead of a blank state, the way
+            // any other continuously-tracked metric (sleep, weight, HRV
+            // trend) keeps displaying its last known reading rather than
+            // resetting to nothing the instant the calendar date rolls over.
+            double? displayStressScore = stressScore;
+            String? stressAsOf;
+            if (displayStressScore == null) {
+              final today = _todayPeriod();
+              for (final doc in scanDocs) {
+                if (doc.id == today) continue;
+                final avg = ((doc.data()['stress'] as Map?)?['avg'] as num?)?.toDouble();
+                if (avg != null) {
+                  displayStressScore = avg;
+                  stressAsOf = _asOfLabel(doc.id);
+                  break;
+                }
+              }
+            }
+
             return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: _goalsStreamCached,
               builder: (context, goalSnap) {
@@ -187,22 +220,27 @@ class _HomeScreenState extends State<HomeScreen> {
                         0;
                 final goalProgress = (rawPercent / 100).clamp(0.0, 1.0);
 
-                return _buildScaffold(
-                  stressScore: stressScore,
-                  stressLoading: loading,
-                  sleepVal: sleepVal,
-                  sleepLoading: loading,
-                  stepsVal: stepsVal,
-                  stepsLoading: loading,
-                  hrVal: hrVal,
-                  hrLoading: scanSnap.connectionState ==
-                          ConnectionState.waiting &&
-                      !scanSnap.hasData,
-                  moodVal: moodVal,
-                  moodLoading: loading,
-                  wellnessVal: wellnessVal,
-                  goalTitle: goalTitle,
-                  goalProgress: goalProgress,
+                return ValueListenableBuilder<bool>(
+                  valueListenable: StressScoreService.isComputing,
+                  builder: (context, computingStress, _) => _buildScaffold(
+                    stressScore: displayStressScore,
+                    stressAsOf: stressAsOf,
+                    stressUpdating: computingStress,
+                    stressLoading: loading,
+                    sleepVal: sleepVal,
+                    sleepLoading: loading,
+                    stepsVal: stepsVal,
+                    stepsLoading: loading,
+                    hrVal: hrVal,
+                    hrLoading: scanSnap.connectionState ==
+                            ConnectionState.waiting &&
+                        !scanSnap.hasData,
+                    moodVal: moodVal,
+                    moodLoading: loading,
+                    wellnessVal: wellnessVal,
+                    goalTitle: goalTitle,
+                    goalProgress: goalProgress,
+                  ),
                 );
               },
             );
@@ -275,6 +313,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildScaffold({
     required double? stressScore,
+    String? stressAsOf,
+    bool stressUpdating = false,
     required bool stressLoading,
     required String sleepVal,
     required bool sleepLoading,
@@ -300,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildHeader(),
               const SizedBox(height: 24),
-              _buildStressCard(stressScore, loading: stressLoading),
+              _buildStressCard(stressScore, loading: stressLoading, asOf: stressAsOf, updating: stressUpdating),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -423,7 +463,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-    Widget _buildStressCard(double? stressScore, {bool loading = false}) {
+    Widget _buildStressCard(double? stressScore, {bool loading = false, String? asOf, bool updating = false}) {
     final statusColor = stressScore == null ? const Color(0xFF8E8E93) : _getStressColor(stressScore);
     final stressLabel = stressScore == null ? 'No data yet' : _getStressLabel(stressScore);
     return ClipRRect(
@@ -474,14 +514,31 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Current Stress Level',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.75),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.2,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'Current Stress Level',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.75),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                      if (updating) ...[
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white.withOpacity(0.75),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 10),
                   Row(
@@ -544,6 +601,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      if (asOf != null) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '· $asOf',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.6),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 18),
