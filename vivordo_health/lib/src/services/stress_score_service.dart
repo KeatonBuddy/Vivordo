@@ -47,6 +47,13 @@ import 'health_service.dart';
 class StressScoreService {
   static const kApiUrl = 'https://vivordo-baas.onrender.com/baas/score';
 
+  /// True while a computeAndSave() network round trip is actually in
+  /// flight. The BaaS free-tier backend can cold-start (45-60s+), so UI
+  /// listening to this can show a small "Updating…" indicator over the
+  /// last-known score instead of the score silently sitting stale with no
+  /// sign anything is happening.
+  static final ValueNotifier<bool> isComputing = ValueNotifier(false);
+
   /// Validation / online-learning endpoint. Takes a completed day's metrics
   /// plus that day's 1-5 mood check-in as a supervised label, appends the pair
   /// to the training dataset, and nudges this user's channel weights toward
@@ -104,12 +111,15 @@ class StressScoreService {
       } catch (_) {}
     }
 
+    isComputing.value = true;
     try {
       final payload = await _buildPayload(uid, today);
       final result = await _callApi(payload);
       if (result != null) await _saveScore(uid, today, result);
     } catch (e, st) {
       debugPrint('StressScoreService.computeAndSave: $e\n$st');
+    } finally {
+      isComputing.value = false;
     }
   }
 

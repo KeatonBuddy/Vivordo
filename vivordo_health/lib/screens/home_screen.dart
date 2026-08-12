@@ -494,25 +494,35 @@ class _HomeScreenState extends State<HomeScreen> {
                       });
                 }
 
-                return _buildScaffold(
-                  stressScore: displayedStressScore,
-                  stressLoading: stressStillLoading,
-                  sleepVal: sleepVal,
-                  sleepLoading: loading,
-                  stepsVal: stepsVal,
-                  steps: steps ?? 0,
-                  activeCalories: activeCalories,
-                  exerciseMinutes: exerciseMinutes,
-                  stepsLoading: loading,
-                  hrVal: hrVal,
-                  hrLoading:
-                      scanSnap.connectionState == ConnectionState.waiting &&
-                      !scanSnap.hasData,
-                  moodVal: moodVal,
-                  moodLoading: loading,
-                  wellnessVal: wellnessVal,
-                  goalTitle: goalTitle,
-                  goalProgress: goalProgress,
+                // isComputing reflects a computeAndSave() network round trip
+                // actually in flight — separate from stressStillLoading
+                // (which is about the Firestore listener) — so the UI can
+                // show a small "Updating…" hint over displayedStressScore
+                // (today's, or the anchor fallback) while a fresh one is
+                // being fetched, same as any other syncing tracked metric.
+                return ValueListenableBuilder<bool>(
+                  valueListenable: StressScoreService.isComputing,
+                  builder: (context, computingStress, _) => _buildScaffold(
+                    stressScore: displayedStressScore,
+                    stressUpdating: computingStress,
+                    stressLoading: stressStillLoading,
+                    sleepVal: sleepVal,
+                    sleepLoading: loading,
+                    stepsVal: stepsVal,
+                    steps: steps ?? 0,
+                    activeCalories: activeCalories,
+                    exerciseMinutes: exerciseMinutes,
+                    stepsLoading: loading,
+                    hrVal: hrVal,
+                    hrLoading:
+                        scanSnap.connectionState == ConnectionState.waiting &&
+                        !scanSnap.hasData,
+                    moodVal: moodVal,
+                    moodLoading: loading,
+                    wellnessVal: wellnessVal,
+                    goalTitle: goalTitle,
+                    goalProgress: goalProgress,
+                  ),
                 );
               },
             );
@@ -589,6 +599,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildScaffold({
     required double? stressScore,
+    bool stressUpdating = false,
     required bool stressLoading,
     required String sleepVal,
     required bool sleepLoading,
@@ -621,7 +632,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const StressDetailScreen()),
                 ),
-                child: _buildStressCard(stressScore, loading: stressLoading),
+                child: _buildStressCard(
+                  stressScore,
+                  loading: stressLoading,
+                  updating: stressUpdating,
+                ),
               ),
               const SizedBox(height: 16),
               Row(
@@ -954,7 +969,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildStressCard(double? stressScore, {bool loading = false}) {
+  Widget _buildStressCard(
+    double? stressScore, {
+    bool loading = false,
+    bool updating = false,
+  }) {
     final statusColor = stressScore == null
         ? const Color(0xFF8E8E93)
         : _getStressColor(stressScore);
@@ -1009,14 +1028,31 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Current Stress Level',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.75),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.2,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'Current Stress Level',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.75),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                      if (updating) ...[
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white.withOpacity(0.75),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 10),
                   Row(
