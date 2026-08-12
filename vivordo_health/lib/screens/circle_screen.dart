@@ -4890,78 +4890,355 @@ class _CustomActivityPicker extends StatelessWidget {
             selectedExercise.name,
             category: selectedExercise.category,
           );
-    return Container(
-      height: 68,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
+    return Material(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: visual.color.withValues(alpha: .12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(visual.icon, color: visual.color, size: 24),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: value ?? '',
-                isExpanded: true,
-                menuMaxHeight: 390,
-                dropdownColor: context.vivordoColors.card,
-                icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                style: TextStyle(
-                  color: context.vivordoColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
+        onTap: () async {
+          final selection =
+              await showModalBottomSheet<_SpecificExerciseSelection>(
+                context: context,
+                isScrollControlled: true,
+                useSafeArea: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => _SpecificExerciseSearchSheet(
+                  exercises: exercises,
+                  selectedValue: value,
+                  anyLabel: anyLabel,
+                  fallbackIcon: fallbackIcon,
+                  fallbackColor: fallbackColor,
                 ),
-                items: [
-                  DropdownMenuItem(value: '', child: Text(anyLabel)),
-                  ...exercises.map(
-                    (exercise) => DropdownMenuItem(
-                      value: exercise.name,
-                      child: Row(
+              );
+          if (selection != null) onChanged(selection.value);
+        },
+        child: Container(
+          height: 68,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: context.vivordoColors.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: visual.color.withValues(alpha: .12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(visual.icon, color: visual.color, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  selectedExercise?.name ?? anyLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.vivordoColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: context.vivordoColors.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpecificExerciseSelection {
+  const _SpecificExerciseSelection(this.value);
+
+  final String? value;
+}
+
+class _SpecificExerciseSearchSheet extends StatefulWidget {
+  const _SpecificExerciseSearchSheet({
+    required this.exercises,
+    required this.selectedValue,
+    required this.anyLabel,
+    required this.fallbackIcon,
+    required this.fallbackColor,
+  });
+
+  final List<WorkoutExerciseCatalogItem> exercises;
+  final String? selectedValue;
+  final String anyLabel;
+  final IconData fallbackIcon;
+  final Color fallbackColor;
+
+  @override
+  State<_SpecificExerciseSearchSheet> createState() =>
+      _SpecificExerciseSearchSheetState();
+}
+
+class _SpecificExerciseSearchSheetState
+    extends State<_SpecificExerciseSearchSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<WorkoutExerciseCatalogItem> get _filteredExercises {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return widget.exercises;
+    return widget.exercises
+        .where(
+          (exercise) =>
+              exercise.name.toLowerCase().contains(query) ||
+              exercise.category.toLowerCase().contains(query),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final exercises = _filteredExercises;
+    final isActivityPicker = widget.anyLabel.toLowerCase().contains('activity');
+    final subjectLabel = isActivityPicker ? 'Activity' : 'Workout';
+    return FractionallySizedBox(
+      heightFactor: .82,
+      child: Material(
+        color: context.vivordoColors.page,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 48,
+              height: 5,
+              decoration: BoxDecoration(
+                color: context.vivordoColors.border,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 12, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Select $subjectLabel',
+                      style: TextStyle(
+                        color: context.vivordoColors.textPrimary,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  _ChallengeSheetCloseButton(
+                    onTap: () => Navigator.maybePop(context),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                onChanged: (value) => setState(() => _query = value),
+                decoration: InputDecoration(
+                  hintText: 'Search ${subjectLabel.toLowerCase()}s',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Clear search',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _query = '');
+                          },
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                  filled: true,
+                  fillColor: context.vivordoColors.input,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                children: [
+                  if (_query.trim().isEmpty) ...[
+                    _SpecificExerciseResultTile(
+                      title: widget.anyLabel,
+                      subtitle: 'Count any matching session',
+                      icon: widget.fallbackIcon,
+                      color: widget.fallbackColor,
+                      selected: widget.selectedValue == null,
+                      onTap: () => Navigator.pop(
+                        context,
+                        const _SpecificExerciseSelection(null),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (exercises.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 44),
+                      child: Column(
                         children: [
-                          Expanded(
-                            child: Text(
-                              exercise.name,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                          Icon(
+                            Icons.search_off_rounded,
+                            size: 42,
+                            color: context.vivordoColors.textSecondary,
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(height: 12),
                           Text(
-                            exercise.category,
-                            style: const TextStyle(
-                              color: CircleScreen._muted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
+                            'No ${subjectLabel.toLowerCase()}s found',
+                            style: TextStyle(
+                              color: context.vivordoColors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ),
+                    )
+                  else
+                    for (final exercise in exercises) ...[
+                      Builder(
+                        builder: (context) {
+                          final visual = workoutActivityVisual(
+                            exercise.name,
+                            category: exercise.category,
+                          );
+                          return _SpecificExerciseResultTile(
+                            title: exercise.name,
+                            subtitle: exercise.category,
+                            icon: visual.icon,
+                            color: visual.color,
+                            selected: widget.selectedValue == exercise.name,
+                            onTap: () => Navigator.pop(
+                              context,
+                              _SpecificExerciseSelection(exercise.name),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                 ],
-                onChanged: (selection) {
-                  onChanged(
-                    selection == null || selection.isEmpty ? null : selection,
-                  );
-                },
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
+
+class _SpecificExerciseResultTile extends StatelessWidget {
+  const _SpecificExerciseResultTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: context.vivordoColors.card,
+    borderRadius: BorderRadius.circular(16),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected
+                ? CircleScreen._purple
+                : context.vivordoColors.border,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 23),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.vivordoColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.vivordoColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (selected)
+              const Padding(
+                padding: EdgeInsets.only(left: 10),
+                child: Icon(
+                  Icons.check_circle_rounded,
+                  color: CircleScreen._purple,
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _CustomChallengeSlider extends StatelessWidget {
