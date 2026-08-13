@@ -815,7 +815,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       'Connect Apple Health or complete a scan to see your daily insights.',
                 ),
               const SizedBox(height: 28),
-              _buildSectionTitle('TODAY\'S REACHABLE WINDOWS'),
+              _buildReachableWindowsTitle(),
               const SizedBox(height: 12),
               _buildReachableWindows(),
               const SizedBox(height: 160),
@@ -1340,6 +1340,91 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  Widget _buildReachableWindowsTitle() => Row(
+    children: [
+      Expanded(child: _buildSectionTitle('TODAY\'S REACHABLE WINDOWS')),
+      Semantics(
+        button: true,
+        label: 'How reachable windows work',
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: _showReachableWindowsInfo,
+            customBorder: const CircleBorder(),
+            child: const Padding(
+              padding: EdgeInsets.all(6),
+              child: Icon(
+                Icons.info_outline_rounded,
+                size: 20,
+                color: textGrey,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Future<void> _showReachableWindowsInfo() => showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: dialogContext.vivordoColors.card,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 22, 16, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: accentPurple.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: const Icon(
+              Icons.psychology_alt_rounded,
+              color: accentPurple,
+              size: 23,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'How reachable windows work',
+              style: TextStyle(
+                color: dialogContext.vivordoColors.textPrimary,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Text(
+          'Vivordo scores your calendar events based on how mentally demanding they may be, helping highlight periods that could require more focus and open times when your schedule is lighter.\n\nUse these windows to plan demanding tasks, take a break, or make the most of your available time. Scores are estimates based on your calendar details.',
+          style: TextStyle(
+            color: dialogContext.vivordoColors.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          style: FilledButton.styleFrom(
+            backgroundColor: accentPurple,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Got it'),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildCircleCard() {
     final user = FirebaseAuth.instance.currentUser;
