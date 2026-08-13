@@ -7,6 +7,7 @@ import '../src/services/calendar_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import 'home_screen.dart' show WeeklyCalendar;
 import 'journal_screen.dart';
+import 'month_calendar_screen.dart';
 
 class MyDayScreen extends StatefulWidget {
   const MyDayScreen({super.key});
@@ -547,13 +548,37 @@ class _MyDayScreenState extends State<MyDayScreen> {
                 ),
               ),
               const SizedBox(height: 28),
-              const Text(
-                'WEEKLY CALENDAR',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.3,
-                  color: MyDayScreen.muted,
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MonthCalendarScreen(),
+                    ),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Text(
+                          'WEEKLY CALENDAR',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.3,
+                            color: MyDayScreen.muted,
+                          ),
+                        ),
+                        SizedBox(width: 4),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 20,
+                          color: MyDayScreen.muted,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
