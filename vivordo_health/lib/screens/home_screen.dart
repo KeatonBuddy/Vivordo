@@ -17,6 +17,7 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
+import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'steps_detail_screen.dart';
@@ -209,6 +210,8 @@ class _HomeScreenState extends State<HomeScreen> {
   late final Stream<CircleProfile?> _circleProfileStream;
   Future<List<gcal.Event>>? _reachableWindowEventsFuture;
   DateTime? _reachableWindowEventsDate;
+  Future<List<_ScoredReachableEvent>>? _reachableWindowScoresFuture;
+  DateTime? _reachableWindowScoresDate;
   Future<_ScheduleInsight?>? _scheduleInsightFuture;
   DateTime? _scheduleInsightDate;
 
@@ -596,6 +599,83 @@ class _HomeScreenState extends State<HomeScreen> {
     _reachableWindowEventsFuture = _loadReachableWindowEvents(normalizedDate);
     return _reachableWindowEventsFuture!;
   }
+
+  Future<List<_ScoredReachableEvent>> _getReachableWindowScoresFuture(
+    DateTime todayStart,
+  ) {
+    final normalizedDate = DateUtils.dateOnly(todayStart);
+    if (_reachableWindowScoresFuture != null &&
+        DateUtils.isSameDay(_reachableWindowScoresDate, normalizedDate)) {
+      return _reachableWindowScoresFuture!;
+    }
+
+    _reachableWindowScoresDate = normalizedDate;
+    _reachableWindowScoresFuture = _loadReachableWindowScores(normalizedDate);
+    return _reachableWindowScoresFuture!;
+  }
+
+  Future<List<_ScoredReachableEvent>> _loadReachableWindowScores(
+    DateTime todayStart,
+  ) async {
+    final events = await _getReachableWindowEventsFuture(todayStart);
+    final timedEvents = events.where((event) {
+      return event.status != 'cancelled' &&
+          event.start?.dateTime != null &&
+          event.end?.dateTime != null;
+    }).toList();
+
+    final inputs = <CalendarCognitiveEvent>[];
+    for (var i = 0; i < timedEvents.length; i++) {
+      final event = timedEvents[i];
+      final start = event.start!.dateTime!.toLocal();
+      final end = event.end!.dateTime!.toLocal();
+      final selfAttendee = event.attendees
+          ?.where((attendee) => attendee.self == true)
+          .firstOrNull;
+      final hasTightTransition = timedEvents.any((other) {
+        if (identical(other, event) ||
+            other.start?.dateTime == null ||
+            other.end?.dateTime == null) {
+          return false;
+        }
+        final otherStart = other.start!.dateTime!.toLocal();
+        final otherEnd = other.end!.dateTime!.toLocal();
+        final gapBefore = start.difference(otherEnd).inMinutes;
+        final gapAfter = otherStart.difference(end).inMinutes;
+        return (gapBefore >= 0 && gapBefore <= 15) ||
+            (gapAfter >= 0 && gapAfter <= 15);
+      });
+      inputs.add(
+        CalendarCognitiveEvent(
+          id: _reachableEventKey(event, i),
+          title: event.summary ?? 'Calendar event',
+          description: event.description ?? '',
+          start: start,
+          end: end,
+          attendeeCount: event.attendees?.length ?? 0,
+          isOrganizer: event.organizer?.self == true,
+          isOptional: selfAttendee?.optional == true,
+          isOnlineMeeting:
+              event.hangoutLink?.isNotEmpty == true ||
+              event.conferenceData != null,
+          showsAsFree: event.transparency == 'transparent',
+          hasTightTransition: hasTightTransition,
+        ),
+      );
+    }
+
+    final scores = await CalendarCognitiveLoadService.scoreEvents(inputs);
+    return List.generate(
+      timedEvents.length,
+      (index) => _ScoredReachableEvent(
+        event: timedEvents[index],
+        score: scores[index],
+      ),
+    );
+  }
+
+  String _reachableEventKey(gcal.Event event, int index) =>
+      'google:${event.id ?? event.iCalUID ?? index}';
 
   Widget _buildScaffold({
     required double? stressScore,
@@ -1887,6 +1967,8 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _reachableWindowEventsFuture = null;
       _reachableWindowEventsDate = null;
+      _reachableWindowScoresFuture = null;
+      _reachableWindowScoresDate = null;
       _scheduleInsightFuture = null;
       _scheduleInsightDate = null;
     });
@@ -1903,8 +1985,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
 
-    return FutureBuilder<List<gcal.Event>>(
-      future: _getReachableWindowEventsFuture(todayStart),
+    return FutureBuilder<List<_ScoredReachableEvent>>(
+      future: _getReachableWindowScoresFuture(todayStart),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Container(
@@ -1941,18 +2023,20 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }
 
-        final events =
-            (snapshot.data ?? const <gcal.Event>[]).where((event) {
+        final scoredEvents =
+            (snapshot.data ?? const <_ScoredReachableEvent>[]).where((item) {
+              final event = item.event;
               final start = event.start?.dateTime?.toLocal();
               return start != null &&
                   start.year == now.year &&
                   start.month == now.month &&
                   start.day == now.day;
             }).toList()..sort((a, b) {
-              final aStart = a.start?.dateTime?.toLocal() ?? todayStart;
-              final bStart = b.start?.dateTime?.toLocal() ?? todayStart;
+              final aStart = a.event.start?.dateTime?.toLocal() ?? todayStart;
+              final bStart = b.event.start?.dateTime?.toLocal() ?? todayStart;
               return aStart.compareTo(bStart);
             });
+        final events = scoredEvents.map((item) => item.event).toList();
 
         final workStart = DateTime(now.year, now.month, now.day, 9);
         final workEnd = DateTime(now.year, now.month, now.day, 17);
@@ -1983,8 +2067,10 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
         final highLoadWindows =
-            events
-                .map((event) {
+            scoredEvents
+                .where((item) => item.score.level == CognitiveLoadLevel.high)
+                .map((item) {
+                  final event = item.event;
                   final start = event.start?.dateTime?.toLocal();
                   final end = event.end?.dateTime?.toLocal();
                   if (start == null || end == null) return null;
@@ -2000,14 +2086,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         : 'Calendar event',
                     'duration': clippedEnd.difference(clippedStart),
                     'event': event,
+                    'score': item.score.score,
                   };
                 })
                 .whereType<Map<String, dynamic>>()
                 .toList()
               ..sort(
-                (a, b) => (b['duration'] as Duration).compareTo(
-                  a['duration'] as Duration,
-                ),
+                (a, b) => (b['score'] as int).compareTo(a['score'] as int),
               );
 
         final lowLoadWindows = <Map<String, dynamic>>[];
@@ -2052,10 +2137,15 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         }
 
-        highLoadWindows.sort(
-          (a, b) =>
-              (b['duration'] as Duration).compareTo(a['duration'] as Duration),
-        );
+        highLoadWindows.sort((a, b) {
+          final scoreComparison = (b['score'] as int).compareTo(
+            a['score'] as int,
+          );
+          if (scoreComparison != 0) return scoreComparison;
+          return (b['duration'] as Duration).compareTo(
+            a['duration'] as Duration,
+          );
+        });
         lowLoadWindows.sort(
           (a, b) =>
               (b['duration'] as Duration).compareTo(a['duration'] as Duration),
@@ -2082,7 +2172,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: 'Here are your times of high cognitive load',
                 icon: Icons.psychology_alt_rounded,
                 color: orangeColor,
-                emptyText: 'No busy calendar blocks found today.',
+                emptyText: 'No high cognitive-load events found today.',
                 windows: highLoadWindows.take(2).toList(),
               ),
               const SizedBox(height: 18),
@@ -2719,6 +2809,13 @@ class _ScheduleEvent {
   final DateTime end;
 
   Duration get duration => end.difference(start);
+}
+
+class _ScoredReachableEvent {
+  const _ScoredReachableEvent({required this.event, required this.score});
+
+  final gcal.Event event;
+  final CognitiveLoadScore score;
 }
 
 class _ScheduleInsight {
