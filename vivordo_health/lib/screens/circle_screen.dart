@@ -1953,6 +1953,10 @@ class _ChallengesTabState extends State<_ChallengesTab> {
           );
           if (newUnlock) {
             final unlockedTier = achievement.tier;
+            final unlockedRequirement = _achievementRequirementForTier(
+              achievement,
+              unlockedTier,
+            );
             final activityId = unlockedTier == null
                 ? 'achievement_${achievement.id}'
                 : 'achievement_${achievement.id}_$unlockedTier';
@@ -1965,7 +1969,7 @@ class _ChallengesTabState extends State<_ChallengesTab> {
               {
                 'kind': 'achievement',
                 'name': achievement.name,
-                'summary': achievement.requirement,
+                'summary': unlockedRequirement,
                 'achievementId': achievement.id,
                 'achievementBadgeAsset': achievement.earnedBadgeAsset,
                 'achievementTier': ?unlockedTier,
@@ -6200,6 +6204,7 @@ class _AchievementsPageState extends State<_AchievementsPage> {
             else
               _RecentlyEarnedCard(
                 achievements: recentlyEarned.take(3).toList(),
+                onAchievementTap: _showAchievementDetails,
               ),
             const SizedBox(height: 18),
             Row(
@@ -6226,7 +6231,10 @@ class _AchievementsPageState extends State<_AchievementsPage> {
             if (visibleOneTime.isEmpty)
               const _AchievementFilteredEmpty()
             else
-              _OneTimeAchievementGrid(achievements: visibleOneTime),
+              _OneTimeAchievementGrid(
+                achievements: visibleOneTime,
+                onAchievementTap: _showAchievementDetails,
+              ),
             const SizedBox(height: 28),
             _AchievementPageSectionHeader(
               title: 'TIERED ACHIEVEMENTS',
@@ -6359,7 +6367,9 @@ class _AchievementsPageState extends State<_AchievementsPage> {
               ),
               const SizedBox(height: 6),
               Text(
-                achievement.requirement,
+                achievement.target > 1
+                    ? _tieredAchievementGoalDescription(achievement)
+                    : achievement.requirement,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: CircleScreen._muted,
@@ -6640,9 +6650,13 @@ class _AchievementPageSectionHeader extends StatelessWidget {
 }
 
 class _OneTimeAchievementGrid extends StatelessWidget {
-  const _OneTimeAchievementGrid({required this.achievements});
+  const _OneTimeAchievementGrid({
+    required this.achievements,
+    required this.onAchievementTap,
+  });
 
   final List<_Achievement> achievements;
+  final ValueChanged<_Achievement> onAchievementTap;
 
   @override
   Widget build(BuildContext context) => _CircleCard(
@@ -6656,61 +6670,78 @@ class _OneTimeAchievementGrid extends StatelessWidget {
         crossAxisSpacing: 8,
         mainAxisExtent: 146,
       ),
-      itemBuilder: (context, index) =>
-          _OneTimeAchievementItem(achievement: achievements[index]),
+      itemBuilder: (context, index) => _OneTimeAchievementItem(
+        achievement: achievements[index],
+        onTap: () => onAchievementTap(achievements[index]),
+      ),
     ),
   );
 }
 
 class _OneTimeAchievementItem extends StatelessWidget {
-  const _OneTimeAchievementItem({required this.achievement});
+  const _OneTimeAchievementItem({
+    required this.achievement,
+    required this.onTap,
+  });
 
   final _Achievement achievement;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      _AchievementCollectionBadge(achievement: achievement, size: 72),
-      const SizedBox(height: 7),
-      Text(
-        achievement.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: context.vivordoColors.textPrimary,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-      const SizedBox(height: 5),
-      Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+  Widget build(BuildContext context) => Material(
+    color: Colors.transparent,
+    borderRadius: BorderRadius.circular(18),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Column(
         children: [
-          Icon(
-            achievement.earned
-                ? Icons.check_circle_rounded
-                : Icons.lock_rounded,
-            size: 15,
-            color: achievement.earned
-                ? const Color(0xFF18B747)
-                : CircleScreen._muted,
-          ),
-          const SizedBox(width: 4),
+          _AchievementCollectionBadge(achievement: achievement, size: 72),
+          const SizedBox(height: 7),
           Text(
-            achievement.earned ? 'Earned' : 'Locked',
-            style: const TextStyle(color: CircleScreen._muted, fontSize: 11),
+            achievement.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: context.vivordoColors.textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
           ),
+          const SizedBox(height: 5),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                achievement.earned
+                    ? Icons.check_circle_rounded
+                    : Icons.lock_rounded,
+                size: 15,
+                color: achievement.earned
+                    ? const Color(0xFF18B747)
+                    : CircleScreen._muted,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                achievement.earned ? 'Earned' : 'Locked',
+                style: const TextStyle(
+                  color: CircleScreen._muted,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+          if (achievement.earned && achievement.earnedAt != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              DateFormat('MMM d').format(achievement.earnedAt!),
+              style: const TextStyle(color: CircleScreen._muted, fontSize: 10),
+            ),
+          ],
         ],
       ),
-      if (achievement.earned && achievement.earnedAt != null) ...[
-        const SizedBox(height: 3),
-        Text(
-          DateFormat('MMM d').format(achievement.earnedAt!),
-          style: const TextStyle(color: CircleScreen._muted, fontSize: 10),
-        ),
-      ],
-    ],
+    ),
   );
 }
 
@@ -6842,7 +6873,7 @@ class _TieredAchievementCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      _tieredAchievementDescription(achievement),
+                      _tieredAchievementGoalDescription(achievement),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -6956,14 +6987,37 @@ String _tierForRank(int rank) => switch (rank) {
   _ => 'gold',
 };
 
-String _tieredAchievementDescription(_Achievement achievement) =>
-    switch (achievement.id) {
-      'workout_momentum' => 'Complete strength workouts',
-      'endurance' => 'Complete cardio or sports activities',
-      'pulse_check' => 'Complete heart-rate scans',
-      'story_keeper' => 'Write journal entries',
-      _ => achievement.requirement,
-    };
+String _tieredAchievementGoalDescription(_Achievement achievement) {
+  final goalTier = achievement.goalTier ?? achievement.tier ?? 'bronze';
+  return '${_tierLabel(goalTier)} goal: ${achievement.requirement}';
+}
+
+String _achievementRequirementForTier(_Achievement achievement, String? tier) {
+  if (tier == null) return achievement.requirement;
+  final target = switch ((achievement.id, tier)) {
+    ('workout_momentum', 'bronze') => 5,
+    ('workout_momentum', 'silver') => 10,
+    ('workout_momentum', 'gold') => 100,
+    ('endurance', 'bronze') => 5,
+    ('endurance', 'silver') => 10,
+    ('endurance', 'gold') => 100,
+    ('pulse_check', 'bronze') => 10,
+    ('pulse_check', 'silver') => 100,
+    ('pulse_check', 'gold') => 1000,
+    ('story_keeper', 'bronze') => 5,
+    ('story_keeper', 'silver') => 20,
+    ('story_keeper', 'gold') => 100,
+    _ => null,
+  };
+  if (target == null) return achievement.requirement;
+  return switch (achievement.id) {
+    'workout_momentum' => 'Complete $target strength workouts',
+    'endurance' => 'Complete $target cardio or sports activities',
+    'pulse_check' => 'Complete $target heart-rate scans',
+    'story_keeper' => 'Write $target journal entries',
+    _ => achievement.requirement,
+  };
+}
 
 Color _achievementTierColor(String tier) => switch (tier) {
   'gold' => const Color(0xFFD99A17),
@@ -7096,9 +7150,13 @@ class _NextAchievementSummary extends StatelessWidget {
 }
 
 class _RecentlyEarnedCard extends StatelessWidget {
-  const _RecentlyEarnedCard({required this.achievements});
+  const _RecentlyEarnedCard({
+    required this.achievements,
+    this.onAchievementTap,
+  });
 
   final List<_Achievement> achievements;
+  final ValueChanged<_Achievement>? onAchievementTap;
 
   @override
   Widget build(BuildContext context) => _CircleCard(
@@ -7115,27 +7173,37 @@ class _RecentlyEarnedCard extends StatelessWidget {
                 color: context.vivordoColors.border,
               ),
             Expanded(
-              child: Column(
-                children: [
-                  _AchievementBadge(
-                    assetPath: achievements[index].visibleBadgeAsset,
-                    size: 62,
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  onTap: onAchievementTap == null
+                      ? null
+                      : () => onAchievementTap!(achievements[index]),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Column(
+                    children: [
+                      _AchievementBadge(
+                        assetPath: achievements[index].visibleBadgeAsset,
+                        size: 62,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        achievements[index].tier == null
+                            ? achievements[index].name
+                            : '${achievements[index].name} · ${_tierLabel(achievements[index].tier!)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: context.vivordoColors.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    achievements[index].tier == null
-                        ? achievements[index].name
-                        : '${achievements[index].name} · ${_tierLabel(achievements[index].tier!)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: context.vivordoColors.textPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ],

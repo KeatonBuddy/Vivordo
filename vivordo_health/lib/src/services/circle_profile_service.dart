@@ -692,12 +692,15 @@ class CircleProfileService {
     final controller = StreamController<List<CircleActivity>>();
     StreamSubscription<List<CircleProfile>>? friendsSubscription;
     final activitySubscriptions = <StreamSubscription>[];
-    final latestByFriend = <String, CircleActivity>{};
+    final activitiesByFriend = <String, List<CircleActivity>>{};
 
     void emit() {
-      final activities = latestByFriend.values.toList()
-        ..sort((a, b) => b.day.compareTo(a.day));
-      if (!controller.isClosed) controller.add(activities);
+      final activities =
+          activitiesByFriend.values.expand((items) => items).toList()
+            ..sort((a, b) => b.day.compareTo(a.day));
+      if (!controller.isClosed) {
+        controller.add(activities.take(5).toList(growable: false));
+      }
     }
 
     Future<void> replaceFriends(List<CircleProfile> friends) async {
@@ -705,7 +708,7 @@ class CircleProfileService {
         await subscription.cancel();
       }
       activitySubscriptions.clear();
-      latestByFriend.clear();
+      activitiesByFriend.clear();
       emit();
       for (final friend in friends) {
         final subscription = FirebaseFirestore.instance
@@ -713,30 +716,35 @@ class CircleProfileService {
             .doc(friend.uid)
             .collection('circle_activity')
             .orderBy('day', descending: true)
-            .limit(1)
+            .limit(5)
             .snapshots()
             .listen((snapshot) {
               if (snapshot.docs.isEmpty) {
-                latestByFriend.remove(friend.uid);
+                activitiesByFriend.remove(friend.uid);
               } else {
-                final document = snapshot.docs.first;
-                final data = document.data();
-                latestByFriend[friend.uid] = CircleActivity(
-                  id: document.id,
-                  profile: friend,
-                  name: data['name'] as String? ?? 'Activity',
-                  minutes: (data['minutes'] as num?)?.round() ?? 0,
-                  day: (data['day'] as Timestamp?)?.toDate() ?? DateTime.now(),
-                  kind: data['kind'] as String? ?? 'activity',
-                  summary: data['summary'] as String?,
-                  mood: data['mood'] as String?,
-                  km: (data['km'] as num?)?.toDouble(),
-                  sets: (data['sets'] as num?)?.round(),
-                  activityCategory: data['activityCategory'] as String?,
-                  achievementBadgeAsset:
-                      data['achievementBadgeAsset'] as String?,
-                  achievementTier: data['achievementTier'] as String?,
-                );
+                activitiesByFriend[friend.uid] = snapshot.docs
+                    .map((document) {
+                      final data = document.data();
+                      return CircleActivity(
+                        id: document.id,
+                        profile: friend,
+                        name: data['name'] as String? ?? 'Activity',
+                        minutes: (data['minutes'] as num?)?.round() ?? 0,
+                        day:
+                            (data['day'] as Timestamp?)?.toDate() ??
+                            DateTime.now(),
+                        kind: data['kind'] as String? ?? 'activity',
+                        summary: data['summary'] as String?,
+                        mood: data['mood'] as String?,
+                        km: (data['km'] as num?)?.toDouble(),
+                        sets: (data['sets'] as num?)?.round(),
+                        activityCategory: data['activityCategory'] as String?,
+                        achievementBadgeAsset:
+                            data['achievementBadgeAsset'] as String?,
+                        achievementTier: data['achievementTier'] as String?,
+                      );
+                    })
+                    .toList(growable: false);
               }
               emit();
             }, onError: controller.addError);
