@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'achievement_unlock_service.dart';
+
 /// Reconciles achievements whose progress is derived from user-owned data.
 class AchievementService {
   AchievementService._();
@@ -49,6 +51,11 @@ class AchievementService {
       _ => 'bronze',
     };
     final badgeTier = tier ?? 'bronze';
+    final unlockedTarget = switch (tier) {
+      'gold' => 100,
+      'silver' => 20,
+      _ => 5,
+    };
     final batch = _firestore.batch();
     batch.set(achievementRef, {
       'achievementId': 'story_keeper',
@@ -78,7 +85,7 @@ class AchievementService {
         {
           'kind': 'achievement',
           'name': 'Story Keeper',
-          'summary': 'Write $target journal entries',
+          'summary': 'Write $unlockedTarget journal entries',
           'achievementId': 'story_keeper',
           'achievementBadgeAsset':
               'assets/achievements/story_keeper_$badgeTier.png',
@@ -90,6 +97,17 @@ class AchievementService {
       );
     }
     await batch.commit();
+    if (tierAdvanced && tier != null) {
+      AchievementUnlockService.announce(
+        AchievementUnlock(
+          id: 'achievement_story_keeper_$tier',
+          name: 'Story Keeper',
+          requirement: 'Write $unlockedTarget journal entries',
+          badgeAsset: 'assets/achievements/story_keeper_$badgeTier.png',
+          tier: tier,
+        ),
+      );
+    }
   }
 
   static String? _higherTier(String? first, String? second) =>

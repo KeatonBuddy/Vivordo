@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/achievement_unlock_service.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/workout_live_activity_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
@@ -15,6 +16,7 @@ import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/version_gate_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/achievement_unlocked_dialog.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -140,6 +142,9 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   bool _openingWorkout = false;
   bool _openingWidget = false;
+  StreamSubscription<AchievementUnlock>? _achievementUnlockSubscription;
+  final List<AchievementUnlock> _pendingAchievementUnlocks = [];
+  bool _showingAchievementUnlock = false;
 
   @override
   void initState() {
@@ -148,6 +153,55 @@ class _MyAppState extends State<MyApp> {
       WorkoutLiveActivityService.configureLaunchHandler(_openActiveWorkout);
       HomeWidgetService.configureLaunchHandler(_openWidgetDestination);
     });
+    _achievementUnlockSubscription = AchievementUnlockService.unlocks.listen(
+      _queueAchievementUnlock,
+    );
+  }
+
+  void _queueAchievementUnlock(AchievementUnlock achievement) {
+    _pendingAchievementUnlocks.add(achievement);
+    unawaited(_showNextAchievementUnlock());
+  }
+
+  Future<void> _showNextAchievementUnlock() async {
+    if (_showingAchievementUnlock || _pendingAchievementUnlocks.isEmpty) return;
+    final navigatorContext = navigatorKey.currentContext;
+    if (navigatorContext == null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => unawaited(_showNextAchievementUnlock()),
+      );
+      return;
+    }
+    _showingAchievementUnlock = true;
+    final achievement = _pendingAchievementUnlocks.removeAt(0);
+    await showGeneralDialog<void>(
+      context: navigatorContext,
+      barrierDismissible: false,
+      barrierLabel: 'Achievement unlocked',
+      barrierColor: Colors.black.withValues(alpha: .82),
+      transitionDuration: const Duration(milliseconds: 320),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) =>
+          AchievementUnlockedDialog(
+            achievement: achievement,
+            onDismiss: () => Navigator.of(dialogContext).pop(),
+          ),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutBack,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(scale: curved, child: child),
+        );
+      },
+    );
+    _showingAchievementUnlock = false;
+    if (_pendingAchievementUnlocks.isNotEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+      unawaited(_showNextAchievementUnlock());
+    }
   }
 
   Future<void> _openWidgetDestination(String destination) async {
@@ -217,6 +271,7 @@ class _MyAppState extends State<MyApp> {
   void dispose() {
     WorkoutLiveActivityService.clearLaunchHandler();
     HomeWidgetService.clearLaunchHandler();
+    _achievementUnlockSubscription?.cancel();
     super.dispose();
   }
 

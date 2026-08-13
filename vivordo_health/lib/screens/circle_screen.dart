@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/activity_goals_service.dart';
+import '../src/services/achievement_unlock_service.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/circle_challenge_service.dart';
 import '../src/services/circle_profile_service.dart';
@@ -1910,6 +1911,7 @@ class _ChallengesTabState extends State<_ChallengesTab> {
     ];
     final batch = firestore.batch();
     final now = DateTime.now();
+    final newlyUnlocked = <AchievementUnlock>[];
     final resolved = achievementChecks
         .map((achievement) {
           final saved = savedById[achievement.id];
@@ -1978,11 +1980,24 @@ class _ChallengesTabState extends State<_ChallengesTab> {
               },
               SetOptions(merge: true),
             );
+            newlyUnlocked.add(
+              AchievementUnlock(
+                id: activityId,
+                name: achievement.name,
+                requirement: unlockedRequirement,
+                badgeAsset:
+                    achievement.earnedBadgeAsset ?? achievement.goalBadgeAsset,
+                tier: unlockedTier,
+              ),
+            );
           }
           return achievement.copyWith(earned: isEarned, earnedAt: earnedAt);
         })
         .toList(growable: false);
     await batch.commit();
+    for (final achievement in newlyUnlocked) {
+      AchievementUnlockService.announce(achievement);
+    }
     return resolved;
   }
 
