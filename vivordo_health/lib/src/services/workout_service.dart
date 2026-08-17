@@ -412,6 +412,60 @@ class WorkoutService {
     return snapshot.docs.map(SavedWorkout.fromDocument).toList(growable: false);
   }
 
+  static Future<List<WorkoutTemplateExercise>> loadCustomExercises() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const [];
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('custom_exercises')
+        .get();
+    return snapshot.docs
+        .map((document) {
+          final data = document.data();
+          final name = (data['name'] as String? ?? '').trim();
+          final category = (data['category'] as String? ?? 'Other').trim();
+          return WorkoutTemplateExercise(
+            name: name,
+            category: category.isEmpty ? 'Other' : category,
+          );
+        })
+        .where((exercise) => exercise.name.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  static Future<void> saveCustomExercise({
+    required String name,
+    required String category,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw StateError('Sign in before creating a custom exercise.');
+    }
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) throw ArgumentError('Exercise name is required.');
+    final cleanCategory = category.trim().isEmpty ? 'Other' : category.trim();
+    final normalizedName = cleanName.toLowerCase();
+    final collection = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('custom_exercises');
+    final existing = await collection
+        .where('normalizedName', isEqualTo: normalizedName)
+        .limit(1)
+        .get();
+    final document = existing.docs.isEmpty
+        ? collection.doc()
+        : existing.docs.first.reference;
+    await document.set({
+      'name': cleanName,
+      'normalizedName': normalizedName,
+      'category': cleanCategory,
+      'updatedAt': FieldValue.serverTimestamp(),
+      if (existing.docs.isEmpty) 'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
   static Future<Map<String, List<WorkoutSetRecord>>> loadLatestExerciseSets(
     Iterable<String> exerciseNames,
   ) async {

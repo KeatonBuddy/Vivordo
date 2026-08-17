@@ -509,7 +509,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   }
 
   Map<String, List<_WeightPoint>> _progressions(List<SavedWorkout> workouts) {
-    final result = <String, List<_WeightPoint>>{};
+    final pointsByName = <String, List<_WeightPoint>>{};
+    final displayNames = <String, String>{};
     for (final workout in workouts.reversed) {
       for (final exercise in workout.exercises) {
         final weights = exercise.sets
@@ -517,8 +518,16 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             .where((weight) => weight > 0)
             .toList();
         if (weights.isEmpty) continue;
-        result
-            .putIfAbsent(exercise.name, () => [])
+        final normalizedName = exercise.name.trim().toLowerCase();
+        if (normalizedName.isEmpty) continue;
+        final currentDisplayName = displayNames[normalizedName];
+        if (currentDisplayName == null ||
+            _capitalLetterCount(exercise.name) >
+                _capitalLetterCount(currentDisplayName)) {
+          displayNames[normalizedName] = exercise.name.trim();
+        }
+        pointsByName
+            .putIfAbsent(normalizedName, () => [])
             .add(
               _WeightPoint(
                 workout.completedAt.toLocal(),
@@ -527,8 +536,14 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             );
       }
     }
-    return result;
+    return {
+      for (final entry in pointsByName.entries)
+        displayNames[entry.key] ?? entry.key: entry.value,
+    };
   }
+
+  int _capitalLetterCount(String value) =>
+      RegExp(r'[A-Z]').allMatches(value).length;
 
   String _duration(int minutes) => minutes >= 60
       ? '${minutes ~/ 60} h${minutes % 60 == 0 ? '' : ' ${minutes % 60} m'}'

@@ -19,7 +19,6 @@ import 'exercise_detail_screen.dart';
 import 'personal_profile_screen.dart';
 
 const _purple = Color(0xFF6B5CE7);
-const _ink = Color(0xFF17172B);
 const _muted = Color(0xFF85859B);
 
 /// Shared in-memory workout timer state for navigation affordances.
@@ -2898,6 +2897,9 @@ class _ExerciseDefinition {
   final String category;
 }
 
+String _exerciseNameKey(String value) =>
+    value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+
 String _compactWorkoutNumber(double value) =>
     value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
 
@@ -3379,6 +3381,2572 @@ const _exerciseLibrary = <_ExerciseDefinition>[
   _ExerciseDefinition(name: 'Cycling', category: 'Sports'),
   _ExerciseDefinition(name: 'Skiing', category: 'Sports'),
   _ExerciseDefinition(name: 'Lacrosse', category: 'Sports'),
+  _ExerciseDefinition(name: '45° cable rear delt fly', category: 'Shoulders'),
+  _ExerciseDefinition(name: '45° incline barbell press', category: 'Chest'),
+  _ExerciseDefinition(name: '45° incline close grip press', category: 'Arms'),
+  _ExerciseDefinition(name: '45° incline dumbbell fly', category: 'Chest'),
+  _ExerciseDefinition(name: '45° incline dumbbell press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: '45° incline neutral grip dumbbell press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: '45° incline pause barbell press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: '45° incline pause dumbbell press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: '45° incline single arm dumbbell press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: '45° incline Smith machine press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: '45° incline wide grip press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Ab coaster exercise', category: 'Core'),
+  _ExerciseDefinition(name: 'Ab coaster oblique exercice', category: 'Core'),
+  _ExerciseDefinition(name: 'Ab wheel plank rollout', category: 'Core'),
+  _ExerciseDefinition(name: 'Ab wheel rollout', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Accentuated eccentric pin-loaded machine leg extension',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Accentuated eccentric plate-loaded machine leg extension',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Alternating dumbbell bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Alternating dumbbell biceps curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Ankle weight hip flexion straight leg raise',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Ankle-banded lateral walk', category: 'Legs'),
+  _ExerciseDefinition(name: 'Assisted pistol squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Assisted skater squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Asymmetrical weight forearm pronation',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Asymmetrical weight forearm pronation and supination',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Asymmetrical weight forearm supination',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Asymmetrical weight wrist radial deviation',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Asymmetrical weight wrist ulnar deviation',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Backward sled drag with belt', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Backward sled drag with handles',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Band triceps pushdown', category: 'Arms'),
+  _ExerciseDefinition(name: 'Band-assisted chin-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Band-assisted glute ham raise', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Band-assisted reverse Nordic curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Banded back squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Banded barbell bench press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Banded conventional deadlift', category: 'Back'),
+  _ExerciseDefinition(name: 'Banded Pallof press', category: 'Core'),
+  _ExerciseDefinition(name: 'Banded push-up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Banded terminal knee extension', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell back squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell back squat to a box', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Barbell behind the back shrug',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Barbell biceps curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Barbell box squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell cheat curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Barbell cheat shrug', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Barbell deficit Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Barbell drag curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Barbell floor press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Barbell forward lunge', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Barbell front foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Barbell front raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Barbell glute bridge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell good morning', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell guillotine press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Barbell hip thrust', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell Jefferson curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Barbell JM press', category: 'Arms'),
+  _ExerciseDefinition(name: 'Barbell overhead squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell pin squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell plank rollout', category: 'Core'),
+  _ExerciseDefinition(name: 'Barbell pullover', category: 'Back'),
+  _ExerciseDefinition(name: 'Barbell push press', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Barbell rear foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Barbell reverse curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Barbell reverse lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell rollout', category: 'Core'),
+  _ExerciseDefinition(name: 'Barbell Romanian deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Barbell split squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell static hold', category: 'Core'),
+  _ExerciseDefinition(name: 'Barbell straight-leg deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell upright row', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Barbell walking lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Barbell Z press', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Behind the back barbell wrist curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Behind-the-back cable cuffed Y-raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Behind-the-back cable Y-raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Bench dip with bent knees', category: 'Arms'),
+  _ExerciseDefinition(name: 'Bench dip with straight knees', category: 'Arms'),
+  _ExerciseDefinition(name: 'Bent-arm sled push', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bent-leg reverse crunch', category: 'Core'),
+  _ExerciseDefinition(name: 'Bent-over barbell cheat row', category: 'Back'),
+  _ExerciseDefinition(name: 'Bent-over cable fly', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Bent-over dumbbell row', category: 'Back'),
+  _ExerciseDefinition(name: 'Bent-over kettlebell row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Bent-over neutral grip dumbbell reverse fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Bent-over neutral grip T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Bent-over overhand grip barbell row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Bent-over overhand grip dumbbell reverse fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Bent-over overhand grip T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Bent-over semi-neutral grip T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Bent-over underhand grip barbell row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Bent-over underhand grip T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Bent-over wide grip T-bar row', category: 'Back'),
+  _ExerciseDefinition(name: 'Bicycle crunch', category: 'Core'),
+  _ExerciseDefinition(name: 'Bird dog', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Bird dog regression with alternating arm lifts',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Bird dog regression with alternating leg lifts',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Body saw with feet on ground', category: 'Core'),
+  _ExerciseDefinition(name: 'Bodyweight chest dip', category: 'Chest'),
+  _ExerciseDefinition(name: 'Bodyweight Cossack squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Bodyweight crunch with hands behind head',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight crunch with hands on floor',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight crunch with hands on shoulders',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Bodyweight dip', category: 'Chest'),
+  _ExerciseDefinition(name: 'Bodyweight forward lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight forward step-down', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight frog pump', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Bodyweight front foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Bodyweight glute bridge', category: 'Legs'),
+  _ExerciseDefinition(
+    name:
+        'Bodyweight glute ham developer back extension with hands behind head',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name:
+        'Bodyweight glute ham developer back extension with hands on shoulders',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight glute ham developer hip hinge with hands behind head',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight glute ham developer hip hinge with hands on shoulders',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight glute-dominant reverse lunge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Bodyweight hamstring bridge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight hip thrust', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight Jefferson curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Bodyweight lateral lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight lateral step-down', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight lunge hold', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight machine sissy squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Bodyweight marching glute bridge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight rear foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Bodyweight reverse lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight reverse step-down', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight ring dip', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Bodyweight Roman chair back extension with hands behind head',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight Roman chair back extension with hands on shoulders',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight Roman chair hip hinge with arms overhead',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight Roman chair hip hinge with hands behind head',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight Roman chair hip hinge with hands on shoulders',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Bodyweight Russian twist', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Bodyweight single leg box squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight sit-up with hands behind head',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight sit-up with hands on floor',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Bodyweight sit-up with hands on shoulders',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Bodyweight skater squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight Spanish squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight split squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight step-up', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight triceps dip', category: 'Arms'),
+  _ExerciseDefinition(name: 'Bodyweight walking lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight wall sit', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bodyweight wall squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Bottoms up pin back squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Bottoms-up landmine goblet squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Cable chest press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Cable concentration curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Cable dual rope diverging triceps pushdown',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Cable EZ bar biceps curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Cable face pull', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Cable glute kickback', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Cable hip abduction (leg behind body)',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Cable hip abduction (leg in front of body)',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Cable hip adduction', category: 'Legs'),
+  _ExerciseDefinition(name: 'Cable Pallof press', category: 'Core'),
+  _ExerciseDefinition(name: 'Cable press-around', category: 'Chest'),
+  _ExerciseDefinition(name: 'Cable pull-through', category: 'Legs'),
+  _ExerciseDefinition(name: 'Cable reverse curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Cable Romanian deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Cable rope hammer curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Cable rope high row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Cable rope straight arm lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Cable rope triceps pushdown', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Cable shoulder external rotation with arm at side',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Cable shoulder external rotation with arm elevated',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Cable shoulder internal rotation with arm at side',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Cable shoulder internal rotation with arm elevated',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Cable shoulder press', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Cable shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Cable shrug-in', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Cable side bend', category: 'Core'),
+  _ExerciseDefinition(name: 'Cable straight bar biceps curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Cable straight bar straight arm lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Cable upright row', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Cable V-bar triceps pushdown', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Captain’s chair bent-knee leg raise',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Captain’s chair straight knee leg raise',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Center pendulum reverse hyperextension',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported neutral grip pin-loaded machine row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported neutral grip plate-loaded machine row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported neutral grip T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported overhand grip pin-loaded machine row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported overhand grip plate-loaded machine row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported overhand grip T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported semi-neutral grip T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported T-bar Kelso shrug',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported underhand grip T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported wide grip T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported wide overhand grip pin-loaded machine row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Chest-supported wide overhand grip plate-loaded machine row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Clean', category: 'Legs'),
+  _ExerciseDefinition(name: 'Clean grip high pull', category: 'Legs'),
+  _ExerciseDefinition(name: 'Close grip chin-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Close grip EZ bar biceps curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Close grip EZ bar preacher curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Close grip medicine ball push-up',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: 'Close grip push-up', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Close grip Smith machine bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Conventional above-the-knee block pull',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Conventional above-the-knee rack pull',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Conventional below-the-knee block pull',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Conventional below-the-knee rack pull',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Conventional deadlift', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Conventional mid-shin block pull',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Conventional mid-shin rack pull',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Corpse crunch', category: 'Core'),
+  _ExerciseDefinition(name: 'Counterbalanced skater squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Cross-arm grip front squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Cross-body cable lat pull-around',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Crucifix curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Decline barbell press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Decline bodyweight crunch with hands behind head',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Decline bodyweight crunch with hands on shoulders',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Decline bodyweight sit-up with hands behind head',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Decline bodyweight sit-up with hands on shoulders',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Decline close grip press', category: 'Arms'),
+  _ExerciseDefinition(name: 'Decline pause barbell press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Decline pause dumbbell press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Decline single arm dumbbell bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: 'Decline Smith machine press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Decline weighted crunch', category: 'Core'),
+  _ExerciseDefinition(name: 'Decline weighted sit-up', category: 'Core'),
+  _ExerciseDefinition(name: 'Decline wide grip press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Deficit conventional deadlift', category: 'Back'),
+  _ExerciseDefinition(name: 'Deficit kettlebell deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Deficit Pendlay row', category: 'Back'),
+  _ExerciseDefinition(name: 'Deficit push-up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Double straight leg raise', category: 'Core'),
+  _ExerciseDefinition(name: 'Dual cable Bayesian curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dual cable lateral raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Dual cable triceps press', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dual dumbbell triceps kickback', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dual kettlebell clean', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Dual kettlebell upright row',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Dumbbell cheat curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dumbbell cheat shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Dumbbell concentration curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dumbbell farmer’s carry', category: 'Core'),
+  _ExerciseDefinition(name: 'Dumbbell floor press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Dumbbell fly', category: 'Chest'),
+  _ExerciseDefinition(name: 'Dumbbell forward lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell frog pump', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Dumbbell front foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Dumbbell glute bridge', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Dumbbell glute-dominant reverse lunge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Dumbbell hammer cheat curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dumbbell Helms row', category: 'Back'),
+  _ExerciseDefinition(name: 'Dumbbell hip thrust', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell Jefferson curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dumbbell Kelso shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Dumbbell lateral step-down', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell lunge hold', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell preacher curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dumbbell preacher hammer curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dumbbell preacher reverse curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dumbbell push press', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Dumbbell rear foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Dumbbell reverse lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell reverse step-down', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell Romanian deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell side bend', category: 'Core'),
+  _ExerciseDefinition(name: 'Dumbbell skater squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell spider curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Dumbbell split squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell step-up', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell suitcase carry', category: 'Core'),
+  _ExerciseDefinition(name: 'Dumbbell sumo squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell upright row', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Dumbbell waiter walk', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Dumbbell walking lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Dumbbell Z press', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Dynamic long lever Copenhagen plank',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Dynamic short lever Copenhagen plank',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Elbows-in dumbbell seal row', category: 'Back'),
+  _ExerciseDefinition(name: 'Elbows-out dumbbell seal row', category: 'Back'),
+  _ExerciseDefinition(name: 'Extended-hip ab wheel rollout', category: 'Core'),
+  _ExerciseDefinition(name: 'Extended-hip barbell rollout', category: 'Core'),
+  _ExerciseDefinition(name: 'EZ bar biceps curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'EZ bar preacher curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'EZ bar preacher reverse curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'EZ bar pullover', category: 'Back'),
+  _ExerciseDefinition(name: 'EZ bar reverse curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Fat grip dumbbell preacher hammer curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Feet-elevated bodyweight glute bridge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Feet-elevated bodyweight hamstring bridge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Feet-elevated thigh-banded bodyweight glute bridge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Feet-up barbell bench press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Feet-up dumbbell bench press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Feet-up Smith machine bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Fingertip clean grip front squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Flat-back barbell bench press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Flat-back dead bug', category: 'Core'),
+  _ExerciseDefinition(name: 'Flutter kick with head down', category: 'Core'),
+  _ExerciseDefinition(name: 'Flutter kick with head up', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Foot-elevated single leg bodyweight glute bridge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Foot-elevated single leg bodyweight hamstring bridge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Forearm plank', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Forearm plank scapular protraction',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Forearm plank with leg lift', category: 'Core'),
+  _ExerciseDefinition(name: 'Four-board press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Full hand clean grip front squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Glute ham developer CrossFit-style sit-up',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Glute ham developer sit-up with hands behind head',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Glute ham developer sit-up with hands on shoulders',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Glute ham raise with arms by sides',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Glute ham raise with hands behind head',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Glute ham raise with hands on shoulders',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Goblet carry', category: 'Core'),
+  _ExerciseDefinition(name: 'Goblet Cossack squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Goblet forward lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Goblet forward step-down', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Goblet front foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Goblet lateral lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Goblet lateral step-down', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Goblet rear foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Goblet reverse lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Goblet reverse step-down', category: 'Legs'),
+  _ExerciseDefinition(name: 'Goblet skater squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Goblet split squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Goblet step-up', category: 'Legs'),
+  _ExerciseDefinition(name: 'Goblet walking lunge', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Half-kneeling cable Pallof press',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Half-kneeling single arm cable lat pull-in',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Half-kneeling single arm cable lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Half-kneeling single arm crucifix curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Half-kneeling single arm elbow-out cable biceps curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Hand gripper crushing', category: 'Arms'),
+  _ExerciseDefinition(name: 'Hand release push-up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Hang power clean', category: 'Legs'),
+  _ExerciseDefinition(name: 'Hang power snatch', category: 'Legs'),
+  _ExerciseDefinition(name: 'Hanging bent-knee leg raise', category: 'Core'),
+  _ExerciseDefinition(name: 'Hanging L-sit hold', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Hanging straight knee leg raise',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Heels-elevated ankle dorsiflexion',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'High bar back squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'High bar box squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'High handle trap bar deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'High incline barbell press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'High incline dumbbell bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'High incline Smith machine press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'High pulley cable face pull',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'High pulley cable rope overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'High pulley cable straight bar overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'High pulley cable V-bar overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'High-to-low cable chop', category: 'Core'),
+  _ExerciseDefinition(name: 'High-to-low cable fly', category: 'Chest'),
+  _ExerciseDefinition(name: 'Hollow body hold', category: 'Core'),
+  _ExerciseDefinition(name: 'Horizontal cable chop', category: 'Core'),
+  _ExerciseDefinition(name: 'Horizontal cable crossover', category: 'Chest'),
+  _ExerciseDefinition(name: 'Horizontal cable fly', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Incline chest-supported dumbbell lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Incline chest-supported dumbbell rear delt fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Incline close grip push-up', category: 'Arms'),
+  _ExerciseDefinition(name: 'Incline dumbbell biceps curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Incline dumbbell front raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Incline dumbbell hammer curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Incline dumbbell I-raise', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Incline dumbbell lateral raise (facing up)',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Incline dumbbell T-raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Incline dumbbell Y-raise', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Incline externally rotated dumbbell biceps curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Incline tall plank scapular protraction',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Isometric bodyweight Spanish squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Katana triceps extension', category: 'Arms'),
+  _ExerciseDefinition(name: 'Kettlebell bench press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Kettlebell deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Kettlebell farmer’s carry', category: 'Core'),
+  _ExerciseDefinition(name: 'Kettlebell floor press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Kettlebell forward lunge', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Kettlebell front foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Kettlebell Jefferson curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Kettlebell rear foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Kettlebell reverse lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Kettlebell Romanian deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Kettlebell side bend', category: 'Core'),
+  _ExerciseDefinition(name: 'Kettlebell split squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Kettlebell suitcase carry', category: 'Core'),
+  _ExerciseDefinition(name: 'Kettlebell swing', category: 'Legs'),
+  _ExerciseDefinition(name: 'Kettlebell waiter walk', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Kettlebell walking lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Kipping pull-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Kneeling cable crunch', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Kneeling cable straight arm lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Kneeling close grip push-up', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Kneeling machine lower trunk rotation',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Kneeling pin-loaded machine glute kickback',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Kneeling plate-loaded machine glute kickback',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Kneeling push-up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Kneeling wide grip push-up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Knuckle push-up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Landmine goblet squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Lean-in dumbbell lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Leaned forward pin-loaded machine hip abduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Leaned forward plate-loaded machine hip abduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Leaning single arm cable lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Lever-arm machine belt squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Lockout pin bench press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Long lever plank', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Long sitting banded ankle eversion',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Low bar back squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Low handle trap bar deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Low incline barbell press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Low incline chest-supported dumbbell high row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Low incline chest-supported elbows-in dumbbell row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Low incline chest-supported elbows-out dumbbell row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Low incline dumbbell fly', category: 'Chest'),
+  _ExerciseDefinition(name: 'Low incline dumbbell press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Low incline Smith machine press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: 'Low pin bench press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Low pulley cable face pull',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Low pulley cable rope overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Low pulley cable straight bar overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Low pulley cable V-bar overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Low pulley dual cable biceps curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Low-to-high cable chop', category: 'Core'),
+  _ExerciseDefinition(name: 'Low-to-high cable fly', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Low-to-high plate-loaded machine low row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying barbell triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying barbell triceps extension pullover',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Lying cable triceps extension', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Lying dual kettlebell triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying dumbbell triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying dumbbell triceps extension pullover',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Lying EZ bar triceps extension', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Lying EZ bar triceps extension pullover',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying feet-up overhand grip plate-loaded machine chest press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: 'Lying machine decline press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Lying neutral grip plate-loaded machine chest press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying on floor dumbbell triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying overhand grip pin-loaded machine chest press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying overhand grip plate-loaded machine chest press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying pause cable face pull',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying pin-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying plate-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying single arm dumbbell triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying single kettlebell triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying single leg pin-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Lying single leg plate-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Machine biceps curl with arms at sides',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Machine cheat shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Machine fly with arm pads', category: 'Chest'),
+  _ExerciseDefinition(name: 'Machine hack squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Machine pendulum squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Machine upper trunk rotation (with arm or shoulder pads)',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Machine upper trunk rotation (with chest pad)',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Machine V-squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Marching flat-back dead bug', category: 'Core'),
+  _ExerciseDefinition(name: 'Marching mountain climber', category: 'Core'),
+  _ExerciseDefinition(name: 'Marching neutral dead bug', category: 'Core'),
+  _ExerciseDefinition(name: 'Midpoint pin bench press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Modified candlestick', category: 'Core'),
+  _ExerciseDefinition(name: 'Moto cable row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Multi-hip machine bent-knee hip extension',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Multi-hip machine hip abduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Multi-hip machine hip adduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Multi-hip machine hip flexion', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Multi-hip machine straight-knee hip extension',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Muscle-up', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Neutral close grip cable lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Neutral close grip pull-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Neutral dead bug', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Neutral grip band pull-apart',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip band-assisted pull-up',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip cable reverse fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip cable triceps kickback',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Neutral grip deficit push-up', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Neutral grip dumbbell bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip dumbbell Z press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip landmine T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Neutral grip machine fly', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Neutral grip machine reverse fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip pin-loaded machine assisted pull-up',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip pin-loaded machine lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip pin-loaded machine shoulder press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip plate-loaded machine assisted pull-up',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip plate-loaded machine lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip plate-loaded machine shoulder press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Neutral grip pull-up', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Neutral grip suspension trainer inverted row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral grip Swiss bar bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: 'Neutral grip weighted pull-up', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Neutral shoulder width grip cable lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Neutral wide grip cable lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Neutral wide grip pull-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Nordic hamstring curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Offset dumbbell front foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Offset dumbbell rear foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Offset dumbbell split squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Offset kettlebell front foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Offset kettlebell rear foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Offset kettlebell split squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'One-board press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Overhand grip band pull-apart',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip band-assisted pull-up',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip barbell inverted row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Overhand grip barbell seal row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Overhand grip bodyweight eccentric pull-up',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip cable lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip cable reverse fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip cable straight bar triceps pushdown',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Overhand grip dead hang', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Overhand grip dead hang pull-up',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Overhand grip L-sit pull-up', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Overhand grip landmine T-bar row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Overhand grip machine fly', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Overhand grip machine reverse fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip pin-loaded machine assisted pull-up',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip pin-loaded machine lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip pin-loaded machine shoulder press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip plate-loaded machine assisted pull-up',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip plate-loaded machine lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip plate-loaded machine shoulder press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Overhand grip pull-up', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Overhand grip Smith machine deficit row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip Smith machine row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand grip weighted eccentric pull-up',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Overhand grip weighted pull-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Overhand grip Yates row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Overhand wide grip barbell inverted row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Overhand wide grip cable lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Overhead medicine ball slam', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Partial range of motion bodyweight skater squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Partial range of motion shrimp squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Pause back squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Pause barbell bench press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Pause barbell Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Pause bodyweight chest dip', category: 'Chest'),
+  _ExerciseDefinition(name: 'Pause bodyweight dip', category: 'Chest'),
+  _ExerciseDefinition(name: 'Pause bodyweight triceps dip', category: 'Arms'),
+  _ExerciseDefinition(name: 'Pause cable shrug-in', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Pause close grip bench press', category: 'Arms'),
+  _ExerciseDefinition(name: 'Pause conventional deadlift', category: 'Back'),
+  _ExerciseDefinition(name: 'Pause dumbbell bench press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Pause dumbbell rear foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Pause dumbbell Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Pause front squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Pause machine hack squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Pause pin-loaded machine assisted dip',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Pause plate-loaded machine assisted dip',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: 'Pause push-up', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Pause Smith machine bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: 'Pause snatch grip deadlift', category: 'Back'),
+  _ExerciseDefinition(name: 'Pause sumo deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Pause weighted chest dip', category: 'Chest'),
+  _ExerciseDefinition(name: 'Pause weighted dip', category: 'Chest'),
+  _ExerciseDefinition(name: 'Pause weighted triceps dip', category: 'Arms'),
+  _ExerciseDefinition(name: 'Pause wide grip bench press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Pendlay row', category: 'Back'),
+  _ExerciseDefinition(name: 'Pin good morning', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Pin-loaded glute-biased leg press',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Pin-loaded leg press', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Pin-loaded leg press calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded leg press calf “jump”',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine assisted chest dip',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine assisted dip',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine assisted triceps dip',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine back extension',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Pin-loaded machine chest dip', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine crunch (with chest pad)',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine crunch (with overhead handles)',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine crunch (with straight elbows)',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine donkey calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Pin-loaded machine hip thrust', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine leg extension',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine preacher curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Pin-loaded machine pullover', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Pin-loaded machine triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded quad-biased leg press',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded reverse hyperextension',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Pin-loaded row machine Kelso shrug',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Pinch grip dumbbell curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Plate front raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Plate overhead raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Plate pullover', category: 'Back'),
+  _ExerciseDefinition(name: 'Plate shrug', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Plate-loaded glute-biased leg press',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Plate-loaded leg press', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Plate-loaded leg press calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded leg press calf “jump”',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine assisted chest dip',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine assisted dip',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine assisted triceps dip',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine back extension',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine crunch (with chest pad)',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine crunch (with overhead handles)',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine donkey calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine finger curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine hip thrust (starting from the bottom)',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine hip thrust (starting from the top)',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine leg extension',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine preacher curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Plate-loaded machine pullover', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Plate-loaded machine triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded quad-biased leg press',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Plate-loaded row machine Kelso shrug',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Plyometric push-up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Power clean', category: 'Legs'),
+  _ExerciseDefinition(name: 'Power snatch', category: 'Legs'),
+  _ExerciseDefinition(name: 'Prone blackburn', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Prone I-raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Prone T-raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Prone Y-raise', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Pulley machine belt squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Push-up plus', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Reclined pin-loaded machine hip abduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Reclined pin-loaded machine hip adduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Reclined pin-loaded machine incline press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Reclined plate-loaded machine hip abduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Reclined plate-loaded machine hip adduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Reclined plate-loaded machine incline press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Regressed dead hang (feet on floor)',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Regressed scapular pull-up (feet on floor)',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Reset conventional deadlift', category: 'Back'),
+  _ExerciseDefinition(name: 'Reset sumo deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Reverse grip bench press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Reverse Nordic curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Reverse plank', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Reverse plank with alternating leg lifts',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Ring chin-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Ring fly', category: 'Chest'),
+  _ExerciseDefinition(name: 'Ring pull-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Running mountain climber', category: 'Core'),
+  _ExerciseDefinition(name: 'Safety squat bar good morning', category: 'Legs'),
+  _ExerciseDefinition(name: 'Safety squat bar reverse lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Safety squat bar split squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Safety squat bar squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Scapular pull-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Scapular wall slide', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Seated accentuated eccentric pin-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Seated banded ankle eversion', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Seated barbell behind-the-neck overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated barbell finger flexion wrist curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated barbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Seated barbell wrist curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Seated barbell wrist extension', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Seated bent-arm dumbbell lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Seated cable back extension', category: 'Back'),
+  _ExerciseDefinition(name: 'Seated cable deadlift', category: 'Back'),
+  _ExerciseDefinition(name: 'Seated cable face pull', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Seated cable fly', category: 'Chest'),
+  _ExerciseDefinition(name: 'Seated cable Romanian deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Seated cable wrist curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Seated cable wrist extension', category: 'Arms'),
+  _ExerciseDefinition(name: 'Seated crucifix curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Seated dual cable Bayesian curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated dual dumbbell overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated dumbbell Arnold press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Seated dumbbell biceps curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Seated dumbbell finger flexion wrist curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated dumbbell front raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Seated dumbbell hammer curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Seated dumbbell inverse Zottman curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated dumbbell lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated dumbbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated dumbbell overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Seated dumbbell reverse curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Seated dumbbell shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Seated dumbbell wrist curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Seated dumbbell wrist extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Seated dumbbell Zottman curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Seated fat grip dumbbell biceps curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated fat grip dumbbell hammer curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Seated machine decline press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Seated machine lower trunk rotation',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Seated neutral grip cable row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Seated neutral grip dumbbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated neutral grip dumbbell reverse fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated neutral grip pin-loaded machine chest press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated neutral grip plate-loaded machine chest press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated neutral wide grip cable row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Seated overhand grip cable row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Seated overhand grip cable row with dynamic back extension',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated overhand grip dumbbell reverse fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated overhand grip pin-loaded machine chest press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated overhand grip plate-loaded machine chest press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated overhand wide grip cable row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated pin-loaded machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated pin-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated pin-loaded machine hip abduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated pin-loaded machine hip adduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated pin-loaded machine incline press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated pin-loaded machine lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated pin-loaded machine shrug',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated pin-loaded machine triceps dip',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated plate-loaded machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated plate-loaded machine chest dip',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated plate-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated plate-loaded machine hip abduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated plate-loaded machine hip adduction',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated plate-loaded machine incline press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated plate-loaded machine lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated plate-loaded machine shrug',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated plate-loaded machine triceps dip',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Seated single arm cable row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Seated single arm dumbbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated single arm dumbbell overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated single arm plate-loaded machine incline press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated single leg cable Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated single leg pin-loaded machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated single leg pin-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated single leg plate-loaded machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated single leg plate-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated super ROM dumbbell lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Seated underhand grip cable row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Shrimp squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Side lying dumbbell shoulder external rotation',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Side plank', category: 'Core'),
+  _ExerciseDefinition(name: 'Side plank on knees', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Side plank with dynamic leg lift',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Side plank with leg lift hold', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Side-lying ankle weight hip abduction straight leg raise',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Side-lying banded clamshell', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Side-lying banded hip abduction straight leg raise',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Side-lying bodyweight clamshell',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Side-lying bodyweight hip abduction straight leg raise',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Side-lying low incline dumbbell lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Side-plate-loaded reverse hyperextension',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Sideways single arm machine reverse fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm 45° cable rear delt fly',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Single arm Bayesian curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Single arm cable biceps curl (facing toward machine)',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Single arm cable chest press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Single arm cable face pull',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm cable front raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Single arm cable lat pulldown', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Single arm cable lateral raise (with cable between legs)',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm cable lateral raise (with cable in front of body)',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm cable overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm cross-body cable triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm cross-body cable Y-raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Single arm crucifix curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Single arm dead hang', category: 'Back'),
+  _ExerciseDefinition(name: 'Single arm dual plate pinch', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Single arm dumbbell bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm dumbbell biceps curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Single arm dumbbell cheat row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Single arm dumbbell floor press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm dumbbell preacher curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm dumbbell preacher hammer curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm dumbbell preacher reverse curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm dumbbell push press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Single arm dumbbell Scott curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Single arm dumbbell triceps kickback',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm dumbbell Z press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm elbow-in dumbbell row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm elbow-in kettlebell row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm elbow-out cable biceps curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm elbow-out dumbbell row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm fat grip dumbbell preacher hammer curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm high cable cuffed lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm high cable lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm high-to-low cable fly',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm horizontal cable fly',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: 'Single arm kettlebell clean', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Single arm kettlebell push press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm low-to-high cable fly',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm low-to-high plate-loaded machine low row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm neutral grip cable triceps pushdown',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm neutral grip dumbbell floor press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm neutral grip landmine row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm overhand grip cable triceps pushdown',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm overhand grip landmine row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm pin-loaded machine preacher curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm pinch grip dumbbell curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm plate-loaded machine preacher curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Single arm push-up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Single arm single plate pinch', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Single arm underhand grip cable triceps pushdown',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Single arm underhand grip dumbbell row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Single kettlebell upright row',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg bodyweight glute bridge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg bodyweight hamstring bridge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg bodyweight hip thrust',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg bodyweight Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg dumbbell calf “jump”',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Single leg dumbbell hip thrust', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Single leg dumbbell Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Single leg goblet box squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Single leg kettlebell Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg offset dumbbell Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg offset kettlebell Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg pin-loaded leg press',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg pin-loaded leg press calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg pin-loaded machine hip thrust',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg pin-loaded machine leg extension',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg plate-loaded leg press',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg plate-loaded leg press calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name:
+        'Single leg plate-loaded machine hip thrust (starting from the bottom)',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg plate-loaded machine hip thrust (starting from the top)',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg plate-loaded machine leg extension',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Single leg reverse plank', category: 'Core'),
+  _ExerciseDefinition(name: 'Single leg slider leg curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Single leg Smith machine hip thrust',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Single leg stability ball leg curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Single leg wall sit', category: 'Legs'),
+  _ExerciseDefinition(name: 'Single leg wall squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Sissy squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Six-inch leg raise with head down',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Six-inch leg raise with head up',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Slider leg curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Slight decline dumbbell bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: 'Smith machine back squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Smith machine behind the back shrug',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Smith machine bench press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Smith machine cheat shrug', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Smith machine deficit Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Smith machine front foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Smith machine front foot elevated split squat hold',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Smith machine good morning', category: 'Legs'),
+  _ExerciseDefinition(name: 'Smith machine hip thrust', category: 'Legs'),
+  _ExerciseDefinition(name: 'Smith machine JM press', category: 'Arms'),
+  _ExerciseDefinition(name: 'Smith machine lunge', category: 'Legs'),
+  _ExerciseDefinition(name: 'Smith machine lunge hold', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Smith machine overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Smith machine Pendlay row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Smith machine rear foot elevated split squat',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Smith machine Romanian deadlift',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Smith machine shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Smith machine split squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Snatch', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Snatch grip barbell Jefferson curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Snatch grip barbell shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Snatch grip deadlift', category: 'Back'),
+  _ExerciseDefinition(name: 'Snatch grip high pull', category: 'Legs'),
+  _ExerciseDefinition(name: 'Snatch grip Romanian deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Split jerk', category: 'Legs'),
+  _ExerciseDefinition(name: 'Spoto press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Squat walkout', category: 'Legs'),
+  _ExerciseDefinition(name: 'Stability ball crunch', category: 'Core'),
+  _ExerciseDefinition(name: 'Stability ball leg curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Stability ball plank', category: 'Core'),
+  _ExerciseDefinition(name: 'Stability ball plank rollout', category: 'Core'),
+  _ExerciseDefinition(name: 'Stability ball rollout', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Standing accentuated eccentric bodyweight calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing accentuated eccentric dumbbell calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing accentuated eccentric pin-loaded machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing accentuated eccentric plate-loaded machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing alternating cross body dumbbell hammer curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing barbell behind-the-neck overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Standing barbell calf raise', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Standing barbell overhead lockout pin press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing barbell overhead low pin press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing barbell overhead midpoint pin press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing barbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing barbell overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Standing barbell wrist curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Standing bent-arm dumbbell lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Standing Bradford press', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Standing cable crunch', category: 'Core'),
+  _ExerciseDefinition(name: 'Standing cable leg curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Standing close grip barbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing dual dumbbell overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing dual kettlebell biceps curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing dual kettlebell overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing dumbbell Arnold press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Standing dumbbell biceps curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Standing dumbbell calf raise', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Standing dumbbell front raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Standing dumbbell hammer curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Standing dumbbell inverse Zottman curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing dumbbell lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing dumbbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing dumbbell overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Standing dumbbell reverse curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Standing dumbbell shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Standing dumbbell Zottman curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Standing EZ bar overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing fat grip dumbbell biceps curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing fat grip dumbbell hammer curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing kettlebell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Standing kettlebell shrug', category: 'Shoulders'),
+  _ExerciseDefinition(name: 'Standing landmine chest press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Standing machine shrug', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Standing neutral grip dumbbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing on ground ankle dorsiflexion',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing on ground bodyweight calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing on ground single leg bodyweight calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing on step bodyweight calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing on step single leg bodyweight calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing on step single leg dumbbell calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing pause barbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing pin-loaded machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing pin-loaded machine glute kickback',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing pin-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing pin-loaded machine lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing plate-loaded machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing plate-loaded machine chest press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing plate-loaded machine glute kickback',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing plate-loaded machine hamstring curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing plate-loaded machine lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(name: 'Standing single arm cable row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Standing single arm cross-body dumbbell hammer curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing single arm dumbbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing single arm dumbbell overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing single arm high-to-low cable row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing single arm kettlebell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing single arm landmine press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing single kettlebell hammer curl',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing single kettlebell overhead triceps extension',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing single leg pin-loaded machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing single leg plate-loaded machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing Smith machine calf raise',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing super ROM dumbbell lateral raise',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing wide grip barbell behind-the-neck overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Standing wide grip barbell overhead press',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Static long lever Copenhagen plank',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Static short lever Copenhagen plank',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Step-into overhead medicine ball slam',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Sternum chin-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Stiff-leg deadlift from floor', category: 'Legs'),
+  _ExerciseDefinition(name: 'Stir the pot', category: 'Core'),
+  _ExerciseDefinition(name: 'Stomach vacuum', category: 'Core'),
+  _ExerciseDefinition(name: 'Straight leg reverse crunch', category: 'Core'),
+  _ExerciseDefinition(name: 'Straight-arm sled push', category: 'Legs'),
+  _ExerciseDefinition(name: 'Strap front squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Sumo deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Sumo low block pull', category: 'Back'),
+  _ExerciseDefinition(name: 'Sumo mid-shin block pull', category: 'Back'),
+  _ExerciseDefinition(name: 'Sumo Romanian deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Superman', category: 'Back'),
+  _ExerciseDefinition(name: 'Tabletop reverse plank', category: 'Core'),
+  _ExerciseDefinition(name: 'Tall plank', category: 'Core'),
+  _ExerciseDefinition(name: 'Tall plank bird dog', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Tall plank scapular protraction',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Tall plank with alternating leg lifts',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Tall plank with shoulder taps', category: 'Core'),
+  _ExerciseDefinition(name: 'Tempo back squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Tempo bench press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Thigh-banded bodyweight frog pump',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Thigh-banded bodyweight glute bridge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Thigh-banded bodyweight hip thrust',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Thigh-banded bodyweight squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Thigh-banded lateral walk', category: 'Legs'),
+  _ExerciseDefinition(name: 'Three-board press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Touch-and-go conventional deadlift',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Touch-and-go sumo deadlift', category: 'Legs'),
+  _ExerciseDefinition(name: 'Trap bar block pull', category: 'Back'),
+  _ExerciseDefinition(name: 'Trap bar farmer’s carry', category: 'Core'),
+  _ExerciseDefinition(name: 'Trap bar shrug', category: 'Shoulders'),
+  _ExerciseDefinition(
+    name: 'Two-arms two-legs flat-back dead bug',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Two-arms two-legs neutral dead bug',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Two-board press', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Underhand close grip cable lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Underhand grip band pull-apart',
+    category: 'Shoulders',
+  ),
+  _ExerciseDefinition(
+    name: 'Underhand grip barbell inverted row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Underhand grip barbell seal row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Underhand grip cable lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Underhand grip cable straight bar triceps pushdown',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Underhand grip cable triceps kickback',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Underhand grip plate-loaded machine lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Underhand grip Smith machine deficit row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Underhand grip Smith machine row',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Underhand grip Yates row', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Underhand wide grip cable lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'V sit-up', category: 'Core'),
+  _ExerciseDefinition(name: 'Weighted chest dip', category: 'Chest'),
+  _ExerciseDefinition(name: 'Weighted chin-up', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Weighted crunch (holding weight on chest)',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(
+    name: 'Weighted crunch (holding weight overhead)',
+    category: 'Core',
+  ),
+  _ExerciseDefinition(name: 'Weighted dip', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Weighted glute ham developer back extension',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Weighted glute ham developer hip hinge',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Weighted glute ham raise', category: 'Legs'),
+  _ExerciseDefinition(name: 'Weighted machine sissy squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Weighted push-up', category: 'Chest'),
+  _ExerciseDefinition(name: 'Weighted reverse Nordic curl', category: 'Arms'),
+  _ExerciseDefinition(
+    name: 'Weighted Roman chair back extension',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Weighted Roman chair hip hinge (holding weight to chest)',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name:
+        'Weighted Roman chair hip hinge (holding weight with straight elbows)',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Weighted Russian twist', category: 'Core'),
+  _ExerciseDefinition(name: 'Weighted sit-up', category: 'Core'),
+  _ExerciseDefinition(name: 'Weighted Spanish squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Weighted triceps dip', category: 'Arms'),
+  _ExerciseDefinition(name: 'Weighted wall sit', category: 'Legs'),
+  _ExerciseDefinition(name: 'Weighted wall squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Wide grip band-assisted pull-up',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Wide grip behind-the-neck cable lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Wide grip bench press', category: 'Chest'),
+  _ExerciseDefinition(name: 'Wide grip chin-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Wide grip EZ bar biceps curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Wide grip EZ bar preacher curl', category: 'Arms'),
+  _ExerciseDefinition(name: 'Wide grip pull-up', category: 'Back'),
+  _ExerciseDefinition(name: 'Wide grip push-up', category: 'Chest'),
+  _ExerciseDefinition(
+    name: 'Wide grip Smith machine bench press',
+    category: 'Chest',
+  ),
+  _ExerciseDefinition(name: 'Wide grip weighted pull-up', category: 'Back'),
+  _ExerciseDefinition(
+    name: 'Wide overhand grip pin-loaded machine lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(
+    name: 'Wide overhand grip plate-loaded machine lat pulldown',
+    category: 'Back',
+  ),
+  _ExerciseDefinition(name: 'Wide stance barbell box squat', category: 'Legs'),
+  _ExerciseDefinition(
+    name: 'Wide stance barbell good morning',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Wide stance safety squat bar good morning',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(
+    name: 'Wide stance Smith machine good morning',
+    category: 'Legs',
+  ),
+  _ExerciseDefinition(name: 'Windshield wiper', category: 'Core'),
+  _ExerciseDefinition(
+    name: 'Wrist roller wrist curl with arms directed down',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Wrist roller wrist curl with arms raised',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Wrist roller wrist curl with bent elbows',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Wrist roller wrist extension with arms directed down',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Wrist roller wrist extension with arms raised',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(
+    name: 'Wrist roller wrist extension with bent elbows',
+    category: 'Arms',
+  ),
+  _ExerciseDefinition(name: 'Zercher squat', category: 'Legs'),
+  _ExerciseDefinition(name: 'Zombie front squat', category: 'Legs'),
 ];
 
 typedef WorkoutExerciseCatalogItem = ({String name, String category});
@@ -3426,25 +5994,79 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
         .map((exercise) => exercise.name)
         .toSet();
     final libraryNames = _exerciseLibrary
-        .map((exercise) => exercise.name)
+        .map((exercise) => _exerciseNameKey(exercise.name))
         .toSet();
     _customExercises.addAll(
       widget.initiallySelected.where(
-        (exercise) => !libraryNames.contains(exercise.name),
+        (exercise) => !libraryNames.contains(_exerciseNameKey(exercise.name)),
       ),
     );
+    unawaited(_loadCustomExercises());
+  }
+
+  Future<void> _loadCustomExercises() async {
+    final recovered = <_ExerciseDefinition>[];
+    try {
+      final saved = await WorkoutService.loadCustomExercises();
+      recovered.addAll(
+        saved.map(
+          (exercise) => _ExerciseDefinition(
+            name: exercise.name,
+            category: exercise.category,
+          ),
+        ),
+      );
+    } catch (_) {
+      // Completed workout history below can still recover older exercises.
+    }
+    try {
+      final workouts = await WorkoutService.loadRecent(limit: 100);
+      recovered.addAll(
+        workouts.expand(
+          (workout) => workout.exercises.map(
+            (exercise) => _ExerciseDefinition(
+              name: exercise.name,
+              category: exercise.category,
+            ),
+          ),
+        ),
+      );
+    } catch (_) {
+      // Keep the built-in and already loaded custom exercises available.
+    }
+    if (!mounted) return;
+    final knownNames = {
+      for (final exercise in [..._exerciseLibrary, ..._customExercises])
+        _exerciseNameKey(exercise.name),
+    };
+    final additions = <_ExerciseDefinition>[];
+    for (final exercise in recovered) {
+      final key = _exerciseNameKey(exercise.name);
+      if (key.isNotEmpty && knownNames.add(key)) additions.add(exercise);
+    }
+    if (additions.isEmpty) return;
+    setState(() => _customExercises.addAll(additions));
+    for (final exercise in additions) {
+      unawaited(
+        WorkoutService.saveCustomExercise(
+          name: exercise.name,
+          category: exercise.category,
+        ).catchError((_) {}),
+      );
+    }
   }
 
   List<_ExerciseDefinition> get _filteredExercises {
     final query = _search.trim().toLowerCase();
     return [..._exerciseLibrary, ..._customExercises].where((exercise) {
-      final matchesFilter = _filter == 'All' || exercise.category == _filter;
-      final matchesSearch =
-          query.isEmpty ||
-          exercise.name.toLowerCase().contains(query) ||
-          exercise.category.toLowerCase().contains(query);
-      return matchesFilter && matchesSearch;
-    }).toList();
+        final matchesFilter = _filter == 'All' || exercise.category == _filter;
+        final matchesSearch =
+            query.isEmpty ||
+            exercise.name.toLowerCase().contains(query) ||
+            exercise.category.toLowerCase().contains(query);
+        return matchesFilter && matchesSearch;
+      }).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   }
 
   void _toggle(_ExerciseDefinition exercise) {
@@ -3516,10 +6138,30 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
       ),
     );
     if (created == null || !mounted) return;
+    _ExerciseDefinition? matchingExercise;
+    for (final exercise in [..._exerciseLibrary, ..._customExercises]) {
+      if (_exerciseNameKey(exercise.name) == _exerciseNameKey(created.name)) {
+        matchingExercise = exercise;
+        break;
+      }
+    }
     setState(() {
-      _customExercises.add(created);
-      _selected.add(created.name);
+      if (matchingExercise == null) _customExercises.add(created);
+      _selected.add(matchingExercise?.name ?? created.name);
     });
+    try {
+      await WorkoutService.saveCustomExercise(
+        name: created.name,
+        category: created.category,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Exercise added, but it could not be saved for later.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -3600,20 +6242,43 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const _PickerSectionTitle('ALL EXERCISES'),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 18),
+                    child: _PickerSectionTitle('ALL EXERCISES'),
+                  ),
                   if (exercises.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(28),
+                    const Expanded(
                       child: Center(child: Text('No exercises found.')),
                     )
                   else
-                    _ExercisePickerCard(
-                      exercises: exercises,
-                      selected: _selected,
-                      onTap: _toggle,
+                    Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+                        clipBehavior: Clip.antiAlias,
+                        decoration: BoxDecoration(
+                          color: context.vivordoColors.card,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: context.vivordoColors.border,
+                          ),
+                        ),
+                        child: ListView.separated(
+                          itemCount: exercises.length,
+                          itemBuilder: (context, index) {
+                            final exercise = exercises[index];
+                            return _ExercisePickerRow(
+                              exercise: exercise,
+                              selected: _selected.contains(exercise.name),
+                              onTap: () => _toggle(exercise),
+                            );
+                          },
+                          separatorBuilder: (_, _) =>
+                              const Divider(height: 1, indent: 72),
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -3676,40 +6341,6 @@ class _PickerSectionTitle extends StatelessWidget {
         letterSpacing: 1.5,
         color: _muted,
       ),
-    ),
-  );
-}
-
-class _ExercisePickerCard extends StatelessWidget {
-  const _ExercisePickerCard({
-    required this.exercises,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final List<_ExerciseDefinition> exercises;
-  final Set<String> selected;
-  final ValueChanged<_ExerciseDefinition> onTap;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: context.vivordoColors.card,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: context.vivordoColors.border),
-    ),
-    child: Column(
-      children: [
-        for (var index = 0; index < exercises.length; index++) ...[
-          _ExercisePickerRow(
-            exercise: exercises[index],
-            selected: selected.contains(exercises[index].name),
-            onTap: () => onTap(exercises[index]),
-          ),
-          if (index < exercises.length - 1)
-            const Divider(height: 1, indent: 72),
-        ],
-      ],
     ),
   );
 }

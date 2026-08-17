@@ -5097,27 +5097,34 @@ class _SpecificExerciseSearchSheetState
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: ListView(
+              child: ListView.builder(
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                children: [
-                  if (_query.trim().isEmpty) ...[
-                    _SpecificExerciseResultTile(
-                      title: widget.anyLabel,
-                      subtitle: 'Count any matching session',
-                      icon: widget.fallbackIcon,
-                      color: widget.fallbackColor,
-                      selected: widget.selectedValue == null,
-                      onTap: () => Navigator.pop(
-                        context,
-                        const _SpecificExerciseSelection(null),
+                itemCount:
+                    exercises.length +
+                    (_query.trim().isEmpty ? 1 : 0) +
+                    (exercises.isEmpty ? 1 : 0),
+                itemBuilder: (context, index) {
+                  final showAny = _query.trim().isEmpty;
+                  if (showAny && index == 0) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _SpecificExerciseResultTile(
+                        title: widget.anyLabel,
+                        subtitle: 'Count any matching session',
+                        icon: widget.fallbackIcon,
+                        color: widget.fallbackColor,
+                        selected: widget.selectedValue == null,
+                        onTap: () => Navigator.pop(
+                          context,
+                          const _SpecificExerciseSelection(null),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  if (exercises.isEmpty)
-                    Padding(
+                    );
+                  }
+                  if (exercises.isEmpty) {
+                    return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 44),
                       child: Column(
                         children: [
@@ -5137,31 +5144,29 @@ class _SpecificExerciseSearchSheetState
                           ),
                         ],
                       ),
-                    )
-                  else
-                    for (final exercise in exercises) ...[
-                      Builder(
-                        builder: (context) {
-                          final visual = workoutActivityVisual(
-                            exercise.name,
-                            category: exercise.category,
-                          );
-                          return _SpecificExerciseResultTile(
-                            title: exercise.name,
-                            subtitle: exercise.category,
-                            icon: visual.icon,
-                            color: visual.color,
-                            selected: widget.selectedValue == exercise.name,
-                            onTap: () => Navigator.pop(
-                              context,
-                              _SpecificExerciseSelection(exercise.name),
-                            ),
-                          );
-                        },
+                    );
+                  }
+                  final exerciseIndex = index - (showAny ? 1 : 0);
+                  final exercise = exercises[exerciseIndex];
+                  final visual = workoutActivityVisual(
+                    exercise.name,
+                    category: exercise.category,
+                  );
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _SpecificExerciseResultTile(
+                      title: exercise.name,
+                      subtitle: exercise.category,
+                      icon: visual.icon,
+                      color: visual.color,
+                      selected: widget.selectedValue == exercise.name,
+                      onTap: () => Navigator.pop(
+                        context,
+                        _SpecificExerciseSelection(exercise.name),
                       ),
-                      const SizedBox(height: 8),
-                    ],
-                ],
+                    ),
+                  );
+                },
               ),
             ),
           ],
