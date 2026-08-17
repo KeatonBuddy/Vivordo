@@ -43,12 +43,51 @@ void main() {
     expect(result.score, greaterThanOrEqualTo(60));
   });
 
-  test('routine meetings remain moderate without demanding context', () {
+  test('app development is treated as high cognitive load', () {
+    final result = CalendarCognitiveLoadService.scoreLocally(
+      event(title: 'Vivordo App Development', minutes: 120),
+    );
+
+    expect(result.level, CognitiveLoadLevel.high);
+    expect(result.score, greaterThanOrEqualTo(60));
+  });
+
+  test('focused professional work is treated as high cognitive load', () {
+    for (final title in [
+      'Production deployment',
+      'Architecture review',
+      'Financial modeling',
+      'Grant writing',
+    ]) {
+      final result = CalendarCognitiveLoadService.scoreLocally(
+        event(title: title),
+      );
+
+      expect(result.level, CognitiveLoadLevel.high, reason: title);
+    }
+  });
+
+  test('demanding school work is treated as high cognitive load', () {
+    for (final title in [
+      'Study session',
+      'Research paper',
+      'Lab report',
+      'Capstone project',
+    ]) {
+      final result = CalendarCognitiveLoadService.scoreLocally(
+        event(title: title),
+      );
+
+      expect(result.level, CognitiveLoadLevel.high, reason: title);
+    }
+  });
+
+  test('meetings are treated as high cognitive load', () {
     final result = CalendarCognitiveLoadService.scoreLocally(
       event(title: 'Weekly team meeting', attendeeCount: 3),
     );
 
-    expect(result.level, CognitiveLoadLevel.moderate);
+    expect(result.level, CognitiveLoadLevel.high);
   });
 
   test('duration alone cannot make an unclear event high load', () {
