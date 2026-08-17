@@ -18,9 +18,21 @@ setGlobalOptions({maxInstances: 10});
 // on the same shared Admin app and Firestore connection pool.
 Object.assign(exports, require("./challenges"));
 
-// Single shared client — reused across all function invocations on the same
-// container instance (connection pooling, no per-call allocation overhead).
-const client = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});
+const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
+let anthropicClient;
+
+/**
+ * Resolves the Anthropic secret at runtime and reuses the client in warm
+ * function containers.
+ *
+ * @return {Anthropic} The configured Anthropic client.
+ */
+function getAnthropicClient() {
+  if (!anthropicClient) {
+    anthropicClient = new Anthropic({apiKey: anthropicApiKey.value()});
+  }
+  return anthropicClient;
+}
 
 const googleHealthClientId = defineSecret("GOOGLE_HEALTH_CLIENT_ID");
 const googleHealthClientSecret = defineSecret("GOOGLE_HEALTH_CLIENT_SECRET");
@@ -388,7 +400,7 @@ exports.achievementUnlockNotification = onDocumentWritten(
 // Security: API key stays server-side (VIV-309).
 // =============================================================================
 
-exports.pandaClaude = onCall(async (request) => {
+exports.pandaClaude = onCall({secrets: [anthropicApiKey]}, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Must be logged in.");
   }
@@ -416,7 +428,7 @@ exports.pandaClaude = onCall(async (request) => {
     user :
     [{type: "text", text: String(user)}];
 
-  const msg = await client.messages.create({
+  const msg = await getAnthropicClient().messages.create({
     model: "claude-sonnet-4-5",
     max_tokens: outputCap,
     system: systemBlocks,
@@ -1083,6 +1095,7 @@ exports.pandaBatchNightly = onSchedule({
   schedule: "0 2 * * *",
   timeZone: "America/Los_Angeles",
   memory: "256MiB",
+  secrets: [anthropicApiKey],
 }, async () => {
   const db = admin.firestore();
 
@@ -1145,7 +1158,7 @@ exports.pandaBatchNightly = onSchedule({
     });
   }
 
-  const batch = await client.messages.batches.create({requests});
+  const batch = await getAnthropicClient().messages.batches.create({requests});
 
   await db.collection("batch_jobs").doc(batch.id).set({
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1172,7 +1185,10 @@ exports.pandaBatchNightly = onSchedule({
  * the result is written back to the same document by pandaBatchPoller.
  */
 exports.pandaQuestionnaireBatch = onDocumentCreated(
-    "users/{userId}/insights/{insightId}",
+    {
+      document: "users/{userId}/insights/{insightId}",
+      secrets: [anthropicApiKey],
+    },
     async (event) => {
       const data = event.data?.data();
       if (!data) return;
@@ -1192,7 +1208,7 @@ exports.pandaQuestionnaireBatch = onDocumentCreated(
         sessionDate: data.sessionDate?.toDate?.()?.toISOString() ?? null,
       };
 
-      const batch = await client.messages.batches.create({
+      const batch = await getAnthropicClient().messages.batches.create({
         requests: [{
           custom_id: `questionnaire-${insightId}`,
           params: {
@@ -1249,6 +1265,7 @@ exports.pandaBatchPoller = onSchedule({
   schedule: "every 30 minutes",
   timeZone: "America/Los_Angeles",
   memory: "256MiB",
+  secrets: [anthropicApiKey],
 }, async () => {
   const db = admin.firestore();
 
@@ -1263,7 +1280,7 @@ exports.pandaBatchPoller = onSchedule({
 
     let batch;
     try {
-      batch = await client.messages.batches.retrieve(batchId);
+      batch = await getAnthropicClient().messages.batches.retrieve(batchId);
     } catch (err) {
       console.error(`[pandaBatchPoller] retrieve ${batchId} failed:`, err);
       continue;
@@ -1317,7 +1334,7 @@ exports.pandaBatchPoller = onSchedule({
 
     try {
       for await (const result of
-        await client.messages.batches.results(batchId)) {
+        await getAnthropicClient().messages.batches.results(batchId)) {
         if (result.result.type !== "succeeded") {
           console.warn(
               `[pandaBatchPoller] ${result.custom_id} — ` +

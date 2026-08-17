@@ -19,7 +19,7 @@ class WellnessDetailScreen extends StatefulWidget {
 class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
   static const _purple = Color(0xFF5B42F3);
   static const _red = Color(0xFFFF3B4E);
-  int _rangeIndex = 1;
+  int _rangeIndex = 0;
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,

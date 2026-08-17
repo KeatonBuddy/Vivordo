@@ -20,7 +20,7 @@ class ExerciseDetailScreen extends StatefulWidget {
 
 class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   static const _purple = Color(0xFF5B28E6);
-  int _rangeIndex = 1;
+  int _rangeIndex = 0;
   String? _selectedExercise;
 
   int get _rangeDays => switch (_rangeIndex) {

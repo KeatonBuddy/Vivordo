@@ -16,7 +16,7 @@ class SleepDetailScreen extends StatefulWidget {
 
 class _SleepDetailScreenState extends State<SleepDetailScreen> {
   static const _purple = Color(0xFF5420DE);
-  int _rangeIndex = 1;
+  int _rangeIndex = 0;
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,

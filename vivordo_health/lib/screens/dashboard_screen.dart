@@ -46,8 +46,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     'sleep',
   ];
 
-  // 0 = Day, 1 = Week (default), 2 = Month
-  int _filterIndex = 1;
+  // 0 = Day (default), 1 = Week, 2 = Month
+  int _filterIndex = 0;
   static const _filterLabels = ['Day', 'Week', 'Month'];
   int get _daysBack => _filterIndex == 0
       ? 1

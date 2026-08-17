@@ -21,7 +21,7 @@ class _ActiveCaloriesDetailScreenState
     extends State<ActiveCaloriesDetailScreen> {
   static const _orange = Color(0xFFFF6A00);
   static const _purple = Color(0xFF5B42F3);
-  int _rangeIndex = 1;
+  int _rangeIndex = 0;
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,

@@ -18,7 +18,7 @@ class MoodDetailScreen extends StatefulWidget {
 class _MoodDetailScreenState extends State<MoodDetailScreen> {
   static const _moodColor = Color(0xFFF59E0B);
   static const _purple = Color(0xFF5B42F3);
-  int _rangeIndex = 1;
+  int _rangeIndex = 0;
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,

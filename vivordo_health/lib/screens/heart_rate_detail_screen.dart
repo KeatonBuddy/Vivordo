@@ -19,7 +19,7 @@ class HeartRateDetailScreen extends StatefulWidget {
 class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   static const red = Color(0xFFFF3B4E);
   static const purple = Color(0xFF5B42F3);
-  int rangeIndex = 1;
+  int rangeIndex = 0;
 
   int get rangeDays => switch (rangeIndex) {
     0 => 1,
@@ -389,12 +389,21 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     double? resting,
   ) {
     final isDay = rangeIndex == 0;
+    final buckets = isDay
+        ? _bucketDayReadings(entries)
+        : const <_HeartBucket>[];
     final values = isDay
-        ? entries.map((entry) => entry.bpm).toList()
+        ? buckets.map((bucket) => bucket.average).toList()
         : dailyValues;
     final dates = isDay
-        ? entries.map((entry) => entry.timestamp).toList()
+        ? buckets.map((bucket) => bucket.timestamp).toList()
         : days.map((day) => day.date).toList();
+    final lows = isDay
+        ? buckets.map((bucket) => bucket.low).toList()
+        : const <double>[];
+    final highs = isDay
+        ? buckets.map((bucket) => bucket.high).toList()
+        : const <double>[];
     final labels = isDay
         ? dates.map((date) => DateFormat('h:mm a').format(date)).toList()
         : days
@@ -412,11 +421,36 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           values: values,
           labels: labels,
           dates: dates,
+          lows: lows,
+          highs: highs,
           resting: resting,
           showTime: isDay,
         ),
       ),
     );
+  }
+
+  List<_HeartBucket> _bucketDayReadings(List<_HeartReading> entries) {
+    const bucketSize = Duration(minutes: 5);
+    final bucketMilliseconds = bucketSize.inMilliseconds;
+    final grouped = <int, List<_HeartReading>>{};
+    for (final entry in entries) {
+      final bucket =
+          entry.timestamp.millisecondsSinceEpoch ~/ bucketMilliseconds;
+      grouped.putIfAbsent(bucket, () => []).add(entry);
+    }
+
+    final keys = grouped.keys.toList()..sort();
+    return keys.map((key) {
+      final readings = grouped[key]!;
+      final values = readings.map((reading) => reading.bpm).toList();
+      return _HeartBucket(
+        average(readings.map((reading) => reading.bpm))!,
+        values.reduce(math.min),
+        values.reduce(math.max),
+        readings.first.timestamp,
+      );
+    }).toList();
   }
 
   Widget zones(List<double> readings) {
@@ -537,17 +571,29 @@ class _HeartReading {
   final DateTime timestamp;
 }
 
+class _HeartBucket {
+  const _HeartBucket(this.average, this.low, this.high, this.timestamp);
+  final double average;
+  final double low;
+  final double high;
+  final DateTime timestamp;
+}
+
 class _HeartChart extends StatefulWidget {
   const _HeartChart({
     required this.values,
     required this.labels,
     required this.dates,
+    required this.lows,
+    required this.highs,
     required this.resting,
     required this.showTime,
   });
   final List<double> values;
   final List<String> labels;
   final List<DateTime> dates;
+  final List<double> lows;
+  final List<double> highs;
   final double? resting;
   final bool showTime;
 
@@ -560,19 +606,45 @@ class _HeartChartState extends State<_HeartChart> {
 
   void select(double x, double width) {
     if (widget.values.isEmpty) return;
-    const left = 38.0;
-    final index = widget.values.length == 1
-        ? 0
-        : (((x - left) / (width - left)) * (widget.values.length - 1))
-              .round()
-              .clamp(0, widget.values.length - 1);
+    final left = widget.showTime ? 8.0 : 38.0;
+    final right = widget.showTime ? 40.0 : 0.0;
+    var index = 0;
+    if (widget.values.length > 1) {
+      if (widget.showTime) {
+        final fraction = ((x - left) / (width - left - right)).clamp(0.0, 1.0);
+        final first = widget.dates.first.millisecondsSinceEpoch;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final last = math.max(
+          first + const Duration(minutes: 1).inMilliseconds,
+          now,
+        );
+        final target = first + ((last - first) * fraction).round();
+        var nearestDistance =
+            (widget.dates.first.millisecondsSinceEpoch - target).abs();
+        for (var i = 1; i < widget.dates.length; i++) {
+          final distance = (widget.dates[i].millisecondsSinceEpoch - target)
+              .abs();
+          if (distance < nearestDistance) {
+            nearestDistance = distance;
+            index = i;
+          }
+        }
+      } else {
+        index = (((x - left) / (width - left)) * (widget.values.length - 1))
+            .round()
+            .clamp(0, widget.values.length - 1);
+      }
+    }
     if (selected != index) setState(() => selected = index);
   }
 
   @override
   void didUpdateWidget(covariant _HeartChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!listEquals(widget.values, oldWidget.values)) selected = null;
+    if (!listEquals(widget.values, oldWidget.values) ||
+        !listEquals(widget.dates, oldWidget.dates)) {
+      selected = null;
+    }
   }
 
   @override
@@ -589,6 +661,8 @@ class _HeartChartState extends State<_HeartChart> {
           values: widget.values,
           labels: widget.labels,
           dates: widget.dates,
+          lows: widget.lows,
+          highs: widget.highs,
           resting: widget.resting,
           showTime: widget.showTime,
           selected: selected,
@@ -604,6 +678,8 @@ class _HeartChartPainter extends CustomPainter {
     required this.values,
     required this.labels,
     required this.dates,
+    required this.lows,
+    required this.highs,
     required this.resting,
     required this.showTime,
     required this.selected,
@@ -612,6 +688,8 @@ class _HeartChartPainter extends CustomPainter {
   final List<double> values;
   final List<String> labels;
   final List<DateTime> dates;
+  final List<double> lows;
+  final List<double> highs;
   final double? resting;
   final bool showTime;
   final int? selected;
@@ -619,82 +697,177 @@ class _HeartChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const left = 38.0;
-    const bottom = 25.0;
+    final left = showTime ? 8.0 : 38.0;
+    final right = showTime ? 40.0 : 0.0;
+    final bottom = showTime ? 38.0 : 28.0;
     final height = size.height - bottom;
-    final width = size.width - left;
-    final maximum = math.max(
+    final width = size.width - left - right;
+    final rightEdge = left + width;
+    var minimum = 0.0;
+    var maximum = math.max(
       120.0,
-      values.isEmpty ? 0 : values.reduce(math.max) * 1.15,
+      values.isEmpty ? 0.0 : values.reduce(math.max) * 1.15,
     );
+    final hasRanges =
+        lows.length == values.length &&
+        highs.length == values.length &&
+        values.isNotEmpty;
+    if (showTime && values.isNotEmpty) {
+      final rawMinimum = hasRanges
+          ? lows.reduce(math.min)
+          : values.reduce(math.min);
+      final rawMaximum = hasRanges
+          ? highs.reduce(math.max)
+          : values.reduce(math.max);
+      minimum = math.max(30.0, ((rawMinimum - 5) / 10).floor() * 10.0);
+      maximum = math.min(220.0, ((rawMaximum + 5) / 10).ceil() * 10.0);
+      if (maximum - minimum < 30) {
+        final padding = (30 - (maximum - minimum)) / 2;
+        minimum = math.max(30.0, minimum - padding);
+        maximum = math.min(220.0, maximum + padding);
+      }
+    }
+    final valueRange = math.max(1.0, maximum - minimum);
+    double yFor(double value) =>
+        height * (1 - ((value - minimum) / valueRange).clamp(0.0, 1.0));
+
     final grid = Paint()
       ..color = (dark ? Colors.white : Colors.black).withValues(alpha: .08)
       ..strokeWidth = 1;
-    for (var i = 0; i <= 4; i++) {
-      final y = height * i / 4;
-      canvas.drawLine(Offset(left, y), Offset(size.width, y), grid);
-      text(canvas, '${(maximum * (1 - i / 4)).round()}', Offset(0, y - 6), 10);
+    final gridDivisions = showTime ? 2 : 4;
+    for (var i = 0; i <= gridDivisions; i++) {
+      final y = height * i / gridDivisions;
+      canvas.drawLine(Offset(left, y), Offset(rightEdge, y), grid);
+      final labelValue = maximum - valueRange * i / gridDivisions;
+      text(
+        canvas,
+        '${labelValue.round()}',
+        Offset(showTime ? rightEdge + 6 : 0, math.max(0, y - 6)),
+        10,
+      );
     }
     if (values.isEmpty) return;
+
+    final firstTime = dates.first.millisecondsSinceEpoch;
+    final lastTime = showTime
+        ? math.max(
+            firstTime + const Duration(minutes: 1).inMilliseconds,
+            DateTime.now().millisecondsSinceEpoch,
+          )
+        : dates.last.millisecondsSinceEpoch;
     final points = List.generate(values.length, (i) {
-      final x = values.length == 1
+      final x = showTime && lastTime > firstTime
+          ? left +
+                width *
+                    (dates[i].millisecondsSinceEpoch - firstTime) /
+                    (lastTime - firstTime)
+          : values.length == 1
           ? left + width / 2
           : left + width * i / (values.length - 1);
-      return Offset(x, height * (1 - (values[i] / maximum).clamp(0.0, 1.0)));
+      return Offset(x, yFor(values[i]));
     });
-    if (resting != null) {
-      final y = height * (1 - resting! / maximum);
+
+    if (resting != null && resting! >= minimum && resting! <= maximum) {
+      final y = yFor(resting!);
       canvas.drawLine(
         Offset(left, y),
-        Offset(size.width, y),
+        Offset(rightEdge, y),
         Paint()
           ..color = Colors.grey
           ..strokeWidth = 1.2,
       );
     }
-    final path = smoothChartPath(points);
-    final fill = Path.from(path)
-      ..lineTo(points.last.dx, height)
-      ..lineTo(points.first.dx, height)
-      ..close();
-    canvas.drawPath(
-      fill,
-      Paint()
-        ..shader = ui.Gradient.linear(Offset.zero, Offset(0, height), [
-          const Color(0xFFFF3B4E).withValues(alpha: .2),
-          const Color(0xFFFF3B4E).withValues(alpha: 0),
-        ]),
-    );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = const Color(0xFFFF3B4E)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-    for (var i = 0; i < points.length; i++) {
-      canvas.drawCircle(points[i], 5, Paint()..color = Colors.white);
-      canvas.drawCircle(
-        points[i],
-        3.5,
-        Paint()..color = const Color(0xFFFF3B4E),
+
+    if (showTime) {
+      _drawDayLine(canvas, points);
+    } else {
+      final path = smoothChartPath(points);
+      final fill = Path.from(path)
+        ..lineTo(points.last.dx, height)
+        ..lineTo(points.first.dx, height)
+        ..close();
+      canvas.drawPath(
+        fill,
+        Paint()
+          ..shader = ui.Gradient.linear(Offset.zero, Offset(0, height), [
+            const Color(0xFFFF3B4E).withValues(alpha: .2),
+            const Color(0xFFFF3B4E).withValues(alpha: 0),
+          ]),
       );
-      if (values.length <= 10 || i % 5 == 0 || i == values.length - 1) {
-        centerText(canvas, labels[i], Offset(points[i].dx, height + 7), 9);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = const Color(0xFFFF3B4E)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+
+    if (showTime) {
+      final tickPaint = Paint()
+        ..color = (dark ? Colors.white : Colors.black).withValues(alpha: .16)
+        ..strokeWidth = 1;
+      final tickCount = size.width < 330 ? 3 : 4;
+      for (var i = 0; i < tickCount; i++) {
+        final fraction = i / (tickCount - 1);
+        final tickX = left + width * fraction;
+        canvas.drawLine(
+          Offset(tickX, height),
+          Offset(tickX, height + 5),
+          tickPaint,
+        );
+        final milliseconds =
+            firstTime + ((lastTime - firstTime) * fraction).round();
+        final tickDate = DateTime.fromMillisecondsSinceEpoch(milliseconds);
+        centerTextClamped(
+          canvas,
+          '${DateFormat('h:mm').format(tickDate)}\n'
+          '${DateFormat('a').format(tickDate)}',
+          tickX,
+          height + 7,
+          9,
+          left,
+          rightEdge,
+        );
+      }
+    } else {
+      for (var i = 0; i < points.length; i++) {
+        canvas.drawCircle(points[i], 5, Paint()..color = Colors.white);
+        canvas.drawCircle(
+          points[i],
+          3.5,
+          Paint()..color = const Color(0xFFFF3B4E),
+        );
+        if (values.length <= 10 || i % 5 == 0 || i == values.length - 1) {
+          centerText(canvas, labels[i], Offset(points[i].dx, height + 7), 9);
+        }
       }
     }
+
     final index = selected;
     if (index != null && index < points.length) {
       final point = points[index];
-      canvas.drawCircle(
-        point,
-        9,
-        Paint()..color = const Color(0xFFFF3B4E).withValues(alpha: .2),
+      canvas.drawLine(
+        Offset(point.dx, 0),
+        Offset(point.dx, height),
+        Paint()
+          ..color = (dark ? Colors.white : Colors.black).withValues(alpha: .1)
+          ..strokeWidth = 1,
       );
+      if (!showTime) {
+        canvas.drawCircle(
+          point,
+          9,
+          Paint()..color = const Color(0xFFFF3B4E).withValues(alpha: .2),
+        );
+        canvas.drawCircle(point, 5.5, Paint()..color = Colors.white);
+        canvas.drawCircle(point, 4, Paint()..color = const Color(0xFFFF3B4E));
+      }
       final label = showTime
-          ? '${DateFormat('h:mm a').format(dates[index])}\n${values[index].round()} bpm'
+          ? '${values[index].round()} bpm\n'
+                '${DateFormat('h:mm a').format(dates[index])}'
           : '${DateFormat('MMM d').format(dates[index])}\n${values[index].round()} bpm';
       final painter = TextPainter(
         text: TextSpan(
@@ -710,7 +883,7 @@ class _HeartChartPainter extends CustomPainter {
       )..layout();
       final boxWidth = painter.width + 18;
       final boxHeight = painter.height + 14;
-      final x = (point.dx - boxWidth / 2).clamp(left, size.width - boxWidth);
+      final x = (point.dx - boxWidth / 2).clamp(left, rightEdge - boxWidth);
       final y = (point.dy - boxHeight - 12).clamp(0.0, height - boxHeight);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
@@ -723,6 +896,72 @@ class _HeartChartPainter extends CustomPainter {
     }
   }
 
+  void _drawDayLine(Canvas canvas, List<Offset> points) {
+    const elevatedThreshold = 100.0;
+    final normalPaint = Paint()
+      ..color = const Color(0xFF69AEB2)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final elevatedPaint = Paint()
+      ..color = const Color(0xFFFFC43A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    if (points.length == 1) {
+      final paint = values.first >= elevatedThreshold
+          ? elevatedPaint
+          : normalPaint;
+      canvas.drawLine(
+        Offset(points.first.dx - 4, points.first.dy),
+        Offset(points.first.dx + 4, points.first.dy),
+        paint,
+      );
+      return;
+    }
+
+    for (var i = 1; i < points.length; i++) {
+      if (dates[i].difference(dates[i - 1]).abs() >
+          const Duration(minutes: 30)) {
+        continue;
+      }
+
+      final previousValue = values[i - 1];
+      final currentValue = values[i];
+      final previousElevated = previousValue >= elevatedThreshold;
+      final currentElevated = currentValue >= elevatedThreshold;
+      if (previousElevated == currentElevated) {
+        canvas.drawLine(
+          points[i - 1],
+          points[i],
+          currentElevated ? elevatedPaint : normalPaint,
+        );
+        continue;
+      }
+
+      final crossingFraction =
+          (elevatedThreshold - previousValue) / (currentValue - previousValue);
+      final crossing = Offset.lerp(
+        points[i - 1],
+        points[i],
+        crossingFraction.clamp(0.0, 1.0),
+      )!;
+      canvas.drawLine(
+        points[i - 1],
+        crossing,
+        previousElevated ? elevatedPaint : normalPaint,
+      );
+      canvas.drawLine(
+        crossing,
+        points[i],
+        currentElevated ? elevatedPaint : normalPaint,
+      );
+    }
+  }
+
   void text(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
       text: TextSpan(
@@ -732,6 +971,7 @@ class _HeartChartPainter extends CustomPainter {
           color: dark ? Colors.white54 : Colors.black45,
         ),
       ),
+      textAlign: TextAlign.center,
       textDirection: ui.TextDirection.ltr,
     )..layout();
     painter.paint(canvas, offset);
@@ -746,15 +986,48 @@ class _HeartChartPainter extends CustomPainter {
           color: dark ? Colors.white54 : Colors.black45,
         ),
       ),
+      textAlign: TextAlign.center,
       textDirection: ui.TextDirection.ltr,
     )..layout();
     painter.paint(canvas, Offset(offset.dx - painter.width / 2, offset.dy));
   }
 
+  void centerTextClamped(
+    Canvas canvas,
+    String value,
+    double x,
+    double y,
+    double size,
+    double minimumX,
+    double maximumX,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: value,
+        style: TextStyle(
+          fontSize: size,
+          color: dark ? Colors.white54 : Colors.black45,
+        ),
+      ),
+      textAlign: TextAlign.center,
+      textDirection: ui.TextDirection.ltr,
+    )..layout();
+    final left = (x - painter.width / 2).clamp(
+      minimumX,
+      maximumX - painter.width,
+    );
+    painter.paint(canvas, Offset(left, y));
+  }
+
   @override
   bool shouldRepaint(covariant _HeartChartPainter oldDelegate) =>
       !listEquals(values, oldDelegate.values) ||
+      !listEquals(labels, oldDelegate.labels) ||
+      !listEquals(dates, oldDelegate.dates) ||
+      !listEquals(lows, oldDelegate.lows) ||
+      !listEquals(highs, oldDelegate.highs) ||
       selected != oldDelegate.selected ||
       resting != oldDelegate.resting ||
+      showTime != oldDelegate.showTime ||
       dark != oldDelegate.dark;
 }

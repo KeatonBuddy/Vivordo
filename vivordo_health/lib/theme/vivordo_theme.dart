@@ -179,12 +179,17 @@ abstract final class VivordoTheme {
 
 /// Keeps the selected appearance in the signed-in user's Firestore profile.
 class ThemeController extends ChangeNotifier {
-  ThemeMode _mode = ThemeMode.light;
+  ThemeMode _mode = ThemeMode.system;
   String? _boundUid;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
 
   ThemeMode get mode => _mode;
-  bool get isDark => _mode == ThemeMode.dark;
+
+  String get modeLabel => switch (_mode) {
+    ThemeMode.system => 'System Default',
+    ThemeMode.light => 'Light',
+    ThemeMode.dark => 'Dark',
+  };
 
   void bindUser(User? user) {
     if (_boundUid == user?.uid) return;
@@ -193,7 +198,7 @@ class ThemeController extends ChangeNotifier {
     _subscription = null;
 
     if (user == null) {
-      _setMode(ThemeMode.light);
+      _setMode(ThemeMode.system);
       return;
     }
 
@@ -203,20 +208,33 @@ class ThemeController extends ChangeNotifier {
         .snapshots()
         .listen((snapshot) {
           final preferences = snapshot.data()?['preferences'] as Map?;
-          _setMode(
-            preferences?['darkModeEnabled'] == true
-                ? ThemeMode.dark
-                : ThemeMode.light,
-          );
+          final savedMode = preferences?['themeMode'] as String?;
+          final nextMode = switch (savedMode) {
+            'light' => ThemeMode.light,
+            'dark' => ThemeMode.dark,
+            'system' => ThemeMode.system,
+            // Preserve the explicit choice made by users of older versions.
+            // A profile without either preference is a new/default profile and
+            // follows the device appearance.
+            _ when preferences?.containsKey('darkModeEnabled') == true =>
+              preferences?['darkModeEnabled'] == true
+                  ? ThemeMode.dark
+                  : ThemeMode.light,
+            _ => ThemeMode.system,
+          };
+          _setMode(nextMode);
         });
   }
 
-  Future<void> setDarkMode(bool enabled) async {
-    _setMode(enabled ? ThemeMode.dark : ThemeMode.light);
+  Future<void> setMode(ThemeMode mode) async {
+    _setMode(mode);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     await FirebaseFirestore.instance.collection('users').doc(uid).update({
-      'preferences.darkModeEnabled': enabled,
+      'preferences.themeMode': mode.name,
+      // Keep older app versions functional while users transition to the new
+      // three-option setting. Older clients interpret System as Light.
+      'preferences.darkModeEnabled': mode == ThemeMode.dark,
     });
   }
 

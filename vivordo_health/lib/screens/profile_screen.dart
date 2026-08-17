@@ -1448,13 +1448,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                   _buildSectionLabel('App Settings'),
                   _buildCard(
                     children: [
-                      _buildToggleRow(
-                        Icons.dark_mode_outlined,
-                        'Dark Mode',
-                        'Use Vivordo’s dark appearance',
-                        context.watch<ThemeController>().isDark,
-                        (value) =>
-                            context.read<ThemeController>().setDarkMode(value),
+                      _buildInfoRow(
+                        Icons.brightness_auto_outlined,
+                        'Appearance',
+                        context.watch<ThemeController>().modeLabel,
+                        onTap: _showAppearancePicker,
                       ),
                       _buildDivider(),
                       _buildToggleRow(
@@ -1740,6 +1738,65 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Widget _buildDivider() =>
       Divider(height: 1, color: context.vivordoColors.border);
+
+  Future<void> _showAppearancePicker() async {
+    final controller = context.read<ThemeController>();
+    final selected = await showModalBottomSheet<ThemeMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Appearance',
+                style: Theme.of(
+                  sheetContext,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Choose how Vivordo looks on this device.',
+                style: Theme.of(sheetContext).textTheme.bodyMedium?.copyWith(
+                  color: sheetContext.vivordoColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (final option in const [
+                (
+                  ThemeMode.system,
+                  Icons.brightness_auto_outlined,
+                  'System Default',
+                ),
+                (ThemeMode.light, Icons.light_mode_outlined, 'Light'),
+                (ThemeMode.dark, Icons.dark_mode_outlined, 'Dark'),
+              ])
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(option.$2, color: const Color(0xFF7B6EF6)),
+                  title: Text(option.$3),
+                  subtitle: option.$1 == ThemeMode.system
+                      ? const Text('Match your iPhone appearance')
+                      : null,
+                  trailing: controller.mode == option.$1
+                      ? const Icon(
+                          Icons.check_circle_rounded,
+                          color: Color(0xFF7B6EF6),
+                        )
+                      : null,
+                  onTap: () => Navigator.pop(sheetContext, option.$1),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selected != null) await controller.setMode(selected);
+  }
 
   Widget _buildInfoRow(
     IconData icon,
