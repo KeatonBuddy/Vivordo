@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'package:intl/intl.dart';
 import 'stress_score_service.dart';
+import '../utils/sleep_stage_aggregation.dart';
 
 // ─── Metric definitions ──────────────────────────────────────────────────────
 
@@ -120,6 +121,16 @@ final Map<String, HealthMetricDef> kMetricByKey = {
   for (final m in kHealthMetrics) m.key: m,
 };
 
+/// Apple calls its light-sleep stage "Core". The health package exposes that
+/// category as SLEEP_LIGHT, so it is mapped back to the Apple-facing name when
+/// written to Firestore.
+const List<HealthDataType> kSleepStageTypes = [
+  HealthDataType.SLEEP_AWAKE,
+  HealthDataType.SLEEP_LIGHT,
+  HealthDataType.SLEEP_DEEP,
+  HealthDataType.SLEEP_REM,
+];
+
 // ─── HealthService ───────────────────────────────────────────────────────────
 
 class HealthService {
@@ -135,11 +146,13 @@ class HealthService {
   Future<void>? _activeSync;
   int _pendingSyncDays = 0;
 
-  List<HealthDataType> get _authorizationTypes =>
-      kHealthMetrics.map((metric) => metric.type).toList(growable: false);
+  List<HealthDataType> get _authorizationTypes => [
+    ...kHealthMetrics.map((metric) => metric.type),
+    ...kSleepStageTypes,
+  ];
 
   List<HealthDataAccess> get _authorizationAccess => List.filled(
-    kHealthMetrics.length,
+    _authorizationTypes.length,
     HealthDataAccess.READ,
     growable: false,
   );
@@ -351,6 +364,11 @@ class HealthService {
     final start = today.subtract(Duration(days: daysBack - 1));
 
     try {
+      if (metricKey == 'sleep') {
+        await _syncSleep(uid, start: start, end: now);
+        return;
+      }
+
       if (_usesDailyTotals(def.type)) {
         final dataPoints = await _health.getHealthIntervalDataFromTypes(
           startDate: start,
@@ -423,6 +441,107 @@ class HealthService {
     } catch (e, st) {
       debugPrint('HealthService.syncMetric($metricKey): $e\n$st');
       rethrow; // Surface Firestore/permissions errors to the caller
+    }
+  }
+
+  Future<void> _syncSleep(
+    String uid, {
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final points = await _health.getHealthDataFromTypes(
+      startTime: start.subtract(const Duration(hours: 12)),
+      endTime: end,
+      types: [HealthDataType.SLEEP_ASLEEP, ...kSleepStageTypes],
+    );
+    final unique = _health.removeDuplicates(points);
+    final intervals = <SleepInterval>[];
+    for (final point in unique) {
+      final stage = _sleepStageForType(point.type);
+      if (stage == null || !point.dateTo.isAfter(point.dateFrom)) continue;
+      intervals.add(
+        SleepInterval(stage: stage, start: point.dateFrom, end: point.dateTo),
+      );
+    }
+
+    final summaries = summarizeSleepByWakeDay(intervals).where((summary) {
+      return !summary.date.isBefore(
+            DateTime(start.year, start.month, start.day),
+          ) &&
+          !summary.date.isAfter(DateTime(end.year, end.month, end.day));
+    }).toList();
+    final daysWithData = <String>{};
+
+    if (summaries.isNotEmpty) {
+      final batch = _db.batch();
+      for (final summary in summaries) {
+        final day = _formatDate(summary.date);
+        daysWithData.add(day);
+        final hours = summary.totalAsleepMinutes / 60;
+        final entries = summary.asleepIntervals
+            .map(
+              (interval) => {
+                'start': Timestamp.fromDate(interval.start),
+                'end': Timestamp.fromDate(interval.end),
+                'minutes':
+                    interval.end.difference(interval.start).inMilliseconds /
+                    60000,
+              },
+            )
+            .toList(growable: false);
+        final ref = _db
+            .collection('users')
+            .doc(uid)
+            .collection('metrics_daily')
+            .doc(day);
+        batch.set(ref, {
+          'sleep': {
+            'avg': hours,
+            'min': hours,
+            'max': hours,
+            'unit': 'hours',
+            'dimension': 'sleep',
+            'entries': entries,
+            'stages': summary.stageMinutes,
+            'bedtime': Timestamp.fromDate(summary.bedtime),
+            'wakeTime': Timestamp.fromDate(summary.wakeTime),
+            'source': 'apple_health',
+            'syncedAt': FieldValue.serverTimestamp(),
+          },
+          'date': day,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+      await batch.commit();
+      debugPrint(
+        'HealthService.syncMetric(sleep): wrote sleep totals and stages for '
+        '${summaries.length} day(s).',
+      );
+    }
+
+    await _deleteMetricForMissingDays(
+      uid,
+      'sleep',
+      start: start,
+      end: end,
+      daysWithData: daysWithData,
+    );
+  }
+
+  VivordoSleepStage? _sleepStageForType(HealthDataType type) {
+    switch (type) {
+      case HealthDataType.SLEEP_ASLEEP:
+        return VivordoSleepStage.unspecified;
+      case HealthDataType.SLEEP_AWAKE:
+        return VivordoSleepStage.awake;
+      case HealthDataType.SLEEP_LIGHT:
+        return VivordoSleepStage.core;
+      case HealthDataType.SLEEP_DEEP:
+        return VivordoSleepStage.deep;
+      case HealthDataType.SLEEP_REM:
+        return VivordoSleepStage.rem;
+      default:
+        return null;
     }
   }
 
@@ -638,7 +757,9 @@ class HealthService {
         points = await _health.getHealthDataFromTypes(
           startTime: start,
           endTime: now,
-          types: [def.type],
+          types: entry.key == 'sleep'
+              ? [HealthDataType.SLEEP_ASLEEP, ...kSleepStageTypes]
+              : [def.type],
         );
       } catch (e) {
         // One metric failing must not cost us the rest of the payload.
@@ -647,13 +768,12 @@ class HealthService {
       }
       if (points.isEmpty) continue;
 
-      out.addAll(
-        _pointsToBaasSamples(
-          entry.key,
-          entry.value,
-          _health.removeDuplicates(points),
-        ),
-      );
+      final unique = _health.removeDuplicates(points);
+      if (entry.key == 'sleep') {
+        out.addAll(_sleepPointsToBaasSamples(unique, entry.value));
+      } else {
+        out.addAll(_pointsToBaasSamples(entry.key, entry.value, unique));
+      }
     }
 
     out.sort(
@@ -664,6 +784,38 @@ class HealthService {
       'across $daysBack day(s)',
     );
     return out;
+  }
+
+  List<Map<String, dynamic>> _sleepPointsToBaasSamples(
+    List<HealthDataPoint> points,
+    String unit,
+  ) {
+    final intervals = <SleepInterval>[];
+    for (final point in points) {
+      final stage = _sleepStageForType(point.type);
+      if (stage == null || !point.dateTo.isAfter(point.dateFrom)) continue;
+      intervals.add(
+        SleepInterval(stage: stage, start: point.dateFrom, end: point.dateTo),
+      );
+    }
+
+    return summarizeSleepByWakeDay(intervals)
+        .expand((summary) => summary.asleepIntervals)
+        .map((interval) {
+          final duration = interval.end
+              .difference(interval.start)
+              .inSeconds
+              .toDouble();
+          return {
+            'metric_type': 'sleep',
+            'timestamp': _fmtUtcTimestamp(interval.start),
+            'value': duration / 3600,
+            'unit': unit,
+            'source': 'apple_health',
+            'duration_seconds': duration,
+          };
+        })
+        .toList(growable: false);
   }
 
   /// Converts HealthKit points for one metric into BaaS samples: summed per

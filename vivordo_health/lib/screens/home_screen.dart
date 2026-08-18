@@ -16,6 +16,7 @@ import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
+import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'circle_screen.dart';
@@ -285,43 +286,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int? _latestBpmFrom(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
-
-    for (final doc in sortedDocs) {
-      final data = doc.data();
-      final savedScan = data['heart_rate_scan'] as Map?;
-      if (savedScan != null) {
-        final rawEntries = savedScan['entries'];
-        if (rawEntries is List && rawEntries.isNotEmpty) {
-          Map? latestEntry;
-          DateTime? latestTime;
-          for (final entry in rawEntries) {
-            if (entry is! Map || entry['bpm'] is! num) continue;
-            final timestamp = entry['timestamp'];
-            final entryTime = timestamp is Timestamp
-                ? timestamp.toDate()
-                : null;
-            if (latestEntry == null ||
-                (entryTime != null &&
-                    (latestTime == null || entryTime.isAfter(latestTime)))) {
-              latestEntry = entry;
-              latestTime = entryTime;
-            }
-          }
-          final bpm = latestEntry?['bpm'];
-          if (bpm is num) return bpm.round();
-        }
-
-        // Records created before scan history was added only have avg.
-        final legacyBpm = savedScan['avg'];
-        if (legacyBpm is num) return legacyBpm.round();
-      }
-
-      final heartRate = data['heart_rate'] as Map?;
-      if (heartRate?['source'] == 'camera_ppg' && heartRate?['avg'] is num) {
-        return (heartRate!['avg'] as num).round();
-      }
-    }
-    return null;
+    return latestHeartRateBpmFromMetricDays(
+      sortedDocs.map((doc) => doc.data()),
+    );
   }
 
   /// Returns the personalized value a new stress day should open at while the
@@ -453,8 +420,10 @@ class _HomeScreenState extends State<HomeScreen> {
           stream: _latestScanStream,
           builder: (context, scanSnap) {
             final metricDocs = scanSnap.data?.docs ?? [];
-            final latestScanBpm = _latestBpmFrom(metricDocs);
-            final hrVal = latestScanBpm == null ? '--' : '$latestScanBpm bpm';
+            final latestHeartRateBpm = _latestBpmFrom(metricDocs);
+            final hrVal = latestHeartRateBpm == null
+                ? '--'
+                : '$latestHeartRateBpm bpm';
             final displayedStressScore =
                 stressScore ?? _latestStressAnchorFrom(metricDocs);
             final stressStillLoading =

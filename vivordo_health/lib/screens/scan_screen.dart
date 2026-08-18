@@ -158,6 +158,30 @@ class _ScanScreenState extends State<ScanScreen>
     });
   }
 
+  void _showScannerTutorial() {
+    unawaited(_deactivateCamera());
+    _scanTimer?.cancel();
+    _spinController.stop();
+    setState(() {
+      _showTutorial = true;
+      _dismissedFirstScanTutorial = false;
+      _tutorialPageIndex = 0;
+      _fingerDetectedFrames = 0;
+      _scanArmed = false;
+      _isStartingScan = false;
+      _scanState = ScanState.idle;
+      _progress = 0.0;
+    });
+
+    if (_tutorialPageController.hasClients) {
+      _tutorialPageController.animateToPage(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
   // ── Camera init ───────────────────────────────────────────────────────────
 
   Future<void> _initCamera() async {
@@ -415,14 +439,14 @@ class _ScanScreenState extends State<ScanScreen>
 
     if (bpmResult > 0) {
       await _saveToFirestore(bpmResult.round(), qualityScore);
-      if (mounted) {
+      if (mounted && !_showTutorial) {
         setState(() {
           _finalBpm = bpmResult;
           _scanState = ScanState.success;
         });
       }
     } else {
-      if (mounted) {
+      if (mounted && !_showTutorial) {
         setState(() {
           _errorTitle = 'Poor signal detected';
           _errorBody =
@@ -677,30 +701,7 @@ class _ScanScreenState extends State<ScanScreen>
                   ),
                   IconButton(
                     tooltip: 'Show tutorial',
-                    onPressed: () {
-                      unawaited(_deactivateCamera());
-                      _scanTimer?.cancel();
-                      _spinController.stop();
-                      setState(() {
-                        _showTutorial = true;
-                        _dismissedFirstScanTutorial = false;
-                        _tutorialPageIndex = 0;
-                        _fingerDetectedFrames = 0;
-                        if (_scanState == ScanState.scanning) {
-                          _scanState = ScanState.idle;
-                          _progress = 0.0;
-                          _redValues.clear();
-                        }
-                      });
-
-                      if (_tutorialPageController.hasClients) {
-                        _tutorialPageController.animateToPage(
-                          0,
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOut,
-                        );
-                      }
-                    },
+                    onPressed: _showScannerTutorial,
                     icon: const Icon(
                       Icons.help_outline_rounded,
                       color: accentPurple,
