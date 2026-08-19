@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
+import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 
@@ -20,6 +22,15 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   static const red = Color(0xFFFF3B4E);
   static const purple = Color(0xFF5B42F3);
   int rangeIndex = 0;
+  bool _connectingWhoopAccount = false;
+  late final Future<QuerySnapshot<Map<String, dynamic>>> _heartDataFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    WhoopBleHeartRateService.instance.startIfPaired();
+    _heartDataFuture = _loadHeartData();
+  }
 
   int get rangeDays => switch (rangeIndex) {
     0 => 1,
@@ -34,9 +45,12 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
 
   String keyFor(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> get stream {
+  Future<QuerySnapshot<Map<String, dynamic>>> _loadHeartData() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return const Stream.empty();
+    if (uid == null) throw StateError('Sign in to view heart-rate data.');
+    // Persist any Bluetooth minute buckets collected before this screen opened
+    // so the snapshot below includes the latest available graph history.
+    await WhoopBleHeartRateService.instance.flush().catchError((Object _) {});
     final now = DateTime.now();
     return FirebaseFirestore.instance
         .collection('users')
@@ -50,7 +64,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         )
         .where(FieldPath.documentId, isLessThanOrEqualTo: keyFor(now))
         .orderBy(FieldPath.documentId)
-        .snapshots();
+        .get();
   }
 
   List<_HeartDay> allDays(QuerySnapshot<Map<String, dynamic>>? snapshot) {
@@ -149,37 +163,71 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: stream,
+      body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        future: _heartDataFuture,
         builder: (context, snapshot) {
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           final all = allDays(snapshot.data);
-          return content(currentDays(all), previousDays(all));
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid == null) return const SizedBox.shrink();
+          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(uid)
+                .snapshots(),
+            builder: (context, userSnapshot) {
+              final whoopConnected =
+                  userSnapshot.data?.data()?['whoopConnected'] == true;
+              return ValueListenableBuilder<WhoopBleState>(
+                valueListenable: WhoopBleHeartRateService.instance.state,
+                builder: (context, bleState, _) => content(
+                  currentDays(all),
+                  previousDays(all),
+                  bleState,
+                  whoopConnected,
+                ),
+              );
+            },
+          );
         },
       ),
     );
   }
 
-  Widget content(List<_HeartDay> days, List<_HeartDay> previous) {
-    final entries = days.expand((day) => day.readings).toList();
-    final readings = entries.map((entry) => entry.bpm).toList();
+  Widget content(
+    List<_HeartDay> days,
+    List<_HeartDay> previous,
+    WhoopBleState bleState,
+    bool whoopConnected,
+  ) {
+    final storedEntries = days.expand((day) => day.readings).toList();
+    final storedReadings = storedEntries.map((entry) => entry.bpm).toList();
+    final chartDays = days;
+    final chartEntries = chartDays.expand((day) => day.readings).toList();
     final resting = days.map((day) => day.resting).whereType<double>().toList();
     final prior = previous
         .map((day) => day.resting)
         .whereType<double>()
         .toList();
-    final avg = average(readings);
+    // Summary values use only persisted minute aggregates. The temporary live
+    // Bluetooth point remains visible on the chart without changing the Day
+    // average every time WHOOP broadcasts a packet.
+    final avg = average(storedReadings);
     final restingAvg = average(resting);
     final priorAvg = average(prior);
     final change = restingAvg == null || priorAvg == null
         ? null
         : (restingAvg - priorAvg).round();
-    final low = readings.isEmpty ? null : readings.reduce(math.min).round();
-    final high = readings.isEmpty ? null : readings.reduce(math.max).round();
-    final dailyValues = days
+    final low = storedReadings.isEmpty
+        ? null
+        : storedReadings.reduce(math.min).round();
+    final high = storedReadings.isEmpty
+        ? null
+        : storedReadings.reduce(math.max).round();
+    final dailyValues = chartDays
         .map(
           (day) =>
               average(day.readings.map((entry) => entry.bpm)) ??
@@ -203,13 +251,387 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           const SizedBox(height: 18),
           rangeSelector(),
           const SizedBox(height: 18),
+          whoopLiveCard(bleState, whoopConnected),
+          const SizedBox(height: 18),
           summary(avg, restingAvg, change, low, high),
           section('$rangeName trend'),
-          chart(days, entries, dailyValues, restingAvg),
+          chart(chartDays, chartEntries, dailyValues, restingAvg),
           section('Heart rate zones'),
-          zones(readings),
+          zones(storedReadings),
           section('Insight'),
           insight(change, restingAvg),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pairWhoop() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final user = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      if (user.data()?['whoopConnected'] != true) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Connect your WHOOP account in Settings first.'),
+          ),
+        );
+        return;
+      }
+      final devices = await WhoopBleHeartRateService.instance.scanForDevices();
+      if (!mounted) return;
+      if (devices.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No heart-rate broadcast found. Enable Heart Rate Broadcast in the WHOOP app and try again.',
+            ),
+          ),
+        );
+        return;
+      }
+      final selected = devices.length == 1
+          ? devices.first
+          : await showModalBottomSheet<WhoopBleDevice>(
+              context: context,
+              builder: (context) => SafeArea(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    const ListTile(
+                      title: Text(
+                        'Choose your WHOOP',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text('Nearby heart-rate broadcasters'),
+                    ),
+                    ...devices.map(
+                      (device) => ListTile(
+                        leading: const Icon(Icons.bluetooth_rounded),
+                        title: Text(device.name),
+                        subtitle: Text('Signal ${device.rssi} dBm'),
+                        onTap: () => Navigator.pop(context, device),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+      if (selected == null) return;
+      await WhoopBleHeartRateService.instance.pairAndStart(selected);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+        ),
+      );
+    }
+  }
+
+  Future<void> _connectWhoopAccount() async {
+    if (_connectingWhoopAccount) return;
+    setState(() => _connectingWhoopAccount = true);
+    try {
+      await WhoopService.instance.connect();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'WHOOP account connected. Enable Heart Rate Broadcast, then pair your WHOOP.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _connectingWhoopAccount = false);
+    }
+  }
+
+  Future<void> _toggleWhoopLive(WhoopBleState bleState) async {
+    if (bleState.isConnected) {
+      await WhoopBleHeartRateService.instance.stop();
+    } else {
+      await WhoopBleHeartRateService.instance.startIfPaired();
+    }
+  }
+
+  Future<void> _forgetWhoop() =>
+      WhoopBleHeartRateService.instance.stop(clearPairing: true);
+
+  Widget whoopLiveCard(WhoopBleState bleState, bool whoopConnected) {
+    final busy =
+        _connectingWhoopAccount ||
+        (whoopConnected &&
+            (bleState.status == WhoopBleStatus.scanning ||
+                bleState.status == WhoopBleStatus.connecting));
+    final hasReading =
+        whoopConnected && bleState.isConnected && bleState.bpm != null;
+    final statusLabel = !whoopConnected
+        ? 'ACCOUNT REQUIRED'
+        : switch (bleState.status) {
+            WhoopBleStatus.unpaired => 'NOT PAIRED',
+            WhoopBleStatus.scanning => 'SCANNING',
+            WhoopBleStatus.connecting => 'CONNECTING',
+            WhoopBleStatus.connected when hasReading => 'LIVE',
+            WhoopBleStatus.connected => 'CONNECTED',
+            WhoopBleStatus.disconnected => 'PAUSED',
+            WhoopBleStatus.unavailable => 'UNAVAILABLE',
+            WhoopBleStatus.error => 'CONNECTION ISSUE',
+          };
+    final statusColor = !whoopConnected
+        ? purple
+        : switch (bleState.status) {
+            WhoopBleStatus.connected when hasReading => red,
+            WhoopBleStatus.connected => const Color(0xFF20B26B),
+            WhoopBleStatus.scanning || WhoopBleStatus.connecting => purple,
+            WhoopBleStatus.unpaired ||
+            WhoopBleStatus.disconnected => context.vivordoColors.textSecondary,
+            WhoopBleStatus.unavailable ||
+            WhoopBleStatus.error => const Color(0xFFFF9F43),
+          };
+    final String? detailText = !whoopConnected
+        ? 'Connect your WHOOP account before pairing for live heart rate.'
+        : switch (bleState.status) {
+            WhoopBleStatus.unpaired =>
+              'Pair your WHOOP to see your heart rate here in real time.',
+            WhoopBleStatus.scanning => 'Looking for your WHOOP broadcast…',
+            WhoopBleStatus.connecting => 'Establishing a live connection…',
+            WhoopBleStatus.connected when hasReading => null,
+            WhoopBleStatus.connected =>
+              'Waiting for the first heart-rate reading…',
+            WhoopBleStatus.disconnected =>
+              'Live monitoring is currently stopped.',
+            WhoopBleStatus.unavailable || WhoopBleStatus.error =>
+              bleState.message ?? 'WHOOP Bluetooth is unavailable.',
+          };
+    return card(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: purple.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.bluetooth_rounded,
+                  color: purple,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Text(
+                  'WHOOP HEART RATE',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (hasReading) ...[
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: statusColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      statusLabel,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            child: hasReading
+                ? Row(
+                    key: ValueKey(bleState.bpm),
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 7),
+                        child: Icon(
+                          Icons.favorite_rounded,
+                          color: red,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 11),
+                      Text(
+                        '${bleState.bpm}',
+                        style: const TextStyle(
+                          color: red,
+                          fontSize: 58,
+                          height: .9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -2,
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.only(left: 7, bottom: 5),
+                        child: Text(
+                          'bpm',
+                          style: TextStyle(
+                            color: red,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    key: ValueKey(bleState.status),
+                    children: [
+                      if (busy)
+                        const SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(strokeWidth: 3),
+                        )
+                      else
+                        Icon(
+                          Icons.monitor_heart_outlined,
+                          color: statusColor,
+                          size: 36,
+                        ),
+                      const SizedBox(width: 12),
+                      Text(
+                        bleState.isConnected ? '-- bpm' : 'Live heart rate',
+                        style: TextStyle(
+                          color: context.vivordoColors.textPrimary,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          if (detailText != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              detailText,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: context.vivordoColors.textSecondary,
+                fontSize: 14,
+              ),
+            ),
+          ],
+          if (whoopConnected && bleState.deviceName != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              bleState.deviceName!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: context.vivordoColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Divider(height: 1, color: context.vivordoColors.border),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: busy
+                      ? null
+                      : !whoopConnected
+                      ? _connectWhoopAccount
+                      : bleState.isPaired
+                      ? () => _toggleWhoopLive(bleState)
+                      : _pairWhoop,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: bleState.isConnected
+                        ? context.vivordoColors.cardMuted
+                        : purple,
+                    foregroundColor: bleState.isConnected
+                        ? context.vivordoColors.textPrimary
+                        : Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                  ),
+                  icon: Icon(
+                    !whoopConnected
+                        ? Icons.link_rounded
+                        : bleState.isConnected
+                        ? Icons.stop_rounded
+                        : Icons.play_arrow_rounded,
+                    size: 19,
+                  ),
+                  label: Text(
+                    _connectingWhoopAccount
+                        ? 'Connecting…'
+                        : !whoopConnected
+                        ? 'Connect WHOOP'
+                        : bleState.isConnected
+                        ? 'Stop live'
+                        : bleState.isPaired
+                        ? 'Start live'
+                        : 'Pair WHOOP',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              if (whoopConnected && bleState.isPaired) ...[
+                const SizedBox(width: 10),
+                TextButton(
+                  onPressed: busy ? null : _forgetWhoop,
+                  child: Text(
+                    'Forget',
+                    style: TextStyle(
+                      color: context.vivordoColors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );
@@ -431,7 +853,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   }
 
   List<_HeartBucket> _bucketDayReadings(List<_HeartReading> entries) {
-    const bucketSize = Duration(minutes: 5);
+    const bucketSize = Duration(minutes: 1);
     final bucketMilliseconds = bucketSize.inMilliseconds;
     final grouped = <int, List<_HeartReading>>{};
     for (final entry in entries) {

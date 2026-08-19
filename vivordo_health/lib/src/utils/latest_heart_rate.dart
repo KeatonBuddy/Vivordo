@@ -17,8 +17,41 @@ int? latestHeartRateBpmFromMetricDays(
     return null;
   }
 
+  int? freshWhoopBleBpm;
+  DateTime? freshWhoopBleTime;
+
+  void considerFreshWhoopBle(Map? metric) {
+    if (metric == null || metric['source'] != 'whoop_ble') return;
+    final lastReadingAt = timestampDate(metric['lastReadingAt']);
+    if (lastReadingAt == null ||
+        DateTime.now().difference(lastReadingAt) > const Duration(minutes: 5)) {
+      return;
+    }
+    final entries = metric['entries'];
+    if (entries is List) {
+      for (final entry in entries) {
+        if (entry is! Map || entry['bpm'] is! num) continue;
+        final timestamp = timestampDate(entry['timestamp']);
+        if (timestamp != null &&
+            (freshWhoopBleTime == null ||
+                timestamp.isAfter(freshWhoopBleTime!))) {
+          freshWhoopBleBpm = (entry['bpm'] as num).round();
+          freshWhoopBleTime = timestamp;
+        }
+      }
+    }
+  }
+
   void considerMetric(Map? metric) {
     if (metric == null) return;
+    if (metric['source'] == 'whoop_ble') {
+      final lastReadingAt = timestampDate(metric['lastReadingAt']);
+      if (lastReadingAt == null ||
+          DateTime.now().difference(lastReadingAt) >
+              const Duration(minutes: 5)) {
+        return;
+      }
+    }
     var foundTimestampedEntry = false;
     final rawEntries = metric['entries'];
     if (rawEntries is List) {
@@ -53,7 +86,17 @@ int? latestHeartRateBpmFromMetricDays(
     }
   }
 
-  for (final data in metricDays) {
+  final days = metricDays.toList();
+  for (final data in days) {
+    final sources = data['heart_rate_sources'] as Map?;
+    considerFreshWhoopBle(sources?['whoop_ble'] as Map?);
+    considerFreshWhoopBle(data['heart_rate'] as Map?);
+  }
+  if (freshWhoopBleBpm != null) return freshWhoopBleBpm;
+
+  for (final data in days) {
+    final sources = data['heart_rate_sources'] as Map?;
+    considerMetric(sources?['apple_health'] as Map?);
     considerMetric(data['heart_rate'] as Map?);
     considerMetric(data['heart_rate_scan'] as Map?);
   }

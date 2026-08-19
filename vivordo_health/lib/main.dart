@@ -13,6 +13,7 @@ import 'package:vivordo_health/src/services/workout_live_activity_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
+import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/version_gate_service.dart';
@@ -357,6 +358,9 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (FirebaseAuth.instance.currentUser != null) {
+      unawaited(WhoopBleHeartRateService.instance.startIfPaired());
+    }
     // Sync HealthKit data every 3 minutes while the app is open, then retry
     // the stress score. computeAndSave() is otherwise only triggered from
     // HomeScreen.initState(), which only reruns when the user navigates
@@ -389,6 +393,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       if (FirebaseAuth.instance.currentUser != null) {
+        unawaited(WhoopBleHeartRateService.instance.startIfPaired());
         HealthService().syncToday().whenComplete(() async {
           await FitbitService.instance.syncInBackground();
           await WhoopService.instance.syncInBackground();
@@ -398,6 +403,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       }
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      unawaited(WhoopBleHeartRateService.instance.stop());
       AnalyticsService().endSession();
     }
   }
@@ -423,6 +429,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     if (user == null) {
       if (_lastSyncedUid != null) {
         NotificationService().clearUserReminders();
+        unawaited(WhoopBleHeartRateService.instance.handleSignedOut());
       }
       _lastSyncedUid = null;
       _userDocUid = null;

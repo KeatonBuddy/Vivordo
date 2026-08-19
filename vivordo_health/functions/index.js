@@ -9,6 +9,7 @@ const {defineSecret} = require("firebase-functions/params");
 const Anthropic = require("@anthropic-ai/sdk");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+const {dueWhoopEndpoints} = require("./whoop_schedule");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
@@ -18,7 +19,9 @@ setGlobalOptions({maxInstances: 10});
 // on the same shared Admin app and Firestore connection pool.
 Object.assign(exports, require("./challenges"));
 
-const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
+// A distinct Secret Manager binding avoids the legacy plain environment
+// variable with the old name on the existing Panda Cloud Run services.
+const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY_SECRET");
 let anthropicClient;
 
 /**
@@ -743,7 +746,6 @@ function addMetric(days, day, key, values) {
 
 async function fetchGoogleHealthData(accessToken, start, end) {
   const types = [
-    "steps",
     "distance",
     "floors",
     "active-energy-burned",
@@ -799,12 +801,6 @@ function normalizeGoogleHealthData(data) {
     if (type === "sleep") continue;
     for (const entry of entries) {
       const day = civilDateKey(entry.civilStartTime);
-      addMetric(days, day, "steps", metricPayload({
-        sum: Number(entry.steps?.countSum),
-        avg: Number(entry.steps?.countSum),
-        unit: "steps",
-        dimension: "activity",
-      }));
       addMetric(days, day, "distance", metricPayload({
         sum: Number(entry.distance?.millimetersSum) / 1000000,
         avg: Number(entry.distance?.millimetersSum) / 1000000,
@@ -909,11 +905,7 @@ const _WHOOP_IOS_CALLBACK = "vivordo-whoop://oauth2redirect";
 const _WHOOP_SECRETS = [whoopClientId, whoopClientSecret];
 const _WHOOP_SCOPES = [
   "offline",
-  "read:recovery",
-  "read:cycles",
   "read:sleep",
-  "read:workout",
-  "read:body_measurement",
 ];
 
 async function requestWhoopToken(parameters) {
@@ -1171,6 +1163,89 @@ async function whoopCollection(uid, path, start, end) {
   return records;
 }
 
+/**
+ * Atomically selects the WHOOP endpoints due for one sync invocation.
+ * Endpoint leases prevent overlapping app lifecycle calls from duplicating
+ * the same WHOOP requests.
+ *
+ * @param {string} uid Firebase user id.
+ * @param {boolean} force Whether this is an explicit user refresh.
+ * @param {number} timezoneOffsetMinutes User-local UTC offset in minutes.
+ * @return {Promise<Object>} Claimed endpoints and their schedule slot.
+ */
+async function claimWhoopSync(uid, force, timezoneOffsetMinutes) {
+  const reference = admin.firestore()
+      .collection("whoop_credentials")
+      .doc(uid);
+  const nowMs = Date.now();
+  const claimId = crypto.randomBytes(16).toString("hex");
+  return admin.firestore().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists) {
+      throw new HttpsError(
+          "failed-precondition",
+          "Connect WHOOP before syncing.",
+      );
+    }
+    const credentials = snapshot.data() || {};
+    const state = credentials.syncState || {};
+    const schedule = dueWhoopEndpoints({
+      nowMs,
+      force,
+      timezoneOffsetMinutes,
+      lastSleepMorningDate: state.lastSleepMorningDate,
+      lastSleepMiddayDate: state.lastSleepMiddayDate,
+    });
+    const leases = credentials.syncLeases || {};
+    const leaseAvailable = (endpoint) =>
+      (endpoint?.expiresAt?.toMillis?.() || 0) <= nowMs;
+    const sleep = schedule.sleep && leaseAvailable(leases.sleep);
+    if (sleep) {
+      const expiresAt = admin.firestore.Timestamp.fromMillis(
+          nowMs + 2 * 60 * 1000,
+      );
+      const nextLeases = {...leases};
+      if (sleep) nextLeases.sleep = {id: claimId, expiresAt};
+      transaction.set(reference, {syncLeases: nextLeases}, {merge: true});
+    }
+    return {
+      reference,
+      claimId,
+      sleep,
+      localDate: schedule.localDate,
+      sleepSlot: schedule.sleepSlot,
+    };
+  });
+}
+
+/**
+ * Releases endpoint leases and advances only schedules whose data was saved.
+ *
+ * @param {Object} claim Claim returned by claimWhoopSync.
+ * @param {Object} succeeded Per-endpoint save results.
+ * @return {Promise<void>}
+ */
+async function finishWhoopSync(claim, succeeded) {
+  if (!claim.sleep) return;
+  await admin.firestore().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(claim.reference);
+    if (!snapshot.exists) return;
+    const leases = snapshot.data()?.syncLeases || {};
+    const updates = {};
+    if (claim.sleep && leases.sleep?.id === claim.claimId) {
+      updates["syncLeases.sleep"] = admin.firestore.FieldValue.delete();
+      if (succeeded.sleep &&
+          ["morning", "midday"].includes(claim.sleepSlot)) {
+        const slot = claim.sleepSlot === "morning" ? "Morning" : "Midday";
+        updates[`syncState.lastSleep${slot}Date`] = claim.localDate;
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      transaction.update(claim.reference, updates);
+    }
+  });
+}
+
 function whoopDateKey(timestamp, timezoneOffset = "+00:00") {
   const milliseconds = Date.parse(timestamp);
   if (!Number.isFinite(milliseconds)) return null;
@@ -1207,27 +1282,8 @@ function setWhoopMetric(days, day, key, values) {
   };
 }
 
-function normalizeWhoopData({cycles, recoveries, sleeps, workouts, body}) {
+function normalizeWhoopData({sleeps}) {
   const days = {};
-  const cyclesById = new Map(cycles.map((cycle) => [cycle.id, cycle]));
-  const sleepsById = new Map(sleeps.map((sleep) => [sleep.id, sleep]));
-
-  for (const cycle of cycles) {
-    if (cycle.score_state !== "SCORED" || !cycle.score) continue;
-    const day = whoopDateKey(cycle.start, cycle.timezone_offset);
-    setWhoopMetric(days, day, "strain", {
-      avg: whoopNumber(cycle.score.strain),
-      unit: "score",
-      dimension: "activity",
-    });
-    setWhoopMetric(days, day, "heart_rate", {
-      avg: whoopNumber(cycle.score.average_heart_rate),
-      max: whoopNumber(cycle.score.max_heart_rate),
-      unit: "bpm",
-      dimension: "cardiovascular",
-    });
-  }
-
   const sleepTotals = {};
   for (const sleep of sleeps) {
     if (sleep.score_state !== "SCORED" || !sleep.score) continue;
@@ -1285,115 +1341,6 @@ function normalizeWhoopData({cycles, recoveries, sleeps, workouts, body}) {
       performance: whoopNumber(score.sleep_performance_percentage),
       consistency: whoopNumber(score.sleep_consistency_percentage),
       efficiency: whoopNumber(score.sleep_efficiency_percentage),
-    });
-    setWhoopMetric(days, day, "respiratory_rate", {
-      avg: whoopNumber(score.respiratory_rate),
-      unit: "breaths/min",
-      dimension: "respiratory",
-    });
-  }
-
-  for (const recovery of recoveries) {
-    if (recovery.score_state !== "SCORED" || !recovery.score) continue;
-    const sleep = sleepsById.get(recovery.sleep_id);
-    const cycle = cyclesById.get(recovery.cycle_id);
-    const timestamp = sleep?.end || cycle?.start || recovery.updated_at;
-    const offset = sleep?.timezone_offset || cycle?.timezone_offset;
-    const day = whoopDateKey(timestamp, offset);
-    const score = recovery.score;
-    setWhoopMetric(days, day, "recovery", {
-      avg: whoopNumber(score.recovery_score),
-      unit: "score",
-      dimension: "recovery",
-      calibrating: score.user_calibrating === true,
-    });
-    setWhoopMetric(days, day, "resting_heart_rate", {
-      avg: whoopNumber(score.resting_heart_rate),
-      unit: "bpm",
-      dimension: "cardiovascular",
-    });
-    setWhoopMetric(days, day, "hrv", {
-      avg: whoopNumber(score.hrv_rmssd_milli),
-      unit: "ms",
-      dimension: "cardiovascular",
-    });
-    setWhoopMetric(days, day, "blood_oxygen", {
-      avg: whoopNumber(score.spo2_percentage),
-      unit: "%",
-      dimension: "respiratory",
-    });
-    setWhoopMetric(days, day, "skin_temperature", {
-      avg: whoopNumber(score.skin_temp_celsius),
-      unit: "°C",
-      dimension: "body",
-    });
-  }
-
-  const workoutsByDay = {};
-  for (const workout of workouts) {
-    if (workout.score_state !== "SCORED" || !workout.score) continue;
-    const day = whoopDateKey(workout.start, workout.timezone_offset);
-    if (!day) continue;
-    if (!workoutsByDay[day]) {
-      workoutsByDay[day] = {
-        count: 0,
-        minutes: 0,
-        calories: 0,
-        distance: 0,
-        strain: 0,
-      };
-    }
-    const summary = workoutsByDay[day];
-    summary.count++;
-    const start = Date.parse(workout.start);
-    const end = Date.parse(workout.end);
-    if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-      summary.minutes += (end - start) / 60000;
-    }
-    summary.calories += (whoopNumber(workout.score.kilojoule) || 0) / 4.184;
-    summary.distance += (whoopNumber(workout.score.distance_meter) || 0) /
-        1000;
-    summary.strain += whoopNumber(workout.score.strain) || 0;
-  }
-  for (const [day, summary] of Object.entries(workoutsByDay)) {
-    setWhoopMetric(days, day, "exercise_time", {
-      sum: summary.minutes,
-      avg: summary.minutes,
-      count: summary.count,
-      unit: "min",
-      dimension: "activity",
-    });
-    setWhoopMetric(days, day, "active_calories", {
-      sum: summary.calories,
-      avg: summary.calories,
-      unit: "kcal",
-      dimension: "activity",
-    });
-    setWhoopMetric(days, day, "distance", {
-      sum: summary.distance,
-      avg: summary.distance,
-      unit: "km",
-      dimension: "activity",
-    });
-    setWhoopMetric(days, day, "workout_strain", {
-      sum: summary.strain,
-      avg: summary.strain / summary.count,
-      count: summary.count,
-      unit: "score",
-      dimension: "activity",
-    });
-  }
-
-  if (body) {
-    const latestCycle = cycles[0];
-    const day = whoopDateKey(
-        new Date().toISOString(),
-        latestCycle?.timezone_offset,
-    );
-    setWhoopMetric(days, day, "weight", {
-      avg: whoopNumber(body.weight_kilogram),
-      unit: "kg",
-      dimension: "body",
     });
   }
   return days;
@@ -1480,59 +1427,81 @@ exports.syncWhoop = onCall(
     {secrets: _WHOOP_SECRETS, timeoutSeconds: 120},
     async (request) => {
       const uid = requireAuth(request);
-      const requestedDays = Number(request.data?.daysBack || 30);
+      const rawRequestedDays = Number(request.data?.daysBack || 30);
+      const requestedDays = Number.isFinite(rawRequestedDays) ?
+        rawRequestedDays : 30;
       const daysBack = Math.max(1, Math.min(30, Math.floor(requestedDays)));
+      const force = request.data?.force === true;
+      const timezoneOffsetMinutes =
+        Number(request.data?.timezoneOffsetMinutes || 0);
+      const claim = await claimWhoopSync(
+          uid,
+          force,
+          timezoneOffsetMinutes,
+      );
+      if (!claim.sleep) {
+        return {
+          daysSynced: 0,
+          records: {sleeps: 0},
+          endpoints: {sleep: "not_due"},
+        };
+      }
+
+      // Scheduled refreshes need only the current/previous local day. Explicit
+      // user refreshes retain the requested history window.
+      const effectiveDaysBack = force ? daysBack : 2;
       const end = new Date();
       const start = new Date(end);
-      start.setUTCDate(start.getUTCDate() - daysBack + 1);
+      start.setUTCDate(start.getUTCDate() - effectiveDaysBack + 1);
       start.setUTCHours(0, 0, 0, 0);
 
-      const [cycles, recoveries, sleeps, workouts, body] = await Promise.all([
-        whoopCollection(uid, "/v2/cycle", start, end),
-        whoopCollection(uid, "/v2/recovery", start, end),
-        whoopCollection(uid, "/v2/activity/sleep", start, end),
-        whoopCollection(uid, "/v2/activity/workout", start, end),
-        whoopApiRequest(
+      try {
+        const sleeps = await whoopCollection(
             uid,
-            "/v2/user/measurement/body",
-            null,
-            true,
-        ),
-      ]);
-      const days = normalizeWhoopData({
-        cycles,
-        recoveries,
-        sleeps,
-        workouts,
-        body,
-      });
-      const batch = admin.firestore().batch();
-      for (const [day, metrics] of Object.entries(days)) {
-        const reference = admin.firestore()
-            .collection("users")
-            .doc(uid)
-            .collection("metrics_daily")
-            .doc(day);
-        batch.set(reference, {
-          ...metrics,
-          date: day,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, {merge: true});
+            "/v2/activity/sleep",
+            start,
+            end,
+        );
+        const days = normalizeWhoopData({sleeps});
+        const batch = admin.firestore().batch();
+        for (const [day, metrics] of Object.entries(days)) {
+          const reference = admin.firestore()
+              .collection("users")
+              .doc(uid)
+              .collection("metrics_daily")
+              .doc(day);
+          batch.set(reference, {
+            ...metrics,
+            date: day,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, {merge: true});
+        }
+        const userUpdate = {
+          whoopConnected: true,
+          lastWhoopSync: admin.firestore.FieldValue.serverTimestamp(),
+          lastWhoopSleepSync: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        batch.set(
+            admin.firestore().collection("users").doc(uid),
+            userUpdate,
+            {merge: true},
+        );
+        await batch.commit();
+        await finishWhoopSync(claim, {sleep: true});
+        return {
+          daysSynced: Object.keys(days).length,
+          records: {sleeps: sleeps.length},
+          endpoints: {sleep: "synced"},
+        };
+      } catch (error) {
+        await finishWhoopSync(claim, {sleep: false});
+        if (error instanceof HttpsError) throw error;
+        console.error("[WHOOP] sleep sync failed", error);
+        throw new HttpsError(
+            "unavailable",
+            "WHOOP could not be synced. Please try again.",
+        );
       }
-      batch.set(admin.firestore().collection("users").doc(uid), {
-        whoopConnected: true,
-        lastWhoopSync: admin.firestore.FieldValue.serverTimestamp(),
-      }, {merge: true});
-      await batch.commit();
-      return {
-        daysSynced: Object.keys(days).length,
-        records: {
-          cycles: cycles.length,
-          recoveries: recoveries.length,
-          sleeps: sleeps.length,
-          workouts: workouts.length,
-        },
-      };
     },
 );
 

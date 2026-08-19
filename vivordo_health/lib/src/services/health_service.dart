@@ -155,13 +155,21 @@ class HealthService {
     _fitbitConnected = data?['fitbitConnected'] == true;
   }
 
-  // Apple Health is the fallback. Preserve a canonical value while the
-  // wearable that supplied it remains connected; a disconnected source can
-  // be replaced on the next Apple Health sync.
+  // Apple Health is the fallback for metrics supplied directly by a connected
+  // wearable. Steps are intentionally handled separately as Apple
+  // Health-only data.
   bool _connectedWearableHasPriority(Map<String, dynamic>? day, String key) {
     final metric = day?[key] as Map?;
     final source = metric?['source'];
-    return (source == 'whoop' && _whoopConnected) ||
+    if (key == 'heart_rate' && source == 'whoop_ble') {
+      final raw = metric?['lastReadingAt'];
+      final lastReadingAt = raw is Timestamp ? raw.toDate() : null;
+      return _whoopConnected &&
+          lastReadingAt != null &&
+          DateTime.now().difference(lastReadingAt) <=
+              const Duration(minutes: 5);
+    }
+    return (source == 'whoop' && _whoopConnected && key != 'heart_rate') ||
         (source == 'fitbit' && _fitbitConnected);
   }
 
@@ -965,6 +973,8 @@ class HealthService {
   }
 
   Future<void> _syncStepTotals(String uid, {int daysBack = 30}) async {
+    // Apple Health is the single canonical step source, including steps that
+    // a wearable may have contributed to HealthKit.
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final batch = _db.batch();
@@ -996,9 +1006,6 @@ class HealthService {
           .doc(uid)
           .collection('metrics_daily')
           .doc(dayKey);
-      final existing = await ref.get();
-      if (_connectedWearableHasPriority(existing.data(), 'steps')) continue;
-
       batch.set(ref, {
         'steps': {
           'sum': total,
@@ -1069,7 +1076,10 @@ class HealthService {
           .collection('metrics_daily')
           .doc(dayKey);
       final snapshot = await ref.get();
-      if (_connectedWearableHasPriority(snapshot.data(), metricKey)) continue;
+      if (metricKey != 'steps' &&
+          _connectedWearableHasPriority(snapshot.data(), metricKey)) {
+        continue;
+      }
       if (metricKey == 'exercise_time') {
         final exerciseTime =
             snapshot.data()?['exercise_time'] as Map<String, dynamic>?;
@@ -1152,6 +1162,7 @@ class HealthService {
 
     final batch = _db.batch();
     final daysWithData = <String>{};
+    final appleHeartRatePayloads = <String, Map<String, dynamic>>{};
     for (final entry in byDay.entries) {
       final day = entry.key;
       daysWithData.add(day);
@@ -1162,9 +1173,6 @@ class HealthService {
           .collection('metrics_daily')
           .doc(day);
       final existingSnapshot = await ref.get();
-      if (_connectedWearableHasPriority(existingSnapshot.data(), def.key)) {
-        continue;
-      }
       final payload = _buildValueMap(def.type, vals);
       if (def.type == HealthDataType.EXERCISE_TIME) {
         final existingExerciseTime =
@@ -1184,6 +1192,20 @@ class HealthService {
           return aTime.compareTo(bTime);
         });
         payload['entries'] = entries;
+        batch.set(ref, {
+          'heart_rate_sources': {
+            'apple_health': {
+              ...payload,
+              'source': 'apple_health',
+              'syncedAt': FieldValue.serverTimestamp(),
+            },
+          },
+        }, SetOptions(merge: true));
+        appleHeartRatePayloads[day] = Map<String, dynamic>.from(payload);
+        continue;
+      }
+      if (_connectedWearableHasPriority(existingSnapshot.data(), def.key)) {
+        continue;
       }
       if (def.type == HealthDataType.SLEEP_ASLEEP) {
         final entries = sleepEntriesByDay[day] ?? const [];
@@ -1220,6 +1242,9 @@ class HealthService {
 
     try {
       await batch.commit();
+      for (final entry in appleHeartRatePayloads.entries) {
+        await _promoteAppleHeartRateIfBleStale(uid, entry.key, entry.value);
+      }
       debugPrint(
         'DEBUG: Firestore batch commit succeeded for ${def.key}. Days written: ${byDay.length}',
       );
@@ -1229,6 +1254,41 @@ class HealthService {
       debugPrint(st.toString());
       rethrow;
     }
+  }
+
+  Future<void> _promoteAppleHeartRateIfBleStale(
+    String uid,
+    String day,
+    Map<String, dynamic> payload,
+  ) async {
+    final reference = _db
+        .collection('users')
+        .doc(uid)
+        .collection('metrics_daily')
+        .doc(day);
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(reference);
+      final sources = snapshot.data()?['heart_rate_sources'] as Map?;
+      final whoopBle = sources?['whoop_ble'] as Map?;
+      final rawLastReading = whoopBle?['lastReadingAt'];
+      final lastReadingAt = rawLastReading is Timestamp
+          ? rawLastReading.toDate()
+          : null;
+      final bluetoothIsFresh =
+          lastReadingAt != null &&
+          DateTime.now().difference(lastReadingAt) <=
+              const Duration(minutes: 5);
+      if (bluetoothIsFresh) return;
+      transaction.set(reference, {
+        'heart_rate': {
+          ...payload,
+          'source': 'apple_health',
+          'syncedAt': FieldValue.serverTimestamp(),
+        },
+        'date': day,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
   }
 
   Map<String, dynamic> _buildValueMap(HealthDataType type, List<double> vals) {

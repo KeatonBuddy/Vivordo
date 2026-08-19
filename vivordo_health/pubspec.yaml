@@ -61,6 +61,7 @@ dependencies:
   timezone: ^0.9.4
   health: ^12.2.0           # Apple HealthKit + Google Health Connect bridge
   permission_handler: ^11.3.1 # Runtime permission requests
+  flutter_reactive_ble: ^5.5.0 # WHOOP standard BLE heart-rate broadcast
   intl: ^0.20.1             # Date formatting (DateFormat)
   camera: ^0.10.5+9          # For accessing the device camera
   firebase_remote_config: ^6.0.0

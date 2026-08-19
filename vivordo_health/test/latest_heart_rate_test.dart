@@ -56,4 +56,73 @@ void main() {
 
     expect(result, 68);
   });
+
+  test('fresh WHOOP Bluetooth wins over a newer Apple Health reading', () {
+    final now = DateTime.now();
+    final result = latestHeartRateBpmFromMetricDays([
+      {
+        'heart_rate_sources': {
+          'whoop_ble': {
+            'source': 'whoop_ble',
+            'lastReadingAt': Timestamp.fromDate(
+              now.subtract(const Duration(minutes: 1)),
+            ),
+            'entries': [
+              {
+                'bpm': 91,
+                'timestamp': Timestamp.fromDate(
+                  now.subtract(const Duration(minutes: 1)),
+                ),
+              },
+            ],
+          },
+          'apple_health': {
+            'source': 'apple_health',
+            'entries': [
+              {'bpm': 74, 'timestamp': Timestamp.fromDate(now)},
+            ],
+          },
+        },
+      },
+    ]);
+
+    expect(result, 91);
+  });
+
+  test('stale WHOOP Bluetooth falls back to Apple Health', () {
+    final now = DateTime.now();
+    final result = latestHeartRateBpmFromMetricDays([
+      {
+        'heart_rate': {
+          'source': 'whoop_ble',
+          'lastReadingAt': Timestamp.fromDate(
+            now.subtract(const Duration(minutes: 10)),
+          ),
+          'entries': [
+            {
+              'bpm': 91,
+              'timestamp': Timestamp.fromDate(
+                now.subtract(const Duration(minutes: 10)),
+              ),
+            },
+          ],
+        },
+        'heart_rate_sources': {
+          'apple_health': {
+            'source': 'apple_health',
+            'entries': [
+              {
+                'bpm': 74,
+                'timestamp': Timestamp.fromDate(
+                  now.subtract(const Duration(minutes: 2)),
+                ),
+              },
+            ],
+          },
+        },
+      },
+    ]);
+
+    expect(result, 74);
+  });
 }
