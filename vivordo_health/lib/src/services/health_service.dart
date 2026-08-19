@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'package:intl/intl.dart';
+import 'activity_goals_service.dart';
 import 'stress_score_service.dart';
+import '../utils/activity_score.dart';
 import '../utils/sleep_stage_aggregation.dart';
 
 // ─── Metric definitions ──────────────────────────────────────────────────────
@@ -1419,6 +1421,8 @@ class HealthService {
     if (uid == null) return;
     final now = DateTime.now();
     final batch = _db.batch();
+    final userSnapshot = await _db.collection('users').doc(uid).get();
+    final activityGoals = ActivityGoals.fromUserData(userSnapshot.data());
 
     for (int i = 0; i < daysBack; i++) {
       final day = now.subtract(Duration(days: i));
@@ -1435,11 +1439,23 @@ class HealthService {
       final stress = (data?['stress']?['avg'] as num?)?.toDouble();
       final sleep = (data?['sleep']?['avg'] as num?)?.toDouble();
       final steps = (data?['steps']?['sum'] as num?)?.toDouble();
+      final exerciseMinutes = (data?['exercise_time']?['sum'] as num?)
+          ?.toDouble();
+      final activeCalories = (data?['active_calories']?['sum'] as num?)
+          ?.toDouble();
       final heartRate = (data?['heart_rate_scan']?['avg'] as num?)?.toDouble();
+      final activity = calculateActivityScore(
+        steps: steps,
+        exerciseMinutes: exerciseMinutes,
+        activeCalories: activeCalories,
+        stepsGoal: activityGoals.steps.toDouble(),
+        exerciseMinutesGoal: activityGoals.exerciseMinutes.toDouble(),
+        activeCaloriesGoal: activityGoals.activeCalories.toDouble(),
+      );
 
       if (stress == null &&
           sleep == null &&
-          steps == null &&
+          activity == null &&
           heartRate == null) {
         continue;
       }
@@ -1456,9 +1472,8 @@ class HealthService {
         wellness += sleepScore * 0.30;
         weight += 30;
       }
-      if (steps != null) {
-        final stepsScore = ((steps / 10000.0) * 100).clamp(0.0, 100.0);
-        wellness += stepsScore * 0.20;
+      if (activity != null) {
+        wellness += activity.score * 0.20;
         weight += 20;
       }
       if (heartRate != null) {

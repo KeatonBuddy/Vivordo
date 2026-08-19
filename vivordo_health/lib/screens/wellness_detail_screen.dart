@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/services/activity_goals_service.dart';
+import 'package:vivordo_health/src/utils/activity_score.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 
@@ -61,6 +63,10 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
       stress: avg('stress'),
       sleep: avg('sleep'),
       steps: ((data['steps'] as Map?)?['sum'] as num?)?.toDouble(),
+      exerciseMinutes: ((data['exercise_time'] as Map?)?['sum'] as num?)
+          ?.toDouble(),
+      activeCalories: ((data['active_calories'] as Map?)?['sum'] as num?)
+          ?.toDouble(),
       heartRate: avg('heart_rate_scan'),
     );
   }
@@ -115,20 +121,32 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _stream(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData &&
-              snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return _content(_range(snapshot.data), _previous(snapshot.data));
-        },
+      body: StreamBuilder<ActivityGoals>(
+        stream: ActivityGoalsService.watch(),
+        builder: (context, goalsSnapshot) =>
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _stream(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData &&
+                    snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return _content(
+                  _range(snapshot.data),
+                  _previous(snapshot.data),
+                  goalsSnapshot.data ?? const ActivityGoals(),
+                );
+              },
+            ),
       ),
     );
   }
 
-  Widget _content(List<_WellnessDay> days, List<double> previous) {
+  Widget _content(
+    List<_WellnessDay> days,
+    List<double> previous,
+    ActivityGoals activityGoals,
+  ) {
     final scoredDays = days.where((day) => day.wellness != null).toList();
     final latest = scoredDays.isEmpty ? days.last : scoredDays.last;
     final currentAverage = _average(scoredDays.map((day) => day.wellness!));
@@ -157,13 +175,13 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
           const SizedBox(height: 18),
           _rangeSelector(),
           const SizedBox(height: 18),
-          _scoreCard(score, change, latest, _scoreLabel),
+          _scoreCard(score, change, latest, _scoreLabel, activityGoals),
           if (_rangeIndex != 0) ...[
             _section('$_rangeName trend'),
             _chartCard(days, usual),
           ],
           _section('Score breakdown'),
-          _breakdown(latest),
+          _breakdown(latest, activityGoals),
           _section('How it works'),
           _howItWorks(),
         ],
@@ -223,6 +241,7 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
     int? change,
     _WellnessDay latest,
     String scoreLabel,
+    ActivityGoals activityGoals,
   ) {
     final status = score == null
         ? 'Not enough data'
@@ -238,7 +257,7 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
         : score >= 50
         ? const Color(0xFFFF9500)
         : _red;
-    final explanation = _scoreExplanation(latest);
+    final explanation = _scoreExplanation(latest, activityGoals);
     return _card(
       padding: const EdgeInsets.all(20),
       child: Row(
@@ -337,7 +356,17 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
     );
   }
 
-  String _scoreExplanation(_WellnessDay day) {
+  ActivityScoreResult? _activityScore(_WellnessDay day, ActivityGoals goals) =>
+      calculateActivityScore(
+        steps: day.steps,
+        exerciseMinutes: day.exerciseMinutes,
+        activeCalories: day.activeCalories,
+        stepsGoal: goals.steps.toDouble(),
+        exerciseMinutesGoal: goals.exerciseMinutes.toDouble(),
+        activeCaloriesGoal: goals.activeCalories.toDouble(),
+      );
+
+  String _scoreExplanation(_WellnessDay day, ActivityGoals activityGoals) {
     if (day.wellness == null) {
       return 'Sync your health data to calculate your score.';
     }
@@ -347,7 +376,10 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
       concerns.add('heart rate outside the optimal range');
     }
     if (day.sleep != null && day.sleep! < 7) concerns.add('lower sleep');
-    if (day.steps != null && day.steps! < 7000) concerns.add('lower activity');
+    final activity = _activityScore(day, activityGoals);
+    if (activity != null && activity.score < 70) {
+      concerns.add('lower activity');
+    }
     if (concerns.isEmpty) {
       return 'Your recent health signals support your score.';
     }
@@ -379,7 +411,7 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
     return (100 - distance * 2.5).clamp(0.0, 100.0);
   }
 
-  Widget _breakdown(_WellnessDay day) {
+  Widget _breakdown(_WellnessDay day, ActivityGoals activityGoals) {
     final components = <_ScoreComponent>[];
     if (day.stress != null) {
       components.add(
@@ -401,17 +433,16 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
         _purple,
       ),
     );
-    if (day.steps != null) {
-      components.add(
-        _ScoreComponent(
-          'Steps',
-          (day.steps! / 10000 * 100).clamp(0, 100),
-          .20,
-          Icons.directions_walk_rounded,
-          const Color(0xFF24A83B),
-        ),
-      );
-    }
+    final activity = _activityScore(day, activityGoals);
+    components.add(
+      _ScoreComponent(
+        'Activity',
+        activity?.score,
+        .20,
+        Icons.directions_run_rounded,
+        const Color(0xFF24A83B),
+      ),
+    );
     if (day.heartRate != null) {
       components.add(
         _ScoreComponent(
@@ -543,9 +574,12 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
         const SizedBox(width: 14),
         Expanded(
           child: Text(
-            'Your score combines stress, sleep, steps, and average heart rate. '
-            'Stress is inverted, so lower stress improves your score. Heart '
-            'rate scores highest within the 60–80 bpm range.',
+            'Your score combines stress, sleep, activity, and average heart '
+            'rate. Activity considers steps, exercise time, and active energy '
+            'using your goals. Unavailable activity signals are excluded, '
+            'while a recorded zero still counts. Stress is inverted, so lower '
+            'stress improves your score. Heart rate scores highest within the '
+            '60–80 bpm range.',
             style: const TextStyle(height: 1.45),
           ),
         ),
@@ -588,6 +622,8 @@ class _WellnessDay {
     this.stress,
     this.sleep,
     this.steps,
+    this.exerciseMinutes,
+    this.activeCalories,
     this.heartRate,
   });
   final DateTime date;
@@ -595,6 +631,8 @@ class _WellnessDay {
   final double? stress;
   final double? sleep;
   final double? steps;
+  final double? exerciseMinutes;
+  final double? activeCalories;
   final double? heartRate;
 }
 

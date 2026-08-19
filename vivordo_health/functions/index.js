@@ -19,6 +19,10 @@ const {
   whoopPresentSleepDays,
   whoopReconciliationDays,
 } = require("./whoop_reconciliation");
+const {
+  activityGoalsFromUserData,
+  calculateActivityScore,
+} = require("./activity_score");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
@@ -864,19 +868,29 @@ function normalizeGoogleHealthData(data) {
   return days;
 }
 
-function addFitbitWellness(days) {
+function addFitbitWellness(days, activityGoals) {
   for (const metrics of Object.values(days)) {
     let weightedScore = 0;
     let totalWeight = 0;
     const sleep = metrics.sleep?.avg;
     const steps = metrics.steps?.sum;
+    const exerciseMinutes = metrics.exercise_time?.sum;
+    const activeCalories = metrics.active_calories?.sum;
     const heartRate = metrics.heart_rate_scan?.avg;
+    const activity = calculateActivityScore({
+      steps,
+      exerciseMinutes,
+      activeCalories,
+      stepsGoal: activityGoals.steps,
+      exerciseMinutesGoal: activityGoals.exerciseMinutes,
+      activeCaloriesGoal: activityGoals.activeCalories,
+    });
     if (Number.isFinite(sleep)) {
       weightedScore += Math.max(0, Math.min(100, sleep / 8 * 100)) * 0.30;
       totalWeight += 30;
     }
-    if (Number.isFinite(steps)) {
-      weightedScore += Math.max(0, Math.min(100, steps / 10000 * 100)) * 0.20;
+    if (activity !== null) {
+      weightedScore += activity.score * 0.20;
       totalWeight += 20;
     }
     if (Number.isFinite(heartRate)) {
@@ -1706,9 +1720,13 @@ exports.syncFitbit = onCall(
           exclusiveEndDate,
       );
       const days = normalizeGoogleHealthData(raw);
-      addFitbitWellness(days);
       const firestore = admin.firestore();
       const userReference = firestore.collection("users").doc(uid);
+      const activityGoalsSnapshot = await userReference.get();
+      addFitbitWellness(
+          days,
+          activityGoalsFromUserData(activityGoalsSnapshot.data()),
+      );
       const entries = Object.entries(days);
       const references = entries.map(([day]) => userReference
           .collection("metrics_daily")
