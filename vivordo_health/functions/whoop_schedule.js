@@ -44,7 +44,20 @@ function dueWhoopEndpoints(options) {
   };
 }
 
+/**
+ * Returns whether a WHOOP failure proves the stored authorization can no
+ * longer be used. Transient availability and rate-limit errors must leave the
+ * connection intact.
+ *
+ * @param {string} code Firebase Functions error code.
+ * @return {boolean}
+ */
+function isWhoopAuthorizationFailureCode(code) {
+  return code === "unauthenticated" || code === "failed-precondition";
+}
+
 module.exports = {
   dueWhoopEndpoints,
+  isWhoopAuthorizationFailureCode,
   whoopLocalSlot,
 };

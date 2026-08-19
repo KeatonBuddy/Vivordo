@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
+import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 
@@ -70,56 +71,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   List<_HeartDay> allDays(QuerySnapshot<Map<String, dynamic>>? snapshot) {
     return (snapshot?.docs ?? const []).map((doc) {
       final data = doc.data();
-      final scan = data['heart_rate_scan'] as Map?;
-      final health = data['heart_rate'] as Map?;
       final date = DateTime.parse(doc.id);
-      final readings = <_HeartReading>[];
-
-      void addEntries(Map? metric) {
-        if (metric?['entries'] is! List) return;
-        for (final entry in metric!['entries'] as List) {
-          if (entry is Map && entry['bpm'] is num) {
-            readings.add(
-              _HeartReading(
-                (entry['bpm'] as num).toDouble(),
-                _entryTime(entry['timestamp'], date),
-              ),
-            );
-          }
-        }
-      }
-
-      // Camera scans are mirrored into `heart_rate`, so only merge HealthKit
-      // entries when that map actually contains its own timestamped samples.
-      addEntries(health);
-      addEntries(scan);
-      if (readings.isEmpty && scan?['avg'] is num) {
-        readings.add(
-          _HeartReading(
-            (scan!['avg'] as num).toDouble(),
-            _entryTime(scan['syncedAt'], date),
-          ),
-        );
-      } else if (readings.isEmpty && health?['avg'] is num) {
-        readings.add(
-          _HeartReading(
-            (health!['avg'] as num).toDouble(),
-            _entryTime(health['syncedAt'], date),
-          ),
-        );
-      }
-      readings.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      final readings = mergedHeartRateHistory(data, fallbackDate: date)
+          .map((reading) => _HeartReading(reading.bpm, reading.timestamp))
+          .toList();
       final resting = ((data['resting_heart_rate'] as Map?)?['avg'] as num?)
           ?.toDouble();
       return _HeartDay(date, readings, resting);
     }).toList();
-  }
-
-  DateTime _entryTime(Object? raw, DateTime fallbackDate) {
-    if (raw is Timestamp) return raw.toDate();
-    if (raw is DateTime) return raw;
-    if (raw is String) return DateTime.tryParse(raw) ?? fallbackDate;
-    return fallbackDate;
   }
 
   List<_HeartDay> currentDays(List<_HeartDay> all) {
@@ -181,14 +140,10 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
             builder: (context, userSnapshot) {
               final whoopConnected =
                   userSnapshot.data?.data()?['whoopConnected'] == true;
-              return ValueListenableBuilder<WhoopBleState>(
-                valueListenable: WhoopBleHeartRateService.instance.state,
-                builder: (context, bleState, _) => content(
-                  currentDays(all),
-                  previousDays(all),
-                  bleState,
-                  whoopConnected,
-                ),
+              return content(
+                currentDays(all),
+                previousDays(all),
+                whoopConnected,
               );
             },
           );
@@ -200,7 +155,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   Widget content(
     List<_HeartDay> days,
     List<_HeartDay> previous,
-    WhoopBleState bleState,
     bool whoopConnected,
   ) {
     final storedEntries = days.expand((day) => day.readings).toList();
@@ -212,9 +166,8 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         .map((day) => day.resting)
         .whereType<double>()
         .toList();
-    // Summary values use only persisted minute aggregates. The temporary live
-    // Bluetooth point remains visible on the chart without changing the Day
-    // average every time WHOOP broadcasts a packet.
+    // Summary values and the graph use only the persisted screen snapshot.
+    // Incoming Bluetooth packets update only the live WHOOP card below.
     final avg = average(storedReadings);
     final restingAvg = average(resting);
     final priorAvg = average(prior);
@@ -251,7 +204,11 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           const SizedBox(height: 18),
           rangeSelector(),
           const SizedBox(height: 18),
-          whoopLiveCard(bleState, whoopConnected),
+          ValueListenableBuilder<WhoopBleState>(
+            valueListenable: WhoopBleHeartRateService.instance.state,
+            builder: (context, bleState, _) =>
+                whoopLiveCard(bleState, whoopConnected),
+          ),
           const SizedBox(height: 18),
           summary(avg, restingAvg, change, low, high),
           section('$rangeName trend'),
@@ -1032,30 +989,10 @@ class _HeartChartState extends State<_HeartChart> {
     final right = widget.showTime ? 40.0 : 0.0;
     var index = 0;
     if (widget.values.length > 1) {
-      if (widget.showTime) {
-        final fraction = ((x - left) / (width - left - right)).clamp(0.0, 1.0);
-        final first = widget.dates.first.millisecondsSinceEpoch;
-        final now = DateTime.now().millisecondsSinceEpoch;
-        final last = math.max(
-          first + const Duration(minutes: 1).inMilliseconds,
-          now,
-        );
-        final target = first + ((last - first) * fraction).round();
-        var nearestDistance =
-            (widget.dates.first.millisecondsSinceEpoch - target).abs();
-        for (var i = 1; i < widget.dates.length; i++) {
-          final distance = (widget.dates[i].millisecondsSinceEpoch - target)
-              .abs();
-          if (distance < nearestDistance) {
-            nearestDistance = distance;
-            index = i;
-          }
-        }
-      } else {
-        index = (((x - left) / (width - left)) * (widget.values.length - 1))
-            .round()
-            .clamp(0, widget.values.length - 1);
-      }
+      final chartWidth = width - left - right;
+      index = (((x - left) / chartWidth) * (widget.values.length - 1))
+          .round()
+          .clamp(0, widget.values.length - 1);
     }
     if (selected != index) setState(() => selected = index);
   }
@@ -1170,20 +1107,8 @@ class _HeartChartPainter extends CustomPainter {
     }
     if (values.isEmpty) return;
 
-    final firstTime = dates.first.millisecondsSinceEpoch;
-    final lastTime = showTime
-        ? math.max(
-            firstTime + const Duration(minutes: 1).inMilliseconds,
-            DateTime.now().millisecondsSinceEpoch,
-          )
-        : dates.last.millisecondsSinceEpoch;
     final points = List.generate(values.length, (i) {
-      final x = showTime && lastTime > firstTime
-          ? left +
-                width *
-                    (dates[i].millisecondsSinceEpoch - firstTime) /
-                    (lastTime - firstTime)
-          : values.length == 1
+      final x = values.length == 1
           ? left + width / 2
           : left + width * i / (values.length - 1);
       return Offset(x, yFor(values[i]));
@@ -1231,18 +1156,18 @@ class _HeartChartPainter extends CustomPainter {
       final tickPaint = Paint()
         ..color = (dark ? Colors.white : Colors.black).withValues(alpha: .16)
         ..strokeWidth = 1;
-      final tickCount = size.width < 330 ? 3 : 4;
+      final tickCount = math.min(size.width < 330 ? 3 : 4, points.length);
       for (var i = 0; i < tickCount; i++) {
-        final fraction = i / (tickCount - 1);
-        final tickX = left + width * fraction;
+        final index = tickCount == 1
+            ? 0
+            : (i * (points.length - 1) / (tickCount - 1)).round();
+        final tickX = points[index].dx;
         canvas.drawLine(
           Offset(tickX, height),
           Offset(tickX, height + 5),
           tickPaint,
         );
-        final milliseconds =
-            firstTime + ((lastTime - firstTime) * fraction).round();
-        final tickDate = DateTime.fromMillisecondsSinceEpoch(milliseconds);
+        final tickDate = dates[index];
         centerTextClamped(
           canvas,
           '${DateFormat('h:mm').format(tickDate)}\n'

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:vivordo_health/src/utils/stress_source_precedence.dart';
 
 import 'health_service.dart';
 
@@ -471,16 +472,6 @@ class StressScoreService {
       );
     }
 
-    // (date|metric) pairs the raw read already covered, so the synthetic
-    // reconstruction below can skip them instead of emitting a competing
-    // fabricated point at a hardcoded hour for the same metric and day.
-    final rawCovered = <String>{};
-    for (final s in rawSamples) {
-      final ts = s['timestamp'] as String?;
-      if (ts == null || ts.length < 10) continue;
-      rawCovered.add('${ts.substring(0, 10)}|${s['metric_type']}');
-    }
-
     // Build lookup: date → full day doc (only days with at least one input metric).
     final docsMap = <String, Map<String, dynamic>>{};
 
@@ -489,6 +480,26 @@ class StressScoreService {
       // Skip days that only have output data (stress, wellness) and no inputs.
       if (!_inputMetrics.any((m) => data.containsKey(m))) continue;
       docsMap[doc.id] = data;
+    }
+
+    // Raw HealthKit samples must not bypass the canonical source selected by
+    // sync precedence. For example, WHOOP sleep and Fitbit HRV should replace
+    // Apple samples for that metric/day. Steps remain Apple Health-only.
+    rawSamples = filterStressAppleSamplesBySource(rawSamples, docsMap);
+
+    // (date|metric) pairs the retained raw read already covered, so the
+    // synthetic reconstruction below can skip competing fabricated points.
+    final rawCovered = <String>{};
+    for (final sample in rawSamples) {
+      final timestamp = sample['timestamp'] as String?;
+      final metricDate = sample['_metric_date'] as String?;
+      final day =
+          metricDate ??
+          (timestamp != null && timestamp.length >= 10
+              ? timestamp.substring(0, 10)
+              : null);
+      if (day == null) continue;
+      rawCovered.add('$day|${sample['metric_type']}');
     }
 
     // Sort oldest → newest so BaaS receives chronological samples.
@@ -529,7 +540,11 @@ class StressScoreService {
     // below from `heart_rate_scan`; they must not depend on the convenience
     // mirror in `heart_rate`, because a later HealthKit sync may replace that
     // mirror while the original scan history remains intact.
-    final samples = <Map<String, dynamic>>[...rawSamples];
+    final samples = rawSamples.map((sample) {
+      final payloadSample = Map<String, dynamic>.from(sample);
+      payloadSample.remove('_metric_date');
+      return payloadSample;
+    }).toList();
 
     bool covered(String date, String metric) =>
         rawCovered.contains('$date|$metric');

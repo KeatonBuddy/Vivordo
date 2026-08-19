@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
+import 'package:vivordo_health/src/utils/whoop_authorization.dart';
 import 'package:vivordo_health/src/utils/whoop_sync_schedule.dart';
 
 /// WHOOP account integration backed by Firebase Functions.
@@ -64,6 +65,9 @@ class WhoopService {
   /// lifecycle refreshes follow the backend's morning/midday schedule.
   Future<void> sync({int daysBack = 30, bool force = true}) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      return Future.error(StateError('Sign in before syncing WHOOP.'));
+    }
     final activeSync = _activeSync;
     if (activeSync != null) {
       if (!force || _activeSyncForced) return activeSync;
@@ -73,14 +77,7 @@ class WhoopService {
     }
 
     final boundedDays = daysBack.clamp(1, 30);
-    final request = _functions
-        .httpsCallable('syncWhoop')
-        .call<void>({
-          'daysBack': boundedDays,
-          'force': force,
-          'timezoneOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
-        })
-        .then((_) => _recordCurrentAutomaticSlot(uid));
+    final request = _performSync(uid: uid, daysBack: boundedDays, force: force);
     _activeSync = request;
     _activeSyncForced = force;
     return request.whenComplete(() {
@@ -94,7 +91,35 @@ class WhoopService {
   Future<void> disconnect() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     await _functions.httpsCallable('disconnectWhoop').call<void>();
-    await WhoopBleHeartRateService.instance.stop(clearPairing: true);
+    await _clearLocalConnection(uid);
+  }
+
+  Future<void> _performSync({
+    required String uid,
+    required int daysBack,
+    required bool force,
+  }) async {
+    try {
+      await _functions.httpsCallable('syncWhoop').call<void>({
+        'daysBack': daysBack,
+        'force': force,
+        'timezoneOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
+      });
+      await _recordCurrentAutomaticSlot(uid);
+    } on FirebaseFunctionsException catch (error) {
+      if (whoopReconnectRequired(error.code, error.details)) {
+        await _clearLocalConnection(uid);
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _clearLocalConnection(String? uid) async {
+    try {
+      await WhoopBleHeartRateService.instance.stop(clearPairing: true);
+    } catch (error) {
+      debugPrint('[WhoopService] Could not clear WHOOP pairing: $error');
+    }
     if (uid != null) {
       try {
         await _storage.delete(key: '$_automaticSlotStoragePrefix$uid');
@@ -103,7 +128,7 @@ class WhoopService {
       }
     }
     _connectedCache = false;
-    _connectedCacheUid = FirebaseAuth.instance.currentUser?.uid;
+    _connectedCacheUid = uid;
     _clearAutomaticSlotCache();
   }
 

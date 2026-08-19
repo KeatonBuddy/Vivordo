@@ -839,21 +839,26 @@ class HealthService {
     }
 
     return summarizeSleepByWakeDay(intervals)
-        .expand((summary) => summary.asleepIntervals)
-        .map((interval) {
-          final duration = interval.end
-              .difference(interval.start)
-              .inSeconds
-              .toDouble();
-          return {
-            'metric_type': 'sleep',
-            'timestamp': _fmtUtcTimestamp(interval.start),
-            'value': duration / 3600,
-            'unit': unit,
-            'source': 'apple_health',
-            'duration_seconds': duration,
-          };
-        })
+        .expand(
+          (summary) => summary.asleepIntervals.map((interval) {
+            final duration = interval.end
+                .difference(interval.start)
+                .inSeconds
+                .toDouble();
+            return {
+              'metric_type': 'sleep',
+              'timestamp': _fmtUtcTimestamp(interval.start),
+              'value': duration / 3600,
+              'unit': unit,
+              'source': 'apple_health',
+              'duration_seconds': duration,
+              // Used only while assembling the stress payload. A sleep
+              // interval can start before midnight, while its canonical daily
+              // metric is keyed by the day on which the user woke up.
+              '_metric_date': _formatDate(summary.date),
+            };
+          }),
+        )
         .toList(growable: false);
   }
 

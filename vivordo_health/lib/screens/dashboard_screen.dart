@@ -5,6 +5,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
+import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'profile_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'active_calories_detail_screen.dart';
@@ -369,32 +370,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return '$hour:$minute $suffix';
   }
 
-  List<Map<String, dynamic>> _bpmScanEntries(
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _heartRateDocs(
+    QuerySnapshot<Map<String, dynamic>>? snapshot,
+  ) {
+    if (snapshot == null) return [];
+    return snapshot.docs.where((doc) {
+      final data = doc.data();
+      return data.containsKey('heart_rate') ||
+          data.containsKey('heart_rate_scan') ||
+          data.containsKey('heart_rate_sources');
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _heartRateEntries(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
     final points = <Map<String, dynamic>>[];
     for (final doc in docs) {
-      final scan = doc.data()['heart_rate_scan'] as Map?;
-      final rawEntries = scan?['entries'];
-      if (rawEntries is List && rawEntries.isNotEmpty) {
-        for (final entry in rawEntries) {
-          if (entry is! Map || entry['bpm'] is! num) continue;
-          final timestamp = entry['timestamp'];
-          points.add({
-            'bpm': (entry['bpm'] as num).toDouble(),
-            'dateTime': timestamp is Timestamp
-                ? timestamp.toDate()
-                : DateTime.tryParse(doc.id),
-          });
-        }
-      } else if (scan?['avg'] is num) {
-        final timestamp = scan?['syncedAt'];
-        points.add({
-          'bpm': (scan!['avg'] as num).toDouble(),
-          'dateTime': timestamp is Timestamp
-              ? timestamp.toDate()
-              : DateTime.tryParse(doc.id),
-        });
+      final fallbackDate = DateTime.tryParse(doc.id);
+      if (fallbackDate == null) continue;
+      for (final reading in mergedHeartRateHistory(
+        doc.data(),
+        fallbackDate: fallbackDate,
+      )) {
+        points.add({'bpm': reading.bpm, 'dateTime': reading.timestamp});
       }
     }
     points.sort((a, b) {
@@ -407,12 +406,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return points;
   }
 
-  List<Map<String, dynamic>> _dailyBpmScanPoints(
+  List<Map<String, dynamic>> _dailyBpmPoints(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
     final points = <Map<String, dynamic>>[];
     for (final doc in docs) {
-      final entries = _bpmScanEntries([doc]);
+      final entries = _heartRateEntries([doc]);
       if (entries.isEmpty) continue;
       points.add({
         'bpm': _avg(entries.map((entry) => entry['bpm'] as double).toList()),
@@ -777,8 +776,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ) {
     List<double> values;
     if (metric == 'heart_rate_scan') {
-      values = _bpmScanEntries(
-        _docsFor(snap, metric),
+      values = _heartRateEntries(
+        _heartRateDocs(snap),
       ).map((entry) => entry['bpm'] as double).toList();
     } else if (metric == 'mood') {
       values = _dailyMoodValues(_docsFor(snap, metric));
@@ -1192,7 +1191,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Map<String, bool> consent,
     String metric,
   ) {
-    final hasData = _docsFor(snap, metric).isNotEmpty;
+    final hasData = metric == 'heart_rate_scan'
+        ? _heartRateDocs(snap).isNotEmpty
+        : _docsFor(snap, metric).isNotEmpty;
     return KeyedSubtree(
       key: ValueKey('dashboard-metric-$metric'),
       child: !_isManualMetric(metric) && consent[metric] != true && !hasData
@@ -1405,11 +1406,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String field,
     double maxY,
   ) {
-    final docs = _docsFor(snap, metricType);
+    final docs = metricType == 'heart_rate_scan'
+        ? _heartRateDocs(snap)
+        : _docsFor(snap, metricType);
     if (metricType == 'heart_rate_scan') {
       final points = _filterIndex == 0
-          ? _bpmScanEntries(docs)
-          : _dailyBpmScanPoints(docs);
+          ? _heartRateEntries(docs)
+          : _dailyBpmPoints(docs);
       if (points.isEmpty) return const SizedBox.shrink();
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),

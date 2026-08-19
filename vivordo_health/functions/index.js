@@ -9,7 +9,16 @@ const {defineSecret} = require("firebase-functions/params");
 const Anthropic = require("@anthropic-ai/sdk");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-const {dueWhoopEndpoints} = require("./whoop_schedule");
+const {
+  dueWhoopEndpoints,
+  isWhoopAuthorizationFailureCode,
+} = require("./whoop_schedule");
+const {
+  shouldDeleteWhoopSleep,
+  whoopDateKey,
+  whoopPresentSleepDays,
+  whoopReconciliationDays,
+} = require("./whoop_reconciliation");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
@@ -968,6 +977,35 @@ async function saveWhoopTokens(uid, tokens) {
       .set(values, {merge: true});
 }
 
+async function invalidateWhoopAuthorization(uid) {
+  const firestore = admin.firestore();
+  const batch = firestore.batch();
+  batch.delete(firestore.collection("whoop_credentials").doc(uid));
+  batch.set(firestore.collection("users").doc(uid), {
+    whoopConnected: false,
+    whoopAuthorizationExpiredAt:
+        admin.firestore.FieldValue.serverTimestamp(),
+  }, {merge: true});
+  await batch.commit();
+}
+
+async function throwWhoopReconnectRequired(uid, error) {
+  if (!isWhoopAuthorizationFailureCode(error?.code)) return;
+  try {
+    await invalidateWhoopAuthorization(uid);
+  } catch (stateError) {
+    console.error(
+        "[WHOOP] failed to persist expired authorization state",
+        stateError,
+    );
+  }
+  throw new HttpsError(
+      "failed-precondition",
+      "WHOOP authorization has expired. Reconnect WHOOP.",
+      {whoopReconnectRequired: true},
+  );
+}
+
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -1246,17 +1284,6 @@ async function finishWhoopSync(claim, succeeded) {
   });
 }
 
-function whoopDateKey(timestamp, timezoneOffset = "+00:00") {
-  const milliseconds = Date.parse(timestamp);
-  if (!Number.isFinite(milliseconds)) return null;
-  const match = /^([+-])(\d{2}):(\d{2})$/.exec(timezoneOffset || "");
-  const direction = match?.[1] === "-" ? -1 : 1;
-  const offsetMinutes = match ?
-    direction * (Number(match[2]) * 60 + Number(match[3])) : 0;
-  return new Date(milliseconds + offsetMinutes * 60000)
-      .toISOString().slice(0, 10);
-}
-
 function whoopNumber(value) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
@@ -1344,6 +1371,63 @@ function normalizeWhoopData({sleeps}) {
     });
   }
   return days;
+}
+
+async function saveAndReconcileWhoopSleep(
+    uid,
+    days,
+    sleeps,
+    claim,
+    daysBack,
+) {
+  const firestore = admin.firestore();
+  const userReference = firestore.collection("users").doc(uid);
+  const metricsCollection = userReference.collection("metrics_daily");
+  const presentDays = whoopPresentSleepDays(sleeps);
+  const reconciliationDays = whoopReconciliationDays({
+    localDate: claim.localDate,
+    daysBack,
+    includeCurrentDay: claim.sleepSlot === "midday",
+  });
+  const reconciliationReferences = reconciliationDays.map(
+      (day) => metricsCollection.doc(day),
+  );
+
+  return firestore.runTransaction(async (transaction) => {
+    const existingSnapshots = reconciliationReferences.length > 0 ?
+      await transaction.getAll(...reconciliationReferences) : [];
+    let removed = 0;
+    for (let index = 0; index < reconciliationDays.length; index += 1) {
+      const day = reconciliationDays[index];
+      const snapshot = existingSnapshots[index];
+      const existingSleep = snapshot.data()?.sleep;
+      if (!snapshot.exists || !shouldDeleteWhoopSleep(
+          existingSleep,
+          presentDays.has(day),
+      )) {
+        continue;
+      }
+      transaction.update(reconciliationReferences[index], {
+        sleep: admin.firestore.FieldValue.delete(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      removed += 1;
+    }
+
+    for (const [day, metrics] of Object.entries(days)) {
+      transaction.set(metricsCollection.doc(day), {
+        ...metrics,
+        date: day,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+    }
+    transaction.set(userReference, {
+      whoopConnected: true,
+      lastWhoopSync: admin.firestore.FieldValue.serverTimestamp(),
+      lastWhoopSleepSync: admin.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true});
+    return removed;
+  });
 }
 
 exports.beginWhoopConnection = onCall(
@@ -1434,11 +1518,17 @@ exports.syncWhoop = onCall(
       const force = request.data?.force === true;
       const timezoneOffsetMinutes =
         Number(request.data?.timezoneOffsetMinutes || 0);
-      const claim = await claimWhoopSync(
-          uid,
-          force,
-          timezoneOffsetMinutes,
-      );
+      let claim;
+      try {
+        claim = await claimWhoopSync(
+            uid,
+            force,
+            timezoneOffsetMinutes,
+        );
+      } catch (error) {
+        await throwWhoopReconnectRequired(uid, error);
+        throw error;
+      }
       if (!claim.sleep) {
         return {
           daysSynced: 0,
@@ -1452,7 +1542,9 @@ exports.syncWhoop = onCall(
       const effectiveDaysBack = force ? daysBack : 2;
       const end = new Date();
       const start = new Date(end);
-      start.setUTCDate(start.getUTCDate() - effectiveDaysBack + 1);
+      // Fetch one extra UTC day so timezone boundaries cannot make the oldest
+      // local reconciliation day look falsely absent.
+      start.setUTCDate(start.getUTCDate() - effectiveDaysBack);
       start.setUTCHours(0, 0, 0, 0);
 
       try {
@@ -1463,38 +1555,23 @@ exports.syncWhoop = onCall(
             end,
         );
         const days = normalizeWhoopData({sleeps});
-        const batch = admin.firestore().batch();
-        for (const [day, metrics] of Object.entries(days)) {
-          const reference = admin.firestore()
-              .collection("users")
-              .doc(uid)
-              .collection("metrics_daily")
-              .doc(day);
-          batch.set(reference, {
-            ...metrics,
-            date: day,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          }, {merge: true});
-        }
-        const userUpdate = {
-          whoopConnected: true,
-          lastWhoopSync: admin.firestore.FieldValue.serverTimestamp(),
-          lastWhoopSleepSync: admin.firestore.FieldValue.serverTimestamp(),
-        };
-        batch.set(
-            admin.firestore().collection("users").doc(uid),
-            userUpdate,
-            {merge: true},
+        const sleepRemoved = await saveAndReconcileWhoopSleep(
+            uid,
+            days,
+            sleeps,
+            claim,
+            effectiveDaysBack,
         );
-        await batch.commit();
         await finishWhoopSync(claim, {sleep: true});
         return {
           daysSynced: Object.keys(days).length,
+          sleepRemoved,
           records: {sleeps: sleeps.length},
           endpoints: {sleep: "synced"},
         };
       } catch (error) {
         await finishWhoopSync(claim, {sleep: false});
+        await throwWhoopReconnectRequired(uid, error);
         if (error instanceof HttpsError) throw error;
         console.error("[WHOOP] sleep sync failed", error);
         throw new HttpsError(

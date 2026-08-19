@@ -2,7 +2,10 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const {dueWhoopEndpoints} = require("../whoop_schedule");
+const {
+  dueWhoopEndpoints,
+  isWhoopAuthorizationFailureCode,
+} = require("../whoop_schedule");
 
 const morning = Date.parse("2026-08-19T15:00:00.000Z");
 const edmontonOffset = -6 * 60;
@@ -77,4 +80,11 @@ test("manual force still works overnight", () => {
   });
   assert.equal(due.sleepSlot, "overnight");
   assert.equal(due.sleep, true);
+});
+
+test("only definitive authorization failures require reconnecting", () => {
+  assert.equal(isWhoopAuthorizationFailureCode("unauthenticated"), true);
+  assert.equal(isWhoopAuthorizationFailureCode("failed-precondition"), true);
+  assert.equal(isWhoopAuthorizationFailureCode("unavailable"), false);
+  assert.equal(isWhoopAuthorizationFailureCode("resource-exhausted"), false);
 });
