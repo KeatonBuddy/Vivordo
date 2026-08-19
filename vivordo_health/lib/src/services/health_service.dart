@@ -145,6 +145,25 @@ class HealthService {
   bool? _authorizationResultThisSession;
   Future<void>? _activeSync;
   int _pendingSyncDays = 0;
+  bool _whoopConnected = false;
+  bool _fitbitConnected = false;
+
+  Future<void> _refreshWearableConnections(String uid) async {
+    final user = await _db.collection('users').doc(uid).get();
+    final data = user.data();
+    _whoopConnected = data?['whoopConnected'] == true;
+    _fitbitConnected = data?['fitbitConnected'] == true;
+  }
+
+  // Apple Health is the fallback. Preserve a canonical value while the
+  // wearable that supplied it remains connected; a disconnected source can
+  // be replaced on the next Apple Health sync.
+  bool _connectedWearableHasPriority(Map<String, dynamic>? day, String key) {
+    final metric = day?[key] as Map?;
+    final source = metric?['source'];
+    return (source == 'whoop' && _whoopConnected) ||
+        (source == 'fitbit' && _fitbitConnected);
+  }
 
   List<HealthDataType> get _authorizationTypes => [
     ...kHealthMetrics.map((metric) => metric.type),
@@ -342,9 +361,14 @@ class HealthService {
     await _syncMetric(metricKey, daysBack: daysBack);
   }
 
-  Future<void> _syncMetric(String metricKey, {int daysBack = 30}) async {
+  Future<void> _syncMetric(
+    String metricKey, {
+    int daysBack = 30,
+    bool refreshWearableConnections = true,
+  }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    if (refreshWearableConnections) await _refreshWearableConnections(uid);
     final def = kMetricByKey[metricKey];
     if (def == null) return;
 
@@ -494,6 +518,8 @@ class HealthService {
             .doc(uid)
             .collection('metrics_daily')
             .doc(day);
+        final existing = await ref.get();
+        if (_connectedWearableHasPriority(existing.data(), 'sleep')) continue;
         batch.set(ref, {
           'sleep': {
             'avg': hours,
@@ -578,11 +604,17 @@ class HealthService {
       return;
     }
 
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) await _refreshWearableConnections(uid);
     final consent = await getConsent();
     for (final m in kHealthMetrics) {
       if (consent[m.key] == true) {
         try {
-          await _syncMetric(m.key, daysBack: daysBack);
+          await _syncMetric(
+            m.key,
+            daysBack: daysBack,
+            refreshWearableConnections: false,
+          );
         } catch (e) {
           // One metric failing (e.g. permissions) shouldn't stop the others.
           debugPrint('HealthService.syncToFirestore — skipped ${m.key}: $e');
@@ -600,7 +632,6 @@ class HealthService {
       debugPrint('HealthService.syncToFirestore — wellness compute failed: $e');
     }
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       try {
         await _db.collection('users').doc(uid).set({
@@ -965,6 +996,8 @@ class HealthService {
           .doc(uid)
           .collection('metrics_daily')
           .doc(dayKey);
+      final existing = await ref.get();
+      if (_connectedWearableHasPriority(existing.data(), 'steps')) continue;
 
       batch.set(ref, {
         'steps': {
@@ -1035,8 +1068,9 @@ class HealthService {
           .doc(uid)
           .collection('metrics_daily')
           .doc(dayKey);
+      final snapshot = await ref.get();
+      if (_connectedWearableHasPriority(snapshot.data(), metricKey)) continue;
       if (metricKey == 'exercise_time') {
-        final snapshot = await ref.get();
         final exerciseTime =
             snapshot.data()?['exercise_time'] as Map<String, dynamic>?;
         final workoutMinutes =
@@ -1127,9 +1161,12 @@ class HealthService {
           .doc(uid)
           .collection('metrics_daily')
           .doc(day);
+      final existingSnapshot = await ref.get();
+      if (_connectedWearableHasPriority(existingSnapshot.data(), def.key)) {
+        continue;
+      }
       final payload = _buildValueMap(def.type, vals);
       if (def.type == HealthDataType.EXERCISE_TIME) {
-        final existingSnapshot = await ref.get();
         final existingExerciseTime =
             existingSnapshot.data()?['exercise_time'] as Map<String, dynamic>?;
         final healthMinutes = (payload['sum'] as num?)?.toDouble() ?? 0;

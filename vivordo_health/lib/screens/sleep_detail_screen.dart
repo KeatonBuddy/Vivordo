@@ -150,8 +150,10 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           const SizedBox(height: 10),
           _sleepChart(days),
           const SizedBox(height: 24),
-          const Text(
-            'Average sleep stages',
+          Text(
+            _rangeIndex == 0
+                ? "Last night's sleep stages"
+                : 'Average sleep stages',
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
@@ -230,7 +232,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AVERAGE SLEEP',
+                      _rangeIndex == 0 ? "LAST NIGHT'S SLEEP" : 'AVERAGE SLEEP',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
@@ -419,9 +421,13 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                   ),
                   const SizedBox(width: 10),
                   SizedBox(
-                    width: 55,
+                    // "Awake" was clipped by the old 55 px slot on compact
+                    // screens and when iOS text scaling was enabled.
+                    width: 68,
                     child: Text(
                       entry.key,
+                      maxLines: 1,
+                      softWrap: false,
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -444,9 +450,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           Divider(color: context.vivordoColors.border),
           Row(
             children: [
-              const Text(
-                'Average total sleep',
-                style: TextStyle(fontWeight: FontWeight.w800),
+              Text(
+                _rangeIndex == 0
+                    ? "Last night's total sleep"
+                    : 'Average total sleep',
+                style: const TextStyle(fontWeight: FontWeight.w800),
               ),
               const Spacer(),
               Text(

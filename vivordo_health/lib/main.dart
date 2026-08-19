@@ -12,6 +12,7 @@ import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/workout_live_activity_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
+import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/version_gate_service.dart';
@@ -367,7 +368,8 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     _syncTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
       if (FirebaseAuth.instance.currentUser != null) {
         await HealthService().syncToday();
-        FitbitService.instance.syncInBackground();
+        await FitbitService.instance.syncInBackground();
+        await WhoopService.instance.syncInBackground();
         StressScoreService.computeAndSave().catchError((_) {});
       }
     });
@@ -387,9 +389,10 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       if (FirebaseAuth.instance.currentUser != null) {
-        HealthService().syncToday().whenComplete(
-          () => FitbitService.instance.syncInBackground(),
-        );
+        HealthService().syncToday().whenComplete(() async {
+          await FitbitService.instance.syncInBackground();
+          await WhoopService.instance.syncInBackground();
+        });
         unawaited(HomeWidgetService.refreshCalendarSnapshot());
         AnalyticsService().startSession();
       }
@@ -404,11 +407,10 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   void _triggerFullSync(String uid) {
     if (_lastSyncedUid == uid) return;
     _lastSyncedUid = uid;
-    HealthService()
-        .syncToFirestore(daysBack: 30)
-        .whenComplete(
-          () => FitbitService.instance.syncInBackground(daysBack: 30),
-        );
+    HealthService().syncToFirestore(daysBack: 30).whenComplete(() async {
+      await FitbitService.instance.syncInBackground(daysBack: 30);
+      await WhoopService.instance.syncInBackground(daysBack: 30);
+    });
     NotificationService().configureForUser(uid);
     unawaited(HomeWidgetService.refreshCalendarSnapshot(force: true));
     AnalyticsService().logLogin();

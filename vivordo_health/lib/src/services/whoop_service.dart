@@ -4,33 +4,27 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 
-class FitbitAccountNotLinkedException implements Exception {
-  const FitbitAccountNotLinkedException(this.setupUrl);
-
-  final Uri setupUrl;
-}
-
-/// Fitbit account integration for iOS through the Google Health API.
+/// WHOOP account integration backed by Firebase Functions.
 ///
-/// OAuth tokens and the authorization code stay on Firebase Functions. The
-/// app opens Google's consent page and receives only a success callback.
-class FitbitService {
-  FitbitService._();
+/// OAuth codes, client credentials, and user tokens remain on the backend.
+/// The app receives only the final success or error callback.
+class WhoopService {
+  WhoopService._();
 
-  static final FitbitService instance = FitbitService._();
+  static final WhoopService instance = WhoopService._();
 
-  static const String _callbackScheme = 'vivordo-fitbit';
+  static const String _callbackScheme = 'vivordo-whoop';
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
   bool? _connectedCache;
   Future<void>? _activeSync;
 
   Future<void> connect() async {
     final connection = await _functions
-        .httpsCallable('beginFitbitConnection')
+        .httpsCallable('beginWhoopConnection')
         .call<Map<String, dynamic>>();
     final authorizationUrl = connection.data['authorizationUrl'] as String?;
     if (authorizationUrl == null || authorizationUrl.isEmpty) {
-      throw StateError('Google Health has not been configured for this build.');
+      throw StateError('WHOOP has not been configured for this build.');
     }
 
     final callback = await FlutterWebAuth2.authenticate(
@@ -42,11 +36,11 @@ class FitbitService {
     if (error != null) {
       throw StateError(
         callbackUri.queryParameters['error_description'] ??
-            'Google Health authorization was cancelled.',
+            'WHOOP authorization was cancelled.',
       );
     }
     if (callbackUri.queryParameters['status'] != 'success') {
-      throw StateError('Google Health did not complete authorization.');
+      throw StateError('WHOOP did not complete authorization.');
     }
 
     _connectedCache = true;
@@ -59,19 +53,9 @@ class FitbitService {
 
     final boundedDays = daysBack.clamp(1, 30);
     final request = _functions
-        .httpsCallable('syncFitbit')
+        .httpsCallable('syncWhoop')
         .call<void>({'daysBack': boundedDays})
-        .then((_) {})
-        .onError<FirebaseFunctionsException>((error, stackTrace) {
-          final details = error.details;
-          if (details is Map && details['reason'] == 'ACCOUNT_NOT_LINKED') {
-            final rawUrl = details['setupUrl'] as String?;
-            throw FitbitAccountNotLinkedException(
-              Uri.parse(rawUrl ?? 'https://fitbit.google.com/auth/signup'),
-            );
-          }
-          throw error;
-        });
+        .then((_) {});
     _activeSync = request;
     return request.whenComplete(() {
       if (identical(_activeSync, request)) _activeSync = null;
@@ -79,13 +63,13 @@ class FitbitService {
   }
 
   Future<void> disconnect() async {
-    await _functions.httpsCallable('disconnectFitbit').call<void>();
+    await _functions.httpsCallable('disconnectWhoop').call<void>();
     _connectedCache = false;
   }
 
   Future<void> syncInBackground({int daysBack = 1}) {
     return _syncIfConnected(daysBack: daysBack).catchError((Object error) {
-      debugPrint('[FitbitService] Background sync skipped: $error');
+      debugPrint('[WhoopService] Background sync skipped: $error');
     });
   }
 
@@ -98,7 +82,7 @@ class FitbitService {
           .collection('users')
           .doc(uid)
           .get();
-      connected = user.data()?['fitbitConnected'] == true;
+      connected = user.data()?['whoopConnected'] == true;
       _connectedCache = connected;
     }
     if (connected) await sync(daysBack: daysBack);

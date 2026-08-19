@@ -136,6 +136,16 @@ service cloud.firestore {
       }
     }
 
+    // WHOOP access/refresh tokens and temporary OAuth state are backend-only.
+    // Firebase Functions uses the Admin SDK, which bypasses these client rules.
+    match /whoop_credentials/{userId} {
+      allow read, write: if false;
+    }
+
+    match /whoop_oauth_states/{state} {
+      allow read, write: if false;
+    }
+
     match /circle_friend_codes/{friendCode} {
       allow get: if request.auth != null;
       allow list: if false;

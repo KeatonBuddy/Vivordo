@@ -6,6 +6,7 @@ import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
+import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
@@ -36,6 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isOutlookCalendarConnected = false;
   bool _isUpdatingOutlookCalendar = false;
   bool _isUpdatingFitbit = false;
+  bool _isUpdatingWhoop = false;
   bool _isUpdatingScanReminder = false;
   bool _isUpdatingCheckInReminder = false;
   bool _isUpdatingCircleNotifications = false;
@@ -270,6 +272,66 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
     } finally {
       if (mounted) setState(() => _isUpdatingFitbit = false);
+    }
+  }
+
+  Future<void> _updateWhoopConnection(bool isConnected) async {
+    if (_isUpdatingWhoop) return;
+    setState(() => _isUpdatingWhoop = true);
+    try {
+      if (isConnected) {
+        await WhoopService.instance.disconnect();
+      } else {
+        await WhoopService.instance.connect();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isConnected
+                  ? 'WHOOP has been disconnected.'
+                  : 'WHOOP connected and the last 30 days were synced.',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'WHOOP could not be updated. Please try again shortly.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdatingWhoop = false);
+    }
+  }
+
+  Future<void> _syncWhoop() async {
+    if (_isUpdatingWhoop) return;
+    setState(() => _isUpdatingWhoop = true);
+    try {
+      await WhoopService.instance.sync(daysBack: 30);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('WHOOP data is up to date.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'WHOOP could not be synced. Please try again shortly.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdatingWhoop = false);
     }
   }
 
@@ -662,6 +724,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             .where((metric) => consent[metric.key] == true)
             .length;
         final fitbitConnected = rawData['fitbitConnected'] == true;
+        final whoopConnected = rawData['whoopConnected'] == true;
 
         return Scaffold(
           backgroundColor: context.vivordoColors.page,
@@ -1130,6 +1193,112 @@ class _SettingsScreenState extends State<SettingsScreen>
                             label: const Text('Sync last 30 days'),
                             style: TextButton.styleFrom(
                               foregroundColor: const Color(0xFF00B0B9),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildCard(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFF00D4A8,
+                                ).withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.monitor_heart_outlined,
+                                size: 18,
+                                color: Color(0xFF00A884),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'WHOOP',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    whoopConnected
+                                        ? 'Connected — recovery and activity sync enabled'
+                                        : 'Connect your WHOOP account',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: whoopConnected
+                                          ? const Color(0xFF34C759)
+                                          : const Color(0xFF8E8E93),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: _isUpdatingWhoop
+                                  ? null
+                                  : () =>
+                                        _updateWhoopConnection(whoopConnected),
+                              icon: _isUpdatingWhoop
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Color(0xFF00A884),
+                                      ),
+                                    )
+                                  : Icon(
+                                      whoopConnected
+                                          ? Icons.link_off_rounded
+                                          : Icons.link_rounded,
+                                      size: 16,
+                                    ),
+                              label: Text(
+                                _isUpdatingWhoop
+                                    ? (whoopConnected
+                                          ? 'Disconnecting…'
+                                          : 'Connecting…')
+                                    : (whoopConnected
+                                          ? 'Disconnect'
+                                          : 'Connect'),
+                              ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: whoopConnected
+                                    ? const Color(0xFFFF3B30)
+                                    : const Color(0xFF00A884),
+                                textStyle: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (whoopConnected) ...[
+                        _buildDivider(),
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton.icon(
+                            onPressed: _isUpdatingWhoop ? null : _syncWhoop,
+                            icon: const Icon(Icons.sync_rounded, size: 17),
+                            label: const Text('Sync last 30 days'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF00A884),
                             ),
                           ),
                         ),

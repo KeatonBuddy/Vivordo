@@ -36,6 +36,8 @@ function getAnthropicClient() {
 
 const googleHealthClientId = defineSecret("GOOGLE_HEALTH_CLIENT_ID");
 const googleHealthClientSecret = defineSecret("GOOGLE_HEALTH_CLIENT_SECRET");
+const whoopClientId = defineSecret("WHOOP_CLIENT_ID");
+const whoopClientSecret = defineSecret("WHOOP_CLIENT_SECRET");
 
 // Sends a private push notification to an activity owner when a Circle friend
 // likes or comments. The engagement document is already created atomically
@@ -496,6 +498,15 @@ function googleHealthCallbackUrl() {
       "googleHealthOAuthCallback";
 }
 
+function whoopCallbackUrl() {
+  const project = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT;
+  if (!project) {
+    throw new HttpsError("internal", "Firebase project ID is unavailable.");
+  }
+  return `https://us-central1-${project}.cloudfunctions.net/` +
+      "whoopOAuthCallback";
+}
+
 async function requestGoogleToken(parameters) {
   const response = await fetch(_GOOGLE_TOKEN_URL, {
     method: "POST",
@@ -884,6 +895,678 @@ function addFitbitWellness(days) {
   }
 }
 
+// =============================================================================
+// WHOOP OAuth
+//
+// The callable returns only the consent URL. The client secret, authorization
+// code, and eventual tokens remain in Firebase Functions.
+// =============================================================================
+
+const _WHOOP_AUTHORIZATION_URL =
+    "https://api.prod.whoop.com/oauth/oauth2/auth";
+const _WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
+const _WHOOP_IOS_CALLBACK = "vivordo-whoop://oauth2redirect";
+const _WHOOP_SECRETS = [whoopClientId, whoopClientSecret];
+const _WHOOP_SCOPES = [
+  "offline",
+  "read:recovery",
+  "read:cycles",
+  "read:sleep",
+  "read:workout",
+  "read:body_measurement",
+];
+
+async function requestWhoopToken(parameters) {
+  const response = await fetch(_WHOOP_TOKEN_URL, {
+    method: "POST",
+    signal: AbortSignal.timeout(15000),
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json",
+    },
+    body: new URLSearchParams({
+      ...parameters,
+      client_id: whoopClientId.value(),
+      client_secret: whoopClientSecret.value(),
+    }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || typeof body.access_token !== "string") {
+    console.error("[WHOOP] token request failed", response.status, {
+      error: body.error,
+      errorDescription: body.error_description,
+    });
+    if (response.status === 400 || response.status === 401) {
+      throw new HttpsError(
+          "unauthenticated",
+          "WHOOP authorization has expired. Reconnect WHOOP.",
+      );
+    }
+    if (response.status === 429) {
+      throw new HttpsError(
+          "resource-exhausted",
+          "WHOOP request limit reached. Please try again later.",
+      );
+    }
+    throw new HttpsError(
+        "unavailable",
+        "WHOOP authorization could not be completed.",
+    );
+  }
+  return body;
+}
+
+async function saveWhoopTokens(uid, tokens) {
+  const expiresIn = Number(tokens.expires_in || 3600);
+  const expiresAt = admin.firestore.Timestamp.fromMillis(
+      Date.now() + expiresIn * 1000,
+  );
+  const values = {
+    accessToken: tokens.access_token,
+    scope: tokens.scope || "",
+    tokenType: tokens.token_type || "Bearer",
+    expiresAt,
+    refreshLease: admin.firestore.FieldValue.delete(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  if (tokens.refresh_token) values.refreshToken = tokens.refresh_token;
+  await admin.firestore()
+      .collection("whoop_credentials")
+      .doc(uid)
+      .set(values, {merge: true});
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function getWhoopAccessToken(uid, invalidAccessToken) {
+  const reference =
+      admin.firestore().collection("whoop_credentials").doc(uid);
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const now = Date.now();
+    const leaseId = crypto.randomBytes(16).toString("hex");
+    let result;
+    await admin.firestore().runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(reference);
+      if (!snapshot.exists) {
+        result = {missing: true};
+        return;
+      }
+      const credentials = snapshot.data();
+      const expiresAt = credentials.expiresAt?.toMillis?.() || 0;
+      const tokenWasReplaced = invalidAccessToken &&
+          credentials.accessToken !== invalidAccessToken;
+      const canReuse = tokenWasReplaced ? expiresAt > now :
+          !invalidAccessToken && expiresAt > now + 5 * 60 * 1000;
+      if (canReuse && credentials.accessToken) {
+        result = {accessToken: credentials.accessToken};
+        return;
+      }
+
+      const leaseExpiresAt =
+          credentials.refreshLease?.expiresAt?.toMillis?.() || 0;
+      if (leaseExpiresAt > now) {
+        result = {waiting: true};
+        return;
+      }
+      if (!credentials.refreshToken) {
+        result = {missingRefreshToken: true};
+        return;
+      }
+      transaction.set(reference, {
+        refreshLease: {
+          id: leaseId,
+          expiresAt: admin.firestore.Timestamp.fromMillis(now + 60 * 1000),
+        },
+      }, {merge: true});
+      result = {
+        refreshToken: credentials.refreshToken,
+        leaseId,
+      };
+    });
+
+    if (result.missing) {
+      throw new HttpsError(
+          "failed-precondition",
+          "Connect WHOOP before syncing.",
+      );
+    }
+    if (result.missingRefreshToken) {
+      throw new HttpsError(
+          "failed-precondition",
+          "Reconnect WHOOP to grant offline access.",
+      );
+    }
+    if (result.accessToken) return result.accessToken;
+    if (result.refreshToken) {
+      try {
+        const tokens = await requestWhoopToken({
+          grant_type: "refresh_token",
+          refresh_token: result.refreshToken,
+          scope: "offline",
+        });
+        await saveWhoopTokens(uid, tokens);
+        return tokens.access_token;
+      } catch (error) {
+        await admin.firestore().runTransaction(async (transaction) => {
+          const snapshot = await transaction.get(reference);
+          if (snapshot.data()?.refreshLease?.id === result.leaseId) {
+            transaction.set(reference, {
+              refreshLease: admin.firestore.FieldValue.delete(),
+            }, {merge: true});
+          }
+        });
+        throw error;
+      }
+    }
+    await wait(500);
+  }
+  throw new HttpsError(
+      "unavailable",
+      "WHOOP authorization is being refreshed. Please try again.",
+  );
+}
+
+const _WHOOP_API = "https://api.prod.whoop.com/developer";
+
+async function whoopApiRequest(uid, path, query, optional = false) {
+  let accessToken = await getWhoopAccessToken(uid);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const url = new URL(`${_WHOOP_API}${path}`);
+    if (query) url.search = new URLSearchParams(query).toString();
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(15000),
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+      },
+    });
+    if (response.status === 401 && attempt === 0) {
+      accessToken = await getWhoopAccessToken(uid, accessToken);
+      continue;
+    }
+    if (optional && response.status === 404) return null;
+    if (response.status === 429) {
+      throw new HttpsError(
+          "resource-exhausted",
+          "WHOOP request limit reached. Please sync again later.",
+      );
+    }
+    if (!response.ok) {
+      console.error("[WHOOP] API request failed", response.status, path);
+      throw new HttpsError(
+          response.status === 401 ? "unauthenticated" : "unavailable",
+          "WHOOP data could not be synced.",
+      );
+    }
+    return response.json();
+  }
+  throw new HttpsError("unauthenticated", "Reconnect WHOOP before syncing.");
+}
+
+async function revokeWhoopAccess(uid) {
+  let accessToken = await getWhoopAccessToken(uid);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let response;
+    try {
+      response = await fetch(`${_WHOOP_API}/v2/user/access`, {
+        method: "DELETE",
+        signal: AbortSignal.timeout(15000),
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Accept": "application/json",
+        },
+      });
+    } catch (error) {
+      console.warn("[WHOOP] revoke request failed", error);
+      throw new HttpsError(
+          "unavailable",
+          "WHOOP could not be disconnected. Please try again.",
+      );
+    }
+    if (response.status === 204 || response.status === 404) return;
+    if (response.status === 401) {
+      if (attempt === 0) {
+        accessToken = await getWhoopAccessToken(uid, accessToken);
+        continue;
+      }
+      // WHOOP no longer accepts either a refreshed or existing credential.
+      // Treat the remote authorization as already inaccessible.
+      return;
+    }
+    if (response.status === 429) {
+      throw new HttpsError(
+          "resource-exhausted",
+          "WHOOP request limit reached. Please disconnect again later.",
+      );
+    }
+    console.error("[WHOOP] revoke request failed", response.status);
+    throw new HttpsError(
+        "unavailable",
+        "WHOOP could not be disconnected. Please try again.",
+    );
+  }
+}
+
+async function whoopCollection(uid, path, start, end) {
+  const records = [];
+  const seenTokens = new Set();
+  let nextToken;
+  do {
+    const query = {
+      limit: "25",
+      start: start.toISOString(),
+      end: end.toISOString(),
+    };
+    if (nextToken) query.nextToken = nextToken;
+    const body = await whoopApiRequest(uid, path, query);
+    records.push(...(Array.isArray(body.records) ? body.records : []));
+    nextToken = body.next_token;
+    if (nextToken && seenTokens.has(nextToken)) {
+      throw new HttpsError("unavailable", "WHOOP pagination did not advance.");
+    }
+    if (nextToken) seenTokens.add(nextToken);
+  } while (nextToken);
+  return records;
+}
+
+function whoopDateKey(timestamp, timezoneOffset = "+00:00") {
+  const milliseconds = Date.parse(timestamp);
+  if (!Number.isFinite(milliseconds)) return null;
+  const match = /^([+-])(\d{2}):(\d{2})$/.exec(timezoneOffset || "");
+  const direction = match?.[1] === "-" ? -1 : 1;
+  const offsetMinutes = match ?
+    direction * (Number(match[2]) * 60 + Number(match[3])) : 0;
+  return new Date(milliseconds + offsetMinutes * 60000)
+      .toISOString().slice(0, 10);
+}
+
+function whoopNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function setWhoopMetric(days, day, key, values) {
+  if (!day) return;
+  const payload = {};
+  for (const [name, value] of Object.entries(values)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "number" && !Number.isFinite(value)) continue;
+    payload[name] = value;
+  }
+  const hasMeasurement = ["avg", "min", "max", "sum", "count"]
+      .some((name) => Number.isFinite(payload[name]));
+  if (!hasMeasurement) return;
+  if (!days[day]) days[day] = {};
+  days[day][key] = {
+    ...payload,
+    source: "whoop",
+    syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+function normalizeWhoopData({cycles, recoveries, sleeps, workouts, body}) {
+  const days = {};
+  const cyclesById = new Map(cycles.map((cycle) => [cycle.id, cycle]));
+  const sleepsById = new Map(sleeps.map((sleep) => [sleep.id, sleep]));
+
+  for (const cycle of cycles) {
+    if (cycle.score_state !== "SCORED" || !cycle.score) continue;
+    const day = whoopDateKey(cycle.start, cycle.timezone_offset);
+    setWhoopMetric(days, day, "strain", {
+      avg: whoopNumber(cycle.score.strain),
+      unit: "score",
+      dimension: "activity",
+    });
+    setWhoopMetric(days, day, "heart_rate", {
+      avg: whoopNumber(cycle.score.average_heart_rate),
+      max: whoopNumber(cycle.score.max_heart_rate),
+      unit: "bpm",
+      dimension: "cardiovascular",
+    });
+  }
+
+  const sleepTotals = {};
+  for (const sleep of sleeps) {
+    if (sleep.score_state !== "SCORED" || !sleep.score) continue;
+    const day = whoopDateKey(sleep.end, sleep.timezone_offset);
+    if (!day) continue;
+    const stages = sleep.score.stage_summary || {};
+    const stageMinutes = {
+      awake: (whoopNumber(stages.total_awake_time_milli) || 0) / 60000,
+      core: (whoopNumber(stages.total_light_sleep_time_milli) || 0) / 60000,
+      deep: (whoopNumber(stages.total_slow_wave_sleep_time_milli) || 0) /
+          60000,
+      rem: (whoopNumber(stages.total_rem_sleep_time_milli) || 0) / 60000,
+    };
+    const asleepMinutes = stageMinutes.core + stageMinutes.deep +
+        stageMinutes.rem;
+    if (!sleepTotals[day]) {
+      sleepTotals[day] = {
+        minutes: 0,
+        stages: {awake: 0, core: 0, deep: 0, rem: 0},
+        bedtime: null,
+        wakeTime: null,
+        mainSleep: null,
+      };
+    }
+    const total = sleepTotals[day];
+    total.minutes += asleepMinutes;
+    for (const stage of Object.keys(total.stages)) {
+      total.stages[stage] += stageMinutes[stage];
+    }
+    const start = Date.parse(sleep.start);
+    const end = Date.parse(sleep.end);
+    if (Number.isFinite(start) &&
+        (!total.bedtime || start < total.bedtime.getTime())) {
+      total.bedtime = new Date(start);
+    }
+    if (Number.isFinite(end) &&
+        (!total.wakeTime || end > total.wakeTime.getTime())) {
+      total.wakeTime = new Date(end);
+    }
+    if (!sleep.nap) total.mainSleep = sleep;
+  }
+  for (const [day, total] of Object.entries(sleepTotals)) {
+    const score = total.mainSleep?.score || {};
+    setWhoopMetric(days, day, "sleep", {
+      avg: total.minutes / 60,
+      min: total.minutes / 60,
+      max: total.minutes / 60,
+      unit: "hours",
+      dimension: "sleep",
+      bedtime: total.bedtime ?
+        admin.firestore.Timestamp.fromDate(total.bedtime) : null,
+      wakeTime: total.wakeTime ?
+        admin.firestore.Timestamp.fromDate(total.wakeTime) : null,
+      stages: total.stages,
+      performance: whoopNumber(score.sleep_performance_percentage),
+      consistency: whoopNumber(score.sleep_consistency_percentage),
+      efficiency: whoopNumber(score.sleep_efficiency_percentage),
+    });
+    setWhoopMetric(days, day, "respiratory_rate", {
+      avg: whoopNumber(score.respiratory_rate),
+      unit: "breaths/min",
+      dimension: "respiratory",
+    });
+  }
+
+  for (const recovery of recoveries) {
+    if (recovery.score_state !== "SCORED" || !recovery.score) continue;
+    const sleep = sleepsById.get(recovery.sleep_id);
+    const cycle = cyclesById.get(recovery.cycle_id);
+    const timestamp = sleep?.end || cycle?.start || recovery.updated_at;
+    const offset = sleep?.timezone_offset || cycle?.timezone_offset;
+    const day = whoopDateKey(timestamp, offset);
+    const score = recovery.score;
+    setWhoopMetric(days, day, "recovery", {
+      avg: whoopNumber(score.recovery_score),
+      unit: "score",
+      dimension: "recovery",
+      calibrating: score.user_calibrating === true,
+    });
+    setWhoopMetric(days, day, "resting_heart_rate", {
+      avg: whoopNumber(score.resting_heart_rate),
+      unit: "bpm",
+      dimension: "cardiovascular",
+    });
+    setWhoopMetric(days, day, "hrv", {
+      avg: whoopNumber(score.hrv_rmssd_milli),
+      unit: "ms",
+      dimension: "cardiovascular",
+    });
+    setWhoopMetric(days, day, "blood_oxygen", {
+      avg: whoopNumber(score.spo2_percentage),
+      unit: "%",
+      dimension: "respiratory",
+    });
+    setWhoopMetric(days, day, "skin_temperature", {
+      avg: whoopNumber(score.skin_temp_celsius),
+      unit: "°C",
+      dimension: "body",
+    });
+  }
+
+  const workoutsByDay = {};
+  for (const workout of workouts) {
+    if (workout.score_state !== "SCORED" || !workout.score) continue;
+    const day = whoopDateKey(workout.start, workout.timezone_offset);
+    if (!day) continue;
+    if (!workoutsByDay[day]) {
+      workoutsByDay[day] = {
+        count: 0,
+        minutes: 0,
+        calories: 0,
+        distance: 0,
+        strain: 0,
+      };
+    }
+    const summary = workoutsByDay[day];
+    summary.count++;
+    const start = Date.parse(workout.start);
+    const end = Date.parse(workout.end);
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+      summary.minutes += (end - start) / 60000;
+    }
+    summary.calories += (whoopNumber(workout.score.kilojoule) || 0) / 4.184;
+    summary.distance += (whoopNumber(workout.score.distance_meter) || 0) /
+        1000;
+    summary.strain += whoopNumber(workout.score.strain) || 0;
+  }
+  for (const [day, summary] of Object.entries(workoutsByDay)) {
+    setWhoopMetric(days, day, "exercise_time", {
+      sum: summary.minutes,
+      avg: summary.minutes,
+      count: summary.count,
+      unit: "min",
+      dimension: "activity",
+    });
+    setWhoopMetric(days, day, "active_calories", {
+      sum: summary.calories,
+      avg: summary.calories,
+      unit: "kcal",
+      dimension: "activity",
+    });
+    setWhoopMetric(days, day, "distance", {
+      sum: summary.distance,
+      avg: summary.distance,
+      unit: "km",
+      dimension: "activity",
+    });
+    setWhoopMetric(days, day, "workout_strain", {
+      sum: summary.strain,
+      avg: summary.strain / summary.count,
+      count: summary.count,
+      unit: "score",
+      dimension: "activity",
+    });
+  }
+
+  if (body) {
+    const latestCycle = cycles[0];
+    const day = whoopDateKey(
+        new Date().toISOString(),
+        latestCycle?.timezone_offset,
+    );
+    setWhoopMetric(days, day, "weight", {
+      avg: whoopNumber(body.weight_kilogram),
+      unit: "kg",
+      dimension: "body",
+    });
+  }
+  return days;
+}
+
+exports.beginWhoopConnection = onCall(
+    {secrets: [whoopClientId]},
+    async (request) => {
+      const uid = requireAuth(request);
+      // WHOOP requires client-generated OAuth state values to be 8 characters.
+      const state = crypto.randomBytes(6).toString("base64url");
+      await admin.firestore()
+          .collection("whoop_oauth_states")
+          .doc(state)
+          .set({
+            uid,
+            expiresAt: admin.firestore.Timestamp.fromMillis(
+                Date.now() + 10 * 60 * 1000,
+            ),
+          });
+
+      const authorizationUrl = new URL(_WHOOP_AUTHORIZATION_URL);
+      authorizationUrl.search = new URLSearchParams({
+        response_type: "code",
+        client_id: whoopClientId.value(),
+        redirect_uri: whoopCallbackUrl(),
+        scope: _WHOOP_SCOPES.join(" "),
+        state,
+      }).toString();
+      return {authorizationUrl: authorizationUrl.toString()};
+    },
+);
+
+exports.whoopOAuthCallback = onRequest(
+    {secrets: _WHOOP_SECRETS},
+    async (request, response) => {
+      const state = request.query.state;
+      const code = request.query.code;
+      const oauthError = request.query.error;
+      const fail = (message) => response.redirect(
+          `${_WHOOP_IOS_CALLBACK}?error=authorization_failed&` +
+          `error_description=${encodeURIComponent(message)}`,
+      );
+      if (typeof state !== "string") return fail("Missing OAuth state.");
+
+      const reference = admin.firestore()
+          .collection("whoop_oauth_states")
+          .doc(state);
+      let values;
+      await admin.firestore().runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(reference);
+        if (snapshot.exists) {
+          values = snapshot.data();
+          transaction.delete(reference);
+        }
+      });
+      if (!values || (values.expiresAt?.toMillis?.() || 0) < Date.now()) {
+        return fail("The authorization request expired.");
+      }
+      if (oauthError || typeof code !== "string") {
+        return fail("WHOOP authorization was cancelled.");
+      }
+
+      try {
+        const tokens = await requestWhoopToken({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: whoopCallbackUrl(),
+        });
+        await saveWhoopTokens(values.uid, tokens);
+        await admin.firestore().collection("users").doc(values.uid).set({
+          whoopConnected: true,
+          whoopConnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+        return response.redirect(`${_WHOOP_IOS_CALLBACK}?status=success`);
+      } catch (error) {
+        console.error("[WHOOP] OAuth callback failed", error);
+        return fail("WHOOP could not complete authorization.");
+      }
+    },
+);
+
+exports.syncWhoop = onCall(
+    {secrets: _WHOOP_SECRETS, timeoutSeconds: 120},
+    async (request) => {
+      const uid = requireAuth(request);
+      const requestedDays = Number(request.data?.daysBack || 30);
+      const daysBack = Math.max(1, Math.min(30, Math.floor(requestedDays)));
+      const end = new Date();
+      const start = new Date(end);
+      start.setUTCDate(start.getUTCDate() - daysBack + 1);
+      start.setUTCHours(0, 0, 0, 0);
+
+      const [cycles, recoveries, sleeps, workouts, body] = await Promise.all([
+        whoopCollection(uid, "/v2/cycle", start, end),
+        whoopCollection(uid, "/v2/recovery", start, end),
+        whoopCollection(uid, "/v2/activity/sleep", start, end),
+        whoopCollection(uid, "/v2/activity/workout", start, end),
+        whoopApiRequest(
+            uid,
+            "/v2/user/measurement/body",
+            null,
+            true,
+        ),
+      ]);
+      const days = normalizeWhoopData({
+        cycles,
+        recoveries,
+        sleeps,
+        workouts,
+        body,
+      });
+      const batch = admin.firestore().batch();
+      for (const [day, metrics] of Object.entries(days)) {
+        const reference = admin.firestore()
+            .collection("users")
+            .doc(uid)
+            .collection("metrics_daily")
+            .doc(day);
+        batch.set(reference, {
+          ...metrics,
+          date: day,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+      }
+      batch.set(admin.firestore().collection("users").doc(uid), {
+        whoopConnected: true,
+        lastWhoopSync: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+      await batch.commit();
+      return {
+        daysSynced: Object.keys(days).length,
+        records: {
+          cycles: cycles.length,
+          recoveries: recoveries.length,
+          sleeps: sleeps.length,
+          workouts: workouts.length,
+        },
+      };
+    },
+);
+
+exports.disconnectWhoop = onCall(
+    {secrets: _WHOOP_SECRETS},
+    async (request) => {
+      const uid = requireAuth(request);
+      const credentials = admin.firestore()
+          .collection("whoop_credentials")
+          .doc(uid);
+      const snapshot = await credentials.get();
+      if (snapshot.exists) {
+        try {
+          await revokeWhoopAccess(uid);
+        } catch (error) {
+          if (!["unauthenticated", "failed-precondition"]
+              .includes(error?.code)) {
+            throw error;
+          }
+          console.info("[WHOOP] remote authorization already inaccessible");
+        }
+      }
+
+      const batch = admin.firestore().batch();
+      batch.delete(credentials);
+      batch.set(admin.firestore().collection("users").doc(uid), {
+        whoopConnected: false,
+        whoopDisconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+      await batch.commit();
+      return {connected: false};
+    },
+);
+
 exports.beginFitbitConnection = onCall(
     {secrets: [googleHealthClientId]},
     async (request) => {
@@ -978,25 +1661,48 @@ exports.syncFitbit = onCall(
       );
       const days = normalizeGoogleHealthData(raw);
       addFitbitWellness(days);
-      const batch = admin.firestore().batch();
-      for (const [day, metrics] of Object.entries(days)) {
-        const reference = admin.firestore()
-            .collection("users")
-            .doc(uid)
-            .collection("metrics_daily")
-            .doc(day);
-        batch.set(reference, {
-          ...metrics,
-          date: day,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      const firestore = admin.firestore();
+      const userReference = firestore.collection("users").doc(uid);
+      const entries = Object.entries(days);
+      const references = entries.map(([day]) => userReference
+          .collection("metrics_daily")
+          .doc(day));
+      // WHOOP is the highest-priority wearable. A transaction makes the
+      // decision deterministic even if WHOOP and Fitbit finish syncing at
+      // nearly the same time.
+      const daysSynced = await firestore.runTransaction(async (transaction) => {
+        const snapshots = references.length > 0 ?
+          await transaction.getAll(userReference, ...references) :
+          [await transaction.get(userReference)];
+        const userSnapshot = snapshots[0];
+        const existingSnapshots = snapshots.slice(1);
+        const whoopConnected =
+            userSnapshot.data()?.whoopConnected === true;
+        let written = 0;
+        for (let index = 0; index < entries.length; index += 1) {
+          const [day, metrics] = entries[index];
+          const existing = existingSnapshots[index]?.data() || {};
+          const resolvedMetrics = {};
+          for (const [key, value] of Object.entries(metrics)) {
+            const existingSource = existing[key]?.source;
+            if (whoopConnected && existingSource === "whoop") continue;
+            resolvedMetrics[key] = value;
+          }
+          if (Object.keys(resolvedMetrics).length === 0) continue;
+          transaction.set(references[index], {
+            ...resolvedMetrics,
+            date: day,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, {merge: true});
+          written += 1;
+        }
+        transaction.set(userReference, {
+          fitbitConnected: true,
+          lastFitbitSync: admin.firestore.FieldValue.serverTimestamp(),
         }, {merge: true});
-      }
-      batch.set(admin.firestore().collection("users").doc(uid), {
-        fitbitConnected: true,
-        lastFitbitSync: admin.firestore.FieldValue.serverTimestamp(),
-      }, {merge: true});
-      await batch.commit();
-      return {daysSynced: Object.keys(days).length};
+        return written;
+      });
+      return {daysSynced};
     },
 );
 
