@@ -23,6 +23,10 @@ const {
   activityGoalsFromUserData,
   calculateActivityScore,
 } = require("./activity_score");
+const {
+  calculateHeartHealthScore,
+  HEART_HEALTH_BASELINE_WINDOW_DAYS,
+} = require("./heart_health_score");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
@@ -868,15 +872,26 @@ function normalizeGoogleHealthData(data) {
   return days;
 }
 
+function importedHeartHealthSignals(metrics = {}) {
+  const valid = (value) => Number.isFinite(value) && value > 0 ? value : null;
+  return {
+    restingHeartRate: valid(metrics.resting_heart_rate?.avg),
+    hrvSdnn: valid(metrics.hrv?.avg),
+    quietHeartRate: valid(metrics.heart_rate_scan?.avg) ??
+      valid(metrics.heart_rate?.min),
+  };
+}
+
 function addFitbitWellness(days, activityGoals) {
-  for (const metrics of Object.values(days)) {
+  const dates = Object.keys(days).sort();
+  for (let dateIndex = 0; dateIndex < dates.length; dateIndex++) {
+    const metrics = days[dates[dateIndex]];
     let weightedScore = 0;
     let totalWeight = 0;
     const sleep = metrics.sleep?.avg;
     const steps = metrics.steps?.sum;
     const exerciseMinutes = metrics.exercise_time?.sum;
     const activeCalories = metrics.active_calories?.sum;
-    const heartRate = metrics.heart_rate_scan?.avg;
     const activity = calculateActivityScore({
       steps,
       exerciseMinutes,
@@ -885,6 +900,15 @@ function addFitbitWellness(days, activityGoals) {
       exerciseMinutesGoal: activityGoals.exerciseMinutes,
       activeCaloriesGoal: activityGoals.activeCalories,
     });
+    const historyStart = Math.max(
+        0,
+        dateIndex - HEART_HEALTH_BASELINE_WINDOW_DAYS,
+    );
+    const heartHealth = calculateHeartHealthScore(
+        importedHeartHealthSignals(metrics),
+        dates.slice(historyStart, dateIndex)
+            .map((date) => importedHeartHealthSignals(days[date])),
+    );
     if (Number.isFinite(sleep)) {
       weightedScore += Math.max(0, Math.min(100, sleep / 8 * 100)) * 0.30;
       totalWeight += 30;
@@ -893,16 +917,28 @@ function addFitbitWellness(days, activityGoals) {
       weightedScore += activity.score * 0.20;
       totalWeight += 20;
     }
-    if (Number.isFinite(heartRate)) {
-      const distanceFromOptimal = heartRate < 60 ?
-        60 - heartRate : heartRate > 80 ? heartRate - 80 : 0;
-      const heartRateScore = Math.max(
-          0,
-          Math.min(100, 100 - distanceFromOptimal * 2.5),
-      );
-      weightedScore += heartRateScore * 0.15;
+    if (heartHealth.score !== null) {
+      weightedScore += heartHealth.score * 0.15;
       totalWeight += 15;
     }
+    metrics.heart_health = {
+      avg: heartHealth.score,
+      unit: "score",
+      source: "computed_personal_baseline",
+      status: heartHealth.isBuildingBaseline ?
+        "building_baseline" : heartHealth.score === null ?
+          "unavailable" : "ready",
+      confidence: heartHealth.confidence,
+      availableSignals: heartHealth.availableSignals,
+      scoredSignals: heartHealth.scoredSignals,
+      baselineDays: heartHealth.baselineDays,
+      components: {
+        restingHeartRate: heartHealth.restingHeartRateScore,
+        hrv: heartHealth.hrvScore,
+        quietHeartRate: heartHealth.quietHeartRateScore,
+      },
+      computedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
     if (totalWeight > 0) {
       metrics.wellness = {
         avg: weightedScore / totalWeight * 100,

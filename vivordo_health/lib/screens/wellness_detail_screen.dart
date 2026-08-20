@@ -57,6 +57,7 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
     final data = doc.data();
     double? avg(String metric) =>
         ((data[metric] as Map?)?['avg'] as num?)?.toDouble();
+    final heartHealth = data['heart_health'] as Map?;
     return _WellnessDay(
       DateTime.parse(doc.id),
       wellness: avg('wellness'),
@@ -67,7 +68,9 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
           ?.toDouble(),
       activeCalories: ((data['active_calories'] as Map?)?['sum'] as num?)
           ?.toDouble(),
-      heartRate: avg('heart_rate_scan'),
+      heartHealth: avg('heart_health'),
+      heartHealthStatus: heartHealth?['status'] as String?,
+      heartHealthConfidence: heartHealth?['confidence'] as String?,
     );
   }
 
@@ -372,8 +375,8 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
     }
     final concerns = <String>[];
     if (day.stress != null && day.stress! >= 60) concerns.add('higher stress');
-    if (day.heartRate != null && (day.heartRate! < 60 || day.heartRate! > 80)) {
-      concerns.add('heart rate outside the optimal range');
+    if (day.heartHealth != null && day.heartHealth! < 70) {
+      concerns.add('heart signals below your usual range');
     }
     if (day.sleep != null && day.sleep! < 7) concerns.add('lower sleep');
     final activity = _activityScore(day, activityGoals);
@@ -381,6 +384,9 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
       concerns.add('lower activity');
     }
     if (concerns.isEmpty) {
+      if (day.heartHealthStatus == 'building_baseline') {
+        return 'Your available health signals support your score. Heart Health is still building your personal baseline.';
+      }
       return 'Your recent health signals support your score.';
     }
     return '${concerns.take(2).join(' and ')} lowered your score.';
@@ -404,12 +410,6 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
       ),
     ),
   );
-
-  double _heartRateScore(double bpm) {
-    if (bpm >= 60 && bpm <= 80) return 100;
-    final distance = bpm < 60 ? 60 - bpm : bpm - 80;
-    return (100 - distance * 2.5).clamp(0.0, 100.0);
-  }
 
   Widget _breakdown(_WellnessDay day, ActivityGoals activityGoals) {
     final components = <_ScoreComponent>[];
@@ -443,17 +443,24 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
         const Color(0xFF24A83B),
       ),
     );
-    if (day.heartRate != null) {
-      components.add(
-        _ScoreComponent(
-          'Avg heart rate',
-          _heartRateScore(day.heartRate!),
-          .15,
-          Icons.favorite_border_rounded,
-          const Color(0xFF2878E8),
-        ),
-      );
-    }
+    components.add(
+      _ScoreComponent(
+        'Heart Health',
+        day.heartHealth,
+        .15,
+        Icons.favorite_border_rounded,
+        const Color(0xFF2878E8),
+        unavailableLabel: day.heartHealthStatus == 'building_baseline'
+            ? 'Building baseline'
+            : 'No data found',
+        confidenceLabel: switch (day.heartHealthConfidence) {
+          'high' => 'High confidence',
+          'medium' => 'Medium confidence',
+          'low' => 'Low confidence',
+          _ => null,
+        },
+      ),
+    );
     final totalWeight = components.fold<double>(
       0,
       (total, item) => total + (item.score == null ? 0 : item.weight),
@@ -533,8 +540,10 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
                 ),
                 Text(
                   item.score == null
-                      ? 'No data found'
-                      : 'Score ${item.score!.round()}',
+                      ? item.unavailableLabel
+                      : item.confidenceLabel == null
+                      ? 'Score ${item.score!.round()}'
+                      : 'Score ${item.score!.round()} · ${item.confidenceLabel}',
                   style: TextStyle(color: context.vivordoColors.textSecondary),
                 ),
               ],
@@ -574,12 +583,15 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
         const SizedBox(width: 14),
         Expanded(
           child: Text(
-            'Your score combines stress, sleep, activity, and average heart '
-            'rate. Activity considers steps, exercise time, and active energy '
-            'using your goals. Unavailable activity signals are excluded, '
-            'while a recorded zero still counts. Stress is inverted, so lower '
-            'stress improves your score. Heart rate scores highest within the '
-            '60–80 bpm range.',
+            'Your score combines stress, sleep, activity, and Heart Health. '
+            'Activity considers steps, exercise time, and active energy using '
+            'your goals. Heart Health compares resting heart rate, heart-rate '
+            'variability, and quiet heart rate with your personal 28-day '
+            'baseline. It needs at least seven prior days for a signal before '
+            'scoring it. Unavailable signals are excluded and the remaining '
+            'weights are redistributed. Stress is inverted, so lower stress '
+            'improves your score. These scores reflect wellness trends and '
+            'are not a medical diagnosis.',
             style: const TextStyle(height: 1.45),
           ),
         ),
@@ -624,7 +636,9 @@ class _WellnessDay {
     this.steps,
     this.exerciseMinutes,
     this.activeCalories,
-    this.heartRate,
+    this.heartHealth,
+    this.heartHealthStatus,
+    this.heartHealthConfidence,
   });
   final DateTime date;
   final double? wellness;
@@ -633,7 +647,9 @@ class _WellnessDay {
   final double? steps;
   final double? exerciseMinutes;
   final double? activeCalories;
-  final double? heartRate;
+  final double? heartHealth;
+  final String? heartHealthStatus;
+  final String? heartHealthConfidence;
 }
 
 class _ScoreComponent {
@@ -642,13 +658,17 @@ class _ScoreComponent {
     this.score,
     this.weight,
     this.icon,
-    this.color,
-  );
+    this.color, {
+    this.unavailableLabel = 'No data found',
+    this.confidenceLabel,
+  });
   final String name;
   final double? score;
   final double weight;
   final IconData icon;
   final Color color;
+  final String unavailableLabel;
+  final String? confidenceLabel;
 }
 
 class _WellnessChart extends StatefulWidget {
