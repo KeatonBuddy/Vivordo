@@ -76,7 +76,16 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           .toList();
       final resting = ((data['resting_heart_rate'] as Map?)?['avg'] as num?)
           ?.toDouble();
-      return _HeartDay(date, readings, resting);
+      final heartHealth = data['heart_health'] as Map?;
+      final heartHealthScore = (heartHealth?['avg'] as num?)?.toDouble();
+      final heartHealthStatus = heartHealth?['status'] as String?;
+      return _HeartDay(
+        date,
+        readings,
+        resting,
+        heartHealthScore,
+        heartHealthStatus,
+      );
     }).toList();
   }
 
@@ -85,7 +94,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     return List.generate(rangeDays, (index) {
       final date = today.subtract(Duration(days: rangeDays - index - 1));
-      return byKey[keyFor(date)] ?? _HeartDay(date, const [], null);
+      return byKey[keyFor(date)] ?? _HeartDay(date, const [], null, null, null);
     });
   }
 
@@ -189,6 +198,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
               0,
         )
         .toList();
+    final latestDay = days.isEmpty ? null : days.last;
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -212,7 +222,19 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
             ),
             const SizedBox(height: 18),
           ],
-          summary(avg, restingAvg, change, low, high),
+          summary(
+            avg,
+            restingAvg,
+            change,
+            low,
+            high,
+            heartHealthScore: rangeIndex == 0
+                ? latestDay?.heartHealthScore
+                : null,
+            heartHealthStatus: rangeIndex == 0
+                ? latestDay?.heartHealthStatus
+                : null,
+          ),
           section('$rangeName trend'),
           chart(chartDays, chartEntries, dailyValues, restingAvg),
           section('Heart rate zones'),
@@ -591,9 +613,26 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     double? resting,
     int? change,
     int? low,
-    int? high,
-  ) {
+    int? high, {
+    double? heartHealthScore,
+    String? heartHealthStatus,
+  }) {
     final avgText = avg?.round().toString() ?? '--';
+    final showHeartHealth = rangeIndex == 0;
+    final heartHealthText = heartHealthScore?.round().toString() ?? '--';
+    final heartHealthDescription = switch (heartHealthStatus) {
+      'building_baseline' => 'Building your personal baseline',
+      'unavailable' => 'Not enough data to calculate',
+      _ when heartHealthScore != null => 'Personalized cardiovascular score',
+      _ => 'No Heart Health score available',
+    };
+    final heartHealthColor = heartHealthScore == null
+        ? context.vivordoColors.textSecondary
+        : heartHealthScore >= 75
+        ? const Color(0xFF20B26B)
+        : heartHealthScore >= 50
+        ? const Color(0xFFFF9500)
+        : red;
     return card(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -601,48 +640,79 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              bubble(Icons.favorite_border_rounded, red),
-              const SizedBox(width: 16),
+              if (!showHeartHealth) ...[
+                bubble(Icons.favorite_border_rounded, red),
+                const SizedBox(width: 16),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'AVERAGE HEART RATE',
-                      style: TextStyle(
-                        color: context.vivordoColors.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            showHeartHealth
+                                ? 'HEART HEALTH SCORE'
+                                : 'AVERAGE HEART RATE',
+                            style: TextStyle(
+                              color: context.vivordoColors.textSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        if (showHeartHealth)
+                          IconButton(
+                            tooltip: 'How Heart Health works',
+                            onPressed: _showHeartHealthInfo,
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            icon: const Icon(
+                              Icons.info_outline_rounded,
+                              color: purple,
+                              size: 20,
+                            ),
+                          ),
+                      ],
                     ),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text: avgText,
-                              style: const TextStyle(
-                                fontSize: 42,
-                                fontWeight: FontWeight.w900,
+                    if (!showHeartHealth)
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: avgText,
+                                style: const TextStyle(
+                                  fontSize: 42,
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
-                            ),
-                            const TextSpan(
-                              text: ' bpm',
-                              style: TextStyle(fontSize: 21),
-                            ),
-                          ],
-                        ),
-                        maxLines: 1,
-                        style: TextStyle(
-                          color: context.vivordoColors.textPrimary,
-                          decoration: TextDecoration.none,
+                              const TextSpan(
+                                text: ' bpm',
+                                style: TextStyle(fontSize: 21),
+                              ),
+                            ],
+                          ),
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: context.vivordoColors.textPrimary,
+                            decoration: TextDecoration.none,
+                          ),
                         ),
                       ),
-                    ),
+                    if (showHeartHealth) const SizedBox(height: 10),
                     Text(
-                      resting == null
+                      showHeartHealth
+                          ? heartHealthDescription
+                          : resting == null
                           ? 'No resting average available'
                           : 'Resting average ${resting.round()} bpm',
                       style: TextStyle(
@@ -650,7 +720,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                         fontSize: 16,
                       ),
                     ),
-                    if (change != null) ...[
+                    if (!showHeartHealth && change != null) ...[
                       const SizedBox(height: 10),
                       Text(
                         '${change <= 0 ? '↓' : '↑'} ${change.abs()} bpm vs previous period',
@@ -664,6 +734,54 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                   ],
                 ),
               ),
+              if (showHeartHealth) ...[
+                const SizedBox(width: 14),
+                SizedBox(
+                  width: 112,
+                  height: 112,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox.expand(
+                        child: CircularProgressIndicator(
+                          value: ((heartHealthScore ?? 0) / 100)
+                              .clamp(0.0, 1.0)
+                              .toDouble(),
+                          strokeWidth: 11,
+                          strokeCap: StrokeCap.round,
+                          color: heartHealthColor,
+                          backgroundColor: context.vivordoColors.cardMuted,
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.favorite_border_rounded,
+                            color: red,
+                            size: 23,
+                          ),
+                          Text(
+                            heartHealthText,
+                            style: const TextStyle(
+                              fontSize: 29,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            '/100',
+                            style: TextStyle(
+                              color: context.vivordoColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 24),
@@ -703,6 +821,65 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
 
   Widget divider() =>
       Container(width: 1, height: 44, color: context.vivordoColors.border);
+
+  Future<void> _showHeartHealthInfo() => showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: dialogContext.vivordoColors.card,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 22, 16, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: red.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: const Icon(
+              Icons.favorite_border_rounded,
+              color: red,
+              size: 23,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'How Heart Health works',
+              style: TextStyle(
+                color: dialogContext.vivordoColors.textPrimary,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Text(
+          'Vivordo creates your Heart Health score from available signals such as resting heart rate, heart rate variability (HRV), and your heart rate during quiet periods. It compares today’s readings with your own recent baseline and combines the available signals into a score from 0 to 100.\n\nAt least seven previous days are needed to begin scoring. Higher scores mean today’s heart signals are trending favorably compared with your usual pattern. Heart Health is a wellness estimate and is not a medical diagnosis.',
+          style: TextStyle(
+            color: dialogContext.vivordoColors.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          style: FilledButton.styleFrom(
+            backgroundColor: purple,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Got it'),
+        ),
+      ],
+    ),
+  );
 
   Widget chart(
     List<_HeartDay> days,
@@ -886,10 +1063,18 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
 }
 
 class _HeartDay {
-  const _HeartDay(this.date, this.readings, this.resting);
+  const _HeartDay(
+    this.date,
+    this.readings,
+    this.resting,
+    this.heartHealthScore,
+    this.heartHealthStatus,
+  );
   final DateTime date;
   final List<_HeartReading> readings;
   final double? resting;
+  final double? heartHealthScore;
+  final String? heartHealthStatus;
 }
 
 class _HeartReading {

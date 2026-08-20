@@ -27,6 +27,7 @@ const {
   calculateHeartHealthScore,
   HEART_HEALTH_BASELINE_WINDOW_DAYS,
 } = require("./heart_health_score");
+const {normalizeGoogleHealthSleep} = require("./google_health_sleep");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
@@ -682,10 +683,12 @@ async function googleHealthSleep(accessToken, start, end) {
     const query = new URLSearchParams({
       filter,
       pageSize: "25",
+      dataSourceFamily: "users/me/dataSourceFamilies/google-wearables",
     });
     if (pageToken) query.set("pageToken", pageToken);
     const response = await fetch(
-        `${_GOOGLE_HEALTH_API}/users/me/dataTypes/sleep/dataPoints?${query}`,
+        `${_GOOGLE_HEALTH_API}/users/me/dataTypes/sleep/` +
+        `dataPoints:reconcile?${query}`,
         {
           headers: {
             "Authorization": `Bearer ${accessToken}`,
@@ -797,21 +800,6 @@ async function fetchGoogleHealthData(accessToken, start, end) {
   return data;
 }
 
-function sleepMinutes(sleep) {
-  const summaryMinutes = Number(sleep.summary?.minutesAsleep);
-  if (Number.isFinite(summaryMinutes)) return summaryMinutes;
-  return (sleep.stages || []).reduce((total, stage) => {
-    if (!["LIGHT", "DEEP", "REM", "ASLEEP"].includes(stage.type)) {
-      return total;
-    }
-    const start = Date.parse(stage.startTime);
-    const end = Date.parse(stage.endTime);
-    return Number.isFinite(start) && Number.isFinite(end) && end > start ?
-      total + (end - start) / 60000 :
-      total;
-  }, 0);
-}
-
 function normalizeGoogleHealthData(data) {
   const days = {};
   for (const [type, entries] of Object.entries(data)) {
@@ -850,24 +838,29 @@ function normalizeGoogleHealthData(data) {
       }));
     }
   }
-  const sleepByDay = {};
-  for (const point of data.sleep || []) {
-    const sleep = point.sleep;
-    const day = civilDateKey(sleep?.interval?.civilEndTime);
-    const minutes = sleepMinutes(sleep || {});
-    if (day && minutes > 0) {
-      sleepByDay[day] = (sleepByDay[day] || 0) + minutes;
-    }
-  }
-  for (const [day, minutes] of Object.entries(sleepByDay)) {
-    const hours = minutes / 60;
-    addMetric(days, day, "sleep", metricPayload({
+  const sleepByDay = normalizeGoogleHealthSleep(data.sleep);
+  for (const [day, sleep] of Object.entries(sleepByDay)) {
+    const hours = sleep.minutes / 60;
+    const sleepMetric = {
       avg: hours,
       min: hours,
       max: hours,
       unit: "hours",
       dimension: "sleep",
-    }));
+      stages: sleep.stages || {},
+    };
+    if (sleep.bedtime) {
+      sleepMetric.bedtime = admin.firestore.Timestamp.fromDate(sleep.bedtime);
+    }
+    if (sleep.wakeTime) {
+      sleepMetric.wakeTime = admin.firestore.Timestamp.fromDate(
+          sleep.wakeTime,
+      );
+    }
+    if (sleep.efficiency !== undefined) {
+      sleepMetric.efficiency = sleep.efficiency;
+    }
+    addMetric(days, day, "sleep", sleepMetric);
   }
   return days;
 }
