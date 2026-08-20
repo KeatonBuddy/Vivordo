@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
+import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 
@@ -833,21 +834,26 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   }
 
   Widget zones(List<double> readings) {
-    final counts = [
-      readings.where((value) => value < 70).length,
-      readings.where((value) => value >= 70 && value < 100).length,
-      readings.where((value) => value >= 100).length,
-    ];
+    final counts = {for (final zone in HeartRateZone.values) zone: 0};
+    for (final reading in readings) {
+      final category = heartRateZoneFor(reading);
+      counts[category] = counts[category]! + 1;
+    }
     final total = math.max(1, readings.length);
     return card(
       padding: const EdgeInsets.symmetric(horizontal: 18),
       child: Column(
         children: [
-          zone('Resting', 'Below 70 bpm', counts[0], total),
-          Divider(height: 1, color: context.vivordoColors.border),
-          zone('Elevated', '70–99 bpm', counts[1], total),
-          Divider(height: 1, color: context.vivordoColors.border),
-          zone('Active', '100+ bpm', counts[2], total),
+          for (var index = 0; index < HeartRateZone.values.length; index++) ...[
+            if (index > 0)
+              Divider(height: 1, color: context.vivordoColors.border),
+            zone(
+              HeartRateZone.values[index].label,
+              HeartRateZone.values[index].rangeLabel,
+              counts[HeartRateZone.values[index]]!,
+              total,
+            ),
+          ],
         ],
       ),
     );
