@@ -65,4 +65,20 @@ void main() {
     expect(result, hasLength(1));
     expect(result.single.bpm, 75);
   });
+
+  test('can exclude daily summaries when timestamped history is required', () {
+    final day = DateTime(2026, 8, 19);
+    final result = mergedHeartRateHistory(
+      {
+        'heart_rate': {
+          'avg': 64,
+          'syncedAt': Timestamp.fromDate(day.add(const Duration(hours: 8))),
+        },
+      },
+      fallbackDate: day,
+      includeDailyFallback: false,
+    );
+
+    expect(result, isEmpty);
+  });
 }

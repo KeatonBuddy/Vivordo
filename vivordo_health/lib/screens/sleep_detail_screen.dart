@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 class SleepDetailScreen extends StatefulWidget {
@@ -125,6 +126,9 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         : ((average - previousAverage) * 60).round();
     final latest = recorded.isEmpty ? null : recorded.last.value;
     final averageStages = _averageStages(recorded);
+    final sleepingHeartRate = _rangeIndex == 0 && latest != null
+        ? _heartRateDuringSleep(snapshot, latest)
+        : const <HeartRateHistoryReading>[];
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -144,11 +148,13 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           _summaryCard(average, total, changeMinutes, latest),
           const SizedBox(height: 24),
           Text(
-            '$_rangeName sleep',
+            _rangeIndex == 0 ? 'Heart rate during sleep' : '$_rangeName sleep',
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
-          _sleepChart(days),
+          _rangeIndex == 0
+              ? _sleepHeartRateChart(sleepingHeartRate, latest)
+              : _sleepChart(days),
           const SizedBox(height: 24),
           Text(
             _rangeIndex == 0
@@ -363,6 +369,182 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
       ? DateFormat('M/d').format(date)
       : DateFormat('E').format(date);
 
+  List<HeartRateHistoryReading> _heartRateDuringSleep(
+    QuerySnapshot<Map<String, dynamic>>? snapshot,
+    _SleepValue sleep,
+  ) {
+    final bedtime = sleep.bedtime;
+    final wakeTime = sleep.wakeTime;
+    if (bedtime == null || wakeTime == null || !wakeTime.isAfter(bedtime)) {
+      return const [];
+    }
+
+    final readings = <HeartRateHistoryReading>[];
+    final firstDay = DateUtils.dateOnly(bedtime);
+    final lastDay = DateUtils.dateOnly(wakeTime);
+    for (final doc in snapshot?.docs ?? const []) {
+      final fallbackDate = DateTime.tryParse(doc.id);
+      if (fallbackDate == null) continue;
+      final documentDay = DateUtils.dateOnly(fallbackDate);
+      if (documentDay.isBefore(firstDay) || documentDay.isAfter(lastDay)) {
+        continue;
+      }
+      readings.addAll(
+        mergedHeartRateHistory(
+          doc.data(),
+          fallbackDate: fallbackDate,
+          includeDailyFallback: false,
+        ).where(
+          (reading) =>
+              !reading.timestamp.isBefore(bedtime) &&
+              !reading.timestamp.isAfter(wakeTime) &&
+              reading.bpm >= 30 &&
+              reading.bpm <= 220,
+        ),
+      );
+    }
+    readings.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return readings;
+  }
+
+  Widget _sleepHeartRateChart(
+    List<HeartRateHistoryReading> readings,
+    _SleepValue? sleep,
+  ) {
+    final bedtime = sleep?.bedtime;
+    final wakeTime = sleep?.wakeTime;
+    if (bedtime == null || wakeTime == null || !wakeTime.isAfter(bedtime)) {
+      return _sleepHeartRateEmptyState(
+        'Sleep times not synced',
+        'Bedtime and wake time are needed to identify heart-rate readings captured during sleep.',
+      );
+    }
+    if (readings.isEmpty) {
+      return _sleepHeartRateEmptyState(
+        'No sleeping heart-rate data',
+        'Your sleep was recorded, but no timestamped heart-rate readings were found between bedtime and wake time.',
+      );
+    }
+
+    final values = readings.map((reading) => reading.bpm).toList();
+    final average = values.reduce((a, b) => a + b) / values.length;
+    final low = values.reduce(math.min).round();
+    final high = values.reduce(math.max).round();
+    final duration = wakeTime.difference(bedtime);
+
+    return _card(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AVERAGE SLEEPING HEART RATE',
+                      style: TextStyle(
+                        color: context.vivordoColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: average.round().toString(),
+                            style: const TextStyle(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const TextSpan(
+                            text: ' bpm',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '${_duration(duration.inMinutes / 60)} window',
+                style: TextStyle(
+                  color: context.vivordoColors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 220,
+            child: CustomPaint(
+              painter: _SleepingHeartRatePainter(
+                readings: readings,
+                bedtime: bedtime,
+                wakeTime: wakeTime,
+                dark: Theme.of(context).brightness == Brightness.dark,
+              ),
+              size: const Size(double.infinity, 220),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Text(
+                'Low $low bpm',
+                style: TextStyle(
+                  color: context.vivordoColors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'High $high bpm',
+                style: TextStyle(
+                  color: context.vivordoColors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sleepHeartRateEmptyState(String title, String message) => _card(
+    padding: const EdgeInsets.all(22),
+    child: Row(
+      children: [
+        _iconBubble(Icons.favorite_outline_rounded, _purple),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 3),
+              Text(
+                message,
+                style: TextStyle(color: context.vivordoColors.textSecondary),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
   Widget _stagesCard(Map<String, double> stages, double average) {
     if (stages.isEmpty) {
       return _card(
@@ -573,6 +755,200 @@ class _SleepDay {
   const _SleepDay(this.date, this.value);
   final DateTime date;
   final _SleepValue? value;
+}
+
+class _SleepingHeartRatePainter extends CustomPainter {
+  const _SleepingHeartRatePainter({
+    required this.readings,
+    required this.bedtime,
+    required this.wakeTime,
+    required this.dark,
+  });
+
+  final List<HeartRateHistoryReading> readings;
+  final DateTime bedtime;
+  final DateTime wakeTime;
+  final bool dark;
+
+  static const _lineColor = Color(0xFF7B67F6);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const left = 38.0;
+    const right = 6.0;
+    const top = 12.0;
+    const bottom = 35.0;
+    final plotWidth = size.width - left - right;
+    final plotHeight = size.height - top - bottom;
+    if (plotWidth <= 0 || plotHeight <= 0 || readings.isEmpty) return;
+
+    final values = readings.map((reading) => reading.bpm).toList();
+    var minY = ((values.reduce(math.min) - 5) / 5).floor() * 5.0;
+    var maxY = ((values.reduce(math.max) + 5) / 5).ceil() * 5.0;
+    minY = math.max(30, minY);
+    maxY = math.min(220, maxY);
+    if (maxY - minY < 10) {
+      minY = math.max(30, minY - 5);
+      maxY = math.min(220, maxY + 5);
+    }
+
+    final gridColor = dark ? Colors.white12 : Colors.black12;
+    final labelColor = dark ? Colors.white60 : Colors.black54;
+    for (var index = 0; index < 3; index++) {
+      final fraction = index / 2;
+      final y = top + plotHeight * fraction;
+      canvas.drawLine(
+        Offset(left, y),
+        Offset(left + plotWidth, y),
+        Paint()..color = gridColor,
+      );
+      final value = maxY - (maxY - minY) * fraction;
+      _paintText(
+        canvas,
+        value.round().toString(),
+        Offset(0, y - 7),
+        11,
+        labelColor,
+      );
+    }
+
+    final totalMilliseconds = wakeTime.difference(bedtime).inMilliseconds;
+    if (totalMilliseconds <= 0) return;
+    Offset pointFor(HeartRateHistoryReading reading) {
+      final elapsed = reading.timestamp.difference(bedtime).inMilliseconds;
+      final x =
+          left + (elapsed / totalMilliseconds).clamp(0.0, 1.0) * plotWidth;
+      final y =
+          top +
+          (1 - ((reading.bpm - minY) / (maxY - minY)).clamp(0.0, 1.0)) *
+              plotHeight;
+      return Offset(x, y);
+    }
+
+    final linePaint = Paint()
+      ..color = _lineColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fillPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(0, top),
+        Offset(0, top + plotHeight),
+        [
+          _lineColor.withValues(alpha: dark ? .22 : .16),
+          _lineColor.withValues(alpha: 0),
+        ],
+      );
+
+    var segment = <Offset>[];
+    DateTime? previousTime;
+    void drawSegment() {
+      if (segment.isEmpty) return;
+      if (segment.length == 1) {
+        final point = segment.single;
+        canvas.drawLine(
+          Offset(point.dx - 3, point.dy),
+          Offset(point.dx + 3, point.dy),
+          linePaint,
+        );
+        segment = <Offset>[];
+        return;
+      }
+      final line = Path()..moveTo(segment.first.dx, segment.first.dy);
+      for (final point in segment.skip(1)) {
+        line.lineTo(point.dx, point.dy);
+      }
+      final fill = Path.from(line)
+        ..lineTo(segment.last.dx, top + plotHeight)
+        ..lineTo(segment.first.dx, top + plotHeight)
+        ..close();
+      canvas.drawPath(fill, fillPaint);
+      canvas.drawPath(line, linePaint);
+      segment = <Offset>[];
+    }
+
+    for (final reading in readings) {
+      if (previousTime != null &&
+          reading.timestamp.difference(previousTime) >
+              const Duration(minutes: 45)) {
+        drawSegment();
+      }
+      segment.add(pointFor(reading));
+      previousTime = reading.timestamp;
+    }
+    drawSegment();
+
+    final boundaryPaint = Paint()
+      ..color = dark ? Colors.white54 : Colors.black38
+      ..strokeWidth = 1.2;
+    _drawDashedLine(
+      canvas,
+      Offset(left, top),
+      Offset(left, top + plotHeight),
+      boundaryPaint,
+    );
+    _drawDashedLine(
+      canvas,
+      Offset(left + plotWidth, top),
+      Offset(left + plotWidth, top + plotHeight),
+      boundaryPaint,
+    );
+    _paintText(
+      canvas,
+      DateFormat('h:mm a').format(bedtime),
+      Offset(left, top + plotHeight + 10),
+      11,
+      labelColor,
+    );
+    final wakeLabel = DateFormat('h:mm a').format(wakeTime);
+    final wakePainter = _textPainter(wakeLabel, 11, labelColor)..layout();
+    wakePainter.paint(
+      canvas,
+      Offset(left + plotWidth - wakePainter.width, top + plotHeight + 10),
+    );
+  }
+
+  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
+    const dash = 5.0;
+    const gap = 5.0;
+    var y = start.dy;
+    while (y < end.dy) {
+      canvas.drawLine(
+        Offset(start.dx, y),
+        Offset(start.dx, math.min(y + dash, end.dy)),
+        paint,
+      );
+      y += dash + gap;
+    }
+  }
+
+  TextPainter _textPainter(String text, double size, Color color) =>
+      TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(fontSize: size, color: color),
+        ),
+        textDirection: ui.TextDirection.ltr,
+      );
+
+  void _paintText(
+    Canvas canvas,
+    String text,
+    Offset offset,
+    double size,
+    Color color,
+  ) {
+    final painter = _textPainter(text, size, color)..layout();
+    painter.paint(canvas, offset);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SleepingHeartRatePainter oldDelegate) =>
+      oldDelegate.readings != readings ||
+      oldDelegate.bedtime != bedtime ||
+      oldDelegate.wakeTime != wakeTime ||
+      oldDelegate.dark != dark;
 }
 
 class _SleepBarPainter extends CustomPainter {

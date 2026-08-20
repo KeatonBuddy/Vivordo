@@ -48,7 +48,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Vivordo uses the rear camera and flash for heart-rate scans and the front camera when you choose to take a Circle profile picture.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Vivordo connects to your WHOOP to display live heart-rate readings when you choose to enable monitoring.</string>
+	<string>Vivordo connects to your WHOOP to record heart-rate readings while monitoring is enabled, including while the app is in the background.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Vivordo uses Face ID to protect access to your private journal.</string>
 	<key>NSHealthClinicalHealthRecordsShareUsageDescription</key>
@@ -65,6 +65,7 @@
 	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>bluetooth-central</string>
 		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>

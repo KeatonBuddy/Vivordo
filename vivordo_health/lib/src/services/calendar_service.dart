@@ -153,17 +153,33 @@ class CalendarService {
         'This event cannot be edited because its calendar is unknown.',
       );
     }
-    final originalStart = event.start?.dateTime?.toLocal();
-    final originalEnd = event.end?.dateTime?.toLocal();
+    final isAllDay = event.start?.dateTime == null && event.start?.date != null;
+    final originalStart =
+        event.start?.dateTime?.toLocal() ?? event.start?.date?.toLocal();
+    final originalEnd =
+        event.end?.dateTime?.toLocal() ?? event.end?.date?.toLocal();
     final nextStart = start ?? originalStart;
     final nextEnd = end ?? originalEnd;
     if (nextStart == null || nextEnd == null || !nextEnd.isAfter(nextStart)) {
       throw ArgumentError('The event must have a valid start and end time.');
     }
     final updated = gcal.Event()
-      ..summary = title?.trim().isNotEmpty == true ? title!.trim() : null
-      ..start = (gcal.EventDateTime()..dateTime = nextStart.toUtc())
-      ..end = (gcal.EventDateTime()..dateTime = nextEnd.toUtc());
+      ..summary = title?.trim().isNotEmpty == true ? title!.trim() : null;
+    if (isAllDay) {
+      updated
+        ..start = (gcal.EventDateTime()
+          ..date = DateTime(nextStart.year, nextStart.month, nextStart.day))
+        ..end = (gcal.EventDateTime()
+          ..date = DateTime(nextEnd.year, nextEnd.month, nextEnd.day));
+    } else {
+      updated
+        ..start = (gcal.EventDateTime()
+          ..dateTime = nextStart.toUtc()
+          ..timeZone = event.start?.timeZone)
+        ..end = (gcal.EventDateTime()
+          ..dateTime = nextEnd.toUtc()
+          ..timeZone = event.end?.timeZone);
+    }
     if (recurrence != null) {
       updated.recurrence = switch (recurrence) {
         'daily' => <String>['RRULE:FREQ=DAILY'],

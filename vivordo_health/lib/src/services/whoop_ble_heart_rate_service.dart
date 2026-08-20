@@ -95,10 +95,14 @@ class WhoopBleHeartRateService {
   Timer? _flushTimer;
   Timer? _reconnectTimer;
   Future<void>? _loadPairingFuture;
+  Future<void>? _startFuture;
+  Future<void>? _stopFuture;
   String? _deviceId;
   String? _deviceName;
   bool _shouldMonitor = false;
   bool _isFlushing = false;
+  int _connectionGeneration = 0;
+  DateTime? _lastFlushAt;
 
   Future<void> _loadPairing() {
     return _loadPairingFuture ??= () async {
@@ -184,7 +188,26 @@ class WhoopBleHeartRateService {
 
   /// Reconnects a previously selected WHOOP without prompting for permissions.
   Future<void> startIfPaired() async {
+    final pendingStart = _startFuture;
+    if (pendingStart != null) {
+      await pendingStart;
+      return;
+    }
+    final start = _startIfPaired();
+    _startFuture = start;
+    try {
+      await start;
+    } finally {
+      if (identical(_startFuture, start)) _startFuture = null;
+    }
+  }
+
+  Future<void> _startIfPaired() async {
+    final pendingStop = _stopFuture;
+    if (pendingStop != null) await pendingStop;
+    final startGeneration = _connectionGeneration;
     await _loadPairing();
+    if (startGeneration != _connectionGeneration) return;
     if (_deviceId == null || _connectionSubscription != null) return;
     try {
       _ensurePlatformSupport();
@@ -197,8 +220,41 @@ class WhoopBleHeartRateService {
       return;
     }
     _shouldMonitor = true;
+    if (!await _waitForBleReady()) return;
     await _connect();
   }
+
+  Future<bool> _waitForBleReady() async {
+    if (_ble.status == BleStatus.ready) return true;
+    try {
+      await _ble.statusStream
+          .firstWhere((status) => status == BleStatus.ready)
+          .timeout(const Duration(seconds: 12));
+      // Allow the native event channels to finish attaching before starting a
+      // connection. This is especially important during a cold iOS launch.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      return _shouldMonitor;
+    } catch (_) {
+      if (!_shouldMonitor) return false;
+      state.value = WhoopBleState(
+        status: WhoopBleStatus.unavailable,
+        deviceName: _displayName,
+        bpm: state.value.bpm,
+        lastReadingAt: state.value.lastReadingAt,
+        message: _bleStatusMessage(_ble.status),
+      );
+      return false;
+    }
+  }
+
+  static String _bleStatusMessage(BleStatus status) => switch (status) {
+    BleStatus.poweredOff => 'Turn on Bluetooth to connect to WHOOP.',
+    BleStatus.unauthorized =>
+      'Allow Bluetooth access in Settings to connect to WHOOP.',
+    BleStatus.unsupported =>
+      'Bluetooth heart-rate monitoring is unavailable on this device.',
+    _ => 'Bluetooth is not ready. Try connecting to WHOOP again.',
+  };
 
   Future<void> _connect() async {
     final deviceId = _deviceId;
@@ -208,6 +264,7 @@ class WhoopBleHeartRateService {
       return;
     }
     _reconnectTimer?.cancel();
+    final generation = ++_connectionGeneration;
     state.value = WhoopBleState(
       status: WhoopBleStatus.connecting,
       deviceName: _displayName,
@@ -224,6 +281,7 @@ class WhoopBleHeartRateService {
         )
         .listen(
           (update) async {
+            if (generation != _connectionGeneration || !_shouldMonitor) return;
             switch (update.connectionState) {
               case DeviceConnectionState.connected:
                 state.value = WhoopBleState(
@@ -233,23 +291,28 @@ class WhoopBleHeartRateService {
                   lastReadingAt: state.value.lastReadingAt,
                 );
                 _startFlushTimer();
-                await _subscribeToHeartRate(deviceId);
+                await _subscribeToHeartRate(deviceId, generation);
               case DeviceConnectionState.disconnected:
-                await _handleDisconnect();
+                await _handleDisconnect(generation: generation);
               case DeviceConnectionState.connecting:
               case DeviceConnectionState.disconnecting:
                 break;
             }
           },
           onError: (Object error) async {
-            await _handleDisconnect(message: 'WHOOP Bluetooth disconnected.');
+            await _handleDisconnect(
+              generation: generation,
+              message: 'WHOOP Bluetooth disconnected.',
+            );
           },
-          onDone: _handleDisconnect,
+          onDone: () => _handleDisconnect(generation: generation),
         );
   }
 
-  Future<void> _subscribeToHeartRate(String deviceId) async {
+  Future<void> _subscribeToHeartRate(String deviceId, int generation) async {
+    if (generation != _connectionGeneration || !_shouldMonitor) return;
     await _measurementSubscription?.cancel();
+    if (generation != _connectionGeneration || !_shouldMonitor) return;
     final characteristic = QualifiedCharacteristic(
       serviceId: _heartRateService,
       characteristicId: _heartRateMeasurement,
@@ -261,6 +324,7 @@ class WhoopBleHeartRateService {
           _handleMeasurement,
           onError: (Object error) async {
             await _handleDisconnect(
+              generation: generation,
               message: 'Live heart-rate notifications stopped.',
             );
           },
@@ -286,6 +350,13 @@ class WhoopBleHeartRateService {
       bpm: bpm,
       lastReadingAt: now,
     );
+    // Periodic Dart timers can be suspended by iOS in the background. A BLE
+    // characteristic update wakes bluetooth-central apps briefly, so use that
+    // opportunity to persist accumulated minute buckets as well.
+    final lastFlushAt = _lastFlushAt;
+    if (lastFlushAt == null || now.difference(lastFlushAt) >= _flushInterval) {
+      unawaited(flush().catchError((Object _) {}));
+    }
   }
 
   @visibleForTesting
@@ -305,6 +376,7 @@ class WhoopBleHeartRateService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (_isFlushing || uid == null || _pendingBuckets.isEmpty) return;
     _isFlushing = true;
+    _lastFlushAt = DateTime.now();
     final pending = <DateTime, _MinuteBucket>{
       for (final entry in _pendingBuckets.entries)
         entry.key: (_sessionBuckets[entry.key] ?? entry.value).copy(),
@@ -413,13 +485,20 @@ class WhoopBleHeartRateService {
     });
   }
 
-  Future<void> _handleDisconnect({String? message}) async {
+  Future<void> _handleDisconnect({
+    required int generation,
+    String? message,
+  }) async {
+    if (generation != _connectionGeneration) return;
     final measurement = _measurementSubscription;
     _measurementSubscription = null;
-    if (measurement != null) unawaited(measurement.cancel());
     final connection = _connectionSubscription;
     _connectionSubscription = null;
-    if (connection != null) unawaited(connection.cancel());
+    await Future.wait([
+      if (measurement != null) measurement.cancel(),
+      if (connection != null) connection.cancel(),
+    ]);
+    if (generation != _connectionGeneration) return;
     if (_deviceId != null) {
       state.value = WhoopBleState(
         status: WhoopBleStatus.disconnected,
@@ -432,14 +511,42 @@ class WhoopBleHeartRateService {
     if (_shouldMonitor && _deviceId != null) {
       _reconnectTimer?.cancel();
       _reconnectTimer = Timer(
-        const Duration(seconds: 8),
-        () => unawaited(_connect()),
+        // iOS only grants a short execution window for a background Bluetooth
+        // event, so reconnect while that window is still available.
+        const Duration(seconds: 2),
+        () => unawaited(_reconnectAfterDisconnect(generation)),
       );
     }
   }
 
+  Future<void> _reconnectAfterDisconnect(int generation) async {
+    if (generation != _connectionGeneration || !_shouldMonitor) return;
+    if (!await _waitForBleReady()) return;
+    if (generation != _connectionGeneration || !_shouldMonitor) return;
+    await _connect();
+  }
+
   Future<void> stop({bool clearPairing = false}) async {
+    final pendingStop = _stopFuture;
+    if (pendingStop != null) {
+      await pendingStop;
+      if (clearPairing && _deviceId != null) {
+        await stop(clearPairing: true);
+      }
+      return;
+    }
+    final stopOperation = _stop(clearPairing: clearPairing);
+    _stopFuture = stopOperation;
+    try {
+      await stopOperation;
+    } finally {
+      if (identical(_stopFuture, stopOperation)) _stopFuture = null;
+    }
+  }
+
+  Future<void> _stop({required bool clearPairing}) async {
     _shouldMonitor = false;
+    _connectionGeneration++;
     _reconnectTimer?.cancel();
     _flushTimer?.cancel();
     _flushTimer = null;

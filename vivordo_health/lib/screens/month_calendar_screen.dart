@@ -108,6 +108,281 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
     setState(() => _selectedDay = DateUtils.dateOnly(day));
   }
 
+  Future<void> _handleEventTap(_MonthEvent event) async {
+    final googleEvent = event.googleEvent;
+    if (googleEvent == null) {
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  event.title,
+                  style: Theme.of(
+                    sheetContext,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(event.timeLabel),
+                const SizedBox(height: 18),
+                const Text(
+                  'Outlook events are read-only in Vivordo. Open Outlook to edit or delete this event.',
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final action = await showModalBottomSheet<_EventAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event.title,
+                      style: Theme.of(sheetContext).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(event.timeLabel),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_rounded),
+                title: const Text('Edit event'),
+                onTap: () => Navigator.pop(sheetContext, _EventAction.edit),
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded),
+                iconColor: Colors.red,
+                textColor: Colors.red,
+                title: const Text('Delete event'),
+                onTap: () => Navigator.pop(sheetContext, _EventAction.delete),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    switch (action) {
+      case _EventAction.edit:
+        await _editGoogleEvent(googleEvent);
+        return;
+      case _EventAction.delete:
+        await _deleteGoogleEvent(googleEvent);
+        return;
+      case null:
+        return;
+    }
+  }
+
+  Future<void> _editGoogleEvent(gcal.Event event) async {
+    final originalStart =
+        event.start?.dateTime?.toLocal() ?? event.start?.date?.toLocal();
+    final originalEnd =
+        event.end?.dateTime?.toLocal() ?? event.end?.date?.toLocal();
+    if (originalStart == null || originalEnd == null) {
+      _showMessage('This event does not have a valid date.');
+      return;
+    }
+
+    final isAllDay = event.start?.dateTime == null;
+    final titleController = TextEditingController(text: event.summary ?? '');
+    var title = titleController.text.trim();
+    var date = DateUtils.dateOnly(originalStart);
+    var startTime = TimeOfDay.fromDateTime(originalStart);
+    var endTime = TimeOfDay.fromDateTime(originalEnd);
+    final allDayDuration = originalEnd.difference(originalStart);
+
+    final shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text('Edit event'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleController,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.sentences,
+                  onChanged: (value) {
+                    setDialogState(() => title = value.trim());
+                  },
+                  decoration: const InputDecoration(
+                    labelText: 'Title',
+                    prefixIcon: Icon(Icons.title_rounded),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.calendar_today_rounded),
+                  title: const Text('Date'),
+                  subtitle: Text(DateFormat('MMMM d, y').format(date)),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: date,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      setDialogState(() => date = picked);
+                    }
+                  },
+                ),
+                if (!isAllDay) ...[
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.schedule_rounded),
+                    title: const Text('Start time'),
+                    trailing: Text(startTime.format(context)),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: startTime,
+                      );
+                      if (picked != null) {
+                        setDialogState(() => startTime = picked);
+                      }
+                    },
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.schedule_outlined),
+                    title: const Text('End time'),
+                    trailing: Text(endTime.format(context)),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: endTime,
+                      );
+                      if (picked != null) {
+                        setDialogState(() => endTime = picked);
+                      }
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: title.isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, true),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    title = titleController.text.trim();
+    titleController.dispose();
+    if (shouldSave != true || !mounted || title.isEmpty) return;
+
+    late DateTime start;
+    late DateTime end;
+    if (isAllDay) {
+      start = DateUtils.dateOnly(date);
+      end = start.add(
+        allDayDuration > Duration.zero
+            ? allDayDuration
+            : const Duration(days: 1),
+      );
+    } else {
+      start = _withTime(date, startTime);
+      end = _withTime(date, endTime);
+      if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
+    }
+
+    try {
+      await CalendarService.updateEvent(
+        event,
+        title: title,
+        start: start,
+        end: end,
+      );
+      await _loadEvents();
+      _showMessage('Event updated.');
+    } catch (error) {
+      _showMessage('Could not update event: $error');
+    }
+  }
+
+  Future<void> _deleteGoogleEvent(gcal.Event event) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete event?'),
+        content: Text(
+          'This will delete “${event.summary ?? 'Untitled event'}” from Google Calendar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await CalendarService.deleteEvent(event);
+      await _loadEvents();
+      _showMessage('Event deleted.');
+    } catch (error) {
+      _showMessage('Could not delete event: $error');
+    }
+  }
+
+  DateTime _withTime(DateTime date, TimeOfDay time) =>
+      DateTime(date.year, date.month, date.day, time.hour, time.minute);
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
@@ -262,7 +537,10 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                 child: Column(
                   children: [
                     for (var i = 0; i < selectedEvents.length; i++) ...[
-                      _AgendaEventTile(event: selectedEvents[i]),
+                      _AgendaEventTile(
+                        event: selectedEvents[i],
+                        onTap: () => _handleEventTap(selectedEvents[i]),
+                      ),
                       if (i != selectedEvents.length - 1)
                         Divider(height: 1, indent: 64, color: colors.border),
                     ],
@@ -401,14 +679,16 @@ class _CalendarDayCell extends StatelessWidget {
 }
 
 class _AgendaEventTile extends StatelessWidget {
-  const _AgendaEventTile({required this.event});
+  const _AgendaEventTile({required this.event, required this.onTap});
 
   final _MonthEvent event;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => Material(
     color: Colors.transparent,
     child: ListTile(
+      onTap: onTap,
       leading: Container(
         width: 38,
         height: 38,
@@ -428,9 +708,12 @@ class _AgendaEventTile extends StatelessWidget {
         ),
       ),
       subtitle: Text(event.timeLabel),
+      trailing: const Icon(Icons.chevron_right_rounded),
     ),
   );
 }
+
+enum _EventAction { edit, delete }
 
 class _MonthEvent {
   const _MonthEvent({
@@ -439,6 +722,7 @@ class _MonthEvent {
     required this.end,
     required this.isAllDay,
     required this.color,
+    this.googleEvent,
   });
 
   final String title;
@@ -446,6 +730,7 @@ class _MonthEvent {
   final DateTime end;
   final bool isAllDay;
   final Color color;
+  final gcal.Event? googleEvent;
 
   static _MonthEvent? fromGoogle(gcal.Event event) {
     final start =
@@ -460,6 +745,7 @@ class _MonthEvent {
       end: end,
       isAllDay: event.start?.dateTime == null,
       color: _MonthCalendarScreenState._googleBlue,
+      googleEvent: event,
     );
   }
 

@@ -22,6 +22,7 @@ class _Candidate {
 List<HeartRateHistoryReading> mergedHeartRateHistory(
   Map<String, dynamic> data, {
   required DateTime fallbackDate,
+  bool includeDailyFallback = true,
 }) {
   const applePriority = 10;
   const legacyPriority = 15;
@@ -99,7 +100,7 @@ List<HeartRateHistoryReading> mergedHeartRateHistory(
   addMetric(scan, scanPriority);
   addMetric(whoop, whoopPriority);
 
-  if (byMinute.isEmpty) {
+  if (byMinute.isEmpty && includeDailyFallback) {
     void addDailyFallback(Map? metric, int priority) {
       if (metric?['avg'] is! num) return;
       final timestamp = entryTime(

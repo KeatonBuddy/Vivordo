@@ -31,8 +31,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   late final AnimationController _fitnessPulseController;
   late final Animation<double> _chatRevealAnimation;
   final GlobalKey _chatBubbleKey = GlobalKey();
+  final GlobalKey<NavigatorState> _contentNavigatorKey =
+      GlobalKey<NavigatorState>();
+  late final NavigatorObserver _contentNavigatorObserver;
   Offset _chatRevealOrigin = Offset.zero;
   bool _chatOpen = false;
+  bool _detailRouteOpen = false;
   bool _startupSplashMounted = true;
   Timer? _healthRefreshTimer;
   final List<Timer> _tabPreloadTimers = [];
@@ -60,6 +64,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         ? 0
         : widget.initialIndex.clamp(0, 4);
     _loadedTabs.add(_selectedIndex);
+    _contentNavigatorObserver = _ContentNavigatorObserver(
+      _handleContentNavigationChanged,
+    );
     _tabPages = [
       const SizedBox.shrink(),
       const MyDayScreen(),
@@ -209,6 +216,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     if (mounted) setState(() => _chatOpen = false);
   }
 
+  void _handleContentNavigationChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final detailOpen = _contentNavigatorKey.currentState?.canPop() ?? false;
+      if (detailOpen != _detailRouteOpen) {
+        setState(() => _detailRouteOpen = detailOpen);
+      }
+    });
+  }
+
   void _logScreenView(int index) {
     if (index >= 0 && index < _screenNames.length) {
       AnalyticsService().logScreenView(_screenNames[index]);
@@ -219,6 +236,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   @override
   Widget build(BuildContext context) {
+    final detailRouteVisible = _detailRouteOpen;
     final activePage = IndexedStack(
       index: _selectedIndex,
       children: List.generate(
@@ -242,26 +260,43 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             : const SizedBox.shrink(),
       ),
     );
+    final contentNavigator = Navigator(
+      key: _contentNavigatorKey,
+      observers: [_contentNavigatorObserver],
+      pages: [
+        MaterialPage<void>(
+          key: const ValueKey('main-content-tabs'),
+          child: activePage,
+        ),
+      ],
+      onDidRemovePage: (_) {},
+    );
 
     return PopScope(
-      canPop: !_chatOpen,
+      canPop: !_chatOpen && !detailRouteVisible,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && _chatOpen) _closeChat();
+        if (didPop) return;
+        if (_chatOpen) {
+          _closeChat();
+        } else if (detailRouteVisible) {
+          _contentNavigatorKey.currentState?.maybePop(result);
+        }
       },
       child: Scaffold(
         body: Stack(
           children: [
-            Positioned.fill(child: RepaintBoundary(child: activePage)),
-            Positioned(
-              bottom: 30,
-              left: 24,
-              right: 24,
-              child: _buildFloatingNavBar(),
-            ),
+            Positioned.fill(child: RepaintBoundary(child: contentNavigator)),
+            if (!detailRouteVisible)
+              Positioned(
+                bottom: 30,
+                left: 24,
+                right: 24,
+                child: _buildFloatingNavBar(),
+              ),
             Positioned(
               key: const ValueKey('ai-chat-bubble-layer'),
               right: 30,
-              bottom: 116,
+              bottom: detailRouteVisible ? 30 : 116,
               child: IgnorePointer(
                 ignoring: _chatOpen,
                 child: AnimatedOpacity(
@@ -465,6 +500,32 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         ),
       ),
     );
+  }
+}
+
+class _ContentNavigatorObserver extends NavigatorObserver {
+  _ContentNavigatorObserver(this.onChanged);
+
+  final VoidCallback onChanged;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onChanged();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onChanged();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onChanged();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    onChanged();
   }
 }
 

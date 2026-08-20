@@ -401,8 +401,15 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         unawaited(HomeWidgetService.refreshCalendarSnapshot());
         AnalyticsService().startSession();
       }
-    } else if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
+    } else if (state == AppLifecycleState.paused) {
+      // Keep the WHOOP BLE stream alive while iOS briefly backgrounds the app
+      // for permission sheets and system UI. Cancelling during native service
+      // discovery can race the plugin's connection event channel.
+      unawaited(
+        WhoopBleHeartRateService.instance.flush().catchError((Object _) {}),
+      );
+      AnalyticsService().endSession();
+    } else if (state == AppLifecycleState.detached) {
       unawaited(WhoopBleHeartRateService.instance.stop());
       AnalyticsService().endSession();
     }
