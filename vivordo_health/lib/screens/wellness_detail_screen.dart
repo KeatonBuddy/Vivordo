@@ -185,8 +185,8 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
           ],
           _section('Score breakdown'),
           _breakdown(latest, activityGoals),
-          _section('How it works'),
-          _howItWorks(),
+          _section('Insights'),
+          _insights(latest, activityGoals),
         ],
       ),
     );
@@ -574,25 +574,152 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
     );
   }
 
-  Widget _howItWorks() => _card(
-    padding: const EdgeInsets.all(18),
+  Widget _insights(_WellnessDay day, ActivityGoals activityGoals) {
+    final activity = _activityScore(day, activityGoals);
+    final insights = [
+      _InsightItem(
+        'Stress',
+        _stressInsight(day.stress),
+        Icons.psychology_rounded,
+        _red,
+      ),
+      _InsightItem(
+        'Sleep',
+        _sleepInsight(day.sleep),
+        Icons.nightlight_round,
+        _purple,
+      ),
+      _InsightItem(
+        'Activity',
+        _activityInsight(activity?.score),
+        Icons.directions_run_rounded,
+        const Color(0xFF24A83B),
+      ),
+      _InsightItem(
+        'Heart Health',
+        _heartHealthInsight(day),
+        Icons.favorite_border_rounded,
+        const Color(0xFF2878E8),
+      ),
+    ];
+    return _card(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+      child: Column(
+        children: [
+          for (var index = 0; index < insights.length; index++) ...[
+            _insightRow(insights[index]),
+            if (index < insights.length - 1)
+              Divider(height: 1, color: context.vivordoColors.border),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _stressInsight(double? stress) {
+    if (stress == null) {
+      return 'Sync stress data to see how it is influencing your score.';
+    }
+    if (stress < 40) {
+      return 'Your stress is in a lower range and is supporting your score.';
+    }
+    if (stress < 60) {
+      return 'Your stress is moderate. Brief recovery breaks may help keep it balanced.';
+    }
+    return 'Your stress is elevated and is lowering your score. Consider a lighter pace or a brief recovery break.';
+  }
+
+  String _sleepInsight(double? sleepHours) {
+    if (sleepHours == null) {
+      return 'Sync sleep data to see how your rest is influencing your score.';
+    }
+    if (sleepHours >= 8) {
+      return 'Your sleep duration is strongly supporting recovery and your score.';
+    }
+    if (sleepHours >= 7) {
+      return 'Your sleep is within a supportive range for today.';
+    }
+    if (sleepHours >= 5) {
+      return 'Your sleep was below seven hours and is limiting your score today.';
+    }
+    return 'Your recorded sleep was low. Prioritizing rest may help support recovery.';
+  }
+
+  String _activityInsight(double? activityScore) {
+    if (activityScore == null) {
+      return 'Sync movement data to see progress toward your activity goals.';
+    }
+    if (activityScore >= 90) {
+      return 'Your movement is on track with your goals and is strongly supporting your score.';
+    }
+    if (activityScore >= 70) {
+      return 'Your activity is close to your daily goals and is supporting your score.';
+    }
+    if (activityScore >= 40) {
+      return 'You have made some progress, but more movement would better support your goals.';
+    }
+    return 'Your activity is currently well below your goals and is limiting your score.';
+  }
+
+  String _heartHealthInsight(_WellnessDay day) {
+    if (day.heartHealthStatus == 'building_baseline') {
+      return 'Vivordo is building your personal baseline. At least seven prior days are needed before this signal is scored.';
+    }
+    final score = day.heartHealth;
+    if (score == null) {
+      return 'More heart data is needed to compare today with your personal baseline.';
+    }
+    final trend = score >= 90
+        ? 'Your heart signals are trending better than your personal baseline.'
+        : score >= 75
+        ? 'Your heart signals are close to your usual personal trend.'
+        : score >= 60
+        ? 'Some heart signals have shifted from your usual personal trend.'
+        : 'Your heart signals are notably outside your usual personal trend today.';
+    final confidence = switch (day.heartHealthConfidence) {
+      'high' => 'High-confidence estimate.',
+      'medium' => 'Medium-confidence estimate.',
+      'low' => 'Early estimate with low confidence.',
+      _ => '',
+    };
+    return confidence.isEmpty ? trend : '$trend $confidence';
+  }
+
+  Widget _insightRow(_InsightItem item) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 14),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.info_outline_rounded, color: _purple, size: 30),
-        const SizedBox(width: 14),
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: item.color.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Icon(item.icon, color: item.color, size: 23),
+        ),
+        const SizedBox(width: 12),
         Expanded(
-          child: Text(
-            'Your score combines stress, sleep, activity, and Heart Health. '
-            'Activity considers steps, exercise time, and active energy using '
-            'your goals. Heart Health compares resting heart rate, heart-rate '
-            'variability, and quiet heart rate with your personal 28-day '
-            'baseline. It needs at least seven prior days for a signal before '
-            'scoring it. Unavailable signals are excluded and the remaining '
-            'weights are redistributed. Stress is inverted, so lower stress '
-            'improves your score. These scores reflect wellness trends and '
-            'are not a medical diagnosis.',
-            style: const TextStyle(height: 1.45),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                item.message,
+                style: TextStyle(
+                  color: context.vivordoColors.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -669,6 +796,15 @@ class _ScoreComponent {
   final Color color;
   final String unavailableLabel;
   final String? confidenceLabel;
+}
+
+class _InsightItem {
+  const _InsightItem(this.title, this.message, this.icon, this.color);
+
+  final String title;
+  final String message;
+  final IconData icon;
+  final Color color;
 }
 
 class _WellnessChart extends StatefulWidget {
