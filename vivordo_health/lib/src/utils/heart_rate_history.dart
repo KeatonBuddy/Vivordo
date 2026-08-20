@@ -16,9 +16,9 @@ class _Candidate {
 
 /// Combines stored heart-rate histories without losing inactive sources.
 ///
-/// Samples are reduced to one value per minute. WHOOP Bluetooth has the
-/// highest precedence when it overlaps another source, while non-overlapping
-/// Apple Health and camera readings remain in the returned history.
+/// Samples are reduced to one value per minute. Live Bluetooth wearables have
+/// the highest precedence when they overlap another source, while
+/// non-overlapping Apple Health and camera readings remain in the history.
 List<HeartRateHistoryReading> mergedHeartRateHistory(
   Map<String, dynamic> data, {
   required DateTime fallbackDate,
@@ -27,7 +27,7 @@ List<HeartRateHistoryReading> mergedHeartRateHistory(
   const applePriority = 10;
   const legacyPriority = 15;
   const scanPriority = 20;
-  const whoopPriority = 30;
+  const liveBlePriority = 30;
   final byMinute = <int, _Candidate>{};
 
   DateTime entryTime(Object? raw) {
@@ -75,6 +75,8 @@ List<HeartRateHistoryReading> mergedHeartRateHistory(
   final sources = data['heart_rate_sources'] as Map?;
   final apple = sources?['apple_health'] as Map?;
   final whoop = sources?['whoop_ble'] as Map?;
+  final fitbit = sources?['fitbit_ble'] as Map?;
+  final wearable = sources?['wearable_ble'] as Map?;
   final active = data['heart_rate'] as Map?;
   final scan = data['heart_rate_scan'] as Map?;
 
@@ -85,12 +87,16 @@ List<HeartRateHistoryReading> mergedHeartRateHistory(
   final activeSource = active?['source'];
   final activeHasDedicatedSource =
       (activeSource == 'apple_health' && apple != null) ||
-      (activeSource == 'whoop_ble' && whoop != null);
+      (activeSource == 'whoop_ble' && whoop != null) ||
+      (activeSource == 'fitbit_ble' && fitbit != null) ||
+      (activeSource == 'wearable_ble' && wearable != null);
   if (!activeHasDedicatedSource) {
     addMetric(
       active,
-      activeSource == 'whoop_ble'
-          ? whoopPriority
+      activeSource == 'whoop_ble' ||
+              activeSource == 'fitbit_ble' ||
+              activeSource == 'wearable_ble'
+          ? liveBlePriority
           : activeSource == 'apple_health'
           ? applePriority
           : legacyPriority,
@@ -98,7 +104,9 @@ List<HeartRateHistoryReading> mergedHeartRateHistory(
   }
 
   addMetric(scan, scanPriority);
-  addMetric(whoop, whoopPriority);
+  addMetric(whoop, liveBlePriority);
+  addMetric(fitbit, liveBlePriority);
+  addMetric(wearable, liveBlePriority);
 
   if (byMinute.isEmpty && includeDailyFallback) {
     void addDailyFallback(Map? metric, int priority) {
@@ -122,15 +130,19 @@ List<HeartRateHistoryReading> mergedHeartRateHistory(
     if (!activeHasDedicatedSource) {
       addDailyFallback(
         active,
-        activeSource == 'whoop_ble'
-            ? whoopPriority
+        activeSource == 'whoop_ble' ||
+                activeSource == 'fitbit_ble' ||
+                activeSource == 'wearable_ble'
+            ? liveBlePriority
             : activeSource == 'apple_health'
             ? applePriority
             : legacyPriority,
       );
     }
     addDailyFallback(scan, scanPriority);
-    addDailyFallback(whoop, whoopPriority);
+    addDailyFallback(whoop, liveBlePriority);
+    addDailyFallback(fitbit, liveBlePriority);
+    addDailyFallback(wearable, liveBlePriority);
   }
 
   final result = byMinute.values.map((value) => value.reading).toList()

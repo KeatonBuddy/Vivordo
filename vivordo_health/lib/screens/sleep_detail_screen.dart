@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
@@ -354,13 +355,10 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     padding: const EdgeInsets.fromLTRB(10, 16, 10, 8),
     child: SizedBox(
       height: 245,
-      child: CustomPaint(
-        painter: _SleepBarPainter(
-          values: days.map((day) => day.value?.hours ?? 0).toList(),
-          labels: days.map((day) => _chartLabel(day.date)).toList(),
-          dark: Theme.of(context).brightness == Brightness.dark,
-        ),
-        size: const Size(double.infinity, 245),
+      child: _SleepBarChart(
+        values: days.map((day) => day.value?.hours ?? 0).toList(),
+        labels: days.map((day) => _chartLabel(day.date)).toList(),
+        dates: days.map((day) => day.date).toList(),
       ),
     ),
   );
@@ -951,14 +949,78 @@ class _SleepingHeartRatePainter extends CustomPainter {
       oldDelegate.dark != dark;
 }
 
+class _SleepBarChart extends StatefulWidget {
+  const _SleepBarChart({
+    required this.values,
+    required this.labels,
+    required this.dates,
+  });
+
+  final List<double> values;
+  final List<String> labels;
+  final List<DateTime> dates;
+
+  @override
+  State<_SleepBarChart> createState() => _SleepBarChartState();
+}
+
+class _SleepBarChartState extends State<_SleepBarChart> {
+  int? selected;
+
+  void _select(double x, double width) {
+    if (widget.values.isEmpty) return;
+    const left = 34.0;
+    final slot = (width - left) / widget.values.length;
+    final index = ((x - left) / slot).floor().clamp(
+      0,
+      widget.values.length - 1,
+    );
+    if (selected != index) setState(() => selected = index);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SleepBarChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.values, widget.values) ||
+        !listEquals(oldWidget.dates, widget.dates)) {
+      selected = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (event) =>
+          _select(event.localPosition.dx, constraints.maxWidth),
+      onHorizontalDragUpdate: (event) =>
+          _select(event.localPosition.dx, constraints.maxWidth),
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _SleepBarPainter(
+          values: widget.values,
+          labels: widget.labels,
+          dates: widget.dates,
+          selected: selected,
+          dark: Theme.of(context).brightness == Brightness.dark,
+        ),
+      ),
+    ),
+  );
+}
+
 class _SleepBarPainter extends CustomPainter {
   const _SleepBarPainter({
     required this.values,
     required this.labels,
+    required this.dates,
+    required this.selected,
     required this.dark,
   });
   final List<double> values;
   final List<String> labels;
+  final List<DateTime> dates;
+  final int? selected;
   final bool dark;
 
   @override
@@ -1002,10 +1064,70 @@ class _SleepBarPainter extends CustomPainter {
         ),
         Paint()..color = _SleepDetailScreenState._purple,
       );
+      if (selected == i) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(
+              x - barWidth / 2 - 4,
+              top + height - barHeight - 4,
+              barWidth + 8,
+              barHeight + 8,
+            ),
+            const Radius.circular(12),
+          ),
+          Paint()
+            ..color = _SleepDetailScreenState._purple.withValues(alpha: .2)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3,
+        );
+      }
       if (values.length <= 10 || i % 5 == 0 || i == values.length - 1) {
         _center(canvas, labels[i], Offset(x, top + height + 8), 9);
       }
     }
+
+    final index = selected;
+    if (index != null && index < values.length && index < dates.length) {
+      final x = left + slot * index + slot / 2;
+      final barHeight = values[index] / maxY * height;
+      final barTop = top + height - barHeight;
+      final label =
+          '${DateFormat('MMM d').format(dates[index])}\n${_durationLabel(values[index])}';
+      final painter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(
+            color: dark ? Colors.white : Colors.black,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textAlign: TextAlign.center,
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      final boxWidth = painter.width + 18;
+      final boxHeight = painter.height + 14;
+      final boxX = (x - boxWidth / 2).clamp(0.0, size.width - boxWidth);
+      final boxY = (barTop - boxHeight - 10).clamp(0.0, height - boxHeight);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(boxX, boxY, boxWidth, boxHeight),
+          const Radius.circular(9),
+        ),
+        Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
+      );
+      painter.paint(canvas, Offset(boxX + 9, boxY + 7));
+    }
+  }
+
+  String _durationLabel(double hours) {
+    final totalMinutes = (hours * 60).round();
+    if (totalMinutes <= 0) return 'No sleep recorded';
+    final wholeHours = totalMinutes ~/ 60;
+    final minutes = totalMinutes % 60;
+    if (wholeHours == 0) return '$minutes min';
+    if (minutes == 0) return '$wholeHours h';
+    return '$wholeHours h $minutes min';
   }
 
   void _text(Canvas canvas, String text, Offset offset, double size) {
@@ -1038,5 +1160,9 @@ class _SleepBarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SleepBarPainter oldDelegate) =>
-      oldDelegate.values != values || oldDelegate.dark != dark;
+      !listEquals(oldDelegate.values, values) ||
+      !listEquals(oldDelegate.labels, labels) ||
+      !listEquals(oldDelegate.dates, dates) ||
+      oldDelegate.selected != selected ||
+      oldDelegate.dark != dark;
 }

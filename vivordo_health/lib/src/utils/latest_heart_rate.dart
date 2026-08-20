@@ -17,11 +17,16 @@ int? latestHeartRateBpmFromMetricDays(
     return null;
   }
 
-  int? freshWhoopBleBpm;
-  DateTime? freshWhoopBleTime;
+  int? freshBleBpm;
+  DateTime? freshBleTime;
 
-  void considerFreshWhoopBle(Map? metric) {
-    if (metric == null || metric['source'] != 'whoop_ble') return;
+  bool isLiveBleSource(Object? source) =>
+      source == 'whoop_ble' ||
+      source == 'fitbit_ble' ||
+      source == 'wearable_ble';
+
+  void considerFreshBle(Map? metric) {
+    if (metric == null || !isLiveBleSource(metric['source'])) return;
     final lastReadingAt = timestampDate(metric['lastReadingAt']);
     if (lastReadingAt == null ||
         DateTime.now().difference(lastReadingAt) > const Duration(minutes: 5)) {
@@ -33,10 +38,9 @@ int? latestHeartRateBpmFromMetricDays(
         if (entry is! Map || entry['bpm'] is! num) continue;
         final timestamp = timestampDate(entry['timestamp']);
         if (timestamp != null &&
-            (freshWhoopBleTime == null ||
-                timestamp.isAfter(freshWhoopBleTime!))) {
-          freshWhoopBleBpm = (entry['bpm'] as num).round();
-          freshWhoopBleTime = timestamp;
+            (freshBleTime == null || timestamp.isAfter(freshBleTime!))) {
+          freshBleBpm = (entry['bpm'] as num).round();
+          freshBleTime = timestamp;
         }
       }
     }
@@ -44,7 +48,7 @@ int? latestHeartRateBpmFromMetricDays(
 
   void considerMetric(Map? metric) {
     if (metric == null) return;
-    if (metric['source'] == 'whoop_ble') {
+    if (isLiveBleSource(metric['source'])) {
       final lastReadingAt = timestampDate(metric['lastReadingAt']);
       if (lastReadingAt == null ||
           DateTime.now().difference(lastReadingAt) >
@@ -89,10 +93,12 @@ int? latestHeartRateBpmFromMetricDays(
   final days = metricDays.toList();
   for (final data in days) {
     final sources = data['heart_rate_sources'] as Map?;
-    considerFreshWhoopBle(sources?['whoop_ble'] as Map?);
-    considerFreshWhoopBle(data['heart_rate'] as Map?);
+    considerFreshBle(sources?['whoop_ble'] as Map?);
+    considerFreshBle(sources?['fitbit_ble'] as Map?);
+    considerFreshBle(sources?['wearable_ble'] as Map?);
+    considerFreshBle(data['heart_rate'] as Map?);
   }
-  if (freshWhoopBleBpm != null) return freshWhoopBleBpm;
+  if (freshBleBpm != null) return freshBleBpm;
 
   for (final data in days) {
     final sources = data['heart_rate_sources'] as Map?;

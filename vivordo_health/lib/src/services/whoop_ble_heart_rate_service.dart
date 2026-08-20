@@ -58,7 +58,8 @@ class WhoopBleDevice {
   final int rssi;
 }
 
-/// Receives the standard Bluetooth Heart Rate Service broadcast from WHOOP.
+/// Receives the standard Bluetooth Heart Rate Service broadcast from a
+/// supported wearable, including WHOOP and Google Fitbit Air.
 ///
 /// Live packets remain in memory for immediate UI updates. Firestore receives
 /// one-minute aggregates every five minutes so continuous monitoring does not
@@ -125,7 +126,14 @@ class WhoopBleHeartRateService {
 
   String get _displayName {
     final name = _deviceName?.trim();
-    return name == null || name.isEmpty ? 'WHOOP' : name;
+    return name == null || name.isEmpty ? 'Heart-rate monitor' : name;
+  }
+
+  String get _sourceKey {
+    final name = _displayName.toLowerCase();
+    if (name.contains('fitbit')) return 'fitbit_ble';
+    if (name.contains('whoop')) return 'whoop_ble';
+    return 'wearable_ble';
   }
 
   Future<List<WhoopBleDevice>> scanForDevices({
@@ -175,7 +183,9 @@ class WhoopBleHeartRateService {
   Future<void> pairAndStart(WhoopBleDevice device) async {
     _ensurePlatformSupport();
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) throw StateError('Sign in before pairing a WHOOP.');
+    if (uid == null) {
+      throw StateError('Sign in before pairing a heart-rate monitor.');
+    }
     _deviceId = device.id;
     _deviceName = device.name;
     await Future.wait([
@@ -186,7 +196,7 @@ class WhoopBleHeartRateService {
     await startIfPaired();
   }
 
-  /// Reconnects a previously selected WHOOP without prompting for permissions.
+  /// Reconnects a previously selected wearable without prompting for access.
   Future<void> startIfPaired() async {
     final pendingStart = _startFuture;
     if (pendingStart != null) {
@@ -248,12 +258,12 @@ class WhoopBleHeartRateService {
   }
 
   static String _bleStatusMessage(BleStatus status) => switch (status) {
-    BleStatus.poweredOff => 'Turn on Bluetooth to connect to WHOOP.',
+    BleStatus.poweredOff => 'Turn on Bluetooth to connect your wearable.',
     BleStatus.unauthorized =>
-      'Allow Bluetooth access in Settings to connect to WHOOP.',
+      'Allow Bluetooth access in Settings to connect your wearable.',
     BleStatus.unsupported =>
       'Bluetooth heart-rate monitoring is unavailable on this device.',
-    _ => 'Bluetooth is not ready. Try connecting to WHOOP again.',
+    _ => 'Bluetooth is not ready. Try connecting your wearable again.',
   };
 
   Future<void> _connect() async {
@@ -302,7 +312,7 @@ class WhoopBleHeartRateService {
           onError: (Object error) async {
             await _handleDisconnect(
               generation: generation,
-              message: 'WHOOP Bluetooth disconnected.',
+              message: 'Wearable Bluetooth disconnected.',
             );
           },
           onDone: () => _handleDisconnect(generation: generation),
@@ -417,7 +427,8 @@ class WhoopBleHeartRateService {
       final snapshot = await transaction.get(reference);
       final data = snapshot.data();
       final sources = data?['heart_rate_sources'] as Map?;
-      final existing = sources?['whoop_ble'] as Map?;
+      final sourceKey = _sourceKey;
+      final existing = sources?[sourceKey] as Map?;
       final entriesByMinute = <int, Map<String, dynamic>>{};
       final existingEntries = existing?['entries'];
       if (existingEntries is List) {
@@ -473,11 +484,11 @@ class WhoopBleHeartRateService {
         'dimension': 'cardiovascular',
         'entries': entries,
         'lastReadingAt': latestAt,
-        'source': 'whoop_ble',
+        'source': sourceKey,
         'syncedAt': FieldValue.serverTimestamp(),
       };
       transaction.set(reference, {
-        'heart_rate_sources': {'whoop_ble': payload},
+        'heart_rate_sources': {sourceKey: payload},
         'heart_rate': payload,
         'date': day,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -544,6 +555,17 @@ class WhoopBleHeartRateService {
     }
   }
 
+  /// Removes the saved Bluetooth device only when it is a WHOOP broadcast.
+  ///
+  /// Fitbit Air and other compatible monitors can use this service without a
+  /// WHOOP cloud connection, so disconnecting WHOOP must not forget them.
+  Future<void> clearWhoopPairing() async {
+    await _loadPairing();
+    if (_deviceId != null && _sourceKey == 'whoop_ble') {
+      await stop(clearPairing: true);
+    }
+  }
+
   Future<void> _stop({required bool clearPairing}) async {
     _shouldMonitor = false;
     _connectionGeneration++;
@@ -592,7 +614,7 @@ class WhoopBleHeartRateService {
   void _ensurePlatformSupport() {
     if (!Platform.isIOS) {
       throw StateError(
-        'Live WHOOP Bluetooth monitoring is currently available on iPhone only.',
+        'Live wearable Bluetooth monitoring is currently available on iPhone only.',
       );
     }
   }

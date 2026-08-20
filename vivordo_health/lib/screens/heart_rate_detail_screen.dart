@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
-import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -24,7 +23,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   static const red = Color(0xFFFF3B4E);
   static const purple = Color(0xFF5B42F3);
   int rangeIndex = 0;
-  bool _connectingWhoopAccount = false;
   late final Future<QuerySnapshot<Map<String, dynamic>>> _heartDataFuture;
 
   @override
@@ -139,12 +137,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                 .doc(uid)
                 .snapshots(),
             builder: (context, userSnapshot) {
-              final whoopConnected =
-                  userSnapshot.data?.data()?['whoopConnected'] == true;
+              final user = userSnapshot.data?.data();
+              final hasConnectedWearable =
+                  user?['whoopConnected'] == true ||
+                  user?['fitbitConnected'] == true;
               return content(
                 currentDays(all),
                 previousDays(all),
-                whoopConnected,
+                hasConnectedWearable: hasConnectedWearable,
               );
             },
           );
@@ -155,9 +155,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
 
   Widget content(
     List<_HeartDay> days,
-    List<_HeartDay> previous,
-    bool whoopConnected,
-  ) {
+    List<_HeartDay> previous, {
+    required bool hasConnectedWearable,
+  }) {
     final storedEntries = days.expand((day) => day.readings).toList();
     final storedReadings = storedEntries.map((entry) => entry.bpm).toList();
     final chartDays = days;
@@ -168,7 +168,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         .whereType<double>()
         .toList();
     // Summary values and the graph use only the persisted screen snapshot.
-    // Incoming Bluetooth packets update only the live WHOOP card below.
+    // Incoming Bluetooth packets update only the live wearable card below.
     final avg = average(storedReadings);
     final restingAvg = average(resting);
     final priorAvg = average(prior);
@@ -205,12 +205,13 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           const SizedBox(height: 18),
           rangeSelector(),
           const SizedBox(height: 18),
-          ValueListenableBuilder<WhoopBleState>(
-            valueListenable: WhoopBleHeartRateService.instance.state,
-            builder: (context, bleState, _) =>
-                whoopLiveCard(bleState, whoopConnected),
-          ),
-          const SizedBox(height: 18),
+          if (hasConnectedWearable) ...[
+            ValueListenableBuilder<WhoopBleState>(
+              valueListenable: WhoopBleHeartRateService.instance.state,
+              builder: (context, bleState, _) => wearableLiveCard(bleState),
+            ),
+            const SizedBox(height: 18),
+          ],
           summary(avg, restingAvg, change, low, high),
           section('$rangeName trend'),
           chart(chartDays, chartEntries, dailyValues, restingAvg),
@@ -223,30 +224,15 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     );
   }
 
-  Future<void> _pairWhoop() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+  Future<void> _pairWearable() async {
     try {
-      final user = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
-      if (user.data()?['whoopConnected'] != true) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Connect your WHOOP account in Settings first.'),
-          ),
-        );
-        return;
-      }
       final devices = await WhoopBleHeartRateService.instance.scanForDevices();
       if (!mounted) return;
       if (devices.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'No heart-rate broadcast found. Enable Heart Rate Broadcast in the WHOOP app and try again.',
+              'No heart-rate broadcast found. Enable heart-rate sharing or broadcasting on your wearable and try again.',
             ),
           ),
         );
@@ -262,7 +248,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                   children: [
                     const ListTile(
                       title: Text(
-                        'Choose your WHOOP',
+                        'Choose your wearable',
                         style: TextStyle(fontWeight: FontWeight.w800),
                       ),
                       subtitle: Text('Nearby heart-rate broadcasters'),
@@ -291,32 +277,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     }
   }
 
-  Future<void> _connectWhoopAccount() async {
-    if (_connectingWhoopAccount) return;
-    setState(() => _connectingWhoopAccount = true);
-    try {
-      await WhoopService.instance.connect();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'WHOOP account connected. Enable Heart Rate Broadcast, then pair your WHOOP.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Bad state: ', '')),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _connectingWhoopAccount = false);
-    }
-  }
-
-  Future<void> _toggleWhoopLive(WhoopBleState bleState) async {
+  Future<void> _toggleWearableLive(WhoopBleState bleState) async {
     if (bleState.isConnected) {
       await WhoopBleHeartRateService.instance.stop();
     } else {
@@ -324,55 +285,44 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     }
   }
 
-  Future<void> _forgetWhoop() =>
+  Future<void> _forgetWearable() =>
       WhoopBleHeartRateService.instance.stop(clearPairing: true);
 
-  Widget whoopLiveCard(WhoopBleState bleState, bool whoopConnected) {
+  Widget wearableLiveCard(WhoopBleState bleState) {
     final busy =
-        _connectingWhoopAccount ||
-        (whoopConnected &&
-            (bleState.status == WhoopBleStatus.scanning ||
-                bleState.status == WhoopBleStatus.connecting));
-    final hasReading =
-        whoopConnected && bleState.isConnected && bleState.bpm != null;
-    final statusLabel = !whoopConnected
-        ? 'ACCOUNT REQUIRED'
-        : switch (bleState.status) {
-            WhoopBleStatus.unpaired => 'NOT PAIRED',
-            WhoopBleStatus.scanning => 'SCANNING',
-            WhoopBleStatus.connecting => 'CONNECTING',
-            WhoopBleStatus.connected when hasReading => 'LIVE',
-            WhoopBleStatus.connected => 'CONNECTED',
-            WhoopBleStatus.disconnected => 'PAUSED',
-            WhoopBleStatus.unavailable => 'UNAVAILABLE',
-            WhoopBleStatus.error => 'CONNECTION ISSUE',
-          };
-    final statusColor = !whoopConnected
-        ? purple
-        : switch (bleState.status) {
-            WhoopBleStatus.connected when hasReading => red,
-            WhoopBleStatus.connected => const Color(0xFF20B26B),
-            WhoopBleStatus.scanning || WhoopBleStatus.connecting => purple,
-            WhoopBleStatus.unpaired ||
-            WhoopBleStatus.disconnected => context.vivordoColors.textSecondary,
-            WhoopBleStatus.unavailable ||
-            WhoopBleStatus.error => const Color(0xFFFF9F43),
-          };
-    final String? detailText = !whoopConnected
-        ? 'Connect your WHOOP account before pairing for live heart rate.'
-        : switch (bleState.status) {
-            WhoopBleStatus.unpaired =>
-              'Pair your WHOOP to see your heart rate here in real time.',
-            WhoopBleStatus.scanning => 'Looking for your WHOOP broadcast…',
-            WhoopBleStatus.connecting => 'Establishing a live connection…',
-            WhoopBleStatus.connected when hasReading => null,
-            WhoopBleStatus.connected =>
-              'Waiting for the first heart-rate reading…',
-            WhoopBleStatus.disconnected =>
-              'Live monitoring is currently stopped.',
-            WhoopBleStatus.unavailable || WhoopBleStatus.error =>
-              bleState.message ?? 'WHOOP Bluetooth is unavailable.',
-          };
+        bleState.status == WhoopBleStatus.scanning ||
+        bleState.status == WhoopBleStatus.connecting;
+    final hasReading = bleState.isConnected && bleState.bpm != null;
+    final statusLabel = switch (bleState.status) {
+      WhoopBleStatus.unpaired => 'NOT PAIRED',
+      WhoopBleStatus.scanning => 'SCANNING',
+      WhoopBleStatus.connecting => 'CONNECTING',
+      WhoopBleStatus.connected when hasReading => 'LIVE',
+      WhoopBleStatus.connected => 'CONNECTED',
+      WhoopBleStatus.disconnected => 'PAUSED',
+      WhoopBleStatus.unavailable => 'UNAVAILABLE',
+      WhoopBleStatus.error => 'CONNECTION ISSUE',
+    };
+    final statusColor = switch (bleState.status) {
+      WhoopBleStatus.connected when hasReading => red,
+      WhoopBleStatus.connected => const Color(0xFF20B26B),
+      WhoopBleStatus.scanning || WhoopBleStatus.connecting => purple,
+      WhoopBleStatus.unpaired ||
+      WhoopBleStatus.disconnected => context.vivordoColors.textSecondary,
+      WhoopBleStatus.unavailable ||
+      WhoopBleStatus.error => const Color(0xFFFF9F43),
+    };
+    final String? detailText = switch (bleState.status) {
+      WhoopBleStatus.unpaired =>
+        'Pair your wearable to see your heart rate here in real time.',
+      WhoopBleStatus.scanning => 'Looking for nearby heart-rate broadcasts…',
+      WhoopBleStatus.connecting => 'Establishing a live connection…',
+      WhoopBleStatus.connected when hasReading => null,
+      WhoopBleStatus.connected => 'Waiting for the first heart-rate reading…',
+      WhoopBleStatus.disconnected => 'Live monitoring is currently stopped.',
+      WhoopBleStatus.unavailable || WhoopBleStatus.error =>
+        bleState.message ?? 'Wearable Bluetooth is unavailable.',
+    };
     return card(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
       child: Column(
@@ -396,7 +346,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
               const SizedBox(width: 11),
               const Expanded(
                 child: Text(
-                  'WHOOP HEART RATE',
+                  'LIVE WEARABLE HEART RATE',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
                 ),
               ),
@@ -513,7 +463,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
               ),
             ),
           ],
-          if (whoopConnected && bleState.deviceName != null) ...[
+          if (bleState.deviceName != null) ...[
             const SizedBox(height: 5),
             Text(
               bleState.deviceName!,
@@ -535,11 +485,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                 child: FilledButton.icon(
                   onPressed: busy
                       ? null
-                      : !whoopConnected
-                      ? _connectWhoopAccount
                       : bleState.isPaired
-                      ? () => _toggleWhoopLive(bleState)
-                      : _pairWhoop,
+                      ? () => _toggleWearableLive(bleState)
+                      : _pairWearable,
                   style: FilledButton.styleFrom(
                     backgroundColor: bleState.isConnected
                         ? context.vivordoColors.cardMuted
@@ -554,31 +502,25 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                     ),
                   ),
                   icon: Icon(
-                    !whoopConnected
-                        ? Icons.link_rounded
-                        : bleState.isConnected
+                    bleState.isConnected
                         ? Icons.stop_rounded
                         : Icons.play_arrow_rounded,
                     size: 19,
                   ),
                   label: Text(
-                    _connectingWhoopAccount
-                        ? 'Connecting…'
-                        : !whoopConnected
-                        ? 'Connect WHOOP'
-                        : bleState.isConnected
+                    bleState.isConnected
                         ? 'Stop live'
                         : bleState.isPaired
                         ? 'Start live'
-                        : 'Pair WHOOP',
+                        : 'Pair wearable',
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
               ),
-              if (whoopConnected && bleState.isPaired) ...[
+              if (bleState.isPaired) ...[
                 const SizedBox(width: 10),
                 TextButton(
-                  onPressed: busy ? null : _forgetWhoop,
+                  onPressed: busy ? null : _forgetWearable,
                   child: Text(
                     'Forget',
                     style: TextStyle(

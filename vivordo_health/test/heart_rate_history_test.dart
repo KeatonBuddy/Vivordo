@@ -66,6 +66,29 @@ void main() {
     expect(result.single.bpm, 75);
   });
 
+  test('includes Fitbit Air Bluetooth history with live precedence', () {
+    final minute = DateTime(2026, 8, 20, 9, 30);
+    final result = mergedHeartRateHistory({
+      'heart_rate_sources': {
+        'apple_health': {
+          'source': 'apple_health',
+          'entries': [
+            {'bpm': 70, 'timestamp': Timestamp.fromDate(minute)},
+          ],
+        },
+        'fitbit_ble': {
+          'source': 'fitbit_ble',
+          'entries': [
+            {'bpm': 84, 'timestamp': Timestamp.fromDate(minute)},
+          ],
+        },
+      },
+    }, fallbackDate: DateTime(2026, 8, 20));
+
+    expect(result, hasLength(1));
+    expect(result.single.bpm, 84);
+  });
+
   test('can exclude daily summaries when timestamped history is required', () {
     final day = DateTime(2026, 8, 19);
     final result = mergedHeartRateHistory(

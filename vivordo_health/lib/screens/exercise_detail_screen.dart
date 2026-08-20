@@ -398,29 +398,64 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       : DateFormat('E').format(date);
 
   Widget _exerciseSelector(List<String> names, String? selected) => _card(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-    child: DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        isExpanded: true,
-        value: selected,
-        hint: const Text('No weighted exercises recorded'),
-        items: names
-            .map(
-              (name) => DropdownMenuItem(
-                value: name,
+    padding: EdgeInsets.zero,
+    child: Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: names.isEmpty
+            ? null
+            : () => _showExercisePicker(names, selected),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
+          child: Row(
+            children: [
+              Icon(
+                Icons.search_rounded,
+                color: names.isEmpty
+                    ? context.vivordoColors.textSecondary
+                    : _purple,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
                 child: Text(
-                  name,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  selected ?? 'No weighted exercises recorded',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected == null
+                        ? context.vivordoColors.textSecondary
+                        : context.vivordoColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            )
-            .toList(),
-        onChanged: names.isEmpty
-            ? null
-            : (value) => setState(() => _selectedExercise = value),
+              if (names.isNotEmpty)
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: context.vivordoColors.textSecondary,
+                ),
+            ],
+          ),
+        ),
       ),
     ),
   );
+
+  Future<void> _showExercisePicker(List<String> names, String? selected) async {
+    final selection = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (context) =>
+          _ExercisePickerSheet(exercises: names, selectedExercise: selected),
+    );
+    if (selection != null && mounted) {
+      setState(() => _selectedExercise = selection);
+    }
+  }
 
   Widget _weightProgression(String? exercise, List<_WeightPoint> points) {
     if (exercise == null || points.isEmpty) {
@@ -572,6 +607,138 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         ),
         child: Icon(icon, color: color, size: size * .48),
       );
+}
+
+class _ExercisePickerSheet extends StatefulWidget {
+  const _ExercisePickerSheet({
+    required this.exercises,
+    required this.selectedExercise,
+  });
+
+  final List<String> exercises;
+  final String? selectedExercise;
+
+  @override
+  State<_ExercisePickerSheet> createState() => _ExercisePickerSheetState();
+}
+
+class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final query = _query.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? widget.exercises
+        : widget.exercises
+              .where((exercise) => exercise.toLowerCase().contains(query))
+              .toList();
+
+    return FractionallySizedBox(
+      heightFactor: .72,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            child: Text(
+              'Select exercise',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Search exercises',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                filled: true,
+                fillColor: colors.cardMuted,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onChanged: (value) => setState(() => _query = value),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: filtered.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'No exercises match “${_query.trim()}”.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: colors.textSecondary),
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, _) => Divider(
+                      height: 1,
+                      indent: 20,
+                      endIndent: 20,
+                      color: colors.border,
+                    ),
+                    itemBuilder: (context, index) {
+                      final exercise = filtered[index];
+                      final selected = exercise == widget.selectedExercise;
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 3,
+                        ),
+                        title: Text(
+                          exercise,
+                          style: TextStyle(
+                            fontWeight: selected
+                                ? FontWeight.w900
+                                : FontWeight.w600,
+                          ),
+                        ),
+                        trailing: selected
+                            ? const Icon(
+                                Icons.check_circle_rounded,
+                                color: _ExerciseDetailScreenState._purple,
+                              )
+                            : null,
+                        onTap: () => Navigator.pop(context, exercise),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ExerciseDay {

@@ -125,4 +125,29 @@ void main() {
 
     expect(result, 74);
   });
+
+  test('fresh Fitbit Air Bluetooth wins over synced health data', () {
+    final now = DateTime.now();
+    final result = latestHeartRateBpmFromMetricDays([
+      {
+        'heart_rate_sources': {
+          'fitbit_ble': {
+            'source': 'fitbit_ble',
+            'lastReadingAt': Timestamp.fromDate(now),
+            'entries': [
+              {'bpm': 86, 'timestamp': Timestamp.fromDate(now)},
+            ],
+          },
+          'apple_health': {
+            'source': 'apple_health',
+            'entries': [
+              {'bpm': 72, 'timestamp': Timestamp.fromDate(now)},
+            ],
+          },
+        },
+      },
+    ]);
+
+    expect(result, 86);
+  });
 }

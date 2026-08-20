@@ -116,7 +116,7 @@ class WhoopService {
 
   Future<void> _clearLocalConnection(String? uid) async {
     try {
-      await WhoopBleHeartRateService.instance.stop(clearPairing: true);
+      await WhoopBleHeartRateService.instance.clearWhoopPairing();
     } catch (error) {
       debugPrint('[WhoopService] Could not clear WHOOP pairing: $error');
     }
