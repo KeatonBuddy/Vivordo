@@ -787,11 +787,11 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           const SizedBox(height: 24),
           Row(
             children: [
-              stat('Low', low?.toString() ?? '--'),
+              stat('Low', low?.toString() ?? '--', unit: 'bpm'),
               divider(),
-              stat('Average', avgText),
+              stat('Average', avgText, unit: 'bpm'),
               divider(),
-              stat('High', high?.toString() ?? '--'),
+              stat('High', high?.toString() ?? '--', unit: 'bpm'),
             ],
           ),
         ],
@@ -799,7 +799,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     );
   }
 
-  Widget stat(String label, String value) => Expanded(
+  Widget stat(String label, String value, {String? unit}) => Expanded(
     child: Column(
       children: [
         Text(
@@ -807,13 +807,29 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           style: TextStyle(color: context.vivordoColors.textSecondary),
         ),
         const SizedBox(height: 5),
-        Text(
-          value,
-          style: const TextStyle(
-            color: red,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: value,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (unit != null && value != '--')
+                TextSpan(
+                  text: ' $unit',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
           ),
+          maxLines: 1,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: red),
         ),
       ],
     ),
