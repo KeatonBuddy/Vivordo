@@ -303,6 +303,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
           dates: data.map((day) => day.date).toList(),
           maxY: maxY,
           usual: usual,
+          showDataPoints: _rangeIndex == 0,
         ),
       ),
     );
@@ -441,12 +442,14 @@ class _MoodChart extends StatefulWidget {
     required this.dates,
     required this.maxY,
     required this.usual,
+    required this.showDataPoints,
   });
   final List<double> values;
   final List<String> labels;
   final List<DateTime> dates;
   final double maxY;
   final double? usual;
+  final bool showDataPoints;
 
   @override
   State<_MoodChart> createState() => _MoodChartState();
@@ -489,6 +492,7 @@ class _MoodChartState extends State<_MoodChart> {
           dates: widget.dates,
           maxY: widget.maxY,
           usual: widget.usual,
+          showDataPoints: widget.showDataPoints,
           selected: selected,
           dark: Theme.of(context).brightness == Brightness.dark,
         ),
@@ -504,6 +508,7 @@ class _MoodChartPainter extends CustomPainter {
     required this.dates,
     required this.maxY,
     required this.usual,
+    required this.showDataPoints,
     required this.selected,
     required this.dark,
   });
@@ -512,6 +517,7 @@ class _MoodChartPainter extends CustomPainter {
   final List<DateTime> dates;
   final double maxY;
   final double? usual;
+  final bool showDataPoints;
   final int? selected;
   final bool dark;
   static const left = 38.0;
@@ -570,12 +576,14 @@ class _MoodChartPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round,
     );
     for (var i = 0; i < points.length; i++) {
-      canvas.drawCircle(points[i], 5, Paint()..color = Colors.white);
-      canvas.drawCircle(
-        points[i],
-        3.5,
-        Paint()..color = const Color(0xFFF59E0B),
-      );
+      if (showDataPoints) {
+        canvas.drawCircle(points[i], 5, Paint()..color = Colors.white);
+        canvas.drawCircle(
+          points[i],
+          3.5,
+          Paint()..color = const Color(0xFFF59E0B),
+        );
+      }
       if (values.length <= 10 || i % 5 == 0 || i == values.length - 1) {
         _centerText(canvas, labels[i], Offset(points[i].dx, height + 7), 9);
       }
@@ -583,10 +591,12 @@ class _MoodChartPainter extends CustomPainter {
     final index = selected;
     if (index != null && index < points.length) {
       final point = points[index];
-      canvas.drawCircle(
-        point,
-        8,
-        Paint()..color = const Color(0xFFF59E0B).withValues(alpha: .2),
+      canvas.drawLine(
+        Offset(point.dx, 0),
+        Offset(point.dx, height),
+        Paint()
+          ..color = const Color(0xFFF59E0B).withValues(alpha: .2)
+          ..strokeWidth = 1,
       );
       final label =
           '${DateFormat('MMM d').format(dates[index])}\n${_moodName(values[index])} · ${values[index].round()}/100';
@@ -661,5 +671,6 @@ class _MoodChartPainter extends CustomPainter {
       !listEquals(values, oldDelegate.values) ||
       selected != oldDelegate.selected ||
       maxY != oldDelegate.maxY ||
+      showDataPoints != oldDelegate.showDataPoints ||
       dark != oldDelegate.dark;
 }

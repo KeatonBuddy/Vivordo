@@ -92,19 +92,28 @@ class FitnessScreen extends StatefulWidget {
 class _FitnessScreenState extends State<FitnessScreen> {
   bool _allActivity = false;
   bool _recommendationsExpanded = true;
-  final Map<String, int> _strengthGoals = {
-    'Chest': 10,
-    'Back': 10,
-    'Legs': 12,
-    'Shoulders': 8,
-    'Arms': 10,
-  };
+  final Map<String, int> _strengthGoals = Map.of(kDefaultStrengthGoals);
 
   @override
   void initState() {
     super.initState();
     unawaited(_restoreActiveWorkout());
     unawaited(_backfillLegacyExerciseMinutes());
+    unawaited(_loadStrengthGoals());
+  }
+
+  Future<void> _loadStrengthGoals() async {
+    try {
+      final goals = await ActivityGoalsService.loadStrengthGoals();
+      if (!mounted) return;
+      setState(() {
+        _strengthGoals
+          ..clear()
+          ..addAll(goals);
+      });
+    } catch (error) {
+      debugPrint('FitnessScreen: failed to load strength goals: $error');
+    }
   }
 
   Future<void> _backfillLegacyExerciseMinutes() async {
@@ -1697,6 +1706,7 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
   void initState() {
     super.initState();
     _loadActivityGoals();
+    _loadStrengthGoals();
   }
 
   Future<void> _loadActivityGoals() async {
@@ -1710,6 +1720,16 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
     });
   }
 
+  Future<void> _loadStrengthGoals() async {
+    final goals = await ActivityGoalsService.loadStrengthGoals();
+    if (!mounted) return;
+    setState(() {
+      widget.strengthGoals
+        ..clear()
+        ..addAll(goals);
+    });
+  }
+
   Future<void> _saveActivityGoals() => ActivityGoalsService.save(
     ActivityGoals(
       steps: activity['Steps']!,
@@ -1720,6 +1740,7 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
   );
 
   Future<void> _edit(Map<String, int> target, String key, String unit) async {
+    final editingActivityGoal = identical(target, activity);
     var enteredValue = '${target[key]}';
     final value = await showDialog<int>(
       context: context,
@@ -1751,7 +1772,11 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
     if (value == null || value <= 0) return;
     setState(() => target[key] = value);
     try {
-      await _saveActivityGoals();
+      if (editingActivityGoal) {
+        await _saveActivityGoals();
+      } else {
+        await ActivityGoalsService.saveStrengthGoals(widget.strengthGoals);
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(

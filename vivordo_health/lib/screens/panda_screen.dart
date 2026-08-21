@@ -1050,7 +1050,12 @@ class _PandaScreenState extends State<PandaScreen>
         final value = _dashboardMetricValue(metric, raw);
         if (value != null) values.add('$date=$value');
       }
-      if (values.isNotEmpty) lines.add('$metric:${values.join(',')}');
+      if (values.isNotEmpty) {
+        final label = metric == 'sleep'
+            ? 'sleep(hours|stage_minutes=awake/core/deep/rem)'
+            : metric;
+        lines.add('$label:${values.join(',')}');
+      }
     }
     return lines.isEmpty ? null : lines.join('\n');
   }
@@ -1112,6 +1117,35 @@ class _PandaScreenState extends State<PandaScreen>
   }
 
   String? _dashboardMetricValue(String metric, dynamic raw) {
+    if (metric == 'sleep' && raw is Map) {
+      final hours = raw['avg'] as num?;
+      final stages = raw['stages'];
+      if (hours == null && stages is! Map) return null;
+
+      final hoursText = hours == null
+          ? '-'
+          : hours.toDouble() == hours.roundToDouble()
+          ? hours.round().toString()
+          : hours.toStringAsFixed(1);
+      if (stages is! Map || stages.isEmpty) return '${hoursText}h';
+
+      String minutes(String key) {
+        final value = stages[key];
+        return value is num ? value.round().toString() : '-';
+      }
+
+      // Compact positional encoding keeps the seven-day sleep context small.
+      // The label above supplies the order once instead of repeating four
+      // stage names for every date.
+      final stageText = const [
+        'awake',
+        'core',
+        'deep',
+        'rem',
+      ].map(minutes).join('/');
+      return '${hoursText}h|$stageText';
+    }
+
     num? value;
     if (raw is num) {
       value = raw;

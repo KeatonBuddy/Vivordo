@@ -1,6 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+const Map<String, int> kDefaultStrengthGoals = {
+  'Chest': 10,
+  'Back': 10,
+  'Legs': 12,
+  'Shoulders': 8,
+  'Arms': 10,
+};
+
 class ActivityGoals {
   const ActivityGoals({
     this.steps = 10000,
@@ -84,11 +92,53 @@ class ActivityGoalsService {
     return ActivityGoals.fromUserData(data);
   }
 
+  static Map<String, int> strengthGoalsFromUserData(
+    Map<String, dynamic>? data,
+  ) {
+    final preferences = data?['preferences'] as Map?;
+    final stored = preferences?['strengthGoals'] as Map?;
+    return {
+      for (final entry in kDefaultStrengthGoals.entries)
+        entry.key: switch (stored?[entry.key]) {
+          final num value when value > 0 => value.round(),
+          _ => entry.value,
+        },
+    };
+  }
+
+  static Future<Map<String, int>> loadStrengthGoals() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Map.of(kDefaultStrengthGoals);
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+    final data = snapshot.data();
+    final preferences = data?['preferences'] as Map?;
+    if (preferences?['strengthGoals'] is! Map) {
+      await saveStrengthGoals(kDefaultStrengthGoals);
+      return Map.of(kDefaultStrengthGoals);
+    }
+    return strengthGoalsFromUserData(data);
+  }
+
   static Future<void> save(ActivityGoals goals) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
       'preferences': {'activityGoals': goals.toMap()},
+    }, SetOptions(merge: true));
+  }
+
+  static Future<void> saveStrengthGoals(Map<String, int> goals) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final sanitized = {
+      for (final entry in kDefaultStrengthGoals.entries)
+        entry.key: (goals[entry.key] ?? entry.value).clamp(1, 1000),
+    };
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      'preferences': {'strengthGoals': sanitized},
     }, SetOptions(merge: true));
   }
 }

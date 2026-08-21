@@ -485,14 +485,10 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           const SizedBox(height: 8),
           SizedBox(
             height: 220,
-            child: CustomPaint(
-              painter: _SleepingHeartRatePainter(
-                readings: readings,
-                bedtime: bedtime,
-                wakeTime: wakeTime,
-                dark: Theme.of(context).brightness == Brightness.dark,
-              ),
-              size: const Size(double.infinity, 220),
+            child: _SleepingHeartRateChart(
+              readings: readings,
+              bedtime: bedtime,
+              wakeTime: wakeTime,
             ),
           ),
           const SizedBox(height: 6),
@@ -755,17 +751,106 @@ class _SleepDay {
   final _SleepValue? value;
 }
 
+class _SleepingHeartRateChart extends StatefulWidget {
+  const _SleepingHeartRateChart({
+    required this.readings,
+    required this.bedtime,
+    required this.wakeTime,
+  });
+
+  final List<HeartRateHistoryReading> readings;
+  final DateTime bedtime;
+  final DateTime wakeTime;
+
+  @override
+  State<_SleepingHeartRateChart> createState() =>
+      _SleepingHeartRateChartState();
+}
+
+class _SleepingHeartRateChartState extends State<_SleepingHeartRateChart> {
+  int? _selectedIndex;
+
+  void _select(double x, double width) {
+    if (widget.readings.isEmpty) return;
+    const left = 38.0;
+    const right = 6.0;
+    final plotWidth = width - left - right;
+    final totalMilliseconds = widget.wakeTime
+        .difference(widget.bedtime)
+        .inMilliseconds;
+    if (plotWidth <= 0 || totalMilliseconds <= 0) return;
+
+    final fraction = ((x - left) / plotWidth).clamp(0.0, 1.0);
+    final targetMilliseconds = (fraction * totalMilliseconds).round();
+    var nearestIndex = 0;
+    var nearestDistance =
+        (widget.readings.first.timestamp
+                    .difference(widget.bedtime)
+                    .inMilliseconds -
+                targetMilliseconds)
+            .abs();
+    for (var index = 0; index < widget.readings.length; index++) {
+      final elapsed = widget.readings[index].timestamp
+          .difference(widget.bedtime)
+          .inMilliseconds;
+      final distance = (elapsed - targetMilliseconds).abs();
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    }
+    if (_selectedIndex != nearestIndex) {
+      setState(() => _selectedIndex = nearestIndex);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _SleepingHeartRateChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.readings, widget.readings) ||
+        oldWidget.bedtime != widget.bedtime ||
+        oldWidget.wakeTime != widget.wakeTime) {
+      _selectedIndex = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (event) =>
+          _select(event.localPosition.dx, constraints.maxWidth),
+      onHorizontalDragStart: (event) =>
+          _select(event.localPosition.dx, constraints.maxWidth),
+      onHorizontalDragUpdate: (event) =>
+          _select(event.localPosition.dx, constraints.maxWidth),
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _SleepingHeartRatePainter(
+          readings: widget.readings,
+          bedtime: widget.bedtime,
+          wakeTime: widget.wakeTime,
+          selectedIndex: _selectedIndex,
+          dark: Theme.of(context).brightness == Brightness.dark,
+        ),
+      ),
+    ),
+  );
+}
+
 class _SleepingHeartRatePainter extends CustomPainter {
   const _SleepingHeartRatePainter({
     required this.readings,
     required this.bedtime,
     required this.wakeTime,
+    required this.selectedIndex,
     required this.dark,
   });
 
   final List<HeartRateHistoryReading> readings;
   final DateTime bedtime;
   final DateTime wakeTime;
+  final int? selectedIndex;
   final bool dark;
 
   static const _lineColor = Color(0xFF7B67F6);
@@ -905,6 +990,66 @@ class _SleepingHeartRatePainter extends CustomPainter {
       canvas,
       Offset(left + plotWidth - wakePainter.width, top + plotHeight + 10),
     );
+
+    final index = selectedIndex;
+    if (index != null && index >= 0 && index < readings.length) {
+      final reading = readings[index];
+      final point = pointFor(reading);
+      final selectionColor = dark ? Colors.white70 : Colors.black54;
+      canvas.drawLine(
+        Offset(point.dx, top),
+        Offset(point.dx, top + plotHeight),
+        Paint()
+          ..color = selectionColor.withValues(alpha: .55)
+          ..strokeWidth = 1,
+      );
+      canvas.drawCircle(
+        point,
+        6,
+        Paint()..color = dark ? Colors.black : Colors.white,
+      );
+      canvas.drawCircle(point, 4, Paint()..color = _lineColor);
+
+      final tooltip = TextPainter(
+        text: TextSpan(
+          text:
+              '${DateFormat('h:mm a').format(reading.timestamp)}\n${reading.bpm.round()} bpm',
+          style: TextStyle(
+            color: dark ? Colors.white : Colors.black87,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            height: 1.25,
+          ),
+        ),
+        textAlign: TextAlign.center,
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      final tooltipWidth = tooltip.width + 18;
+      final tooltipHeight = tooltip.height + 12;
+      final tooltipX = (point.dx - tooltipWidth / 2).clamp(
+        left,
+        left + plotWidth - tooltipWidth,
+      );
+      final preferredY = point.dy - tooltipHeight - 12;
+      final tooltipY = preferredY >= top
+          ? preferredY
+          : math.min(point.dy + 12, top + plotHeight - tooltipHeight);
+      final tooltipRect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(tooltipX, tooltipY, tooltipWidth, tooltipHeight),
+        const Radius.circular(9),
+      );
+      canvas.drawRRect(
+        tooltipRect,
+        Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
+      );
+      canvas.drawRRect(
+        tooltipRect,
+        Paint()
+          ..color = _lineColor.withValues(alpha: .35)
+          ..style = PaintingStyle.stroke,
+      );
+      tooltip.paint(canvas, Offset(tooltipX + 9, tooltipY + 6));
+    }
   }
 
   void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
@@ -946,6 +1091,7 @@ class _SleepingHeartRatePainter extends CustomPainter {
       oldDelegate.readings != readings ||
       oldDelegate.bedtime != bedtime ||
       oldDelegate.wakeTime != wakeTime ||
+      oldDelegate.selectedIndex != selectedIndex ||
       oldDelegate.dark != dark;
 }
 

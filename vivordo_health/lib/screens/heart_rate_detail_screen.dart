@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -23,13 +24,22 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   static const red = Color(0xFFFF3B4E);
   static const purple = Color(0xFF5B42F3);
   int rangeIndex = 0;
-  late final Future<QuerySnapshot<Map<String, dynamic>>> _heartDataFuture;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _heartDataStream;
 
   @override
   void initState() {
     super.initState();
-    WhoopBleHeartRateService.instance.startIfPaired();
-    _heartDataFuture = _loadHeartData();
+    _heartDataStream = _heartDataSnapshots();
+    unawaited(
+      WhoopBleHeartRateService.instance.startIfPaired().catchError(
+        (Object _) {},
+      ),
+    );
+    // Persist pending wearable readings without holding up the first frame.
+    // The Firestore listener below updates the graph when the write completes.
+    unawaited(
+      WhoopBleHeartRateService.instance.flush().catchError((Object _) {}),
+    );
   }
 
   int get rangeDays => switch (rangeIndex) {
@@ -45,12 +55,11 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
 
   String keyFor(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
 
-  Future<QuerySnapshot<Map<String, dynamic>>> _loadHeartData() async {
+  Stream<QuerySnapshot<Map<String, dynamic>>> _heartDataSnapshots() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) throw StateError('Sign in to view heart-rate data.');
-    // Persist any Bluetooth minute buckets collected before this screen opened
-    // so the snapshot below includes the latest available graph history.
-    await WhoopBleHeartRateService.instance.flush().catchError((Object _) {});
+    if (uid == null) {
+      return Stream.error(StateError('Sign in to view heart-rate data.'));
+    }
     final now = DateTime.now();
     return FirebaseFirestore.instance
         .collection('users')
@@ -64,7 +73,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         )
         .where(FieldPath.documentId, isLessThanOrEqualTo: keyFor(now))
         .orderBy(FieldPath.documentId)
-        .get();
+        .snapshots();
   }
 
   List<_HeartDay> allDays(QuerySnapshot<Map<String, dynamic>>? snapshot) {
@@ -130,8 +139,8 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        future: _heartDataFuture,
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _heartDataStream,
         builder: (context, snapshot) {
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
@@ -190,15 +199,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final high = storedReadings.isEmpty
         ? null
         : storedReadings.reduce(math.max).round();
-    final dailyValues = chartDays
-        .map(
-          (day) =>
-              average(day.readings.map((entry) => entry.bpm)) ??
-              day.resting ??
-              0,
-        )
-        .toList();
     final latestDay = days.isEmpty ? null : days.last;
+    final heartHealthScores = days
+        .map((day) => day.heartHealthScore)
+        .whereType<double>()
+        .toList();
+    final displayedHeartHealth = rangeIndex == 0
+        ? latestDay?.heartHealthScore
+        : average(heartHealthScores);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -224,19 +232,18 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           ],
           summary(
             avg,
-            restingAvg,
-            change,
             low,
             high,
-            heartHealthScore: rangeIndex == 0
-                ? latestDay?.heartHealthScore
-                : null,
+            heartHealthScore: displayedHeartHealth,
             heartHealthStatus: rangeIndex == 0
                 ? latestDay?.heartHealthStatus
-                : null,
+                : heartHealthScores.isEmpty
+                ? 'unavailable'
+                : 'ready',
+            heartHealthScoreCount: heartHealthScores.length,
           ),
           section('$rangeName trend'),
-          chart(chartDays, chartEntries, dailyValues, restingAvg),
+          chart(chartDays, chartEntries, restingAvg),
           section('Heart rate zones'),
           zones(storedReadings),
           section('Insight'),
@@ -610,22 +617,27 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
 
   Widget summary(
     double? avg,
-    double? resting,
-    int? change,
     int? low,
     int? high, {
     double? heartHealthScore,
     String? heartHealthStatus,
+    required int heartHealthScoreCount,
   }) {
     final avgText = avg?.round().toString() ?? '--';
-    final showHeartHealth = rangeIndex == 0;
+    final isDay = rangeIndex == 0;
     final heartHealthText = heartHealthScore?.round().toString() ?? '--';
-    final heartHealthDescription = switch (heartHealthStatus) {
-      'building_baseline' => 'Building your personal baseline',
-      'unavailable' => 'Not enough data to calculate',
-      _ when heartHealthScore != null => 'Personalized cardiovascular score',
-      _ => 'No Heart Health score available',
-    };
+    final heartHealthDescription = isDay
+        ? switch (heartHealthStatus) {
+            'building_baseline' => 'Building your personal baseline',
+            'unavailable' => 'Not enough data to calculate',
+            _ when heartHealthScore != null =>
+              'Personalized cardiovascular score',
+            _ => 'No Heart Health score available',
+          }
+        : heartHealthScore == null
+        ? 'No Heart Health scores available for this period'
+        : 'Average across $heartHealthScoreCount '
+              '${heartHealthScoreCount == 1 ? 'day' : 'days'} with available scores';
     final heartHealthColor = heartHealthScore == null
         ? context.vivordoColors.textSecondary
         : heartHealthScore >= 75
@@ -640,10 +652,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (!showHeartHealth) ...[
-                bubble(Icons.favorite_border_rounded, red),
-                const SizedBox(width: 16),
-              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -653,9 +661,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                       children: [
                         Flexible(
                           child: Text(
-                            showHeartHealth
+                            isDay
                                 ? 'HEART HEALTH SCORE'
-                                : 'AVERAGE HEART RATE',
+                                : 'AVERAGE HEART HEALTH',
                             style: TextStyle(
                               color: context.vivordoColors.textSecondary,
                               fontSize: 13,
@@ -663,125 +671,80 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                             ),
                           ),
                         ),
-                        if (showHeartHealth)
-                          IconButton(
-                            tooltip: 'How Heart Health works',
-                            onPressed: _showHeartHealthInfo,
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.all(4),
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
-                            icon: const Icon(
-                              Icons.info_outline_rounded,
-                              color: purple,
-                              size: 20,
-                            ),
+                        IconButton(
+                          tooltip: 'How Heart Health works',
+                          onPressed: _showHeartHealthInfo,
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
                           ),
-                      ],
-                    ),
-                    if (!showHeartHealth)
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              TextSpan(
-                                text: avgText,
-                                style: const TextStyle(
-                                  fontSize: 42,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const TextSpan(
-                                text: ' bpm',
-                                style: TextStyle(fontSize: 21),
-                              ),
-                            ],
-                          ),
-                          maxLines: 1,
-                          style: TextStyle(
-                            color: context.vivordoColors.textPrimary,
-                            decoration: TextDecoration.none,
+                          icon: const Icon(
+                            Icons.info_outline_rounded,
+                            color: purple,
+                            size: 20,
                           ),
                         ),
-                      ),
-                    if (showHeartHealth) const SizedBox(height: 10),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
                     Text(
-                      showHeartHealth
-                          ? heartHealthDescription
-                          : resting == null
-                          ? 'No resting average available'
-                          : 'Resting average ${resting.round()} bpm',
+                      heartHealthDescription,
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 16,
                       ),
                     ),
-                    if (!showHeartHealth && change != null) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        '${change <= 0 ? '↓' : '↑'} ${change.abs()} bpm vs previous period',
-                        style: TextStyle(
-                          color: change <= 0 ? const Color(0xFF20B26B) : red,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
-              if (showHeartHealth) ...[
-                const SizedBox(width: 14),
-                SizedBox(
-                  width: 112,
-                  height: 112,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      SizedBox.expand(
-                        child: CircularProgressIndicator(
-                          value: ((heartHealthScore ?? 0) / 100)
-                              .clamp(0.0, 1.0)
-                              .toDouble(),
-                          strokeWidth: 11,
-                          strokeCap: StrokeCap.round,
-                          color: heartHealthColor,
-                          backgroundColor: context.vivordoColors.cardMuted,
+              const SizedBox(width: 14),
+              SizedBox(
+                width: 112,
+                height: 112,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox.expand(
+                      child: CircularProgressIndicator(
+                        value: ((heartHealthScore ?? 0) / 100)
+                            .clamp(0.0, 1.0)
+                            .toDouble(),
+                        strokeWidth: 11,
+                        strokeCap: StrokeCap.round,
+                        color: heartHealthColor,
+                        backgroundColor: context.vivordoColors.cardMuted,
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.favorite_border_rounded,
+                          color: red,
+                          size: 23,
                         ),
-                      ),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.favorite_border_rounded,
-                            color: red,
-                            size: 23,
+                        Text(
+                          heartHealthText,
+                          style: const TextStyle(
+                            fontSize: 29,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
                           ),
-                          Text(
-                            heartHealthText,
-                            style: const TextStyle(
-                              fontSize: 29,
-                              height: 1,
-                              fontWeight: FontWeight.w900,
-                            ),
+                        ),
+                        Text(
+                          '/100',
+                          style: TextStyle(
+                            color: context.vivordoColors.textSecondary,
+                            fontSize: 12,
                           ),
-                          Text(
-                            '/100',
-                            style: TextStyle(
-                              color: context.vivordoColors.textSecondary,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -900,19 +863,21 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   Widget chart(
     List<_HeartDay> days,
     List<_HeartReading> entries,
-    List<double> dailyValues,
     double? resting,
   ) {
     final isDay = rangeIndex == 0;
+    final scoredDays = isDay
+        ? const <_HeartDay>[]
+        : days.where((day) => day.heartHealthScore != null).toList();
     final buckets = isDay
         ? _bucketDayReadings(entries)
         : const <_HeartBucket>[];
     final values = isDay
         ? buckets.map((bucket) => bucket.average).toList()
-        : dailyValues;
+        : scoredDays.map((day) => day.heartHealthScore!).toList();
     final dates = isDay
         ? buckets.map((bucket) => bucket.timestamp).toList()
-        : days.map((day) => day.date).toList();
+        : scoredDays.map((day) => day.date).toList();
     final lows = isDay
         ? buckets.map((bucket) => bucket.low).toList()
         : const <double>[];
@@ -921,7 +886,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         : const <double>[];
     final labels = isDay
         ? dates.map((date) => DateFormat('h:mm a').format(date)).toList()
-        : days
+        : scoredDays
               .map(
                 (day) => rangeIndex == 2
                     ? DateFormat('M/d').format(day.date)
@@ -938,8 +903,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           dates: dates,
           lows: lows,
           highs: highs,
-          resting: resting,
+          resting: isDay ? resting : null,
           showTime: isDay,
+          showHeartHealthScore: !isDay,
         ),
       ),
     );
@@ -1116,6 +1082,7 @@ class _HeartChart extends StatefulWidget {
     required this.highs,
     required this.resting,
     required this.showTime,
+    required this.showHeartHealthScore,
   });
   final List<double> values;
   final List<String> labels;
@@ -1124,6 +1091,7 @@ class _HeartChart extends StatefulWidget {
   final List<double> highs;
   final double? resting;
   final bool showTime;
+  final bool showHeartHealthScore;
 
   @override
   State<_HeartChart> createState() => _HeartChartState();
@@ -1150,7 +1118,8 @@ class _HeartChartState extends State<_HeartChart> {
   void didUpdateWidget(covariant _HeartChart oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!listEquals(widget.values, oldWidget.values) ||
-        !listEquals(widget.dates, oldWidget.dates)) {
+        !listEquals(widget.dates, oldWidget.dates) ||
+        widget.showHeartHealthScore != oldWidget.showHeartHealthScore) {
       selected = null;
     }
   }
@@ -1173,6 +1142,7 @@ class _HeartChartState extends State<_HeartChart> {
           highs: widget.highs,
           resting: widget.resting,
           showTime: widget.showTime,
+          showHeartHealthScore: widget.showHeartHealthScore,
           selected: selected,
           dark: Theme.of(context).brightness == Brightness.dark,
         ),
@@ -1190,6 +1160,7 @@ class _HeartChartPainter extends CustomPainter {
     required this.highs,
     required this.resting,
     required this.showTime,
+    required this.showHeartHealthScore,
     required this.selected,
     required this.dark,
   });
@@ -1200,6 +1171,7 @@ class _HeartChartPainter extends CustomPainter {
   final List<double> highs;
   final double? resting;
   final bool showTime;
+  final bool showHeartHealthScore;
   final int? selected;
   final bool dark;
 
@@ -1212,10 +1184,12 @@ class _HeartChartPainter extends CustomPainter {
     final width = size.width - left - right;
     final rightEdge = left + width;
     var minimum = 0.0;
-    var maximum = math.max(
-      120.0,
-      values.isEmpty ? 0.0 : values.reduce(math.max) * 1.15,
-    );
+    var maximum = showHeartHealthScore
+        ? 100.0
+        : math.max(
+            120.0,
+            values.isEmpty ? 0.0 : values.reduce(math.max) * 1.15,
+          );
     final hasRanges =
         lows.length == values.length &&
         highs.length == values.length &&
@@ -1330,12 +1304,6 @@ class _HeartChartPainter extends CustomPainter {
       }
     } else {
       for (var i = 0; i < points.length; i++) {
-        canvas.drawCircle(points[i], 5, Paint()..color = Colors.white);
-        canvas.drawCircle(
-          points[i],
-          3.5,
-          Paint()..color = const Color(0xFFFF3B4E),
-        );
         if (values.length <= 10 || i % 5 == 0 || i == values.length - 1) {
           centerText(canvas, labels[i], Offset(points[i].dx, height + 7), 9);
         }
@@ -1352,19 +1320,11 @@ class _HeartChartPainter extends CustomPainter {
           ..color = (dark ? Colors.white : Colors.black).withValues(alpha: .1)
           ..strokeWidth = 1,
       );
-      if (!showTime) {
-        canvas.drawCircle(
-          point,
-          9,
-          Paint()..color = const Color(0xFFFF3B4E).withValues(alpha: .2),
-        );
-        canvas.drawCircle(point, 5.5, Paint()..color = Colors.white);
-        canvas.drawCircle(point, 4, Paint()..color = const Color(0xFFFF3B4E));
-      }
       final label = showTime
           ? '${values[index].round()} bpm\n'
                 '${DateFormat('h:mm a').format(dates[index])}'
-          : '${DateFormat('MMM d').format(dates[index])}\n${values[index].round()} bpm';
+          : '${DateFormat('MMM d').format(dates[index])}\n'
+                '${values[index].round()} / 100';
       final painter = TextPainter(
         text: TextSpan(
           text: label,
@@ -1525,5 +1485,6 @@ class _HeartChartPainter extends CustomPainter {
       selected != oldDelegate.selected ||
       resting != oldDelegate.resting ||
       showTime != oldDelegate.showTime ||
+      showHeartHealthScore != oldDelegate.showHeartHealthScore ||
       dark != oldDelegate.dark;
 }

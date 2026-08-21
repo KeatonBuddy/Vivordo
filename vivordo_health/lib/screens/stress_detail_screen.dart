@@ -557,6 +557,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               dates: data.dates,
               labels: data.labels,
               isTime: data.isTime,
+              showDataPoints: _rangeIndex == 0,
             ),
           ),
           Divider(color: context.vivordoColors.border),
@@ -910,11 +911,13 @@ class _StressChart extends StatefulWidget {
     required this.dates,
     required this.labels,
     required this.isTime,
+    required this.showDataPoints,
   });
   final List<double> values;
   final List<DateTime> dates;
   final List<String> labels;
   final bool isTime;
+  final bool showDataPoints;
 
   @override
   State<_StressChart> createState() => _StressChartState();
@@ -956,6 +959,7 @@ class _StressChartState extends State<_StressChart> {
           dates: widget.dates,
           labels: widget.labels,
           isTime: widget.isTime,
+          showDataPoints: widget.showDataPoints,
           selected: selected,
           dark: Theme.of(context).brightness == Brightness.dark,
         ),
@@ -970,6 +974,7 @@ class _StressChartPainter extends CustomPainter {
     required this.dates,
     required this.labels,
     required this.isTime,
+    required this.showDataPoints,
     required this.selected,
     required this.dark,
   });
@@ -977,6 +982,7 @@ class _StressChartPainter extends CustomPainter {
   final List<DateTime> dates;
   final List<String> labels;
   final bool isTime;
+  final bool showDataPoints;
   final int? selected;
   final bool dark;
 
@@ -1030,12 +1036,14 @@ class _StressChartPainter extends CustomPainter {
       );
     }
     for (var index = 0; index < points.length; index++) {
-      canvas.drawCircle(points[index], 6, Paint()..color = Colors.white);
-      canvas.drawCircle(
-        points[index],
-        4,
-        Paint()..color = const Color(0xFF6B55F5),
-      );
+      if (showDataPoints) {
+        canvas.drawCircle(points[index], 6, Paint()..color = Colors.white);
+        canvas.drawCircle(
+          points[index],
+          4,
+          Paint()..color = const Color(0xFF6B55F5),
+        );
+      }
       if (values.length <= 8 || index % 4 == 0 || index == values.length - 1) {
         _centerText(
           canvas,
@@ -1151,5 +1159,6 @@ class _StressChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _StressChartPainter oldDelegate) =>
       !listEquals(values, oldDelegate.values) ||
       selected != oldDelegate.selected ||
+      showDataPoints != oldDelegate.showDataPoints ||
       dark != oldDelegate.dark;
 }

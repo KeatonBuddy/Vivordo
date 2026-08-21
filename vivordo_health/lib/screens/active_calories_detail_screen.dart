@@ -597,12 +597,6 @@ class _CaloriesChartPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round,
     );
     for (var i = 0; i < points.length; i++) {
-      canvas.drawCircle(points[i], 5, Paint()..color = Colors.white);
-      canvas.drawCircle(
-        points[i],
-        3.5,
-        Paint()..color = const Color(0xFFFF6A00),
-      );
       if (values.length <= 10 || i % 5 == 0 || i == values.length - 1) {
         _centerText(canvas, labels[i], Offset(points[i].dx, height + 7), 9);
       }
@@ -610,10 +604,12 @@ class _CaloriesChartPainter extends CustomPainter {
     final index = selected;
     if (index != null && index < points.length) {
       final point = points[index];
-      canvas.drawCircle(
-        point,
-        8,
-        Paint()..color = const Color(0xFFFF6A00).withValues(alpha: .2),
+      canvas.drawLine(
+        Offset(point.dx, 0),
+        Offset(point.dx, height),
+        Paint()
+          ..color = const Color(0xFFFF6A00).withValues(alpha: .2)
+          ..strokeWidth = 1,
       );
       final label =
           '${DateFormat('MMM d').format(dates[index])}\n${NumberFormat.decimalPattern().format(values[index].round())} kcal';

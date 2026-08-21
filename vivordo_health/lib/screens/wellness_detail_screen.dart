@@ -945,8 +945,6 @@ class _WellnessChartPainter extends CustomPainter {
     );
     for (final index in available) {
       final p = point(index);
-      canvas.drawCircle(p, 5, Paint()..color = Colors.white);
-      canvas.drawCircle(p, 3.5, Paint()..color = const Color(0xFFFF3B4E));
       if (values.length <= 10 || index % 5 == 0 || index == values.length - 1) {
         _centerText(canvas, labels[index], Offset(p.dx, height + 7), 9);
       }
@@ -954,12 +952,13 @@ class _WellnessChartPainter extends CustomPainter {
     final index = selected;
     if (index == null || values[index] == null) return;
     final p = point(index);
-    canvas.drawCircle(
-      p,
-      9,
-      Paint()..color = const Color(0xFF5B42F3).withValues(alpha: .25),
+    canvas.drawLine(
+      Offset(p.dx, 0),
+      Offset(p.dx, height),
+      Paint()
+        ..color = const Color(0xFF5B42F3).withValues(alpha: .25)
+        ..strokeWidth = 1,
     );
-    canvas.drawCircle(p, 5, Paint()..color = const Color(0xFF5B42F3));
     final painter = TextPainter(
       text: TextSpan(
         text:
