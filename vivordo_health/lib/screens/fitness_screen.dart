@@ -17,6 +17,7 @@ import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import 'exercise_detail_screen.dart';
 import 'personal_profile_screen.dart';
+import 'workout_summary_screen.dart';
 
 const _purple = Color(0xFF6B5CE7);
 const _muted = Color(0xFF85859B);
@@ -99,6 +100,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
     super.initState();
     unawaited(_restoreActiveWorkout());
     unawaited(_backfillLegacyExerciseMinutes());
+    unawaited(_backfillPersonalBests());
     unawaited(_loadStrengthGoals());
   }
 
@@ -128,6 +130,19 @@ class _FitnessScreenState extends State<FitnessScreen> {
       debugPrint(
         'WorkoutService: legacy exercise-time backfill failed: $error',
       );
+    }
+  }
+
+  Future<void> _backfillPersonalBests() async {
+    try {
+      final updated = await WorkoutService.backfillPersonalBestsOnce();
+      if (updated > 0) {
+        debugPrint(
+          'WorkoutService: checked $updated workout(s) for personal bests.',
+        );
+      }
+    } catch (error) {
+      debugPrint('WorkoutService: personal-best backfill failed: $error');
     }
   }
 
@@ -1279,217 +1294,11 @@ class _RecentWorkoutRow extends StatelessWidget {
   }
 
   Future<void> _showSummary(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => FractionallySizedBox(
-        heightFactor: .82,
-        child: Container(
-          decoration: BoxDecoration(
-            color: context.vivordoColors.page,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'WORKOUT SUMMARY',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.5,
-                                color: _muted,
-                              ),
-                            ),
-                            Text(
-                              DateFormat(
-                                'EEEE, MMMM d, y',
-                              ).format(workout.completedAt),
-                              style: const TextStyle(
-                                fontSize: 21,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
-                    children: [
-                      _Card(
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _ActivityStat(
-                                value: _durationLabel(workout.durationSeconds),
-                                label: 'Time',
-                              ),
-                            ),
-                            Expanded(
-                              child: _ActivityStat(
-                                value: '${workout.exerciseCount}',
-                                label: 'Exercises',
-                              ),
-                            ),
-                            Expanded(
-                              child: _ActivityStat(
-                                value: '${workout.setCount}',
-                                label: 'Sets',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      const Text(
-                        'EXERCISES',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.4,
-                          color: _muted,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      for (final exercise in workout.exercises) ...[
-                        _Card(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                exercise.name,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                exercise.category,
-                                style: const TextStyle(color: _muted),
-                              ),
-                              const Divider(height: 24),
-                              if (exercise.distanceKm != null)
-                                Text(
-                                  '${exercise.distanceKm!.toStringAsFixed(exercise.distanceKm! % 1 == 0 ? 0 : 2)} km',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                )
-                              else
-                                for (
-                                  var index = 0;
-                                  index < exercise.sets.length;
-                                  index++
-                                ) ...[
-                                  Row(
-                                    children: [
-                                      SizedBox(
-                                        width: 52,
-                                        child: Text(
-                                          'Set ${index + 1}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          '${exercise.sets[index].weightLbs.toStringAsFixed(exercise.sets[index].weightLbs % 1 == 0 ? 0 : 1)} lbs',
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          '${exercise.sets[index].reps} reps',
-                                          textAlign: TextAlign.end,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (index < exercise.sets.length - 1)
-                                    const Divider(height: 18),
-                                ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: () => _deleteWorkout(context),
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        label: const Text('Delete Workout'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          side: const BorderSide(color: Colors.red),
-                          minimumSize: const Size.fromHeight(50),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => WorkoutSummaryScreen(workout: workout),
       ),
     );
-  }
-
-  Future<void> _deleteWorkout(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete workout?'),
-        content: const Text(
-          'This workout and all of its exercise data will be permanently deleted.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Keep Workout'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
-    try {
-      await WorkoutService.delete(workout.id);
-      if (context.mounted) Navigator.pop(context);
-    } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete workout: $error')),
-      );
-    }
   }
 }
 
