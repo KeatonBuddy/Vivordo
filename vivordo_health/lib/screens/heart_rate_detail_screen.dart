@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
+import 'package:vivordo_health/src/utils/heart_rate_insight.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -178,6 +179,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   }) {
     final storedEntries = days.expand((day) => day.readings).toList();
     final storedReadings = storedEntries.map((entry) => entry.bpm).toList();
+    final insightReadings = storedEntries
+        .map(
+          (entry) => HeartRateInsightReading(
+            bpm: entry.bpm,
+            timestamp: entry.timestamp,
+          ),
+        )
+        .toList();
     final chartDays = days;
     final chartEntries = chartDays.expand((day) => day.readings).toList();
     final resting = days.map((day) => day.resting).whereType<double>().toList();
@@ -247,7 +256,15 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           section('Heart rate zones'),
           zones(storedReadings),
           section('Insight'),
-          insight(change, restingAvg),
+          insight(
+            buildHeartRateInsight(
+              isDay: rangeIndex == 0,
+              readings: insightReadings,
+              heartHealthScore: displayedHeartHealth,
+              restingAverage: restingAvg,
+              restingChange: change,
+            ),
+          ),
         ],
       ),
     );
@@ -1001,14 +1018,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     ),
   );
 
-  Widget insight(int? change, double? resting) {
-    final text = resting == null
-        ? 'Complete a heart scan to begin building your heart rate trend.'
-        : change == null
-        ? 'Your resting heart rate averaged ${resting.round()} bpm.'
-        : change <= 0
-        ? 'Your resting heart rate improved by ${change.abs()} bpm.'
-        : 'Your resting heart rate increased by $change bpm.';
+  Widget insight(String text) {
     return card(
       padding: const EdgeInsets.all(18),
       child: Row(

@@ -10,6 +10,7 @@ import 'dashboard_screen.dart';
 import 'panda_screen.dart';
 import 'fitness_screen.dart';
 import 'my_day_screen.dart';
+import '../src/services/achievement_service.dart';
 import '../src/services/analytics_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/health_service.dart';
@@ -41,6 +42,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Timer? _healthRefreshTimer;
   final List<Timer> _tabPreloadTimers = [];
   Future<void>? _circlePreload;
+  AchievementMonitor? _achievementMonitor;
   final Set<int> _loadedTabs = {};
   late final List<Widget> _tabPages;
   late final PandaScreen _persistentChatScreen;
@@ -96,6 +98,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _logScreenView(_selectedIndex);
     _refreshTodayFromHealth();
     _circlePreload = CircleProfileService.preload();
+    _achievementMonitor = AchievementMonitor.start();
     // HealthKit does not push new values into Firestore. Keep the shared data
     // source current for both Home and Dashboard while the app is in use.
     _healthRefreshTimer = Timer.periodic(
@@ -117,12 +120,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshTodayFromHealth();
+    if (state == AppLifecycleState.resumed) {
+      _refreshTodayFromHealth();
+      _achievementMonitor?.scheduleNow();
+    }
   }
 
   @override
   void dispose() {
     _healthRefreshTimer?.cancel();
+    unawaited(_achievementMonitor?.dispose() ?? Future<void>.value());
     for (final timer in _tabPreloadTimers) {
       timer.cancel();
     }

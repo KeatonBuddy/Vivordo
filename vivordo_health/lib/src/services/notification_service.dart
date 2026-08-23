@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -11,6 +12,7 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:vivordo_health/main.dart' show navigatorKey;
 import 'package:vivordo_health/src/services/analytics_service.dart';
+import 'package:vivordo_health/src/utils/notification_navigation.dart';
 
 /// Function to handle background messages
 @pragma('vm:entry-point')
@@ -343,24 +345,27 @@ class NotificationService {
   }
 
   void _navigateToNotificationScreen(String? screen) {
-    final route = switch (screen) {
-      'scan' => '/scan',
-      'ai_chat' => '/ai-chat',
-      'circle' => '/circle',
-      _ => '/home',
-    };
-    final navigator = navigatorKey.currentState;
-    if (navigator != null) {
-      navigator.pushNamedAndRemoveUntil(route, (route) => false);
-      return;
-    }
+    unawaited(_openNotificationRouteStack(screen));
+  }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      navigatorKey.currentState?.pushNamedAndRemoveUntil(
-        route,
-        (route) => false,
-      );
-    });
+  Future<void> _openNotificationRouteStack(String? screen) async {
+    NavigatorState? navigator;
+    for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
+      navigator = navigatorKey.currentState;
+      if (navigator == null) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
+    if (navigator == null) return;
+
+    final routes = notificationRouteStack(screen);
+    navigator.pushNamedAndRemoveUntil(routes.first, (_) => false);
+    if (routes.length == 1) return;
+
+    // Keep the main app beneath notification destinations so the AppBar back
+    // button and iOS swipe-back gesture always have somewhere useful to go.
+    await WidgetsBinding.instance.endOfFrame;
+    navigatorKey.currentState?.pushNamed(routes.last);
   }
 
   Future<void> _persistCurrentFcmToken() async {
