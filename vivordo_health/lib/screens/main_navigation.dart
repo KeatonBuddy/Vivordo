@@ -44,6 +44,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Future<void>? _circlePreload;
   AchievementMonitor? _achievementMonitor;
   final Set<int> _loadedTabs = {};
+  late final List<ValueNotifier<bool>> _tabActivity;
+  late final ValueNotifier<bool> _homeStressReveal;
   late final List<Widget> _tabPages;
   late final PandaScreen _persistentChatScreen;
   final Color primaryPurple = VivordoTheme.brand;
@@ -66,16 +68,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         ? 0
         : widget.initialIndex.clamp(0, 4);
     _loadedTabs.add(_selectedIndex);
+    _tabActivity = List.generate(
+      5,
+      (index) => ValueNotifier<bool>(
+        widget.initialIndex != 5 && index == _selectedIndex,
+      ),
+    );
+    _homeStressReveal = ValueNotifier<bool>(false);
     _contentNavigatorObserver = _ContentNavigatorObserver(
       _handleContentNavigationChanged,
     );
-    _tabPages = [
-      const SizedBox.shrink(),
-      const MyDayScreen(),
-      const SizedBox.shrink(),
-      const SizedBox.shrink(),
-      const SizedBox.shrink(),
-    ];
+    _tabPages = List.generate(5, _buildCachedTabPage);
     _persistentChatScreen = PandaScreen(onClose: _closeChat);
     _pandaHasBeenOpened = widget.initialIndex == 5;
     _chatRevealController = AnimationController(
@@ -136,8 +139,43 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _chatRevealController.dispose();
     FitnessWorkoutTimerState.isRunning.removeListener(_syncFitnessPulse);
     _fitnessPulseController.dispose();
+    for (final activity in _tabActivity) {
+      activity.dispose();
+    }
+    _homeStressReveal.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  Widget _buildCachedTabPage(int index) {
+    return KeyedSubtree(
+      key: ValueKey('main-tab-$index'),
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _tabActivity[index],
+        builder: (context, isActive, _) {
+          final page = switch (index) {
+            0 => ValueListenableBuilder<bool>(
+              valueListenable: _homeStressReveal,
+              builder: (context, revealStress, _) => HomeScreen(
+                isActive: isActive,
+                onScanTap: _openScan,
+                onFitnessTap: () => _selectTab(3),
+                revealStress: revealStress,
+              ),
+            ),
+            1 => const MyDayScreen(),
+            2 => ScanScreen(
+              isActive: isActive,
+              onBackToHome: () => _selectTab(0),
+            ),
+            3 => FitnessScreen(isActive: isActive),
+            4 => DashboardScreen(isActive: isActive, onScanTap: _openScan),
+            _ => const SizedBox.shrink(),
+          };
+          return TickerMode(enabled: isActive, child: page);
+        },
+      ),
+    );
   }
 
   void _syncFitnessPulse() {
@@ -156,7 +194,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   /// through here so analytics stay in sync with what's on screen.
   void _selectTab(int index) {
     if (index < 0 || index >= _tabPages.length) return;
-    if (index != _selectedIndex) _logScreenView(index);
+    if (index == _selectedIndex) return;
+    final previousIndex = _selectedIndex;
+    _logScreenView(index);
+    _tabActivity[previousIndex].value = false;
+    _tabActivity[index].value = !_chatOpen;
     setState(() {
       _loadedTabs.add(index);
       _selectedIndex = index;
@@ -185,7 +227,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           onTimeout: () {},
         );
         await WidgetsBinding.instance.endOfFrame;
-        if (mounted) setState(() => _startupSplashMounted = false);
+        if (mounted) {
+          _homeStressReveal.value = true;
+          setState(() => _startupSplashMounted = false);
+        }
       }),
     );
   }
@@ -200,6 +245,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             MediaQuery.sizeOf(context).height - 150,
           )
         : bubbleBox.localToGlobal(bubbleBox.size.center(Offset.zero));
+    _tabActivity[_selectedIndex].value = false;
     setState(() {
       _chatRevealOrigin = origin;
       _pandaHasBeenOpened = true;
@@ -212,7 +258,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Future<void> _closeChat() async {
     if (!_chatOpen) return;
     await _chatRevealController.reverse();
-    if (mounted) setState(() => _chatOpen = false);
+    if (mounted) {
+      setState(() => _chatOpen = false);
+      _tabActivity[_selectedIndex].value = true;
+    }
   }
 
   void _handleContentNavigationChanged() {
@@ -238,31 +287,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final detailRouteVisible = _detailRouteOpen;
     final activePage = IndexedStack(
       index: _selectedIndex,
-      children: List.generate(_tabPages.length, (index) {
-        if (!_loadedTabs.contains(index)) return const SizedBox.shrink();
-        final isActive = index == _selectedIndex && !_chatOpen;
-        return TickerMode(
-          enabled: isActive,
-          child: KeyedSubtree(
-            key: ValueKey('main-tab-$index'),
-            child: switch (index) {
-              0 => HomeScreen(
-                isActive: isActive,
-                onScanTap: _openScan,
-                onFitnessTap: () => _selectTab(3),
-                revealStress: !_startupSplashMounted,
-              ),
-              2 => ScanScreen(
-                isActive: isActive,
-                onBackToHome: () => _selectTab(0),
-              ),
-              3 => FitnessScreen(isActive: isActive),
-              4 => DashboardScreen(isActive: isActive, onScanTap: _openScan),
-              _ => _tabPages[index],
-            },
-          ),
-        );
-      }),
+      children: List.generate(
+        _tabPages.length,
+        (index) => _loadedTabs.contains(index)
+            ? _tabPages[index]
+            : const SizedBox.shrink(),
+      ),
     );
     final contentNavigator = Navigator(
       key: _contentNavigatorKey,

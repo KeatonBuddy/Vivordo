@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/material.dart';
@@ -61,6 +62,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late Stream<QuerySnapshot<Map<String, dynamic>>> _allMetricsStream;
   bool _refreshingHealthMetrics = false;
   bool _automaticRefreshRequested = false;
+  bool _automaticRefreshScheduled = false;
+  Timer? _automaticRefreshTimer;
   DateTime? _lastManualHealthRefresh;
   static const List<String> _defaultKeyMetrics = [
     'mood',
@@ -85,15 +88,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void didUpdateWidget(covariant DashboardScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive && !widget.isActive) {
+      _automaticRefreshTimer?.cancel();
+      _automaticRefreshTimer = null;
+      _automaticRefreshScheduled = false;
+    }
     if (!oldWidget.isActive && widget.isActive) {
       _requestAutomaticRefreshIfActive();
     }
   }
 
   void _requestAutomaticRefreshIfActive() {
-    if (!widget.isActive || _automaticRefreshRequested) return;
-    _automaticRefreshRequested = true;
-    _refreshHealthMetricsFromHealth();
+    if (!widget.isActive ||
+        _automaticRefreshRequested ||
+        _automaticRefreshScheduled) {
+      return;
+    }
+    _automaticRefreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.isActive) {
+        _automaticRefreshScheduled = false;
+        return;
+      }
+      _automaticRefreshTimer = Timer(const Duration(milliseconds: 220), () {
+        _automaticRefreshTimer = null;
+        _automaticRefreshScheduled = false;
+        if (!mounted || !widget.isActive || _automaticRefreshRequested) return;
+        _automaticRefreshRequested = true;
+        _refreshHealthMetricsFromHealth();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _automaticRefreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadMetricOrder() async {

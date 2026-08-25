@@ -96,6 +96,8 @@ class _FitnessScreenState extends State<FitnessScreen> {
   bool _allActivity = false;
   bool _recommendationsExpanded = true;
   bool _deferredInitializationStarted = false;
+  bool _deferredInitializationScheduled = false;
+  Timer? _deferredInitializationTimer;
   final Map<String, int> _strengthGoals = Map.of(kDefaultStrengthGoals);
 
   @override
@@ -107,18 +109,50 @@ class _FitnessScreenState extends State<FitnessScreen> {
   @override
   void didUpdateWidget(covariant FitnessScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive && !widget.isActive) {
+      _deferredInitializationTimer?.cancel();
+      _deferredInitializationTimer = null;
+      _deferredInitializationScheduled = false;
+    }
     if (!oldWidget.isActive && widget.isActive) {
       _startDeferredInitializationIfActive();
     }
   }
 
   void _startDeferredInitializationIfActive() {
-    if (!widget.isActive || _deferredInitializationStarted) return;
-    _deferredInitializationStarted = true;
-    unawaited(_restoreActiveWorkout());
-    unawaited(_backfillLegacyExerciseMinutes());
-    unawaited(_backfillPersonalBests());
-    unawaited(_loadStrengthGoals());
+    if (!widget.isActive ||
+        _deferredInitializationStarted ||
+        _deferredInitializationScheduled) {
+      return;
+    }
+    _deferredInitializationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.isActive) {
+        _deferredInitializationScheduled = false;
+        return;
+      }
+      _deferredInitializationTimer = Timer(
+        const Duration(milliseconds: 220),
+        () {
+          _deferredInitializationTimer = null;
+          _deferredInitializationScheduled = false;
+          if (!mounted || !widget.isActive || _deferredInitializationStarted) {
+            return;
+          }
+          _deferredInitializationStarted = true;
+          unawaited(_restoreActiveWorkout());
+          unawaited(_backfillLegacyExerciseMinutes());
+          unawaited(_backfillPersonalBests());
+          unawaited(_loadStrengthGoals());
+        },
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _deferredInitializationTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadStrengthGoals() async {
