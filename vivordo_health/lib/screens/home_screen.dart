@@ -189,19 +189,52 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
   final VoidCallback? onFitnessTap;
   final bool revealStress;
+  final bool isActive;
   const HomeScreen({
     super.key,
     this.onScanTap,
     this.onFitnessTap,
     this.revealStress = true,
+    this.isActive = true,
   });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+class _HomeWidgetSnapshot {
+  const _HomeWidgetSnapshot({
+    required this.stressScore,
+    required this.wellnessScore,
+    required this.steps,
+    required this.activeCalories,
+    required this.exerciseMinutes,
+    required this.goals,
+  });
+
+  final double? stressScore;
+  final double? wellnessScore;
+  final int steps;
+  final int activeCalories;
+  final int exerciseMinutes;
+  final ActivityGoals goals;
+
+  String get signature => <Object?>[
+    stressScore?.round(),
+    wellnessScore?.round(),
+    steps,
+    activeCalories,
+    exerciseMinutes,
+    goals.steps,
+    goals.activeCalories,
+    goals.exerciseMinutes,
+  ].join('|');
+}
+
 class _HomeScreenState extends State<HomeScreen> {
   String _currentMood = 'Good';
+  String? _pendingMoodSync;
+  bool _isSavingMood = false;
   // _messageCopied removed — smart message card replaced with calendar
 
   // Single stream for today's unified metrics doc
@@ -215,6 +248,14 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _reachableWindowScoresDate;
   Future<_ScheduleInsight?>? _scheduleInsightFuture;
   DateTime? _scheduleInsightDate;
+  ActivityGoals _activityGoals = const ActivityGoals();
+  StreamSubscription<ActivityGoals>? _activityGoalsSubscription;
+  _HomeWidgetSnapshot? _latestHomeWidgetSnapshot;
+  _HomeWidgetSnapshot? _queuedHomeWidgetSnapshot;
+  String? _lastPublishedHomeWidgetSignature;
+  String? _homeWidgetPublishInProgressSignature;
+  bool _homeWidgetPublishScheduled = false;
+  bool _homeWidgetPublishInProgress = false;
 
   static const Color accentPurple = Color(0xFF7B6EF6);
   static const Color textDark = Color(0xFF1C1C1E);
@@ -251,6 +292,97 @@ class _HomeScreenState extends State<HomeScreen> {
         : const Stream.empty();
     _circleProfileStream = CircleProfileService.watchCurrentProfile();
     _goalsStreamCached = _goalsStream();
+    _activityGoalsSubscription = ActivityGoalsService.watch().listen(
+      (goals) {
+        _activityGoals = goals;
+        final snapshot = _latestHomeWidgetSnapshot;
+        if (snapshot == null) return;
+        _queueHomeWidgetPublish(
+          _HomeWidgetSnapshot(
+            stressScore: snapshot.stressScore,
+            wellnessScore: snapshot.wellnessScore,
+            steps: snapshot.steps,
+            activeCalories: snapshot.activeCalories,
+            exerciseMinutes: snapshot.exerciseMinutes,
+            goals: goals,
+          ),
+        );
+      },
+      onError: (Object error) {
+        debugPrint('Activity goals listener failed: $error');
+      },
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isActive && widget.isActive) {
+      final snapshot = _latestHomeWidgetSnapshot;
+      if (snapshot != null) _queueHomeWidgetPublish(snapshot);
+    }
+  }
+
+  @override
+  void dispose() {
+    _activityGoalsSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _syncMoodAfterBuild(String savedMood) {
+    if (savedMood == _currentMood || savedMood == _pendingMoodSync) return;
+    _pendingMoodSync = savedMood;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final mood = _pendingMoodSync;
+      _pendingMoodSync = null;
+      if (mood == null || mood == _currentMood) return;
+      setState(() => _currentMood = mood);
+    });
+  }
+
+  void _queueHomeWidgetPublish(_HomeWidgetSnapshot snapshot) {
+    _latestHomeWidgetSnapshot = snapshot;
+    if (!widget.isActive ||
+        snapshot.signature == _lastPublishedHomeWidgetSignature ||
+        snapshot.signature == _homeWidgetPublishInProgressSignature ||
+        snapshot.signature == _queuedHomeWidgetSnapshot?.signature) {
+      return;
+    }
+    _queuedHomeWidgetSnapshot = snapshot;
+    if (_homeWidgetPublishScheduled || _homeWidgetPublishInProgress) return;
+    _homeWidgetPublishScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _homeWidgetPublishScheduled = false;
+      if (!mounted) return;
+      unawaited(_drainHomeWidgetPublishQueue());
+    });
+  }
+
+  Future<void> _drainHomeWidgetPublishQueue() async {
+    if (_homeWidgetPublishInProgress || !mounted || !widget.isActive) return;
+    _homeWidgetPublishInProgress = true;
+    try {
+      while (mounted && widget.isActive) {
+        final snapshot = _queuedHomeWidgetSnapshot;
+        if (snapshot == null) break;
+        _queuedHomeWidgetSnapshot = null;
+        _homeWidgetPublishInProgressSignature = snapshot.signature;
+        await HomeWidgetService.publish(
+          stressScore: snapshot.stressScore,
+          wellnessScore: snapshot.wellnessScore,
+          steps: snapshot.steps,
+          activeCalories: snapshot.activeCalories,
+          exerciseMinutes: snapshot.exerciseMinutes,
+          goals: snapshot.goals,
+        );
+        if (!mounted) return;
+        _lastPublishedHomeWidgetSignature = snapshot.signature;
+      }
+    } finally {
+      _homeWidgetPublishInProgressSignature = null;
+      _homeWidgetPublishInProgress = false;
+    }
   }
 
   String _getGreeting() {
@@ -400,13 +532,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   : steps.toString())
             : '--';
 
-        if (moodMap != null && _currentMood == 'Good') {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted)
-              setState(
-                () => _currentMood = moodMap['label'] as String? ?? 'Good',
-              );
-          });
+        final savedMood = moodMap?['label'] as String?;
+        if (savedMood != null && !_isSavingMood) {
+          _syncMoodAfterBuild(savedMood);
         }
         final moodVal = moodMap != null
             ? (moodMap['label'] as String? ?? '--')
@@ -448,22 +576,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 final goalProgress = (rawPercent / 100).clamp(0.0, 1.0);
 
                 if (data != null) {
-                  final wellnessScore = (wellnessMap?['avg'] as num?)
-                      ?.toDouble();
-                  ActivityGoalsService.load()
-                      .then((goals) {
-                        HomeWidgetService.publish(
-                          stressScore: displayedStressScore,
-                          wellnessScore: wellnessScore,
-                          steps: steps ?? 0,
-                          activeCalories: activeCalories,
-                          exerciseMinutes: exerciseMinutes,
-                          goals: goals,
-                        );
-                      })
-                      .catchError((Object error) {
-                        debugPrint('Home widget snapshot failed: $error');
-                      });
+                  _queueHomeWidgetPublish(
+                    _HomeWidgetSnapshot(
+                      stressScore: displayedStressScore,
+                      wellnessScore: (wellnessMap?['avg'] as num?)?.toDouble(),
+                      steps: steps ?? 0,
+                      activeCalories: activeCalories,
+                      exerciseMinutes: exerciseMinutes,
+                      goals: _activityGoals,
+                    ),
+                  );
                 }
 
                 // isComputing reflects a computeAndSave() network round trip
@@ -2749,12 +2871,16 @@ class _HomeScreenState extends State<HomeScreen> {
     bool isSelected = _currentMood == label;
     return GestureDetector(
       onTap: () async {
+        _pendingMoodSync = null;
+        _isSavingMood = true;
         setState(() => _currentMood = label);
         Navigator.pop(context);
         try {
           await MetricsService.saveMoodCheckIn(label);
         } catch (e) {
           debugPrint('Mood save failed: $e');
+        } finally {
+          _isSavingMood = false;
         }
       },
       child: Column(

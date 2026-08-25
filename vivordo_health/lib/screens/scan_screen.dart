@@ -112,19 +112,23 @@ class _ScanScreenState extends State<ScanScreen>
         return;
       }
 
-      final previousScans = await FirebaseFirestore.instance
+      final metrics = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .collection('metrics_daily')
-          .get();
-
-      final hasPreviousScan = previousScans.docs.any((doc) {
-        final data = doc.data();
-        final savedScan = data['heart_rate_scan'] as Map?;
-        final heartRate = data['heart_rate'] as Map?;
-        return savedScan?['source'] == 'camera_ppg' ||
-            heartRate?['source'] == 'camera_ppg';
-      });
+          .collection('metrics_daily');
+      final matches = await Future.wait([
+        metrics
+            .where('heart_rate_scan.source', isEqualTo: 'camera_ppg')
+            .limit(1)
+            .get(),
+        metrics
+            .where('heart_rate.source', isEqualTo: 'camera_ppg')
+            .limit(1)
+            .get(),
+      ]);
+      final hasPreviousScan = matches.any(
+        (snapshot) => snapshot.docs.isNotEmpty,
+      );
       final isFirstScan = !hasPreviousScan;
       /* TODO: Remove after testing.
       final isFirstScan = true;

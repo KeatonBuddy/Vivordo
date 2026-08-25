@@ -28,7 +28,8 @@ import 'wellness_detail_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
-  const DashboardScreen({super.key, this.onScanTap});
+  final bool isActive;
+  const DashboardScreen({super.key, this.onScanTap, this.isActive = true});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -59,6 +60,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ── ONE combined stream for all metrics_daily docs in the date window ──────
   late Stream<QuerySnapshot<Map<String, dynamic>>> _allMetricsStream;
   bool _refreshingHealthMetrics = false;
+  bool _automaticRefreshRequested = false;
   DateTime? _lastManualHealthRefresh;
   static const List<String> _defaultKeyMetrics = [
     'mood',
@@ -77,6 +79,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _rebuildStreams();
     _loadMetricOrder();
+    _requestAutomaticRefreshIfActive();
+  }
+
+  @override
+  void didUpdateWidget(covariant DashboardScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isActive && widget.isActive) {
+      _requestAutomaticRefreshIfActive();
+    }
+  }
+
+  void _requestAutomaticRefreshIfActive() {
+    if (!widget.isActive || _automaticRefreshRequested) return;
+    _automaticRefreshRequested = true;
     _refreshHealthMetricsFromHealth();
   }
 

@@ -84,7 +84,9 @@ class FitnessWorkoutTimerState {
 }
 
 class FitnessScreen extends StatefulWidget {
-  const FitnessScreen({super.key});
+  const FitnessScreen({super.key, this.isActive = true});
+
+  final bool isActive;
 
   @override
   State<FitnessScreen> createState() => _FitnessScreenState();
@@ -93,11 +95,26 @@ class FitnessScreen extends StatefulWidget {
 class _FitnessScreenState extends State<FitnessScreen> {
   bool _allActivity = false;
   bool _recommendationsExpanded = true;
+  bool _deferredInitializationStarted = false;
   final Map<String, int> _strengthGoals = Map.of(kDefaultStrengthGoals);
 
   @override
   void initState() {
     super.initState();
+    _startDeferredInitializationIfActive();
+  }
+
+  @override
+  void didUpdateWidget(covariant FitnessScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isActive && widget.isActive) {
+      _startDeferredInitializationIfActive();
+    }
+  }
+
+  void _startDeferredInitializationIfActive() {
+    if (!widget.isActive || _deferredInitializationStarted) return;
+    _deferredInitializationStarted = true;
     unawaited(_restoreActiveWorkout());
     unawaited(_backfillLegacyExerciseMinutes());
     unawaited(_backfillPersonalBests());

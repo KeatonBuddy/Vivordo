@@ -73,8 +73,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       const SizedBox.shrink(),
       const MyDayScreen(),
       const SizedBox.shrink(),
-      const FitnessScreen(),
-      DashboardScreen(onScanTap: _openScan),
+      const SizedBox.shrink(),
+      const SizedBox.shrink(),
     ];
     _persistentChatScreen = PandaScreen(onClose: _closeChat);
     _pandaHasBeenOpened = widget.initialIndex == 5;
@@ -175,14 +175,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       );
       delay += 150;
     }
-    if (!_pandaHasBeenOpened) {
-      _tabPreloadTimers.add(
-        Timer(Duration(milliseconds: delay), () {
-          if (!mounted || _pandaHasBeenOpened) return;
-          setState(() => _pandaHasBeenOpened = true);
-        }),
-      );
-    }
     _tabPreloadTimers.add(
       // Give the newly mounted Firebase-backed screens time to receive their
       // first snapshots before starting the transition. This prevents their
@@ -246,26 +238,31 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final detailRouteVisible = _detailRouteOpen;
     final activePage = IndexedStack(
       index: _selectedIndex,
-      children: List.generate(
-        _tabPages.length,
-        (index) => _loadedTabs.contains(index)
-            ? KeyedSubtree(
-                key: ValueKey('main-tab-$index'),
-                child: switch (index) {
-                  0 => HomeScreen(
-                    onScanTap: _openScan,
-                    onFitnessTap: () => _selectTab(3),
-                    revealStress: !_startupSplashMounted,
-                  ),
-                  2 => ScanScreen(
-                    isActive: _selectedIndex == 2 && !_chatOpen,
-                    onBackToHome: () => _selectTab(0),
-                  ),
-                  _ => _tabPages[index],
-                },
-              )
-            : const SizedBox.shrink(),
-      ),
+      children: List.generate(_tabPages.length, (index) {
+        if (!_loadedTabs.contains(index)) return const SizedBox.shrink();
+        final isActive = index == _selectedIndex && !_chatOpen;
+        return TickerMode(
+          enabled: isActive,
+          child: KeyedSubtree(
+            key: ValueKey('main-tab-$index'),
+            child: switch (index) {
+              0 => HomeScreen(
+                isActive: isActive,
+                onScanTap: _openScan,
+                onFitnessTap: () => _selectTab(3),
+                revealStress: !_startupSplashMounted,
+              ),
+              2 => ScanScreen(
+                isActive: isActive,
+                onBackToHome: () => _selectTab(0),
+              ),
+              3 => FitnessScreen(isActive: isActive),
+              4 => DashboardScreen(isActive: isActive, onScanTap: _openScan),
+              _ => _tabPages[index],
+            },
+          ),
+        );
+      }),
     );
     final contentNavigator = Navigator(
       key: _contentNavigatorKey,
@@ -316,19 +313,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             if (_pandaHasBeenOpened)
               Positioned.fill(
                 key: const ValueKey('persistent-ai-chat-layer'),
-                child: IgnorePointer(
-                  ignoring: !_chatOpen,
-                  child: AnimatedBuilder(
-                    animation: _chatRevealAnimation,
-                    // Reuse one mounted chat instance so closing the circular
-                    // reveal never resets the current conversation.
-                    child: _persistentChatScreen,
-                    builder: (context, child) => ClipPath(
-                      clipper: _CircularRevealClipper(
-                        origin: _chatRevealOrigin,
-                        progress: _chatRevealAnimation.value,
+                child: TickerMode(
+                  enabled: _chatOpen,
+                  child: IgnorePointer(
+                    ignoring: !_chatOpen,
+                    child: AnimatedBuilder(
+                      animation: _chatRevealAnimation,
+                      // Reuse one mounted chat instance so closing the circular
+                      // reveal never resets the current conversation.
+                      child: _persistentChatScreen,
+                      builder: (context, child) => ClipPath(
+                        clipper: _CircularRevealClipper(
+                          origin: _chatRevealOrigin,
+                          progress: _chatRevealAnimation.value,
+                        ),
+                        child: child,
                       ),
-                      child: child,
                     ),
                   ),
                 ),
