@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import 'activity_goals_service.dart';
 import 'achievement_unlock_service.dart';
 import 'calendar_service.dart';
 import 'circle_profile_service.dart';
@@ -57,6 +58,29 @@ class AchievementProgress {
       );
 }
 
+@visibleForTesting
+int countCompletedActivityRingDays({
+  required Iterable<Map<String, dynamic>> metricDays,
+  required ActivityGoals goals,
+}) {
+  num? metricSum(Map<String, dynamic> day, String key) {
+    final metric = day[key];
+    return metric is Map ? metric['sum'] as num? : null;
+  }
+
+  return metricDays.where((day) {
+    final steps = metricSum(day, 'steps');
+    final activeCalories = metricSum(day, 'active_calories');
+    final exerciseMinutes = metricSum(day, 'exercise_time');
+    return steps != null &&
+        activeCalories != null &&
+        exerciseMinutes != null &&
+        steps >= goals.steps &&
+        activeCalories >= goals.activeCalories &&
+        exerciseMinutes >= goals.exerciseMinutes;
+  }).length;
+}
+
 /// Watches achievement inputs for the lifetime of the signed-in app.
 class AchievementMonitor {
   AchievementMonitor._(this._userId);
@@ -65,7 +89,8 @@ class AchievementMonitor {
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   Timer? _debounce;
   String? _workoutSignature;
-  String? _scanSignature;
+  String? _metricSignature;
+  String? _activityGoalsSignature;
   String? _journalSignature;
   String? _profileSignature;
   String? _friendSignature;
@@ -110,22 +135,41 @@ class AchievementMonitor {
             (snapshot) => _updateSignature(
               snapshot.docs
                   .map((doc) {
-                    final scan = doc.data()['heart_rate_scan'];
-                    if (scan is! Map) return '${doc.id}:0';
-                    final entries = scan['entries'];
-                    final count = entries is List && entries.isNotEmpty
-                        ? entries.length
-                        : (scan['source'] == 'camera_ppg' || scan['avg'] is num)
-                        ? 1
-                        : 0;
-                    return '${doc.id}:$count';
+                    final data = doc.data();
+                    final scan = data['heart_rate_scan'];
+                    var count = 0;
+                    if (scan is Map) {
+                      final entries = scan['entries'];
+                      count = entries is List && entries.isNotEmpty
+                          ? entries.length
+                          : (scan['source'] == 'camera_ppg' ||
+                                scan['avg'] is num)
+                          ? 1
+                          : 0;
+                    }
+                    num? sumFor(String key) {
+                      final metric = data[key];
+                      return metric is Map ? metric['sum'] as num? : null;
+                    }
+
+                    return '${doc.id}:$count:${sumFor('steps')}:${sumFor('active_calories')}:${sumFor('exercise_time')}';
                   })
                   .join('|'),
-              (value) => _scanSignature = value,
-              () => _scanSignature,
+              (value) => _metricSignature = value,
+              () => _metricSignature,
             ),
             onError: _logMonitorError,
           ),
+    );
+    _subscriptions.add(
+      userRef.snapshots().listen((snapshot) {
+        final goals = ActivityGoals.fromUserData(snapshot.data());
+        _updateSignature(
+          '${goals.steps}:${goals.activeCalories}:${goals.exerciseMinutes}',
+          (value) => _activityGoalsSignature = value,
+          () => _activityGoalsSignature,
+        );
+      }, onError: _logMonitorError),
     );
     _subscriptions.add(
       userRef
@@ -254,6 +298,7 @@ class AchievementService {
       CircleProfileService.watchFriends().first,
       _hasGoogleCalendar(),
       _hasOutlookCalendar(),
+      userRef.get(),
     ]);
 
     final workouts = results[0] as QuerySnapshot<Map<String, dynamic>>;
@@ -263,6 +308,8 @@ class AchievementService {
     final savedAchievements = results[3] as QuerySnapshot<Map<String, dynamic>>;
     final friends = results[4] as List<CircleProfile>;
     final calendarConnected = (results[5] as bool) || (results[6] as bool);
+    final userSnapshot = results[7] as DocumentSnapshot<Map<String, dynamic>>;
+    final activityGoals = ActivityGoals.fromUserData(userSnapshot.data());
     final savedById = {
       for (final document in savedAchievements.docs) document.id: document,
     };
@@ -294,6 +341,10 @@ class AchievementService {
     }).length;
     final strengthWorkoutCount =
         workouts.docs.length - cardioOrSportsActivityCount;
+    final completedActivityRingDays = countCompletedActivityRingDays(
+      metricDays: metricDays.docs.map((document) => document.data()),
+      goals: activityGoals,
+    );
 
     final momentum = _tierProgress(
       id: 'workout_momentum',
@@ -325,6 +376,14 @@ class AchievementService {
       value: journalEntryCount,
       bronze: 5,
       silver: 20,
+      gold: 100,
+    );
+    final fullCircle = _tierProgress(
+      id: 'full_circle',
+      savedTier: savedById['full_circle']?.data()['tier'] as String?,
+      value: completedActivityRingDays,
+      bronze: 7,
+      silver: 30,
       gold: 100,
     );
 
@@ -388,6 +447,12 @@ class AchievementService {
         name: 'Story Keeper',
         requirement: 'Write ${story.target} journal entries',
         progressUnit: 'entries',
+      ),
+      _tierAchievement(
+        progress: fullCircle,
+        name: 'Full Circle',
+        requirement: 'Fill all activity rings on ${fullCircle.target} days',
+        progressUnit: 'days',
       ),
     ];
 
@@ -567,6 +632,9 @@ class AchievementService {
       ('story_keeper', 'bronze') => 5,
       ('story_keeper', 'silver') => 20,
       ('story_keeper', 'gold') => 100,
+      ('full_circle', 'bronze') => 7,
+      ('full_circle', 'silver') => 30,
+      ('full_circle', 'gold') => 100,
       _ => achievement.target,
     };
     return switch (achievement.id) {
@@ -574,6 +642,7 @@ class AchievementService {
       'endurance' => 'Complete $target cardio or sports activities',
       'pulse_check' => 'Complete $target heart-rate scans',
       'story_keeper' => 'Write $target journal entries',
+      'full_circle' => 'Fill all activity rings on $target days',
       _ => achievement.requirement,
     };
   }

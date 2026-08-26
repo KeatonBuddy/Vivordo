@@ -12,6 +12,8 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:vivordo_health/main.dart' show navigatorKey;
 import 'package:vivordo_health/src/services/analytics_service.dart';
+import 'package:vivordo_health/src/services/activity_goals_service.dart';
+import 'package:vivordo_health/src/utils/fitness_goal_notifications.dart';
 import 'package:vivordo_health/src/utils/notification_navigation.dart';
 
 /// Function to handle background messages
@@ -27,6 +29,10 @@ class NotificationService {
   static const int _dailyScanReminderBaseId = 1001;
   static const int _maxDailyScanReminders = 10;
   static const int _calendarCheckInReminderId = 1101;
+  static const int _stepGoalNotificationId = 1201;
+  static const int _activeCalorieGoalNotificationId = 1202;
+  static const int _exerciseGoalNotificationId = 1203;
+  static const int _fitnessRingNotificationId = 1204;
 
   factory NotificationService() {
     return _instance;
@@ -41,6 +47,8 @@ class NotificationService {
   bool _isInitialized = false;
   bool _dailyScanRemindersEnabled = true;
   bool _calendarCheckInReminderEnabled = true;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _fitnessGoalSubscription;
   String? _configuredUid;
   DateTime? _lastCalendarEventEnd;
   List<int> _scanReminderMinutes = [9 * 60, 17 * 60];
@@ -49,6 +57,8 @@ class NotificationService {
     if (_configuredUid != uid) {
       await _removeCurrentFcmToken();
       await cancelCalendarCheckIn();
+      await _fitnessGoalSubscription?.cancel();
+      _fitnessGoalSubscription = null;
       _lastCalendarEventEnd = null;
       _configuredUid = uid;
     }
@@ -89,6 +99,7 @@ class NotificationService {
     await setCalendarCheckInReminderEnabled(
       preferences?['checkInReminderEnabled'] != false,
     );
+    await _startFitnessGoalListener(uid);
   }
 
   Future<void> clearUserReminders() async {
@@ -97,6 +108,8 @@ class NotificationService {
     _lastCalendarEventEnd = null;
     _dailyScanRemindersEnabled = false;
     _calendarCheckInReminderEnabled = false;
+    await _fitnessGoalSubscription?.cancel();
+    _fitnessGoalSubscription = null;
     await cancelDailyScanReminder();
     await cancelCalendarCheckIn();
   }
@@ -145,6 +158,153 @@ class NotificationService {
     final eventEnd = _lastCalendarEventEnd;
     if (eventEnd != null) await scheduleCalendarCheckIn(eventEnd);
   }
+
+  Future<void> setFitnessNotificationsEnabled(bool enabled) async {
+    if (!enabled) return;
+    final uid = _configuredUid;
+    if (uid == null) return;
+    await _evaluateLatestFitnessGoals(uid);
+  }
+
+  Future<void> _startFitnessGoalListener(String uid) async {
+    await _fitnessGoalSubscription?.cancel();
+    _fitnessGoalSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('metrics_daily')
+        .orderBy(FieldPath.documentId, descending: true)
+        .limit(1)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (snapshot.docs.isEmpty) return;
+            unawaited(_evaluateFitnessGoals(uid, snapshot.docs.first));
+          },
+          onError: (Object error) {
+            print('NotificationService: Fitness goal listener failed: $error');
+          },
+        );
+  }
+
+  Future<void> _evaluateLatestFitnessGoals(String uid) async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('metrics_daily')
+        .orderBy(FieldPath.documentId, descending: true)
+        .limit(1)
+        .get();
+    if (snapshot.docs.isEmpty) return;
+    await _evaluateFitnessGoals(uid, snapshot.docs.first);
+  }
+
+  Future<void> _evaluateFitnessGoals(
+    String uid,
+    QueryDocumentSnapshot<Map<String, dynamic>> dailyDocument,
+  ) async {
+    if (_configuredUid != uid || dailyDocument.id != _localDayKey()) return;
+
+    try {
+      final dayKey = dailyDocument.id;
+      final userReference = FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid);
+      final newlyReached = await FirebaseFirestore.instance
+          .runTransaction<List<FitnessGoalNotificationType>>((
+            transaction,
+          ) async {
+            final userSnapshot = await transaction.get(userReference);
+            final userData = userSnapshot.data();
+            final preferences = userData?['preferences'] as Map?;
+            if (preferences?['fitnessNotificationsEnabled'] == false) {
+              return const [];
+            }
+
+            final goals = ActivityGoals.fromUserData(userData);
+            final reached = reachedFitnessGoalNotifications(
+              dailyMetrics: dailyDocument.data(),
+              stepsGoal: goals.steps,
+              activeCaloriesGoal: goals.activeCalories,
+              exerciseMinutesGoal: goals.exerciseMinutes,
+            );
+            final notificationState = userData?['notificationState'] as Map?;
+            final lastNotified =
+                notificationState?['fitnessGoalLastNotified'] as Map? ?? {};
+            final unclaimed = reached
+                .where((type) => lastNotified[type.storageKey] != dayKey)
+                .toList();
+            if (unclaimed.isEmpty) return const [];
+
+            transaction.update(userReference, {
+              for (final type in unclaimed)
+                'notificationState.fitnessGoalLastNotified.${type.storageKey}':
+                    dayKey,
+            });
+            return unclaimed;
+          });
+
+      if (newlyReached.isEmpty) return;
+      final userSnapshot = await userReference.get();
+      final goals = ActivityGoals.fromUserData(userSnapshot.data());
+      for (final type in newlyReached) {
+        await _showFitnessGoalNotification(type, goals);
+      }
+    } catch (error) {
+      print('NotificationService: Could not evaluate fitness goals: $error');
+    }
+  }
+
+  Future<void> _showFitnessGoalNotification(
+    FitnessGoalNotificationType type,
+    ActivityGoals goals,
+  ) async {
+    final (title, body) = switch (type) {
+      FitnessGoalNotificationType.steps => (
+        'Step goal complete',
+        'You reached your ${_formattedNumber(goals.steps)}-step goal today.',
+      ),
+      FitnessGoalNotificationType.activeCalories => (
+        'Active calorie goal complete',
+        'You burned ${_formattedNumber(goals.activeCalories)} active calories today.',
+      ),
+      FitnessGoalNotificationType.exerciseMinutes => (
+        'Exercise goal complete',
+        'You completed ${_formattedNumber(goals.exerciseMinutes)} exercise minutes today.',
+      ),
+      FitnessGoalNotificationType.allRings => (
+        'Fitness ring complete',
+        'You filled all three fitness rings today. Great work!',
+      ),
+    };
+    await showLocalNotification(
+      notificationId: switch (type) {
+        FitnessGoalNotificationType.steps => _stepGoalNotificationId,
+        FitnessGoalNotificationType.activeCalories =>
+          _activeCalorieGoalNotificationId,
+        FitnessGoalNotificationType.exerciseMinutes =>
+          _exerciseGoalNotificationId,
+        FitnessGoalNotificationType.allRings => _fitnessRingNotificationId,
+      },
+      title: title,
+      body: body,
+      payload: jsonEncode({
+        'screen': 'fitness',
+        'type': 'fitness_goal_${type.storageKey}',
+      }),
+    );
+  }
+
+  String _localDayKey() {
+    final now = DateTime.now();
+    return '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formattedNumber(int value) => value.toString().replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => ',',
+  );
 
   /// Initialize the notification service
   /// Should be called once in main() after Firebase.initializeApp()
@@ -432,6 +592,7 @@ class NotificationService {
   /// Show a local notification
   /// Used to display notifications when app is in foreground
   Future<void> showLocalNotification({
+    int? notificationId,
     required String title,
     required String body,
     String? payload,
@@ -455,7 +616,7 @@ class NotificationService {
     );
 
     await _localNotificationsPlugin.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      notificationId ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title,
       body,
       platformChannelSpecifics,

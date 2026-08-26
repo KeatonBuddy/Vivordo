@@ -3,6 +3,7 @@ List<String> notificationRouteStack(String? screen) {
     'scan' => '/scan',
     'ai_chat' => '/ai-chat',
     'circle' => '/circle',
+    'fitness' => '/fitness',
     _ => '/home',
   };
 

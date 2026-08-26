@@ -14,6 +14,10 @@ void main() {
     expect(notificationRouteStack('ai_chat'), ['/home', '/ai-chat']);
   });
 
+  test('fitness notifications retain the main app as a back destination', () {
+    expect(notificationRouteStack('fitness'), ['/home', '/fitness']);
+  });
+
   test('unknown notification destinations safely open the main app', () {
     expect(notificationRouteStack('unknown'), ['/home']);
     expect(notificationRouteStack(null), ['/home']);

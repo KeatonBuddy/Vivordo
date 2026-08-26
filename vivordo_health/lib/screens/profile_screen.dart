@@ -41,6 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isUpdatingScanReminder = false;
   bool _isUpdatingCheckInReminder = false;
   bool _isUpdatingCircleNotifications = false;
+  bool _isUpdatingFitnessNotifications = false;
 
   // Bug report
   final TextEditingController _bugReportController = TextEditingController();
@@ -381,10 +382,13 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     final isScanReminder = field == 'scanReminderEnabled';
     final isCircleNotification = field == 'circleNotificationsEnabled';
+    final isFitnessNotification = field == 'fitnessNotificationsEnabled';
     final isUpdating = isScanReminder
         ? _isUpdatingScanReminder
         : isCircleNotification
         ? _isUpdatingCircleNotifications
+        : isFitnessNotification
+        ? _isUpdatingFitnessNotifications
         : _isUpdatingCheckInReminder;
     if (isUpdating) {
       return;
@@ -395,6 +399,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         _isUpdatingScanReminder = true;
       } else if (isCircleNotification) {
         _isUpdatingCircleNotifications = true;
+      } else if (isFitnessNotification) {
+        _isUpdatingFitnessNotifications = true;
       } else {
         _isUpdatingCheckInReminder = true;
       }
@@ -406,6 +412,8 @@ class _SettingsScreenState extends State<SettingsScreen>
       });
       if (isScanReminder) {
         await NotificationService().setDailyScanRemindersEnabled(enabled);
+      } else if (isFitnessNotification) {
+        await NotificationService().setFitnessNotificationsEnabled(enabled);
       } else if (!isCircleNotification) {
         await NotificationService().setCalendarCheckInReminderEnabled(enabled);
       }
@@ -422,6 +430,8 @@ class _SettingsScreenState extends State<SettingsScreen>
             _isUpdatingScanReminder = false;
           } else if (isCircleNotification) {
             _isUpdatingCircleNotifications = false;
+          } else if (isFitnessNotification) {
+            _isUpdatingFitnessNotifications = false;
           } else {
             _isUpdatingCheckInReminder = false;
           }
@@ -693,6 +703,8 @@ class _SettingsScreenState extends State<SettingsScreen>
             preferences['checkInReminderEnabled'] != false;
         final circleNotificationsEnabled =
             preferences['circleNotificationsEnabled'] != false;
+        final fitnessNotificationsEnabled =
+            preferences['fitnessNotificationsEnabled'] != false;
         final savedReminderTimes =
             (preferences['scanReminderTimes'] as List?)
                 ?.whereType<num>()
@@ -1688,6 +1700,17 @@ class _SettingsScreenState extends State<SettingsScreen>
                         circleNotificationsEnabled,
                         (val) => _updateReminderPreference(
                           field: 'circleNotificationsEnabled',
+                          enabled: val,
+                        ),
+                      ),
+                      _buildDivider(),
+                      _buildToggleRow(
+                        Icons.fitness_center_rounded,
+                        'Fitness Notifications',
+                        'Goal and fitness ring updates',
+                        fitnessNotificationsEnabled,
+                        (val) => _updateReminderPreference(
+                          field: 'fitnessNotificationsEnabled',
                           enabled: val,
                         ),
                       ),

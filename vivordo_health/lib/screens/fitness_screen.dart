@@ -2004,10 +2004,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 )
                 .toList()
           : [
-              ...exercises,
               ...selected
                   .where((definition) => !existing.containsKey(definition.name))
                   .map(_WorkoutExercise.new),
+              ...exercises,
             ];
       exercises
         ..clear()
@@ -2422,6 +2422,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               onRemove: () {
                 setState(() => exercises.remove(exercise));
                 unawaited(draft.persist());
+                FitnessWorkoutTimerState.update(
+                  title: draft.liveActivityTitle,
+                  exerciseCount: exercises.length,
+                );
               },
             ),
             const SizedBox(height: 10),
@@ -5868,6 +5872,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   ];
 
   late final Set<String> _selected;
+  late final List<String> _selectedOrder;
   final List<_ExerciseDefinition> _customExercises = [];
   String _filter = 'All';
   String _search = '';
@@ -5878,6 +5883,9 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
     _selected = widget.initiallySelected
         .map((exercise) => exercise.name)
         .toSet();
+    _selectedOrder = widget.initiallySelected
+        .map((exercise) => exercise.name)
+        .toList();
     final libraryNames = _exerciseLibrary
         .map((exercise) => _exerciseNameKey(exercise.name))
         .toSet();
@@ -5956,15 +5964,26 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
 
   void _toggle(_ExerciseDefinition exercise) {
     setState(() {
-      if (!_selected.add(exercise.name)) _selected.remove(exercise.name);
+      if (_selected.add(exercise.name)) {
+        // The active workout is ordered newest-first, so the last exercise
+        // the user adds becomes both the top card and the Live Activity title.
+        _selectedOrder.insert(0, exercise.name);
+      } else {
+        _selected.remove(exercise.name);
+        _selectedOrder.remove(exercise.name);
+      }
     });
   }
 
   void _finish() {
-    final selectedExercises = [
-      ..._exerciseLibrary,
-      ..._customExercises,
-    ].where((exercise) => _selected.contains(exercise.name)).toList();
+    final definitionsByName = {
+      for (final exercise in [..._exerciseLibrary, ..._customExercises])
+        exercise.name: exercise,
+    };
+    final selectedExercises = _selectedOrder
+        .map((name) => definitionsByName[name])
+        .whereType<_ExerciseDefinition>()
+        .toList(growable: false);
     Navigator.pop(context, selectedExercises);
   }
 
@@ -6032,7 +6051,8 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
     }
     setState(() {
       if (matchingExercise == null) _customExercises.add(created);
-      _selected.add(matchingExercise?.name ?? created.name);
+      final selectedName = matchingExercise?.name ?? created.name;
+      if (_selected.add(selectedName)) _selectedOrder.insert(0, selectedName);
     });
     try {
       await WorkoutService.saveCustomExercise(
