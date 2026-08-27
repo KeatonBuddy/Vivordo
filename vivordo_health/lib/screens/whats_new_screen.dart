@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
-/// Release notes shown once to existing users after the major Vivordo refresh.
+/// Release notes shown once to existing users after the My Day refresh.
 class WhatsNewScreen extends StatelessWidget {
   const WhatsNewScreen({super.key, required this.onDismiss});
 
@@ -9,71 +9,46 @@ class WhatsNewScreen extends StatelessWidget {
 
   static const _features = <_WhatsNewFeature>[
     _WhatsNewFeature(
-      icon: Icons.fitness_center_rounded,
-      colors: [Color(0xFF7B6EF6), Color(0xFF4935F5)],
-      title: 'Complete Fitness',
+      icon: Icons.speed_rounded,
+      colors: [Color(0xFF7667F4), Color(0xFF4935F5)],
+      title: 'Your day at a glance',
       description:
-          'Record 100+ exercises, build templates and track your progress.',
+          'See today’s schedule load, scheduled time and longest opening instantly.',
     ),
     _WhatsNewFeature(
-      icon: Icons.donut_large_rounded,
+      icon: Icons.schedule_rounded,
+      colors: [Color(0xFF77D36B), Color(0xFF37A84B)],
+      title: 'Know what’s next',
+      description:
+          'Find your current opening and upcoming events from Google and Outlook.',
+    ),
+    _WhatsNewFeature(
+      icon: Icons.check_circle_rounded,
+      colors: [Color(0xFF66D46A), Color(0xFF27A94B)],
+      title: 'Independent daily priorities',
+      description:
+          'Use smart calendar suggestions or add your own, then check them off as you go.',
+    ),
+    _WhatsNewFeature(
+      icon: Icons.account_tree_rounded,
+      colors: [Color(0xFF76A7FF), Color(0xFF3478F6)],
+      title: 'A connected timeline',
+      description:
+          'Follow the day in order, open events directly and jump into the full calendar.',
+    ),
+    _WhatsNewFeature(
+      icon: Icons.add_rounded,
       colors: [Color(0xFFA697FF), Color(0xFF6752EF)],
-      title: 'Wellness & Metrics',
+      title: 'Add plans without leaving My Day',
       description:
-          'Explore detailed scores, trends, goals and personalized insights.',
-    ),
-    _WhatsNewFeature(
-      icon: Icons.monitor_heart_outlined,
-      colors: [Color(0xFFFF786C), Color(0xFFF0443D)],
-      title: 'Smarter Scans',
-      description:
-          'Start scans when ready and use saved readings across Vivordo.',
+          'Create calendar events or scheduled and repeating priorities in a few taps.',
     ),
     _WhatsNewFeature(
       icon: Icons.menu_book_rounded,
       colors: [Color(0xFF43D7C8), Color(0xFF00AFA1)],
-      title: 'Private Journal',
-      description: 'Track reflections and moods with biometric protection.',
-    ),
-    _WhatsNewFeature(
-      icon: Icons.group_rounded,
-      colors: [Color(0xFF9477F7), Color(0xFFFF6581), Color(0xFF31C9A8)],
-      title: 'Introducing Circle',
+      title: 'Reflect in the moment',
       description:
-          'Share selected moments, connect with friends and encourage each other.',
-    ),
-    _WhatsNewFeature(
-      icon: Icons.military_tech_rounded,
-      colors: [Color(0xFFFFD45C), Color(0xFFF2A900)],
-      title: 'Achievements & Challenges',
-      description:
-          'Earn collectible badges and compete or collaborate with friends.',
-    ),
-    _WhatsNewFeature(
-      icon: Icons.calendar_month_rounded,
-      colors: [Color(0xFF76A7FF), Color(0xFF3478F6)],
-      title: 'Smarter My Day',
-      description: 'See Google and Outlook events together and find open time.',
-    ),
-    _WhatsNewFeature(
-      icon: Icons.chat_bubble_outline_rounded,
-      colors: [Color(0xFFA697FF), Color(0xFF6752EF)],
-      title: 'Smarter AI Chat',
-      description:
-          'Get personalized answers from your relevant workout history.',
-    ),
-    _WhatsNewFeature(
-      icon: Icons.dark_mode_rounded,
-      colors: [Color(0xFF6E67A8), Color(0xFF302C68)],
-      title: 'Dark Mode & New Design',
-      description: 'Enjoy refreshed screens, navigation, cards and graphs.',
-    ),
-    _WhatsNewFeature(
-      icon: Icons.phone_iphone_rounded,
-      colors: [Color(0xFF9D8BFF), Color(0xFF6453E8)],
-      title: 'Live Activities & Widgets',
-      description:
-          'Track workouts from the Lock Screen and add Home Screen widgets.',
+          'Your journal stays close by with the same private writing experience.',
     ),
   ];
 
@@ -136,7 +111,7 @@ class WhatsNewScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Meet the new Vivordo',
+                    'Your day, redesigned',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: colors.textPrimary,
@@ -148,7 +123,7 @@ class WhatsNewScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Your fitness, health and friends—completely reimagined.',
+                    'A clearer way to plan what matters and move through your schedule.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: colors.textSecondary,
@@ -170,7 +145,7 @@ class WhatsNewScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: const Text(
-                        'MAJOR UPDATE',
+                        'MY DAY UPDATE',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 14,
@@ -212,7 +187,7 @@ class WhatsNewScreen extends StatelessWidget {
                         ],
                         const SizedBox(height: 10),
                         Text(
-                          'And many more improvements throughout the app.',
+                          'Built to help you spend less time organizing and more time doing.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: colors.textSecondary,
