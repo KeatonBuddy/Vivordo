@@ -3,6 +3,20 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:flutter/foundation.dart';
 
+class WritableCalendar {
+  const WritableCalendar({
+    required this.id,
+    required this.name,
+    required this.isPrimary,
+    this.colorHex,
+  });
+
+  final String id;
+  final String name;
+  final bool isPrimary;
+  final String? colorHex;
+}
+
 class CalendarService {
   static bool _initialized = false;
   static Future<void>? _initializationFuture;
@@ -74,30 +88,83 @@ class CalendarService {
     _eventCalendarIds.remove(eventId);
   }
 
+  static Future<List<WritableCalendar>> getWritableCalendars() async {
+    final calendarApi = await _authorizedCalendarApi();
+    final calendars = <WritableCalendar>[];
+    String? pageToken;
+    do {
+      final page = await calendarApi.calendarList.list(pageToken: pageToken);
+      for (final entry in page.items ?? const <gcal.CalendarListEntry>[]) {
+        final id = entry.id;
+        final role = entry.accessRole;
+        if (id == null || (role != 'owner' && role != 'writer')) continue;
+        calendars.add(
+          WritableCalendar(
+            id: id,
+            name: entry.summary?.trim().isNotEmpty == true
+                ? entry.summary!.trim()
+                : 'Untitled calendar',
+            isPrimary: entry.primary == true,
+            colorHex: entry.backgroundColor,
+          ),
+        );
+      }
+      pageToken = page.nextPageToken;
+    } while (pageToken != null && pageToken.isNotEmpty);
+
+    calendars.sort((a, b) {
+      if (a.isPrimary != b.isPrimary) return a.isPrimary ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    return calendars;
+  }
+
   static Future<gcal.Event> createEvent({
     required String title,
     required DateTime start,
     required DateTime end,
     required String recurrence,
+    bool isAllDay = false,
+    String calendarId = 'primary',
+    bool isPriority = false,
   }) async {
     if (!end.isAfter(start)) {
       throw ArgumentError('The end time must be after the start time.');
     }
 
+    final recurrenceParts = recurrence.split(';until=');
+    final recurrenceBase = recurrenceParts.first;
+    final untilSuffix = recurrenceParts.length > 1
+        ? ';UNTIL=${recurrenceParts[1]}T235959Z'
+        : '';
+    final weeklyDays = recurrenceBase.startsWith('weekly:')
+        ? recurrenceBase.substring('weekly:'.length)
+        : '';
     final event = gcal.Event()
       ..summary = title
-      ..start = (gcal.EventDateTime()..dateTime = start.toUtc())
-      ..end = (gcal.EventDateTime()..dateTime = end.toUtc())
-      ..recurrence = switch (recurrence) {
-        'daily' => <String>['RRULE:FREQ=DAILY'],
-        'weekly' => <String>['RRULE:FREQ=WEEKLY'],
-        'monthly' => <String>['RRULE:FREQ=MONTHLY'],
+      ..start = (gcal.EventDateTime()
+        ..dateTime = isAllDay ? null : start.toUtc()
+        ..date = isAllDay ? DateTime(start.year, start.month, start.day) : null)
+      ..end = (gcal.EventDateTime()
+        ..dateTime = isAllDay ? null : end.toUtc()
+        ..date = isAllDay ? DateTime(end.year, end.month, end.day) : null)
+      ..recurrence = switch (recurrenceBase) {
+        'daily' => <String>['RRULE:FREQ=DAILY$untilSuffix'],
+        'weekly' => <String>['RRULE:FREQ=WEEKLY$untilSuffix'],
+        'monthly' => <String>['RRULE:FREQ=MONTHLY$untilSuffix'],
+        _ when weeklyDays.isNotEmpty => <String>[
+          'RRULE:FREQ=WEEKLY;BYDAY=$weeklyDays$untilSuffix',
+        ],
         _ => <String>[],
-      };
+      }
+      ..extendedProperties = isPriority
+          ? (gcal.EventExtendedProperties()
+              ..private = const {'vivordoPriority': 'true'})
+          : null;
 
     final calendarApi = await _authorizedCalendarApi();
-    final result = await calendarApi.events.insert(event, 'primary');
-    if (result.id != null) _eventCalendarIds[result.id!] = 'primary';
+    final result = await calendarApi.events.insert(event, calendarId);
+    if (result.id != null) _eventCalendarIds[result.id!] = calendarId;
     return result;
   }
 

@@ -5,6 +5,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/calendar_service.dart';
 import '../src/services/outlook_calendar_service.dart';
+import '../widgets/add_calendar_event_sheet.dart';
 
 class MonthCalendarScreen extends StatefulWidget {
   const MonthCalendarScreen({super.key});
@@ -373,6 +374,48 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
     }
   }
 
+  Future<void> _createGoogleEvent() async {
+    final now = DateTime.now();
+    final isToday = DateUtils.isSameDay(_selectedDay, now);
+    final initialStart = isToday
+        ? DateTime(
+            now.year,
+            now.month,
+            now.day,
+            now.minute < 30 ? now.hour : now.hour + 1,
+            now.minute < 30 ? 30 : 0,
+          )
+        : DateTime(_selectedDay.year, _selectedDay.month, _selectedDay.day, 9);
+    final draft = await showAddCalendarEventSheet(
+      context,
+      initialStart: initialStart,
+      initialEnd: initialStart.add(const Duration(hours: 1)),
+    );
+    if (draft == null || !mounted) return;
+
+    try {
+      setState(() => _loading = true);
+      await CalendarService.createEvent(
+        title: draft.title,
+        start: draft.start,
+        end: draft.end,
+        recurrence: draft.recurrence,
+        isAllDay: draft.isAllDay,
+        calendarId: draft.calendarId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _visibleMonth = DateTime(draft.date.year, draft.date.month);
+        _selectedDay = DateUtils.dateOnly(draft.date);
+      });
+      await _loadEvents();
+      _showMessage('Event added to Google Calendar.');
+    } catch (error) {
+      if (mounted) setState(() => _loading = false);
+      _showMessage('Could not create event: $error');
+    }
+  }
+
   DateTime _withTime(DateTime date, TimeOfDay time) =>
       DateTime(date.year, date.month, date.day, time.hour, time.minute);
 
@@ -408,6 +451,12 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
         ),
         centerTitle: true,
         actions: [
+          IconButton(
+            onPressed: _loading ? null : _createGoogleEvent,
+            tooltip: 'Add event',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.add_rounded),
+          ),
           TextButton(onPressed: _goToToday, child: const Text('Today')),
           const SizedBox(width: 6),
         ],

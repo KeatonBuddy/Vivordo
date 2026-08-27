@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 
 import '../src/services/calendar_service.dart';
+import '../src/services/daily_priority_service.dart';
 import '../src/services/outlook_calendar_service.dart';
-import 'home_screen.dart' show WeeklyCalendar;
+import '../widgets/add_calendar_event_sheet.dart';
+import '../widgets/add_priority_sheet.dart';
 import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
 
@@ -24,11 +28,23 @@ class MyDayScreen extends StatefulWidget {
 class _MyDayScreenState extends State<MyDayScreen> {
   List<_CalendarEvent> _events = const [];
   bool _isLoading = true;
+  Timer? _clockTimer;
+  late final Stream<List<DailyPriority>> _priorityStream;
 
   @override
   void initState() {
     super.initState();
+    _priorityStream = DailyPriorityService.watch(DateTime.now());
     _loadTodayEvents();
+    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadTodayEvents() async {
@@ -69,6 +85,17 @@ class _MyDayScreenState extends State<MyDayScreen> {
       _events = events;
       _isLoading = false;
     });
+    try {
+      await DailyPriorityService.materializeRecurring(dayStart);
+      await DailyPriorityService.seedFromCalendar(
+        dayStart,
+        events
+            .where((event) => !event.isPriorityLinked)
+            .map((event) => event.priorityCandidate),
+      );
+    } catch (error) {
+      debugPrint('Could not generate daily priorities: $error');
+    }
   }
 
   Future<void> _handleEventTap(_CalendarEvent event) async {
@@ -242,6 +269,40 @@ class _MyDayScreenState extends State<MyDayScreen> {
     }
   }
 
+  Future<void> _createGoogleEvent() async {
+    final now = DateTime.now();
+    final initialStart = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.minute < 30 ? now.hour : now.hour + 1,
+      now.minute < 30 ? 30 : 0,
+    );
+    final draft = await showAddCalendarEventSheet(
+      context,
+      initialStart: initialStart,
+      initialEnd: initialStart.add(const Duration(hours: 1)),
+    );
+    if (draft == null || !mounted) return;
+
+    try {
+      setState(() => _isLoading = true);
+      await CalendarService.createEvent(
+        title: draft.title,
+        start: draft.start,
+        end: draft.end,
+        recurrence: draft.recurrence,
+        isAllDay: draft.isAllDay,
+        calendarId: draft.calendarId,
+      );
+      await _loadTodayEvents();
+      _showMessage('Event added to Google Calendar.');
+    } catch (error) {
+      if (mounted) setState(() => _isLoading = false);
+      _showMessage('Could not create event: $error');
+    }
+  }
+
   void _showMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -332,9 +393,15 @@ class _MyDayScreenState extends State<MyDayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final load = _events.length >= 6
+    final timedEvents = _events.where((event) => !event.isAllDay).toList();
+    final scheduled = timedEvents.fold<Duration>(
+      Duration.zero,
+      (total, event) => total + event.end.difference(event.start),
+    );
+    final longestOpening = _longestOpening();
+    final load = scheduled.inHours >= 6
         ? 'High'
-        : _events.length >= 3
+        : scheduled.inHours >= 3
         ? 'Moderate'
         : 'Low';
     final dayInsight = _calculateDayInsight();
@@ -345,12 +412,12 @@ class _MyDayScreenState extends State<MyDayScreen> {
         child: RefreshIndicator(
           onRefresh: _loadTodayEvents,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(18, 22, 18, 150),
+            padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
             children: [
               Text(
                 'My Day',
                 style: TextStyle(
-                  fontSize: 28,
+                  fontSize: 34,
                   fontWeight: FontWeight.w800,
                   color: context.vivordoColors.textPrimary,
                 ),
@@ -360,283 +427,160 @@ class _MyDayScreenState extends State<MyDayScreen> {
                 DateFormat('EEEE, MMMM d').format(DateTime.now()),
                 style: const TextStyle(color: MyDayScreen.muted),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
               Container(
-                padding: const EdgeInsets.all(18),
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFF7667F4), Color(0xFF5845DF)],
+                    colors: [Color(0xFF5848E8), Color(0xFF3422B8)],
                   ),
                   borderRadius: BorderRadius.circular(22),
                 ),
-                child: Row(
+                child: Column(
                   children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: .18),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.speed_rounded,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "TODAY'S LOAD SCORE",
-                            style: TextStyle(
-                              color: Color(0xFFDCD6FF),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            load,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 25,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          Text(
-                            '${_events.length} calendar events · Balanced focus time',
-                            style: const TextStyle(
-                              color: Color(0xFFE7E3FF),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                "TODAY'S EVENTS",
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.3,
-                  color: MyDayScreen.muted,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                decoration: BoxDecoration(
-                  color: context.vivordoColors.card,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(
-                    color: Colors.black.withValues(alpha: .07),
-                  ),
-                ),
-                child: _buildEvents(),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'JOURNAL',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.3,
-                  color: MyDayScreen.muted,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Material(
-                color: context.vivordoColors.card,
-                borderRadius: BorderRadius.circular(20),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const JournalScreen(),
-                    ),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.black.withValues(alpha: .07),
-                      ),
-                    ),
-                    child: Row(
+                    Row(
                       children: [
-                        Container(
-                          width: 46,
-                          height: 46,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF2EDFF),
-                            borderRadius: BorderRadius.circular(13),
-                          ),
-                          child: const Icon(
-                            Icons.menu_book_rounded,
-                            color: MyDayScreen.purple,
+                        const SizedBox(
+                          width: 62,
+                          height: 62,
+                          child: Icon(
+                            Icons.speed_rounded,
+                            color: Colors.white,
+                            size: 48,
                           ),
                         ),
-                        const SizedBox(width: 13),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Journal',
+                              const Text(
+                                "TODAY'S SCHEDULE LOAD",
                                 style: TextStyle(
-                                  color: context.vivordoColors.textPrimary,
-                                  fontSize: 17,
+                                  color: Color(0xFFE1DDFF),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.1,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                load,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 28,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              SizedBox(height: 3),
                               Text(
-                                'Reflect on your day',
-                                style: TextStyle(
-                                  color: MyDayScreen.muted,
+                                '${_events.length} ${_events.length == 1 ? 'event' : 'events'} · ${load == 'Low' ? 'Balanced focus time' : 'A structured day'}',
+                                style: const TextStyle(
+                                  color: Color(0xFFE7E3FF),
                                   fontSize: 12,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF7F3FF),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: MyDayScreen.purple.withValues(alpha: .18),
-                            ),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(
-                                Icons.edit_rounded,
-                                color: MyDayScreen.purple,
-                                size: 16,
-                              ),
-                              SizedBox(width: 5),
-                              Text(
-                                'Write',
-                                style: TextStyle(
-                                  color: MyDayScreen.purple,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.chevron_right_rounded,
-                          color: MyDayScreen.muted,
-                        ),
                       ],
                     ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 28),
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const MonthCalendarScreen(),
-                    ),
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
+                    const Divider(height: 24, color: Color(0x55FFFFFF)),
+                    Row(
                       children: [
-                        Text(
-                          'WEEKLY CALENDAR',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.3,
-                            color: MyDayScreen.muted,
+                        Expanded(
+                          child: _LoadMetric(
+                            icon: Icons.schedule_rounded,
+                            value: _shortDuration(longestOpening),
+                            label: 'longest opening',
                           ),
                         ),
-                        SizedBox(width: 4),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          size: 20,
-                          color: MyDayScreen.muted,
+                        Container(width: 1, height: 38, color: Colors.white24),
+                        Expanded(
+                          child: _LoadMetric(
+                            icon: Icons.calendar_month_rounded,
+                            value: _shortDuration(scheduled),
+                            label: 'scheduled',
+                          ),
                         ),
                       ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const WeeklyCalendar(),
-              const SizedBox(height: 22),
-              const Text(
-                'DAY INSIGHT',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.3,
-                  color: MyDayScreen.muted,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: context.vivordoColors.card,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.black.withValues(alpha: .07),
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.auto_awesome_rounded,
-                      color: MyDayScreen.purple,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            dayInsight.title,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: context.vivordoColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            dayInsight.detail,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              height: 1.4,
-                              color: MyDayScreen.muted,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(height: 24),
+              const _SectionLabel('NOW & NEXT'),
+              const SizedBox(height: 10),
+              _SectionCard(child: _buildNowAndNext()),
+              const SizedBox(height: 24),
+              const _SectionLabel('VIVORDO INSIGHT'),
+              const SizedBox(height: 10),
+              _SectionCard(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.auto_awesome_rounded,
+                        color: MyDayScreen.purple,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              dayInsight.title,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: context.vivordoColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              dayInsight.detail,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                height: 1.4,
+                                color: MyDayScreen.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const _SectionLabel("TODAY'S PRIORITIES"),
+              const SizedBox(height: 10),
+              _SectionCard(child: _buildPriorities()),
+              const SizedBox(height: 24),
+              const _SectionLabel('JOURNAL'),
+              const SizedBox(height: 10),
+              _buildJournalTile(),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  const Expanded(child: _SectionLabel("TODAY'S TIMELINE")),
+                  IconButton(
+                    onPressed: _isLoading ? null : _createGoogleEvent,
+                    tooltip: 'Add event',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(
+                      Icons.add_rounded,
+                      color: MyDayScreen.purple,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _openCalendar,
+                    child: const Text('View Calendar'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              _SectionCard(child: _buildTimeline()),
             ],
           ),
         ),
@@ -644,7 +588,273 @@ class _MyDayScreenState extends State<MyDayScreen> {
     );
   }
 
-  Widget _buildEvents() {
+  Duration _longestOpening() {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day, 9);
+    final end = DateTime(now.year, now.month, now.day, 17);
+    final events =
+        _events
+            .where(
+              (e) =>
+                  !e.isAllDay && e.end.isAfter(start) && e.start.isBefore(end),
+            )
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
+    var cursor = start;
+    var longest = Duration.zero;
+    for (final event in events) {
+      if (event.start.isAfter(cursor)) {
+        final gap = event.start.difference(cursor);
+        if (gap > longest) longest = gap;
+      }
+      if (event.end.isAfter(cursor)) cursor = event.end;
+    }
+    if (cursor.isBefore(end) && end.difference(cursor) > longest) {
+      return end.difference(cursor);
+    }
+    return longest;
+  }
+
+  String _shortDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    if (hours == 0) return '${minutes}m';
+    return minutes == 0 ? '${hours}h' : '${hours}h ${minutes}m';
+  }
+
+  Future<void> _openCalendar() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const MonthCalendarScreen()),
+    );
+    if (mounted) await _loadTodayEvents();
+  }
+
+  Widget _buildNowAndNext() {
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final now = DateTime.now();
+    final timedEvents = _events.where((event) => !event.isAllDay).toList();
+    final isBusy = timedEvents.any(
+      (event) => !event.start.isAfter(now) && event.end.isAfter(now),
+    );
+    final futureEvents = timedEvents
+        .where((event) => event.start.isAfter(now))
+        .toList();
+    final nextEvent = futureEvents.isEmpty ? null : futureEvents.first;
+    final freeDuration = nextEvent?.start.difference(now);
+    final showFreeUntil =
+        !isBusy && freeDuration != null && freeDuration.inMinutes >= 1;
+    final upcoming = _events
+        .where((event) => event.end.isAfter(now))
+        .take(showFreeUntil ? 2 : 3)
+        .toList();
+    if (upcoming.isEmpty && !showFreeUntil) {
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(
+          child: Text(
+            'Nothing else scheduled today',
+            style: TextStyle(color: MyDayScreen.muted),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        if (showFreeUntil) ...[
+          _FreeUntilRow(until: nextEvent!.start, duration: freeDuration),
+          if (upcoming.isNotEmpty) const Divider(height: 1, indent: 66),
+        ],
+        for (var i = 0; i < upcoming.length; i++) ...[
+          _DayEvent(upcoming[i], onTap: () => _handleEventTap(upcoming[i])),
+          if (i < upcoming.length - 1) const Divider(height: 1, indent: 66),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPriorities() => StreamBuilder<List<DailyPriority>>(
+    stream: _priorityStream,
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting &&
+          !snapshot.hasData) {
+        return const SizedBox(
+          height: 72,
+          child: Center(child: CircularProgressIndicator()),
+        );
+      }
+      if (snapshot.hasError) {
+        return const Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'Could not load today’s priorities',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: MyDayScreen.muted),
+          ),
+        );
+      }
+      final priorities = snapshot.data ?? const <DailyPriority>[];
+      return Column(
+        children: [
+          if (priorities.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 20, 18, 12),
+              child: Text(
+                'No calendar events qualify as priorities yet.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: MyDayScreen.muted, fontSize: 12),
+              ),
+            ),
+          for (var index = 0; index < priorities.length; index++) ...[
+            _PriorityRow(
+              priority: priorities[index],
+              onToggle: () => _togglePriority(priorities[index]),
+            ),
+            if (index < priorities.length - 1)
+              const Divider(height: 1, indent: 58, endIndent: 16),
+          ],
+          if (priorities.isNotEmpty) const Divider(height: 1),
+          TextButton.icon(
+            onPressed: _addManualPriority,
+            icon: const Icon(Icons.add_rounded, size: 19),
+            label: const Text('Add priority'),
+          ),
+          const SizedBox(height: 4),
+        ],
+      );
+    },
+  );
+
+  Future<void> _togglePriority(DailyPriority priority) async {
+    try {
+      await DailyPriorityService.setCompleted(priority, !priority.completed);
+    } catch (error) {
+      _showMessage('Could not update priority: $error');
+    }
+  }
+
+  Future<void> _addManualPriority() async {
+    final draft = await showAddPrioritySheet(context);
+    if (draft == null || !mounted) return;
+
+    try {
+      await DailyPriorityService.createManual(
+        title: draft.title,
+        date: draft.date,
+        scheduledAt: draft.scheduledAt,
+        recurrence: draft.recurrence,
+        selectedWeekdays: draft.selectedWeekdays,
+        recurrenceEnd: draft.repeatEnd,
+      );
+    } catch (error) {
+      _showMessage('Could not add priority: $error');
+      return;
+    }
+
+    if (!draft.addToCalendar) return;
+    final start = draft.scheduledAt ?? DateUtils.dateOnly(draft.date);
+    final end = draft.scheduledAt == null
+        ? start.add(const Duration(days: 1))
+        : start.add(const Duration(hours: 1));
+    try {
+      await CalendarService.createEvent(
+        title: draft.title,
+        start: start,
+        end: end,
+        recurrence: draft.calendarRecurrence,
+        isAllDay: draft.scheduledAt == null,
+        isPriority: true,
+      );
+      if (mounted) await _loadTodayEvents();
+    } catch (error) {
+      _showMessage(
+        'Priority saved, but the calendar event could not be added: $error',
+      );
+    }
+  }
+
+  Widget _buildJournalTile() => Material(
+    color: context.vivordoColors.card,
+    borderRadius: BorderRadius.circular(20),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const JournalScreen())),
+      child: Container(
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.black.withValues(alpha: .07)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF2EDFF),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(
+                Icons.menu_book_rounded,
+                color: MyDayScreen.purple,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Today's Journal",
+                    style: TextStyle(
+                      color: context.vivordoColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Your space to write, reflect, or record your day.',
+                    style: TextStyle(color: MyDayScreen.muted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF2EDFF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.edit_rounded, color: MyDayScreen.purple, size: 15),
+                  SizedBox(width: 5),
+                  Text(
+                    'Write entry',
+                    style: TextStyle(
+                      color: MyDayScreen.purple,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _buildTimeline() {
     if (_isLoading) {
       return const Padding(
         padding: EdgeInsets.all(24),
@@ -656,21 +866,331 @@ class _MyDayScreenState extends State<MyDayScreen> {
         padding: EdgeInsets.all(24),
         child: Center(
           child: Text(
-            'No calendar events today',
+            'Your timeline is open today',
             style: TextStyle(color: MyDayScreen.muted),
           ),
         ),
       );
     }
-    return Column(
-      children: [
-        for (var i = 0; i < _events.length; i++) ...[
-          _DayEvent(_events[i], onTap: () => _handleEventTap(_events[i])),
-          if (i < _events.length - 1) const Divider(height: 1, indent: 74),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        children: [
+          for (var index = 0; index < _events.length; index++)
+            _TimelineEvent(
+              event: _events[index],
+              isFirst: index == 0,
+              isLast: index == _events.length - 1,
+              onTap: () => _handleEventTap(_events[index]),
+            ),
         ],
-      ],
+      ),
     );
   }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: const TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.3,
+      color: MyDayScreen.muted,
+    ),
+  );
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: Colors.black.withValues(alpha: .07)),
+    ),
+    child: child,
+  );
+}
+
+class _PriorityRow extends StatelessWidget {
+  const _PriorityRow({required this.priority, required this.onToggle});
+
+  final DailyPriority priority;
+  final VoidCallback onToggle;
+
+  String? get _timeLabel {
+    final start = priority.sourceStart;
+    final end = priority.sourceEnd;
+    if (start == null) return null;
+    if (priority.isAllDay) return 'All day';
+    if (end == null) return DateFormat('h:mm a').format(start);
+    return '${DateFormat('h:mm').format(start)}–${DateFormat('h:mm a').format(end)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final timeLabel = _timeLabel;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      child: Row(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onToggle,
+              customBorder: const CircleBorder(),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: priority.completed
+                      ? const Color(0xFF54C75B)
+                      : Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: priority.completed
+                        ? const Color(0xFF54C75B)
+                        : MyDayScreen.muted,
+                    width: 2,
+                  ),
+                ),
+                child: priority.completed
+                    ? const Icon(
+                        Icons.check_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      )
+                    : null,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              priority.title,
+              style: TextStyle(
+                color: priority.completed
+                    ? colors.textSecondary
+                    : colors.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                decoration: priority.completed
+                    ? TextDecoration.lineThrough
+                    : null,
+              ),
+            ),
+          ),
+          if (timeLabel != null) ...[
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: MyDayScreen.purple.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: Text(
+                timeLabel,
+                style: const TextStyle(
+                  color: MyDayScreen.purple,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadMetric extends StatelessWidget {
+  const _LoadMetric({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+  final IconData icon;
+  final String value;
+  final String label;
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Icon(icon, color: const Color(0xFFD8D2FF), size: 23),
+      const SizedBox(width: 9),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          Text(
+            label,
+            style: const TextStyle(color: Color(0xFFD8D2FF), fontSize: 10),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+class _TimelineEvent extends StatelessWidget {
+  const _TimelineEvent({
+    required this.event,
+    required this.isFirst,
+    required this.isLast,
+    required this.onTap,
+  });
+  final _CalendarEvent event;
+  final bool isFirst;
+  final bool isLast;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 68,
+            child: Text(
+              event.timeLabel,
+              style: const TextStyle(fontSize: 11, color: MyDayScreen.muted),
+            ),
+          ),
+          SizedBox(
+            width: 10,
+            height: 50,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned(
+                  top: isFirst ? 25 : 0,
+                  bottom: isLast ? 25 : 0,
+                  left: 4.5,
+                  child: Container(
+                    width: 1,
+                    color: MyDayScreen.muted.withValues(alpha: .65),
+                  ),
+                ),
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: DateTime.now().isBefore(event.end)
+                        ? const Color(0xFF858594)
+                        : const Color(0xFF3978F6),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: context.vivordoColors.card,
+                      width: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: event.color.withValues(alpha: .14),
+                borderRadius: BorderRadius.circular(8),
+                border: Border(left: BorderSide(color: event.color, width: 2)),
+              ),
+              child: Text(
+                '${event.title}  ·  ${event.durationLabel}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: context.vivordoColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _FreeUntilRow extends StatelessWidget {
+  const _FreeUntilRow({required this.until, required this.duration});
+
+  final DateTime until;
+  final Duration duration;
+
+  String get _durationLabel {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    if (hours == 0) return '$minutes min open';
+    if (minutes == 0) return '${hours}h open';
+    return '${hours}h ${minutes}m open';
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(15),
+    child: Row(
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: const Color(0xFF65C65A).withValues(alpha: .13),
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: const Center(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color(0xFF76D66A),
+                shape: BoxShape.circle,
+              ),
+              child: SizedBox(width: 16, height: 16),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Free until ${DateFormat('h:mm a').format(until)}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: context.vivordoColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                _durationLabel,
+                style: const TextStyle(fontSize: 11, color: MyDayScreen.muted),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _DayEvent extends StatelessWidget {
@@ -750,6 +1270,10 @@ class _CalendarEvent {
     required this.start,
     required this.end,
     required this.isAllDay,
+    required this.sourceEventKey,
+    required this.isRecurring,
+    required this.attendeeCount,
+    required this.isPriorityLinked,
     required this.icon,
     required this.color,
     this.googleEvent,
@@ -759,11 +1283,16 @@ class _CalendarEvent {
   final DateTime start;
   final DateTime end;
   final bool isAllDay;
+  final String sourceEventKey;
+  final bool isRecurring;
+  final int attendeeCount;
+  final bool isPriorityLinked;
   final IconData icon;
   final Color color;
   final gcal.Event? googleEvent;
 
   static _CalendarEvent? fromGoogle(gcal.Event event) {
+    if (event.status == 'cancelled') return null;
     final start =
         event.start?.dateTime?.toLocal() ?? event.start?.date?.toLocal();
     final end = event.end?.dateTime?.toLocal() ?? event.end?.date?.toLocal();
@@ -775,6 +1304,14 @@ class _CalendarEvent {
       start: start,
       end: end,
       isAllDay: event.start?.dateTime == null,
+      sourceEventKey:
+          'google:${event.id ?? event.iCalUID ?? '${event.summary}:$start'}',
+      isRecurring:
+          event.recurringEventId != null ||
+          event.recurrence?.isNotEmpty == true,
+      attendeeCount: event.attendees?.length ?? 0,
+      isPriorityLinked:
+          event.extendedProperties?.private?['vivordoPriority'] == 'true',
       icon: Icons.event_rounded,
       color: const Color(0xFF3978F6),
       googleEvent: event,
@@ -788,12 +1325,26 @@ class _CalendarEvent {
     start: event.start.toLocal(),
     end: event.end.toLocal(),
     isAllDay: event.isAllDay,
+    sourceEventKey: 'outlook:${event.id}',
+    isRecurring: false,
+    attendeeCount: 0,
+    isPriorityLinked: false,
     icon: Icons.event_rounded,
     color: MyDayScreen.purple,
   );
 
   String get timeLabel =>
       isAllDay ? 'All day' : DateFormat('h:mm a').format(start);
+
+  CalendarPriorityCandidate get priorityCandidate => CalendarPriorityCandidate(
+    sourceEventKey: sourceEventKey,
+    title: title,
+    start: start,
+    end: end,
+    isAllDay: isAllDay,
+    isRecurring: isRecurring,
+    attendeeCount: attendeeCount,
+  );
 
   String get durationLabel {
     if (isAllDay) return 'All-day event';
