@@ -233,7 +233,9 @@ class _HomeWidgetSnapshot {
 
 class _HomeScreenState extends State<HomeScreen> {
   String _currentMood = 'Good';
+  double _currentMoodScore = 75;
   String? _pendingMoodSync;
+  double? _pendingMoodScoreSync;
   bool _isSavingMood = false;
   // _messageCopied removed — smart message card replaced with calendar
 
@@ -329,15 +331,29 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _syncMoodAfterBuild(String savedMood) {
-    if (savedMood == _currentMood || savedMood == _pendingMoodSync) return;
+  void _syncMoodAfterBuild(String savedMood, double savedMoodScore) {
+    if ((savedMood == _currentMood &&
+            savedMoodScore.round() == _currentMoodScore.round()) ||
+        (savedMood == _pendingMoodSync &&
+            savedMoodScore.round() == _pendingMoodScoreSync?.round())) {
+      return;
+    }
     _pendingMoodSync = savedMood;
+    _pendingMoodScoreSync = savedMoodScore;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final mood = _pendingMoodSync;
+      final score = _pendingMoodScoreSync;
       _pendingMoodSync = null;
-      if (mood == null || mood == _currentMood) return;
-      setState(() => _currentMood = mood);
+      _pendingMoodScoreSync = null;
+      if (mood == null || score == null) return;
+      if (mood == _currentMood && score.round() == _currentMoodScore.round()) {
+        return;
+      }
+      setState(() {
+        _currentMood = mood;
+        _currentMoodScore = score;
+      });
     });
   }
 
@@ -532,13 +548,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   : steps.toString())
             : '--';
 
-        final savedMood = moodMap?['label'] as String?;
-        if (savedMood != null && !_isSavingMood) {
-          _syncMoodAfterBuild(savedMood);
+        final savedMoodLabel = moodMap?['label'] as String?;
+        final savedMoodScore =
+            (moodMap?['avg'] as num?)?.toDouble() ??
+            (savedMoodLabel == null
+                ? null
+                : MetricsService.moodScoreForLabel(savedMoodLabel));
+        final savedMood =
+            savedMoodLabel ??
+            (savedMoodScore == null
+                ? null
+                : MetricsService.moodLabelForScore(savedMoodScore));
+        if (savedMood != null && savedMoodScore != null && !_isSavingMood) {
+          _syncMoodAfterBuild(savedMood, savedMoodScore);
         }
-        final moodVal = moodMap != null
-            ? (moodMap['label'] as String? ?? '--')
-            : '--';
+        final moodVal = savedMoodScore?.round().toString() ?? '--';
 
         final wellnessVal = wellnessMap != null
             ? '${(wellnessMap['avg'] as num?)?.round() ?? '--'}'
@@ -2746,181 +2770,258 @@ class _HomeScreenState extends State<HomeScreen> {
     return events;
   }
 
-  void _showMoodCheck() {
-    showModalBottomSheet(
-      context: context,
+  Future<void> _showMoodCheck() async {
+    var sliderValue = _currentMoodScore.clamp(0, 100).toDouble();
+    final navigator = Navigator.of(context);
+    final localizations = MaterialLocalizations.of(context);
+    final route = ModalBottomSheetRoute<double>(
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          decoration: BoxDecoration(
-            color: context.vivordoColors.card,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(40),
-              topRight: Radius.circular(40),
-            ),
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 44,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: accentPurple.withOpacity(0.25),
-                    borderRadius: BorderRadius.circular(10),
+      capturedThemes: InheritedTheme.capture(
+        from: context,
+        to: navigator.context,
+      ),
+      barrierLabel: localizations.scrimLabel,
+      barrierOnTapHint: localizations.scrimOnTapHint(
+        localizations.bottomSheetLabel,
+      ),
+      modalBarrierColor: Theme.of(context).bottomSheetTheme.modalBarrierColor,
+      sheetAnimationStyle: const AnimationStyle(
+        duration: Duration(milliseconds: 220),
+        reverseDuration: Duration(milliseconds: 120),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final colors = sheetContext.vivordoColors;
+            final label = MetricsService.moodLabelForScore(sliderValue);
+            final accent = _moodColorForScore(sliderValue);
+            final emoji = _moodEmojiForScore(sliderValue);
+
+            return SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                decoration: BoxDecoration(
+                  color: colors.card,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(36),
+                    topRight: Radius.circular(36),
                   ),
                 ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: accentPurple.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.mood_rounded,
-                    color: accentPurple,
-                    size: 28,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  "How are you feeling?",
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF2D3142),
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  "Don't think too much, just tap.",
-                  style: TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
-                ),
-                const SizedBox(height: 32),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      _moodOption(
-                        'Great',
-                        '🤩',
-                        const Color(0xFFFFEDD5),
-                        const Color(0xFFF97316),
+                      Container(
+                        width: 44,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: accentPurple.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
-                      _moodOption(
-                        'Good',
-                        '😊',
-                        const Color(0xFFDCFCE7),
-                        const Color(0xFF22C55E),
+                      const SizedBox(height: 24),
+                      Text(
+                        'How are you feeling?',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: colors.textPrimary,
+                          letterSpacing: -0.6,
+                        ),
                       ),
-                      _moodOption(
-                        'Okay',
-                        '😐',
-                        const Color(0xFFF3F4F6),
-                        const Color(0xFF6B7280),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Move the slider to the value that best reflects how you feel right now.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 14,
+                          height: 1.35,
+                        ),
                       ),
-                      _moodOption(
-                        'Down',
-                        '😔',
-                        const Color(0xFFEDE9FE),
-                        accentPurple,
+                      const SizedBox(height: 28),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 112,
+                        height: 112,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: accent.withValues(alpha: 0.28),
+                            width: 2,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 54),
+                        ),
                       ),
-                      _moodOption(
-                        'Awful',
-                        '😫',
-                        const Color(0xFFFEE2E2),
-                        const Color(0xFFEF4444),
+                      const SizedBox(height: 18),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 160),
+                        child: Text(
+                          '${sliderValue.round()}',
+                          key: ValueKey(sliderValue.round()),
+                          style: TextStyle(
+                            fontSize: 52,
+                            height: 1,
+                            fontWeight: FontWeight.w800,
+                            color: accent,
+                            letterSpacing: -2,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: colors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      SliderTheme(
+                        data: SliderTheme.of(sheetContext).copyWith(
+                          activeTrackColor: accent,
+                          inactiveTrackColor: colors.border,
+                          thumbColor: accent,
+                          overlayColor: accent.withValues(alpha: 0.14),
+                          trackHeight: 8,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 13,
+                          ),
+                        ),
+                        child: Slider(
+                          value: sliderValue,
+                          min: 0,
+                          max: 100,
+                          divisions: 100,
+                          semanticFormatterCallback: (value) =>
+                              '${value.round()} out of 100, ${MetricsService.moodLabelForScore(value)}',
+                          onChanged: (value) {
+                            setSheetState(() => sliderValue = value);
+                          },
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '0 · Very low',
+                              style: TextStyle(
+                                color: colors.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            Text(
+                              '100 · Excellent',
+                              style: TextStyle(
+                                color: colors.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: FilledButton(
+                          onPressed: () {
+                            final score = sliderValue.roundToDouble();
+                            Navigator.pop(sheetContext, score);
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: accentPurple,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                          child: const Text(
+                            'Save check-in',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Your mood helps personalize your daily insights.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    'Your mood shapes your daily insights',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: accentPurple.withOpacity(0.7),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 28),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
+    final selectedScore = await navigator.push(route);
+    // Navigator.pop completes the route result before the closing transition
+    // has removed its inherited widgets. Wait for the route itself to finish
+    // disposal before rebuilding Home or allowing Firestore to emit a mood
+    // update into this subtree.
+    await route.completed;
+    if (!mounted || selectedScore == null) return;
+    await _saveMoodCheckIn(selectedScore);
   }
 
-  Widget _moodOption(
-    String label,
-    String emoji,
-    Color bgColor,
-    Color accentColor,
-  ) {
-    bool isSelected = _currentMood == label;
-    return GestureDetector(
-      onTap: () async {
-        _pendingMoodSync = null;
-        _isSavingMood = true;
-        setState(() => _currentMood = label);
-        Navigator.pop(context);
-        try {
-          await MetricsService.saveMoodCheckIn(label);
-        } catch (e) {
-          debugPrint('Mood save failed: $e');
-        } finally {
-          _isSavingMood = false;
-        }
-      },
-      child: Column(
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: isSelected ? accentColor : bgColor,
-              shape: BoxShape.circle,
-              boxShadow: isSelected
-                  ? [
-                      BoxShadow(
-                        color: accentColor.withOpacity(0.4),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ]
-                  : [],
-            ),
-            child: Center(
-              child: Text(emoji, style: const TextStyle(fontSize: 28)),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            label,
-            style: TextStyle(
-              color: isSelected
-                  ? const Color(0xFF2D3142)
-                  : const Color(0xFF9CA3AF),
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
+  Future<void> _saveMoodCheckIn(double score) async {
+    final roundedScore = score.clamp(0, 100).roundToDouble();
+    final label = MetricsService.moodLabelForScore(roundedScore);
+
+    _pendingMoodSync = null;
+    _pendingMoodScoreSync = null;
+    _isSavingMood = true;
+    if (mounted) {
+      setState(() {
+        _currentMood = label;
+        _currentMoodScore = roundedScore;
+      });
+    }
+
+    try {
+      await MetricsService.saveMoodCheckIn(label, moodScore: roundedScore);
+    } catch (error) {
+      debugPrint('Mood save failed: $error');
+    } finally {
+      _isSavingMood = false;
+    }
+  }
+
+  Color _moodColorForScore(double score) {
+    if (score >= 80) return const Color(0xFF22C55E);
+    if (score >= 60) return const Color(0xFF34C759);
+    if (score >= 40) return const Color(0xFFFF9500);
+    if (score >= 20) return accentPurple;
+    return const Color(0xFFEF4444);
+  }
+
+  String _moodEmojiForScore(double score) {
+    if (score >= 80) return '🤩';
+    if (score >= 60) return '😊';
+    if (score >= 40) return '😐';
+    if (score >= 20) return '😔';
+    return '😫';
   }
 }
 

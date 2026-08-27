@@ -10,6 +10,7 @@ class MetricsService {
   // now, while journal entries can supply the date the reflection belongs to.
   static Future<void> saveMoodCheckIn(
     String moodLabel, {
+    double? moodScore,
     DateTime? occurredAt,
     String source = 'user_checkin',
   }) async {
@@ -18,7 +19,9 @@ class MetricsService {
 
     final checkInTime = occurredAt ?? DateTime.now();
     final period = _formatDate(checkInTime);
-    final moodScore = _moodToScore(moodLabel);
+    final resolvedMoodScore = (moodScore ?? moodScoreForLabel(moodLabel))
+        .clamp(0, 100)
+        .toDouble();
 
     await _db
         .collection('users')
@@ -28,7 +31,7 @@ class MetricsService {
         .set(
           {
             'mood': {
-              'avg': moodScore,
+              'avg': resolvedMoodScore,
               'label': moodLabel,
               'unit': 'score',
               'source': source,
@@ -44,7 +47,7 @@ class MetricsService {
               'checkInAt': Timestamp.fromDate(checkInTime),
               'entries': FieldValue.arrayUnion([
                 {
-                  'score': moodScore,
+                  'score': resolvedMoodScore,
                   'label': moodLabel,
                   'source': source,
                   'timestamp': Timestamp.fromDate(checkInTime),
@@ -78,8 +81,18 @@ class MetricsService {
   static String _formatDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  /// Keeps the familiar mood wording while allowing precise 0–100 check-ins.
+  static String moodLabelForScore(num score) {
+    final value = score.clamp(0, 100);
+    if (value >= 80) return 'Great';
+    if (value >= 60) return 'Good';
+    if (value >= 40) return 'Okay';
+    if (value >= 20) return 'Down';
+    return 'Awful';
+  }
+
   // Maps mood label to a 0–100 numeric score for graphing
-  static double _moodToScore(String label) {
+  static double moodScoreForLabel(String label) {
     switch (label.toLowerCase()) {
       case 'great':
         return 95;
