@@ -25,24 +25,48 @@ class MyDayScreen extends StatefulWidget {
   State<MyDayScreen> createState() => _MyDayScreenState();
 }
 
-class _MyDayScreenState extends State<MyDayScreen> {
+class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   List<_CalendarEvent> _events = const [];
   bool _isLoading = true;
   Timer? _clockTimer;
-  late final Stream<List<DailyPriority>> _priorityStream;
+  late DateTime _priorityDay;
+  late Stream<List<DailyPriority>> _priorityStream;
 
   @override
   void initState() {
     super.initState();
-    _priorityStream = DailyPriorityService.watch(DateTime.now());
+    WidgetsBinding.instance.addObserver(this);
+    _priorityDay = DateUtils.dateOnly(DateTime.now());
+    _priorityStream = DailyPriorityService.watch(_priorityDay);
     _loadTodayEvents();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      if (!_handleDayRollover()) setState(() {});
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _handleDayRollover();
+    }
+  }
+
+  bool _handleDayRollover() {
+    final today = DateUtils.dateOnly(DateTime.now());
+    if (DateUtils.isSameDay(today, _priorityDay)) return false;
+
+    setState(() {
+      _priorityDay = today;
+      _priorityStream = DailyPriorityService.watch(today);
+    });
+    unawaited(_loadTodayEvents());
+    return true;
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
     super.dispose();
   }

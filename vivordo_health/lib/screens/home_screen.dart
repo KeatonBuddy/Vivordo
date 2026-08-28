@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -17,6 +18,7 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
+import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'circle_screen.dart';
@@ -414,19 +416,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return displayName.split(' ').first;
   }
 
-  Color _getStressColor(double score) {
-    if (score < 30) return greenColor;
-    if (score < 60) return const Color(0xFFFFCC00);
-    return const Color(0xFFFF3B30);
-  }
-
-  String _getStressLabel(double score) {
-    if (score < 30) return 'Very Low Stress';
-    if (score < 60) return "Low Stress — You're in good shape";
-    if (score < 80) return 'Moderate Stress';
-    return 'High Stress';
-  }
-
   String _todayPeriod() {
     final now = DateTime.now();
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
@@ -468,6 +457,55 @@ class _HomeScreenState extends State<HomeScreen> {
     return null;
   }
 
+  double? _sevenDayStressAverage(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final oldest = today.subtract(const Duration(days: 7));
+    final values = <double>[];
+    for (final doc in docs) {
+      final date = DateTime.tryParse(doc.id);
+      if (date == null || date.isBefore(oldest) || !date.isBefore(today)) {
+        continue;
+      }
+      final stress = doc.data()['stress'] as Map?;
+      final value =
+          (stress?['avg'] as num?)?.toDouble() ??
+          (stress?['current'] as num?)?.toDouble();
+      if (value != null) values.add(value);
+    }
+    if (values.isEmpty) return null;
+    return values.reduce((a, b) => a + b) / values.length;
+  }
+
+  DateTime? _stressUpdatedAt(Map? stress) {
+    final raw = stress?['computedAt'];
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is String) return DateTime.tryParse(raw);
+    return null;
+  }
+
+  void _showStressScoreExplanation() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Your stress score'),
+        content: const Text(
+          'Vivordo combines signals such as heart rate, HRV, sleep, activity, '
+          'and mood with your personal baseline. Lower scores generally mean '
+          'your body is showing fewer signs of stress.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStream() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
@@ -484,6 +522,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (FirebaseAuth.instance.currentUser == null) {
       return _buildScaffold(
         stressScore: null,
+        stressUpdatedAt: null,
+        sevenDayStressAverage: null,
+        stressDrivers: const [],
         stressLoading: false,
         sleepVal: '--',
         sleepLoading: false,
@@ -578,6 +619,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 : '$latestHeartRateBpm bpm';
             final displayedStressScore =
                 stressScore ?? _latestStressAnchorFrom(metricDocs);
+            final sevenDayStressAverage = _sevenDayStressAverage(metricDocs);
+            final stressDrivers = homeStressDrivers(stressMap?['top_drivers']);
             final stressStillLoading =
                 loading ||
                 (stressScore == null &&
@@ -622,6 +665,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   valueListenable: StressScoreService.isComputing,
                   builder: (context, computingStress, _) => _buildScaffold(
                     stressScore: displayedStressScore,
+                    stressUpdatedAt: _stressUpdatedAt(stressMap),
+                    sevenDayStressAverage: sevenDayStressAverage,
+                    stressDrivers: stressDrivers,
                     stressUpdating: computingStress,
                     stressLoading: stressStillLoading,
                     sleepVal: sleepVal,
@@ -794,6 +840,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildScaffold({
     required double? stressScore,
+    required DateTime? stressUpdatedAt,
+    required double? sevenDayStressAverage,
+    required List<HomeStressDriver> stressDrivers,
     bool stressUpdating = false,
     required bool stressLoading,
     required String sleepVal,
@@ -829,6 +878,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: _buildStressCard(
                   stressScore,
+                  updatedAt: stressUpdatedAt,
+                  sevenDayAverage: sevenDayStressAverage,
+                  drivers: stressDrivers,
+                  steps: steps,
                   loading: stressLoading,
                   updating: stressUpdating,
                 ),
@@ -1166,175 +1219,284 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildStressCard(
     double? stressScore, {
+    required DateTime? updatedAt,
+    required double? sevenDayAverage,
+    required List<HomeStressDriver> drivers,
+    required int steps,
     bool loading = false,
     bool updating = false,
   }) {
-    final statusColor = stressScore == null
-        ? const Color(0xFF8E8E93)
-        : _getStressColor(stressScore);
-    final stressLabel = stressScore == null
-        ? 'No data yet'
-        : _getStressLabel(stressScore);
+    const palePurple = Color(0xFFC5BCFF);
+    final displayedScore = widget.revealStress ? stressScore : null;
+    final action = homeStressAction(
+      score: stressScore,
+      drivers: drivers,
+      steps: steps,
+    );
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(26),
       child: Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          color: accentPurple,
-          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF4327EC), Color(0xFF282078), Color(0xFF181445)],
+            stops: [0, 0.58, 1],
+          ),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: const Color(0xFF6253EF), width: 1),
           boxShadow: [
             BoxShadow(
-              color: accentPurple.withOpacity(0.4),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
+              color: const Color(0xFF3C2AD4).withValues(alpha: 0.35),
+              blurRadius: 28,
+              offset: const Offset(0, 10),
             ),
           ],
         ),
         child: Stack(
           children: [
-            // Decorative circle top-right
             Positioned(
-              top: -30,
-              right: -30,
+              top: -70,
+              right: -55,
               child: Container(
-                width: 140,
-                height: 140,
+                width: 210,
+                height: 210,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
+                  color: Colors.white.withValues(alpha: 0.035),
                   shape: BoxShape.circle,
                 ),
               ),
             ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.06),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            // Content
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Text(
-                        'Current Stress Level',
+                      const Text(
+                        'CURRENT STRESS',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.75),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 0.2,
+                          color: palePurple,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.7,
                         ),
                       ),
-                      if (updating) ...[
-                        const SizedBox(width: 8),
+                      const Spacer(),
+                      if (updating)
                         SizedBox(
-                          width: 10,
-                          height: 10,
+                          width: 12,
+                          height: 12,
                           child: CircularProgressIndicator(
-                            strokeWidth: 1.5,
+                            strokeWidth: 1.7,
                             valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white.withOpacity(0.75),
+                              Colors.white.withValues(alpha: 0.72),
                             ),
                           ),
                         ),
-                      ],
+                      if (updating) const SizedBox(width: 6),
+                      Text(
+                        _stressUpdatedLabel(updatedAt, updating: updating),
+                        style: const TextStyle(
+                          color: palePurple,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _showStressScoreExplanation,
+                        child: const Padding(
+                          padding: EdgeInsets.all(3),
+                          child: Icon(
+                            Icons.info_outline_rounded,
+                            color: palePurple,
+                            size: 16,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      loading
-                          ? Container(
-                              width: 80,
-                              height: 56,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            )
-                          : TweenAnimationBuilder<double>(
-                              tween: Tween(
-                                begin: 0,
-                                end: widget.revealStress ? stressScore ?? 0 : 0,
-                              ),
-                              duration: const Duration(milliseconds: 1200),
-                              curve: Curves.easeOutCubic,
-                              builder: (_, value, __) => Text(
-                                stressScore == null
-                                    ? '--'
-                                    : value.toInt().toString(),
-                                style: TextStyle(
-                                  fontSize: stressScore == null ? 30 : 56,
-                                  fontWeight: FontWeight.bold,
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: 155,
+                    height: 155,
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween<double>(begin: 0, end: displayedScore ?? 0),
+                      duration: const Duration(milliseconds: 1100),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, value, child) => CustomPaint(
+                        painter: _StressRingPainter(
+                          progress: value / 100,
+                          showEndpoint: displayedScore != null,
+                        ),
+                        child: child,
+                      ),
+                      child: Center(
+                        child: loading
+                            ? const SizedBox(
+                                width: 28,
+                                height: 28,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
                                   color: Colors.white,
-                                  height: 1.0,
-                                  letterSpacing: -2,
+                                ),
+                              )
+                            : Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.monitor_heart_outlined,
+                                    color: Color(0xFFA99DFF),
+                                    size: 31,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    displayedScore == null
+                                        ? '--'
+                                        : '${displayedScore.round()}%',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 31,
+                                      height: 1,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -1.4,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  const Text(
+                                    'STRESS',
+                                    style: TextStyle(
+                                      color: Color(0xFFA99DFF),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.6,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    homeStressRangeMessage(stressScore, sevenDayAverage),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: palePurple,
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF171344).withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'INSIGHTS',
+                          style: TextStyle(
+                            color: palePurple,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              _comparisonIcon(stressScore, sevenDayAverage),
+                              color: palePurple,
+                              size: 17,
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Text(
+                                homeStressComparison(
+                                  stressScore,
+                                  sevenDayAverage,
+                                ),
+                                style: const TextStyle(
+                                  color: Color(0xFFE5E0FF),
+                                  fontSize: 11,
+                                  height: 1.25,
                                 ),
                               ),
                             ),
-                      const Padding(
-                        padding: EdgeInsets.only(left: 4),
-                        child: Text(
-                          '/100',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white60,
+                          ],
+                        ),
+                        if (drivers.isNotEmpty) ...[
+                          const SizedBox(height: 7),
+                          const Text(
+                            'LEADING DRIVERS',
+                            style: TextStyle(
+                              color: palePurple,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.7,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              for (
+                                var index = 0;
+                                index < drivers.length;
+                                index++
+                              ) ...[
+                                if (index > 0) const SizedBox(width: 6),
+                                Expanded(
+                                  child: _stressDriverChip(drivers[index]),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 7),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.directions_walk_rounded,
+                                color: Color(0xFF69E987),
+                                size: 18,
+                              ),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: Text(
+                                  action,
+                                  style: const TextStyle(
+                                    color: Color(0xFFE7E3FF),
+                                    fontSize: 10,
+                                    height: 1.25,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Container(
-                        width: 9,
-                        height: 9,
-                        decoration: BoxDecoration(
-                          color: statusColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 7),
-                      Text(
-                        stressLabel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween(
-                        begin: 0,
-                        end: widget.revealStress ? (stressScore ?? 0) / 100 : 0,
-                      ),
-                      duration: const Duration(milliseconds: 1400),
-                      curve: Curves.easeOutCubic,
-                      builder: (_, value, __) => LinearProgressIndicator(
-                        value: value,
-                        minHeight: 6,
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          Colors.white,
-                        ),
-                      ),
+                      ],
                     ),
                   ),
                 ],
@@ -1342,6 +1504,75 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  String _stressUpdatedLabel(DateTime? updatedAt, {required bool updating}) {
+    if (updating) return 'Updating';
+    if (updatedAt == null) return 'Waiting for data';
+    final elapsed = DateTime.now().difference(updatedAt);
+    if (elapsed.isNegative || elapsed.inMinutes < 1) return 'Updated now';
+    if (elapsed.inMinutes < 60) return 'Updated ${elapsed.inMinutes}m ago';
+    if (elapsed.inHours < 24) return 'Updated ${elapsed.inHours}h ago';
+    return 'Updated ${updatedAt.month}/${updatedAt.day}';
+  }
+
+  IconData _comparisonIcon(double? score, double? average) {
+    if (score == null || average == null || (score - average).abs() < 1) {
+      return Icons.trending_flat_rounded;
+    }
+    return score < average
+        ? Icons.trending_down_rounded
+        : Icons.trending_up_rounded;
+  }
+
+  Widget _stressDriverChip(HomeStressDriver driver) {
+    final (icon, color) = switch (driver.type) {
+      HomeStressDriverType.sleep => (
+        Icons.dark_mode_rounded,
+        const Color(0xFF9B8CFF),
+      ),
+      HomeStressDriverType.heartRate => (
+        Icons.favorite_rounded,
+        const Color(0xFFFF6BAE),
+      ),
+      HomeStressDriverType.hrv => (
+        Icons.monitor_heart_rounded,
+        const Color(0xFFFF6BAE),
+      ),
+      HomeStressDriverType.activity => (
+        Icons.directions_walk_rounded,
+        const Color(0xFF69E987),
+      ),
+      HomeStressDriverType.mood => (
+        Icons.mood_rounded,
+        const Color(0xFFFFA44D),
+      ),
+      HomeStressDriverType.other => (
+        Icons.insights_rounded,
+        const Color(0xFF9B8CFF),
+      ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              driver.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 10),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4828,4 +5059,82 @@ class _EventDetailRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _StressRingPainter extends CustomPainter {
+  const _StressRingPainter({
+    required this.progress,
+    required this.showEndpoint,
+  });
+
+  final double progress;
+  final bool showEndpoint;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const strokeWidth = 12.0;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (math.min(size.width, size.height) - strokeWidth) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final value = progress.clamp(0.0, 1.0);
+    const startAngle = -math.pi / 2;
+    const segmentCount = 4;
+    const gapAngle = 0.20;
+    const segmentSweep = (math.pi * 2 - segmentCount * gapAngle) / segmentCount;
+    final trackPaint = Paint()
+      ..color = const Color(0xFF8175E8).withValues(alpha: 0.72)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+    final progressPaint = Paint()
+      ..shader = const SweepGradient(
+        startAngle: 0,
+        endAngle: math.pi * 2,
+        colors: [Color(0xFF65E47D), Color(0xFFB0F29C)],
+      ).createShader(rect)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    for (var segment = 0; segment < segmentCount; segment++) {
+      final angle =
+          startAngle + gapAngle / 2 + segment * (segmentSweep + gapAngle);
+      canvas.drawArc(rect, angle, segmentSweep, false, trackPaint);
+    }
+
+    var remainingSweep = value * segmentSweep * segmentCount;
+    double? endpointAngle;
+    for (
+      var segment = 0;
+      segment < segmentCount && remainingSweep > 0;
+      segment++
+    ) {
+      final angle =
+          startAngle + gapAngle / 2 + segment * (segmentSweep + gapAngle);
+      final paintedSweep = math.min(segmentSweep, remainingSweep);
+      canvas.drawArc(rect, angle, paintedSweep, false, progressPaint);
+      endpointAngle = angle + paintedSweep;
+      remainingSweep -= paintedSweep;
+    }
+
+    if (showEndpoint && endpointAngle != null) {
+      final endpoint = Offset(
+        center.dx + radius * math.cos(endpointAngle),
+        center.dy + radius * math.sin(endpointAngle),
+      );
+      canvas.drawCircle(
+        endpoint,
+        6,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.18)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+      canvas.drawCircle(endpoint, 5, Paint()..color = Colors.white);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StressRingPainter oldDelegate) =>
+      progress != oldDelegate.progress ||
+      showEndpoint != oldDelegate.showEndpoint;
 }
