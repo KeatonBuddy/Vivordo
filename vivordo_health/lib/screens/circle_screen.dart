@@ -1425,6 +1425,7 @@ List<_Achievement> _profileAchievementsFromDocuments(
     ('endurance', 'Endurance', 'activities'),
     ('pulse_check', 'Pulse Check', 'scans'),
     ('story_keeper', 'Story Keeper', 'entries'),
+    ('mood_keeper', 'Mood Keeper', 'check-ins'),
     ('full_circle', 'Full Circle', 'days'),
   ]) {
     final data = byId[definition.$1];
@@ -1440,6 +1441,9 @@ List<_Achievement> _profileAchievementsFromDocuments(
       ('story_keeper', 'bronze') => 5,
       ('story_keeper', 'silver') => 20,
       ('story_keeper', _) => 100,
+      ('mood_keeper', 'bronze') => 5,
+      ('mood_keeper', 'silver') => 20,
+      ('mood_keeper', _) => 100,
       ('full_circle', 'bronze') => 7,
       ('full_circle', 'silver') => 30,
       ('full_circle', _) => 100,
@@ -1455,6 +1459,8 @@ List<_Achievement> _profileAchievementsFromDocuments(
             data?['requirement'] as String? ??
             (definition.$1 == 'full_circle'
                 ? 'Fill all activity rings on $defaultTarget days'
+                : definition.$1 == 'mood_keeper'
+                ? 'Complete $defaultTarget mood check-ins'
                 : 'Complete $defaultTarget ${definition.$3}'),
         goalBadgeAsset: 'assets/achievements/${assetPrefix}_$shownTier.png',
         earnedBadgeAsset: tier == null

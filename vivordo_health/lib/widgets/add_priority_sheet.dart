@@ -202,6 +202,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
+    final lightMode = Theme.of(context).brightness == Brightness.light;
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     return AnimatedPadding(
       duration: const Duration(milliseconds: 180),
@@ -396,6 +397,10 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           style: FilledButton.styleFrom(
                             backgroundColor: Colors.transparent,
                             disabledBackgroundColor: Colors.transparent,
+                            foregroundColor: Colors.white,
+                            disabledForegroundColor: Colors.white.withValues(
+                              alpha: lightMode ? .78 : .58,
+                            ),
                             shadowColor: Colors.transparent,
                           ),
                           child: const Text(

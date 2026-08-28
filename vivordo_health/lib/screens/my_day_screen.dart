@@ -735,8 +735,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             ),
           for (var index = 0; index < priorities.length; index++) ...[
             _PriorityRow(
+              key: ValueKey(priorities[index].id),
               priority: priorities[index],
               onToggle: () => _togglePriority(priorities[index]),
+              onDelete: () => _deletePriority(priorities[index]),
             ),
             if (index < priorities.length - 1)
               const Divider(height: 1, indent: 58, endIndent: 16),
@@ -758,6 +760,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       await DailyPriorityService.setCompleted(priority, !priority.completed);
     } catch (error) {
       _showMessage('Could not update priority: $error');
+    }
+  }
+
+  Future<void> _deletePriority(DailyPriority priority) async {
+    try {
+      await DailyPriorityService.delete(priority);
+    } catch (error) {
+      _showMessage('Could not delete priority: $error');
     }
   }
 
@@ -942,11 +952,29 @@ class _SectionCard extends StatelessWidget {
   );
 }
 
-class _PriorityRow extends StatelessWidget {
-  const _PriorityRow({required this.priority, required this.onToggle});
+class _PriorityRow extends StatefulWidget {
+  const _PriorityRow({
+    super.key,
+    required this.priority,
+    required this.onToggle,
+    required this.onDelete,
+  });
 
   final DailyPriority priority;
   final VoidCallback onToggle;
+  final Future<void> Function() onDelete;
+
+  @override
+  State<_PriorityRow> createState() => _PriorityRowState();
+}
+
+class _PriorityRowState extends State<_PriorityRow> {
+  static const _actionWidth = 88.0;
+  double _dragOffset = 0;
+  bool _dragging = false;
+  bool _deleting = false;
+
+  DailyPriority get priority => widget.priority;
 
   String? get _timeLabel {
     final start = priority.sourceStart;
@@ -961,78 +989,173 @@ class _PriorityRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final timeLabel = _timeLabel;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      child: Row(
+    return ClipRect(
+      child: Stack(
         children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onToggle,
-              customBorder: const CircleBorder(),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: priority.completed
-                      ? const Color(0xFF54C75B)
-                      : Colors.transparent,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: priority.completed
-                        ? const Color(0xFF54C75B)
-                        : MyDayScreen.muted,
-                    width: 2,
+          Positioned.fill(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: _actionWidth,
+                child: Material(
+                  color: const Color(0xFFE5484D),
+                  child: InkWell(
+                    onTap: _deleting ? null : _delete,
+                    child: Center(
+                      child: _deleting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.white,
+                                  size: 22,
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Delete',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
                   ),
                 ),
-                child: priority.completed
-                    ? const Icon(
-                        Icons.check_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      )
-                    : null,
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              priority.title,
-              style: TextStyle(
-                color: priority.completed
-                    ? colors.textSecondary
-                    : colors.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                decoration: priority.completed
-                    ? TextDecoration.lineThrough
-                    : null,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragStart: (_) => setState(() => _dragging = true),
+            onHorizontalDragUpdate: (details) {
+              setState(() {
+                _dragOffset = (_dragOffset + details.delta.dx).clamp(
+                  -_actionWidth,
+                  0,
+                );
+              });
+            },
+            onHorizontalDragEnd: (_) {
+              setState(() {
+                _dragging = false;
+                _dragOffset = _dragOffset <= -_actionWidth * .35
+                    ? -_actionWidth
+                    : 0;
+              });
+            },
+            onHorizontalDragCancel: () {
+              setState(() {
+                _dragging = false;
+                _dragOffset = 0;
+              });
+            },
+            child: AnimatedContainer(
+              duration: _dragging
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              transform: Matrix4.translationValues(_dragOffset, 0, 0),
+              color: colors.card,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              child: Row(
+                children: [
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: widget.onToggle,
+                      customBorder: const CircleBorder(),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: priority.completed
+                              ? const Color(0xFF54C75B)
+                              : Colors.transparent,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: priority.completed
+                                ? const Color(0xFF54C75B)
+                                : MyDayScreen.muted,
+                            width: 2,
+                          ),
+                        ),
+                        child: priority.completed
+                            ? const Icon(
+                                Icons.check_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      priority.title,
+                      style: TextStyle(
+                        color: priority.completed
+                            ? colors.textSecondary
+                            : colors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        decoration: priority.completed
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                  ),
+                  if (timeLabel != null) ...[
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: MyDayScreen.purple.withValues(alpha: .10),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        timeLabel,
+                        style: const TextStyle(
+                          color: MyDayScreen.purple,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
-          if (timeLabel != null) ...[
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-              decoration: BoxDecoration(
-                color: MyDayScreen.purple.withValues(alpha: .10),
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: Text(
-                timeLabel,
-                style: const TextStyle(
-                  color: MyDayScreen.purple,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
+  }
+
+  Future<void> _delete() async {
+    setState(() => _deleting = true);
+    await widget.onDelete();
+    if (!mounted) return;
+    setState(() {
+      _deleting = false;
+      _dragOffset = 0;
+    });
   }
 }
 
