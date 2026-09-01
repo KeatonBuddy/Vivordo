@@ -126,40 +126,17 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   Future<void> _handleEventTap(_CalendarEvent event) async {
     final googleEvent = event.googleEvent;
-    if (googleEvent == null) {
-      if (!mounted) return;
-      await showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  event.title,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text('${event.timeLabel} · ${event.durationLabel}'),
-                const SizedBox(height: 18),
-                const Text(
-                  'Outlook events are read-only in Vivordo. Open Outlook to edit this event.',
-                  style: TextStyle(color: MyDayScreen.muted),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-      return;
+    if (!mounted) return;
+    final shouldEdit = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _EventSummarySheet(event: event),
+    );
+    if (shouldEdit == true && googleEvent != null && mounted) {
+      await _editGoogleEvent(googleEvent);
     }
-    await _editGoogleEvent(googleEvent);
   }
 
   Future<void> _editGoogleEvent(gcal.Event event) async {
@@ -565,18 +542,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Widget _buildWatchItem(BackToBackEventBlock block) {
     final count = block.events.length;
     final last = block.events.last;
-    final countLabel = switch (count) {
-      2 => 'Two',
-      3 => 'Three',
-      4 => 'Four',
-      5 => 'Five',
-      _ => '$count',
-    };
-    final period = block.start.hour >= 12
-        ? 'after lunch'
-        : block.end.hour <= 12
-        ? 'this morning'
-        : 'today';
     final resetEnd = block.end.add(const Duration(minutes: 10));
 
     return Container(
@@ -618,7 +583,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 14),
           Text(
-            '$countLabel meetings run back-to-back $period.',
+            'These events run back to back.',
             style: TextStyle(
               color: context.vivordoColors.textPrimary,
               fontSize: 19,
@@ -1534,6 +1499,337 @@ class _DayEvent extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _EventSummarySheet extends StatelessWidget {
+  const _EventSummarySheet({required this.event});
+
+  final _CalendarEvent event;
+
+  (String, Color) get _status {
+    final now = DateTime.now();
+    if (!now.isBefore(event.end)) {
+      return ('COMPLETED', const Color(0xFF20A968));
+    }
+    if (!now.isBefore(event.start)) {
+      return ('IN PROGRESS', const Color(0xFFFF9F0A));
+    }
+    return ('UPCOMING', MyDayScreen.purple);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final status = _status;
+    final time = event.isAllDay
+        ? 'All day'
+        : '${DateFormat('h:mm a').format(event.start)} – ${DateFormat('h:mm a').format(event.end)}';
+
+    return FractionallySizedBox(
+      heightFactor: .9,
+      child: Material(
+        color: colors.card,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 48,
+              height: 5,
+              decoration: BoxDecoration(
+                color: colors.border,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
+              child: Row(
+                children: [
+                  const SizedBox(width: 40),
+                  Expanded(
+                    child: Text(
+                      'Event Summary',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: colors.textPrimary,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton.filledTonal(
+                    onPressed: () => Navigator.pop(context, false),
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: 'Close',
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: colors.cardMuted,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: colors.border),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 68,
+                            height: 68,
+                            decoration: BoxDecoration(
+                              color: MyDayScreen.purple.withValues(alpha: .14),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: const Icon(
+                              Icons.calendar_month_rounded,
+                              color: MyDayScreen.purple,
+                              size: 36,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  event.title,
+                                  style: TextStyle(
+                                    color: colors.textPrimary,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: status.$2.withValues(alpha: .16),
+                                    borderRadius: BorderRadius.circular(9),
+                                  ),
+                                  child: Text(
+                                    status.$1,
+                                    style: TextStyle(
+                                      color: status.$2,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: .8,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const _SummarySectionLabel('DETAILS'),
+                    const SizedBox(height: 10),
+                    _SummarySurface(
+                      children: [
+                        _SummaryDetailRow(
+                          icon: Icons.calendar_today_rounded,
+                          label: 'Date',
+                          value: DateFormat('MMMM d, y').format(event.start),
+                        ),
+                        _SummaryDetailRow(
+                          icon: Icons.schedule_rounded,
+                          label: 'Time',
+                          value: time,
+                        ),
+                        _SummaryDetailRow(
+                          icon: Icons.hourglass_bottom_rounded,
+                          label: 'Duration',
+                          value: event.durationLabel,
+                        ),
+                        _SummaryDetailRow(
+                          icon: Icons.repeat_rounded,
+                          label: 'Repeats',
+                          value: event.isRecurring
+                              ? 'Recurring event'
+                              : 'Does not repeat',
+                          showDivider: false,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    const _SummarySectionLabel('CALENDAR'),
+                    const SizedBox(height: 10),
+                    _SummarySurface(
+                      children: [
+                        _SummaryDetailRow(
+                          icon: Icons.calendar_month_rounded,
+                          label: 'Calendar',
+                          value: event.googleEvent == null
+                              ? 'Outlook'
+                              : 'Google Calendar',
+                          valueDotColor: event.color,
+                          showDivider: false,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: FilledButton(
+                        onPressed: event.googleEvent == null
+                            ? null
+                            : () => Navigator.pop(context, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: MyDayScreen.purple,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Text(
+                          event.googleEvent == null
+                              ? 'Outlook event · Read only'
+                              : 'Edit Event',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (event.googleEvent == null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Outlook events are currently read-only in Vivordo.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SummarySectionLabel extends StatelessWidget {
+  const _SummarySectionLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    label,
+    style: const TextStyle(
+      color: MyDayScreen.purple,
+      fontSize: 12,
+      fontWeight: FontWeight.w900,
+      letterSpacing: 1.2,
+    ),
+  );
+}
+
+class _SummarySurface extends StatelessWidget {
+  const _SummarySurface({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    decoration: BoxDecoration(
+      color: context.vivordoColors.cardMuted,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: context.vivordoColors.border),
+    ),
+    child: Column(children: children),
+  );
+}
+
+class _SummaryDetailRow extends StatelessWidget {
+  const _SummaryDetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueDotColor,
+    this.showDivider = true,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueDotColor;
+  final bool showDivider;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Row(
+            children: [
+              Icon(icon, color: MyDayScreen.purple, size: 23),
+              const SizedBox(width: 14),
+              Text(
+                label,
+                style: TextStyle(color: colors.textPrimary, fontSize: 15),
+              ),
+              const Spacer(),
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        value,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    if (valueDotColor != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: valueDotColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (showDivider) Divider(height: 1, color: colors.border),
+      ],
+    );
+  }
 }
 
 class _DayInsight {
