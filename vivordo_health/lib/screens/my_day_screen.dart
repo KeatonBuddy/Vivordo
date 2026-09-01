@@ -1080,9 +1080,12 @@ class _WatchTimelineSegment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = isReset ? const Color(0xFF169B62) : MyDayScreen.purple;
     final fill = isReset
-        ? const Color(0xFFEAF8F0)
+        ? isDark
+              ? context.vivordoColors.cardMuted
+              : const Color(0xFFEAF8F0)
         : MyDayScreen.purple.withValues(alpha: .07);
     final border = isReset
         ? const Color(0xFF9DDDBD)
