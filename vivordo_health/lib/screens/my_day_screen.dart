@@ -163,135 +163,34 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _editGoogleEvent(gcal.Event event) async {
-    final originalStart = event.start?.dateTime?.toLocal();
-    final originalEnd = event.end?.dateTime?.toLocal();
-    if (originalStart == null || originalEnd == null) {
-      _showMessage('All-day events cannot be edited here yet.');
-      return;
-    }
-
-    var title = event.summary ?? '';
-    var date = DateUtils.dateOnly(originalStart);
-    var startTime = TimeOfDay.fromDateTime(originalStart);
-    var endTime = TimeOfDay.fromDateTime(originalEnd);
-
-    final shouldSave = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text('Edit event'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  initialValue: title,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    labelText: 'Event title',
-                    prefixIcon: Icon(Icons.event_rounded),
-                  ),
-                  onChanged: (value) => title = value,
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.calendar_today_rounded),
-                  title: const Text('Date'),
-                  subtitle: Text(DateFormat('MMMM d, y').format(date)),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: date,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) setDialogState(() => date = picked);
-                  },
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.schedule_rounded),
-                  title: const Text('Start time'),
-                  trailing: Text(startTime.format(context)),
-                  onTap: () async {
-                    final picked = await showTimePicker(
-                      context: context,
-                      initialTime: startTime,
-                    );
-                    if (picked != null) {
-                      setDialogState(() => startTime = picked);
-                    }
-                  },
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.schedule_outlined),
-                  title: const Text('End time'),
-                  trailing: Text(endTime.format(context)),
-                  onTap: () async {
-                    final picked = await showTimePicker(
-                      context: context,
-                      initialTime: endTime,
-                    );
-                    if (picked != null) setDialogState(() => endTime = picked);
-                  },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (shouldSave != true || !mounted) return;
-    title = title.trim();
-    if (title.isEmpty) {
-      _showMessage('Enter an event title.');
-      return;
-    }
-
-    final start = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      startTime.hour,
-      startTime.minute,
-    );
-    var end = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      endTime.hour,
-      endTime.minute,
-    );
-    if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
+    final result = await showEditCalendarEventSheet(context, event: event);
+    if (result == null || !mounted) return;
 
     try {
-      await CalendarService.updateEvent(
-        event,
-        title: title,
-        start: start,
-        end: end,
-      );
+      setState(() => _isLoading = true);
+      if (result.action == CalendarEventEditAction.delete) {
+        await CalendarService.deleteEvent(event);
+      } else {
+        final draft = result.draft!;
+        await CalendarService.updateEvent(
+          event,
+          title: draft.title,
+          start: draft.start,
+          end: draft.end,
+          recurrence: result.recurrenceChanged ? draft.recurrence : null,
+          calendarId: draft.calendarId,
+          isAllDay: draft.isAllDay,
+        );
+      }
       await _loadTodayEvents();
-      _showMessage('Event updated.');
+      _showMessage(
+        result.action == CalendarEventEditAction.delete
+            ? 'Event deleted.'
+            : 'Event updated.',
+      );
     } catch (error) {
       if (mounted) setState(() => _isLoading = false);
-      _showMessage('Could not update event: $error');
+      _showMessage('Could not save event: $error');
     }
   }
 
