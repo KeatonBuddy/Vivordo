@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
@@ -19,6 +20,10 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
   bool _isGoogleLoading = false;
+  bool _isAppleLoading = false;
+
+  bool get _showAppleSignIn =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   @override
   void dispose() {
@@ -57,6 +62,16 @@ class _LoginScreenState extends State<LoginScreen> {
     if (success) {
       // Google accounts come back with emailVerified already true, so this
       // always lands straight in the app rather than EmailVerificationScreen.
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+    }
+  }
+
+  Future<void> _loginWithApple() async {
+    setState(() => _isAppleLoading = true);
+    final success = await AuthService.signInWithApple(context: context);
+    if (!mounted) return;
+    setState(() => _isAppleLoading = false);
+    if (success) {
       Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
     }
   }
@@ -378,12 +393,66 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 20),
 
+                    if (_showAppleSignIn) ...[
+                      // Apple's authorization button uses the standard black
+                      // treatment and matches the prominence of Google login.
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: ElevatedButton(
+                          onPressed: _isAppleLoading || _isGoogleLoading
+                              ? null
+                              : _loginWithApple,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            disabledBackgroundColor: Colors.black.withValues(
+                              alpha: 0.62,
+                            ),
+                            foregroundColor: Colors.white,
+                            disabledForegroundColor: Colors.white,
+                            elevation: 0,
+                            overlayColor: const Color(0xFF2C2C2E),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: _isAppleLoading
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.5,
+                                  ),
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.apple, size: 25),
+                                    SizedBox(width: 10),
+                                    Text(
+                                      'Continue with Apple',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
                     // Google sign-in button
                     SizedBox(
                       width: double.infinity,
                       height: 54,
                       child: ElevatedButton(
-                        onPressed: _isGoogleLoading ? null : _loginWithGoogle,
+                        onPressed: _isGoogleLoading || _isAppleLoading
+                            ? null
+                            : _loginWithGoogle,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF4285F4),
                           disabledBackgroundColor: const Color(

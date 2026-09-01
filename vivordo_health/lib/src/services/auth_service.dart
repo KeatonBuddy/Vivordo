@@ -163,6 +163,55 @@ class AuthService {
     }
   }
 
+  // Apple sign-in — Firebase's native Apple provider manages the secure
+  // nonce and authorization flow on iOS. Apple only returns the user's name
+  // the first time they authorize the app, so create the Firestore profile
+  // immediately for new accounts while that information is available.
+  static Future<bool> signInWithApple({required BuildContext context}) async {
+    try {
+      final provider = AppleAuthProvider()
+        ..addScope('email')
+        ..addScope('name');
+      final userCredential = await FirebaseAuth.instance.signInWithProvider(
+        provider,
+      );
+      final user = userCredential.user;
+      if (user == null) {
+        throw Exception('Error signing in with Apple');
+      }
+
+      if (userCredential.additionalUserInfo?.isNewUser ?? false) {
+        await UserService.createUser(user);
+      }
+      return true;
+    } on FirebaseAuthException catch (e) {
+      // Closing Apple's authorization sheet is a normal cancellation, not an
+      // authentication failure that needs to be surfaced to the user.
+      const cancellationCodes = {
+        'canceled',
+        'cancelled',
+        'web-context-canceled',
+        'web-context-cancelled',
+      };
+      if (!cancellationCodes.contains(e.code) && context.mounted) {
+        final message = e.code == 'account-exists-with-different-credential'
+            ? 'An account already exists with this email using a different sign-in method.'
+            : e.message ?? 'Apple sign-in failed. Please try again.';
+        SnackBars.authMessage(context: context, message: message);
+      }
+      return false;
+    } catch (e) {
+      debugPrint(e.toString());
+      if (context.mounted) {
+        SnackBars.authMessage(
+          context: context,
+          message: 'Apple sign-in failed. Please try again.',
+        );
+      }
+      return false;
+    }
+  }
+
   // email sign in — returns true on success, false on failure
   static Future<bool> emailLogin({
     required String emailAddress,
