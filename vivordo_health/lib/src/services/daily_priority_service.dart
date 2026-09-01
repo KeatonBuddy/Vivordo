@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 class CalendarPriorityCandidate {
@@ -31,6 +32,7 @@ class DailyPriority {
     required this.completed,
     required this.reference,
     required this.isAllDay,
+    required this.source,
     this.sourceStart,
     this.sourceEnd,
   });
@@ -39,6 +41,7 @@ class DailyPriority {
   final String title;
   final bool completed;
   final bool isAllDay;
+  final String source;
   final DateTime? sourceStart;
   final DateTime? sourceEnd;
   final DocumentReference<Map<String, dynamic>> reference;
@@ -52,6 +55,7 @@ class DailyPriority {
       title: (data['title'] as String? ?? 'Untitled priority').trim(),
       completed: data['completed'] == true,
       isAllDay: data['isAllDay'] == true,
+      source: data['source'] as String? ?? 'manual',
       sourceStart: (data['sourceStart'] as Timestamp?)?.toDate(),
       sourceEnd: (data['sourceEnd'] as Timestamp?)?.toDate(),
       reference: document.reference,
@@ -64,30 +68,68 @@ class DailyPriorityService {
 
   static const _actionKeywords = <String>{
     'appointment',
+    'assessment',
+    'audition',
+    'book appointment',
+    'complete',
+    'complete application',
+    'confirm',
     'deadline',
+    'deliver',
+    'dentist',
+    'doctor',
     'due',
     'exam',
+    'finalize',
     'finish',
+    'follow up',
     'interview',
+    'pay bill',
+    'payment',
+    'physio',
+    'pick up',
+    'practice',
     'prepare',
+    'prepare for',
     'presentation',
+    'register',
+    'rehearsal',
+    'renew',
+    'reply',
+    'respond',
     'review',
+    'send application',
+    'study',
     'submit',
+    'submit application',
+    'training',
+    'vaccination',
     'workout',
   };
   static const _ignoredPhrases = <String>{
     'birthday',
     'break',
+    'brunch',
     'commute',
+    'concert',
+    'dinner',
+    'drinks',
     'free',
+    'game',
+    'golf',
     'holiday',
     'hold',
     'lunch',
+    'movie',
     'optional',
     'out of office',
     'ooo',
+    'party',
+    'social',
+    'vacation',
   };
-  static const _ignoredPrefixes = <String>{'watch '};
+  static const _ignoredPrefixes = <String>{'watch'};
+  static final _nonAlphanumeric = RegExp(r'[^a-z0-9]+');
 
   static String _dayKey(DateTime day) => DateFormat('yyyy-MM-dd').format(day);
   static DateTime _dateOnly(DateTime day) =>
@@ -149,7 +191,7 @@ class DailyPriorityService {
     for (final candidate in candidates) {
       final id = _calendarDocumentId(candidate.sourceEventKey);
       final existingDocument = existingById[id];
-      if (_isIgnoredTitle(candidate.title)) {
+      if (!_shouldSuggest(candidate)) {
         final data = existingDocument?.data();
         if (data?['source'] == 'calendar' &&
             data?['dismissed'] != true &&
@@ -163,7 +205,7 @@ class DailyPriorityService {
         }
         continue;
       }
-      if (!_shouldSuggest(candidate) || existingDocument != null) continue;
+      if (existingDocument != null) continue;
       batch.set(collection.doc(id), {
         'title': candidate.title.trim(),
         'completed': false,
@@ -298,34 +340,61 @@ class DailyPriorityService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-  static bool _shouldSuggest(CalendarPriorityCandidate candidate) {
-    final title = candidate.title.trim().toLowerCase();
-    if (title.length < 3 || !candidate.end.isAfter(DateTime.now())) {
+  static Future<void> delete(DailyPriority priority) {
+    if (priority.source == 'manual') return priority.reference.delete();
+    return priority.reference.update({
+      'dismissed': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static bool _shouldSuggest(
+    CalendarPriorityCandidate candidate, {
+    DateTime? now,
+  }) {
+    final title = _normalizeForMatching(candidate.title);
+    if (title.length < 3 || !candidate.end.isAfter(now ?? DateTime.now())) {
       return false;
     }
     if (_isIgnoredTitle(title)) return false;
-    final hasAction = _actionKeywords.any(title.contains);
-    if (candidate.isAllDay && !hasAction) return false;
-    return _score(candidate) >= 2;
+    return _actionKeywords.any((keyword) => _containsTerm(title, keyword));
   }
 
   static int _score(CalendarPriorityCandidate candidate) {
-    final title = candidate.title.toLowerCase();
-    var score = 1;
-    final minutes = candidate.end.difference(candidate.start).inMinutes;
-    if (minutes >= 30) score++;
-    if (minutes >= 60) score++;
-    if (candidate.start.difference(DateTime.now()).inHours <= 4) score += 2;
-    if (_actionKeywords.any(title.contains)) score += 3;
-    if (candidate.attendeeCount > 1) score++;
-    if (candidate.isRecurring) score -= 2;
-    return score;
+    final title = _normalizeForMatching(candidate.title);
+    if (_isIgnoredTitle(title)) return 0;
+    return _actionKeywords.any((keyword) => _containsTerm(title, keyword))
+        ? 3
+        : 0;
   }
 
+  @visibleForTesting
+  static bool shouldSuggestForTesting(
+    CalendarPriorityCandidate candidate, {
+    required DateTime now,
+  }) => _shouldSuggest(candidate, now: now);
+
+  @visibleForTesting
+  static int scoreForTesting(CalendarPriorityCandidate candidate) =>
+      _score(candidate);
+
   static bool _isIgnoredTitle(String title) {
-    final normalized = title.trim().toLowerCase();
-    return _ignoredPhrases.any(normalized.contains) ||
-        _ignoredPrefixes.any(normalized.startsWith);
+    final normalized = _normalizeForMatching(title);
+    return _ignoredPhrases.any((phrase) => _containsTerm(normalized, phrase)) ||
+        _ignoredPrefixes.any(
+          (prefix) => normalized == prefix || normalized.startsWith('$prefix '),
+        );
+  }
+
+  static String _normalizeForMatching(String value) => value
+      .toLowerCase()
+      .replaceAll(_nonAlphanumeric, ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  static bool _containsTerm(String normalizedTitle, String term) {
+    final normalizedTerm = _normalizeForMatching(term);
+    return ' $normalizedTitle '.contains(' $normalizedTerm ');
   }
 
   static String _calendarDocumentId(String sourceEventKey) {

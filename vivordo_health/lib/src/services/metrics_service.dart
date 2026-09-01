@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'achievement_service.dart';
 import 'stress_score_service.dart';
 
 class MetricsService {
@@ -60,6 +61,12 @@ class MetricsService {
           },
           SetOptions(merge: true),
         ); // merge so we don't overwrite if already exists
+
+    // Reconcile in the background so Mood Keeper can unlock without making
+    // the check-in sheet wait for the achievement queries to finish.
+    AchievementService.reconcileAll().catchError(
+      (_) => <AchievementProgress>[],
+    );
 
     // Recompute BaaS stress score now that mood data has changed
     StressScoreService.computeAndSave(

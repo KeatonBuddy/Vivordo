@@ -199,146 +199,34 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
   }
 
   Future<void> _editGoogleEvent(gcal.Event event) async {
-    final originalStart =
-        event.start?.dateTime?.toLocal() ?? event.start?.date?.toLocal();
-    final originalEnd =
-        event.end?.dateTime?.toLocal() ?? event.end?.date?.toLocal();
-    if (originalStart == null || originalEnd == null) {
-      _showMessage('This event does not have a valid date.');
-      return;
-    }
-
-    final isAllDay = event.start?.dateTime == null;
-    final titleController = TextEditingController(text: event.summary ?? '');
-    var title = titleController.text.trim();
-    var date = DateUtils.dateOnly(originalStart);
-    var startTime = TimeOfDay.fromDateTime(originalStart);
-    var endTime = TimeOfDay.fromDateTime(originalEnd);
-    final allDayDuration = originalEnd.difference(originalStart);
-
-    final shouldSave = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text('Edit event'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleController,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.sentences,
-                  onChanged: (value) {
-                    setDialogState(() => title = value.trim());
-                  },
-                  decoration: const InputDecoration(
-                    labelText: 'Title',
-                    prefixIcon: Icon(Icons.title_rounded),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.calendar_today_rounded),
-                  title: const Text('Date'),
-                  subtitle: Text(DateFormat('MMMM d, y').format(date)),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: date,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) {
-                      setDialogState(() => date = picked);
-                    }
-                  },
-                ),
-                if (!isAllDay) ...[
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.schedule_rounded),
-                    title: const Text('Start time'),
-                    trailing: Text(startTime.format(context)),
-                    onTap: () async {
-                      final picked = await showTimePicker(
-                        context: context,
-                        initialTime: startTime,
-                      );
-                      if (picked != null) {
-                        setDialogState(() => startTime = picked);
-                      }
-                    },
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.schedule_outlined),
-                    title: const Text('End time'),
-                    trailing: Text(endTime.format(context)),
-                    onTap: () async {
-                      final picked = await showTimePicker(
-                        context: context,
-                        initialTime: endTime,
-                      );
-                      if (picked != null) {
-                        setDialogState(() => endTime = picked);
-                      }
-                    },
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: title.isEmpty
-                  ? null
-                  : () => Navigator.pop(dialogContext, true),
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    title = titleController.text.trim();
-    titleController.dispose();
-    if (shouldSave != true || !mounted || title.isEmpty) return;
-
-    late DateTime start;
-    late DateTime end;
-    if (isAllDay) {
-      start = DateUtils.dateOnly(date);
-      end = start.add(
-        allDayDuration > Duration.zero
-            ? allDayDuration
-            : const Duration(days: 1),
-      );
-    } else {
-      start = _withTime(date, startTime);
-      end = _withTime(date, endTime);
-      if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
-    }
+    final result = await showEditCalendarEventSheet(context, event: event);
+    if (result == null || !mounted) return;
 
     try {
-      await CalendarService.updateEvent(
-        event,
-        title: title,
-        start: start,
-        end: end,
-      );
+      setState(() => _loading = true);
+      if (result.action == CalendarEventEditAction.delete) {
+        await CalendarService.deleteEvent(event);
+      } else {
+        final draft = result.draft!;
+        await CalendarService.updateEvent(
+          event,
+          title: draft.title,
+          start: draft.start,
+          end: draft.end,
+          recurrence: result.recurrenceChanged ? draft.recurrence : null,
+          calendarId: draft.calendarId,
+          isAllDay: draft.isAllDay,
+        );
+      }
       await _loadEvents();
-      _showMessage('Event updated.');
+      _showMessage(
+        result.action == CalendarEventEditAction.delete
+            ? 'Event deleted.'
+            : 'Event updated.',
+      );
     } catch (error) {
-      _showMessage('Could not update event: $error');
+      if (mounted) setState(() => _loading = false);
+      _showMessage('Could not save event: $error');
     }
   }
 
@@ -415,9 +303,6 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
       _showMessage('Could not create event: $error');
     }
   }
-
-  DateTime _withTime(DateTime date, TimeOfDay time) =>
-      DateTime(date.year, date.month, date.day, time.hour, time.minute);
 
   void _showMessage(String message) {
     if (!mounted) return;

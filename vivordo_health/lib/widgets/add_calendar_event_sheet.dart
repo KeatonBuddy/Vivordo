@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -52,6 +53,24 @@ class CalendarEventDraft {
   }
 }
 
+enum CalendarEventEditAction { save, delete }
+
+class CalendarEventEditResult {
+  const CalendarEventEditResult.save(
+    this.draft, {
+    required this.recurrenceChanged,
+  }) : action = CalendarEventEditAction.save;
+
+  const CalendarEventEditResult.delete()
+    : action = CalendarEventEditAction.delete,
+      draft = null,
+      recurrenceChanged = false;
+
+  final CalendarEventEditAction action;
+  final CalendarEventDraft? draft;
+  final bool recurrenceChanged;
+}
+
 Future<CalendarEventDraft?> showAddCalendarEventSheet(
   BuildContext context, {
   required DateTime initialStart,
@@ -68,16 +87,62 @@ Future<CalendarEventDraft?> showAddCalendarEventSheet(
   ),
 );
 
+Future<CalendarEventEditResult?> showEditCalendarEventSheet(
+  BuildContext context, {
+  required gcal.Event event,
+}) {
+  final start =
+      event.start?.dateTime?.toLocal() ?? event.start?.date?.toLocal();
+  final end = event.end?.dateTime?.toLocal() ?? event.end?.date?.toLocal();
+  if (start == null || end == null) return Future.value(null);
+
+  final recurrenceRule = event.recurrence?.join(' ').toUpperCase() ?? '';
+  var recurrence = 'none';
+  if (recurrenceRule.contains('FREQ=DAILY')) {
+    recurrence = 'daily';
+  } else if (recurrenceRule.contains('FREQ=WEEKLY')) {
+    final match = RegExp(r'BYDAY=([A-Z,]+)').firstMatch(recurrenceRule);
+    recurrence = match == null ? 'weekly' : 'weekly:${match.group(1)}';
+  }
+
+  return showModalBottomSheet<CalendarEventEditResult>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: .72),
+    builder: (_) => _AddCalendarEventSheet(
+      initialStart: start,
+      initialEnd: end,
+      initialTitle: event.summary ?? '',
+      initialIsAllDay: event.start?.dateTime == null,
+      initialRecurrence: recurrence,
+      initialCalendarId: CalendarService.calendarIdForEvent(event),
+      isEditing: true,
+    ),
+  );
+}
+
 enum _RepeatChoice { once, daily, selectedDays }
 
 class _AddCalendarEventSheet extends StatefulWidget {
   const _AddCalendarEventSheet({
     required this.initialStart,
     required this.initialEnd,
+    this.initialTitle = '',
+    this.initialIsAllDay = false,
+    this.initialRecurrence = 'none',
+    this.initialCalendarId,
+    this.isEditing = false,
   });
 
   final DateTime initialStart;
   final DateTime initialEnd;
+  final String initialTitle;
+  final bool initialIsAllDay;
+  final String initialRecurrence;
+  final String? initialCalendarId;
+  final bool isEditing;
 
   @override
   State<_AddCalendarEventSheet> createState() => _AddCalendarEventSheetState();
@@ -99,15 +164,41 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
     colorHex: '#6254F4',
   );
   bool _loadingCalendars = true;
+  bool _recurrenceChanged = false;
 
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController()..addListener(_titleChanged);
+    _titleController = TextEditingController(text: widget.initialTitle)
+      ..addListener(_titleChanged);
     _date = DateUtils.dateOnly(widget.initialStart);
     _startTime = TimeOfDay.fromDateTime(widget.initialStart);
     _endTime = TimeOfDay.fromDateTime(widget.initialEnd);
-    _selectedWeekdays = {_date.weekday};
+    _isAllDay = widget.initialIsAllDay;
+    final weekdayCodes = <String, int>{
+      'MO': 1,
+      'TU': 2,
+      'WE': 3,
+      'TH': 4,
+      'FR': 5,
+      'SA': 6,
+      'SU': 7,
+    };
+    final selectedCodes = widget.initialRecurrence.startsWith('weekly:')
+        ? widget.initialRecurrence.substring('weekly:'.length).split(',')
+        : const <String>[];
+    _selectedWeekdays = selectedCodes
+        .map((code) => weekdayCodes[code])
+        .whereType<int>()
+        .toSet();
+    if (_selectedWeekdays.isEmpty) _selectedWeekdays = {_date.weekday};
+    _repeat = switch (widget.initialRecurrence) {
+      'daily' => _RepeatChoice.daily,
+      'weekly' => _RepeatChoice.selectedDays,
+      _ when widget.initialRecurrence.startsWith('weekly:') =>
+        _RepeatChoice.selectedDays,
+      _ => _RepeatChoice.once,
+    };
     _loadCalendars();
   }
 
@@ -129,8 +220,11 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
         _calendars = calendars;
         if (calendars.isNotEmpty) {
           _selectedCalendar = calendars.firstWhere(
-            (calendar) => calendar.isPrimary,
-            orElse: () => calendars.first,
+            (calendar) => calendar.id == widget.initialCalendarId,
+            orElse: () => calendars.firstWhere(
+              (calendar) => calendar.isPrimary,
+              orElse: () => calendars.first,
+            ),
           );
         }
         _loadingCalendars = false;
@@ -251,18 +345,50 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   void _submit() {
     final title = _titleController.text.trim();
     if (title.isEmpty) return;
+    final draft = CalendarEventDraft(
+      title: title,
+      date: _date,
+      startTime: _startTime,
+      endTime: _endTime,
+      isAllDay: _isAllDay,
+      recurrence: _recurrence,
+      calendarId: _selectedCalendar.id,
+    );
     Navigator.pop(
       context,
-      CalendarEventDraft(
-        title: title,
-        date: _date,
-        startTime: _startTime,
-        endTime: _endTime,
-        isAllDay: _isAllDay,
-        recurrence: _recurrence,
-        calendarId: _selectedCalendar.id,
+      widget.isEditing
+          ? CalendarEventEditResult.save(
+              draft,
+              recurrenceChanged: _recurrenceChanged,
+            )
+          : draft,
+    );
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete event?'),
+        content: Text(
+          'This will delete “${_titleController.text.trim().isEmpty ? 'Untitled event' : _titleController.text.trim()}” from Google Calendar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
+    if (confirmed == true && mounted) {
+      Navigator.pop(context, const CalendarEventEditResult.delete());
+    }
   }
 
   @override
@@ -306,7 +432,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                   const SizedBox(width: 42),
                   Expanded(
                     child: Text(
-                      'Add Event',
+                      widget.isEditing ? 'Edit Event' : 'Add Event',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: colors.textPrimary,
@@ -333,7 +459,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                     const SizedBox(height: 10),
                     TextField(
                       controller: _titleController,
-                      autofocus: true,
+                      autofocus: !widget.isEditing,
                       textCapitalization: TextCapitalization.sentences,
                       style: TextStyle(color: colors.textPrimary, fontSize: 17),
                       decoration: InputDecoration(
@@ -416,14 +542,19 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                     const SizedBox(height: 10),
                     _RepeatSelector(
                       value: _repeat,
-                      onChanged: (value) => setState(() => _repeat = value),
+                      onChanged: (value) => setState(() {
+                        _repeat = value;
+                        _recurrenceChanged = true;
+                      }),
                     ),
                     if (_repeat == _RepeatChoice.selectedDays) ...[
                       const SizedBox(height: 12),
                       _WeekdaySelector(
                         selected: _selectedWeekdays,
-                        onChanged: (days) =>
-                            setState(() => _selectedWeekdays = days),
+                        onChanged: (days) => setState(() {
+                          _selectedWeekdays = days;
+                          _recurrenceChanged = true;
+                        }),
                       ),
                     ],
                     const SizedBox(height: 26),
@@ -468,13 +599,27 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: const Text(
-                            'Add Event',
-                            style: TextStyle(fontSize: 17),
+                          child: Text(
+                            widget.isEditing ? 'Save Changes' : 'Add Event',
+                            style: const TextStyle(fontSize: 17),
                           ),
                         ),
                       ),
                     ),
+                    if (widget.isEditing) ...[
+                      const SizedBox(height: 18),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: _delete,
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFFF574D),
+                            textStyle: const TextStyle(fontSize: 16),
+                          ),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          label: const Text('Delete Event'),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -3,6 +3,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
 
 void main() {
+  test('returns the timestamp with the latest reading', () {
+    final timestamp = DateTime(2026, 8, 17, 14, 25);
+    final result = latestHeartRateReadingFromMetricDays([
+      {
+        'heart_rate': {
+          'source': 'apple_health',
+          'entries': [
+            {'bpm': 82, 'timestamp': Timestamp.fromDate(timestamp)},
+          ],
+        },
+      },
+    ]);
+
+    expect(result?.bpm, 82);
+    expect(result?.timestamp, timestamp);
+    expect(result?.source, 'apple_health');
+  });
+
   test('newer wearable reading wins over an older Vivordo scan', () {
     final result = latestHeartRateBpmFromMetricDays([
       {

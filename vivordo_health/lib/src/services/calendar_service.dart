@@ -29,6 +29,8 @@ class CalendarService {
   static String? _calendarIdFor(gcal.Event event) =>
       event.id == null ? null : _eventCalendarIds[event.id!];
 
+  static String? calendarIdForEvent(gcal.Event event) => _calendarIdFor(event);
+
   /// Records the account returned directly by an interactive Google sign-in.
   /// This avoids waiting for the asynchronous authentication event before
   /// screens that depend on Google Calendar are built.
@@ -212,15 +214,19 @@ class CalendarService {
     DateTime? start,
     DateTime? end,
     String? recurrence,
+    String? calendarId,
+    bool? isAllDay,
   }) async {
-    final calendarId = _calendarIdFor(event);
+    final sourceCalendarId = _calendarIdFor(event);
     final eventId = event.id;
-    if (calendarId == null || eventId == null) {
+    if (sourceCalendarId == null || eventId == null) {
       throw StateError(
         'This event cannot be edited because its calendar is unknown.',
       );
     }
-    final isAllDay = event.start?.dateTime == null && event.start?.date != null;
+    final originalIsAllDay =
+        event.start?.dateTime == null && event.start?.date != null;
+    final nextIsAllDay = isAllDay ?? originalIsAllDay;
     final originalStart =
         event.start?.dateTime?.toLocal() ?? event.start?.date?.toLocal();
     final originalEnd =
@@ -232,7 +238,7 @@ class CalendarService {
     }
     final updated = gcal.Event()
       ..summary = title?.trim().isNotEmpty == true ? title!.trim() : null;
-    if (isAllDay) {
+    if (nextIsAllDay) {
       updated
         ..start = (gcal.EventDateTime()
           ..date = DateTime(nextStart.year, nextStart.month, nextStart.day))
@@ -248,16 +254,33 @@ class CalendarService {
           ..timeZone = event.end?.timeZone);
     }
     if (recurrence != null) {
+      final weeklyDays = recurrence.startsWith('weekly:')
+          ? recurrence.substring('weekly:'.length)
+          : '';
       updated.recurrence = switch (recurrence) {
         'daily' => <String>['RRULE:FREQ=DAILY'],
         'weekly' => <String>['RRULE:FREQ=WEEKLY'],
         'monthly' => <String>['RRULE:FREQ=MONTHLY'],
+        _ when weeklyDays.isNotEmpty => <String>[
+          'RRULE:FREQ=WEEKLY;BYDAY=$weeklyDays',
+        ],
         _ => <String>[],
       };
     }
     final api = await _authorizedCalendarApi();
-    final result = await api.events.patch(updated, calendarId, eventId);
-    if (result.id != null) _eventCalendarIds[result.id!] = calendarId;
+    var result = await api.events.patch(updated, sourceCalendarId, eventId);
+    final destinationCalendarId = calendarId;
+    if (destinationCalendarId != null &&
+        destinationCalendarId != sourceCalendarId) {
+      result = await api.events.move(
+        sourceCalendarId,
+        eventId,
+        destinationCalendarId,
+      );
+    }
+    if (result.id != null) {
+      _eventCalendarIds[result.id!] = destinationCalendarId ?? sourceCalendarId;
+    }
     return result;
   }
 

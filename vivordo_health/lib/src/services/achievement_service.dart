@@ -81,6 +81,21 @@ int countCompletedActivityRingDays({
   }).length;
 }
 
+@visibleForTesting
+int countMoodCheckIns({required Iterable<Map<String, dynamic>> metricDays}) =>
+    metricDays.fold<int>(0, (total, day) {
+      final mood = day['mood'];
+      if (mood is! Map) return total;
+      final entries = mood['entries'];
+      if (entries is List && entries.isNotEmpty) {
+        return total + entries.length;
+      }
+      // Mood data created before per-check-in entries were introduced still
+      // represents one check-in for that day.
+      if (mood['avg'] is num || mood['label'] is String) return total + 1;
+      return total;
+    });
+
 /// Watches achievement inputs for the lifetime of the signed-in app.
 class AchievementMonitor {
   AchievementMonitor._(this._userId);
@@ -147,12 +162,13 @@ class AchievementMonitor {
                           ? 1
                           : 0;
                     }
+                    final moodCount = countMoodCheckIns(metricDays: [data]);
                     num? sumFor(String key) {
                       final metric = data[key];
                       return metric is Map ? metric['sum'] as num? : null;
                     }
 
-                    return '${doc.id}:$count:${sumFor('steps')}:${sumFor('active_calories')}:${sumFor('exercise_time')}';
+                    return '${doc.id}:$count:$moodCount:${sumFor('steps')}:${sumFor('active_calories')}:${sumFor('exercise_time')}';
                   })
                   .join('|'),
               (value) => _metricSignature = value,
@@ -324,6 +340,9 @@ class AchievementService {
       }
       return total;
     });
+    final moodCheckInCount = countMoodCheckIns(
+      metricDays: metricDays.docs.map((document) => document.data()),
+    );
     final cardioOrSportsActivityCount = workouts.docs.where((document) {
       final data = document.data();
       final activityCategory = data['activityCategory'] as String?;
@@ -374,6 +393,14 @@ class AchievementService {
       id: 'story_keeper',
       savedTier: savedById['story_keeper']?.data()['tier'] as String?,
       value: journalEntryCount,
+      bronze: 5,
+      silver: 20,
+      gold: 100,
+    );
+    final moodKeeper = _tierProgress(
+      id: 'mood_keeper',
+      savedTier: savedById['mood_keeper']?.data()['tier'] as String?,
+      value: moodCheckInCount,
       bronze: 5,
       silver: 20,
       gold: 100,
@@ -447,6 +474,12 @@ class AchievementService {
         name: 'Story Keeper',
         requirement: 'Write ${story.target} journal entries',
         progressUnit: 'entries',
+      ),
+      _tierAchievement(
+        progress: moodKeeper,
+        name: 'Mood Keeper',
+        requirement: 'Complete ${moodKeeper.target} mood check-ins',
+        progressUnit: 'check-ins',
       ),
       _tierAchievement(
         progress: fullCircle,
@@ -632,6 +665,9 @@ class AchievementService {
       ('story_keeper', 'bronze') => 5,
       ('story_keeper', 'silver') => 20,
       ('story_keeper', 'gold') => 100,
+      ('mood_keeper', 'bronze') => 5,
+      ('mood_keeper', 'silver') => 20,
+      ('mood_keeper', 'gold') => 100,
       ('full_circle', 'bronze') => 7,
       ('full_circle', 'silver') => 30,
       ('full_circle', 'gold') => 100,
@@ -642,6 +678,7 @@ class AchievementService {
       'endurance' => 'Complete $target cardio or sports activities',
       'pulse_check' => 'Complete $target heart-rate scans',
       'story_keeper' => 'Write $target journal entries',
+      'mood_keeper' => 'Complete $target mood check-ins',
       'full_circle' => 'Fill all activity rings on $target days',
       _ => achievement.requirement,
     };

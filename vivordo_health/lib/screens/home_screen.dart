@@ -17,6 +17,9 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
+import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
+import 'package:vivordo_health/src/utils/heart_rate_calendar_insight.dart';
+import 'package:vivordo_health/widgets/home_stress_card.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'circle_screen.dart';
@@ -250,6 +253,9 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _reachableWindowScoresDate;
   Future<_ScheduleInsight?>? _scheduleInsightFuture;
   DateTime? _scheduleInsightDate;
+  Future<HeartRateCalendarInsight>? _heartInsightFuture;
+  DateTime? _heartInsightReadingTime;
+  int? _heartInsightReadingBpm;
   ActivityGoals _activityGoals = const ActivityGoals();
   StreamSubscription<ActivityGoals>? _activityGoalsSubscription;
   _HomeWidgetSnapshot? _latestHomeWidgetSnapshot;
@@ -414,27 +420,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return displayName.split(' ').first;
   }
 
-  Color _getStressColor(double score) {
-    if (score < 30) return greenColor;
-    if (score < 60) return const Color(0xFFFFCC00);
-    return const Color(0xFFFF3B30);
-  }
-
-  String _getStressLabel(double score) {
-    if (score < 30) return 'Very Low Stress';
-    if (score < 60) return "Low Stress — You're in good shape";
-    if (score < 80) return 'Moderate Stress';
-    return 'High Stress';
-  }
-
   String _todayPeriod() {
     final now = DateTime.now();
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
-  int? _latestBpmFrom(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  LatestHeartRateReading? _latestHeartRateFrom(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
     final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
-    return latestHeartRateBpmFromMetricDays(
+    return latestHeartRateReadingFromMetricDays(
       sortedDocs.map((doc) => doc.data()),
     );
   }
@@ -468,6 +463,55 @@ class _HomeScreenState extends State<HomeScreen> {
     return null;
   }
 
+  double? _sevenDayStressAverage(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final oldest = today.subtract(const Duration(days: 7));
+    final values = <double>[];
+    for (final doc in docs) {
+      final date = DateTime.tryParse(doc.id);
+      if (date == null || date.isBefore(oldest) || !date.isBefore(today)) {
+        continue;
+      }
+      final stress = doc.data()['stress'] as Map?;
+      final value =
+          (stress?['avg'] as num?)?.toDouble() ??
+          (stress?['current'] as num?)?.toDouble();
+      if (value != null) values.add(value);
+    }
+    if (values.isEmpty) return null;
+    return values.reduce((a, b) => a + b) / values.length;
+  }
+
+  DateTime? _stressUpdatedAt(Map? stress) {
+    final raw = stress?['computedAt'];
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is String) return DateTime.tryParse(raw);
+    return null;
+  }
+
+  void _showStressScoreExplanation() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Your stress score'),
+        content: const Text(
+          'Vivordo combines signals such as heart rate, HRV, sleep, activity, '
+          'and mood with your personal baseline. Lower scores generally mean '
+          'your body is showing fewer signs of stress.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStream() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
@@ -484,6 +528,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (FirebaseAuth.instance.currentUser == null) {
       return _buildScaffold(
         stressScore: null,
+        stressUpdatedAt: null,
+        sevenDayStressAverage: null,
+        stressDrivers: const [],
         stressLoading: false,
         sleepVal: '--',
         sleepLoading: false,
@@ -493,6 +540,7 @@ class _HomeScreenState extends State<HomeScreen> {
         exerciseMinutes: 0,
         stepsLoading: false,
         hrVal: '--',
+        latestHeartRate: null,
         hrLoading: false,
         moodVal: '--',
         moodLoading: false,
@@ -572,12 +620,15 @@ class _HomeScreenState extends State<HomeScreen> {
           stream: _latestScanStream,
           builder: (context, scanSnap) {
             final metricDocs = scanSnap.data?.docs ?? [];
-            final latestHeartRateBpm = _latestBpmFrom(metricDocs);
+            final latestHeartRate = _latestHeartRateFrom(metricDocs);
+            final latestHeartRateBpm = latestHeartRate?.bpm;
             final hrVal = latestHeartRateBpm == null
                 ? '--'
                 : '$latestHeartRateBpm bpm';
             final displayedStressScore =
                 stressScore ?? _latestStressAnchorFrom(metricDocs);
+            final sevenDayStressAverage = _sevenDayStressAverage(metricDocs);
+            final stressDrivers = homeStressDrivers(stressMap?['top_drivers']);
             final stressStillLoading =
                 loading ||
                 (stressScore == null &&
@@ -622,6 +673,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   valueListenable: StressScoreService.isComputing,
                   builder: (context, computingStress, _) => _buildScaffold(
                     stressScore: displayedStressScore,
+                    stressUpdatedAt: _stressUpdatedAt(stressMap),
+                    sevenDayStressAverage: sevenDayStressAverage,
+                    stressDrivers: stressDrivers,
                     stressUpdating: computingStress,
                     stressLoading: stressStillLoading,
                     sleepVal: sleepVal,
@@ -632,6 +686,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     exerciseMinutes: exerciseMinutes,
                     stepsLoading: loading,
                     hrVal: hrVal,
+                    latestHeartRate: latestHeartRate,
                     hrLoading:
                         scanSnap.connectionState == ConnectionState.waiting &&
                         !scanSnap.hasData,
@@ -794,6 +849,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildScaffold({
     required double? stressScore,
+    required DateTime? stressUpdatedAt,
+    required double? sevenDayStressAverage,
+    required List<HomeStressDriver> stressDrivers,
     bool stressUpdating = false,
     required bool stressLoading,
     required String sleepVal,
@@ -804,6 +862,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required int exerciseMinutes,
     required bool stepsLoading,
     required String hrVal,
+    required LatestHeartRateReading? latestHeartRate,
     required bool hrLoading,
     required String moodVal,
     required bool moodLoading,
@@ -827,10 +886,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const StressDetailScreen()),
                 ),
-                child: _buildStressCard(
-                  stressScore,
+                child: HomeStressCard(
+                  score: stressScore,
+                  updatedAt: stressUpdatedAt,
+                  sevenDayAverage: sevenDayStressAverage,
+                  drivers: stressDrivers,
+                  steps: steps,
                   loading: stressLoading,
                   updating: stressUpdating,
+                  revealScore: widget.revealStress,
+                  onInfoTap: _showStressScoreExplanation,
                 ),
               ),
               const SizedBox(height: 16),
@@ -912,14 +977,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   subtitle: _getSleepInsightSubtitle(sleepVal, hrVal),
                 ),
               if (sleepVal != '--') const SizedBox(height: 10),
-              if (hrVal != '--')
-                _buildInsightCard(
-                  icon: Icons.favorite_rounded,
-                  iconColor: const Color(0xFFFF3B30),
-                  iconBg: const Color(0x1FFF3B30),
-                  title: _getHRVInsightTitle(hrVal),
-                  subtitle: _getHRVInsightSubtitle(hrVal),
-                ),
+              if (latestHeartRate != null)
+                _buildHeartRateInsightCard(latestHeartRate),
               if (sleepVal == '--' && hrVal == '--')
                 _buildInsightCard(
                   icon: Icons.info_outline_rounded,
@@ -1161,188 +1220,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildStressCard(
-    double? stressScore, {
-    bool loading = false,
-    bool updating = false,
-  }) {
-    final statusColor = stressScore == null
-        ? const Color(0xFF8E8E93)
-        : _getStressColor(stressScore);
-    final stressLabel = stressScore == null
-        ? 'No data yet'
-        : _getStressLabel(stressScore);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: accentPurple,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: accentPurple.withOpacity(0.4),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            // Decorative circle top-right
-            Positioned(
-              top: -30,
-              right: -30,
-              child: Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.06),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            // Content
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Current Stress Level',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.75),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                      if (updating) ...[
-                        const SizedBox(width: 8),
-                        SizedBox(
-                          width: 10,
-                          height: 10,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 1.5,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white.withOpacity(0.75),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      loading
-                          ? Container(
-                              width: 80,
-                              height: 56,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            )
-                          : TweenAnimationBuilder<double>(
-                              tween: Tween(
-                                begin: 0,
-                                end: widget.revealStress ? stressScore ?? 0 : 0,
-                              ),
-                              duration: const Duration(milliseconds: 1200),
-                              curve: Curves.easeOutCubic,
-                              builder: (_, value, __) => Text(
-                                stressScore == null
-                                    ? '--'
-                                    : value.toInt().toString(),
-                                style: TextStyle(
-                                  fontSize: stressScore == null ? 30 : 56,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                  height: 1.0,
-                                  letterSpacing: -2,
-                                ),
-                              ),
-                            ),
-                      const Padding(
-                        padding: EdgeInsets.only(left: 4),
-                        child: Text(
-                          '/100',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white60,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Container(
-                        width: 9,
-                        height: 9,
-                        decoration: BoxDecoration(
-                          color: statusColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 7),
-                      Text(
-                        stressLabel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween(
-                        begin: 0,
-                        end: widget.revealStress ? (stressScore ?? 0) / 100 : 0,
-                      ),
-                      duration: const Duration(milliseconds: 1400),
-                      curve: Curves.easeOutCubic,
-                      builder: (_, value, __) => LinearProgressIndicator(
-                        value: value,
-                        minHeight: 6,
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -2519,22 +2396,105 @@ class _HomeScreenState extends State<HomeScreen> {
     return '$sleepVal of sleep recorded';
   }
 
-  String _getHRVInsightTitle(String hrVal) {
-    final bpm = int.tryParse(hrVal.replaceAll(' bpm', '')) ?? 0;
-    if (bpm < 60) return 'Resting heart rate looks calm';
-    if (bpm < 80) return 'Heart rate in normal range';
-    if (bpm < 100) return 'Heart rate slightly elevated';
-    return 'Heart rate elevated today';
+  Widget _buildHeartRateInsightCard(LatestHeartRateReading reading) {
+    return FutureBuilder<HeartRateCalendarInsight>(
+      future: _getHeartRateInsightFuture(reading),
+      builder: (context, snapshot) {
+        final insight =
+            snapshot.data ??
+            buildHeartRateCalendarInsight(
+              bpm: reading.bpm,
+              timestamp: reading.timestamp,
+            );
+        return _buildInsightCard(
+          icon: Icons.favorite_rounded,
+          iconColor: const Color(0xFFFF3B30),
+          iconBg: const Color(0x1FFF3B30),
+          title: insight.title,
+          subtitle: insight.subtitle,
+        );
+      },
+    );
   }
 
-  String _getHRVInsightSubtitle(String hrVal) {
-    final bpm = int.tryParse(hrVal.replaceAll(' bpm', '')) ?? 0;
-    if (bpm < 60)
-      return 'Your heart rate of $hrVal suggests good recovery today.';
-    if (bpm < 80) return 'Your heart rate of $hrVal is within a healthy range.';
-    if (bpm < 100)
-      return 'Your heart rate of $hrVal is a bit higher than usual. Consider a rest day.';
-    return 'Your heart rate of $hrVal is elevated. Try some breathing exercises.';
+  Future<HeartRateCalendarInsight> _getHeartRateInsightFuture(
+    LatestHeartRateReading reading,
+  ) {
+    if (_heartInsightFuture != null &&
+        _heartInsightReadingTime == reading.timestamp &&
+        _heartInsightReadingBpm == reading.bpm) {
+      return _heartInsightFuture!;
+    }
+    _heartInsightReadingTime = reading.timestamp;
+    _heartInsightReadingBpm = reading.bpm;
+    _heartInsightFuture = _loadHeartRateInsight(reading);
+    return _heartInsightFuture!;
+  }
+
+  Future<HeartRateCalendarInsight> _loadHeartRateInsight(
+    LatestHeartRateReading reading,
+  ) async {
+    final timestamp = reading.timestamp;
+    if (timestamp == null) {
+      return buildHeartRateCalendarInsight(bpm: reading.bpm, timestamp: null);
+    }
+
+    final events = <HeartRateCalendarEvent>[];
+    try {
+      if (await CalendarService.isSignedIn()) {
+        final googleEvents = await CalendarService.getWeekEvents(
+          timestamp.toLocal(),
+        ).timeout(const Duration(seconds: 8), onTimeout: () => <gcal.Event>[]);
+        for (final event in googleEvents) {
+          if (event.status == 'cancelled') continue;
+          final start = event.start?.dateTime?.toLocal();
+          final end = event.end?.dateTime?.toLocal();
+          if (start == null || end == null) continue;
+          events.add(
+            HeartRateCalendarEvent(
+              title: event.summary?.trim().isNotEmpty == true
+                  ? event.summary!.trim()
+                  : 'Calendar event',
+              start: start,
+              end: end,
+            ),
+          );
+        }
+      }
+    } catch (error) {
+      debugPrint('Heart insight Google Calendar match failed: $error');
+    }
+
+    try {
+      if (await OutlookCalendarService.isSignedIn()) {
+        final outlookEvents =
+            await OutlookCalendarService.getWeekEvents(
+              timestamp.toLocal(),
+            ).timeout(
+              const Duration(seconds: 8),
+              onTimeout: () => <OutlookEvent>[],
+            );
+        for (final event in outlookEvents) {
+          events.add(
+            HeartRateCalendarEvent(
+              title: event.subject.trim().isNotEmpty
+                  ? event.subject.trim()
+                  : 'Calendar event',
+              start: event.start.toLocal(),
+              end: event.end.toLocal(),
+            ),
+          );
+        }
+      }
+    } catch (error) {
+      debugPrint('Heart insight Outlook Calendar match failed: $error');
+    }
+
+    return buildHeartRateCalendarInsight(
+      bpm: reading.bpm,
+      timestamp: timestamp,
+      events: events,
+    );
   }
 
   String _formatCalendarDate(DateTime dt) {

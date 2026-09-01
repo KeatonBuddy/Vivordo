@@ -6,8 +6,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+
+bool hasRecordedSleep(Map<String, dynamic>? dailyMetrics) {
+  final sleep = dailyMetrics?['sleep'];
+  if (sleep is! Map) return false;
+  final hours = (sleep['avg'] as num?)?.toDouble();
+  return hours != null && hours > 0;
+}
 
 class SleepDetailScreen extends StatefulWidget {
   const SleepDetailScreen({super.key});
@@ -19,6 +27,8 @@ class SleepDetailScreen extends StatefulWidget {
 class _SleepDetailScreenState extends State<SleepDetailScreen> {
   static const _purple = Color(0xFF5420DE);
   int _rangeIndex = 0;
+  DateTime? _lastRefreshAt;
+  bool _refreshingWhoopSleep = false;
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,
@@ -32,6 +42,72 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   };
 
   String _dayKey(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
+
+  Future<void> _refreshWhoopSleepIfMissing() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || _refreshingWhoopSleep) return;
+
+    final firestore = FirebaseFirestore.instance;
+    final userReference = firestore.collection('users').doc(uid);
+    final todayReference = userReference
+        .collection('metrics_daily')
+        .doc(_dayKey(DateTime.now()));
+
+    try {
+      _refreshingWhoopSleep = true;
+      final today = await todayReference.get(
+        const GetOptions(source: Source.server),
+      );
+      if (hasRecordedSleep(today.data())) {
+        if (mounted) setState(() => _lastRefreshAt = DateTime.now());
+        return;
+      }
+
+      final user = await userReference.get();
+      if (user.data()?['whoopConnected'] != true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Connect WHOOP to refresh today\'s sleep.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Include yesterday as well as today. WHOOP sleep crosses midnight and
+      // its wake-day assignment can otherwise sit outside a one-day request
+      // around UTC/local-day boundaries.
+      await WhoopService.instance.sync(daysBack: 2, force: true);
+
+      final refreshed = await todayReference.get(
+        const GetOptions(source: Source.server),
+      );
+      final updated = hasRecordedSleep(refreshed.data());
+      if (!mounted) return;
+      setState(() => _lastRefreshAt = DateTime.now());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            updated
+                ? 'Sleep updated from WHOOP.'
+                : 'WHOOP has not finished processing today\'s sleep yet.',
+          ),
+        ),
+      );
+    } catch (error) {
+      debugPrint('[SleepDetailScreen] WHOOP refresh failed: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('WHOOP sleep could not be refreshed. Try again.'),
+          ),
+        );
+      }
+    } finally {
+      _refreshingWhoopSleep = false;
+    }
+  }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _sleepStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -131,48 +207,56 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         ? _heartRateDuringSleep(snapshot, latest)
         : const <HeartRateHistoryReading>[];
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Text(
-              'Updated ${DateFormat('h:mm a').format(DateTime.now())}',
-              style: TextStyle(color: context.vivordoColors.textSecondary),
+    return RefreshIndicator(
+      color: _purple,
+      onRefresh: _refreshWhoopSleepIfMissing,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Text(
+                'Updated ${DateFormat('h:mm a').format(_lastRefreshAt ?? DateTime.now())}',
+                style: TextStyle(color: context.vivordoColors.textSecondary),
+              ),
             ),
-          ),
-          const SizedBox(height: 18),
-          _rangeSelector(),
-          const SizedBox(height: 18),
-          _summaryCard(average, total, changeMinutes, latest),
-          const SizedBox(height: 24),
-          Text(
-            _rangeIndex == 0 ? 'Heart rate during sleep' : '$_rangeName sleep',
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-          _rangeIndex == 0
-              ? _sleepHeartRateChart(sleepingHeartRate, latest)
-              : _sleepChart(days),
-          const SizedBox(height: 24),
-          Text(
+            const SizedBox(height: 18),
+            _rangeSelector(),
+            const SizedBox(height: 18),
+            _summaryCard(average, total, changeMinutes, latest),
+            const SizedBox(height: 24),
+            Text(
+              _rangeIndex == 0
+                  ? 'Heart rate during sleep'
+                  : '$_rangeName sleep',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
             _rangeIndex == 0
-                ? "Last night's sleep stages"
-                : 'Average sleep stages',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-          _stagesCard(averageStages, average),
-          const SizedBox(height: 24),
-          const Text(
-            'Insight',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-          _insightCard(recorded, average),
-        ],
+                ? _sleepHeartRateChart(sleepingHeartRate, latest)
+                : _sleepChart(days),
+            const SizedBox(height: 24),
+            Text(
+              _rangeIndex == 0
+                  ? "Last night's sleep stages"
+                  : 'Average sleep stages',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            _stagesCard(averageStages, average),
+            const SizedBox(height: 24),
+            const Text(
+              'Insight',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            _insightCard(recorded, average),
+          ],
+        ),
       ),
     );
   }
