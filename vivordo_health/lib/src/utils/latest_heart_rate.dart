@@ -1,14 +1,35 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+class LatestHeartRateReading {
+  const LatestHeartRateReading({
+    required this.bpm,
+    this.timestamp,
+    this.source,
+  });
+
+  final int bpm;
+  final DateTime? timestamp;
+  final String? source;
+}
+
 /// Returns the newest timestamped heart-rate reading across HealthKit and
 /// Vivordo camera metrics. [metricDays] should be ordered newest day first so
 /// legacy records without timestamps retain a sensible fallback order.
 int? latestHeartRateBpmFromMetricDays(
   Iterable<Map<String, dynamic>> metricDays,
+) => latestHeartRateReadingFromMetricDays(metricDays)?.bpm;
+
+/// Returns the newest heart-rate value together with its measurement time and
+/// source when those details are available. Legacy daily averages may not have
+/// an exact measurement timestamp.
+LatestHeartRateReading? latestHeartRateReadingFromMetricDays(
+  Iterable<Map<String, dynamic>> metricDays,
 ) {
   int? latestBpm;
   DateTime? latestTime;
+  String? latestSource;
   int? fallbackBpm;
+  String? fallbackSource;
 
   DateTime? timestampDate(dynamic value) {
     if (value is Timestamp) return value.toDate();
@@ -65,6 +86,7 @@ int? latestHeartRateBpmFromMetricDays(
         final entryTime = timestampDate(entry['timestamp']);
         if (entryTime == null) {
           fallbackBpm ??= bpm;
+          fallbackSource ??= metric['source'] as String?;
           continue;
         }
 
@@ -72,6 +94,7 @@ int? latestHeartRateBpmFromMetricDays(
         if (latestTime == null || entryTime.isAfter(latestTime!)) {
           latestBpm = bpm;
           latestTime = entryTime;
+          latestSource = metric['source'] as String?;
         }
       }
     }
@@ -84,8 +107,10 @@ int? latestHeartRateBpmFromMetricDays(
           (latestTime == null || syncedAt.isAfter(latestTime!))) {
         latestBpm = bpm;
         latestTime = syncedAt;
+        latestSource = metric['source'] as String?;
       } else {
         fallbackBpm ??= bpm;
+        fallbackSource ??= metric['source'] as String?;
       }
     }
   }
@@ -98,7 +123,13 @@ int? latestHeartRateBpmFromMetricDays(
     considerFreshBle(sources?['wearable_ble'] as Map?);
     considerFreshBle(data['heart_rate'] as Map?);
   }
-  if (freshBleBpm != null) return freshBleBpm;
+  if (freshBleBpm != null) {
+    return LatestHeartRateReading(
+      bpm: freshBleBpm!,
+      timestamp: freshBleTime,
+      source: 'wearable_ble',
+    );
+  }
 
   for (final data in days) {
     final sources = data['heart_rate_sources'] as Map?;
@@ -107,5 +138,11 @@ int? latestHeartRateBpmFromMetricDays(
     considerMetric(data['heart_rate_scan'] as Map?);
   }
 
-  return latestBpm ?? fallbackBpm;
+  final bpm = latestBpm ?? fallbackBpm;
+  if (bpm == null) return null;
+  return LatestHeartRateReading(
+    bpm: bpm,
+    timestamp: latestTime,
+    source: latestTime == null ? fallbackSource : latestSource,
+  );
 }

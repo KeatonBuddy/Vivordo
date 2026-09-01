@@ -18,6 +18,7 @@ import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
+import 'package:vivordo_health/src/utils/heart_rate_calendar_insight.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
@@ -252,6 +253,9 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _reachableWindowScoresDate;
   Future<_ScheduleInsight?>? _scheduleInsightFuture;
   DateTime? _scheduleInsightDate;
+  Future<HeartRateCalendarInsight>? _heartInsightFuture;
+  DateTime? _heartInsightReadingTime;
+  int? _heartInsightReadingBpm;
   ActivityGoals _activityGoals = const ActivityGoals();
   StreamSubscription<ActivityGoals>? _activityGoalsSubscription;
   _HomeWidgetSnapshot? _latestHomeWidgetSnapshot;
@@ -421,9 +425,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
-  int? _latestBpmFrom(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  LatestHeartRateReading? _latestHeartRateFrom(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
     final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
-    return latestHeartRateBpmFromMetricDays(
+    return latestHeartRateReadingFromMetricDays(
       sortedDocs.map((doc) => doc.data()),
     );
   }
@@ -534,6 +540,7 @@ class _HomeScreenState extends State<HomeScreen> {
         exerciseMinutes: 0,
         stepsLoading: false,
         hrVal: '--',
+        latestHeartRate: null,
         hrLoading: false,
         moodVal: '--',
         moodLoading: false,
@@ -613,7 +620,8 @@ class _HomeScreenState extends State<HomeScreen> {
           stream: _latestScanStream,
           builder: (context, scanSnap) {
             final metricDocs = scanSnap.data?.docs ?? [];
-            final latestHeartRateBpm = _latestBpmFrom(metricDocs);
+            final latestHeartRate = _latestHeartRateFrom(metricDocs);
+            final latestHeartRateBpm = latestHeartRate?.bpm;
             final hrVal = latestHeartRateBpm == null
                 ? '--'
                 : '$latestHeartRateBpm bpm';
@@ -678,6 +686,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     exerciseMinutes: exerciseMinutes,
                     stepsLoading: loading,
                     hrVal: hrVal,
+                    latestHeartRate: latestHeartRate,
                     hrLoading:
                         scanSnap.connectionState == ConnectionState.waiting &&
                         !scanSnap.hasData,
@@ -853,6 +862,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required int exerciseMinutes,
     required bool stepsLoading,
     required String hrVal,
+    required LatestHeartRateReading? latestHeartRate,
     required bool hrLoading,
     required String moodVal,
     required bool moodLoading,
@@ -967,14 +977,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   subtitle: _getSleepInsightSubtitle(sleepVal, hrVal),
                 ),
               if (sleepVal != '--') const SizedBox(height: 10),
-              if (hrVal != '--')
-                _buildInsightCard(
-                  icon: Icons.favorite_rounded,
-                  iconColor: const Color(0xFFFF3B30),
-                  iconBg: const Color(0x1FFF3B30),
-                  title: _getHRVInsightTitle(hrVal),
-                  subtitle: _getHRVInsightSubtitle(hrVal),
-                ),
+              if (latestHeartRate != null)
+                _buildHeartRateInsightCard(latestHeartRate),
               if (sleepVal == '--' && hrVal == '--')
                 _buildInsightCard(
                   icon: Icons.info_outline_rounded,
@@ -2392,22 +2396,105 @@ class _HomeScreenState extends State<HomeScreen> {
     return '$sleepVal of sleep recorded';
   }
 
-  String _getHRVInsightTitle(String hrVal) {
-    final bpm = int.tryParse(hrVal.replaceAll(' bpm', '')) ?? 0;
-    if (bpm < 60) return 'Resting heart rate looks calm';
-    if (bpm < 80) return 'Heart rate in normal range';
-    if (bpm < 100) return 'Heart rate slightly elevated';
-    return 'Heart rate elevated today';
+  Widget _buildHeartRateInsightCard(LatestHeartRateReading reading) {
+    return FutureBuilder<HeartRateCalendarInsight>(
+      future: _getHeartRateInsightFuture(reading),
+      builder: (context, snapshot) {
+        final insight =
+            snapshot.data ??
+            buildHeartRateCalendarInsight(
+              bpm: reading.bpm,
+              timestamp: reading.timestamp,
+            );
+        return _buildInsightCard(
+          icon: Icons.favorite_rounded,
+          iconColor: const Color(0xFFFF3B30),
+          iconBg: const Color(0x1FFF3B30),
+          title: insight.title,
+          subtitle: insight.subtitle,
+        );
+      },
+    );
   }
 
-  String _getHRVInsightSubtitle(String hrVal) {
-    final bpm = int.tryParse(hrVal.replaceAll(' bpm', '')) ?? 0;
-    if (bpm < 60)
-      return 'Your heart rate of $hrVal suggests good recovery today.';
-    if (bpm < 80) return 'Your heart rate of $hrVal is within a healthy range.';
-    if (bpm < 100)
-      return 'Your heart rate of $hrVal is a bit higher than usual. Consider a rest day.';
-    return 'Your heart rate of $hrVal is elevated. Try some breathing exercises.';
+  Future<HeartRateCalendarInsight> _getHeartRateInsightFuture(
+    LatestHeartRateReading reading,
+  ) {
+    if (_heartInsightFuture != null &&
+        _heartInsightReadingTime == reading.timestamp &&
+        _heartInsightReadingBpm == reading.bpm) {
+      return _heartInsightFuture!;
+    }
+    _heartInsightReadingTime = reading.timestamp;
+    _heartInsightReadingBpm = reading.bpm;
+    _heartInsightFuture = _loadHeartRateInsight(reading);
+    return _heartInsightFuture!;
+  }
+
+  Future<HeartRateCalendarInsight> _loadHeartRateInsight(
+    LatestHeartRateReading reading,
+  ) async {
+    final timestamp = reading.timestamp;
+    if (timestamp == null) {
+      return buildHeartRateCalendarInsight(bpm: reading.bpm, timestamp: null);
+    }
+
+    final events = <HeartRateCalendarEvent>[];
+    try {
+      if (await CalendarService.isSignedIn()) {
+        final googleEvents = await CalendarService.getWeekEvents(
+          timestamp.toLocal(),
+        ).timeout(const Duration(seconds: 8), onTimeout: () => <gcal.Event>[]);
+        for (final event in googleEvents) {
+          if (event.status == 'cancelled') continue;
+          final start = event.start?.dateTime?.toLocal();
+          final end = event.end?.dateTime?.toLocal();
+          if (start == null || end == null) continue;
+          events.add(
+            HeartRateCalendarEvent(
+              title: event.summary?.trim().isNotEmpty == true
+                  ? event.summary!.trim()
+                  : 'Calendar event',
+              start: start,
+              end: end,
+            ),
+          );
+        }
+      }
+    } catch (error) {
+      debugPrint('Heart insight Google Calendar match failed: $error');
+    }
+
+    try {
+      if (await OutlookCalendarService.isSignedIn()) {
+        final outlookEvents =
+            await OutlookCalendarService.getWeekEvents(
+              timestamp.toLocal(),
+            ).timeout(
+              const Duration(seconds: 8),
+              onTimeout: () => <OutlookEvent>[],
+            );
+        for (final event in outlookEvents) {
+          events.add(
+            HeartRateCalendarEvent(
+              title: event.subject.trim().isNotEmpty
+                  ? event.subject.trim()
+                  : 'Calendar event',
+              start: event.start.toLocal(),
+              end: event.end.toLocal(),
+            ),
+          );
+        }
+      }
+    } catch (error) {
+      debugPrint('Heart insight Outlook Calendar match failed: $error');
+    }
+
+    return buildHeartRateCalendarInsight(
+      bpm: reading.bpm,
+      timestamp: timestamp,
+      events: events,
+    );
   }
 
   String _formatCalendarDate(DateTime dt) {
