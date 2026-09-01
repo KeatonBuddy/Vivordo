@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
@@ -10,6 +12,8 @@ import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
+import '../src/utils/daily_outlook_score.dart';
+import '../src/utils/latest_heart_rate.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import 'journal_screen.dart';
@@ -33,6 +37,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Timer? _clockTimer;
   late DateTime _priorityDay;
   late Stream<List<DailyPriority>> _priorityStream;
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _todayMetricsStream;
 
   @override
   void initState() {
@@ -40,6 +45,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _priorityDay = DateUtils.dateOnly(DateTime.now());
     _priorityStream = DailyPriorityService.watch(_priorityDay);
+    _todayMetricsStream = _metricsStreamFor(_priorityDay);
     _loadTodayEvents();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
@@ -61,9 +67,24 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     setState(() {
       _priorityDay = today;
       _priorityStream = DailyPriorityService.watch(today);
+      _todayMetricsStream = _metricsStreamFor(today);
     });
     unawaited(_loadTodayEvents());
     return true;
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _metricsStreamFor(
+    DateTime day,
+  ) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+    final period = DateFormat('yyyy-MM-dd').format(day);
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('metrics_daily')
+        .doc(period)
+        .snapshots();
   }
 
   @override
@@ -296,16 +317,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final timedEvents = _events.where((event) => !event.isAllDay).toList();
-    final scheduled = timedEvents.fold<Duration>(
-      Duration.zero,
-      (total, event) => total + event.end.difference(event.start),
-    );
-    final longestOpening = _longestOpening();
-    final load = scheduled.inHours >= 6
-        ? 'High'
-        : scheduled.inHours >= 3
-        ? 'Moderate'
-        : 'Low';
     final dayInsight = _calculateDayInsight();
     final watchItem = findNextBackToBackEventBlock(
       _events
@@ -341,85 +352,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 style: const TextStyle(color: MyDayScreen.muted),
               ),
               const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF5848E8), Color(0xFF3422B8)],
-                  ),
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        const SizedBox(
-                          width: 62,
-                          height: 62,
-                          child: Icon(
-                            Icons.speed_rounded,
-                            color: Colors.white,
-                            size: 48,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                "TODAY'S SCHEDULE LOAD",
-                                style: TextStyle(
-                                  color: Color(0xFFE1DDFF),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.1,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                load,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              Text(
-                                '${_events.length} ${_events.length == 1 ? 'event' : 'events'} · ${load == 'Low' ? 'Balanced focus time' : 'A structured day'}',
-                                style: const TextStyle(
-                                  color: Color(0xFFE7E3FF),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 24, color: Color(0x55FFFFFF)),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _LoadMetric(
-                            icon: Icons.schedule_rounded,
-                            value: _shortDuration(longestOpening),
-                            label: 'longest opening',
-                          ),
-                        ),
-                        Container(width: 1, height: 38, color: Colors.white24),
-                        Expanded(
-                          child: _LoadMetric(
-                            icon: Icons.calendar_month_rounded,
-                            value: _shortDuration(scheduled),
-                            label: 'scheduled',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+              _buildDayOutlookCard(timedEvents: timedEvents),
               const SizedBox(height: 24),
               const _SectionLabel('NOW & NEXT'),
               const SizedBox(height: 10),
@@ -505,32 +438,81 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
   }
 
-  Duration _longestOpening() {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day, 9);
-    final end = DateTime(now.year, now.month, now.day, 17);
-    final events =
-        _events
-            .where(
-              (e) =>
-                  !e.isAllDay && e.end.isAfter(start) && e.start.isBefore(end),
-            )
-            .toList()
-          ..sort((a, b) => a.start.compareTo(b.start));
-    var cursor = start;
-    var longest = Duration.zero;
-    for (final event in events) {
-      if (event.start.isAfter(cursor)) {
-        final gap = event.start.difference(cursor);
-        if (gap > longest) longest = gap;
-      }
-      if (event.end.isAfter(cursor)) cursor = event.end;
-    }
-    if (cursor.isBefore(end) && end.difference(cursor) > longest) {
-      return end.difference(cursor);
-    }
-    return longest;
-  }
+  Widget _buildDayOutlookCard({
+    required List<_CalendarEvent> timedEvents,
+  }) => StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    stream: _todayMetricsStream,
+    builder: (context, snapshot) {
+      final data = snapshot.data?.data();
+      final sleep = ((data?['sleep'] as Map?)?['avg'] as num?)?.toDouble();
+      final stressMap = data?['stress'] as Map?;
+      final hrvMap = data?['hrv'] as Map?;
+      final stress =
+          (stressMap?['current'] as num?)?.toDouble() ??
+          (stressMap?['avg'] as num?)?.toDouble() ??
+          (hrvMap?['stressScore'] as num?)?.toDouble();
+      final latestHeartRate = data == null
+          ? null
+          : latestHeartRateReadingFromMetricDays([data]);
+      final heartRate = latestHeartRate?.bpm.toDouble();
+      final capacity = calculateDailyCapacity(
+        sleepHours: sleep,
+        stressScore: stress,
+        heartRate: heartRate,
+      );
+      final now = DateTime.now();
+      final dayStart = DateTime(now.year, now.month, now.day);
+      final schedule = calculateScheduleDemand(
+        events: timedEvents.map(
+          (event) => DailyScheduleEvent(
+            title: event.title,
+            start: event.start,
+            end: event.end,
+          ),
+        ),
+        dayStart: dayStart,
+        dayEnd: dayStart.add(const Duration(days: 1)),
+      );
+      final signals = <_OutlookSignal>[
+        if (sleep != null)
+          _OutlookSignal(
+            icon: Icons.bedtime_outlined,
+            label: 'Sleep ${sleep.toStringAsFixed(1)}h',
+          ),
+        if (stress != null)
+          _OutlookSignal(
+            icon: Icons.monitor_heart_outlined,
+            label: 'Stress ${stress.round()}',
+          ),
+        if (heartRate != null)
+          _OutlookSignal(
+            icon: Icons.favorite_border_rounded,
+            label: 'Heart ${heartRate.round()}',
+          ),
+        _OutlookSignal(
+          icon: Icons.schedule_rounded,
+          label:
+              '${_shortDuration(Duration(minutes: schedule.unscheduledMinutes))} unscheduled today',
+        ),
+      ];
+      final signalCount = capacity.availableSignals + (_isLoading ? 0 : 1);
+      final confidence = signalCount >= 4
+          ? 'High confidence'
+          : signalCount >= 2
+          ? 'Moderate confidence'
+          : 'Limited data';
+
+      return _DayOutlookCard(
+        capacityScore: capacity.score,
+        capacityLabel: capacity.score == null ? 'Needs data' : capacity.label,
+        scheduleScore: _isLoading ? null : schedule.score,
+        scheduleLabel: _isLoading ? 'Analyzing' : schedule.label,
+        signals: signals,
+        footer:
+            '$confidence · $signalCount ${signalCount == 1 ? 'signal' : 'signals'} available',
+      );
+    },
+  );
 
   String _shortDuration(Duration duration) {
     final hours = duration.inHours;
@@ -1256,39 +1238,249 @@ class _PriorityRowState extends State<_PriorityRow> {
   }
 }
 
-class _LoadMetric extends StatelessWidget {
-  const _LoadMetric({
-    required this.icon,
-    required this.value,
-    required this.label,
+class _DayOutlookCard extends StatelessWidget {
+  const _DayOutlookCard({
+    required this.capacityScore,
+    required this.capacityLabel,
+    required this.scheduleScore,
+    required this.scheduleLabel,
+    required this.signals,
+    required this.footer,
   });
-  final IconData icon;
-  final String value;
-  final String label;
+
+  final int? capacityScore;
+  final String capacityLabel;
+  final int? scheduleScore;
+  final String scheduleLabel;
+  final List<_OutlookSignal> signals;
+  final String footer;
+
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-      Icon(icon, color: const Color(0xFFD8D2FF), size: 23),
-      const SizedBox(width: 9),
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          Text(
-            label,
-            style: const TextStyle(color: Color(0xFFD8D2FF), fontSize: 10),
+  Widget build(BuildContext context) {
+    final headline = capacityScore == null
+        ? 'Daily Capacity needs health data · $scheduleLabel schedule demand'
+        : '$capacityLabel daily capacity · $scheduleLabel schedule demand';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF5848D8), Color(0xFF3020A9)],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF3422B8).withValues(alpha: .24),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
           ),
         ],
       ),
-    ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              _OutlookHeaderIcon(),
+              SizedBox(width: 10),
+              Text(
+                'DAY OUTLOOK',
+                style: TextStyle(
+                  color: Color(0xFFE7E3FF),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.15,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          Text(
+            headline,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              height: 1.18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: _OutlookScoreRing(
+                  title: 'Daily Capacity',
+                  score: capacityScore,
+                  label: capacityLabel,
+                ),
+              ),
+              Container(width: 1, height: 118, color: Colors.white24),
+              Expanded(
+                child: _OutlookScoreRing(
+                  title: 'Schedule',
+                  score: scheduleScore,
+                  label: scheduleLabel,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Center(
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 7,
+              runSpacing: 7,
+              children: [
+                for (final signal in signals) _OutlookSignalChip(signal),
+              ],
+            ),
+          ),
+          const SizedBox(height: 13),
+          Center(
+            child: Text(
+              footer,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFFE7E3FF),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OutlookHeaderIcon extends StatelessWidget {
+  const _OutlookHeaderIcon();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 34,
+    height: 34,
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: .16),
+      shape: BoxShape.circle,
+    ),
+    child: const Icon(Icons.show_chart_rounded, color: Colors.white, size: 23),
+  );
+}
+
+class _OutlookScoreRing extends StatelessWidget {
+  const _OutlookScoreRing({
+    required this.title,
+    required this.score,
+    required this.label,
+  });
+
+  final String title;
+  final int? score;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: SizedBox(
+      width: 132,
+      height: 132,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SizedBox.expand(
+            child: CircularProgressIndicator(
+              value: score == null ? 0 : score! / 100,
+              strokeWidth: 10,
+              strokeCap: StrokeCap.round,
+              backgroundColor: Colors.white.withValues(alpha: .22),
+              valueColor: const AlwaysStoppedAnimation(Color(0xFFDCD7FF)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(17),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: title == 'Daily Capacity' ? 10 : 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  score?.toString() ?? '—',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 36,
+                    height: 1.05,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Color(0xFFE7E3FF),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _OutlookSignal {
+  const _OutlookSignal({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+}
+
+class _OutlookSignalChip extends StatelessWidget {
+  const _OutlookSignalChip(this.signal);
+
+  final _OutlookSignal signal;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: .10),
+      borderRadius: BorderRadius.circular(11),
+      border: Border.all(color: Colors.white.withValues(alpha: .24)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(signal.icon, color: Colors.white, size: 18),
+        const SizedBox(width: 6),
+        Text(
+          signal.label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
   );
 }
 
