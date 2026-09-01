@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -8,6 +9,7 @@ import 'package:intl/intl.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/services/outlook_calendar_service.dart';
+import '../src/utils/back_to_back_events.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import 'journal_screen.dart';
@@ -429,6 +431,17 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         ? 'Moderate'
         : 'Low';
     final dayInsight = _calculateDayInsight();
+    final watchItem = findNextBackToBackEventBlock(
+      _events
+          .where((event) => !event.isAllDay)
+          .map(
+            (event) => ScheduledEventWindow(
+              title: event.title,
+              start: event.start,
+              end: event.end,
+            ),
+          ),
+    );
 
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
@@ -576,6 +589,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   ),
                 ),
               ),
+              if (watchItem != null) ...[
+                const SizedBox(height: 24),
+                _buildWatchItem(watchItem),
+              ],
               const SizedBox(height: 24),
               const _SectionLabel("TODAY'S PRIORITIES"),
               const SizedBox(height: 10),
@@ -644,6 +661,127 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final minutes = duration.inMinutes.remainder(60);
     if (hours == 0) return '${minutes}m';
     return minutes == 0 ? '${hours}h' : '${hours}h ${minutes}m';
+  }
+
+  Widget _buildWatchItem(BackToBackEventBlock block) {
+    final count = block.events.length;
+    final last = block.events.last;
+    final countLabel = switch (count) {
+      2 => 'Two',
+      3 => 'Three',
+      4 => 'Four',
+      5 => 'Five',
+      _ => '$count',
+    };
+    final period = block.start.hour >= 12
+        ? 'after lunch'
+        : block.end.hour <= 12
+        ? 'this morning'
+        : 'today';
+    final resetEnd = block.end.add(const Duration(minutes: 10));
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      decoration: BoxDecoration(
+        color: context.vivordoColors.cardMuted,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: MyDayScreen.purple.withValues(alpha: .28)),
+        boxShadow: [
+          BoxShadow(
+            color: context.vivordoColors.shadow,
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: MyDayScreen.purple,
+                size: 23,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'WATCH ITEM',
+                style: TextStyle(
+                  color: MyDayScreen.purple,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .7,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            '$countLabel meetings run back-to-back $period.',
+            style: TextStyle(
+              color: context.vivordoColors.textPrimary,
+              fontSize: 19,
+              height: 1.15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Protect a 10-minute reset after ${last.title}.',
+            style: TextStyle(
+              color: context.vivordoColors.textSecondary,
+              fontSize: 13,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final timelineWidth = math.max(
+                constraints.maxWidth,
+                (count + 1) * 88.0,
+              );
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: timelineWidth,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var index = 0; index < count; index++)
+                        Expanded(
+                          child: _WatchTimelineSegment(
+                            title: block.events[index].title,
+                            start: block.events[index].start,
+                            end: block.events[index].end,
+                            icon: switch (index % 3) {
+                              0 => Icons.groups_rounded,
+                              1 => Icons.chat_bubble_rounded,
+                              _ => Icons.assessment_rounded,
+                            },
+                            isFirst: index == 0,
+                          ),
+                        ),
+                      Expanded(
+                        child: _WatchTimelineSegment(
+                          title: 'Reset',
+                          start: block.end,
+                          end: resetEnd,
+                          icon: Icons.eco_rounded,
+                          isReset: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openCalendar() async {
@@ -919,6 +1057,98 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _WatchTimelineSegment extends StatelessWidget {
+  const _WatchTimelineSegment({
+    required this.title,
+    required this.start,
+    required this.end,
+    required this.icon,
+    this.isFirst = false,
+    this.isReset = false,
+  });
+
+  final String title;
+  final DateTime start;
+  final DateTime end;
+  final IconData icon;
+  final bool isFirst;
+  final bool isReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = isReset ? const Color(0xFF169B62) : MyDayScreen.purple;
+    final fill = isReset
+        ? const Color(0xFFEAF8F0)
+        : MyDayScreen.purple.withValues(alpha: .07);
+    final border = isReset
+        ? const Color(0xFF9DDDBD)
+        : MyDayScreen.purple.withValues(alpha: .28);
+    final time = DateFormat('h:mm a');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 6, bottom: 7),
+          child: Text(
+            time.format(start),
+            style: TextStyle(
+              color: isReset
+                  ? const Color(0xFF087A49)
+                  : context.vivordoColors.textPrimary,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        Container(
+          height: 112,
+          width: double.infinity,
+          margin: EdgeInsets.only(left: isFirst ? 0 : 2),
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(color: border),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: accent, size: 21),
+              const SizedBox(height: 7),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 11,
+                  height: 1.1,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${time.format(start)}–${time.format(end)}',
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
