@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
@@ -10,6 +11,7 @@ import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
+import 'package:vivordo_health/src/services/account_deletion_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -30,6 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _autoSyncData = true;
 
   bool _isEmailVerificationSignOut = false;
+  bool _isAccountDeletionSignOut = false;
 
   // Loading states for HealthKit actions
   bool _isConnectingAll = false; // "Connect Apple Health" button
@@ -48,6 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   // Bug report
   final TextEditingController _bugReportController = TextEditingController();
   bool _isSubmittingBugReport = false;
+  bool _isDeletingAccount = false;
 
   StreamSubscription<User?>? _authSubscription;
 
@@ -83,9 +87,15 @@ class _SettingsScreenState extends State<SettingsScreen>
         return;
       }
       if (user == null && mounted) {
-        final message = _isEmailVerificationSignOut
-            ? 'Email verified! Please log in again with your new email.'
-            : 'You have been signed out.';
+        final message = switch ((
+          _isEmailVerificationSignOut,
+          _isAccountDeletionSignOut,
+        )) {
+          (true, _) =>
+            'Email verified! Please log in again with your new email.',
+          (_, true) => 'Your Vivordo account has been deleted.',
+          _ => 'You have been signed out.',
+        };
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -147,6 +157,140 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
     } finally {
       if (mounted) setState(() => _isSubmittingBugReport = false);
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    final confirmation = await _showAccountDeletionConfirmation();
+    if (confirmation == null || !mounted) return;
+
+    setState(() {
+      _isDeletingAccount = true;
+      _isAccountDeletionSignOut = true;
+    });
+    try {
+      await AccountDeletionService.deleteAccount(
+        password: confirmation.password,
+      );
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      setState(() => _isAccountDeletionSignOut = false);
+      final message = switch (error.code) {
+        'wrong-password' || 'invalid-credential' =>
+          'That password is incorrect. Your account was not deleted.',
+        'user-mismatch' => 'Sign in with the same account to confirm deletion.',
+        _ => error.message ?? 'Your account could not be deleted.',
+      };
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isAccountDeletionSignOut = false);
+      final message = error is FirebaseFunctionsException
+          ? error.message ?? 'Your account could not be deleted.'
+          : error.toString().replaceFirst('Bad state: ', '');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _isDeletingAccount = false);
+    }
+  }
+
+  Future<_AccountDeletionConfirmation?>
+  _showAccountDeletionConfirmation() async {
+    final confirmationController = TextEditingController();
+    final passwordController = TextEditingController();
+    final needsPassword = AccountDeletionService.requiresPassword;
+    var canDelete = false;
+    try {
+      return await showDialog<_AccountDeletionConfirmation>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            void updateState() {
+              setDialogState(() {
+                canDelete =
+                    confirmationController.text.trim() == 'DELETE' &&
+                    (!needsPassword || passwordController.text.isNotEmpty);
+              });
+            }
+
+            return AlertDialog(
+              title: const Text('Permanently delete account?'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'This permanently deletes your Vivordo profile, health '
+                      'and wellness history, journal entries, workouts, '
+                      'insights, Circle content, challenges, connected-provider '
+                      'credentials, and uploaded profile photo. This cannot be '
+                      'undone.',
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Type DELETE to confirm.'),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: confirmationController,
+                      autofocus: true,
+                      autocorrect: false,
+                      textCapitalization: TextCapitalization.characters,
+                      onChanged: (_) => updateState(),
+                      decoration: const InputDecoration(
+                        labelText: 'DELETE',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    if (needsPassword) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: passwordController,
+                        obscureText: true,
+                        enableSuggestions: false,
+                        autocorrect: false,
+                        onChanged: (_) => updateState(),
+                        decoration: const InputDecoration(
+                          labelText: 'Current password',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: canDelete
+                      ? () => Navigator.of(dialogContext).pop(
+                          _AccountDeletionConfirmation(
+                            password: needsPassword
+                                ? passwordController.text
+                                : null,
+                          ),
+                        )
+                      : null,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFFFF3B30),
+                  ),
+                  child: const Text('Delete Forever'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } finally {
+      confirmationController.dispose();
+      passwordController.dispose();
     }
   }
 
@@ -1965,6 +2109,40 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: OutlinedButton.icon(
+                      onPressed: _isDeletingAccount ? null : _deleteAccount,
+                      icon: _isDeletingAccount
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFFFF3B30),
+                              ),
+                            )
+                          : const Icon(Icons.delete_forever_rounded, size: 18),
+                      label: Text(
+                        _isDeletingAccount
+                            ? 'Deleting Account…'
+                            : 'Delete Account',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFFF3B30),
+                        side: const BorderSide(color: Color(0xFFFF3B30)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 120),
                 ],
               ),
@@ -2278,4 +2456,10 @@ class _SettingsScreenState extends State<SettingsScreen>
         return Icons.monitor_heart_outlined;
     }
   }
+}
+
+class _AccountDeletionConfirmation {
+  const _AccountDeletionConfirmation({this.password});
+
+  final String? password;
 }

@@ -114,6 +114,19 @@ class NotificationService {
     await cancelCalendarCheckIn();
   }
 
+  /// Removes local notification state after the server has deleted an account.
+  Future<void> clearAfterAccountDeletion() async {
+    _configuredUid = null;
+    _lastCalendarEventEnd = null;
+    _dailyScanRemindersEnabled = false;
+    _calendarCheckInReminderEnabled = false;
+    await _fitnessGoalSubscription?.cancel();
+    _fitnessGoalSubscription = null;
+    if (kIsWeb) return;
+    await _localNotificationsPlugin.cancelAll();
+    await _firebaseMessaging.deleteToken();
+  }
+
   Future<void> setDailyScanRemindersEnabled(bool enabled) async {
     _dailyScanRemindersEnabled = enabled;
     if (!enabled) {

@@ -50,6 +50,32 @@ class HomeWidgetService {
     _channel.setMethodCallHandler(null);
   }
 
+  static Future<void> clearAccountSnapshot() async {
+    _lastSignature = null;
+    _lastCalendarSignature = null;
+    _lastCalendarRefresh = null;
+    if (!Platform.isIOS) return;
+    try {
+      await _channel.invokeMethod<void>('updateSnapshot', {
+        'stressScore': 0,
+        'wellnessScore': 0,
+        'wellnessDelta': 0,
+        'steps': 0,
+        'stepsGoal': 0,
+        'activeCalories': 0,
+        'activeCaloriesGoal': 0,
+        'exerciseMinutes': 0,
+        'exerciseGoal': 0,
+        'calendarEvents': <Map<String, Object>>[],
+        'calendarWeekUpdatedAt': 0,
+      });
+    } on MissingPluginException {
+      // The native widget is available after installing an iOS build.
+    } on PlatformException catch (error) {
+      debugPrint('Home widget account cleanup failed: ${error.message}');
+    }
+  }
+
   static Future<void> publish({
     required double? stressScore,
     required double? wellnessScore,

@@ -29,6 +29,10 @@ const {
 } = require("./heart_health_score");
 const {normalizeGoogleHealthSleep} = require("./google_health_sleep");
 const {whoopDeletionPlan} = require("./whoop_deletion");
+const {
+  challengeDeletionPlan,
+  hasRecentAuthentication,
+} = require("./account_deletion");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
@@ -604,6 +608,28 @@ async function getGoogleHealthAccessToken(uid) {
   });
   await saveGoogleHealthTokens(uid, tokens);
   return tokens.access_token;
+}
+
+async function revokeGoogleHealthAccess(uid) {
+  const reference =
+      admin.firestore().collection("google_health_credentials").doc(uid);
+  const snapshot = await reference.get();
+  if (!snapshot.exists) return;
+  const token = snapshot.data()?.refreshToken || snapshot.data()?.accessToken;
+  if (!token) return;
+  const response = await fetch("https://oauth2.googleapis.com/revoke", {
+    method: "POST",
+    signal: AbortSignal.timeout(15000),
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({token}),
+  });
+  // Google returns 400 when the token was already invalidated. In that case
+  // there is no remaining authorization for Vivordo to revoke.
+  if (!response.ok && response.status !== 400) {
+    throw new Error(`Google Health revoke failed: ${response.status}`);
+  }
 }
 
 async function googleHealthDailyRollup(accessToken, dataType, start, end) {
@@ -1862,28 +1888,226 @@ exports.syncFitbit = onCall(
     },
 );
 
+async function deleteQueryDocuments(query) {
+  const snapshot = await query.get();
+  if (snapshot.empty) return 0;
+  const writer = admin.firestore().bulkWriter();
+  for (const document of snapshot.docs) writer.delete(document.ref);
+  await writer.close();
+  return snapshot.size;
+}
+
+async function deleteCircleRelationships(uid) {
+  const db = admin.firestore();
+  const friends = await db.collection("users").doc(uid)
+      .collection("circle").doc("relationships")
+      .collection("friends").get();
+  if (!friends.empty) {
+    const writer = db.bulkWriter();
+    for (const friend of friends.docs) {
+      const friendUid = friend.data()?.uid || friend.id;
+      if (typeof friendUid !== "string" || !friendUid) continue;
+      writer.delete(db.collection("users").doc(friendUid)
+          .collection("circle").doc("relationships")
+          .collection("friends").doc(uid));
+    }
+    await writer.close();
+  }
+}
+
+async function deleteUserChallenges(uid) {
+  const db = admin.firestore();
+  const challenges = await db.collection("challenges")
+      .where("participantUids", "array-contains", uid).get();
+  for (const challengeDocument of challenges.docs) {
+    const challengeReference = challengeDocument.ref;
+    const outcome = await db.runTransaction(async (transaction) => {
+      const challengeSnapshot = await transaction.get(challengeReference);
+      if (!challengeSnapshot.exists) return null;
+      const participantReference = challengeReference
+          .collection("participants").doc(uid);
+      const participantSnapshot = await transaction.get(participantReference);
+      const participantProgress = participantSnapshot.data()?.progress || 0;
+      const plan = challengeDeletionPlan(
+          challengeSnapshot.data(),
+          uid,
+          participantProgress,
+      );
+      if (plan.deleteChallenge) return plan;
+
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      transaction.update(challengeReference, {...plan.update, updatedAt: now});
+      transaction.delete(participantReference);
+      for (const remainingUid of plan.remainingParticipantUids) {
+        const membership = db.collection("challenge_memberships")
+            .doc(remainingUid).collection("items")
+            .doc(challengeReference.id);
+        const update = {
+          participantUids: plan.remainingParticipantUids,
+          participantCount: plan.remainingParticipantUids.length,
+          creatorUid: plan.update.creatorUid,
+          creatorName: plan.update.creatorName,
+          updatedAt: now,
+        };
+        if (plan.update.status === "cancelled") {
+          update.status = "cancelled";
+        }
+        if (remainingUid === plan.newCreatorUid) {
+          update.role = "creator";
+          if (plan.update.status !== "cancelled") update.status = "waiting";
+        }
+        transaction.set(membership, update, {merge: true});
+      }
+      if (plan.newCreatorUid) {
+        const participantUpdate = {role: "creator", updatedAt: now};
+        if (plan.newCreatorWasPending) {
+          participantUpdate.status = "accepted";
+          participantUpdate.acceptedAt = now;
+        }
+        transaction.set(challengeReference.collection("participants")
+            .doc(plan.newCreatorUid), participantUpdate, {merge: true});
+      }
+      return plan;
+    });
+    if (outcome?.deleteChallenge) {
+      await db.recursiveDelete(challengeReference);
+    }
+  }
+}
+
+async function deleteGlobalUserReferences(uid) {
+  const db = admin.firestore();
+  const queries = [
+    db.collection("circle_usernames").where("uid", "==", uid),
+    db.collection("circle_friend_codes").where("uid", "==", uid),
+    db.collection("whoop_oauth_states").where("uid", "==", uid),
+    db.collection("google_health_oauth_states").where("uid", "==", uid),
+    db.collection("goals").where("userId", "==", uid),
+    db.collection("metrics_daily").where("userId", "==", uid),
+    db.collection("questionnaire_responses").where("userId", "==", uid),
+    db.collection("questionaire_responses").where("userId", "==", uid),
+    db.collection("insights").where("userId", "==", uid),
+    db.collection("bug_reports").where("userId", "==", uid),
+    db.collection("batch_jobs").where("userId", "==", uid),
+    db.collectionGroup("friend_requests").where("fromUid", "==", uid),
+    db.collectionGroup("comments").where("authorUid", "==", uid),
+    db.collectionGroup("likes").where("userUid", "==", uid),
+    db.collectionGroup("contributions").where("uid", "==", uid),
+    db.collectionGroup("circle_engagement").where("actorUid", "==", uid),
+  ];
+  for (const query of queries) await deleteQueryDocuments(query);
+}
+
+async function revokeConnectedProviders(uid) {
+  const db = admin.firestore();
+  const whoopCredentials = db.collection("whoop_credentials").doc(uid);
+  const googleCredentials = db.collection("google_health_credentials").doc(uid);
+  const [whoopSnapshot, googleSnapshot] = await Promise.all([
+    whoopCredentials.get(),
+    googleCredentials.get(),
+  ]);
+  if (whoopSnapshot.exists) {
+    await revokeWhoopAccess(uid);
+  }
+  if (googleSnapshot.exists) {
+    await revokeGoogleHealthAccess(uid);
+  }
+  await Promise.all([whoopCredentials.delete(), googleCredentials.delete()]);
+}
+
+async function deleteVivordoAccountData(uid) {
+  const db = admin.firestore();
+  await revokeConnectedProviders(uid);
+  await deleteCircleRelationships(uid);
+  await deleteUserChallenges(uid);
+  await deleteGlobalUserReferences(uid);
+  await Promise.all([
+    db.recursiveDelete(db.collection("challenge_memberships").doc(uid)),
+    db.recursiveDelete(db.collection("challenge_medal_awards").doc(uid)),
+  ]);
+  await admin.storage().bucket().deleteFiles({
+    prefix: `circle_profiles/${uid}/`,
+  });
+  await db.recursiveDelete(db.collection("users").doc(uid));
+}
+
+exports.deleteVivordoAccount = onCall(
+    {
+      secrets: [..._WHOOP_SECRETS, ..._GOOGLE_HEALTH_SECRETS],
+      timeoutSeconds: 540,
+      memory: "512MiB",
+    },
+    async (request) => {
+      const uid = requireAuth(request);
+      if (request.data?.confirmation !== "DELETE") {
+        throw new HttpsError(
+            "invalid-argument",
+            "Type DELETE to confirm permanent account deletion.",
+        );
+      }
+      if (!hasRecentAuthentication(request.auth)) {
+        throw new HttpsError(
+            "failed-precondition",
+            "Sign in again before deleting your account.",
+        );
+      }
+
+      const db = admin.firestore();
+      const deletionId = crypto.createHash("sha256").update(uid).digest("hex");
+      const deletionJob = db.collection("account_deletion_jobs")
+          .doc(deletionId);
+      await deletionJob.set({
+        status: "deleting",
+        startedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+
+      await admin.auth().updateUser(uid, {disabled: true});
+      try {
+        await deleteVivordoAccountData(uid);
+        await admin.auth().deleteUser(uid);
+        await deletionJob.set({
+          status: "complete",
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          error: admin.firestore.FieldValue.delete(),
+        }, {merge: true});
+        return {deleted: true};
+      } catch (error) {
+        console.error("[Account deletion] failed", {uid, error});
+        try {
+          await admin.auth().updateUser(uid, {disabled: false});
+        } catch (restoreError) {
+          if (restoreError?.code !== "auth/user-not-found") {
+            console.error("[Account deletion] could not restore user", {
+              uid,
+              restoreError,
+            });
+          }
+        }
+        await deletionJob.set({
+          status: "failed",
+          failedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          error: "cleanup_failed",
+        }, {merge: true});
+        throw new HttpsError(
+            "internal",
+            "Your account could not be deleted. Please try again.",
+        );
+      }
+    },
+);
+
 exports.disconnectFitbit = onCall(
     {secrets: _GOOGLE_HEALTH_SECRETS},
     async (request) => {
       const uid = requireAuth(request);
       const reference =
           admin.firestore().collection("google_health_credentials").doc(uid);
-      const snapshot = await reference.get();
-      if (snapshot.exists) {
-        const token = snapshot.data()?.refreshToken ||
-            snapshot.data()?.accessToken;
-        if (token) {
-          await fetch("https://oauth2.googleapis.com/revoke", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({token}),
-          }).catch((error) => {
-            console.warn("[Google Health] revoke request failed", error);
-          });
-        }
-      }
+      await revokeGoogleHealthAccess(uid).catch((error) => {
+        console.warn("[Google Health] revoke request failed", error);
+      });
       await reference.delete();
       await admin.firestore().collection("users").doc(uid).set({
         fitbitConnected: false,

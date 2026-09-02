@@ -124,7 +124,7 @@ We may use or disclose information that has been aggregated or de-identified so 
 
 You may disconnect WHOOP, Fitbit/Google Health, Google Calendar, Outlook Calendar, or another supported service from Vivordo's settings. Disconnecting stops future API access and Vivordo deletes its stored access and refresh credentials. Where supported, Vivordo also sends a revocation request to the connected service.
 
-Disconnecting a service does **not** automatically delete measurements or calendar-derived information that Vivordo imported before disconnection. Previously imported information remains in your Vivordo account so that your history and derived trends remain available until you delete the applicable information, delete your Vivordo account, or ask us to delete it. You can also manage or revoke third-party access from the connected service's account settings.
+When you disconnect WHOOP, Vivordo lets you choose whether to retain previously imported WHOOP history or delete it. Disconnecting other services does **not** automatically delete measurements or calendar-derived information that Vivordo imported before disconnection. Previously imported information remains in your Vivordo account so that your history and derived trends remain available until you delete the applicable information, delete your Vivordo account, or ask us to delete it. You can also manage or revoke third-party access from the connected service's account settings.
 
 ## Data Storage, Security, and International Transfers
 
@@ -137,6 +137,8 @@ If we discover a security incident, we will investigate and provide notices to a
 ## Retention and Deletion
 
 We retain account information and user content while your account is active and as reasonably necessary to provide Vivordo. Imported WHOOP, Fitbit/Google Health, Apple Health, Bluetooth wearable, and other health information is generally retained until you delete the applicable information, delete your account, or ask us to delete it. OAuth credentials are retained only while the relevant connection remains authorized and are deleted when you disconnect it.
+
+You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores and insights; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, comments, likes, activity, and challenge participation; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
 
 After a verified deletion request, we delete or de-identify information under our control within the period required by applicable law, except information we must retain for legal compliance, fraud prevention, dispute resolution, security, or enforcement. Information may remain temporarily in encrypted backups until those backups are overwritten through their ordinary lifecycle. We do not use backup copies for ordinary product purposes.
 
@@ -179,4 +181,3 @@ For privacy questions, requests, or complaints, contact:
 
 **Vivordo**  
 **Email: contact@vivordo.com**
-
