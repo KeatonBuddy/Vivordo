@@ -1,10 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class HeartRateHistoryReading {
-  const HeartRateHistoryReading({required this.bpm, required this.timestamp});
+  const HeartRateHistoryReading({
+    required this.bpm,
+    required this.timestamp,
+    this.source,
+  });
 
   final double bpm;
   final DateTime timestamp;
+  final String? source;
 }
 
 class _Candidate {
@@ -66,6 +71,7 @@ List<HeartRateHistoryReading> mergedHeartRateHistory(
         HeartRateHistoryReading(
           bpm: entry.value.sum / entry.value.count,
           timestamp: entry.value.timestamp,
+          source: metric?['source'] as String?,
         ),
         priority,
       );
@@ -121,6 +127,7 @@ List<HeartRateHistoryReading> mergedHeartRateHistory(
         HeartRateHistoryReading(
           bpm: (metric!['avg'] as num).toDouble(),
           timestamp: timestamp,
+          source: metric['source'] as String?,
         ),
         priority,
       );

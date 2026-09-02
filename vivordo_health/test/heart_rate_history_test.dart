@@ -42,6 +42,11 @@ void main() {
       atEleven,
     ]);
     expect(result.map((reading) => reading.bpm), [70, 88, 90]);
+    expect(result.map((reading) => reading.source), [
+      'apple_health',
+      'whoop_ble',
+      'whoop_ble',
+    ]);
   });
 
   test('averages multiple samples from one source within a minute', () {
@@ -87,6 +92,7 @@ void main() {
 
     expect(result, hasLength(1));
     expect(result.single.bpm, 84);
+    expect(result.single.source, 'fitbit_ble');
   });
 
   test('can exclude daily summaries when timestamped history is required', () {

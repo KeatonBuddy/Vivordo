@@ -23,6 +23,10 @@ class OutlookEvent {
 }
 
 class OutlookCalendarService {
+  /// Outlook is temporarily benched. Keep the implementation in place so it
+  /// can be restored without another migration or reconnecting existing users.
+  static const bool enabled = false;
+
   static const String clientId = '07c05b6e-07ad-4ed3-bfd2-35af418decdf';
   static const String authority = 'https://login.microsoftonline.com/common';
 
@@ -65,6 +69,8 @@ class OutlookCalendarService {
     DateTime start,
     DateTime end,
   ) async {
+    if (!enabled) return const <OutlookEvent>[];
+
     try {
       final savedToken = await _getSavedAccessToken();
       if (savedToken != null) {
@@ -100,6 +106,8 @@ class OutlookCalendarService {
   static Future<List<OutlookEvent>> connectAndGetWeekEvents(
     DateTime weekStart,
   ) async {
+    if (!enabled) return const <OutlookEvent>[];
+
     try {
       debugPrint('Outlook MSAL: connecting and fetching week events');
       final pca = await _getPca();
@@ -166,16 +174,20 @@ class OutlookCalendarService {
   }
 
   static Future<bool> isSignedIn() async {
+    if (!enabled) return false;
+
     final signedIn = await _secureStorage.read(key: _outlookSignedInKey);
     return signedIn == 'true' && await _getSavedAccessToken() != null;
   }
 
   static Future<void> signOut() async {
-    try {
-      final pca = await _getPca();
-      await pca.signOut();
-    } catch (e) {
-      debugPrint('Outlook sign out error: $e');
+    if (enabled) {
+      try {
+        final pca = await _getPca();
+        await pca.signOut();
+      } catch (e) {
+        debugPrint('Outlook sign out error: $e');
+      }
     }
 
     await _secureStorage.delete(key: _accessTokenKey);
@@ -188,16 +200,12 @@ class OutlookCalendarService {
     DateTime start,
     DateTime end,
   ) async {
-    final uri = Uri.https(
-      _graphHost,
-      '/v1.0/me/calendarView',
-      {
-        'startDateTime': start.toUtc().toIso8601String(),
-        'endDateTime': end.toUtc().toIso8601String(),
-        r'$orderby': 'start/dateTime',
-        r'$top': '100',
-      },
-    );
+    final uri = Uri.https(_graphHost, '/v1.0/me/calendarView', {
+      'startDateTime': start.toUtc().toIso8601String(),
+      'endDateTime': end.toUtc().toIso8601String(),
+      r'$orderby': 'start/dateTime',
+      r'$top': '100',
+    });
 
     debugPrint('Outlook Graph request: $uri');
 
@@ -211,7 +219,9 @@ class OutlookCalendarService {
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      debugPrint('Outlook Graph error: ${response.statusCode} ${response.body}');
+      debugPrint(
+        'Outlook Graph error: ${response.statusCode} ${response.body}',
+      );
       return [];
     }
 
@@ -260,6 +270,11 @@ class OutlookCalendarService {
   }
 
   static Future<void> testLogin() async {
+    if (!enabled) {
+      debugPrint('Outlook MSAL: feature is currently disabled');
+      return;
+    }
+
     try {
       debugPrint('Outlook MSAL: starting');
       final pca = await _getPca();

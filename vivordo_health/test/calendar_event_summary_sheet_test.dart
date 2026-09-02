@@ -43,7 +43,7 @@ void main() {
     expect(find.text('Product Review'), findsOneWidget);
     expect(find.text('Google Calendar'), findsOneWidget);
     expect(find.text('Edit Event'), findsOneWidget);
-    expect(find.text('Quick Delete'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Edit Event'));
     await tester.pumpAndSettle();

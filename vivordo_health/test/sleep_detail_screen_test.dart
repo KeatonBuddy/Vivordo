@@ -29,4 +29,32 @@ void main() {
       );
     });
   });
+
+  group('hasConnectedWhoop', () {
+    test('returns true only for an explicitly connected WHOOP account', () {
+      expect(hasConnectedWhoop({'whoopConnected': true}), isTrue);
+      expect(hasConnectedWhoop({'whoopConnected': false}), isFalse);
+      expect(hasConnectedWhoop(<String, dynamic>{}), isFalse);
+      expect(hasConnectedWhoop(null), isFalse);
+    });
+  });
+
+  group('includesWhoopSleepSource', () {
+    test('returns true only when the displayed range contains WHOOP data', () {
+      expect(includesWhoopSleepSource(['apple_health', 'whoop']), isTrue);
+      expect(includesWhoopSleepSource(['WHOOP']), isTrue);
+      expect(includesWhoopSleepSource(['apple_health', null]), isFalse);
+      expect(includesWhoopSleepSource(const []), isFalse);
+    });
+  });
+
+  group('sleepInsightInfoText', () {
+    test('mentions WHOOP only when WHOOP sleep data is displayed', () {
+      expect(sleepInsightInfoText(hasWhoopSleepData: true), contains('WHOOP'));
+      expect(
+        sleepInsightInfoText(hasWhoopSleepData: false),
+        isNot(contains('WHOOP')),
+      );
+    });
+  });
 }

@@ -15,6 +15,7 @@ import 'mood_detail_screen.dart';
 import 'sleep_detail_screen.dart';
 import 'steps_detail_screen.dart';
 import 'wellness_detail_screen.dart';
+import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DashboardScreen
@@ -439,7 +440,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         doc.data(),
         fallbackDate: fallbackDate,
       )) {
-        points.add({'bpm': reading.bpm, 'dateTime': reading.timestamp});
+        points.add({
+          'bpm': reading.bpm,
+          'dateTime': reading.timestamp,
+          'source': reading.source,
+        });
       }
     }
     points.sort((a, b) {
@@ -469,6 +474,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   double _avg(List<double> vals) =>
       vals.isEmpty ? 0 : vals.reduce((a, b) => a + b) / vals.length;
+
+  bool _hasVisibleWhoopData(QuerySnapshot<Map<String, dynamic>>? snapshot) {
+    if (snapshot == null) return false;
+    if (_enabledKeyMetrics.contains('sleep')) {
+      final sleepDocs = _docsFor(snapshot, 'sleep');
+      if (sleepDocs.isNotEmpty &&
+          (sleepDocs.last.data()['sleep'] as Map?)?['source'] == 'whoop') {
+        return true;
+      }
+    }
+    if (_enabledKeyMetrics.contains('heart_rate_scan')) {
+      final entries = _heartRateEntries(_heartRateDocs(snapshot));
+      if (entries.isNotEmpty && entries.last['source'] == 'whoop_ble') {
+        return true;
+      }
+    }
+    return false;
+  }
 
   String _trend(List<double> vals) {
     if (vals.length < 2) return '';
@@ -511,16 +534,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          _lastManualHealthRefresh == null
-                              ? 'Synced automatically'
-                              : _manualRefreshLabel().replaceFirst(
-                                  'Updated',
-                                  'Synced',
+                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: _allMetricsStream,
+                          builder: (context, snapshot) => Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 7,
+                            runSpacing: 4,
+                            children: [
+                              Text(
+                                '${_lastManualHealthRefresh == null ? 'Synced automatically' : _manualRefreshLabel().replaceFirst('Updated', 'Synced')}${_hasVisibleWhoopData(snapshot.data) ? ' · Data includes' : ''}',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: context.vivordoColors.textSecondary,
                                 ),
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: context.vivordoColors.textSecondary,
+                              ),
+                              if (_hasVisibleWhoopData(snapshot.data))
+                                const WhoopSourceBadge(compact: true),
+                            ],
                           ),
                         ),
                       ],
@@ -871,7 +901,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ? (_stressIntradayDetail(snap) ??
               _comparisonText(values, lowerIsBetter: true))
         : _comparisonText(values, lowerIsBetter: metric == 'stress');
-
     return _buildKeyMetricTile(
       title: title,
       value: value,

@@ -20,7 +20,7 @@ class WhatsNewScreen extends StatelessWidget {
       colors: [Color(0xFF77D36B), Color(0xFF37A84B)],
       title: 'Know what’s next',
       description:
-          'Find your current opening and upcoming events from Google and Outlook.',
+          'Find your current opening and upcoming events from Google Calendar.',
     ),
     _WhatsNewFeature(
       icon: Icons.check_circle_rounded,

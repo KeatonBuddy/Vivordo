@@ -269,7 +269,7 @@ class _CalendarEventSummarySheet extends StatelessWidget {
                             ),
                           ),
                           icon: const Icon(Icons.delete_outline_rounded),
-                          label: const Text('Quick Delete'),
+                          label: const Text('Delete'),
                         ),
                       ),
                     ],

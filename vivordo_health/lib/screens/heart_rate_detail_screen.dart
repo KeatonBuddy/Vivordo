@@ -13,6 +13,7 @@ import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
+import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 class HeartRateDetailScreen extends StatefulWidget {
   const HeartRateDetailScreen({super.key});
@@ -82,7 +83,10 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
       final data = doc.data();
       final date = DateTime.parse(doc.id);
       final readings = mergedHeartRateHistory(data, fallbackDate: date)
-          .map((reading) => _HeartReading(reading.bpm, reading.timestamp))
+          .map(
+            (reading) =>
+                _HeartReading(reading.bpm, reading.timestamp, reading.source),
+          )
           .toList();
       final resting = ((data['resting_heart_rate'] as Map?)?['avg'] as num?)
           ?.toDouble();
@@ -178,6 +182,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     required bool hasConnectedWearable,
   }) {
     final storedEntries = days.expand((day) => day.readings).toList();
+    final hasWhoopHistoricalData = storedEntries.any(
+      (reading) => reading.source == 'whoop_ble',
+    );
     final storedReadings = storedEntries.map((entry) => entry.bpm).toList();
     final insightReadings = storedEntries
         .map(
@@ -224,9 +231,37 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Center(
-            child: Text(
-              'Updated ${DateFormat('h:mm a').format(DateTime.now())}',
-              style: TextStyle(color: context.vivordoColors.textSecondary),
+            child: ValueListenableBuilder<WhoopBleState>(
+              valueListenable: WhoopBleHeartRateService.instance.state,
+              builder: (context, bleState, _) {
+                final hasWhoopData =
+                    hasWhoopHistoricalData ||
+                    (bleState.deviceName?.toUpperCase().contains('WHOOP') ??
+                        false);
+                return Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 7,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      'Updated ${DateFormat('h:mm a').format(DateTime.now())}',
+                      style: TextStyle(
+                        color: context.vivordoColors.textSecondary,
+                      ),
+                    ),
+                    if (hasWhoopData) ...[
+                      Text(
+                        '· Data includes',
+                        style: TextStyle(
+                          color: context.vivordoColors.textSecondary,
+                        ),
+                      ),
+                      const WhoopSourceBadge(compact: true),
+                    ],
+                  ],
+                );
+              },
             ),
           ),
           const SizedBox(height: 18),
@@ -390,10 +425,18 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                 ),
               ),
               const SizedBox(width: 11),
-              const Expanded(
-                child: Text(
-                  'LIVE WEARABLE HEART RATE',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'LIVE WEARABLE HEART RATE',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Container(
@@ -1070,9 +1113,10 @@ class _HeartDay {
 }
 
 class _HeartReading {
-  const _HeartReading(this.bpm, this.timestamp);
+  const _HeartReading(this.bpm, this.timestamp, this.source);
   final double bpm;
   final DateTime timestamp;
+  final String? source;
 }
 
 class _HeartBucket {

@@ -103,6 +103,8 @@ flutter:
     - assets/vivordo_splash_logo_v2.png
     - assets/vivordo_splash_logo_full.png
     - assets/google_g_logo.svg
+    - assets/whoop_puck_black.svg
+    - assets/whoop_puck_white.svg
     - assets/achievements/
     - assets/recommendations.json
     - assets/vivordo_robot.svg

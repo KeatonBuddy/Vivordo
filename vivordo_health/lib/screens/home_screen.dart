@@ -21,6 +21,7 @@ import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/src/utils/heart_rate_calendar_insight.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
+import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'circle_screen.dart';
@@ -534,6 +535,7 @@ class _HomeScreenState extends State<HomeScreen> {
         stressDrivers: const [],
         stressLoading: false,
         sleepVal: '--',
+        sleepIsWhoop: false,
         sleepLoading: false,
         stepsVal: '--',
         steps: 0,
@@ -562,6 +564,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final stressMap = data?['stress'] as Map?;
         final hrvMap = data?['hrv'] as Map?;
         final sleepMap = data?['sleep'] as Map?;
+        final sleepIsWhoop = sleepMap?['source'] == 'whoop';
         final stepsMap = data?['steps'] as Map?;
         final activeCaloriesMap = data?['active_calories'] as Map?;
         final exerciseTimeMap = data?['exercise_time'] as Map?;
@@ -680,6 +683,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     stressUpdating: computingStress,
                     stressLoading: stressStillLoading,
                     sleepVal: sleepVal,
+                    sleepIsWhoop: sleepIsWhoop,
                     sleepLoading: loading,
                     stepsVal: stepsVal,
                     steps: steps ?? 0,
@@ -856,6 +860,7 @@ class _HomeScreenState extends State<HomeScreen> {
     bool stressUpdating = false,
     required bool stressLoading,
     required String sleepVal,
+    required bool sleepIsWhoop,
     required bool sleepLoading,
     required String stepsVal,
     required int steps,
@@ -880,7 +885,10 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildHeader(),
+              _buildHeader(
+                hasWhoopData:
+                    sleepIsWhoop || latestHeartRate?.source == 'whoop_ble',
+              ),
               const SizedBox(height: 24),
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -1001,7 +1009,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader({required bool hasWhoopData}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1039,6 +1047,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   const Text('👋', style: TextStyle(fontSize: 26)),
                 ],
               ),
+              if (hasWhoopData) ...[
+                const SizedBox(height: 6),
+                const Row(
+                  children: [
+                    Text(
+                      'Synced · Data includes',
+                      style: TextStyle(
+                        color: textGrey,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(width: 7),
+                    WhoopSourceBadge(compact: true),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -3093,7 +3118,9 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
   DateTime? _lastGoogleCalendarAttempt;
   DateTime? _lastGoogleCalendarFailure;
   int? _lastGoogleCalendarWeekOffset;
-  bool get _hasConnectedCalendar => _isGoogleConnected || _isOutlookConnected;
+  bool get _hasConnectedCalendar =>
+      _isGoogleConnected ||
+      (OutlookCalendarService.enabled && _isOutlookConnected);
 
   static const double _cellH = 52;
   static const double _timeColW = 52;
@@ -3151,7 +3178,9 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
       _handleGoogleCalendarConnectionChange,
     );
     _loadExistingGoogleCalendar();
-    _loadExistingOutlookCalendar();
+    if (OutlookCalendarService.enabled) {
+      _loadExistingOutlookCalendar();
+    }
   }
 
   void _scrollToFirstTodayEvent() {
@@ -3949,7 +3978,8 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                     ),
                             ),
                           ),
-                        if (!_isOutlookConnected) ...[
+                        if (OutlookCalendarService.enabled &&
+                            !_isOutlookConnected) ...[
                           const SizedBox(width: 4),
                           GestureDetector(
                             onTap: _isLoading ? null : _connectOutlook,
@@ -4118,7 +4148,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Connect Google or Outlook above\nto see your events here.',
+                        'Connect Google Calendar above\nto see your events here.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12,
@@ -4168,48 +4198,50 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                 ),
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: _isLoading ? null : _connectOutlook,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0078D4),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.calendar_month_rounded,
-                                      size: 14,
+                      if (OutlookCalendarService.enabled) ...[
+                        const SizedBox(height: 10),
+                        GestureDetector(
+                          onTap: _isLoading ? null : _connectOutlook,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0078D4),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
                                       color: Colors.white,
                                     ),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'Connect Outlook Calendar',
-                                      style: TextStyle(
-                                        fontSize: 12,
+                                  )
+                                : const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_month_rounded,
+                                        size: 14,
                                         color: Colors.white,
-                                        fontWeight: FontWeight.w600,
                                       ),
-                                    ),
-                                  ],
-                                ),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Connect Outlook Calendar',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
