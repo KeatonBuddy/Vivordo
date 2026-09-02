@@ -3,6 +3,7 @@ import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 
 const _purple = Color(0xFF6254F4);
 
@@ -312,9 +313,10 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   }
 
   Future<void> _pickTime({required bool start}) async {
-    final value = await showTimePicker(
+    final value = await showVivordoTimePicker(
       context: context,
       initialTime: start ? _startTime : _endTime,
+      title: start ? 'Start Time' : 'End Time',
     );
     if (value == null) return;
     setState(() {

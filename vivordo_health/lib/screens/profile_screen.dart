@@ -15,6 +15,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -456,12 +457,13 @@ class _SettingsScreenState extends State<SettingsScreen>
     final currentMinutes = isAdding
         ? (reminderTimes.last + 4 * 60) % (24 * 60)
         : reminderTimes[index!];
-    final selected = await showTimePicker(
+    final selected = await showVivordoTimePicker(
       context: context,
       initialTime: TimeOfDay(
         hour: currentMinutes ~/ 60,
         minute: currentMinutes % 60,
       ),
+      title: 'Reminder Time',
     );
     if (selected == null || !mounted) return;
 

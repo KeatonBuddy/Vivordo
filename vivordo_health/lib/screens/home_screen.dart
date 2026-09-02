@@ -20,6 +20,7 @@ import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/src/utils/heart_rate_calendar_insight.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
+import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'circle_screen.dart';
@@ -1926,9 +1927,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: const Text('Start time'),
                   trailing: Text(startTime.format(context)),
                   onTap: () async {
-                    final picked = await showTimePicker(
+                    final picked = await showVivordoTimePicker(
                       context: context,
                       initialTime: startTime,
+                      title: 'Start Time',
                     );
                     if (picked != null) {
                       setDialogState(() => startTime = picked);
@@ -1941,9 +1943,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: const Text('End time'),
                   trailing: Text(endTime.format(context)),
                   onTap: () async {
-                    final picked = await showTimePicker(
+                    final picked = await showVivordoTimePicker(
                       context: context,
                       initialTime: endTime,
+                      title: 'End Time',
                     );
                     if (picked != null) setDialogState(() => endTime = picked);
                   },
@@ -3538,9 +3541,10 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                 title: const Text('Start time'),
                 trailing: Text(startTime.format(context)),
                 onTap: () async {
-                  final picked = await showTimePicker(
+                  final picked = await showVivordoTimePicker(
                     context: context,
                     initialTime: startTime,
+                    title: 'Start Time',
                   );
                   if (picked != null) setDialogState(() => startTime = picked);
                 },
@@ -3551,9 +3555,10 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                 title: const Text('End time'),
                 trailing: Text(endTime.format(context)),
                 onTap: () async {
-                  final picked = await showTimePicker(
+                  final picked = await showVivordoTimePicker(
                     context: context,
                     initialTime: endTime,
+                    title: 'End Time',
                   );
                   if (picked != null) setDialogState(() => endTime = picked);
                 },
@@ -4578,18 +4583,20 @@ class _CreateCalendarEventDialogState
   }
 
   Future<void> _pickStartTime() async {
-    final picked = await showTimePicker(
+    final picked = await showVivordoTimePicker(
       context: context,
       initialTime: _startTime,
+      title: 'Start Time',
     );
     if (!context.mounted || picked == null) return;
     setState(() => _startTime = picked);
   }
 
   Future<void> _pickEndTime() async {
-    final picked = await showTimePicker(
+    final picked = await showVivordoTimePicker(
       context: context,
       initialTime: _endTime,
+      title: 'End Time',
     );
     if (!context.mounted || picked == null) return;
     setState(() => _endTime = picked);

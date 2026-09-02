@@ -127,15 +127,23 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Future<void> _handleEventTap(_CalendarEvent event) async {
     final googleEvent = event.googleEvent;
     if (!mounted) return;
-    final shouldEdit = await showModalBottomSheet<bool>(
+    final action = await showModalBottomSheet<_EventSummaryAction>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _EventSummarySheet(event: event),
     );
-    if (shouldEdit == true && googleEvent != null && mounted) {
-      await _editGoogleEvent(googleEvent);
+    if (googleEvent == null || !mounted) return;
+    switch (action) {
+      case _EventSummaryAction.edit:
+        await _editGoogleEvent(googleEvent);
+        return;
+      case _EventSummaryAction.delete:
+        await _deleteGoogleEvent(googleEvent);
+        return;
+      case null:
+        return;
     }
   }
 
@@ -168,6 +176,40 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     } catch (error) {
       if (mounted) setState(() => _isLoading = false);
       _showMessage('Could not save event: $error');
+    }
+  }
+
+  Future<void> _deleteGoogleEvent(gcal.Event event) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete event?'),
+        content: Text(
+          'This will delete “${event.summary ?? 'Untitled event'}” from Google Calendar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      setState(() => _isLoading = true);
+      await CalendarService.deleteEvent(event);
+      await _loadTodayEvents();
+      _showMessage('Event deleted.');
+    } catch (error) {
+      if (mounted) setState(() => _isLoading = false);
+      _showMessage('Could not delete event: $error');
     }
   }
 
@@ -1501,6 +1543,8 @@ class _DayEvent extends StatelessWidget {
   );
 }
 
+enum _EventSummaryAction { edit, delete }
+
 class _EventSummarySheet extends StatelessWidget {
   const _EventSummarySheet({required this.event});
 
@@ -1559,7 +1603,7 @@ class _EventSummarySheet extends StatelessWidget {
                     ),
                   ),
                   IconButton.filledTonal(
-                    onPressed: () => Navigator.pop(context, false),
+                    onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close_rounded),
                     tooltip: 'Close',
                   ),
@@ -1687,7 +1731,10 @@ class _EventSummarySheet extends StatelessWidget {
                       child: FilledButton(
                         onPressed: event.googleEvent == null
                             ? null
-                            : () => Navigator.pop(context, true),
+                            : () => Navigator.pop(
+                                context,
+                                _EventSummaryAction.edit,
+                              ),
                         style: FilledButton.styleFrom(
                           backgroundColor: MyDayScreen.purple,
                           shape: RoundedRectangleBorder(
@@ -1705,6 +1752,26 @@ class _EventSummarySheet extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (event.googleEvent != null) ...[
+                      const SizedBox(height: 12),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () => Navigator.pop(
+                            context,
+                            _EventSummaryAction.delete,
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFFF453A),
+                            textStyle: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          label: const Text('Quick Delete'),
+                        ),
+                      ),
+                    ],
                     if (event.googleEvent == null) ...[
                       const SizedBox(height: 10),
                       Text(
@@ -1787,16 +1854,30 @@ class _SummaryDetailRow extends StatelessWidget {
             children: [
               Icon(icon, color: MyDayScreen.purple, size: 23),
               const SizedBox(width: 14),
-              Text(
-                label,
-                style: TextStyle(color: colors.textPrimary, fontSize: 15),
+              SizedBox(
+                width: 92,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(color: colors.textPrimary, fontSize: 15),
+                ),
               ),
-              const Spacer(),
-              Flexible(
+              const SizedBox(width: 12),
+              Expanded(
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (valueDotColor != null) ...[
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: valueDotColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     Flexible(
                       child: Text(
                         value,
@@ -1809,17 +1890,6 @@ class _SummaryDetailRow extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (valueDotColor != null) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: valueDotColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),

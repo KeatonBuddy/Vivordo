@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 
 const _purple = Color(0xFF6254F4);
 
@@ -110,7 +111,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   }
 
   Future<void> _pickTime() async {
-    final value = await showTimePicker(
+    final value = await showVivordoTimePicker(
       context: context,
       initialTime: _time ?? TimeOfDay.now(),
     );

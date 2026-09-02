@@ -6,6 +6,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import '../widgets/add_calendar_event_sheet.dart';
+import '../widgets/calendar_event_summary_sheet.dart';
 
 class MonthCalendarScreen extends StatefulWidget {
   const MonthCalendarScreen({super.key});
@@ -111,86 +112,27 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
 
   Future<void> _handleEventTap(_MonthEvent event) async {
     final googleEvent = event.googleEvent;
-    if (googleEvent == null) {
-      await showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (sheetContext) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  event.title,
-                  style: Theme.of(
-                    sheetContext,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 6),
-                Text(event.timeLabel),
-                const SizedBox(height: 18),
-                const Text(
-                  'Outlook events are read-only in Vivordo. Open Outlook to edit or delete this event.',
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-      return;
-    }
-
-    final action = await showModalBottomSheet<_EventAction>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      event.title,
-                      style: Theme.of(sheetContext).textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(event.timeLabel),
-                  ],
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit_rounded),
-                title: const Text('Edit event'),
-                onTap: () => Navigator.pop(sheetContext, _EventAction.edit),
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline_rounded),
-                iconColor: Colors.red,
-                textColor: Colors.red,
-                title: const Text('Delete event'),
-                onTap: () => Navigator.pop(sheetContext, _EventAction.delete),
-              ),
-            ],
-          ),
-        ),
+    final action = await showCalendarEventSummarySheet(
+      context,
+      event: CalendarEventSummaryData(
+        title: event.title,
+        start: event.start,
+        end: event.end,
+        isAllDay: event.isAllDay,
+        isRecurring:
+            googleEvent?.recurringEventId != null ||
+            googleEvent?.recurrence?.isNotEmpty == true,
+        color: event.color,
+        calendarName: googleEvent == null ? 'Outlook' : 'Google Calendar',
+        canEdit: googleEvent != null,
       ),
     );
-
-    if (!mounted) return;
+    if (googleEvent == null || !mounted) return;
     switch (action) {
-      case _EventAction.edit:
+      case CalendarEventSummaryAction.edit:
         await _editGoogleEvent(googleEvent);
         return;
-      case _EventAction.delete:
+      case CalendarEventSummaryAction.delete:
         await _deleteGoogleEvent(googleEvent);
         return;
       case null:
@@ -254,10 +196,12 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
     if (confirmed != true || !mounted) return;
 
     try {
+      setState(() => _loading = true);
       await CalendarService.deleteEvent(event);
       await _loadEvents();
       _showMessage('Event deleted.');
     } catch (error) {
+      if (mounted) setState(() => _loading = false);
       _showMessage('Could not delete event: $error');
     }
   }
@@ -646,8 +590,6 @@ class _AgendaEventTile extends StatelessWidget {
     ),
   );
 }
-
-enum _EventAction { edit, delete }
 
 class _MonthEvent {
   const _MonthEvent({
