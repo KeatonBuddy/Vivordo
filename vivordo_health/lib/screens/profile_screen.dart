@@ -280,12 +280,77 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  Future<bool?> _showWhoopDisconnectDialog() {
+    var deleteImportedData = false;
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Disconnect WHOOP?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Vivordo will stop syncing new WHOOP data and revoke access '
+                'to your WHOOP account.',
+              ),
+              const SizedBox(height: 12),
+              RadioGroup<bool>(
+                groupValue: deleteImportedData,
+                onChanged: (value) =>
+                    setDialogState(() => deleteImportedData = value!),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const RadioListTile<bool>(
+                      contentPadding: EdgeInsets.zero,
+                      value: false,
+                      title: Text('Disconnect and keep history'),
+                      subtitle: Text(
+                        'Keep measurements already imported into Vivordo.',
+                      ),
+                    ),
+                    const RadioListTile<bool>(
+                      contentPadding: EdgeInsets.zero,
+                      value: true,
+                      title: Text('Disconnect and delete WHOOP data'),
+                      subtitle: Text(
+                        'Delete WHOOP measurements and invalidate affected scores.',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, deleteImportedData),
+              child: const Text('Disconnect'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _updateWhoopConnection(bool isConnected) async {
     if (_isUpdatingWhoop) return;
+    final deleteImportedData = isConnected
+        ? await _showWhoopDisconnectDialog()
+        : null;
+    if (isConnected && deleteImportedData == null) return;
     setState(() => _isUpdatingWhoop = true);
     try {
       if (isConnected) {
-        await WhoopService.instance.disconnect();
+        await WhoopService.instance.disconnect(
+          deleteImportedData: deleteImportedData!,
+        );
       } else {
         await WhoopService.instance.connect();
       }
@@ -294,7 +359,12 @@ class _SettingsScreenState extends State<SettingsScreen>
           SnackBar(
             content: Text(
               isConnected
-                  ? 'WHOOP has been disconnected.'
+                  ? deleteImportedData!
+                        ? 'WHOOP has been disconnected and imported WHOOP '
+                              'data has been deleted. Affected scores will be '
+                              'recalculated when new data is available.'
+                        : 'WHOOP has been disconnected. Previously imported '
+                              'WHOOP data remains in Vivordo.'
                   : 'WHOOP connected and the last 30 days were synced.',
             ),
           ),

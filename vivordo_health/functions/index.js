@@ -28,6 +28,7 @@ const {
   HEART_HEALTH_BASELINE_WINDOW_DAYS,
 } = require("./heart_health_score");
 const {normalizeGoogleHealthSleep} = require("./google_health_sleep");
+const {whoopDeletionPlan} = require("./whoop_deletion");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
@@ -1625,10 +1626,63 @@ exports.syncWhoop = onCall(
     },
 );
 
+/**
+ * Deletes imported WHOOP measurements while preserving other providers in the
+ * same daily documents. Kept separate so full account deletion can invoke the
+ * same cleanup before removing the user tree.
+ *
+ * @param {string} uid Authenticated Firebase user ID.
+ * @return {Promise<number>} Number of affected daily documents.
+ */
+async function deleteWhoopImportedData(uid) {
+  const firestore = admin.firestore();
+  const userReference = firestore.collection("users").doc(uid);
+  await userReference.set({
+    whoopDataDeletionStatus: "pending",
+    whoopDataDeletionStartedAt:
+      admin.firestore.FieldValue.serverTimestamp(),
+  }, {merge: true});
+
+  try {
+    const metrics = await userReference.collection("metrics_daily").get();
+    const writer = firestore.bulkWriter();
+    let affectedDays = 0;
+    for (const document of metrics.docs) {
+      const plan = whoopDeletionPlan(document.data());
+      if (!plan.changed) continue;
+      const update = {
+        ...plan.setFields,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      for (const path of plan.deletePaths) {
+        update[path] = admin.firestore.FieldValue.delete();
+      }
+      writer.update(document.ref, update);
+      affectedDays += 1;
+    }
+    await writer.close();
+    await userReference.set({
+      whoopImportedDataRetained: false,
+      whoopDataDeletionStatus: "complete",
+      whoopDataDeletedAt: admin.firestore.FieldValue.serverTimestamp(),
+      whoopDataDeletionAffectedDays: affectedDays,
+    }, {merge: true});
+    return affectedDays;
+  } catch (error) {
+    await userReference.set({
+      whoopDataDeletionStatus: "failed",
+      whoopDataDeletionFailedAt:
+        admin.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true});
+    throw error;
+  }
+}
+
 exports.disconnectWhoop = onCall(
     {secrets: _WHOOP_SECRETS},
     async (request) => {
       const uid = requireAuth(request);
+      const deleteImportedData = request.data?.deleteImportedData === true;
       const credentials = admin.firestore()
           .collection("whoop_credentials")
           .doc(uid);
@@ -1650,9 +1704,18 @@ exports.disconnectWhoop = onCall(
       batch.set(admin.firestore().collection("users").doc(uid), {
         whoopConnected: false,
         whoopDisconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+        whoopImportedDataRetained: deleteImportedData ? null : true,
+        whoopDataDeletionStatus: deleteImportedData ?
+          "pending" : "not_requested",
       }, {merge: true});
       await batch.commit();
-      return {connected: false};
+      const affectedDays = deleteImportedData ?
+        await deleteWhoopImportedData(uid) : 0;
+      return {
+        connected: false,
+        importedDataDeleted: deleteImportedData,
+        affectedDays,
+      };
     },
 );
 
