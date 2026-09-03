@@ -200,67 +200,71 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<_AccountDeletionConfirmation?>
   _showAccountDeletionConfirmation() async {
-    final confirmationController = TextEditingController();
     final passwordController = TextEditingController();
     final needsPassword = AccountDeletionService.requiresPassword;
-    var canDelete = false;
+    var passwordReady = !needsPassword;
     try {
       return await showDialog<_AccountDeletionConfirmation>(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) {
-            void updateState() {
-              setDialogState(() {
-                canDelete =
-                    confirmationController.text.trim() == 'DELETE' &&
-                    (!needsPassword || passwordController.text.isNotEmpty);
-              });
-            }
-
             return AlertDialog(
               title: const Text('Permanently delete account?'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'This permanently deletes your Vivordo profile, health '
-                      'and wellness history, journal entries, workouts, '
-                      'insights, Circle content, challenges, connected-provider '
-                      'credentials, and uploaded profile photo. This cannot be '
-                      'undone.',
-                    ),
-                    const SizedBox(height: 16),
-                    const Text('Type DELETE to confirm.'),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: confirmationController,
-                      autofocus: true,
-                      autocorrect: false,
-                      textCapitalization: TextCapitalization.characters,
-                      onChanged: (_) => updateState(),
-                      decoration: const InputDecoration(
-                        labelText: 'DELETE',
-                        border: OutlineInputBorder(),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 240, maxWidth: 320),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'This permanently deletes your Vivordo profile, health '
+                        'and wellness history, journal entries, workouts, '
+                        'insights, Circle content, challenges, connected-provider '
+                        'credentials, and uploaded profile photo. This cannot be '
+                        'undone.',
                       ),
-                    ),
-                    if (needsPassword) ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: passwordController,
-                        obscureText: true,
-                        enableSuggestions: false,
-                        autocorrect: false,
-                        onChanged: (_) => updateState(),
-                        decoration: const InputDecoration(
-                          labelText: 'Current password',
-                          border: OutlineInputBorder(),
+                      if (needsPassword) ...[
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: passwordController,
+                          autofocus: true,
+                          obscureText: true,
+                          enableSuggestions: false,
+                          autocorrect: false,
+                          onChanged: (value) => setDialogState(
+                            () => passwordReady = value.isNotEmpty,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Current password',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      SlideToDelete(
+                        enabled: passwordReady,
+                        onConfirmed: () => Navigator.of(dialogContext).pop(
+                          _AccountDeletionConfirmation(
+                            password: needsPassword
+                                ? passwordController.text
+                                : null,
+                          ),
                         ),
                       ),
+                      if (!passwordReady) ...[
+                        const SizedBox(height: 8),
+                        const Center(
+                          child: Text(
+                            'Enter your password to enable the slider.',
+                            style: TextStyle(fontSize: 12),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
               actions: [
@@ -268,28 +272,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onPressed: () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancel'),
                 ),
-                TextButton(
-                  onPressed: canDelete
-                      ? () => Navigator.of(dialogContext).pop(
-                          _AccountDeletionConfirmation(
-                            password: needsPassword
-                                ? passwordController.text
-                                : null,
-                          ),
-                        )
-                      : null,
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFFFF3B30),
-                  ),
-                  child: const Text('Delete Forever'),
-                ),
               ],
             );
           },
         ),
       );
     } finally {
-      confirmationController.dispose();
       passwordController.dispose();
     }
   }
@@ -2462,4 +2450,196 @@ class _AccountDeletionConfirmation {
   const _AccountDeletionConfirmation({this.password});
 
   final String? password;
+}
+
+class SlideToDelete extends StatefulWidget {
+  const SlideToDelete({
+    required this.enabled,
+    required this.onConfirmed,
+    super.key,
+  });
+
+  final bool enabled;
+  final VoidCallback onConfirmed;
+
+  @override
+  State<SlideToDelete> createState() => _SlideToDeleteState();
+}
+
+class _SlideToDeleteState extends State<SlideToDelete> {
+  static const _confirmThreshold = 0.92;
+  static const _height = 56.0;
+  static const _thumbSize = 48.0;
+  static const _inset = 4.0;
+  final GlobalKey _trackKey = GlobalKey();
+  double _position = 0;
+  bool _dragging = false;
+  bool _confirmed = false;
+
+  void _setPosition(double value) {
+    if (!widget.enabled || _confirmed) return;
+    final next = value.clamp(0.0, 1.0);
+    setState(() => _position = next);
+  }
+
+  void _increaseForAccessibility() {
+    final next = (_position + 0.25).clamp(0.0, 1.0);
+    if (next >= _confirmThreshold) {
+      _confirm();
+    } else {
+      _setPosition(next);
+    }
+  }
+
+  void _updateFromDrag(DragUpdateDetails details) {
+    final renderBox =
+        _trackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final travel = renderBox.size.width - _thumbSize - _inset * 2;
+    if (travel <= 0) return;
+    _setPosition(_position + details.delta.dx / travel);
+  }
+
+  void _confirm() {
+    if (_confirmed) return;
+    setState(() {
+      _confirmed = true;
+      _dragging = false;
+      _position = 1;
+    });
+    widget.onConfirmed();
+  }
+
+  void _reset() {
+    if (_confirmed) return;
+    setState(() {
+      _dragging = false;
+      _position = 0;
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant SlideToDelete oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled && oldWidget.enabled) _reset();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final disabledColor = Theme.of(context).disabledColor;
+    const destructiveColor = Color(0xFFFF3B30);
+    return Semantics(
+      slider: true,
+      enabled: widget.enabled,
+      label: 'Slide to permanently delete account',
+      value: '${(_position * 100).round()} percent',
+      increasedValue: widget.enabled ? 'Move toward delete' : null,
+      decreasedValue: widget.enabled ? 'Move away from delete' : null,
+      onIncrease: widget.enabled ? _increaseForAccessibility : null,
+      onDecrease: widget.enabled ? () => _setPosition(_position - 0.25) : null,
+      child: GestureDetector(
+        key: _trackKey,
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: widget.enabled
+            ? (_) => setState(() => _dragging = true)
+            : null,
+        onHorizontalDragUpdate: widget.enabled ? _updateFromDrag : null,
+        onHorizontalDragEnd: widget.enabled
+            ? (_) {
+                if (_position >= _confirmThreshold) {
+                  _confirm();
+                } else {
+                  _reset();
+                }
+              }
+            : null,
+        onHorizontalDragCancel: widget.enabled ? _reset : null,
+        child: SizedBox(
+          height: _height,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: widget.enabled
+                        ? destructiveColor.withValues(alpha: 0.10)
+                        : disabledColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(_height / 2),
+                    border: Border.all(
+                      color: widget.enabled
+                          ? destructiveColor.withValues(alpha: 0.32)
+                          : disabledColor.withValues(alpha: 0.20),
+                    ),
+                  ),
+                ),
+              ),
+              AnimatedOpacity(
+                opacity: 1 - (_position * 0.75),
+                duration: const Duration(milliseconds: 80),
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: widget.enabled ? 12 : _thumbSize + 12,
+                    right: 12,
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      widget.enabled ? 'Slide to delete' : 'Enter password',
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: widget.enabled
+                            ? destructiveColor
+                            : disabledColor,
+                        fontSize: widget.enabled ? 14 : 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.all(_inset),
+                  child: AnimatedAlign(
+                    duration: _dragging
+                        ? Duration.zero
+                        : const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment(-1 + 2 * _position, 0),
+                    child: Container(
+                      width: _thumbSize,
+                      height: _thumbSize,
+                      decoration: BoxDecoration(
+                        color: widget.enabled
+                            ? destructiveColor
+                            : disabledColor,
+                        shape: BoxShape.circle,
+                        boxShadow: widget.enabled
+                            ? [
+                                BoxShadow(
+                                  color: destructiveColor.withValues(
+                                    alpha: 0.28,
+                                  ),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.white,
+                        size: 30,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
