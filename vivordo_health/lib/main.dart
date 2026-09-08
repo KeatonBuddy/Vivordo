@@ -27,6 +27,7 @@ import 'screens/force_update_screen.dart';
 import 'screens/circle_screen.dart';
 import 'screens/fitness_screen.dart';
 import 'screens/wellness_detail_screen.dart';
+import 'screens/month_calendar_screen.dart';
 import 'screens/whats_new_screen.dart';
 
 // Change this identifier whenever a new release should display a fresh
@@ -234,6 +235,10 @@ class _MyAppState extends State<MyApp> {
 
       if (destination == 'calendar') {
         navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
+        await WidgetsBinding.instance.endOfFrame;
+        if (mounted && navigator.mounted) {
+          unawaited(navigator.pushNamed('/full-calendar'));
+        }
         return;
       }
 
@@ -305,6 +310,7 @@ class _MyAppState extends State<MyApp> {
         '/signup': (context) => const SignupScreen(),
         '/home': (context) => const MainNavigationScreen(),
         '/calendar': (context) => const MainNavigationScreen(initialIndex: 1),
+        '/full-calendar': (context) => const MonthCalendarScreen(),
         '/fitness': (context) => const MainNavigationScreen(initialIndex: 3),
         '/wellness': (context) => const WellnessDetailScreen(),
         '/scan': (context) => const MainNavigationScreen(initialIndex: 2),
