@@ -6976,15 +6976,15 @@ class _ActivityTab extends StatelessWidget {
       _MyCircleActivityFeed(profile: profile),
       const SizedBox(height: 28),
       const Text(
-        'FRIENDS ACTIVITY',
+        'Recent activity',
         style: TextStyle(
-          color: CircleScreen._muted,
-          fontSize: 14,
+          color: CircleScreen._purple,
+          fontSize: 22,
           fontWeight: FontWeight.w800,
-          letterSpacing: 1.5,
+          letterSpacing: -.3,
         ),
       ),
-      const SizedBox(height: 14),
+      const SizedBox(height: 12),
       const _CircleRecentActivityFeed(),
     ],
   );
@@ -7464,8 +7464,18 @@ class _FriendFitnessContent extends StatelessWidget {
   }
 }
 
-class _CircleRecentActivityFeed extends StatelessWidget {
+enum _CircleActivityFilter { all, workouts, achievements }
+
+class _CircleRecentActivityFeed extends StatefulWidget {
   const _CircleRecentActivityFeed();
+
+  @override
+  State<_CircleRecentActivityFeed> createState() =>
+      _CircleRecentActivityFeedState();
+}
+
+class _CircleRecentActivityFeedState extends State<_CircleRecentActivityFeed> {
+  _CircleActivityFilter _filter = _CircleActivityFilter.all;
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<CircleActivity>>(
@@ -7479,56 +7489,151 @@ class _CircleRecentActivityFeed extends StatelessWidget {
           ),
         );
       }
-      final activities = snapshot.data ?? const [];
+      final allActivities = snapshot.data ?? const <CircleActivity>[];
+      final activities = allActivities
+          .where((activity) {
+            return switch (_filter) {
+              _CircleActivityFilter.all => true,
+              _CircleActivityFilter.workouts =>
+                activity.kind != 'achievement' && activity.kind != 'journal',
+              _CircleActivityFilter.achievements =>
+                activity.kind == 'achievement',
+            };
+          })
+          .toList(growable: false);
+      final filters = Row(
+        children: _CircleActivityFilter.values
+            .map(
+              (filter) => Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: _CircleActivityFilterChip(
+                  label: switch (filter) {
+                    _CircleActivityFilter.all => 'All',
+                    _CircleActivityFilter.workouts => 'Workouts',
+                    _CircleActivityFilter.achievements => 'Achievements',
+                  },
+                  selected: _filter == filter,
+                  onTap: () => setState(() => _filter = filter),
+                ),
+              ),
+            )
+            .toList(growable: false),
+      );
       if (activities.isEmpty) {
-        return const _CircleCard(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.favorite_border_rounded,
-                  color: CircleScreen._purple,
-                  size: 34,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            filters,
+            const SizedBox(height: 14),
+            _CircleCard(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Column(
+                  children: [
+                    const Icon(
+                      Icons.favorite_border_rounded,
+                      color: CircleScreen._purple,
+                      size: 34,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      allActivities.isEmpty
+                          ? 'No recent friend activity'
+                          : 'No ${_filter == _CircleActivityFilter.workouts ? 'workouts' : 'achievements'} yet',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      "Your friends' latest shared activities will appear here.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: CircleScreen._muted,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 12),
-                Text(
-                  'No recent friend activity',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-                ),
-                SizedBox(height: 6),
-                Text(
-                  "Your friends' latest shared activities will appear here.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: CircleScreen._muted, height: 1.35),
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         );
       }
       return Column(
-        children: activities
-            .map(
-              (activity) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _CircleActivityTile(activity: activity),
-              ),
-            )
-            .toList(),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          filters,
+          const SizedBox(height: 14),
+          ...activities.map(
+            (activity) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _CircleActivityTile(activity: activity),
+            ),
+          ),
+        ],
       );
     },
   );
 }
 
-class _CircleActivityTile extends StatelessWidget {
+class _CircleActivityFilterChip extends StatelessWidget {
+  const _CircleActivityFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: selected ? CircleScreen._purple : context.vivordoColors.card,
+    borderRadius: BorderRadius.circular(12),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? CircleScreen._purple
+                : context.vivordoColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : CircleScreen._muted,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _CircleActivityTile extends StatefulWidget {
   const _CircleActivityTile({required this.activity});
 
   final CircleActivity activity;
 
   @override
+  State<_CircleActivityTile> createState() => _CircleActivityTileState();
+}
+
+class _CircleActivityTileState extends State<_CircleActivityTile> {
+  bool _savingLike = false;
+
+  @override
   Widget build(BuildContext context) {
+    final activity = widget.activity;
     final isJournal = activity.kind == 'journal';
     final isAchievement = activity.kind == 'achievement';
     final visual = workoutActivityVisual(
@@ -7549,64 +7654,197 @@ class _CircleActivityTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
         onTap: () => _openCircleActivityDetails(context, activity),
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: context.vivordoColors.border),
+          ),
+          child: Column(
             children: [
-              _ProfileAvatar(profile: activity.profile, radius: 29),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      activity.profile.username,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
+              Row(
+                children: [
+                  _ProfileAvatar(profile: activity.profile, radius: 29),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          activity.profile.username,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isJournal
+                              ? 'shared a Journal Entry${activity.mood == null ? '' : ' · ${activity.mood}'}'
+                              : isAchievement
+                              ? 'earned ${activity.name}${activity.achievementTier == null ? '' : ' · ${_tierLabel(activity.achievementTier!)}'}'
+                              : details.isEmpty
+                              ? 'completed ${activity.name}'
+                              : 'completed ${activity.name} · ${details.join(' · ')}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: CircleScreen._muted,
+                            fontSize: 13,
+                            height: 1.3,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          _relativeActivityTime(activity.day),
+                          style: const TextStyle(
+                            color: CircleScreen._muted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  if (isAchievement)
+                    _AchievementActivityBadge(activity: activity, size: 46)
+                  else
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: CircleScreen._purple,
+                        borderRadius: BorderRadius.circular(13),
+                        boxShadow: const [
+                          BoxShadow(color: Color(0x336250E8), blurRadius: 12),
+                        ],
+                      ),
+                      child: Icon(
+                        isJournal ? Icons.menu_book_rounded : visual.icon,
+                        color: Colors.white,
+                        size: 23,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      isJournal
-                          ? 'shared a Journal Entry${activity.mood == null ? '' : ' · ${activity.mood}'}'
-                          : isAchievement
-                          ? 'earned ${activity.name}${activity.achievementTier == null ? '' : ' · ${_tierLabel(activity.achievementTier!)}'}'
-                          : details.isEmpty
-                          ? 'completed ${activity.name}'
-                          : 'completed ${activity.name} · ${details.join(' · ')}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: CircleScreen._muted,
-                        fontSize: 13,
-                        height: 1.3,
+                ],
+              ),
+              const SizedBox(height: 12),
+              Divider(height: 1, color: context.vivordoColors.border),
+              SizedBox(
+                height: 42,
+                child: StreamBuilder<List<CircleActivityLike>>(
+                  stream: CircleProfileService.watchActivityLikes(activity),
+                  builder: (context, likesSnapshot) {
+                    final likes =
+                        likesSnapshot.data ?? const <CircleActivityLike>[];
+                    final uid = FirebaseAuth.instance.currentUser?.uid;
+                    final liked =
+                        uid != null && likes.any((like) => like.userUid == uid);
+                    return StreamBuilder<List<CircleActivityComment>>(
+                      stream: CircleProfileService.watchActivityComments(
+                        activity,
                       ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      _relativeActivityTime(activity.day),
-                      style: const TextStyle(
-                        color: CircleScreen._muted,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+                      builder: (context, commentsSnapshot) {
+                        final commentCount = commentsSnapshot.data?.length ?? 0;
+                        return Row(
+                          children: [
+                            _ActivityEngagementButton(
+                              icon: liked
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              count: likes.length,
+                              active: liked,
+                              busy: _savingLike,
+                              onTap: () => _setLiked(liked),
+                            ),
+                            Container(
+                              width: 1,
+                              height: 20,
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                              ),
+                              color: context.vivordoColors.border,
+                            ),
+                            _ActivityEngagementButton(
+                              icon: Icons.chat_bubble_outline_rounded,
+                              count: commentCount,
+                              onTap: () =>
+                                  _openCircleActivityDetails(context, activity),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
                 ),
               ),
-              if (isAchievement)
-                _AchievementActivityBadge(activity: activity, size: 42)
-              else
-                Icon(
-                  isJournal ? Icons.menu_book_rounded : visual.icon,
-                  color: isJournal ? CircleScreen._purple : visual.color,
-                ),
             ],
           ),
         ),
       ),
     );
   }
+
+  Future<void> _setLiked(bool liked) async {
+    if (_savingLike) return;
+    setState(() => _savingLike = true);
+    try {
+      await CircleProfileService.setActivityLiked(
+        widget.activity,
+        liked: !liked,
+      );
+    } finally {
+      if (mounted) setState(() => _savingLike = false);
+    }
+  }
+}
+
+class _ActivityEngagementButton extends StatelessWidget {
+  const _ActivityEngagementButton({
+    required this.icon,
+    required this.count,
+    required this.onTap,
+    this.active = false,
+    this.busy = false,
+  });
+
+  final IconData icon;
+  final int count;
+  final VoidCallback onTap;
+  final bool active;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: busy ? null : onTap,
+    borderRadius: BorderRadius.circular(12),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+      child: Row(
+        children: [
+          if (busy)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Icon(
+              icon,
+              size: 23,
+              color: active ? CircleScreen._purple : CircleScreen._muted,
+            ),
+          const SizedBox(width: 7),
+          Text(
+            '$count',
+            style: TextStyle(
+              color: active ? CircleScreen._purple : CircleScreen._muted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _AchievementActivityBadge extends StatelessWidget {
