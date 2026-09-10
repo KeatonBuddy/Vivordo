@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/edit_priority_sheet.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -783,6 +784,21 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               priority: priorities[index],
               onToggle: () => _togglePriority(priorities[index]),
               onDelete: () => _deletePriority(priorities[index]),
+              onEdit: () async {
+                final priority = priorities[index];
+                final result = await showEditPrioritySheet(context, priority);
+                if (result == null || !mounted) return;
+                try {
+                  await DailyPriorityService.editReminder(
+                    priority,
+                    result.$1,
+                    result.$2,
+                    result.$3,
+                  );
+                } catch (error) {
+                  _showMessage('Could not update priority: $error');
+                }
+              },
             ),
             if (index < priorities.length - 1)
               const Divider(height: 1, indent: 58, endIndent: 16),
@@ -827,6 +843,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         recurrence: draft.recurrence,
         selectedWeekdays: draft.selectedWeekdays,
         recurrenceEnd: draft.repeatEnd,
+        reminderMinutes: draft.reminderMinutes,
+        reminderTimeMinutes: draft.reminderTimeMinutes,
       );
     } catch (error) {
       _showMessage('Could not add priority: $error');
@@ -1091,17 +1109,25 @@ class _SectionCard extends StatelessWidget {
   );
 }
 
+@visibleForTesting
+Widget priorityRowForTesting({
+  required DailyPriority priority,
+  required Future<void> Function() onDelete,
+}) => _PriorityRow(priority: priority, onToggle: () {}, onDelete: onDelete);
+
 class _PriorityRow extends StatefulWidget {
   const _PriorityRow({
     super.key,
     required this.priority,
     required this.onToggle,
     required this.onDelete,
+    this.onEdit,
   });
 
   final DailyPriority priority;
   final VoidCallback onToggle;
   final Future<void> Function() onDelete;
+  final VoidCallback? onEdit;
 
   @override
   State<_PriorityRow> createState() => _PriorityRowState();
@@ -1112,6 +1138,7 @@ class _PriorityRowState extends State<_PriorityRow> {
   double _dragOffset = 0;
   bool _dragging = false;
   bool _deleting = false;
+  bool _confirmingDelete = false;
 
   DailyPriority get priority => widget.priority;
 
@@ -1176,7 +1203,9 @@ class _PriorityRowState extends State<_PriorityRow> {
             ),
           ),
           GestureDetector(
-            behavior: HitTestBehavior.opaque,
+            // Let taps in the revealed action area reach the Delete button.
+            behavior: HitTestBehavior.deferToChild,
+            onTap: widget.onEdit,
             onHorizontalDragStart: (_) => setState(() => _dragging = true),
             onHorizontalDragUpdate: (details) {
               setState(() {
@@ -1288,13 +1317,43 @@ class _PriorityRowState extends State<_PriorityRow> {
   }
 
   Future<void> _delete() async {
-    setState(() => _deleting = true);
-    await widget.onDelete();
-    if (!mounted) return;
-    setState(() {
-      _deleting = false;
-      _dragOffset = 0;
-    });
+    if (_deleting || _confirmingDelete) return;
+    _confirmingDelete = true;
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Delete priority?'),
+          content: Text(
+            'Remove “${priority.title}” from your priorities?'
+            '${priority.source == 'manual' ? '' : '\n\nThis will not delete the original calendar event or recurring schedule.'}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true && mounted) {
+        setState(() => _deleting = true);
+        await widget.onDelete();
+      }
+    } finally {
+      _confirmingDelete = false;
+      if (mounted) {
+        setState(() {
+          _deleting = false;
+          _dragOffset = 0;
+        });
+      }
+    }
   }
 }
 

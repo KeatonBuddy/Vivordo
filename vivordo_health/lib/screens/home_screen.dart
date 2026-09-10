@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/calendar_event_summary_sheet.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1897,6 +1898,60 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${minutes}m';
   }
 
+  Future<void> _showReachableEventSummary(gcal.Event event) async {
+    final start = event.start?.dateTime?.toLocal() ?? event.start?.date;
+    final end = event.end?.dateTime?.toLocal() ?? event.end?.date;
+    if (start == null || end == null) return;
+    final action = await showCalendarEventSummarySheet(
+      context,
+      event: CalendarEventSummaryData(
+        title: event.summary ?? 'Untitled event',
+        start: start,
+        end: end,
+        isAllDay: event.start?.dateTime == null,
+        isRecurring:
+            event.recurringEventId != null ||
+            event.recurrence?.isNotEmpty == true,
+        color: const Color(0xFF4285F4),
+        calendarName: 'Google Calendar',
+        canEdit: true,
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == CalendarEventSummaryAction.edit) {
+      await _editReachableEvent(event);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete event?'),
+        content: Text(
+          'This will delete “${event.summary ?? 'Untitled event'}” from Google Calendar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await CalendarService.deleteEvent(event);
+      if (!mounted) return;
+      _refreshHomeCalendarCards();
+      _showHomeCalendarMessage('Event deleted.');
+    } catch (error) {
+      if (mounted) _showHomeCalendarMessage('Could not delete event: $error');
+    }
+  }
+
   Future<void> _editReachableEvent(gcal.Event event) async {
     final originalStart = event.start?.dateTime?.toLocal();
     final originalEnd = event.end?.dateTime?.toLocal();
@@ -2363,7 +2418,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? openStart == null || openEnd == null
                             ? null
                             : () => _createReachableEvent(openStart, openEnd)
-                      : () => _editReachableEvent(event),
+                      : () => _showReachableEventSummary(event),
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Row(

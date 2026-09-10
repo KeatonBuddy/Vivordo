@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
+import 'priority_reminder_picker.dart';
 
 const _purple = Color(0xFF6254F4);
 
@@ -16,6 +17,8 @@ class PriorityDraft {
     required this.repeat,
     required this.selectedWeekdays,
     required this.repeatEnd,
+    this.reminderMinutes = 60,
+    this.reminderTimeMinutes,
   });
 
   final String title;
@@ -25,6 +28,8 @@ class PriorityDraft {
   final PriorityRepeat repeat;
   final Set<int> selectedWeekdays;
   final DateTime? repeatEnd;
+  final int reminderMinutes;
+  final int? reminderTimeMinutes;
 
   DateTime? get scheduledAt => time == null
       ? null
@@ -82,6 +87,8 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   PriorityRepeat _repeat = PriorityRepeat.once;
   late Set<int> _selectedWeekdays;
   DateTime? _repeatEnd;
+  int _reminderMinutes = 60;
+  TimeOfDay? _reminderTime;
 
   @override
   void initState() {
@@ -178,6 +185,10 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
         repeat: _repeat,
         selectedWeekdays: _selectedWeekdays,
         repeatEnd: _repeatEnd,
+        reminderMinutes: _reminderMinutes,
+        reminderTimeMinutes: _reminderTime == null
+            ? null
+            : _reminderTime!.hour * 60 + _reminderTime!.minute,
       ),
     );
   }
@@ -293,6 +304,32 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           label: 'Time',
                           value: _time?.format(context) ?? 'Add time',
                           onTap: _pickTime,
+                        ),
+                        _Row(
+                          icon: Icons.notifications_outlined,
+                          label: 'Reminder',
+                          value: _time == null
+                              ? (_reminderTime?.format(context) ??
+                                    'Choose reminder time')
+                              : priorityReminderLabel(_reminderMinutes),
+                          onTap: () async {
+                            if (_time == null) {
+                              final value = await showVivordoTimePicker(
+                                context: context,
+                                initialTime: _reminderTime ?? TimeOfDay.now(),
+                              );
+                              if (value != null && mounted)
+                                setState(() => _reminderTime = value);
+                              return;
+                            }
+                            final value = await showPriorityReminderPicker(
+                              context,
+                              _reminderMinutes,
+                            );
+                            if (value != null && mounted) {
+                              setState(() => _reminderMinutes = value);
+                            }
+                          },
                         ),
                         Padding(
                           padding: const EdgeInsets.symmetric(

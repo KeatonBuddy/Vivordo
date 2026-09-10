@@ -6963,14 +6963,28 @@ class _ActivityTab extends StatelessWidget {
       const SizedBox(height: 14),
       _YourCircleCard(profile: profile),
       const SizedBox(height: 28),
-      const Text(
-        'MY ACTIVITY',
-        style: TextStyle(
-          color: CircleScreen._muted,
-          fontSize: 14,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.5,
-        ),
+      Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'MY ACTIVITY',
+              style: TextStyle(
+                color: CircleScreen._muted,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.5,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => _MyCirclePostsScreen(profile: profile),
+              ),
+            ),
+            child: const Text('View all'),
+          ),
+        ],
       ),
       const SizedBox(height: 14),
       _MyCircleActivityFeed(profile: profile),
@@ -6987,6 +7001,57 @@ class _ActivityTab extends StatelessWidget {
       const SizedBox(height: 12),
       const _CircleRecentActivityFeed(),
     ],
+  );
+}
+
+class _MyCirclePostsScreen extends StatefulWidget {
+  const _MyCirclePostsScreen({required this.profile});
+
+  final CircleProfile profile;
+
+  @override
+  State<_MyCirclePostsScreen> createState() => _MyCirclePostsScreenState();
+}
+
+class _MyCirclePostsScreenState extends State<_MyCirclePostsScreen> {
+  late final Stream<List<CircleActivity>> _posts =
+      CircleProfileService.watchMyRecentActivities(
+        widget.profile,
+        days: null,
+        limit: null,
+      );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('My Activity')),
+    body: SafeArea(
+      child: StreamBuilder<List<CircleActivity>>(
+        stream: _posts,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(
+              child: Text('Unable to load your posts. Please try again later.'),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final posts = snapshot.data!;
+          if (posts.isEmpty) {
+            return const Center(child: Text('No shared Circle posts yet.'));
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.all(20),
+            itemCount: posts.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (context, index) => _CircleActivityTile(
+              key: ValueKey(posts[index].id),
+              activity: posts[index],
+            ),
+          );
+        },
+      ),
+    ),
   );
 }
 
@@ -7620,7 +7685,7 @@ class _CircleActivityFilterChip extends StatelessWidget {
 }
 
 class _CircleActivityTile extends StatefulWidget {
-  const _CircleActivityTile({required this.activity});
+  const _CircleActivityTile({super.key, required this.activity});
 
   final CircleActivity activity;
 

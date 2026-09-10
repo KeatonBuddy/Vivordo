@@ -1,4 +1,7 @@
 import 'dart:async';
+import '../src/services/active_workout_navigation.dart';
+import '../widgets/workout_rest_timer.dart';
+import '../src/services/notification_service.dart';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -467,6 +470,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
   }
 
   Future<void> _startWorkout() async {
+    if (ActiveWorkoutNavigation.focusExisting()) return;
     _activeWorkoutDraft ??= await _ActiveWorkoutDraft.restore();
     _activeWorkoutDraft ??= _ActiveWorkoutDraft();
     await _activeWorkoutDraft!.persist();
@@ -1893,6 +1897,14 @@ class _ActiveWorkoutDraft {
 }
 
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
+  Route<dynamic>? _registeredRoute;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _registeredRoute = ModalRoute.of(context);
+    ActiveWorkoutNavigation.register(context);
+  }
   Timer? timer;
   late final _ActiveWorkoutDraft draft;
   bool saving = false;
@@ -1936,6 +1948,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void dispose() {
     timer?.cancel();
+    ActiveWorkoutNavigation.unregister(_registeredRoute);
     super.dispose();
   }
 
@@ -2348,6 +2361,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ],
           ),
           const SizedBox(height: 18),
+          WorkoutRestTimer(onDeadlineChanged: (deadline) => NotificationService().updateRestTimerNotification(deadline)),
+          const SizedBox(height: 14),
           _Card(
             child: Row(
               children: [
