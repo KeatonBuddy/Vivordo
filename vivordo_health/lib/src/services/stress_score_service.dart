@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:vivordo_health/src/utils/stress_source_precedence.dart';
 
 import 'health_service.dart';
+import 'calendar_baas_context.dart';
 
 /// Posts a BAAS v1 payload to https://vivordo-baas.onrender.com/baas/score
 /// and saves the returned score to metrics_daily/{uid}_stress_{date}.
@@ -445,6 +446,7 @@ class StressScoreService {
   ) async {
     final db = FirebaseFirestore.instance;
     final nowUtc = DateTime.now().toUtc();
+    final calendarContext = CalendarBaasContext.load(nowUtc);
 
     // Single query for ALL historical metrics — no hard date cap.
     // BaaS builds rolling 14-day baselines, so more history = stronger z-scores.
@@ -721,6 +723,7 @@ class StressScoreService {
     return {
       'user_id': uid,
       'as_of': nowUtc.toIso8601String(),
+      'calendar_context': await calendarContext,
       // The accumulating path: the BaaS folds this reading into the user's
       // running state instead of recomputing a standalone daily composite.
       // The score it returns starts each local day at the user's personalised

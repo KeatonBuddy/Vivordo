@@ -1,7 +1,7 @@
 # Calendar demand and hourly load
 
-Implemented in the app; BaaS transmission, weighting changes, deployment and
-user demand overrides are a subsequent integration step.
+Implemented in the app, including calendar_context in scoring requests.
+BaaS weighting changes, deployment and user demand overrides remain separate.
 
 ## Event classifier v3
 
@@ -70,10 +70,21 @@ hours (60+) within its existing 9 AM–5 PM range. Tapping one retains event
 summary navigation to the highest-demand contributor. Open recovery windows
 remain free gaps of at least 30 minutes. Forecasts are not sent as live strain.
 
+`CalendarBaasContext` fetches the preceding three days of UTC hourly windows,
+plus three hours of preceding event context for schedule pressure. Fetches run
+alongside health input collection with a five-second timeout, without prompting
+for authorization. Missing permission, fetch errors or partial-calendar failures
+produce unavailable/null-load windows, not confirmed empty time. Calendar and
+event pagination are exhausted before treating a fetch as complete.
+
+The request uses one as_of captured before input collection. Windows are clipped
+to that instant. The background feedback path shares this payload but does not
+use calendar for training. Only Google Calendar is connected in this step.
+
 `HourlyCalendarLoad.toJson()` provides versioned UTC window bounds,
 evaluated-until time, availability, demand, pressure, occupied/known minutes,
 confidence and nullable load. It excludes IDs, titles, descriptions and
-attendees. It is an integration DTO, not an endpoint call.
+attendees. StressScoreService includes these DTOs as calendar_context.
 
 Before connecting it to BaaS, agree which side computes hourly load and its
 score-time alignment. Keep one implementation authoritative. Handle absent

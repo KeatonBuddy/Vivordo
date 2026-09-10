@@ -190,7 +190,6 @@ class CalendarCognitiveLoadService {
     return events.map((event) => resolved[event.id]!).toList();
   }
 
-  @visibleForTesting
   static CognitiveLoadScore scoreLocally(CalendarCognitiveEvent event) {
     // Prefer title evidence over incidental words in notes. Within a title,
     // the most specific phrase wins; tied conflicting categories stay unknown.

@@ -18,6 +18,36 @@ class WritableCalendar {
 }
 
 class CalendarService {
+  /// Silent, all-or-nothing fetch for scoring. Null means unavailable, while
+  /// an empty list means a successful fetch with no events.
+  static Future<List<gcal.Event>?> getScoringEvents(
+    DateTime start,
+    DateTime end,
+  ) async {
+    try {
+      await initialize();
+      final user = _currentUser;
+      if (user == null) return null;
+      const scopes = [gcal.CalendarApi.calendarScope];
+      final authorization = await user.authorizationClient
+          .authorizationForScopes(scopes);
+      if (authorization == null) return null;
+      final client = authorization.authClient(scopes: scopes);
+      try {
+        return await _fetchEventsFromCalendars(
+          gcal.CalendarApi(client),
+          start: start,
+          end: end,
+          requireComplete: true,
+        );
+      } finally {
+        client.close();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
   static bool _initialized = false;
   static Future<void>? _initializationFuture;
   static GoogleSignInAccount? _currentUser;
@@ -463,9 +493,16 @@ class CalendarService {
     gcal.CalendarApi calendarApi, {
     required DateTime start,
     required DateTime end,
+    bool requireComplete = false,
   }) async {
-    final calendarList = await calendarApi.calendarList.list();
-    final calendars = (calendarList.items ?? const <gcal.CalendarListEntry>[])
+    final entries = <gcal.CalendarListEntry>[];
+    String? calendarPage;
+    do {
+      final page = await calendarApi.calendarList.list(pageToken: calendarPage);
+      entries.addAll(page.items ?? const []);
+      calendarPage = page.nextPageToken;
+    } while (calendarPage != null && calendarPage.isNotEmpty);
+    final calendars = entries
         .where((calendar) => calendar.id != null)
         .where((calendar) => calendar.hidden != true)
         // Google omits `selected` when a calendar is not selected. Requiring an
@@ -481,19 +518,26 @@ class CalendarService {
     final eventLists = await Future.wait(
       calendars.map((calendar) async {
         try {
-          final events = await calendarApi.events.list(
-            calendar.id!,
-            timeMin: start.toUtc(),
-            timeMax: end.toUtc(),
-            singleEvents: true,
-            orderBy: 'startTime',
-          );
-          final items = events.items ?? const <gcal.Event>[];
+          final items = <gcal.Event>[];
+          String? eventPage;
+          do {
+            final events = await calendarApi.events.list(
+              calendar.id!,
+              timeMin: start.toUtc(),
+              timeMax: end.toUtc(),
+              singleEvents: true,
+              orderBy: 'startTime',
+              pageToken: eventPage,
+            );
+            items.addAll(events.items ?? const []);
+            eventPage = events.nextPageToken;
+          } while (eventPage != null && eventPage.isNotEmpty);
           for (final event in items) {
             if (event.id != null) _eventCalendarIds[event.id!] = calendar.id!;
           }
           return items;
         } catch (e) {
+          if (requireComplete) rethrow;
           debugPrint(
             'CalendarService calendar fetch skipped ${calendar.summary ?? calendar.id}: $e',
           );
