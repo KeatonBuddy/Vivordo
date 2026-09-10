@@ -25,6 +25,7 @@ import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
+import 'package:vivordo_health/src/services/hourly_calendar_load.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'steps_detail_screen.dart';
@@ -796,6 +797,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final events = await _getReachableWindowEventsFuture(todayStart);
     final timedEvents = events.where((event) {
       return event.status != 'cancelled' &&
+          event.transparency != 'transparent' &&
+          !(event.attendees?.any(
+                (a) => a.self == true && a.responseStatus == 'declined',
+              ) ??
+              false) &&
           event.start?.dateTime != null &&
           event.end?.dateTime != null;
     }).toList();
@@ -808,19 +814,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final selfAttendee = event.attendees
           ?.where((attendee) => attendee.self == true)
           .firstOrNull;
-      final hasTightTransition = timedEvents.any((other) {
-        if (identical(other, event) ||
-            other.start?.dateTime == null ||
-            other.end?.dateTime == null) {
-          return false;
-        }
-        final otherStart = other.start!.dateTime!.toLocal();
-        final otherEnd = other.end!.dateTime!.toLocal();
-        final gapBefore = start.difference(otherEnd).inMinutes;
-        final gapAfter = otherStart.difference(end).inMinutes;
-        return (gapBefore >= 0 && gapBefore <= 15) ||
-            (gapAfter >= 0 && gapAfter <= 15);
-      });
       inputs.add(
         CalendarCognitiveEvent(
           id: _reachableEventKey(event, i),
@@ -835,7 +828,6 @@ class _HomeScreenState extends State<HomeScreen> {
               event.hangoutLink?.isNotEmpty == true ||
               event.conferenceData != null,
           showsAsFree: event.transparency == 'transparent',
-          hasTightTransition: hasTightTransition,
         ),
       );
     }
@@ -846,12 +838,14 @@ class _HomeScreenState extends State<HomeScreen> {
       (index) => _ScoredReachableEvent(
         event: timedEvents[index],
         score: scores[index],
+        input: inputs[index],
       ),
     );
   }
 
   String _reachableEventKey(gcal.Event event, int index) =>
-      'google:${event.id ?? event.iCalUID ?? index}';
+      'google:${CalendarService.calendarIdForEvent(event) ?? ''}:'
+      '${event.id ?? event.iCalUID ?? index}:${event.start?.dateTime?.toUtc().toIso8601String()}';
 
   Widget _buildScaffold({
     required double? stressScore,
@@ -2187,10 +2181,11 @@ class _HomeScreenState extends State<HomeScreen> {
             (snapshot.data ?? const <_ScoredReachableEvent>[]).where((item) {
               final event = item.event;
               final start = event.start?.dateTime?.toLocal();
+              final end = event.end?.dateTime?.toLocal();
               return start != null &&
-                  start.year == now.year &&
-                  start.month == now.month &&
-                  start.day == now.day;
+                  end != null &&
+                  start.isBefore(DateTime(now.year, now.month, now.day + 1)) &&
+                  end.isAfter(todayStart);
             }).toList()..sort((a, b) {
               final aStart = a.event.start?.dateTime?.toLocal() ?? todayStart;
               final bStart = b.event.start?.dateTime?.toLocal() ?? todayStart;
@@ -2226,34 +2221,34 @@ class _HomeScreenState extends State<HomeScreen> {
           return '${minutes}m';
         }
 
-        final highLoadWindows =
-            scoredEvents
-                .where((item) => item.score.level == CognitiveLoadLevel.high)
-                .map((item) {
-                  final event = item.event;
-                  final start = event.start?.dateTime?.toLocal();
-                  final end = event.end?.dateTime?.toLocal();
-                  if (start == null || end == null) return null;
-
-                  final clippedStart = clampStart(start);
-                  final clippedEnd = clampEnd(end);
-                  if (!clippedEnd.isAfter(clippedStart)) return null;
-
-                  return {
-                    'time': formatRange(clippedStart, clippedEnd),
-                    'label': event.summary?.trim().isNotEmpty == true
-                        ? event.summary!.trim()
-                        : 'Calendar event',
-                    'duration': clippedEnd.difference(clippedStart),
-                    'event': event,
-                    'score': item.score.score,
-                  };
-                })
-                .whereType<Map<String, dynamic>>()
-                .toList()
-              ..sort(
-                (a, b) => (b['score'] as int).compareTo(a['score'] as int),
-              );
+        // This section is a schedule forecast. Live BaaS callers must pass
+        // asOf to the calculator to exclude time that has not elapsed.
+        final hourly = HourlyCalendarLoadCalculator.calculate(
+          events: scoredEvents.map((e) => e.input).toList(),
+          scores: scoredEvents.map((e) => e.score).toList(),
+          from: workStart,
+          until: workEnd,
+        );
+        final highLoadWindows = <Map<String, dynamic>>[];
+        for (final hour in hourly.where((h) => (h.score ?? 0) >= 60)) {
+          final contributors =
+              scoredEvents
+                  .where(
+                    (e) =>
+                        e.input.start.isBefore(hour.end) &&
+                        e.input.end.isAfter(hour.start),
+                  )
+                  .toList()
+                ..sort((a, b) => b.score.score.compareTo(a.score.score));
+          highLoadWindows.add({
+            'time': formatRange(hour.start, hour.end),
+            'label':
+                '${hour.score!.round()}/100 calendar load · ${contributors.length} event${contributors.length == 1 ? '' : 's'}',
+            'duration': hour.end.difference(hour.start),
+            'event': contributors.first.event,
+            'score': hour.score!.round(),
+          });
+        }
 
         final lowLoadWindows = <Map<String, dynamic>>[];
         var cursor = workStart;
@@ -2329,15 +2324,16 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildCognitiveLoadSection(
-                title: 'Here are your times of high cognitive load',
+                title: 'Expected high calendar load',
                 icon: Icons.psychology_alt_rounded,
                 color: orangeColor,
-                emptyText: 'No high cognitive-load events found today.',
+                emptyText:
+                    'No high-load hours identified from classified events.',
                 windows: highLoadWindows.take(2).toList(),
               ),
               const SizedBox(height: 18),
               _buildCognitiveLoadSection(
-                title: 'Here are your times with the lowest cognitive load',
+                title: 'Open recovery windows',
                 icon: Icons.self_improvement_rounded,
                 color: greenColor,
                 emptyText: 'No open 30+ minute windows found today.',
@@ -3136,10 +3132,15 @@ class _ScheduleEvent {
 }
 
 class _ScoredReachableEvent {
-  const _ScoredReachableEvent({required this.event, required this.score});
+  const _ScoredReachableEvent({
+    required this.event,
+    required this.score,
+    required this.input,
+  });
 
   final gcal.Event event;
   final CognitiveLoadScore score;
+  final CalendarCognitiveEvent input;
 }
 
 class _ScheduleInsight {
