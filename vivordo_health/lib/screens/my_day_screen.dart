@@ -17,6 +17,7 @@ import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
 import 'all_priorities_screen.dart';
 import '../widgets/tomorrow_preview.dart';
+import '../src/utils/owned_stream_snapshot.dart';
 
 class MyDayScreen extends StatefulWidget {
   const MyDayScreen({super.key});
@@ -38,8 +39,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   bool _isLoading = true;
   Timer? _clockTimer;
   late DateTime _priorityDay;
-  late Stream<List<DailyPriority>> _priorityStream;
-  late Stream<List<DailyPriority>> _tomorrowPriorityStream;
+  final _prioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
+  final _tomorrowPrioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
   DateTime get _tomorrow =>
       DateTime(_priorityDay.year, _priorityDay.month, _priorityDay.day + 1);
 
@@ -48,8 +49,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _priorityDay = DateUtils.dateOnly(DateTime.now());
-    _priorityStream = DailyPriorityService.watch(_priorityDay);
-    _tomorrowPriorityStream = DailyPriorityService.watch(_tomorrow);
+    _prioritySnapshot.connect(DailyPriorityService.watch(_priorityDay));
+    _tomorrowPrioritySnapshot.connect(DailyPriorityService.watch(_tomorrow));
     _loadTodayEvents();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
@@ -70,8 +71,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
     setState(() {
       _priorityDay = today;
-      _priorityStream = DailyPriorityService.watch(today);
-      _tomorrowPriorityStream = DailyPriorityService.watch(_tomorrow);
+      _prioritySnapshot.connect(DailyPriorityService.watch(today));
+      _tomorrowPrioritySnapshot.connect(DailyPriorityService.watch(_tomorrow));
     });
     unawaited(_loadTodayEvents());
     return true;
@@ -81,6 +82,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
+    _prioritySnapshot.dispose();
+    _tomorrowPrioritySnapshot.dispose();
     super.dispose();
   }
 
@@ -593,9 +596,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               const SizedBox(height: 4),
               _SectionCard(child: _buildTimeline()),
               const SizedBox(height: 24),
-              StreamBuilder<List<DailyPriority>>(
-                stream: _tomorrowPriorityStream,
-                builder: (context, snapshot) => TomorrowPreview(
+              ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+                valueListenable: _tomorrowPrioritySnapshot,
+                builder: (context, snapshot, _) => TomorrowPreview(
                   day: _tomorrow,
                   loading:
                       _isLoading ||
@@ -835,60 +838,61 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildPriorities() => StreamBuilder<List<DailyPriority>>(
-    stream: _priorityStream,
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting &&
-          !snapshot.hasData) {
-        return const SizedBox(
-          height: 72,
-          child: Center(child: CircularProgressIndicator()),
-        );
-      }
-      if (snapshot.hasError) {
-        return const Padding(
-          padding: EdgeInsets.all(20),
-          child: Text(
-            'Could not load today’s priorities',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: MyDayScreen.muted),
-          ),
-        );
-      }
-      final priorities = snapshot.data ?? const <DailyPriority>[];
-      return Column(
-        children: [
-          if (priorities.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(18, 20, 18, 12),
+  Widget _buildPriorities() =>
+      ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+        valueListenable: _prioritySnapshot,
+        builder: (context, snapshot, _) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const SizedBox(
+              height: 72,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (snapshot.hasError) {
+            return const Padding(
+              padding: EdgeInsets.all(20),
               child: Text(
-                'No calendar events qualify as priorities yet.',
+                'Could not load today’s priorities',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: MyDayScreen.muted, fontSize: 12),
+                style: TextStyle(color: MyDayScreen.muted),
               ),
-            ),
-          for (var index = 0; index < priorities.length; index++) ...[
-            _PriorityRow(
-              key: ValueKey(priorities[index].reference.path),
-              priority: priorities[index],
-              onToggle: () => _togglePriority(priorities[index]),
-              onDelete: () => _deletePriority(priorities[index]),
-              onEdit: () => _editPriority(priorities[index]),
-            ),
-            if (index < priorities.length - 1)
-              const Divider(height: 1, indent: 58, endIndent: 16),
-          ],
-          if (priorities.isNotEmpty) const Divider(height: 1),
-          TextButton.icon(
-            onPressed: _addManualPriority,
-            icon: const Icon(Icons.add_rounded, size: 19),
-            label: const Text('Add priority'),
-          ),
-          const SizedBox(height: 4),
-        ],
+            );
+          }
+          final priorities = snapshot.data ?? const <DailyPriority>[];
+          return Column(
+            children: [
+              if (priorities.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 20, 18, 12),
+                  child: Text(
+                    'No calendar events qualify as priorities yet.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: MyDayScreen.muted, fontSize: 12),
+                  ),
+                ),
+              for (var index = 0; index < priorities.length; index++) ...[
+                _PriorityRow(
+                  key: ValueKey(priorities[index].reference.path),
+                  priority: priorities[index],
+                  onToggle: () => _togglePriority(priorities[index]),
+                  onDelete: () => _deletePriority(priorities[index]),
+                  onEdit: () => _editPriority(priorities[index]),
+                ),
+                if (index < priorities.length - 1)
+                  const Divider(height: 1, indent: 58, endIndent: 16),
+              ],
+              if (priorities.isNotEmpty) const Divider(height: 1),
+              TextButton.icon(
+                onPressed: _addManualPriority,
+                icon: const Icon(Icons.add_rounded, size: 19),
+                label: const Text('Add priority'),
+              ),
+              const SizedBox(height: 4),
+            ],
+          );
+        },
       );
-    },
-  );
 
   Future<void> _togglePriority(DailyPriority priority) async {
     try {
