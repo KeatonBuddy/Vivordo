@@ -1,4 +1,12 @@
-enum HomeStressDriverType { sleep, heartRate, hrv, activity, mood, other }
+enum HomeStressDriverType {
+  sleep,
+  heartRate,
+  hrv,
+  activity,
+  mood,
+  calendar,
+  other,
+}
 
 class HomeStressDriver {
   const HomeStressDriver({required this.label, required this.type});
@@ -47,7 +55,9 @@ List<HomeStressDriver> homeStressDrivers(Object? raw, {int limit = 2}) {
     final type = _driverType(name);
     drivers.add(
       HomeStressDriver(
-        label: _driverLabel(name, detail, influence, type),
+        label: type == HomeStressDriverType.calendar
+            ? _calendarLabel(item is Map ? item['reason_code'] : null)
+            : _driverLabel(name, detail, influence, type),
         type: type,
       ),
     );
@@ -134,6 +144,7 @@ double? _firstNumber(Map item, List<String> keys) {
 
 HomeStressDriverType _driverType(String name) {
   final normalized = name.toLowerCase().replaceAll('_', ' ');
+  if (normalized.contains('calendar')) return HomeStressDriverType.calendar;
   if (normalized.contains('sleep')) return HomeStressDriverType.sleep;
   if (normalized.contains('hrv') ||
       normalized.contains('heart rate variability')) {
@@ -200,11 +211,22 @@ String _driverLabel(
       return 'Mood check-in';
     case HomeStressDriverType.other:
       return _title(name);
+    case HomeStressDriverType.calendar:
+      return 'Calendar load';
   }
 }
 
 bool _containsAny(String value, List<String> terms) =>
     terms.any(value.contains);
+
+String _calendarLabel(Object? reason) => switch (reason) {
+  'event_demand' => 'High-demand schedule',
+  'back_to_back' => 'Back-to-back events',
+  'overlap' => 'Overlapping commitments',
+  'schedule_pressure' => 'Schedule pressure',
+  'mixed' => 'Demanding schedule',
+  _ => 'Calendar load',
+};
 
 String _title(String value) => value
     .replaceAll('_', ' ')

@@ -17,6 +17,10 @@ class HourlyCalendarLoad {
     required this.knownMinutes,
     required this.confidence,
     required this.score,
+    this.overlapMinutes = 0,
+    this.backToBackMinutes = 0,
+    this.backToBackTransitions = 0,
+    this.continuousPressurePoints = 0,
   });
 
   final DateTime start, end, evaluatedUntil;
@@ -25,6 +29,8 @@ class HourlyCalendarLoad {
 
   /// Null means unavailable calendar or only unclassified occupied events.
   final double? score;
+  final double overlapMinutes, backToBackMinutes, continuousPressurePoints;
+  final int backToBackTransitions;
 
   Map<String, Object?> toJson() => {
     'version': 1,
@@ -39,6 +45,10 @@ class HourlyCalendarLoad {
     'known_minutes': knownMinutes,
     'classification_confidence': confidence,
     'calendar_load': score,
+    'overlap_minutes': overlapMinutes,
+    'back_to_back_minutes': backToBackMinutes,
+    'back_to_back_transitions': backToBackTransitions,
+    'continuous_pressure_points': continuousPressurePoints,
   };
 }
 
@@ -79,6 +89,8 @@ class HourlyCalendarLoadCalculator {
         if (e.end.isBefore(stop)) boundaries.add(e.end);
       }
       final points = boundaries.toList()..sort();
+      double overlapMinutes = 0, tightMinutes = 0, continuousPoints = 0;
+      final transitions = <String>{};
       double occupied = 0,
           known = 0,
           demand = 0,
@@ -110,15 +122,16 @@ class HourlyCalendarLoadCalculator {
         // raise the current hour. Use previous end times, not a UI hint flag.
         var tight = false;
         for (final e in active) {
-          tight =
-              tight ||
-              eligible.any(
-                (previous) =>
-                    previous.id != e.id &&
-                    !previous.end.isAfter(e.start) &&
-                    e.start.difference(previous.end) <
-                        const Duration(minutes: 15),
-              );
+          final hasTightTransition = eligible.any(
+            (previous) =>
+                previous.id != e.id &&
+                !previous.end.isAfter(e.start) &&
+                e.start.difference(previous.end) < const Duration(minutes: 15),
+          );
+          tight = tight || hasTightTransition;
+          if (hasTightTransition && !e.start.isBefore(start)) {
+            transitions.add(e.id);
+          }
         }
         // Find the continuous occupied run leading into this segment.
         var runStart = active
@@ -140,6 +153,9 @@ class HourlyCalendarLoadCalculator {
 
         final runPressure =
             5 * (rampArea(runMinutes + minutes) - rampArea(runMinutes));
+        if (active.length > 1) overlapMinutes += minutes;
+        if (tight) tightMinutes += minutes;
+        continuousPoints += runPressure / 60;
         pressureIntegral +=
             minutes * ((active.length > 1 ? 10 : 0) + (tight ? 10 : 0)) +
             runPressure;
@@ -160,6 +176,10 @@ class HourlyCalendarLoadCalculator {
           knownMinutes: known,
           confidence: occupied == 0 ? 0 : certainty / occupied,
           score: value,
+          overlapMinutes: overlapMinutes,
+          backToBackMinutes: tightMinutes,
+          backToBackTransitions: transitions.length,
+          continuousPressurePoints: continuousPoints,
         ),
       );
     }

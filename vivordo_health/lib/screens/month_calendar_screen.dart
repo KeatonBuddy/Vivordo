@@ -9,7 +9,8 @@ import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
 
 class MonthCalendarScreen extends StatefulWidget {
-  const MonthCalendarScreen({super.key});
+  const MonthCalendarScreen({super.key, this.initialDay});
+  final DateTime? initialDay;
 
   @override
   State<MonthCalendarScreen> createState() => _MonthCalendarScreenState();
@@ -28,7 +29,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
   @override
   void initState() {
     super.initState();
-    final today = DateUtils.dateOnly(DateTime.now());
+    final today = DateUtils.dateOnly(widget.initialDay ?? DateTime.now());
     _visibleMonth = DateTime(today.year, today.month);
     _selectedDay = today;
     _loadEvents();

@@ -15,6 +15,8 @@ import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
+import 'all_priorities_screen.dart';
+import '../widgets/tomorrow_preview.dart';
 
 class MyDayScreen extends StatefulWidget {
   const MyDayScreen({super.key});
@@ -30,10 +32,16 @@ class MyDayScreen extends StatefulWidget {
 
 class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   List<_CalendarEvent> _events = const [];
+  List<_CalendarEvent> _tomorrowEvents = const [];
+  String? _calendarLoadError;
+  int _loadGeneration = 0;
   bool _isLoading = true;
   Timer? _clockTimer;
   late DateTime _priorityDay;
   late Stream<List<DailyPriority>> _priorityStream;
+  late Stream<List<DailyPriority>> _tomorrowPriorityStream;
+  DateTime get _tomorrow =>
+      DateTime(_priorityDay.year, _priorityDay.month, _priorityDay.day + 1);
 
   @override
   void initState() {
@@ -41,6 +49,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _priorityDay = DateUtils.dateOnly(DateTime.now());
     _priorityStream = DailyPriorityService.watch(_priorityDay);
+    _tomorrowPriorityStream = DailyPriorityService.watch(_tomorrow);
     _loadTodayEvents();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
@@ -62,6 +71,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     setState(() {
       _priorityDay = today;
       _priorityStream = DailyPriorityService.watch(today);
+      _tomorrowPriorityStream = DailyPriorityService.watch(_tomorrow);
     });
     unawaited(_loadTodayEvents());
     return true;
@@ -75,41 +85,56 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _loadTodayEvents() async {
+    final generation = ++_loadGeneration;
     if (mounted) setState(() => _isLoading = true);
     final now = DateTime.now();
     final dayStart = DateTime(now.year, now.month, now.day);
-    final dayEnd = dayStart.add(const Duration(days: 1));
+    final dayEnd = DateTime(now.year, now.month, now.day + 1);
+    final tomorrowEnd = DateTime(now.year, now.month, now.day + 2);
 
-    final results = await Future.wait([
-      CalendarService.getEventsBetween(
-        dayStart,
-        dayEnd,
-      ).timeout(const Duration(seconds: 8), onTimeout: () => <gcal.Event>[]),
-      OutlookCalendarService.getEventsBetween(
-        dayStart,
-        dayEnd,
-      ).timeout(const Duration(seconds: 8), onTimeout: () => <OutlookEvent>[]),
-    ]);
+    late List<dynamic> results;
+    try {
+      results = await Future.wait([
+        CalendarService.getEventsBetween(
+          dayStart,
+          tomorrowEnd,
+        ).timeout(const Duration(seconds: 8)),
+        OutlookCalendarService.getEventsBetween(
+          dayStart,
+          tomorrowEnd,
+        ).timeout(const Duration(seconds: 8)),
+      ]);
+    } catch (error) {
+      if (mounted && generation == _loadGeneration) {
+        setState(() {
+          _isLoading = false;
+          _calendarLoadError =
+              'Could not refresh the schedule. Pull down to retry.';
+        });
+      }
+      return;
+    }
 
     final googleEvents = results[0] as List<gcal.Event>;
     final outlookEvents = results[1] as List<OutlookEvent>;
-    final events =
-        <_CalendarEvent>[
-              ...googleEvents
-                  .map(_CalendarEvent.fromGoogle)
-                  .whereType<_CalendarEvent>(),
-              ...outlookEvents.map(_CalendarEvent.fromOutlook),
-            ]
-            .where(
-              (event) =>
-                  event.start.isBefore(dayEnd) && event.end.isAfter(dayStart),
-            )
-            .toList()
-          ..sort((a, b) => a.start.compareTo(b.start));
+    final allEvents = <_CalendarEvent>[
+      ...googleEvents
+          .map(_CalendarEvent.fromGoogle)
+          .whereType<_CalendarEvent>(),
+      ...outlookEvents.map(_CalendarEvent.fromOutlook),
+    ].toList()..sort((a, b) => a.start.compareTo(b.start));
+    final events = allEvents
+        .where((e) => e.start.isBefore(dayEnd) && e.end.isAfter(dayStart))
+        .toList();
+    final tomorrowEvents = allEvents
+        .where((e) => e.start.isBefore(tomorrowEnd) && e.end.isAfter(dayEnd))
+        .toList();
 
-    if (!mounted) return;
+    if (!mounted || generation != _loadGeneration) return;
     setState(() {
       _events = events;
+      _tomorrowEvents = tomorrowEvents;
+      _calendarLoadError = null;
       _isLoading = false;
     });
     try {
@@ -119,6 +144,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         events
             .where((event) => !event.isPriorityLinked)
             .map((event) => event.priorityCandidate),
+      );
+      await DailyPriorityService.materializeRecurring(dayEnd);
+      await DailyPriorityService.seedFromCalendar(
+        dayEnd,
+        tomorrowEvents
+            .where((e) => !e.isPriorityLinked)
+            .map((e) => e.priorityCandidate),
       );
     } catch (error) {
       debugPrint('Could not generate daily priorities: $error');
@@ -513,7 +545,26 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 _buildWatchItem(watchItem),
               ],
               const SizedBox(height: 24),
-              const _SectionLabel("TODAY'S PRIORITIES"),
+              Row(
+                children: [
+                  const Expanded(child: _SectionLabel("TODAY'S PRIORITIES")),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => AllPrioritiesScreen(
+                          onAdd: (sheetContext) =>
+                              _addManualPriority(sheetContext: sheetContext),
+                          onEdit: (sheetContext, priority) => _editPriority(
+                            priority,
+                            sheetContext: sheetContext,
+                          ),
+                        ),
+                      ),
+                    ),
+                    child: const Text('View all'),
+                  ),
+                ],
+              ),
               const SizedBox(height: 10),
               _SectionCard(child: _buildPriorities()),
               const SizedBox(height: 24),
@@ -541,6 +592,44 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 4),
               _SectionCard(child: _buildTimeline()),
+              const SizedBox(height: 24),
+              StreamBuilder<List<DailyPriority>>(
+                stream: _tomorrowPriorityStream,
+                builder: (context, snapshot) => TomorrowPreview(
+                  day: _tomorrow,
+                  loading:
+                      _isLoading ||
+                      snapshot.connectionState == ConnectionState.waiting,
+                  error:
+                      _calendarLoadError ??
+                      (snapshot.hasError
+                          ? 'Could not load tomorrow’s priorities.'
+                          : null),
+                  events: _tomorrowEvents
+                      .map(
+                        (e) => TomorrowPreviewEvent(
+                          title: e.title,
+                          start: e.start,
+                          end: e.end,
+                          allDay: e.isAllDay,
+                          onTap: () => _handleEventTap(e),
+                        ),
+                      )
+                      .toList(),
+                  priorities: snapshot.data ?? const [],
+                  onEdit: _editPriority,
+                  onToggle: _togglePriority,
+                  onViewDay: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            MonthCalendarScreen(initialDay: _tomorrow),
+                      ),
+                    );
+                    if (mounted) await _loadTodayEvents();
+                  },
+                ),
+              ),
             ],
           ),
         ),
@@ -780,25 +869,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             ),
           for (var index = 0; index < priorities.length; index++) ...[
             _PriorityRow(
-              key: ValueKey(priorities[index].id),
+              key: ValueKey(priorities[index].reference.path),
               priority: priorities[index],
               onToggle: () => _togglePriority(priorities[index]),
               onDelete: () => _deletePriority(priorities[index]),
-              onEdit: () async {
-                final priority = priorities[index];
-                final result = await showEditPrioritySheet(context, priority);
-                if (result == null || !mounted) return;
-                try {
-                  await DailyPriorityService.editReminder(
-                    priority,
-                    result.$1,
-                    result.$2,
-                    result.$3,
-                  );
-                } catch (error) {
-                  _showMessage('Could not update priority: $error');
-                }
-              },
+              onEdit: () => _editPriority(priorities[index]),
             ),
             if (index < priorities.length - 1)
               const Divider(height: 1, indent: 58, endIndent: 16),
@@ -831,8 +906,46 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _addManualPriority() async {
-    final draft = await showAddPrioritySheet(context);
+  Future<void> _editPriority(
+    DailyPriority priority, {
+    BuildContext? sheetContext,
+  }) async {
+    final result = await showEditPrioritySheet(
+      sheetContext ?? context,
+      priority,
+    );
+    if (result == null || !mounted) return;
+    try {
+      if (result.deleteRequested) {
+        await DailyPriorityService.delete(priority);
+        return;
+      }
+      await DailyPriorityService.editPriority(
+        priority,
+        title: result.title,
+        date: result.date,
+        scheduledAt: result.scheduledAt,
+        completed: result.completed,
+        reminderMinutes: result.reminderMinutes,
+        reminderTimeMinutes: result.reminderTimeMinutes,
+        recurrence: result.recurrence,
+        selectedWeekdays: result.selectedWeekdays,
+        recurrenceEnd: result.repeatEnd,
+      );
+      if (result.addToCalendar) await _addPriorityCalendarEvent(result);
+    } catch (error) {
+      if (sheetContext != null && sheetContext.mounted) {
+        ScaffoldMessenger.of(sheetContext).showSnackBar(
+          SnackBar(content: Text('Could not update priority: $error')),
+        );
+      } else {
+        _showMessage('Could not update priority: $error');
+      }
+    }
+  }
+
+  Future<void> _addManualPriority({BuildContext? sheetContext}) async {
+    final draft = await showAddPrioritySheet(sheetContext ?? context);
     if (draft == null || !mounted) return;
 
     try {
@@ -852,6 +965,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
 
     if (!draft.addToCalendar) return;
+    await _addPriorityCalendarEvent(draft);
+  }
+
+  Future<void> _addPriorityCalendarEvent(PriorityDraft draft) async {
     final start = draft.scheduledAt ?? DateUtils.dateOnly(draft.date);
     final end = draft.scheduledAt == null
         ? start.add(const Duration(days: 1))
@@ -1113,7 +1230,13 @@ class _SectionCard extends StatelessWidget {
 Widget priorityRowForTesting({
   required DailyPriority priority,
   required Future<void> Function() onDelete,
-}) => _PriorityRow(priority: priority, onToggle: () {}, onDelete: onDelete);
+  VoidCallback? onEdit,
+}) => _PriorityRow(
+  priority: priority,
+  onToggle: () {},
+  onDelete: onDelete,
+  onEdit: onEdit,
+);
 
 class _PriorityRow extends StatefulWidget {
   const _PriorityRow({

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -39,6 +40,8 @@ class DailyPriority {
     this.sourceEnd,
     this.reminderMinutes = 60,
     this.reminderTimeMinutes,
+    this.date,
+    this.templateId,
   });
 
   final String id;
@@ -50,6 +53,8 @@ class DailyPriority {
   final DateTime? sourceEnd;
   final int reminderMinutes;
   final int? reminderTimeMinutes;
+  final DateTime? date;
+  final String? templateId;
   final DocumentReference<Map<String, dynamic>> reference;
 
   factory DailyPriority.fromDocument(
@@ -67,6 +72,8 @@ class DailyPriority {
       reminderMinutes: (data['reminderMinutes'] as num?)?.toInt() ?? 60,
       reminderTimeMinutes: (data['reminderTimeMinutes'] as num?)?.toInt(),
       reference: document.reference,
+      date: DateTime.tryParse(document.reference.parent.parent?.id ?? ''),
+      templateId: data['templateId'] as String?,
     );
   }
 }
@@ -160,21 +167,122 @@ class DailyPriorityService {
     return FirebaseFirestore.instance.collection('users').doc(uid);
   }
 
-  static Stream<List<DailyPriority>> watch(DateTime day) {
+  static Stream<List<DailyPriority>> watch(
+    DateTime day, {
+    bool includeUpcoming = false,
+  }) {
     final collection = _collection(day);
-    if (collection == null) return Stream.value(const []);
-    return collection.snapshots().map((snapshot) {
-      final priorities = snapshot.docs
-          .where((document) => document.data()['dismissed'] != true)
-          .map(DailyPriority.fromDocument)
-          .toList();
+    final user = _userDocument();
+    if (collection == null || user == null) return Stream.value(const []);
+    final dayKey = _dayKey(day);
+    final subscriptions =
+        <String, StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>{};
+    final items = <String, List<DailyPriority>>{};
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+    userSubscription;
+    late StreamController<List<DailyPriority>> controller;
+
+    void emit() {
+      final priorities = items.values.expand((value) => value).toList();
       priorities.sort((a, b) {
         final aStart = a.sourceStart?.millisecondsSinceEpoch ?? 1 << 62;
         final bStart = b.sourceStart?.millisecondsSinceEpoch ?? 1 << 62;
-        return aStart.compareTo(bStart);
+        final comparison = aStart.compareTo(bStart);
+        return comparison != 0
+            ? comparison
+            : a.reference.path.compareTo(b.reference.path);
       });
-      return priorities;
+      if (!controller.isClosed) controller.add(priorities);
+    }
+
+    void subscribe(String key) {
+      if (subscriptions.containsKey(key)) return;
+      final source = user
+          .collection('daily_priorities')
+          .doc(key)
+          .collection('items');
+      // Keep today's completions visible (including pending offline writes).
+      // Original references allow unchecking without duplicating the task.
+      final Query<Map<String, dynamic>> query = key.compareTo(dayKey) >= 0
+          ? source
+          : source.where(
+              Filter.or(
+                Filter('completed', isEqualTo: false),
+                Filter('completedDay', isEqualTo: dayKey),
+              ),
+            );
+      subscriptions[key] = query.snapshots().listen((snapshot) {
+        items[key] = snapshot.docs
+            .where(
+              (document) => visibleOnDay(
+                document.data(),
+                key,
+                includeUpcoming && key.compareTo(dayKey) > 0 ? key : dayKey,
+              ),
+            )
+            .map(DailyPriority.fromDocument)
+            .toList();
+        emit();
+      }, onError: controller.addError);
+    }
+
+    controller = StreamController<List<DailyPriority>>(
+      onListen: () {
+        subscribe(dayKey);
+        if (includeUpcoming) {
+          for (var offset = 1; offset < 14; offset++) {
+            subscribe(_dayKey(DateTime(day.year, day.month, day.day + offset)));
+          }
+        }
+        userSubscription = user.snapshots().listen((snapshot) {
+          final days =
+              snapshot.data()?['priorityReminderDays'] as List? ?? const [];
+          for (final key in days.whereType<String>().toSet()) {
+            if (DateTime.tryParse(key) != null &&
+                (includeUpcoming || key.compareTo(dayKey) < 0)) {
+              subscribe(key);
+            }
+          }
+        }, onError: controller.addError);
+      },
+      onCancel: () async {
+        await userSubscription?.cancel();
+        await Future.wait(
+          subscriptions.values.map((subscription) => subscription.cancel()),
+        );
+      },
+    );
+    return controller.stream;
+  }
+
+  static Stream<Map<String, String>> watchRecurrenceLabels() {
+    final user = _userDocument();
+    if (user == null) return Stream.value(const {});
+    return user.collection('priority_templates').snapshots().map((snapshot) {
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return {
+        for (final document in snapshot.docs)
+          document.id: document.data()['recurrence'] == 'daily'
+              ? 'Every day'
+              : 'Every ${((document.data()['selectedWeekdays'] as List?) ?? const []).whereType<num>().where((d) => d >= 1 && d <= 7).map((d) => days[d.toInt() - 1]).join(', ')}',
+      };
     });
+  }
+
+  @visibleForTesting
+  static bool visibleOnDay(
+    Map<String, dynamic> data,
+    String storedDay,
+    String viewingDay,
+  ) {
+    if (data['dismissed'] == true || storedDay.compareTo(viewingDay) > 0) {
+      return false;
+    }
+    if (storedDay == viewingDay) return true;
+    // Recurring occurrences and imported calendar events remain date-bound.
+    return data['source'] == 'manual' &&
+        data['sourceStart'] == null &&
+        (data['completed'] != true || data['completedDay'] == viewingDay);
   }
 
   static Future<void> seedFromCalendar(
@@ -380,6 +488,7 @@ class DailyPriorityService {
     await priority.reference.update({
       'completed': completed,
       'completedAt': completed ? FieldValue.serverTimestamp() : null,
+      'completedDay': completed ? _dayKey(DateTime.now()) : null,
       'updatedAt': FieldValue.serverTimestamp(),
     });
     await _syncReminder(priority.reference);
@@ -410,6 +519,98 @@ class DailyPriorityService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
     await _syncReminder(priority.reference);
+  }
+
+  static Future<void> editPriority(
+    DailyPriority priority, {
+    required String title,
+    required DateTime date,
+    required DateTime? scheduledAt,
+    required bool completed,
+    required int reminderMinutes,
+    required int? reminderTimeMinutes,
+    String recurrence = 'none',
+    Set<int> selectedWeekdays = const {},
+    DateTime? recurrenceEnd,
+  }) async {
+    final user = _userDocument();
+    final collection = _collection(date);
+    if (user == null || collection == null) return;
+    final template = priority.source == 'manual' && recurrence != 'none'
+        ? user.collection('priority_templates').doc()
+        : null;
+    final destination = collection.doc(
+      template == null ? priority.id : 'template_${template.id}',
+    );
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final original = await transaction.get(priority.reference);
+      final data = original.data();
+      if (data == null || data['dismissed'] == true) {
+        throw StateError('Priority no longer exists');
+      }
+      if (destination.path != priority.reference.path) {
+        final existing = await transaction.get(destination);
+        if (existing.exists) {
+          throw StateError('A priority already exists on that date');
+        }
+      }
+      transaction.set(destination, {
+        ...data,
+        'title': title.trim(),
+        'sourceStart': scheduledAt == null
+            ? null
+            : Timestamp.fromDate(scheduledAt),
+        'sourceEnd': null,
+        'isAllDay': false,
+        'completed': completed,
+        'completedAt': completed
+            ? (data['completedAt'] ?? FieldValue.serverTimestamp())
+            : null,
+        'completedDay': completed
+            ? (data['completed'] == true
+                  ? (data['completedDay'] ?? _dayKey(DateTime.now()))
+                  : _dayKey(DateTime.now()))
+            : null,
+        'reminderMinutes': reminderMinutes,
+        'reminderTimeMinutes': reminderTimeMinutes,
+        'updatedAt': FieldValue.serverTimestamp(),
+        if (template != null) 'source': 'recurring_manual',
+        if (template != null) 'templateId': template.id,
+      });
+      if (destination.path != priority.reference.path) {
+        if (priority.source == 'manual') {
+          transaction.delete(priority.reference);
+        } else {
+          transaction.update(priority.reference, {'dismissed': true});
+        }
+      }
+      if (template != null) {
+        transaction.set(template, {
+          'title': title.trim(),
+          'enabled': true,
+          'startDate': Timestamp.fromDate(_dateOnly(date)),
+          'scheduledHour': scheduledAt?.hour,
+          'scheduledMinute': scheduledAt?.minute,
+          'recurrence': recurrence,
+          'selectedWeekdays': selectedWeekdays.toList()..sort(),
+          'recurrenceEnd': recurrenceEnd == null
+              ? null
+              : Timestamp.fromDate(_dateOnly(recurrenceEnd)),
+          'reminderMinutes': reminderMinutes,
+          'reminderTimeMinutes': reminderTimeMinutes,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      transaction.update(user, {
+        'priorityReminderDays': FieldValue.arrayUnion([_dayKey(date)]),
+      });
+    });
+    if (destination.path != priority.reference.path) {
+      await _syncReminder(priority.reference);
+    }
+    await _syncReminder(destination);
+    if (template != null) await refreshReminders(force: true);
   }
 
   static Future<void> _syncReminder(
