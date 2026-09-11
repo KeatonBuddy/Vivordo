@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:vivordo_health/src/utils/day_key.dart';
 
 class CircleProfile {
   const CircleProfile({
@@ -531,9 +532,6 @@ class CircleProfileService {
         });
   }
 
-  static String _dayKey(DateTime date) =>
-      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-
   static Future<void> publishTodayFitness({
     required int steps,
     required int stepsGoal,
@@ -549,7 +547,7 @@ class CircleProfileService {
         .collection('users')
         .doc(user.uid)
         .collection('circle_daily')
-        .doc(_dayKey(now))
+        .doc(localDayKey(now))
         .set({
           'steps': steps,
           'stepsGoal': stepsGoal,
@@ -557,7 +555,7 @@ class CircleProfileService {
           'activeCaloriesGoal': activeCaloriesGoal,
           'exerciseMinutes': exerciseMinutes,
           'exerciseMinutesGoal': exerciseMinutesGoal,
-          'day': _dayKey(now),
+          'day': localDayKey(now),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
   }
@@ -568,7 +566,7 @@ class CircleProfileService {
         .collection('users')
         .doc(uid)
         .collection('circle_daily')
-        .doc(_dayKey(now))
+        .doc(localDayKey(now))
         .snapshots()
         .map((snapshot) {
           final data = snapshot.data();

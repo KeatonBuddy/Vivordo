@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
@@ -53,8 +54,6 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     _ => 'Monthly',
   };
 
-  String _dayKey(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
-
   Future<void> _refreshWhoopSleepIfMissing() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || _refreshingWhoopSleep) return;
@@ -63,7 +62,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     final userReference = firestore.collection('users').doc(uid);
     final todayReference = userReference
         .collection('metrics_daily')
-        .doc(_dayKey(DateTime.now()));
+        .doc(localDayKey(DateTime.now()));
 
     try {
       _refreshingWhoopSleep = true;
@@ -130,8 +129,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         .collection('users')
         .doc(uid)
         .collection('metrics_daily')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: _dayKey(oldest))
-        .where(FieldPath.documentId, isLessThanOrEqualTo: _dayKey(today))
+        .where(
+          FieldPath.documentId,
+          isGreaterThanOrEqualTo: localDayKey(oldest),
+        )
+        .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(today))
         .orderBy(FieldPath.documentId)
         .snapshots();
   }
@@ -184,7 +186,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     final days = List.generate(_rangeDays, (index) {
       final date = today.subtract(Duration(days: _rangeDays - index - 1));
-      return _SleepDay(date, byDay[_dayKey(date)]);
+      return _SleepDay(date, byDay[localDayKey(date)]);
     });
     final previousCutoff = today.subtract(Duration(days: _rangeDays));
     final previous = (snapshot?.docs ?? const [])

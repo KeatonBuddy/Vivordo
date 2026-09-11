@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
+import 'package:vivordo_health/src/utils/day_key.dart';
 
 import 'ai_service.dart';
 import 'calendar_service.dart';
@@ -542,7 +543,7 @@ RULES:
     // ScanScreen._saveToFirestore.
     final dateStrings = List.generate(
       7,
-      (i) => _fmtDate(now.subtract(Duration(days: i))),
+      (i) => localDayKey(now.subtract(Duration(days: i))),
     );
 
     // Fire all Firestore reads concurrently before any await
@@ -889,10 +890,6 @@ RULES:
     }
   }
 
-  static String _fmtDate(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-'
-      '${d.day.toString().padLeft(2, '0')}';
-
   static const _weekdayAbbr = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   static const _monthAbbr = [
@@ -963,7 +960,7 @@ RULES:
       if (localStart.isBefore(dayStart) || !localStart.isBefore(windowEnd)) {
         continue;
       }
-      final dayKey = _fmtDate(localStart);
+      final dayKey = localDayKey(localStart);
       final startHm =
           '${localStart.hour.toString().padLeft(2, '0')}:'
           '${localStart.minute.toString().padLeft(2, '0')}';
@@ -984,7 +981,7 @@ RULES:
     final lines = <String>[];
     for (int i = 0; i < 7; i++) {
       final day = dayStart.add(Duration(days: i));
-      final key = _fmtDate(day);
+      final key = localDayKey(day);
       final label = '${_weekdayAbbr[day.weekday - 1]} $key';
       final dayEvents = byDay[key];
       lines.add(

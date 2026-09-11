@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 
 enum WhoopBleStatus {
   unpaired,
@@ -395,7 +396,7 @@ class WhoopBleHeartRateService {
     try {
       final grouped = <String, Map<DateTime, _MinuteBucket>>{};
       for (final entry in pending.entries) {
-        grouped.putIfAbsent(_dayKey(entry.key), () => {})[entry.key] =
+        grouped.putIfAbsent(localDayKey(entry.key), () => {})[entry.key] =
             entry.value;
       }
       for (final entry in grouped.entries) {
@@ -618,11 +619,6 @@ class WhoopBleHeartRateService {
       );
     }
   }
-
-  static String _dayKey(DateTime value) =>
-      '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
 
   static int _minuteKey(DateTime value) =>
       value.millisecondsSinceEpoch ~/ Duration.millisecondsPerMinute;

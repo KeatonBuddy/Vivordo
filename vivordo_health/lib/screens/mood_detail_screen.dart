@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 
@@ -31,8 +32,6 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     _ => 'Monthly',
   };
 
-  String _dayKey(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
-
   Stream<QuerySnapshot<Map<String, dynamic>>> _moodStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -42,8 +41,11 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
         .collection('users')
         .doc(uid)
         .collection('metrics_daily')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: _dayKey(oldest))
-        .where(FieldPath.documentId, isLessThanOrEqualTo: _dayKey(now))
+        .where(
+          FieldPath.documentId,
+          isGreaterThanOrEqualTo: localDayKey(oldest),
+        )
+        .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(now))
         .orderBy(FieldPath.documentId)
         .snapshots();
   }
@@ -52,7 +54,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     if (_rangeIndex == 0) {
       final todayDoc = (snapshot?.docs ?? const [])
-          .where((doc) => doc.id == _dayKey(today))
+          .where((doc) => doc.id == localDayKey(today))
           .firstOrNull;
       final mood = todayDoc?.data()['mood'] as Map?;
       final entries = <_MoodDay>[];
@@ -77,7 +79,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     }
     return List.generate(_rangeDays, (index) {
       final date = today.subtract(Duration(days: _rangeDays - index - 1));
-      return _MoodDay(date, values[_dayKey(date)] ?? 0);
+      return _MoodDay(date, values[localDayKey(date)] ?? 0);
     });
   }
 

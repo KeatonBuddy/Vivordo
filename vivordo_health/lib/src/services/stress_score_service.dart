@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/stress_source_precedence.dart';
 
 import 'health_service.dart';
@@ -86,7 +87,7 @@ class StressScoreService {
   static Future<void> computeAndSave({String? uid, bool force = false}) async {
     uid ??= FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final today = _formatDate(DateTime.now());
+    final today = localDayKey(DateTime.now());
 
     if (!force) {
       try {
@@ -167,14 +168,14 @@ class StressScoreService {
     if (uid == null) return;
 
     try {
-      final today = _formatDate(DateTime.now());
+      final today = localDayKey(DateTime.now());
       final snap = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .collection('metrics_daily')
           .get();
 
-      final earliest = _formatDate(
+      final earliest = localDayKey(
         DateTime.now().subtract(Duration(days: lookbackDays)),
       );
 
@@ -309,7 +310,7 @@ class StressScoreService {
   }) async {
     uid ??= FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return null;
-    final today = _formatDate(DateTime.now());
+    final today = localDayKey(DateTime.now());
 
     final raw =
         jsonDecode(await rootBundle.loadString(assetPath))
@@ -384,7 +385,7 @@ class StressScoreService {
       final d = c['date'] as String?;
       if (d == null) continue;
       try {
-        c['date'] = _formatDate(
+        c['date'] = localDayKey(
           DateTime.parse(d).add(Duration(days: shiftDays)),
         );
       } catch (_) {}
@@ -404,7 +405,7 @@ class StressScoreService {
   /// (Python datetime.fromisoformat pre-3.11 rejects the bare Z suffix).
   static String _fmtTimestamp(DateTime utc) {
     utc = utc.toUtc();
-    return '${_formatDate(utc)}T'
+    return '${localDayKey(utc)}T'
         '${utc.hour.toString().padLeft(2, '0')}:'
         '${utc.minute.toString().padLeft(2, '0')}:'
         '${utc.second.toString().padLeft(2, '0')}+00:00';
@@ -969,8 +970,4 @@ class StressScoreService {
     if (value is String) return DateTime.tryParse(value);
     return null;
   }
-
-  static String _formatDate(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-'
-      '${d.day.toString().padLeft(2, '0')}';
 }

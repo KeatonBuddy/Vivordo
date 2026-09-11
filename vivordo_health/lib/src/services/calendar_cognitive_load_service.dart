@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 
 /// Calendar metadata used to estimate how mentally demanding an event is.
 ///
@@ -344,7 +345,7 @@ Events: ${jsonEncode(compactEvents)}
   static Future<bool> _canUseAiToday() async {
     try {
       final lastDate = await _storage.read(key: _lastAiBatchDateKey);
-      return lastDate != _localDateKey(DateTime.now());
+      return lastDate != localDayKey(DateTime.now());
     } catch (_) {
       return true;
     }
@@ -352,13 +353,8 @@ Events: ${jsonEncode(compactEvents)}
 
   static Future<void> _markAiUsedToday() => _storage.write(
     key: _lastAiBatchDateKey,
-    value: _localDateKey(DateTime.now()),
+    value: localDayKey(DateTime.now()),
   );
-
-  static String _localDateKey(DateTime value) =>
-      '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
 
   static bool _containsAny(String text, List<String> terms) => terms.any(
     (term) => RegExp(

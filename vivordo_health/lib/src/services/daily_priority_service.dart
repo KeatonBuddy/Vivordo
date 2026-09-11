@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'notification_service.dart';
 import '../utils/priority_reminder.dart';
 
@@ -146,7 +146,6 @@ class DailyPriorityService {
   static const _ignoredPrefixes = <String>{'watch'};
   static final _nonAlphanumeric = RegExp(r'[^a-z0-9]+');
 
-  static String _dayKey(DateTime day) => DateFormat('yyyy-MM-dd').format(day);
   static DateTime _dateOnly(DateTime day) =>
       DateTime(day.year, day.month, day.day);
 
@@ -157,7 +156,7 @@ class DailyPriorityService {
         .collection('users')
         .doc(uid)
         .collection('daily_priorities')
-        .doc(_dayKey(day))
+        .doc(localDayKey(day))
         .collection('items');
   }
 
@@ -174,7 +173,7 @@ class DailyPriorityService {
     final collection = _collection(day);
     final user = _userDocument();
     if (collection == null || user == null) return Stream.value(const []);
-    final dayKey = _dayKey(day);
+    final dayKey = localDayKey(day);
     final subscriptions =
         <String, StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>{};
     final items = <String, List<DailyPriority>>{};
@@ -231,7 +230,9 @@ class DailyPriorityService {
         subscribe(dayKey);
         if (includeUpcoming) {
           for (var offset = 1; offset < 14; offset++) {
-            subscribe(_dayKey(DateTime(day.year, day.month, day.day + offset)));
+            subscribe(
+              localDayKey(DateTime(day.year, day.month, day.day + offset)),
+            );
           }
         }
         userSubscription = user.snapshots().listen((snapshot) {
@@ -340,7 +341,7 @@ class DailyPriorityService {
     }
     if (writes > 0) await batch.commit();
     await _userDocument()?.update({
-      'priorityReminderDays': FieldValue.arrayUnion([_dayKey(day)]),
+      'priorityReminderDays': FieldValue.arrayUnion([localDayKey(day)]),
     });
     for (final document in (await collection.get()).docs) {
       await _syncReminder(document.reference);
@@ -361,7 +362,7 @@ class DailyPriorityService {
     final value = title.trim();
     if (userDocument == null || value.isEmpty) return;
     await userDocument.update({
-      'priorityReminderDays': FieldValue.arrayUnion([_dayKey(date)]),
+      'priorityReminderDays': FieldValue.arrayUnion([localDayKey(date)]),
     });
     if (recurrence == 'none') {
       await _addManualItem(
@@ -488,7 +489,7 @@ class DailyPriorityService {
     await priority.reference.update({
       'completed': completed,
       'completedAt': completed ? FieldValue.serverTimestamp() : null,
-      'completedDay': completed ? _dayKey(DateTime.now()) : null,
+      'completedDay': completed ? localDayKey(DateTime.now()) : null,
       'updatedAt': FieldValue.serverTimestamp(),
     });
     await _syncReminder(priority.reference);
@@ -568,8 +569,8 @@ class DailyPriorityService {
             : null,
         'completedDay': completed
             ? (data['completed'] == true
-                  ? (data['completedDay'] ?? _dayKey(DateTime.now()))
-                  : _dayKey(DateTime.now()))
+                  ? (data['completedDay'] ?? localDayKey(DateTime.now()))
+                  : localDayKey(DateTime.now()))
             : null,
         'reminderMinutes': reminderMinutes,
         'reminderTimeMinutes': reminderTimeMinutes,
@@ -603,7 +604,7 @@ class DailyPriorityService {
         });
       }
       transaction.update(user, {
-        'priorityReminderDays': FieldValue.arrayUnion([_dayKey(date)]),
+        'priorityReminderDays': FieldValue.arrayUnion([localDayKey(date)]),
       });
     });
     if (destination.path != priority.reference.path) {
@@ -640,7 +641,7 @@ class DailyPriorityService {
 
   static Future<void> refreshReminders({bool force = false}) {
     final key =
-        '${FirebaseAuth.instance.currentUser?.uid}/${_dayKey(DateTime.now())}';
+        '${FirebaseAuth.instance.currentUser?.uid}/${localDayKey(DateTime.now())}';
     if (!force && _lastReminderRefresh == key) return Future.value();
     return _refreshingReminders ??= _refreshReminders()
         .then((_) {
@@ -658,10 +659,10 @@ class DailyPriorityService {
         (await user.get()).data()?['priorityReminderDays'] as List? ?? const [];
     final days = <String>{
       ...savedDays.whereType<String>().where(
-        (day) => day.compareTo(_dayKey(now)) >= 0,
+        (day) => day.compareTo(localDayKey(now)) >= 0,
       ),
       for (var offset = 0; offset < 14; offset++)
-        _dayKey(DateTime(now.year, now.month, now.day + offset)),
+        localDayKey(DateTime(now.year, now.month, now.day + offset)),
     }.toList()..sort();
     // Materialize upcoming occurrences so reminders work while the app is closed.
     for (final dayKey in days) {

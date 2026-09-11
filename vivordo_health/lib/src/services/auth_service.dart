@@ -142,10 +142,7 @@ class AuthService {
     } on GoogleSignInException catch (e) {
       // Don't show an error toast for a plain cancel — that's not a failure.
       if (e.code != GoogleSignInExceptionCode.canceled && context.mounted) {
-        _authMessage(
-          context,
-          'Google sign-in failed. Please try again.',
-        );
+        _authMessage(context, 'Google sign-in failed. Please try again.');
       }
       return false;
     } on FirebaseAuthException catch (e) {
@@ -202,10 +199,7 @@ class AuthService {
     } catch (e) {
       debugPrint(e.toString());
       if (context.mounted) {
-        _authMessage(
-          context,
-          'Apple sign-in failed. Please try again.',
-        );
+        _authMessage(context, 'Apple sign-in failed. Please try again.');
       }
       return false;
     }

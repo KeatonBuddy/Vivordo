@@ -17,6 +17,7 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/fitness_goal_notifications.dart';
 import 'package:vivordo_health/src/utils/notification_navigation.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/priority_reminder.dart';
 
 /// Function to handle background messages
@@ -269,7 +270,10 @@ class NotificationService {
     String uid,
     QueryDocumentSnapshot<Map<String, dynamic>> dailyDocument,
   ) async {
-    if (_configuredUid != uid || dailyDocument.id != _localDayKey()) return;
+    if (_configuredUid != uid ||
+        dailyDocument.id != localDayKey(DateTime.now())) {
+      return;
+    }
 
     try {
       final dayKey = dailyDocument.id;
@@ -359,13 +363,6 @@ class NotificationService {
         'type': 'fitness_goal_${type.storageKey}',
       }),
     );
-  }
-
-  String _localDayKey() {
-    final now = DateTime.now();
-    return '${now.year.toString().padLeft(4, '0')}-'
-        '${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}';
   }
 
   String _formattedNumber(int value) => value.toString().replaceAllMapped(

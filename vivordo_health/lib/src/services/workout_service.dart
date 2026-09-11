@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/personal_best.dart';
 
 class WorkoutSetRecord {
@@ -493,7 +494,7 @@ class WorkoutService {
         if (freshDurationSeconds <= 0 || freshCompletedAt == null) return false;
 
         final goalMinutes = (freshDurationSeconds / 60).ceil();
-        final goalDay = _dayKey(freshCompletedAt);
+        final goalDay = localDayKey(freshCompletedAt);
         final dailyReference = userReference
             .collection('metrics_daily')
             .doc(goalDay);
@@ -855,7 +856,7 @@ class WorkoutService {
     final goalMinutes = durationSeconds <= 0
         ? 0
         : (durationSeconds / 60).ceil();
-    final goalDay = _dayKey(completedAt);
+    final goalDay = localDayKey(completedAt);
     final db = FirebaseFirestore.instance;
     final document = db
         .collection('users')
@@ -1039,11 +1040,6 @@ class WorkoutService {
     });
     return document.id;
   }
-
-  static String _dayKey(DateTime value) =>
-      '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
 }
 
 Map<String, _PersonalBestCandidate> _bestCandidatesForExerciseRecords(

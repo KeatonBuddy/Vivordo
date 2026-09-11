@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -34,8 +35,6 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     _ => 'Monthly',
   };
 
-  String _dayKey(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
-
   Stream<QuerySnapshot<Map<String, dynamic>>> _metricsStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -45,8 +44,11 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         .collection('users')
         .doc(uid)
         .collection('metrics_daily')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: _dayKey(oldest))
-        .where(FieldPath.documentId, isLessThanOrEqualTo: _dayKey(today))
+        .where(
+          FieldPath.documentId,
+          isGreaterThanOrEqualTo: localDayKey(oldest),
+        )
+        .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(today))
         .orderBy(FieldPath.documentId)
         .snapshots();
   }
@@ -108,7 +110,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     final days = List.generate(_rangeDays, (index) {
       final date = today.subtract(Duration(days: _rangeDays - index - 1));
-      return _ExerciseDay(date, minutes[_dayKey(date)] ?? 0);
+      return _ExerciseDay(date, minutes[localDayKey(date)] ?? 0);
     });
     final cutoff = today.subtract(Duration(days: _rangeDays));
     final previous = (snapshot?.docs ?? const [])
@@ -141,7 +143,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     final goal = goals.exerciseMinutes * _rangeDays;
     final progress = goal <= 0 ? 0.0 : (total / goal).clamp(0.0, 1.0);
     final activeDates = rangeWorkouts
-        .map((workout) => _dayKey(workout.completedAt.toLocal()))
+        .map((workout) => localDayKey(workout.completedAt.toLocal()))
         .toSet();
     final restDays = math.max(0, _rangeDays - activeDates.length);
     final progression = _progressions(workouts);
