@@ -141,7 +141,7 @@ class PandaRecommendations {
   /// Loads and parses the catalog from assets/recommendations.json.
   /// Result is cached for the app lifetime — subsequent calls are instant.
   ///
-  /// Call once during app init (e.g. in GeminiService or PandaScreen.initState)
+  /// Call once during app init (e.g. in PandaScreen.initState)
   /// and then access [all] synchronously thereafter.
   static Future<List<PandaRec>> load() async {
     if (_cache != null) return _cache!;

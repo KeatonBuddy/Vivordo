@@ -7,9 +7,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
-import '../src/services/ai_service.dart';
-import '../src/services/ai_service_factory.dart';
-import '../src/services/gemini_service.dart' show GeminiService;
+import '../src/services/claude_service.dart';
 import '../src/services/recommendation_engine.dart';
 import '../src/services/insight_service.dart';
 import '../src/models/insights.dart';
@@ -227,7 +225,7 @@ class _PandaScreenState extends State<PandaScreen>
   static const Color _teal = Color(0xFF0ABFBC);
   static const Color _ink = Color(0xFF2D3142);
 
-  late AIService _svc;
+  final ClaudeService _svc = ClaudeService();
   final InsightService _insightSvc = InsightService();
 
   // ── Session ────────────────────────────────────────────────────────────────
@@ -350,15 +348,7 @@ class _PandaScreenState extends State<PandaScreen>
       _subscribeToInsights(_currentUserId);
     }
 
-    _initAIService();
-  }
-
-  // Resolves the active AIService backend (via Remote Config feature flag)
-  // and then starts the session.  The loading indicator is already visible
-  // (_loading = true by default), so there is no UI gap.
-  Future<void> _initAIService() async {
-    _svc = await AIServiceFactory.get();
-    if (mounted) _loadSession();
+    _loadSession();
   }
 
   // ── Subscribe to Firestore insights stream ─────────────────────────────────
@@ -397,7 +387,7 @@ class _PandaScreenState extends State<PandaScreen>
   /// it never delays session init. Once it lands, subsequent dialogue turns get
   /// the schedule and Panda can answer availability/planning questions.
   Future<void> _loadScheduleContext() async {
-    final ctx = await GeminiService.fetchScheduleContext();
+    final ctx = await PandaPrompts.fetchScheduleContext();
     if (!mounted || ctx == null || ctx.isEmpty) return;
     setState(() => _scheduleContext = ctx);
   }

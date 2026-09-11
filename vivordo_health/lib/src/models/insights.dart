@@ -223,7 +223,7 @@ class Insights {
 
   /// Compact natural-language recap of the session (chat + extracted context).
   /// Bounded to ~160 chars so it is cheap to feed back into future sessions'
-  /// user context (see GeminiService.fetchRealUserPayload + aggregateSummary).
+  /// user context (see PandaPrompts.fetchRealUserPayload + aggregateSummary).
   String? summary;
 
   /// Compact, structured details worth retaining from the session, such as

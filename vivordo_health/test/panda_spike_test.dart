@@ -4,7 +4,7 @@
 // panda_spike_test.dart
 //
 // Confirms the full spike → question → insight flow using the pure-logic
-// static helpers on GeminiService.
+// static helpers on PandaPrompts.
 //
 // These tests do NOT need Firebase — they exercise only the in-process
 // data-processing pipeline.  Run with:
@@ -18,8 +18,7 @@
 // =============================================================================
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vivordo_health/src/services/ai_service.dart';
-import 'package:vivordo_health/src/services/gemini_service.dart';
+import 'package:vivordo_health/src/services/panda_prompts.dart';
 
 // ---------------------------------------------------------------------------
 // Test fixture: simulated fetchRealUserPayload output for a user who has
@@ -132,7 +131,7 @@ void main() {
   group('Spike detection — buildCompactPayload', () {
     test('detects spike when peak HR exceeds baseline + 25', () {
       final payload = _buildSpikePayload();
-      final compact = GeminiService.buildCompactPayload(payload, topK: 3);
+      final compact = PandaPrompts.buildCompactPayload(payload, topK: 3);
 
       final spikes = compact['spike_candidates'] as List;
       expect(spikes, isNotEmpty,
@@ -152,7 +151,7 @@ void main() {
           .toList();
       payload['samples_5min'] = normalSamples;
 
-      final compact = GeminiService.buildCompactPayload(payload, topK: 3);
+      final compact = PandaPrompts.buildCompactPayload(payload, topK: 3);
       final spikes = compact['spike_candidates'] as List;
       expect(spikes, isEmpty,
           reason: 'HR at 70 bpm against 62 bpm baseline is below the 25-bpm threshold');
@@ -160,7 +159,7 @@ void main() {
 
     test('compact payload contains no journal or goals keys', () {
       final payload = _buildSpikePayload();
-      final compact = GeminiService.buildCompactPayload(payload, topK: 3);
+      final compact = PandaPrompts.buildCompactPayload(payload, topK: 3);
 
       expect(compact.containsKey('journal'), isFalse,
           reason: 'Journal does not exist and must never be sent to the LLM');
@@ -172,11 +171,11 @@ void main() {
   group('Spike prompt — buildSpikeUserPrompt', () {
     test('prompt does not reference journal or goals', () {
       final payload = _buildSpikePayload();
-      final compact = GeminiService.buildCompactPayload(payload, topK: 1);
+      final compact = PandaPrompts.buildCompactPayload(payload, topK: 1);
       compact['user_context'] = '';
       compact['_variability_seed'] = 12345;
 
-      final prompt = GeminiService.buildSpikeUserPrompt(compact);
+      final prompt = PandaPrompts.buildSpikeUserPrompt(compact);
 
       // "journal" may appear in the "Do NOT invent journal entries" guardrail —
       // what must NOT appear is a positive instruction to USE journal data.
@@ -194,7 +193,7 @@ void main() {
   group('Spike session parsing — parsePandaSession', () {
     test('parses questions from valid LLM JSON', () {
       final payload = _buildSpikePayload();
-      final session = GeminiService.parsePandaSession(
+      final session = PandaPrompts.parsePandaSession(
         _mockSpikeJson,
         payload,
         overrideName: 'TestUser',
@@ -209,7 +208,7 @@ void main() {
 
     test('opener mentions heart rate spike, not journal or mood', () {
       final payload = _buildSpikePayload();
-      final session = GeminiService.parsePandaSession(
+      final session = PandaPrompts.parsePandaSession(
         _mockSpikeJson,
         payload,
         overrideName: 'TestUser',
@@ -225,7 +224,7 @@ void main() {
 
     test('empty-state session returned when no LLM JSON', () {
       final payload = _buildSpikePayload();
-      final session = GeminiService.parsePandaSession(
+      final session = PandaPrompts.parsePandaSession(
         'not json at all',
         payload,
         overrideName: 'TestUser',
@@ -240,7 +239,7 @@ void main() {
   // ---------------------------------------------------------------------------
   // AC: Token guard — 50-turn history is rejected before API is called
   //
-  // The guard in both ClaudeService and GeminiService checks RAW inputs
+  // The guard in both ClaudeService and PandaPrompts checks RAW inputs
   // (before buildDialoguePrompt caps to 10 turns) so a 50-turn history is
   // always caught.  If estimatedTokens > kMaxInputTokens, the method returns
   // a fallback PandaTurnReply immediately — the Cloud Function / Gemini model
@@ -273,7 +272,7 @@ void main() {
           'STRESS SCORE / AVAILABILITY\n{}';
 
       final estimated =
-          GeminiService.estimateTokens(systemContext + rawHistoryText);
+          PandaPrompts.estimateTokens(systemContext + rawHistoryText);
 
       expect(estimated, greaterThan(kMaxInputTokens),
           reason: '50 turns of realistic content + system context must exceed '
@@ -295,7 +294,7 @@ void main() {
           'STRESS SCORE / AVAILABILITY\n{}';
 
       final estimated =
-          GeminiService.estimateTokens(systemContext + rawHistoryText);
+          PandaPrompts.estimateTokens(systemContext + rawHistoryText);
 
       expect(estimated, lessThanOrEqualTo(kMaxInputTokens),
           reason: '10 turns must stay under the $kMaxInputTokens-token budget');
@@ -308,14 +307,14 @@ void main() {
 
     test('estimateTokens: 1 token per 4 chars (conservative)', () {
       // 400 chars → 100 tokens
-      expect(GeminiService.estimateTokens('a' * 400), equals(100));
+      expect(PandaPrompts.estimateTokens('a' * 400), equals(100));
       // 401 chars → ceil → 101 tokens
-      expect(GeminiService.estimateTokens('a' * 401), equals(101));
+      expect(PandaPrompts.estimateTokens('a' * 401), equals(101));
     });
 
     // Guard contract (not automated here — requires Firebase init):
     //
-    // GeminiService.processTurn: guards on RAW conversationHistory — the
+    // PandaPrompts.processTurn: guards on RAW conversationHistory — the
     //   system prompt is inline (~125 tokens), so 50 raw turns comfortably
     //   exceeds 2500 tokens. Test above confirms this.
     //
@@ -332,14 +331,14 @@ void main() {
   group('Insight persistence contract', () {
     test('spike → questions exist → session can be completed', () {
       final payload = _buildSpikePayload();
-      final compact = GeminiService.buildCompactPayload(payload, topK: 1);
+      final compact = PandaPrompts.buildCompactPayload(payload, topK: 1);
 
       expect((compact['spike_candidates'] as List).isNotEmpty, isTrue);
 
       // Simulate what PandaScreen does: if questions are generated from a real
       // LLM call, _persistCompletedSession is called.  We verify the precondition
       // (questions exist) so the code path that calls saveSessionInsight is reached.
-      final session = GeminiService.parsePandaSession(
+      final session = PandaPrompts.parsePandaSession(
         _mockSpikeJson,
         payload,
         overrideName: 'TestUser',
@@ -353,7 +352,7 @@ void main() {
 
   group('On-demand dashboard context', () {
     test('dialogue prompt includes only the supplied metric context', () {
-      final prompt = GeminiService.buildDialoguePrompt(
+      final prompt = PandaPrompts.buildDialoguePrompt(
         userMessage: 'How were my steps?',
         conversationHistory: const [],
         spikeContext: const [],
@@ -368,7 +367,7 @@ void main() {
     });
 
     test('dialogue prompt has no dashboard block for ordinary chat', () {
-      final prompt = GeminiService.buildDialoguePrompt(
+      final prompt = PandaPrompts.buildDialoguePrompt(
         userMessage: 'I had a difficult meeting.',
         conversationHistory: const [],
         spikeContext: const [],

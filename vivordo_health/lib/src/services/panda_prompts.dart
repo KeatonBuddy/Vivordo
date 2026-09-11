@@ -1,30 +1,36 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:vivordo_health/src/utils/day_key.dart';
 
-import 'ai_service.dart';
 import 'calendar_service.dart';
 import 'insight_service.dart';
-
-export 'ai_service.dart'
-    show
-        kMaxInputTokens,
-        kMaxOutputTokensChat,
-        kMaxOutputTokensSpike,
-        kMaxOutputTokensSummary;
+import 'panda_types.dart';
 
 export 'panda_types.dart';
+
+/// Hard-reject any call whose estimated input exceeds this many tokens.
+/// Protects against runaway prompt costs and latency spikes.
+/// 1 token ~ 4 characters (conservative English estimate).
+const int kMaxInputTokens = 2500;
+
+/// Output cap for a single dialogue turn (processTurn).
+const int kMaxOutputTokensChat = 300;
+
+/// Output cap for session spike analysis (analyzePandaSession).
+const int kMaxOutputTokensSpike = 1800;
+
+/// Output cap for the end-of-session insight summary (summarizeSession).
+const int kMaxOutputTokensSummary = 180;
 
 // =============================================================================
 // ARCHITECTURE OVERVIEW
 // =============================================================================
 //
-// This service implements a HYBRID DIALOGUE MANAGER based on 2025 best
-// practices from Rasa, Aisera, and the ICM+LLM literature:
+// Panda runs a HYBRID DIALOGUE MANAGER based on 2025 best practices from
+// Rasa, Aisera, and the ICM+LLM literature:
 //
 //   Predefined path  →  Structured labeling questions generated from spike data.
 //                       Questions vary each session (seeded prompting + temp).
@@ -42,59 +48,21 @@ export 'panda_types.dart';
 //                       (stressor, emotion, intensity, activity, coping_strategy,
 //                       etc.) and accumulates them in a slot store.
 //
-// Static helpers (fetchRealUserPayload, buildCompactPayload, parsePandaSession,
-// parseTurnReply, buildSpikeUserPrompt, buildDialoguePrompt, etc.) are public
-// so that ClaudeService can reuse the same data-processing logic without
-// instantiating Gemini models.
+// Everything here is transport-agnostic: Firestore reads, prompt assembly and
+// response parsing. ClaudeService supplies the transport.
 //
 // =============================================================================
 
 // ---------------------------------------------------------------------------
-// GeminiService
+// PandaPrompts
 // ---------------------------------------------------------------------------
 
-class GeminiService implements AIService {
-  GeminiService()
-    : _spikeModel = FirebaseAI.googleAI().generativeModel(
-        model: 'gemini-2.5-flash',
-        generationConfig: GenerationConfig(
-          responseMimeType: 'application/json',
-          responseSchema: _spikeSchema,
-          candidateCount: 1,
-          temperature: 0,
-          maxOutputTokens: kMaxOutputTokensSpike,
-        ),
-      ),
-      _dialogueModel = FirebaseAI.googleAI().generativeModel(
-        model: 'gemini-2.5-flash',
-        generationConfig: GenerationConfig(
-          responseMimeType: 'application/json',
-          responseSchema: _turnSchema,
-          candidateCount: 1,
-          temperature: 0.5,
-          maxOutputTokens: kMaxOutputTokensChat,
-        ),
-      ),
-      // Plain-text model (no JSON schema) for the end-of-session recap.
-      _summaryModel = FirebaseAI.googleAI().generativeModel(
-        model: 'gemini-2.5-flash',
-        generationConfig: GenerationConfig(
-          candidateCount: 1,
-          temperature: 0.3,
-          maxOutputTokens: kMaxOutputTokensSummary,
-        ),
-      );
+/// Prompt construction, Firestore payload assembly, and response parsing for
+/// the Panda check-in. Holds no transport of its own; ClaudeService calls these
+/// to talk to the model.
+class PandaPrompts {
+  PandaPrompts._();
 
-  final GenerativeModel _spikeModel;
-  final GenerativeModel _dialogueModel;
-  final GenerativeModel _summaryModel;
-
-  // =========================================================================
-  // Spike analysis schema
-  // =========================================================================
-
-  // System prompt for the end-of-session insight summary (summarizeSession).
-  // Shared by GeminiService and ClaudeService so both produce the same shape.
   static const String summarySystemPrompt = '''
 You are condensing a completed Vivordo wellness check-in into a compact archive
 for a future session. Do not preserve the conversation verbatim.
@@ -131,403 +99,6 @@ RULES:
   a spike happened. Reference the DAY (use spike.day, e.g. "on Wed, Jun 17") and
   NEVER state or invent a clock time ("2pm", "noon", "this morning", "afternoon").
 ''';
-
-  static final Schema _spikeSchema = Schema(
-    SchemaType.object,
-    properties: {
-      "summary": Schema(
-        SchemaType.object,
-        properties: {
-          "data_window_start": Schema(SchemaType.string),
-          "data_window_end": Schema(SchemaType.string),
-          "overall_notes": Schema(SchemaType.string),
-        },
-      ),
-      "spikes": Schema(
-        SchemaType.array,
-        items: Schema(
-          SchemaType.object,
-          properties: {
-            "spike_id": Schema(SchemaType.string),
-            "start": Schema(SchemaType.string),
-            "end": Schema(SchemaType.string),
-            "signals": Schema(
-              SchemaType.object,
-              properties: {
-                "heart_rate": Schema(
-                  SchemaType.object,
-                  properties: {
-                    "baseline": Schema(SchemaType.number),
-                    "peak": Schema(SchemaType.number),
-                  },
-                ),
-                "hrv": Schema(
-                  SchemaType.object,
-                  properties: {
-                    "baseline": Schema(SchemaType.number),
-                    "min": Schema(SchemaType.number),
-                  },
-                ),
-                "steps": Schema(
-                  SchemaType.object,
-                  properties: {"peak_window": Schema(SchemaType.number)},
-                ),
-              },
-            ),
-            "context": Schema(
-              SchemaType.object,
-              properties: {
-                "nearby_events": Schema(
-                  SchemaType.array,
-                  items: Schema(
-                    SchemaType.object,
-                    properties: {
-                      "time": Schema(SchemaType.string),
-                      "type": Schema(SchemaType.string),
-                      "detail": Schema(SchemaType.string),
-                    },
-                  ),
-                ),
-                "confidence": Schema(SchemaType.number),
-              },
-            ),
-            "hypotheses": Schema(
-              SchemaType.array,
-              items: Schema(
-                SchemaType.object,
-                properties: {
-                  "label": Schema(SchemaType.string),
-                  "reason": Schema(SchemaType.string),
-                  "confidence": Schema(SchemaType.number),
-                },
-              ),
-            ),
-            "questions": Schema(
-              SchemaType.array,
-              items: Schema(
-                SchemaType.object,
-                properties: {
-                  "question_id": Schema(SchemaType.string),
-                  "prompt": Schema(SchemaType.string),
-                  "type": Schema(SchemaType.string),
-                  "options": Schema(
-                    SchemaType.array,
-                    items: Schema(SchemaType.string),
-                  ),
-                  "depth_prompts": Schema(
-                    SchemaType.array,
-                    items: Schema(SchemaType.string),
-                  ),
-                },
-              ),
-            ),
-            "ml_labels_to_collect": Schema(
-              SchemaType.array,
-              items: Schema(SchemaType.string),
-            ),
-          },
-        ),
-      ),
-    },
-  );
-
-  // =========================================================================
-  // Dialogue turn schema
-  // =========================================================================
-
-  static final Schema _turnSchema = Schema(
-    SchemaType.object,
-    properties: {
-      "intent": Schema(SchemaType.string),
-      "message": Schema(SchemaType.string),
-      "depth_follow_up": Schema(SchemaType.string),
-      "injected_question": Schema(
-        SchemaType.object,
-        properties: {
-          "question_id": Schema(SchemaType.string),
-          "prompt": Schema(SchemaType.string),
-          "options": Schema(SchemaType.array, items: Schema(SchemaType.string)),
-        },
-      ),
-      "filled_slots": Schema(
-        SchemaType.object,
-        properties: {
-          "stressor": Schema(SchemaType.string),
-          "emotion": Schema(SchemaType.string),
-          "intensity": Schema(SchemaType.string),
-          "physical_symptom": Schema(SchemaType.string),
-          "activity": Schema(SchemaType.string),
-          "location": Schema(SchemaType.string),
-          "time_context": Schema(SchemaType.string),
-          "coping_strategy": Schema(SchemaType.string),
-          "sleep_quality": Schema(SchemaType.string),
-          "social_context": Schema(SchemaType.string),
-          "other": Schema(SchemaType.string),
-        },
-      ),
-      "rec_hint": Schema(SchemaType.string),
-      "calendar_action": Schema(
-        SchemaType.object,
-        properties: {
-          "operation": Schema(SchemaType.string),
-          "title": Schema(SchemaType.string),
-          "target_title": Schema(SchemaType.string),
-          "start": Schema(SchemaType.string),
-          "end": Schema(SchemaType.string),
-          "recurrence": Schema(SchemaType.string),
-        },
-      ),
-    },
-  );
-
-  // =========================================================================
-  // Spike analysis
-  // =========================================================================
-
-  Future<String> analyzeStressSpikes({
-    required Map<String, dynamic> data,
-    String? extraUserContext,
-  }) async {
-    final Map<String, dynamic> compact = data.containsKey("spike_candidates")
-        ? Map<String, dynamic>.from(data)
-        : buildCompactPayload(data, topK: 3);
-
-    compact["user_context"] = extraUserContext?.trim() ?? "";
-    compact["_variability_seed"] =
-        DateTime.now().millisecondsSinceEpoch % 100000;
-
-    final userPrompt = buildSpikeUserPrompt(compact);
-
-    // Token guard — reject before hitting the model if the prompt is too large.
-    final estimated = estimateTokens(spikeSystemPrompt + userPrompt);
-    if (estimated > kMaxInputTokens) {
-      if (kDebugMode) {
-        debugPrint(
-          '[Gemini][spike] token guard fired: ~$estimated tokens (limit $kMaxInputTokens)',
-        );
-      }
-      return '';
-    }
-
-    final response = await _spikeModel.generateContent([
-      Content.text(spikeSystemPrompt),
-      Content.text(userPrompt),
-    ]);
-    if (kDebugMode) {
-      final usage = response.usageMetadata;
-      debugPrint(
-        '[Gemini][spike] tokens — in: ${usage?.promptTokenCount}, '
-        'out: ${usage?.candidatesTokenCount}',
-      );
-    }
-    return response.text ?? '';
-  }
-
-  // =========================================================================
-  // Panda session init  (implements AIService)
-  // =========================================================================
-
-  @override
-  Future<PandaSessionData> analyzePandaSession({
-    String? extraUserContext,
-    String? userName,
-    String? userId,
-  }) async {
-    if (userId != null && userId.isNotEmpty) {
-      // ── Production path: real metrics_daily data ──────────────────────
-      final payload = await fetchRealUserPayload(userId);
-      if (payload == null) {
-        return emptyStateSession(userName ?? 'there');
-      }
-      final compact = buildCompactPayload(payload, topK: 1);
-
-      // Nothing to analyze — skip the LLM round trip and open the chat instantly
-      // instead of waiting on a call that would just return `spikes: []`.
-      if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
-        if (kDebugMode) {
-          debugPrint('[Gemini][spike] no spike candidates — skipping LLM call');
-        }
-        return noSpikesSession(payload, overrideName: userName);
-      }
-
-      final raw = await analyzeStressSpikes(
-        data: compact,
-        extraUserContext: extraUserContext,
-      );
-      final session = parsePandaSession(raw, payload, overrideName: userName);
-      // Record the surfaced spike's day so it isn't analyzed again.
-      if (session.rawSpikes.isNotEmpty) {
-        unawaited(markSpikeDaysAnalyzed(userId, spikeDaysFromCompact(compact)));
-      }
-      return session;
-    }
-
-    // No user id → nothing to analyze; surface the empty state.
-    return emptyStateSession(userName ?? 'there');
-  }
-
-  @override
-  Future<PandaSessionBootstrap> startSession({
-    String? extraUserContext,
-    String? userName,
-    String? userId,
-  }) async {
-    if (userId == null || userId.isEmpty) {
-      return PandaSessionBootstrap(
-        session: emptyStateSession(userName ?? 'there'),
-      );
-    }
-
-    final payload = await fetchRealUserPayload(userId);
-    if (payload == null) {
-      return PandaSessionBootstrap(
-        session: emptyStateSession(userName ?? 'there'),
-      );
-    }
-
-    final compact = buildCompactPayload(payload, topK: 1);
-
-    // Nothing to analyze → no LLM call at all; the chat is already final.
-    if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
-      return PandaSessionBootstrap(
-        session: noSpikesSession(payload, overrideName: userName),
-      );
-    }
-
-    // Opener NOW; the labeling questions stream in behind it.
-    final analysis = Future(() async {
-      final raw = await analyzeStressSpikes(
-        data: compact,
-        extraUserContext: extraUserContext,
-      );
-      final session = parsePandaSession(raw, payload, overrideName: userName);
-      if (session.rawSpikes.isNotEmpty) {
-        unawaited(markSpikeDaysAnalyzed(userId, spikeDaysFromCompact(compact)));
-      }
-      return session;
-    });
-
-    return PandaSessionBootstrap(
-      session: bootstrapSession(
-        payload,
-        overrideName: userName,
-        hasSpikes: true,
-      ),
-      spikeAnalysis: analysis,
-    );
-  }
-
-  // =========================================================================
-  // Dialogue turn  (implements AIService)
-  // =========================================================================
-
-  @override
-  Future<PandaTurnReply> processTurn({
-    required String userMessage,
-    required List<Map<String, String>> conversationHistory,
-    required List<Map<String, dynamic>> spikeContext,
-    required bool isOnPredefinedPath,
-    required bool isInDigression,
-    required int digressionTurnCount,
-    String? pendingQuestionId,
-    String? pendingQuestionPrompt,
-    String? digressionTopic,
-    Map<String, String>? accumulatedSlots,
-    String? scheduleContext,
-    String? insightsContext,
-    String? dashboardContext,
-    String? workoutContext,
-  }) async {
-    // Trim to fit rather than refuse — Panda always answers, so the chat ends
-    // naturally instead of being cut off with a canned "let's wrap up".
-    final fitted = fitConversation(conversationHistory, userMessage);
-
-    final prompt = buildDialoguePrompt(
-      userMessage: fitted.message,
-      conversationHistory: fitted.history,
-      spikeContext: spikeContext,
-      isOnPredefinedPath: isOnPredefinedPath,
-      isInDigression: isInDigression,
-      digressionTurnCount: digressionTurnCount,
-      pendingQuestionId: pendingQuestionId,
-      pendingQuestionPrompt: pendingQuestionPrompt,
-      digressionTopic: digressionTopic,
-      accumulatedSlots: accumulatedSlots,
-      scheduleContext: scheduleContext,
-      insightsContext: insightsContext,
-      dashboardContext: dashboardContext,
-      workoutContext: workoutContext,
-    );
-
-    final response = await _dialogueModel.generateContent([
-      Content.text(prompt),
-    ]);
-    if (kDebugMode) {
-      final usage = response.usageMetadata;
-      debugPrint(
-        '[Gemini][dialogue] tokens — in: ${usage?.promptTokenCount}, '
-        'out: ${usage?.candidatesTokenCount}',
-      );
-    }
-    return parseTurnReply(response.text ?? '');
-  }
-
-  // =========================================================================
-  // Session summary  (implements AIService)
-  // =========================================================================
-
-  @override
-  Future<String> summarizeSession({
-    required List<Map<String, String>> conversation,
-    required Map<String, String> slots,
-    required Map<String, String> labeledAnswers,
-  }) async {
-    try {
-      final userPrompt = buildSummaryPrompt(
-        conversation: conversation,
-        slots: slots,
-        labeledAnswers: labeledAnswers,
-      );
-      final estimated = estimateTokens(summarySystemPrompt + userPrompt);
-      if (estimated > kMaxInputTokens) return '';
-
-      final response = await _summaryModel.generateContent([
-        Content.text(summarySystemPrompt),
-        Content.text(userPrompt),
-      ]);
-      if (kDebugMode) {
-        final usage = response.usageMetadata;
-        debugPrint(
-          '[Gemini][summary] tokens — in: ${usage?.promptTokenCount}, '
-          'out: ${usage?.candidatesTokenCount}',
-        );
-      }
-      return (response.text ?? '').trim();
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Gemini][summary] failed: $e');
-      return '';
-    }
-  }
-
-  // =========================================================================
-  // Real user data fetch  (public static — reused by ClaudeService)
-  //
-  // Queries users/{userId}/metrics_daily/{YYYY-MM-DD} subcollection for the
-  // last 7 days.  Each document holds all metrics for that day as top-level
-  // fields (heart_rate, mood, sleep, steps, stress, wellness, hrv).
-  //
-  // Also fetches users/{userId}/preferences and
-  // users/{userId}/questionaire_responses for compact user context, plus an
-  // aggregate of past Panda sessions from the top-level `insights` collection
-  // (recurring stressors/emotions/coping) so the model has cross-session memory.
-  //
-  // When the user has connected Google Calendar (CalendarService), their events
-  // for the analysis window are folded in as `events` — so the spike-correlation
-  // engine can tie HR spikes to real meetings — plus a compact `upcoming_events`
-  // list for planning context. Degrades silently when not connected.
-  //
-  // Returns null when the user has no data yet (caller shows empty state).
-  // =========================================================================
 
   static Future<Map<String, dynamic>?> fetchRealUserPayload(
     String userId,
@@ -819,7 +390,7 @@ RULES:
 
   /// Rough token estimate: 1 token ≈ 4 chars for English text.
   /// Intentionally conservative (over-counts) — the safe direction for budget checks.
-  /// Used by both GeminiService and ClaudeService before every API call.
+  /// Used by both PandaPrompts and ClaudeService before every API call.
   static int estimateTokens(String text) => (text.length / 4).ceil();
 
   /// Fits the dynamic conversation into the token budget WITHOUT ever refusing
@@ -1802,44 +1373,5 @@ Write the continuity note now.''';
       }
     }
     return nearby;
-  }
-
-  // =========================================================================
-  // User data enrichment placeholders
-  // =========================================================================
-
-  Future<void> appendEntitiesToUserData({
-    required String userId,
-    required Map<String, String> sessionSlots,
-    required Map<String, String> labeledAnswers,
-    required DateTime sessionDate,
-  }) async {
-    // ignore: avoid_print
-    print('[PandaService] PLACEHOLDER — would write to user $userId:');
-    // ignore: avoid_print
-    print('  Session date : ${sessionDate.toIso8601String()}');
-    // ignore: avoid_print
-    print('  Slots        : $sessionSlots');
-    // ignore: avoid_print
-    print('  Labeled Q→A  : $labeledAnswers');
-  }
-
-  Future<void> updateLabeledAnswer({
-    required String userId,
-    required DateTime sessionDate,
-    required String questionId,
-    required String oldAnswer,
-    required String newAnswer,
-  }) async {
-    // ignore: avoid_print
-    print('[PandaService] PLACEHOLDER — updateLabeledAnswer for $userId:');
-    // ignore: avoid_print
-    print('  Session : ${sessionDate.toIso8601String()}');
-    // ignore: avoid_print
-    print('  Question: $questionId');
-    // ignore: avoid_print
-    print('  Old     : "$oldAnswer"');
-    // ignore: avoid_print
-    print('  New     : "$newAnswer"');
   }
 }
