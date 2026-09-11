@@ -14,6 +14,7 @@ import '../src/services/circle_challenge_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/workout_service.dart';
 import '../src/utils/workout_activity_visual.dart';
+import '../widgets/report_post_sheet.dart';
 import 'create_circle_profile_screen.dart';
 import 'fitness_screen.dart' show ActivityRingsPainter;
 import 'profile_screen.dart';
@@ -333,7 +334,7 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
             physics: const BouncingScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 42),
             children: [
-              _CircleProfileHeader(isOwner: widget.isOwner),
+              _CircleProfileHeader(isOwner: widget.isOwner, profile: profile),
               const SizedBox(height: 22),
               _CircleProfileHero(
                 profile: profile,
@@ -366,6 +367,8 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
               if (!widget.isOwner) ...[
                 const SizedBox(height: 26),
                 _RemoveCircleFriendButton(profile: profile),
+                const SizedBox(height: 12),
+                _BlockCircleUserButton(profile: profile),
               ],
             ],
           );
@@ -448,7 +451,41 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
 }
 
 class _CircleProfileHeader extends StatelessWidget {
-  const _CircleProfileHeader({required this.isOwner});
+  const _CircleProfileHeader({required this.isOwner, required this.profile});
+  final CircleProfile profile;
+
+  Future<void> _report(BuildContext context) async {
+    final sent = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => ReportPostSheet(
+        isProfile: true,
+        onSubmit: (reason, details) async {
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid == null) throw StateError('Sign in to report a profile.');
+          await FirebaseFirestore.instance.collection('reports').add({
+            'type': 'profile',
+            'reporterUid': uid,
+            'profileOwnerUid': profile.uid,
+            'reason': reason,
+            'details': details,
+            'status': 'pending',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        },
+      ),
+    );
+    if (sent == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Profile report submitted. Thank you for letting us know.',
+          ),
+        ),
+      );
+    }
+  }
 
   final bool isOwner;
 
@@ -476,6 +513,14 @@ class _CircleProfileHeader extends StatelessWidget {
           icon: Icons.settings_outlined,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+          ),
+        ),
+      if (!isOwner)
+        Tooltip(
+          message: 'Report profile',
+          child: _ProfileHeaderButton(
+            icon: Icons.flag_outlined,
+            onTap: () => _report(context),
           ),
         ),
     ],
@@ -1284,6 +1329,73 @@ class _CircleProfileActivityTile extends StatelessWidget {
   }
 }
 
+class _BlockCircleUserButton extends StatefulWidget {
+  const _BlockCircleUserButton({required this.profile});
+  final CircleProfile profile;
+
+  @override
+  State<_BlockCircleUserButton> createState() => _BlockCircleUserButtonState();
+}
+
+class _BlockCircleUserButtonState extends State<_BlockCircleUserButton> {
+  bool _blocking = false;
+
+  Future<void> _block() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Block ${widget.profile.username}?'),
+        content: const Text(
+          'This removes your friendship and hides their posts. Two-person challenges will be cancelled and you will leave shared group challenges. They cannot find or add you while blocked. No block notification is sent.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Block'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _blocking = true);
+    try {
+      await CircleProfileService.blockUser(widget.profile.uid);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.pop(context);
+      messenger.showSnackBar(const SnackBar(content: Text('User blocked.')));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _blocking = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not block user. Please try again.'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: double.infinity,
+    child: OutlinedButton.icon(
+      onPressed: _blocking ? null : _block,
+      icon: const Icon(Icons.block),
+      label: Text(_blocking ? 'Blocking…' : 'Block User'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.red,
+        side: BorderSide(color: Colors.red.withValues(alpha: .5)),
+        minimumSize: const Size.fromHeight(50),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      ),
+    ),
+  );
+}
+
 class _RemoveCircleFriendButton extends StatefulWidget {
   const _RemoveCircleFriendButton({required this.profile});
 
@@ -1325,7 +1437,7 @@ class _RemoveCircleFriendButtonState extends State<_RemoveCircleFriendButton> {
       builder: (dialogContext) => AlertDialog(
         title: Text('Remove ${widget.profile.username}?'),
         content: Text(
-          '${widget.profile.username} will be removed from your Circle.',
+          '${widget.profile.username} will be removed from your Circle and their posts hidden. Two-person challenges will be cancelled and you will leave shared group challenges.',
         ),
         actions: [
           TextButton(
@@ -7681,6 +7793,54 @@ class _CircleActivityFilterChip extends StatelessWidget {
   );
 }
 
+class _ReportPostButton extends StatelessWidget {
+  const _ReportPostButton({required this.activity});
+  final CircleActivity activity;
+
+  Future<void> _report(BuildContext context) async {
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => ReportPostSheet(
+        onSubmit: (reason, details) async {
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid == null) throw StateError('Sign in to report a post.');
+          await FirebaseFirestore.instance.collection('reports').add({
+            'reporterUid': uid,
+            'postOwnerUid': activity.profile.uid,
+            'postId': activity.id,
+            'reason': reason,
+            'details': details,
+            'status': 'pending',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        },
+      ),
+    );
+    if (submitted == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Report submitted. Thank you for letting us know.'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid == activity.profile.uid) {
+      return const SizedBox.shrink();
+    }
+    return IconButton(
+      tooltip: 'Report post',
+      icon: const Icon(Icons.flag_outlined),
+      onPressed: () => _report(context),
+    );
+  }
+}
+
 class _CircleActivityTile extends StatefulWidget {
   const _CircleActivityTile({super.key, required this.activity});
 
@@ -7832,6 +7992,8 @@ class _CircleActivityTileState extends State<_CircleActivityTile> {
                               onTap: () =>
                                   _openCircleActivityDetails(context, activity),
                             ),
+                            const Spacer(),
+                            _ReportPostButton(activity: activity),
                           ],
                         );
                       },
@@ -8022,9 +8184,30 @@ class _CircleActivityDetailsSheetState
                       children: [
                         Row(
                           children: [
-                            _ProfileAvatar(
-                              profile: activity.profile,
-                              radius: 28,
+                            Semantics(
+                              button: true,
+                              label:
+                                  'View ${activity.profile.username} profile',
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => CircleUserProfilePage(
+                                      profile: activity.profile,
+                                      isOwner:
+                                          FirebaseAuth
+                                              .instance
+                                              .currentUser
+                                              ?.uid ==
+                                          activity.profile.uid,
+                                    ),
+                                  ),
+                                ),
+                                child: _ProfileAvatar(
+                                  profile: activity.profile,
+                                  radius: 28,
+                                ),
+                              ),
                             ),
                             const SizedBox(width: 13),
                             Expanded(
@@ -8060,14 +8243,21 @@ class _CircleActivityDetailsSheetState
                           ),
                           const SizedBox(height: 14),
                         ],
-                        Text(
-                          activity.kind == 'achievement'
-                              ? 'Earned ${activity.name}'
-                              : activity.name,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                activity.kind == 'achievement'
+                                    ? 'Earned ${activity.name}'
+                                    : activity.name,
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            _ReportPostButton(activity: activity),
+                          ],
                         ),
                         if ((activity.kind == 'journal' ||
                                 activity.kind == 'achievement') &&
@@ -8136,7 +8326,10 @@ class _CircleActivityDetailsSheetState
                             .map(
                               (comment) => Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
-                                child: _CircleCommentTile(comment: comment),
+                                child: _CircleCommentTile(
+                                  comment: comment,
+                                  activity: activity,
+                                ),
                               ),
                             )
                             .toList(),
@@ -8254,10 +8447,14 @@ class _ActivityLikesSectionState extends State<_ActivityLikesSection> {
                     ? null
                     : () => _setLiked(currentlyLiked: liked),
                 style: FilledButton.styleFrom(
-                  backgroundColor: liked
+                  backgroundColor:
+                      liked || Theme.of(context).brightness == Brightness.dark
                       ? CircleScreen._purple
                       : const Color(0xFFF0EEFF),
-                  foregroundColor: liked ? Colors.white : CircleScreen._purple,
+                  foregroundColor:
+                      liked || Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white
+                      : CircleScreen._purple,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -8373,22 +8570,71 @@ class _ActivityDetailChip extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
     decoration: BoxDecoration(
-      color: const Color(0xFFF0EEFF),
+      color: Theme.of(context).brightness == Brightness.dark
+          ? CircleScreen._purple
+          : const Color(0xFFF0EEFF),
       borderRadius: BorderRadius.circular(12),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: CircleScreen._purple, size: 17),
+        Icon(
+          icon,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Colors.white
+              : CircleScreen._purple,
+          size: 17,
+        ),
         const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+        Text(
+          label,
+          style: TextStyle(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.white
+                : null,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ],
     ),
   );
 }
 
 class _CircleCommentTile extends StatelessWidget {
-  const _CircleCommentTile({required this.comment});
+  const _CircleCommentTile({required this.comment, required this.activity});
+  final CircleActivity activity;
+
+  Future<void> _report(BuildContext context) async {
+    final sent = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => ReportPostSheet(
+        isComment: true,
+        onSubmit: (reason, details) async {
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid == null) throw StateError('Sign in to report.');
+          await FirebaseFirestore.instance.collection('reports').add({
+            'type': 'comment',
+            'reporterUid': uid,
+            'postOwnerUid': activity.profile.uid,
+            'postId': activity.id,
+            'commentId': comment.id,
+            'commentAuthorUid': comment.authorUid,
+            'reason': reason,
+            'details': details,
+            'status': 'pending',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        },
+      ),
+    );
+    if (sent == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Comment report submitted.')),
+      );
+    }
+  }
 
   final CircleActivityComment comment;
 
@@ -8433,14 +8679,27 @@ class _CircleCommentTile extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
-                  if (comment.createdAt != null)
-                    Text(
-                      _relativeActivityTime(comment.createdAt!),
-                      style: const TextStyle(
-                        color: CircleScreen._muted,
-                        fontSize: 10,
-                      ),
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (comment.createdAt != null)
+                        Text(
+                          _relativeActivityTime(comment.createdAt!),
+                          style: const TextStyle(
+                            color: CircleScreen._muted,
+                            fontSize: 10,
+                          ),
+                        ),
+                      if (FirebaseAuth.instance.currentUser != null &&
+                          FirebaseAuth.instance.currentUser?.uid !=
+                              comment.authorUid)
+                        IconButton(
+                          tooltip: 'Report comment',
+                          icon: const Icon(Icons.flag_outlined, size: 18),
+                          onPressed: () => _report(context),
+                        ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
@@ -9215,7 +9474,7 @@ void _showFriendProfile(BuildContext context, CircleProfile profile) {
                                 title: Text('Remove ${profile.username}?'),
                                 content: Text(
                                   '${profile.username} will be removed from your Circle. '
-                                  "You won't see each other's shared activity unless you become friends again.",
+                                  "You won't see each other's shared activity unless you become friends again. Two-person challenges will be cancelled and you will leave shared group challenges.",
                                 ),
                                 actions: [
                                   TextButton(

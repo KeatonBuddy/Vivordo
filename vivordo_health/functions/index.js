@@ -9,6 +9,7 @@ const {defineSecret} = require("firebase-functions/params");
 const Anthropic = require("@anthropic-ai/sdk");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+const {removalPlan} = require("./circle_removal");
 const {
   dueWhoopEndpoints,
   isWhoopAuthorizationFailureCode,
@@ -36,6 +37,129 @@ const {
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
+
+// Server-owned block records cannot be forged or removed by the other user.
+exports.blockCircleUser = onCall(async (request) => {
+  const uid = requireAuth(request);
+  const target = request.data?.userId;
+  if (typeof target !== "string" || !target || target.includes("/") ||
+      target === uid || target.length > 128) {
+    throw new HttpsError("invalid-argument", "Choose another Circle user.");
+  }
+  const db = admin.firestore();
+  const batch = db.batch();
+  batch.set(db.doc(`circle_blocks/${uid}/users/${target}`), {
+    userId: target,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  for (const [owner, other] of [[uid, target], [target, uid]]) {
+    for (const collection of ["friends", "friend_requests"]) {
+      batch.delete(db.doc(
+          `users/${owner}/circle/relationships/${collection}/${other}`,
+      ));
+    }
+  }
+  await batch.commit();
+  await removeSharedCircleChallenges(uid, target);
+  return {blocked: true};
+});
+
+exports.removeCircleFriend = onCall(async (request) => {
+  const uid = requireAuth(request);
+  const target = request.data?.userId;
+  if (typeof target !== "string" || !target || target.includes("/") ||
+      target === uid || target.length > 128) {
+    throw new HttpsError("invalid-argument", "Choose another Circle user.");
+  }
+  await removeSharedCircleChallenges(uid, target);
+  const db = admin.firestore();
+  const batch = db.batch();
+  for (const [owner, other] of [[uid, target], [target, uid]]) {
+    for (const collection of ["friends", "friend_requests"]) {
+      batch.delete(db.doc(
+          `users/${owner}/circle/relationships/${collection}/${other}`,
+      ));
+    }
+  }
+  await batch.commit();
+  return {removed: true};
+});
+
+/**
+ * Remove shared challenges from the departing user's list, preserving groups.
+ * @param {string} uid Caller.
+ * @param {string} target Removed friend.
+ */
+async function removeSharedCircleChallenges(uid, target) {
+  const db = admin.firestore();
+  const challenges = await db.collection("challenges")
+      .where("participantUids", "array-contains", uid).get();
+  for (const document of challenges.docs) {
+    await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(document.ref);
+      const challenge = fresh.data();
+      if (!challenge?.participantUids?.includes(uid) ||
+          !challenge.participantUids.includes(target)) return;
+      const participant = document.ref.collection("participants").doc(uid);
+      const participation = await tx.get(participant);
+      const update = removalPlan(
+          challenge, uid, participation.data()?.progress || 0,
+      );
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      tx.update(document.ref, {...update, updatedAt: now});
+      tx.delete(participant);
+      for (const member of challenge.participantUids) {
+        const mirror = db.doc(
+            `challenge_memberships/${member}/items/${document.id}`,
+        );
+        if (!update.participantUids.includes(member)) {
+          tx.delete(mirror);
+        } else {
+          tx.set(mirror, {
+            participantUids: update.participantUids,
+            participantCount: update.participantCount,
+            creatorUid: update.creatorUid,
+            creatorName: update.creatorName,
+            role: member === update.creatorUid ? "creator" : "participant",
+            updatedAt: now,
+          }, {merge: true});
+        }
+      }
+      if (update.creatorUid && update.creatorUid !== challenge.creatorUid) {
+        tx.set(document.ref.collection("participants").doc(update.creatorUid), {
+          role: "creator", status: "accepted", updatedAt: now,
+        }, {merge: true});
+      }
+    });
+  }
+}
+
+exports.listBlockedCircleUsers = onCall(async (request) => {
+  const uid = requireAuth(request);
+  const db = admin.firestore();
+  const blocks = await db.collection(`circle_blocks/${uid}/users`).get();
+  const users = await Promise.all(blocks.docs.map(async (block) => {
+    const profile = await db.doc(`users/${block.id}/circle/profile`).get();
+    return {
+      userId: block.id,
+      username: profile.data()?.username || "Deleted user",
+    };
+  }));
+  return {users};
+});
+
+exports.unblockCircleUser = onCall(async (request) => {
+  const uid = requireAuth(request);
+  const target = request.data?.userId;
+  if (typeof target !== "string" || !target || target.includes("/") ||
+      target === uid || target.length > 128) {
+    throw new HttpsError("invalid-argument", "Choose another Circle user.");
+  }
+  // Only remove the caller's block. Never recreate friendship or remove a
+  // block that the other person placed against the caller.
+  await admin.firestore().doc(`circle_blocks/${uid}/users/${target}`).delete();
+  return {unblocked: true};
+});
 
 // Circle challenge callables, progress triggers, and expiration scheduler.
 // Loading this module after Firebase Admin initialization keeps all functions

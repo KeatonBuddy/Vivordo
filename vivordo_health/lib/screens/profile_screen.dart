@@ -14,6 +14,7 @@ import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/account_deletion_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
+import 'blocked_users_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
@@ -1936,6 +1937,19 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ],
                   ),
+                  const SizedBox(height: 24),
+
+                  _buildSectionLabel('Circle Settings'),
+                  _buildCard(children: [
+                    ListTile(
+                      leading: const Icon(Icons.block, color: Color(0xFF7B6EF6)),
+                      title: const Text('Blocked Users'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => const BlockedUsersScreen(),
+                      )),
+                    ),
+                  ]),
                   const SizedBox(height: 24),
 
                   // ── Report a Bug ───────────────────────────────────────────
