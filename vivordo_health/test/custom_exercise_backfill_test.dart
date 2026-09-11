@@ -25,6 +25,29 @@ void main() {
     );
   });
 
+  test(
+    'returns nothing when the catalog failed to load, even with non-empty inputs',
+    () {
+      final additions = customExerciseAdditions(
+        catalogLoaded: false,
+        catalog: catalog,
+        known: const [(name: 'Sled Push', category: 'Legs')],
+        recovered: const [
+          (name: 'Barbell Row', category: 'Back'),
+          (name: 'Sled Push', category: 'Legs'),
+        ],
+      );
+
+      expect(
+        additions,
+        isEmpty,
+        reason:
+            'the guard must short-circuit regardless of the other '
+            'arguments, not just because they happen to be empty',
+      );
+    },
+  );
+
   test('keeps history entries that are genuinely not in the catalog', () {
     final additions = customExerciseAdditions(
       catalogLoaded: true,
