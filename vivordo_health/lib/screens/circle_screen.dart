@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/services/exercise_catalog_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/activity_goals_service.dart';
@@ -14,11 +15,7 @@ import '../src/services/circle_profile_service.dart';
 import '../src/services/workout_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import 'create_circle_profile_screen.dart';
-import 'fitness_screen.dart'
-    show
-        ActivityRingsPainter,
-        WorkoutExerciseCatalogItem,
-        workoutExerciseCatalog;
+import 'fitness_screen.dart' show ActivityRingsPainter;
 import 'profile_screen.dart';
 
 class CircleScreen extends StatelessWidget {
@@ -4390,14 +4387,14 @@ class _CreateCustomChallengeSheetState
 
   List<WorkoutExerciseCatalogItem> get _availableSpecificExercises {
     if (_definition.kind == _CustomChallengeCount.activity) {
-      return workoutExerciseCatalog
+      return ExerciseCatalogService.defaults
           .where(
             (exercise) =>
                 exercise.category == 'Cardio' || exercise.category == 'Sports',
           )
           .toList(growable: false);
     }
-    return workoutExerciseCatalog;
+    return ExerciseCatalogService.defaults;
   }
 }
 

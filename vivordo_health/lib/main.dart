@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/exercise_catalog_service.dart';
 import 'package:vivordo_health/src/services/achievement_unlock_service.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/workout_live_activity_service.dart';
@@ -444,6 +445,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       await WhoopService.instance.syncInBackground(daysBack: 30);
     });
     NotificationService().configureForUser(uid);
+    unawaited(ExerciseCatalogService.prefetch());
     unawaited(HomeWidgetService.refreshCalendarSnapshot(force: true));
     AnalyticsService().logLogin();
   }
