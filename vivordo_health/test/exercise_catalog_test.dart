@@ -6,15 +6,15 @@ void main() {
     final items = parseExerciseCatalog({
       'version': 1,
       'exercises': [
-        {'n': 'Barbell Bench Press', 'c': 'Chest'},
-        {'n': 'Barbell Row', 'c': 'Back'},
+        {'n': 'Zercher Squat', 'c': 'Legs'},
+        {'n': 'Arnold Press', 'c': 'Shoulders'},
       ],
     });
 
     expect(items, hasLength(2));
-    expect(items.first.name, 'Barbell Bench Press');
-    expect(items.first.category, 'Chest');
-    expect(items.last.name, 'Barbell Row');
+    expect(items.first.name, 'Zercher Squat');
+    expect(items.first.category, 'Legs');
+    expect(items.last.name, 'Arnold Press');
   });
 
   test('returns empty for a null or malformed document', () {
@@ -53,5 +53,26 @@ void main() {
     expect(exerciseNameKey('Barbell Bench Press'), 'barbellbenchpress');
     expect(exerciseNameKey('barbell-bench  press'), 'barbellbenchpress');
     expect(exerciseNameKey('!!!'), isEmpty);
+  });
+
+  test('handles type-malformed name and category fields', () {
+    final items = parseExerciseCatalog({
+      'exercises': [
+        {'n': 123, 'c': 'Chest'},
+        {'n': 'Good Lift', 'c': 42},
+        {'n': null},
+        {'n': 'Valid Lift', 'c': 'Back'},
+      ],
+    });
+
+    expect(items, hasLength(2));
+    expect(items.first.name, 'Good Lift');
+    expect(
+      items.first.category,
+      'Other',
+      reason: 'non-String category defaults to Other',
+    );
+    expect(items.last.name, 'Valid Lift');
+    expect(items.last.category, 'Back');
   });
 }

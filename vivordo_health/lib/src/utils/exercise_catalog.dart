@@ -24,9 +24,12 @@ List<WorkoutExerciseCatalogItem> parseExerciseCatalog(
   final items = <WorkoutExerciseCatalogItem>[];
   for (final entry in raw) {
     if (entry is! Map) continue;
-    final name = (entry['n'] as String? ?? '').trim();
+    if (entry['n'] is! String) continue;
+    final name = (entry['n'] as String).trim();
     if (name.isEmpty) continue;
-    final category = (entry['c'] as String? ?? '').trim();
+    final category = (entry['c'] is String
+        ? (entry['c'] as String).trim()
+        : '');
     items.add((name: name, category: category.isEmpty ? 'Other' : category));
   }
   return List.unmodifiable(items);
