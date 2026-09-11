@@ -20,24 +20,6 @@ const int kMaxOutputTokensSpike = 1800;
 /// Output cap for the end-of-session insight summary (summarizeSession).
 const int kMaxOutputTokensSummary = 180;
 
-// ---------------------------------------------------------------------------
-// Runtime feature flags (toggle without a rebuild via these static fields).
-// ---------------------------------------------------------------------------
-
-class AppFlags {
-  AppFlags._();
-
-  /// When true, each detected spike is surfaced for analysis only ONCE per
-  /// user. Since metrics are daily aggregates, a spike is identified by its day:
-  /// once a day's spike has been analyzed it is recorded on the user doc
-  /// (`analyzed_spike_days`) and excluded from future sessions, so Panda never
-  /// re-asks about the same spike. Set to false to analyze every detected spike
-  /// on every session.
-  static bool dedupeAnalyzedSpikes = true;
-}
-
-// ---------------------------------------------------------------------------
-
 /// Common interface implemented by GeminiService and ClaudeService.
 /// Switch between them at runtime via AIServiceFactory + Remote Config.
 abstract class AIService {

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
-import 'package:vivordo_health/src/utils/snackbar.dart';
 
 //TODO(favour): log flagged items to crashlytics
 
@@ -53,14 +52,14 @@ class AuthService {
         if (onPasswordError != null) {
           onPasswordError(message);
         } else if (context.mounted) {
-          SnackBars.authMessage(context: context, message: message);
+          _authMessage(context, message);
         }
       } else if (context.mounted) {
         if (e.code == 'email-already-in-use') {
           const message = 'The account already exists for that email.';
-          SnackBars.authMessage(context: context, message: message);
+          _authMessage(context, message);
         } else {
-          SnackBars.authMessage(context: context, message: e.code);
+          _authMessage(context, e.code);
         }
       }
     } catch (e) {
@@ -84,7 +83,7 @@ class AuthService {
         final msg = e.code == 'user-not-found'
             ? 'No account found for that email.'
             : e.message ?? 'Failed to send reset email.';
-        SnackBars.authMessage(context: context, message: msg);
+        _authMessage(context, msg);
       }
       return false;
     } catch (e) {
@@ -107,9 +106,9 @@ class AuthService {
 
       if (!GoogleSignIn.instance.supportsAuthenticate()) {
         if (context.mounted) {
-          SnackBars.authMessage(
-            context: context,
-            message: 'Google Sign-In is not supported on this device.',
+          _authMessage(
+            context,
+            'Google Sign-In is not supported on this device.',
           );
         }
         return false;
@@ -143,9 +142,9 @@ class AuthService {
     } on GoogleSignInException catch (e) {
       // Don't show an error toast for a plain cancel — that's not a failure.
       if (e.code != GoogleSignInExceptionCode.canceled && context.mounted) {
-        SnackBars.authMessage(
-          context: context,
-          message: 'Google sign-in failed. Please try again.',
+        _authMessage(
+          context,
+          'Google sign-in failed. Please try again.',
         );
       }
       return false;
@@ -154,7 +153,7 @@ class AuthService {
         final message = e.code == 'account-exists-with-different-credential'
             ? 'An account already exists with this email using a different sign-in method.'
             : e.message ?? e.code;
-        SnackBars.authMessage(context: context, message: message);
+        _authMessage(context, message);
       }
       return false;
     } catch (e) {
@@ -197,15 +196,15 @@ class AuthService {
         final message = e.code == 'account-exists-with-different-credential'
             ? 'An account already exists with this email using a different sign-in method.'
             : e.message ?? 'Apple sign-in failed. Please try again.';
-        SnackBars.authMessage(context: context, message: message);
+        _authMessage(context, message);
       }
       return false;
     } catch (e) {
       debugPrint(e.toString());
       if (context.mounted) {
-        SnackBars.authMessage(
-          context: context,
-          message: 'Apple sign-in failed. Please try again.',
+        _authMessage(
+          context,
+          'Apple sign-in failed. Please try again.',
         );
       }
       return false;
@@ -235,9 +234,9 @@ class AuthService {
       if (context.mounted) {
         if (e.code == 'invalid-credential') {
           const message = 'Invalid email or password';
-          SnackBars.authMessage(context: context, message: message);
+          _authMessage(context, message);
         } else {
-          SnackBars.authMessage(context: context, message: e.code);
+          _authMessage(context, e.code);
         }
       }
       return false;
@@ -246,4 +245,8 @@ class AuthService {
       return false;
     }
   }
+}
+
+void _authMessage(BuildContext context, String message) {
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 }

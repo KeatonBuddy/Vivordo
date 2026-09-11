@@ -49,9 +49,7 @@ dependencies:
   firebase_core: ^4.3.0
   firebase_analytics: ^12.0.4
   firebase_crashlytics: ^5.0.5
-  visibility_detector: ^0.4.0+2
   firebase_auth: ^6.1.2
-  fluttertoast: ^9.0.0
   google_sign_in: ^7.2.0
   cloud_firestore: ^6.1.0
   firebase_ai: ^3.6.1
@@ -74,7 +72,6 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   mockito: ^5.0.0 # For creating mock objects in test
-  build_runner: ^2.0.0 # For generating code from annotations
   flutter_launcher_icons: ^0.14.4
   
   # The "flutter_lints" package below contains a set of recommended lints to

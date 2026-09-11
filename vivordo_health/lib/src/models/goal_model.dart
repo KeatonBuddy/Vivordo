@@ -1,6 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
-import 'package:vivordo_health/src/models/goal.dart';
 
 class GoalModel {
   final String userId;
@@ -78,17 +76,6 @@ class GoalModel {
       direction: map["direction"],
       startDate: map["startDate"],
       endDate: map["endDate"],
-    );
-  }
-
-  Goal toGoal({required String id}) {
-    return Goal(
-      id: id,
-      title: title,
-      subtext:
-          "Daily", //TODO: Figure out storage of subtext in GoalModel. Is it related to status?
-      color: Color(0xFF7B6EF6),
-      days: {},
     );
   }
 }

@@ -355,7 +355,7 @@ RULES:
       );
       final session = parsePandaSession(raw, payload, overrideName: userName);
       // Record the surfaced spike's day so it isn't analyzed again.
-      if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
+      if (session.rawSpikes.isNotEmpty) {
         unawaited(markSpikeDaysAnalyzed(userId, spikeDaysFromCompact(compact)));
       }
       return session;
@@ -400,7 +400,7 @@ RULES:
         extraUserContext: extraUserContext,
       );
       final session = parsePandaSession(raw, payload, overrideName: userName);
-      if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
+      if (session.rawSpikes.isNotEmpty) {
         unawaited(markSpikeDaysAnalyzed(userId, spikeDaysFromCompact(compact)));
       }
       return session;
@@ -575,14 +575,11 @@ RULES:
     final userSnap = await userDocFuture;
 
     // Days whose spike has already been surfaced once — excluded from detection
-    // so Panda doesn't re-ask about the same spike (AppFlags.dedupeAnalyzedSpikes).
-    final excludedSpikeDays = AppFlags.dedupeAnalyzedSpikes
-        ? Set<String>.from(
-            (userSnap.data()?['analyzed_spike_days'] as List?)
-                    ?.whereType<String>() ??
-                const <String>[],
-          )
-        : <String>{};
+    // so Panda doesn't re-ask about the same spike.
+    final excludedSpikeDays = Set<String>.from(
+      (userSnap.data()?['analyzed_spike_days'] as List?)?.whereType<String>() ??
+          const <String>[],
+    );
 
     // Build daily data map: dateStr → {field → value} from the single day doc
     final dailyData = <String, Map<String, dynamic>>{};
@@ -808,7 +805,7 @@ RULES:
   }
 
   /// Session for a user who HAS data but no NEW spike to analyze (e.g. every
-  /// detected spike day was already surfaced once — AppFlags.dedupeAnalyzedSpikes).
+  /// detected spike day was already surfaced once).
   ///
   /// There is nothing to label, so this skips the spike-analysis LLM call
   /// entirely and opens the chat instantly instead of waiting on a round trip
@@ -862,7 +859,7 @@ RULES:
   //
   // Spikes are identified by their DAY (metrics are daily aggregates). Once a
   // day's spike is surfaced for analysis it is recorded on the user doc so it
-  // is never re-detected. Gated by AppFlags.dedupeAnalyzedSpikes.
+  // is never re-detected.
   // =========================================================================
 
   /// The set of spike days (YYYY-MM-DD) present in a compact payload.

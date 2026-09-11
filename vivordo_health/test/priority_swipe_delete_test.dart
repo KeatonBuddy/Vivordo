@@ -5,7 +5,6 @@ import 'package:mockito/mockito.dart';
 import 'package:vivordo_health/screens/my_day_screen.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
-import 'package:vivordo_health/widgets/edit_priority_sheet.dart';
 import 'package:vivordo_health/widgets/add_priority_sheet.dart';
 
 // The row never accesses Firestore; this mock only supplies its model reference.

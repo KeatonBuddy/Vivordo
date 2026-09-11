@@ -456,7 +456,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       overrideName: userName,
     );
     // Record the surfaced spike's day so Panda doesn't re-ask about it.
-    if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
+    if (session.rawSpikes.isNotEmpty) {
       unawaited(
         GeminiService.markSpikeDaysAnalyzed(
           userId,
