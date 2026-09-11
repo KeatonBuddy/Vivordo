@@ -38,7 +38,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  static const Color accentPurple = Color(0xFF7B6EF6);
+  static const Color accentPurple = VivordoTheme.brand;
   static const Color greenColor = Color(0xFF34C759);
   static const Color textGrey = Color(0xFF8E8E93);
   static const List<String> _defaultMetricOrder = [
@@ -2071,7 +2071,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const Icon(
               Icons.health_and_safety_outlined,
               size: 36,
-              color: Color(0xFF7B6EF6),
+              color: VivordoTheme.brand,
             ),
             const SizedBox(height: 12),
             Text(

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 enum ScanState { idle, scanning, complete }
 
@@ -20,7 +21,7 @@ class _GoalsScreenState extends State<GoalsScreen>
   late AnimationController _spinController;
   late Animation<double> _pulseAnimation;
 
-  static const Color accentPurple = Color(0xFF7B6EF6);
+  static const Color accentPurple = VivordoTheme.brand;
   static const Color bgColor = Color(0xFFF2F2F7);
   static const Color cardWhite = Colors.white;
   static const Color textDark = Color(0xFF1C1C1E);

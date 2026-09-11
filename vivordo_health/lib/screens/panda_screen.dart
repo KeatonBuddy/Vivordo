@@ -153,7 +153,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Day',
     icon: Icons.wb_sunny_outlined,
-    color: Color(0xFF7B6EF6),
+    color: VivordoTheme.brand,
     categoryMessage:
         "Here's what I can help you with for today — pick what feels most useful 👇",
     prompts: [
@@ -167,7 +167,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Patterns',
     icon: Icons.insights_rounded,
-    color: Color(0xFF7B6EF6),
+    color: VivordoTheme.brand,
     categoryMessage:
         "I can dig into your stress patterns — what would you like to understand? 👇",
     prompts: [
@@ -180,7 +180,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Energy',
     icon: Icons.bolt_rounded,
-    color: Color(0xFF7B6EF6),
+    color: VivordoTheme.brand,
     categoryMessage:
         "Let's look at what's shaping your energy and recovery — choose a question 👇",
     prompts: [
@@ -194,7 +194,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'Plans & People',
     icon: Icons.people_outline_rounded,
-    color: Color(0xFF7B6EF6),
+    color: VivordoTheme.brand,
     categoryMessage:
         "I can help you navigate plans and people based on how you're doing — what do you need? 👇",
     prompts: [
@@ -221,7 +221,7 @@ class PandaScreen extends StatefulWidget {
 
 class _PandaScreenState extends State<PandaScreen>
     with SingleTickerProviderStateMixin {
-  static const Color _purple = Color(0xFF7B6EF6);
+  static const Color _purple = VivordoTheme.brand;
   static const Color _teal = Color(0xFF0ABFBC);
   static const Color _ink = Color(0xFF2D3142);
 
@@ -1559,7 +1559,7 @@ class _PandaScreenState extends State<PandaScreen>
                 width: 200,
                 child: LinearProgressIndicator(
                   backgroundColor: Color(0xFFE5E5EA),
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7B6EF6)),
+                  valueColor: AlwaysStoppedAnimation<Color>(VivordoTheme.brand),
                 ),
               ),
             ),

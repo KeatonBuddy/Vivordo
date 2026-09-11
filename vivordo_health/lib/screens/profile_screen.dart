@@ -955,10 +955,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                         width: 52,
                         height: 52,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF7B6EF6).withOpacity(0.12),
+                          color: VivordoTheme.brand.withOpacity(0.12),
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: const Color(0xFF7B6EF6).withOpacity(0.25),
+                            color: VivordoTheme.brand.withOpacity(0.25),
                             width: 2,
                           ),
                         ),
@@ -974,7 +974,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             : const Icon(
                                 Icons.person_outline_rounded,
                                 size: 26,
-                                color: Color(0xFF7B6EF6),
+                                color: VivordoTheme.brand,
                               ),
                       ),
                     ],
@@ -1184,7 +1184,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   : 'Select all health metrics',
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF7B6EF6),
+                              backgroundColor: VivordoTheme.brand,
                               foregroundColor: Colors.white,
                               elevation: 0,
                               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1495,7 +1495,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               child: const Icon(
                                 Icons.calendar_month_rounded,
                                 size: 18,
-                                color: Color(0xFF7B6EF6),
+                                color: VivordoTheme.brand,
                               ),
                             ),
                             const SizedBox(width: 14),
@@ -1535,7 +1535,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                       height: 14,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        color: Color(0xFF7B6EF6),
+                                        color: VivordoTheme.brand,
                                       ),
                                     )
                                   : Icon(
@@ -1556,7 +1556,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               style: TextButton.styleFrom(
                                 foregroundColor: _isGoogleCalendarConnected
                                     ? const Color(0xFFFF3B30)
-                                    : const Color(0xFF7B6EF6),
+                                    : VivordoTheme.brand,
                                 textStyle: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
@@ -1602,7 +1602,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               trackColor: WidgetStateProperty.resolveWith(
                                 (states) =>
                                     states.contains(WidgetState.selected)
-                                    ? const Color(0xFF7B6EF6)
+                                    ? VivordoTheme.brand
                                     : const Color(0xFFD1D1D6),
                               ),
                               trackOutlineColor: const WidgetStatePropertyAll(
@@ -1661,7 +1661,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: isToggling
-                                      ? const Color(0xFF7B6EF6)
+                                      ? VivordoTheme.brand
                                       : const Color(0xFF8E8E93),
                                 ),
                               ),
@@ -1671,13 +1671,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                                       height: 20,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        color: Color(0xFF7B6EF6),
+                                        color: VivordoTheme.brand,
                                       ),
                                     )
                                   : Icon(
                                       _metricIcon(metric.key),
                                       color: enabled
-                                          ? const Color(0xFF7B6EF6)
+                                          ? VivordoTheme.brand
                                           : const Color(0xFF8E8E93),
                                       size: 20,
                                     ),
@@ -1818,7 +1818,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   child: const Icon(
                                     Icons.bug_report_outlined,
                                     size: 16,
-                                    color: Color(0xFF7B6EF6),
+                                    color: VivordoTheme.brand,
                                   ),
                                 ),
                                 const SizedBox(width: 14),
@@ -1873,7 +1873,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(14),
                                   borderSide: const BorderSide(
-                                    color: Color(0xFF7B6EF6),
+                                    color: VivordoTheme.brand,
                                     width: 1.5,
                                   ),
                                 ),
@@ -1902,7 +1902,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                       : 'Send Report',
                                 ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF7B6EF6),
+                                  backgroundColor: VivordoTheme.brand,
                                   foregroundColor: Colors.white,
                                   elevation: 0,
                                   padding: const EdgeInsets.symmetric(
@@ -2072,7 +2072,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               ])
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(option.$2, color: const Color(0xFF7B6EF6)),
+                  leading: Icon(option.$2, color: VivordoTheme.brand),
                   title: Text(option.$3),
                   subtitle: option.$1 == ThemeMode.system
                       ? const Text('Match your iPhone appearance')
@@ -2080,7 +2080,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   trailing: controller.mode == option.$1
                       ? const Icon(
                           Icons.check_circle_rounded,
-                          color: Color(0xFF7B6EF6),
+                          color: VivordoTheme.brand,
                         )
                       : null,
                   onTap: () => Navigator.pop(sheetContext, option.$1),
@@ -2107,7 +2107,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         padding: const EdgeInsets.symmetric(vertical: 13),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: const Color(0xFF7B6EF6)),
+            Icon(icon, size: 18, color: VivordoTheme.brand),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -2164,7 +2164,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   const Icon(
                     Icons.alarm_rounded,
                     size: 18,
-                    color: Color(0xFF7B6EF6),
+                    color: VivordoTheme.brand,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -2227,10 +2227,10 @@ class _SettingsScreenState extends State<SettingsScreen>
           Container(
             padding: const EdgeInsets.all(7),
             decoration: BoxDecoration(
-              color: const Color(0xFF7B6EF6).withOpacity(0.1),
+              color: VivordoTheme.brand.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 16, color: const Color(0xFF7B6EF6)),
+            child: Icon(icon, size: 16, color: VivordoTheme.brand),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -2258,7 +2258,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: const Color(0xFF7B6EF6),
+            activeColor: VivordoTheme.brand,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ],

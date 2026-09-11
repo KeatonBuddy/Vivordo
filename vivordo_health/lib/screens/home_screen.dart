@@ -268,7 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _homeWidgetPublishScheduled = false;
   bool _homeWidgetPublishInProgress = false;
 
-  static const Color accentPurple = Color(0xFF7B6EF6);
+  static const Color accentPurple = VivordoTheme.brand;
   static const Color textDark = Color(0xFF1C1C1E);
   static const Color textGrey = Color(0xFF8E8E93);
   static const Color greenColor = Color(0xFF34C759);
@@ -3117,7 +3117,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
 
   static const double _cellH = 52;
   static const double _timeColW = 52;
-  static const Color _accentPurple = Color(0xFF7B6EF6);
+  static const Color _accentPurple = VivordoTheme.brand;
   static const Color _textDark = Color(0xFF1C1C1E);
   static const Color _textGrey = Color(0xFF8E8E93);
   static const Color _border = Color(0xFFE5E5EA);

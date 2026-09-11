@@ -53,7 +53,7 @@ class _ScanScreenState extends State<ScanScreen>
   int _tutorialPageIndex = 0;
   bool _dismissedFirstScanTutorial = false;
 
-  static const Color accentPurple = Color(0xFF7B6EF6);
+  static const Color accentPurple = VivordoTheme.brand;
   static const Color bgColor = Color(0xFFF2F2F7);
   static const Color cardWhite = Colors.white;
   static const Color textDark = Color(0xFF1C1C1E);
