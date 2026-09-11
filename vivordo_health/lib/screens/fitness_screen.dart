@@ -3448,6 +3448,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
     final results = _pickerResults;
     final customResults = results.custom.map(_definitionFor).toList();
     final exercises = results.defaults.map(_definitionFor).toList();
+    final noResults = customResults.isEmpty && exercises.isEmpty;
 
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
@@ -3523,49 +3524,64 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+              // A single scrollable holds both sections. The custom section's
+              // height is unbounded (it grows with however many exercises the
+              // user has created), so it cannot be a sibling of a flex
+              // (Expanded) child inside a plain Column without risking a
+              // RenderFlex overflow; CustomScrollView lets it take whatever
+              // height it needs and pushes the defaults section down instead.
+              // SliverFillRemaining still gives the defaults list a bounded
+              // viewport, so its ListView stays lazy over the full catalog.
+              child: CustomScrollView(
+                slivers: [
                   if (customResults.isNotEmpty) ...[
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 18),
-                      child: _PickerSectionTitle('YOUR EXERCISES'),
-                    ),
-                    Container(
-                      margin: const EdgeInsets.fromLTRB(18, 0, 18, 4),
-                      clipBehavior: Clip.antiAlias,
-                      decoration: BoxDecoration(
-                        color: context.vivordoColors.card,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: context.vivordoColors.border),
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 18),
+                        child: _PickerSectionTitle('YOUR EXERCISES'),
                       ),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: customResults.length,
-                        itemBuilder: (context, index) {
-                          final exercise = customResults[index];
-                          return _ExercisePickerRow(
-                            exercise: exercise,
-                            selected: _selected.contains(exercise.name),
-                            onTap: () => _toggle(exercise),
-                          );
-                        },
-                        separatorBuilder: (_, _) =>
-                            const Divider(height: 1, indent: 72),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Container(
+                        margin: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+                        clipBehavior: Clip.antiAlias,
+                        decoration: BoxDecoration(
+                          color: context.vivordoColors.card,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: context.vivordoColors.border,
+                          ),
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: customResults.length,
+                          itemBuilder: (context, index) {
+                            final exercise = customResults[index];
+                            return _ExercisePickerRow(
+                              exercise: exercise,
+                              selected: _selected.contains(exercise.name),
+                              onTap: () => _toggle(exercise),
+                            );
+                          },
+                          separatorBuilder: (_, _) =>
+                              const Divider(height: 1, indent: 72),
+                        ),
                       ),
                     ),
                   ],
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 18),
-                    child: _PickerSectionTitle('ALL EXERCISES'),
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 18),
+                      child: _PickerSectionTitle('ALL EXERCISES'),
+                    ),
                   ),
-                  if (exercises.isEmpty)
-                    const Expanded(
+                  if (noResults)
+                    const SliverFillRemaining(
                       child: Center(child: Text('No exercises found.')),
                     )
                   else
-                    Expanded(
+                    SliverFillRemaining(
                       child: Container(
                         margin: const EdgeInsets.fromLTRB(18, 0, 18, 20),
                         clipBehavior: Clip.antiAlias,

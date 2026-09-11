@@ -7,9 +7,13 @@ void main() {
     (name: 'Arnold Press', category: 'Shoulders', isCustom: false),
     (name: 'Cable Press', category: 'Chest', isCustom: false),
   ];
+  // 'Aardvark Cable Curl' is named to sort before every catalog match it
+  // shares a search term or category with ('Cable Press', 'Arnold Press'),
+  // so a merge that sorted each source separately before concatenating would
+  // place it after those catalog entries instead of before them.
   const custom = <PickerExercise>[
     (name: 'Sled Push', category: 'Legs', isCustom: true),
-    (name: 'Cable Y-Raise', category: 'Shoulders', isCustom: true),
+    (name: 'Aardvark Cable Curl', category: 'Shoulders', isCustom: true),
   ];
 
   ExercisePickerResults results({String search = '', String filter = 'All'}) =>
@@ -24,7 +28,10 @@ void main() {
     final result = results();
 
     expect(result.sectioned, isTrue);
-    expect(result.custom.map((e) => e.name), ['Cable Y-Raise', 'Sled Push']);
+    expect(result.custom.map((e) => e.name), [
+      'Aardvark Cable Curl',
+      'Sled Push',
+    ]);
     expect(result.defaults.map((e) => e.name), [
       'Arnold Press',
       'Barbell Row',
@@ -38,17 +45,19 @@ void main() {
     expect(result.sectioned, isFalse);
     expect(result.custom, isEmpty);
     expect(result.defaults.map((e) => e.name), [
+      'Aardvark Cable Curl',
       'Cable Press',
-      'Cable Y-Raise',
     ]);
   });
 
   test('custom entries keep their flag inside a merged list', () {
     final result = results(search: 'cable');
 
-    final yRaise = result.defaults.firstWhere((e) => e.name == 'Cable Y-Raise');
+    final custom = result.defaults.firstWhere(
+      (e) => e.name == 'Aardvark Cable Curl',
+    );
     final press = result.defaults.firstWhere((e) => e.name == 'Cable Press');
-    expect(yRaise.isCustom, isTrue);
+    expect(custom.isCustom, isTrue);
     expect(press.isCustom, isFalse);
   });
 
@@ -57,8 +66,8 @@ void main() {
 
     expect(result.sectioned, isFalse);
     expect(result.defaults.map((e) => e.name), [
+      'Aardvark Cable Curl',
       'Arnold Press',
-      'Cable Y-Raise',
     ]);
   });
 
