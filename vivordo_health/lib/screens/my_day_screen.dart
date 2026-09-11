@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
+import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
@@ -93,12 +94,18 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final dayEnd = DateTime(now.year, now.month, now.day + 1);
     final tomorrowEnd = DateTime(now.year, now.month, now.day + 2);
 
-    late List<gcal.Event> googleEvents;
+    late List<dynamic> results;
     try {
-      googleEvents = await CalendarService.getEventsBetween(
-        dayStart,
-        tomorrowEnd,
-      ).timeout(const Duration(seconds: 8));
+      results = await Future.wait([
+        CalendarService.getEventsBetween(
+          dayStart,
+          tomorrowEnd,
+        ).timeout(const Duration(seconds: 8)),
+        OutlookCalendarService.getEventsBetween(
+          dayStart,
+          tomorrowEnd,
+        ).timeout(const Duration(seconds: 8)),
+      ]);
     } catch (error) {
       if (mounted && generation == _loadGeneration) {
         setState(() {
@@ -110,12 +117,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       return;
     }
 
-    final allEvents =
-        googleEvents
-            .map(_CalendarEvent.fromGoogle)
-            .whereType<_CalendarEvent>()
-            .toList()
-          ..sort((a, b) => a.start.compareTo(b.start));
+    final googleEvents = results[0] as List<gcal.Event>;
+    final outlookEvents = results[1] as List<OutlookEvent>;
+    final allEvents = <_CalendarEvent>[
+      ...googleEvents
+          .map(_CalendarEvent.fromGoogle)
+          .whereType<_CalendarEvent>(),
+      ...outlookEvents.map(_CalendarEvent.fromOutlook),
+    ].toList()..sort((a, b) => a.start.compareTo(b.start));
     final events = allEvents
         .where((e) => e.start.isBefore(dayEnd) && e.end.isAfter(dayStart))
         .toList();
@@ -825,9 +834,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   const SizedBox(height: 4),
                   Text(
                     'No more events scheduled today.',
-                    style: TextStyle(
-                      color: context.vivordoColors.textSecondary,
-                    ),
+                    style: TextStyle(color: context.vivordoColors.textSecondary),
                   ),
                 ],
               ),
@@ -1914,7 +1921,9 @@ class _EventSummarySheet extends StatelessWidget {
                         _SummaryDetailRow(
                           icon: Icons.calendar_month_rounded,
                           label: 'Calendar',
-                          value: 'Google Calendar',
+                          value: event.googleEvent == null
+                              ? 'Outlook'
+                              : 'Google Calendar',
                           valueDotColor: event.color,
                           showDivider: false,
                         ),
@@ -1925,39 +1934,60 @@ class _EventSummarySheet extends StatelessWidget {
                       width: double.infinity,
                       height: 54,
                       child: FilledButton(
-                        onPressed: () =>
-                            Navigator.pop(context, _EventSummaryAction.edit),
+                        onPressed: event.googleEvent == null
+                            ? null
+                            : () => Navigator.pop(
+                                context,
+                                _EventSummaryAction.edit,
+                              ),
                         style: FilledButton.styleFrom(
                           backgroundColor: MyDayScreen.purple,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        child: const Text(
-                          'Edit Event',
-                          style: TextStyle(
+                        child: Text(
+                          event.googleEvent == null
+                              ? 'Outlook event · Read only'
+                              : 'Edit Event',
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Center(
-                      child: TextButton.icon(
-                        onPressed: () =>
-                            Navigator.pop(context, _EventSummaryAction.delete),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFFFF453A),
-                          textStyle: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
+                    if (event.googleEvent != null) ...[
+                      const SizedBox(height: 12),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () => Navigator.pop(
+                            context,
+                            _EventSummaryAction.delete,
                           ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFFF453A),
+                            textStyle: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          label: const Text('Delete'),
                         ),
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        label: const Text('Delete'),
                       ),
-                    ),
+                    ],
+                    if (event.googleEvent == null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Outlook events are currently read-only in Vivordo.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2137,6 +2167,21 @@ class _CalendarEvent {
       googleEvent: event,
     );
   }
+
+  factory _CalendarEvent.fromOutlook(OutlookEvent event) => _CalendarEvent(
+    title: event.subject.trim().isEmpty
+        ? 'Untitled event'
+        : event.subject.trim(),
+    start: event.start.toLocal(),
+    end: event.end.toLocal(),
+    isAllDay: event.isAllDay,
+    sourceEventKey: 'outlook:${event.id}',
+    isRecurring: false,
+    attendeeCount: 0,
+    isPriorityLinked: false,
+    icon: Icons.event_rounded,
+    color: MyDayScreen.purple,
+  );
 
   String get timeLabel =>
       isAllDay ? 'All day' : DateFormat('h:mm a').format(start);

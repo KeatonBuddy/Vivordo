@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/calendar_service.dart';
+import '../src/services/outlook_calendar_service.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
 
@@ -17,6 +18,7 @@ class MonthCalendarScreen extends StatefulWidget {
 
 class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
   static const _googleBlue = Color(0xFF5B7DE8);
+  static const _outlookOrange = Color(0xFFF4A62A);
 
   late DateTime _visibleMonth;
   late DateTime _selectedDay;
@@ -44,18 +46,24 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
     final start = _gridStart;
     final end = start.add(const Duration(days: 42));
 
-    final googleEvents = await CalendarService.getEventsBetween(
-      start,
-      end,
-    ).timeout(const Duration(seconds: 10), onTimeout: () => <gcal.Event>[]);
+    final results = await Future.wait([
+      CalendarService.getEventsBetween(
+        start,
+        end,
+      ).timeout(const Duration(seconds: 10), onTimeout: () => <gcal.Event>[]),
+      OutlookCalendarService.getEventsBetween(
+        start,
+        end,
+      ).timeout(const Duration(seconds: 10), onTimeout: () => <OutlookEvent>[]),
+    ]);
 
     if (!mounted || generation != _loadGeneration) return;
-    final events =
-        googleEvents
-            .map(_MonthEvent.fromGoogle)
-            .whereType<_MonthEvent>()
-            .toList()
-          ..sort((a, b) => a.start.compareTo(b.start));
+    final googleEvents = results[0] as List<gcal.Event>;
+    final outlookEvents = results[1] as List<OutlookEvent>;
+    final events = <_MonthEvent>[
+      ...googleEvents.map(_MonthEvent.fromGoogle).whereType<_MonthEvent>(),
+      ...outlookEvents.map(_MonthEvent.fromOutlook),
+    ]..sort((a, b) => a.start.compareTo(b.start));
 
     setState(() {
       _events = events;
@@ -116,7 +124,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
             googleEvent?.recurringEventId != null ||
             googleEvent?.recurrence?.isNotEmpty == true,
         color: event.color,
-        calendarName: 'Google Calendar',
+        calendarName: googleEvent == null ? 'Outlook' : 'Google Calendar',
         canEdit: googleEvent != null,
       ),
     );
@@ -617,6 +625,16 @@ class _MonthEvent {
       googleEvent: event,
     );
   }
+
+  factory _MonthEvent.fromOutlook(OutlookEvent event) => _MonthEvent(
+    title: event.subject.trim().isEmpty
+        ? 'Untitled event'
+        : event.subject.trim(),
+    start: event.start.toLocal(),
+    end: event.end.toLocal(),
+    isAllDay: event.isAllDay,
+    color: _MonthCalendarScreenState._outlookOrange,
+  );
 
   String get timeLabel => isAllDay
       ? 'All day'

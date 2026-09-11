@@ -9,6 +9,7 @@ import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
+import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 
 class HomeWidgetService {
   const HomeWidgetService._();
@@ -150,8 +151,13 @@ class HomeWidgetService {
         now.month,
         now.day,
       ).subtract(Duration(days: now.weekday - 1));
+      final googleFuture = CalendarService.getWeekEvents(monday);
+      final outlookFuture = OutlookCalendarService.getWeekEvents(monday);
+      final googleEvents = await googleFuture;
+      final outlookEvents = await outlookFuture;
       await publishCalendarEvents(
-        googleEvents: await CalendarService.getWeekEvents(monday),
+        googleEvents: googleEvents,
+        outlookEvents: outlookEvents,
       );
     } catch (error) {
       debugPrint('Calendar widget refresh failed: $error');
@@ -162,6 +168,7 @@ class HomeWidgetService {
 
   static Future<void> publishCalendarEvents({
     required List<gcal.Event> googleEvents,
+    required List<OutlookEvent> outlookEvents,
   }) async {
     if (!Platform.isIOS) return;
 
@@ -182,6 +189,19 @@ class HomeWidgetService {
           start: start,
           end: end,
           isAllDay: timedStart == null,
+        ),
+      );
+    }
+
+    for (final event in outlookEvents) {
+      events.add(
+        _calendarEventMap(
+          title: event.subject.trim().isNotEmpty
+              ? event.subject.trim()
+              : 'Calendar event',
+          start: event.start.toLocal(),
+          end: event.end.toLocal(),
+          isAllDay: event.isAllDay,
         ),
       );
     }
