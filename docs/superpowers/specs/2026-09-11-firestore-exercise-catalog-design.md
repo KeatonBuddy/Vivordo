@@ -152,16 +152,25 @@ Nothing here needs a new Firebase product; Firestore is already in use.
 
    ```
    gcloud auth application-default login
-   cd vivordo_health/functions && node scripts/seed_exercise_catalog.js
+   cd vivordo_health/functions
+   node scripts/seed_exercise_catalog.js
+   ```
+
+   The script is dry-run by default: it prints what it would write and writes
+   nothing. Review that output, then run it again with `--apply` to actually
+   write the document:
+
+   ```
+   node scripts/seed_exercise_catalog.js --apply
    ```
 
    If gcloud is unavailable, download a service account key from
    Firebase console > Project settings > Service accounts, point
-   `GOOGLE_APPLICATION_CREDENTIALS` at it, and run the same command. That key is
-   a production credential: it must not be committed, and should be deleted once
-   the seed is done.
+   `GOOGLE_APPLICATION_CREDENTIALS` at it, and run the same commands. That key
+   is a production credential: it must not be committed, and should be deleted
+   once the seed is done.
 
-   The script creates `exercise_catalog/current`. Verify in
+   The `--apply` run creates `exercise_catalog/current`. Verify in
    Firebase console > Firestore Database that the document exists and
    `exercises` has 1,128 entries.
 
