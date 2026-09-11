@@ -85,7 +85,7 @@ void main() {
     );
 
     test(
-      'present document with garbage exercises sets loaded with empty defaults',
+      'present document with non-List exercises field does not count as loaded',
       () {
         ExerciseCatalogService.applySnapshot(
           exists: true,
@@ -95,8 +95,27 @@ void main() {
         expect(ExerciseCatalogService.defaults, isEmpty);
         expect(
           ExerciseCatalogService.isLoaded,
-          isTrue,
-          reason: 'unparseable-but-present must be distinct from fetch failure',
+          isFalse,
+          reason:
+              'a corrupt field must not be mistaken for a legitimately empty catalog',
+        );
+      },
+    );
+
+    test(
+      'present document missing the exercises field does not count as loaded',
+      () {
+        ExerciseCatalogService.applySnapshot(
+          exists: true,
+          data: {'version': 3},
+        );
+
+        expect(ExerciseCatalogService.defaults, isEmpty);
+        expect(
+          ExerciseCatalogService.isLoaded,
+          isFalse,
+          reason:
+              'a corrupt field must not be mistaken for a legitimately empty catalog',
         );
       },
     );

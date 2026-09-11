@@ -57,14 +57,17 @@ class ExerciseCatalogService {
   /// Applies a Firestore snapshot to the service state.
   ///
   /// Exposed for testing the state machine without a fake Firestore.
-  /// Missing documents do not change state; present documents are parsed
-  /// and marked loaded regardless of content (empty or garbage both count as loaded).
+  /// Missing documents do not change state. A present document only counts
+  /// as loaded if `exercises` is a List: a missing or malformed field (a
+  /// hand-edit gone wrong, a partial seed) must not be mistaken for a
+  /// legitimately empty catalog, since [isLoaded] gates writes to user data.
   @visibleForTesting
   static void applySnapshot({
     required bool exists,
     required Map<String, dynamic>? data,
   }) {
     if (!exists) return;
+    if (data?['exercises'] is! List) return;
     _defaults = parseExerciseCatalog(data);
     _isLoaded = true;
   }
