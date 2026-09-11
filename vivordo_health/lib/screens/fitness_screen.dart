@@ -3254,6 +3254,9 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   }
 
   Future<void> _loadCustomExercises() async {
+    // Retries a failed prefetch (offline launch, cold cache) every time the
+    // picker opens; idempotent and instant once the catalog has loaded.
+    await ExerciseCatalogService.prefetch();
     final recovered = <WorkoutExerciseCatalogItem>[];
     try {
       final saved = await WorkoutService.loadCustomExercises();
