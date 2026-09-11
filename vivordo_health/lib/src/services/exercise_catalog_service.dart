@@ -39,15 +39,34 @@ class ExerciseCatalogService {
           .collection(_collection)
           .doc(_document)
           .get();
-      if (!snapshot.exists) return;
-      _defaults = parseExerciseCatalog(snapshot.data());
-      _isLoaded = true;
-    } on FirebaseException catch (error) {
-      // Offline with a cold cache, or rules not yet deployed. The picker shows
-      // no defaults and the history back-fill stays disabled until a later
-      // launch succeeds.
-      debugPrint('Exercise catalog fetch failed: ${error.code}');
+      applySnapshot(exists: snapshot.exists, data: snapshot.data());
+    } catch (error) {
+      // Broad catch is intentional: this is a fire-and-forget boundary (called
+      // unawaited from sign-in). Firestore.get() can throw FirebaseException,
+      // PlatformException, or StateError if not initialized. All failures have
+      // the same correct outcome: no defaults loaded, isLoaded stays false.
+      // Catching Object prevents unhandled async errors in production.
+      if (error is FirebaseException) {
+        debugPrint('Exercise catalog fetch failed: ${error.code}');
+      } else {
+        debugPrint('Exercise catalog fetch failed: $error');
+      }
     }
+  }
+
+  /// Applies a Firestore snapshot to the service state.
+  ///
+  /// Exposed for testing the state machine without a fake Firestore.
+  /// Missing documents do not change state; present documents are parsed
+  /// and marked loaded regardless of content (empty or garbage both count as loaded).
+  @visibleForTesting
+  static void applySnapshot({
+    required bool exists,
+    required Map<String, dynamic>? data,
+  }) {
+    if (!exists) return;
+    _defaults = parseExerciseCatalog(data);
+    _isLoaded = true;
   }
 
   @visibleForTesting
