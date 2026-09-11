@@ -241,5 +241,13 @@ service cloud.firestore {
                     && request.resource.data.userId == request.auth.uid;
       allow read, update, delete: if false;
     }
+
+    // ── Default exercise catalog (seeded by functions/scripts) ──────────────
+    // One document read by every signed-in client at sign-in. Writes come only
+    // from the Admin SDK seed script, which bypasses these rules.
+    match /exercise_catalog/{document} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
   }
 }

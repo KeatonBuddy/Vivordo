@@ -1,0 +1,4514 @@
+[
+  {
+    "n": "Barbell Bench Press",
+    "c": "Chest"
+  },
+  {
+    "n": "Incline Barbell Bench Press",
+    "c": "Chest"
+  },
+  {
+    "n": "Decline Barbell Bench Press",
+    "c": "Chest"
+  },
+  {
+    "n": "Dumbbell Bench Press",
+    "c": "Chest"
+  },
+  {
+    "n": "Incline Dumbbell Press",
+    "c": "Chest"
+  },
+  {
+    "n": "Decline Dumbbell Press",
+    "c": "Chest"
+  },
+  {
+    "n": "Dumbbell Chest Fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Cable Chest Fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Cable Crossover",
+    "c": "Chest"
+  },
+  {
+    "n": "Chest Press Machine",
+    "c": "Chest"
+  },
+  {
+    "n": "Pec Deck",
+    "c": "Chest"
+  },
+  {
+    "n": "Push-Up",
+    "c": "Chest"
+  },
+  {
+    "n": "Incline Push-Up",
+    "c": "Chest"
+  },
+  {
+    "n": "Decline Push-Up",
+    "c": "Chest"
+  },
+  {
+    "n": "Chest Dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Dumbbell Pullover",
+    "c": "Chest"
+  },
+  {
+    "n": "Barbell Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "EZ-Bar Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Dumbbell Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Hammer Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Preacher Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Incline Dumbbell Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Concentration Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Cable Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Machine Biceps Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Triceps Pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Rope Pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Skull Crusher",
+    "c": "Arms"
+  },
+  {
+    "n": "Overhead Triceps Extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Triceps Kickback",
+    "c": "Arms"
+  },
+  {
+    "n": "Close-Grip Bench Press",
+    "c": "Arms"
+  },
+  {
+    "n": "Triceps Dip",
+    "c": "Arms"
+  },
+  {
+    "n": "Bench Dip",
+    "c": "Arms"
+  },
+  {
+    "n": "Diamond Push-Up",
+    "c": "Arms"
+  },
+  {
+    "n": "Wrist Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Reverse Wrist Curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Deadlift",
+    "c": "Back"
+  },
+  {
+    "n": "Barbell Row",
+    "c": "Back"
+  },
+  {
+    "n": "T-Bar Row",
+    "c": "Back"
+  },
+  {
+    "n": "Landmine Row",
+    "c": "Back"
+  },
+  {
+    "n": "One-Arm Dumbbell Row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-Supported Dumbbell Row",
+    "c": "Back"
+  },
+  {
+    "n": "Seated Cable Row",
+    "c": "Back"
+  },
+  {
+    "n": "Machine Row",
+    "c": "Back"
+  },
+  {
+    "n": "Lat Pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Single-Arm Lat Pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Straight-Arm Pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Pull-Up",
+    "c": "Back"
+  },
+  {
+    "n": "Chin-Up",
+    "c": "Back"
+  },
+  {
+    "n": "Assisted Pull-Up",
+    "c": "Back"
+  },
+  {
+    "n": "Inverted Row",
+    "c": "Back"
+  },
+  {
+    "n": "Back Extension",
+    "c": "Back"
+  },
+  {
+    "n": "Reverse Hyperextension",
+    "c": "Back"
+  },
+  {
+    "n": "Barbell Overhead Press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dumbbell Shoulder Press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Machine Shoulder Press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Arnold Press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Push Press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Landmine Press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dumbbell Lateral Raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable Lateral Raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Machine Lateral Raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dumbbell Front Raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable Front Raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Rear-Delt Dumbbell Fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable Rear-Delt Fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Reverse Pec Deck",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Face Pull",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Upright Row",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dumbbell Shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Pike Push-Up",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Handstand Push-Up",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Back Squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Front Squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet Squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Hack Squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Leg Press",
+    "c": "Legs"
+  },
+  {
+    "n": "Leg Extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Romanian Deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Stiff-Leg Deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated Leg Curl",
+    "c": "Legs"
+  },
+  {
+    "n": "Lying Leg Curl",
+    "c": "Legs"
+  },
+  {
+    "n": "Bulgarian Split Squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Walking Lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Reverse Lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Step-Up",
+    "c": "Legs"
+  },
+  {
+    "n": "Hip Thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Glute Bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Cable Kickback",
+    "c": "Legs"
+  },
+  {
+    "n": "Hip Abduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Hip Adduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing Calf Raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated Calf Raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Single-Leg Calf Raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Sled Push",
+    "c": "Legs"
+  },
+  {
+    "n": "Box Jump",
+    "c": "Legs"
+  },
+  {
+    "n": "Plank",
+    "c": "Core"
+  },
+  {
+    "n": "Cable Crunch",
+    "c": "Core"
+  },
+  {
+    "n": "Run",
+    "c": "Cardio"
+  },
+  {
+    "n": "Walk",
+    "c": "Cardio"
+  },
+  {
+    "n": "Hike",
+    "c": "Cardio"
+  },
+  {
+    "n": "Stairmaster",
+    "c": "Cardio"
+  },
+  {
+    "n": "Soccer",
+    "c": "Sports"
+  },
+  {
+    "n": "Basketball",
+    "c": "Sports"
+  },
+  {
+    "n": "Football",
+    "c": "Sports"
+  },
+  {
+    "n": "Pickleball",
+    "c": "Sports"
+  },
+  {
+    "n": "Tennis",
+    "c": "Sports"
+  },
+  {
+    "n": "Hockey",
+    "c": "Sports"
+  },
+  {
+    "n": "Volleyball",
+    "c": "Sports"
+  },
+  {
+    "n": "Baseball",
+    "c": "Sports"
+  },
+  {
+    "n": "Golf",
+    "c": "Sports"
+  },
+  {
+    "n": "Dance",
+    "c": "Sports"
+  },
+  {
+    "n": "Squash",
+    "c": "Sports"
+  },
+  {
+    "n": "Rugby",
+    "c": "Sports"
+  },
+  {
+    "n": "Swimming",
+    "c": "Sports"
+  },
+  {
+    "n": "Boxing",
+    "c": "Sports"
+  },
+  {
+    "n": "Badminton",
+    "c": "Sports"
+  },
+  {
+    "n": "Cycling",
+    "c": "Sports"
+  },
+  {
+    "n": "Skiing",
+    "c": "Sports"
+  },
+  {
+    "n": "Lacrosse",
+    "c": "Sports"
+  },
+  {
+    "n": "45° cable rear delt fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "45° incline barbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "45° incline close grip press",
+    "c": "Arms"
+  },
+  {
+    "n": "45° incline dumbbell fly",
+    "c": "Chest"
+  },
+  {
+    "n": "45° incline dumbbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "45° incline neutral grip dumbbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "45° incline pause barbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "45° incline pause dumbbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "45° incline single arm dumbbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "45° incline Smith machine press",
+    "c": "Chest"
+  },
+  {
+    "n": "45° incline wide grip press",
+    "c": "Chest"
+  },
+  {
+    "n": "Ab coaster exercise",
+    "c": "Core"
+  },
+  {
+    "n": "Ab coaster oblique exercice",
+    "c": "Core"
+  },
+  {
+    "n": "Ab wheel plank rollout",
+    "c": "Core"
+  },
+  {
+    "n": "Ab wheel rollout",
+    "c": "Core"
+  },
+  {
+    "n": "Accentuated eccentric pin-loaded machine leg extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Accentuated eccentric plate-loaded machine leg extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Alternating dumbbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Alternating dumbbell biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Ankle weight hip flexion straight leg raise",
+    "c": "Core"
+  },
+  {
+    "n": "Ankle-banded lateral walk",
+    "c": "Legs"
+  },
+  {
+    "n": "Assisted pistol squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Assisted skater squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Asymmetrical weight forearm pronation",
+    "c": "Arms"
+  },
+  {
+    "n": "Asymmetrical weight forearm pronation and supination",
+    "c": "Arms"
+  },
+  {
+    "n": "Asymmetrical weight forearm supination",
+    "c": "Arms"
+  },
+  {
+    "n": "Asymmetrical weight wrist radial deviation",
+    "c": "Arms"
+  },
+  {
+    "n": "Asymmetrical weight wrist ulnar deviation",
+    "c": "Arms"
+  },
+  {
+    "n": "Backward sled drag with belt",
+    "c": "Legs"
+  },
+  {
+    "n": "Backward sled drag with handles",
+    "c": "Legs"
+  },
+  {
+    "n": "Band triceps pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Band-assisted chin-up",
+    "c": "Back"
+  },
+  {
+    "n": "Band-assisted glute ham raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Band-assisted reverse Nordic curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Banded back squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Banded barbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Banded conventional deadlift",
+    "c": "Back"
+  },
+  {
+    "n": "Banded Pallof press",
+    "c": "Core"
+  },
+  {
+    "n": "Banded push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Banded terminal knee extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell back squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell back squat to a box",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell behind the back shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Barbell biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Barbell box squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell cheat curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Barbell cheat shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Barbell deficit Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell drag curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Barbell floor press",
+    "c": "Chest"
+  },
+  {
+    "n": "Barbell forward lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell front foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell front raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Barbell glute bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell good morning",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell guillotine press",
+    "c": "Chest"
+  },
+  {
+    "n": "Barbell hip thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell Jefferson curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Barbell JM press",
+    "c": "Arms"
+  },
+  {
+    "n": "Barbell overhead squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell pin squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell plank rollout",
+    "c": "Core"
+  },
+  {
+    "n": "Barbell pullover",
+    "c": "Back"
+  },
+  {
+    "n": "Barbell push press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Barbell rear foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell reverse curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Barbell reverse lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell rollout",
+    "c": "Core"
+  },
+  {
+    "n": "Barbell Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Barbell split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell static hold",
+    "c": "Core"
+  },
+  {
+    "n": "Barbell straight-leg deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell upright row",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Barbell walking lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Barbell Z press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Behind the back barbell wrist curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Behind-the-back cable cuffed Y-raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Behind-the-back cable Y-raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Bench dip with bent knees",
+    "c": "Arms"
+  },
+  {
+    "n": "Bench dip with straight knees",
+    "c": "Arms"
+  },
+  {
+    "n": "Bent-arm sled push",
+    "c": "Legs"
+  },
+  {
+    "n": "Bent-leg reverse crunch",
+    "c": "Core"
+  },
+  {
+    "n": "Bent-over barbell cheat row",
+    "c": "Back"
+  },
+  {
+    "n": "Bent-over cable fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Bent-over dumbbell row",
+    "c": "Back"
+  },
+  {
+    "n": "Bent-over kettlebell row",
+    "c": "Back"
+  },
+  {
+    "n": "Bent-over neutral grip dumbbell reverse fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Bent-over neutral grip T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Bent-over overhand grip barbell row",
+    "c": "Back"
+  },
+  {
+    "n": "Bent-over overhand grip dumbbell reverse fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Bent-over overhand grip T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Bent-over semi-neutral grip T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Bent-over underhand grip barbell row",
+    "c": "Back"
+  },
+  {
+    "n": "Bent-over underhand grip T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Bent-over wide grip T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Bicycle crunch",
+    "c": "Core"
+  },
+  {
+    "n": "Bird dog",
+    "c": "Core"
+  },
+  {
+    "n": "Bird dog regression with alternating arm lifts",
+    "c": "Core"
+  },
+  {
+    "n": "Bird dog regression with alternating leg lifts",
+    "c": "Core"
+  },
+  {
+    "n": "Body saw with feet on ground",
+    "c": "Core"
+  },
+  {
+    "n": "Bodyweight chest dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Bodyweight Cossack squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight crunch with hands behind head",
+    "c": "Core"
+  },
+  {
+    "n": "Bodyweight crunch with hands on floor",
+    "c": "Core"
+  },
+  {
+    "n": "Bodyweight crunch with hands on shoulders",
+    "c": "Core"
+  },
+  {
+    "n": "Bodyweight dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Bodyweight forward lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight forward step-down",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight frog pump",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight front foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight glute bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight glute ham developer back extension with hands behind head",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight glute ham developer back extension with hands on shoulders",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight glute ham developer hip hinge with hands behind head",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight glute ham developer hip hinge with hands on shoulders",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight glute-dominant reverse lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight hamstring bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight hip thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight Jefferson curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Bodyweight lateral lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight lateral step-down",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight lunge hold",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight machine sissy squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight marching glute bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight rear foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight reverse lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight reverse step-down",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight ring dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Bodyweight Roman chair back extension with hands behind head",
+    "c": "Back"
+  },
+  {
+    "n": "Bodyweight Roman chair back extension with hands on shoulders",
+    "c": "Back"
+  },
+  {
+    "n": "Bodyweight Roman chair hip hinge with arms overhead",
+    "c": "Back"
+  },
+  {
+    "n": "Bodyweight Roman chair hip hinge with hands behind head",
+    "c": "Back"
+  },
+  {
+    "n": "Bodyweight Roman chair hip hinge with hands on shoulders",
+    "c": "Back"
+  },
+  {
+    "n": "Bodyweight Russian twist",
+    "c": "Core"
+  },
+  {
+    "n": "Bodyweight single leg box squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight sit-up with hands behind head",
+    "c": "Core"
+  },
+  {
+    "n": "Bodyweight sit-up with hands on floor",
+    "c": "Core"
+  },
+  {
+    "n": "Bodyweight sit-up with hands on shoulders",
+    "c": "Core"
+  },
+  {
+    "n": "Bodyweight skater squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight Spanish squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight step-up",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight triceps dip",
+    "c": "Arms"
+  },
+  {
+    "n": "Bodyweight walking lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight wall sit",
+    "c": "Legs"
+  },
+  {
+    "n": "Bodyweight wall squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bottoms up pin back squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Bottoms-up landmine goblet squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Cable chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Cable concentration curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Cable dual rope diverging triceps pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Cable EZ bar biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Cable face pull",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable glute kickback",
+    "c": "Legs"
+  },
+  {
+    "n": "Cable hip abduction (leg behind body)",
+    "c": "Legs"
+  },
+  {
+    "n": "Cable hip abduction (leg in front of body)",
+    "c": "Legs"
+  },
+  {
+    "n": "Cable hip adduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Cable Pallof press",
+    "c": "Core"
+  },
+  {
+    "n": "Cable press-around",
+    "c": "Chest"
+  },
+  {
+    "n": "Cable pull-through",
+    "c": "Legs"
+  },
+  {
+    "n": "Cable reverse curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Cable Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Cable rope hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Cable rope high row",
+    "c": "Back"
+  },
+  {
+    "n": "Cable rope straight arm lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Cable rope triceps pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Cable shoulder external rotation with arm at side",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable shoulder external rotation with arm elevated",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable shoulder internal rotation with arm at side",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable shoulder internal rotation with arm elevated",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable shoulder press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable shrug-in",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable side bend",
+    "c": "Core"
+  },
+  {
+    "n": "Cable straight bar biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Cable straight bar straight arm lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Cable upright row",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Cable V-bar triceps pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Captain’s chair bent-knee leg raise",
+    "c": "Core"
+  },
+  {
+    "n": "Captain’s chair straight knee leg raise",
+    "c": "Core"
+  },
+  {
+    "n": "Center pendulum reverse hyperextension",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported neutral grip pin-loaded machine row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported neutral grip plate-loaded machine row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported neutral grip T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported overhand grip pin-loaded machine row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported overhand grip plate-loaded machine row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported overhand grip T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported semi-neutral grip T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported T-bar Kelso shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Chest-supported underhand grip T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported wide grip T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported wide overhand grip pin-loaded machine row",
+    "c": "Back"
+  },
+  {
+    "n": "Chest-supported wide overhand grip plate-loaded machine row",
+    "c": "Back"
+  },
+  {
+    "n": "Clean",
+    "c": "Legs"
+  },
+  {
+    "n": "Clean grip high pull",
+    "c": "Legs"
+  },
+  {
+    "n": "Close grip chin-up",
+    "c": "Back"
+  },
+  {
+    "n": "Close grip EZ bar biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Close grip EZ bar preacher curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Close grip medicine ball push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Close grip push-up",
+    "c": "Arms"
+  },
+  {
+    "n": "Close grip Smith machine bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Conventional above-the-knee block pull",
+    "c": "Back"
+  },
+  {
+    "n": "Conventional above-the-knee rack pull",
+    "c": "Back"
+  },
+  {
+    "n": "Conventional below-the-knee block pull",
+    "c": "Back"
+  },
+  {
+    "n": "Conventional below-the-knee rack pull",
+    "c": "Back"
+  },
+  {
+    "n": "Conventional deadlift",
+    "c": "Back"
+  },
+  {
+    "n": "Conventional mid-shin block pull",
+    "c": "Back"
+  },
+  {
+    "n": "Conventional mid-shin rack pull",
+    "c": "Back"
+  },
+  {
+    "n": "Corpse crunch",
+    "c": "Core"
+  },
+  {
+    "n": "Counterbalanced skater squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Cross-arm grip front squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Cross-body cable lat pull-around",
+    "c": "Back"
+  },
+  {
+    "n": "Crucifix curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Decline barbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "Decline bodyweight crunch with hands behind head",
+    "c": "Core"
+  },
+  {
+    "n": "Decline bodyweight crunch with hands on shoulders",
+    "c": "Core"
+  },
+  {
+    "n": "Decline bodyweight sit-up with hands behind head",
+    "c": "Core"
+  },
+  {
+    "n": "Decline bodyweight sit-up with hands on shoulders",
+    "c": "Core"
+  },
+  {
+    "n": "Decline close grip press",
+    "c": "Arms"
+  },
+  {
+    "n": "Decline pause barbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "Decline pause dumbbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "Decline single arm dumbbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Decline Smith machine press",
+    "c": "Chest"
+  },
+  {
+    "n": "Decline weighted crunch",
+    "c": "Core"
+  },
+  {
+    "n": "Decline weighted sit-up",
+    "c": "Core"
+  },
+  {
+    "n": "Decline wide grip press",
+    "c": "Chest"
+  },
+  {
+    "n": "Deficit conventional deadlift",
+    "c": "Back"
+  },
+  {
+    "n": "Deficit kettlebell deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Deficit Pendlay row",
+    "c": "Back"
+  },
+  {
+    "n": "Deficit push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Double straight leg raise",
+    "c": "Core"
+  },
+  {
+    "n": "Dual cable Bayesian curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Dual cable lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dual cable triceps press",
+    "c": "Arms"
+  },
+  {
+    "n": "Dual dumbbell triceps kickback",
+    "c": "Arms"
+  },
+  {
+    "n": "Dual kettlebell clean",
+    "c": "Legs"
+  },
+  {
+    "n": "Dual kettlebell upright row",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dumbbell cheat curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Dumbbell cheat shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dumbbell concentration curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Dumbbell farmer’s carry",
+    "c": "Core"
+  },
+  {
+    "n": "Dumbbell floor press",
+    "c": "Chest"
+  },
+  {
+    "n": "Dumbbell fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Dumbbell forward lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell frog pump",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell front foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell glute bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell glute-dominant reverse lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell hammer cheat curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Dumbbell Helms row",
+    "c": "Back"
+  },
+  {
+    "n": "Dumbbell hip thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell Jefferson curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Dumbbell Kelso shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dumbbell lateral step-down",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell lunge hold",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell preacher curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Dumbbell preacher hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Dumbbell preacher reverse curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Dumbbell push press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dumbbell rear foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell reverse lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell reverse step-down",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell side bend",
+    "c": "Core"
+  },
+  {
+    "n": "Dumbbell skater squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell spider curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Dumbbell split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell step-up",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell suitcase carry",
+    "c": "Core"
+  },
+  {
+    "n": "Dumbbell sumo squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell upright row",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dumbbell waiter walk",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dumbbell walking lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Dumbbell Z press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Dynamic long lever Copenhagen plank",
+    "c": "Core"
+  },
+  {
+    "n": "Dynamic short lever Copenhagen plank",
+    "c": "Core"
+  },
+  {
+    "n": "Elbows-in dumbbell seal row",
+    "c": "Back"
+  },
+  {
+    "n": "Elbows-out dumbbell seal row",
+    "c": "Back"
+  },
+  {
+    "n": "Extended-hip ab wheel rollout",
+    "c": "Core"
+  },
+  {
+    "n": "Extended-hip barbell rollout",
+    "c": "Core"
+  },
+  {
+    "n": "EZ bar biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "EZ bar preacher curl",
+    "c": "Arms"
+  },
+  {
+    "n": "EZ bar preacher reverse curl",
+    "c": "Arms"
+  },
+  {
+    "n": "EZ bar pullover",
+    "c": "Back"
+  },
+  {
+    "n": "EZ bar reverse curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Fat grip dumbbell preacher hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Feet-elevated bodyweight glute bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Feet-elevated bodyweight hamstring bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Feet-elevated thigh-banded bodyweight glute bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Feet-up barbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Feet-up dumbbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Feet-up Smith machine bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Fingertip clean grip front squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Flat-back barbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Flat-back dead bug",
+    "c": "Core"
+  },
+  {
+    "n": "Flutter kick with head down",
+    "c": "Core"
+  },
+  {
+    "n": "Flutter kick with head up",
+    "c": "Core"
+  },
+  {
+    "n": "Foot-elevated single leg bodyweight glute bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Foot-elevated single leg bodyweight hamstring bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Forearm plank",
+    "c": "Core"
+  },
+  {
+    "n": "Forearm plank scapular protraction",
+    "c": "Core"
+  },
+  {
+    "n": "Forearm plank with leg lift",
+    "c": "Core"
+  },
+  {
+    "n": "Four-board press",
+    "c": "Chest"
+  },
+  {
+    "n": "Full hand clean grip front squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Glute ham developer CrossFit-style sit-up",
+    "c": "Core"
+  },
+  {
+    "n": "Glute ham developer sit-up with hands behind head",
+    "c": "Core"
+  },
+  {
+    "n": "Glute ham developer sit-up with hands on shoulders",
+    "c": "Core"
+  },
+  {
+    "n": "Glute ham raise with arms by sides",
+    "c": "Legs"
+  },
+  {
+    "n": "Glute ham raise with hands behind head",
+    "c": "Legs"
+  },
+  {
+    "n": "Glute ham raise with hands on shoulders",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet carry",
+    "c": "Core"
+  },
+  {
+    "n": "Goblet Cossack squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet forward lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet forward step-down",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet front foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet lateral lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet lateral step-down",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet rear foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet reverse lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet reverse step-down",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet skater squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet step-up",
+    "c": "Legs"
+  },
+  {
+    "n": "Goblet walking lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Half-kneeling cable Pallof press",
+    "c": "Core"
+  },
+  {
+    "n": "Half-kneeling single arm cable lat pull-in",
+    "c": "Back"
+  },
+  {
+    "n": "Half-kneeling single arm cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Half-kneeling single arm crucifix curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Half-kneeling single arm elbow-out cable biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Hand gripper crushing",
+    "c": "Arms"
+  },
+  {
+    "n": "Hand release push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Hang power clean",
+    "c": "Legs"
+  },
+  {
+    "n": "Hang power snatch",
+    "c": "Legs"
+  },
+  {
+    "n": "Hanging bent-knee leg raise",
+    "c": "Core"
+  },
+  {
+    "n": "Hanging L-sit hold",
+    "c": "Core"
+  },
+  {
+    "n": "Hanging straight knee leg raise",
+    "c": "Core"
+  },
+  {
+    "n": "Heels-elevated ankle dorsiflexion",
+    "c": "Legs"
+  },
+  {
+    "n": "High bar back squat",
+    "c": "Legs"
+  },
+  {
+    "n": "High bar box squat",
+    "c": "Legs"
+  },
+  {
+    "n": "High handle trap bar deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "High incline barbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "High incline dumbbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "High incline Smith machine press",
+    "c": "Chest"
+  },
+  {
+    "n": "High pulley cable face pull",
+    "c": "Shoulders"
+  },
+  {
+    "n": "High pulley cable rope overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "High pulley cable straight bar overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "High pulley cable V-bar overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "High-to-low cable chop",
+    "c": "Core"
+  },
+  {
+    "n": "High-to-low cable fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Hollow body hold",
+    "c": "Core"
+  },
+  {
+    "n": "Horizontal cable chop",
+    "c": "Core"
+  },
+  {
+    "n": "Horizontal cable crossover",
+    "c": "Chest"
+  },
+  {
+    "n": "Horizontal cable fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Incline chest-supported dumbbell lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Incline chest-supported dumbbell rear delt fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Incline close grip push-up",
+    "c": "Arms"
+  },
+  {
+    "n": "Incline dumbbell biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Incline dumbbell front raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Incline dumbbell hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Incline dumbbell I-raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Incline dumbbell lateral raise (facing up)",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Incline dumbbell T-raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Incline dumbbell Y-raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Incline externally rotated dumbbell biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Incline tall plank scapular protraction",
+    "c": "Core"
+  },
+  {
+    "n": "Isometric bodyweight Spanish squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Katana triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Kettlebell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Kettlebell deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Kettlebell farmer’s carry",
+    "c": "Core"
+  },
+  {
+    "n": "Kettlebell floor press",
+    "c": "Chest"
+  },
+  {
+    "n": "Kettlebell forward lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Kettlebell front foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Kettlebell Jefferson curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Kettlebell rear foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Kettlebell reverse lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Kettlebell Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Kettlebell side bend",
+    "c": "Core"
+  },
+  {
+    "n": "Kettlebell split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Kettlebell suitcase carry",
+    "c": "Core"
+  },
+  {
+    "n": "Kettlebell swing",
+    "c": "Legs"
+  },
+  {
+    "n": "Kettlebell waiter walk",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Kettlebell walking lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Kipping pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Kneeling cable crunch",
+    "c": "Core"
+  },
+  {
+    "n": "Kneeling cable straight arm lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Kneeling close grip push-up",
+    "c": "Arms"
+  },
+  {
+    "n": "Kneeling machine lower trunk rotation",
+    "c": "Core"
+  },
+  {
+    "n": "Kneeling pin-loaded machine glute kickback",
+    "c": "Legs"
+  },
+  {
+    "n": "Kneeling plate-loaded machine glute kickback",
+    "c": "Legs"
+  },
+  {
+    "n": "Kneeling push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Kneeling wide grip push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Knuckle push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Landmine goblet squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Lean-in dumbbell lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Leaned forward pin-loaded machine hip abduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Leaned forward plate-loaded machine hip abduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Leaning single arm cable lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Lever-arm machine belt squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Lockout pin bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Long lever plank",
+    "c": "Core"
+  },
+  {
+    "n": "Long sitting banded ankle eversion",
+    "c": "Legs"
+  },
+  {
+    "n": "Low bar back squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Low handle trap bar deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Low incline barbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "Low incline chest-supported dumbbell high row",
+    "c": "Back"
+  },
+  {
+    "n": "Low incline chest-supported elbows-in dumbbell row",
+    "c": "Back"
+  },
+  {
+    "n": "Low incline chest-supported elbows-out dumbbell row",
+    "c": "Back"
+  },
+  {
+    "n": "Low incline dumbbell fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Low incline dumbbell press",
+    "c": "Chest"
+  },
+  {
+    "n": "Low incline Smith machine press",
+    "c": "Chest"
+  },
+  {
+    "n": "Low pin bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Low pulley cable face pull",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Low pulley cable rope overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Low pulley cable straight bar overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Low pulley cable V-bar overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Low pulley dual cable biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Low-to-high cable chop",
+    "c": "Core"
+  },
+  {
+    "n": "Low-to-high cable fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Low-to-high plate-loaded machine low row",
+    "c": "Back"
+  },
+  {
+    "n": "Lying barbell triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying barbell triceps extension pullover",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying cable triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying dual kettlebell triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying dumbbell triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying dumbbell triceps extension pullover",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying EZ bar triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying EZ bar triceps extension pullover",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying feet-up overhand grip plate-loaded machine chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Lying machine decline press",
+    "c": "Chest"
+  },
+  {
+    "n": "Lying neutral grip plate-loaded machine chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Lying on floor dumbbell triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying overhand grip pin-loaded machine chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Lying overhand grip plate-loaded machine chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Lying pause cable face pull",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Lying pin-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying plate-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying single arm dumbbell triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying single kettlebell triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying single leg pin-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Lying single leg plate-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Machine biceps curl with arms at sides",
+    "c": "Arms"
+  },
+  {
+    "n": "Machine cheat shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Machine fly with arm pads",
+    "c": "Chest"
+  },
+  {
+    "n": "Machine hack squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Machine pendulum squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Machine upper trunk rotation (with arm or shoulder pads)",
+    "c": "Core"
+  },
+  {
+    "n": "Machine upper trunk rotation (with chest pad)",
+    "c": "Core"
+  },
+  {
+    "n": "Machine V-squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Marching flat-back dead bug",
+    "c": "Core"
+  },
+  {
+    "n": "Marching mountain climber",
+    "c": "Core"
+  },
+  {
+    "n": "Marching neutral dead bug",
+    "c": "Core"
+  },
+  {
+    "n": "Midpoint pin bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Modified candlestick",
+    "c": "Core"
+  },
+  {
+    "n": "Moto cable row",
+    "c": "Back"
+  },
+  {
+    "n": "Multi-hip machine bent-knee hip extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Multi-hip machine hip abduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Multi-hip machine hip adduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Multi-hip machine hip flexion",
+    "c": "Legs"
+  },
+  {
+    "n": "Multi-hip machine straight-knee hip extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Muscle-up",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral close grip cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral close grip pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral dead bug",
+    "c": "Core"
+  },
+  {
+    "n": "Neutral grip band pull-apart",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Neutral grip band-assisted pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral grip cable reverse fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Neutral grip cable triceps kickback",
+    "c": "Arms"
+  },
+  {
+    "n": "Neutral grip deficit push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Neutral grip dumbbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Neutral grip dumbbell Z press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Neutral grip landmine T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral grip machine fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Neutral grip machine reverse fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Neutral grip pin-loaded machine assisted pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral grip pin-loaded machine lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral grip pin-loaded machine shoulder press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Neutral grip plate-loaded machine assisted pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral grip plate-loaded machine lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral grip plate-loaded machine shoulder press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Neutral grip pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral grip suspension trainer inverted row",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral grip Swiss bar bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Neutral grip weighted pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral shoulder width grip cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral wide grip cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Neutral wide grip pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Nordic hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Offset dumbbell front foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Offset dumbbell rear foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Offset dumbbell split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Offset kettlebell front foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Offset kettlebell rear foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Offset kettlebell split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "One-board press",
+    "c": "Chest"
+  },
+  {
+    "n": "Overhand grip band pull-apart",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Overhand grip band-assisted pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip barbell inverted row",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip barbell seal row",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip bodyweight eccentric pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip cable reverse fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Overhand grip cable straight bar triceps pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Overhand grip dead hang",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip dead hang pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip L-sit pull-up",
+    "c": "Core"
+  },
+  {
+    "n": "Overhand grip landmine T-bar row",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip machine fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Overhand grip machine reverse fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Overhand grip pin-loaded machine assisted pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip pin-loaded machine lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip pin-loaded machine shoulder press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Overhand grip plate-loaded machine assisted pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip plate-loaded machine lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip plate-loaded machine shoulder press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Overhand grip pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip Smith machine deficit row",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip Smith machine row",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip weighted eccentric pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip weighted pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand grip Yates row",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand wide grip barbell inverted row",
+    "c": "Back"
+  },
+  {
+    "n": "Overhand wide grip cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Overhead medicine ball slam",
+    "c": "Core"
+  },
+  {
+    "n": "Partial range of motion bodyweight skater squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Partial range of motion shrimp squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Pause back squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Pause barbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Pause barbell Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Pause bodyweight chest dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Pause bodyweight dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Pause bodyweight triceps dip",
+    "c": "Arms"
+  },
+  {
+    "n": "Pause cable shrug-in",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Pause close grip bench press",
+    "c": "Arms"
+  },
+  {
+    "n": "Pause conventional deadlift",
+    "c": "Back"
+  },
+  {
+    "n": "Pause dumbbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Pause dumbbell rear foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Pause dumbbell Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Pause front squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Pause machine hack squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Pause pin-loaded machine assisted dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Pause plate-loaded machine assisted dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Pause push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Pause Smith machine bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Pause snatch grip deadlift",
+    "c": "Back"
+  },
+  {
+    "n": "Pause sumo deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Pause weighted chest dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Pause weighted dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Pause weighted triceps dip",
+    "c": "Arms"
+  },
+  {
+    "n": "Pause wide grip bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Pendlay row",
+    "c": "Back"
+  },
+  {
+    "n": "Pin good morning",
+    "c": "Legs"
+  },
+  {
+    "n": "Pin-loaded glute-biased leg press",
+    "c": "Legs"
+  },
+  {
+    "n": "Pin-loaded leg press",
+    "c": "Legs"
+  },
+  {
+    "n": "Pin-loaded leg press calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Pin-loaded leg press calf “jump”",
+    "c": "Legs"
+  },
+  {
+    "n": "Pin-loaded machine assisted chest dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Pin-loaded machine assisted dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Pin-loaded machine assisted triceps dip",
+    "c": "Arms"
+  },
+  {
+    "n": "Pin-loaded machine back extension",
+    "c": "Back"
+  },
+  {
+    "n": "Pin-loaded machine chest dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Pin-loaded machine crunch (with chest pad)",
+    "c": "Core"
+  },
+  {
+    "n": "Pin-loaded machine crunch (with overhead handles)",
+    "c": "Core"
+  },
+  {
+    "n": "Pin-loaded machine crunch (with straight elbows)",
+    "c": "Core"
+  },
+  {
+    "n": "Pin-loaded machine donkey calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Pin-loaded machine hip thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Pin-loaded machine leg extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Pin-loaded machine overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Pin-loaded machine preacher curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Pin-loaded machine pullover",
+    "c": "Back"
+  },
+  {
+    "n": "Pin-loaded machine triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Pin-loaded quad-biased leg press",
+    "c": "Legs"
+  },
+  {
+    "n": "Pin-loaded reverse hyperextension",
+    "c": "Back"
+  },
+  {
+    "n": "Pin-loaded row machine Kelso shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Pinch grip dumbbell curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Plate front raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Plate overhead raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Plate pullover",
+    "c": "Back"
+  },
+  {
+    "n": "Plate shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Plate-loaded glute-biased leg press",
+    "c": "Legs"
+  },
+  {
+    "n": "Plate-loaded leg press",
+    "c": "Legs"
+  },
+  {
+    "n": "Plate-loaded leg press calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Plate-loaded leg press calf “jump”",
+    "c": "Legs"
+  },
+  {
+    "n": "Plate-loaded machine assisted chest dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Plate-loaded machine assisted dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Plate-loaded machine assisted triceps dip",
+    "c": "Arms"
+  },
+  {
+    "n": "Plate-loaded machine back extension",
+    "c": "Back"
+  },
+  {
+    "n": "Plate-loaded machine crunch (with chest pad)",
+    "c": "Core"
+  },
+  {
+    "n": "Plate-loaded machine crunch (with overhead handles)",
+    "c": "Core"
+  },
+  {
+    "n": "Plate-loaded machine donkey calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Plate-loaded machine finger curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Plate-loaded machine hip thrust (starting from the bottom)",
+    "c": "Legs"
+  },
+  {
+    "n": "Plate-loaded machine hip thrust (starting from the top)",
+    "c": "Legs"
+  },
+  {
+    "n": "Plate-loaded machine leg extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Plate-loaded machine overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Plate-loaded machine preacher curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Plate-loaded machine pullover",
+    "c": "Back"
+  },
+  {
+    "n": "Plate-loaded machine triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Plate-loaded quad-biased leg press",
+    "c": "Legs"
+  },
+  {
+    "n": "Plate-loaded row machine Kelso shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Plyometric push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Power clean",
+    "c": "Legs"
+  },
+  {
+    "n": "Power snatch",
+    "c": "Legs"
+  },
+  {
+    "n": "Prone blackburn",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Prone I-raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Prone T-raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Prone Y-raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Pulley machine belt squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Push-up plus",
+    "c": "Chest"
+  },
+  {
+    "n": "Reclined pin-loaded machine hip abduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Reclined pin-loaded machine hip adduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Reclined pin-loaded machine incline press",
+    "c": "Chest"
+  },
+  {
+    "n": "Reclined plate-loaded machine hip abduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Reclined plate-loaded machine hip adduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Reclined plate-loaded machine incline press",
+    "c": "Chest"
+  },
+  {
+    "n": "Regressed dead hang (feet on floor)",
+    "c": "Back"
+  },
+  {
+    "n": "Regressed scapular pull-up (feet on floor)",
+    "c": "Back"
+  },
+  {
+    "n": "Reset conventional deadlift",
+    "c": "Back"
+  },
+  {
+    "n": "Reset sumo deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Reverse grip bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Reverse Nordic curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Reverse plank",
+    "c": "Core"
+  },
+  {
+    "n": "Reverse plank with alternating leg lifts",
+    "c": "Core"
+  },
+  {
+    "n": "Ring chin-up",
+    "c": "Back"
+  },
+  {
+    "n": "Ring fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Ring pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Running mountain climber",
+    "c": "Core"
+  },
+  {
+    "n": "Safety squat bar good morning",
+    "c": "Legs"
+  },
+  {
+    "n": "Safety squat bar reverse lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Safety squat bar split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Safety squat bar squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Scapular pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Scapular wall slide",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated accentuated eccentric pin-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated banded ankle eversion",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated barbell behind-the-neck overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated barbell finger flexion wrist curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated barbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated barbell wrist curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated barbell wrist extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated bent-arm dumbbell lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated cable back extension",
+    "c": "Back"
+  },
+  {
+    "n": "Seated cable deadlift",
+    "c": "Back"
+  },
+  {
+    "n": "Seated cable face pull",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated cable fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Seated cable Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated cable wrist curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated cable wrist extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated crucifix curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dual cable Bayesian curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dual dumbbell overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dumbbell Arnold press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated dumbbell biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dumbbell finger flexion wrist curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dumbbell front raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated dumbbell hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dumbbell inverse Zottman curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dumbbell lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated dumbbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated dumbbell overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dumbbell reverse curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dumbbell shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated dumbbell wrist curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dumbbell wrist extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated dumbbell Zottman curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated fat grip dumbbell biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated fat grip dumbbell hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated machine decline press",
+    "c": "Chest"
+  },
+  {
+    "n": "Seated machine lower trunk rotation",
+    "c": "Core"
+  },
+  {
+    "n": "Seated neutral grip cable row",
+    "c": "Back"
+  },
+  {
+    "n": "Seated neutral grip dumbbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated neutral grip dumbbell reverse fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated neutral grip pin-loaded machine chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Seated neutral grip plate-loaded machine chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Seated neutral wide grip cable row",
+    "c": "Back"
+  },
+  {
+    "n": "Seated overhand grip cable row",
+    "c": "Back"
+  },
+  {
+    "n": "Seated overhand grip cable row with dynamic back extension",
+    "c": "Back"
+  },
+  {
+    "n": "Seated overhand grip dumbbell reverse fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated overhand grip pin-loaded machine chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Seated overhand grip plate-loaded machine chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Seated overhand wide grip cable row",
+    "c": "Back"
+  },
+  {
+    "n": "Seated pin-loaded machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated pin-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated pin-loaded machine hip abduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated pin-loaded machine hip adduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated pin-loaded machine incline press",
+    "c": "Chest"
+  },
+  {
+    "n": "Seated pin-loaded machine lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated pin-loaded machine shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated pin-loaded machine triceps dip",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated plate-loaded machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated plate-loaded machine chest dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Seated plate-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated plate-loaded machine hip abduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated plate-loaded machine hip adduction",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated plate-loaded machine incline press",
+    "c": "Chest"
+  },
+  {
+    "n": "Seated plate-loaded machine lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated plate-loaded machine shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated plate-loaded machine triceps dip",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated single arm cable row",
+    "c": "Back"
+  },
+  {
+    "n": "Seated single arm dumbbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated single arm dumbbell overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated single arm plate-loaded machine incline press",
+    "c": "Chest"
+  },
+  {
+    "n": "Seated single leg cable Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated single leg pin-loaded machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated single leg pin-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated single leg plate-loaded machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Seated single leg plate-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Seated super ROM dumbbell lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Seated underhand grip cable row",
+    "c": "Back"
+  },
+  {
+    "n": "Shrimp squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Side lying dumbbell shoulder external rotation",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Side plank",
+    "c": "Core"
+  },
+  {
+    "n": "Side plank on knees",
+    "c": "Core"
+  },
+  {
+    "n": "Side plank with dynamic leg lift",
+    "c": "Core"
+  },
+  {
+    "n": "Side plank with leg lift hold",
+    "c": "Core"
+  },
+  {
+    "n": "Side-lying ankle weight hip abduction straight leg raise",
+    "c": "Core"
+  },
+  {
+    "n": "Side-lying banded clamshell",
+    "c": "Legs"
+  },
+  {
+    "n": "Side-lying banded hip abduction straight leg raise",
+    "c": "Core"
+  },
+  {
+    "n": "Side-lying bodyweight clamshell",
+    "c": "Legs"
+  },
+  {
+    "n": "Side-lying bodyweight hip abduction straight leg raise",
+    "c": "Core"
+  },
+  {
+    "n": "Side-lying low incline dumbbell lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Side-plate-loaded reverse hyperextension",
+    "c": "Back"
+  },
+  {
+    "n": "Sideways single arm machine reverse fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm 45° cable rear delt fly",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm Bayesian curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm cable biceps curl (facing toward machine)",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm cable chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Single arm cable face pull",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm cable front raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Single arm cable lateral raise (with cable between legs)",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm cable lateral raise (with cable in front of body)",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm cable overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm cross-body cable triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm cross-body cable Y-raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm crucifix curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm dead hang",
+    "c": "Back"
+  },
+  {
+    "n": "Single arm dual plate pinch",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm dumbbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Single arm dumbbell biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm dumbbell cheat row",
+    "c": "Back"
+  },
+  {
+    "n": "Single arm dumbbell floor press",
+    "c": "Chest"
+  },
+  {
+    "n": "Single arm dumbbell preacher curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm dumbbell preacher hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm dumbbell preacher reverse curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm dumbbell push press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm dumbbell Scott curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm dumbbell triceps kickback",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm dumbbell Z press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm elbow-in dumbbell row",
+    "c": "Back"
+  },
+  {
+    "n": "Single arm elbow-in kettlebell row",
+    "c": "Back"
+  },
+  {
+    "n": "Single arm elbow-out cable biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm elbow-out dumbbell row",
+    "c": "Back"
+  },
+  {
+    "n": "Single arm fat grip dumbbell preacher hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm high cable cuffed lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm high cable lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm high-to-low cable fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Single arm horizontal cable fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Single arm kettlebell clean",
+    "c": "Legs"
+  },
+  {
+    "n": "Single arm kettlebell push press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single arm low-to-high cable fly",
+    "c": "Chest"
+  },
+  {
+    "n": "Single arm low-to-high plate-loaded machine low row",
+    "c": "Back"
+  },
+  {
+    "n": "Single arm neutral grip cable triceps pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm neutral grip dumbbell floor press",
+    "c": "Chest"
+  },
+  {
+    "n": "Single arm neutral grip landmine row",
+    "c": "Back"
+  },
+  {
+    "n": "Single arm overhand grip cable triceps pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm overhand grip landmine row",
+    "c": "Back"
+  },
+  {
+    "n": "Single arm pin-loaded machine preacher curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm pinch grip dumbbell curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm plate-loaded machine preacher curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Single arm single plate pinch",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm underhand grip cable triceps pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Single arm underhand grip dumbbell row",
+    "c": "Back"
+  },
+  {
+    "n": "Single kettlebell upright row",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Single leg bodyweight glute bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg bodyweight hamstring bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg bodyweight hip thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg bodyweight Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg dumbbell calf “jump”",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg dumbbell hip thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg dumbbell Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg goblet box squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg kettlebell Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg offset dumbbell Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg offset kettlebell Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg pin-loaded leg press",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg pin-loaded leg press calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg pin-loaded machine hip thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg pin-loaded machine leg extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg plate-loaded leg press",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg plate-loaded leg press calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg plate-loaded machine hip thrust (starting from the bottom)",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg plate-loaded machine hip thrust (starting from the top)",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg plate-loaded machine leg extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg reverse plank",
+    "c": "Core"
+  },
+  {
+    "n": "Single leg slider leg curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single leg Smith machine hip thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg stability ball leg curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Single leg wall sit",
+    "c": "Legs"
+  },
+  {
+    "n": "Single leg wall squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Sissy squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Six-inch leg raise with head down",
+    "c": "Core"
+  },
+  {
+    "n": "Six-inch leg raise with head up",
+    "c": "Core"
+  },
+  {
+    "n": "Slider leg curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Slight decline dumbbell bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Smith machine back squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Smith machine behind the back shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Smith machine bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Smith machine cheat shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Smith machine deficit Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Smith machine front foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Smith machine front foot elevated split squat hold",
+    "c": "Legs"
+  },
+  {
+    "n": "Smith machine good morning",
+    "c": "Legs"
+  },
+  {
+    "n": "Smith machine hip thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Smith machine JM press",
+    "c": "Arms"
+  },
+  {
+    "n": "Smith machine lunge",
+    "c": "Legs"
+  },
+  {
+    "n": "Smith machine lunge hold",
+    "c": "Legs"
+  },
+  {
+    "n": "Smith machine overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Smith machine Pendlay row",
+    "c": "Back"
+  },
+  {
+    "n": "Smith machine rear foot elevated split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Smith machine Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Smith machine shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Smith machine split squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Snatch",
+    "c": "Legs"
+  },
+  {
+    "n": "Snatch grip barbell Jefferson curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Snatch grip barbell shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Snatch grip deadlift",
+    "c": "Back"
+  },
+  {
+    "n": "Snatch grip high pull",
+    "c": "Legs"
+  },
+  {
+    "n": "Snatch grip Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Split jerk",
+    "c": "Legs"
+  },
+  {
+    "n": "Spoto press",
+    "c": "Chest"
+  },
+  {
+    "n": "Squat walkout",
+    "c": "Legs"
+  },
+  {
+    "n": "Stability ball crunch",
+    "c": "Core"
+  },
+  {
+    "n": "Stability ball leg curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Stability ball plank",
+    "c": "Core"
+  },
+  {
+    "n": "Stability ball plank rollout",
+    "c": "Core"
+  },
+  {
+    "n": "Stability ball rollout",
+    "c": "Core"
+  },
+  {
+    "n": "Standing accentuated eccentric bodyweight calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing accentuated eccentric dumbbell calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing accentuated eccentric pin-loaded machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing accentuated eccentric plate-loaded machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing alternating cross body dumbbell hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing barbell behind-the-neck overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing barbell calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing barbell overhead lockout pin press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing barbell overhead low pin press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing barbell overhead midpoint pin press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing barbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing barbell overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing barbell wrist curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing bent-arm dumbbell lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing Bradford press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing cable crunch",
+    "c": "Core"
+  },
+  {
+    "n": "Standing cable leg curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing close grip barbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing dual dumbbell overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing dual kettlebell biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing dual kettlebell overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing dumbbell Arnold press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing dumbbell biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing dumbbell calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing dumbbell front raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing dumbbell hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing dumbbell inverse Zottman curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing dumbbell lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing dumbbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing dumbbell overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing dumbbell reverse curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing dumbbell shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing dumbbell Zottman curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing EZ bar overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing fat grip dumbbell biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing fat grip dumbbell hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing kettlebell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing kettlebell shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing landmine chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Standing machine shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing neutral grip dumbbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing on ground ankle dorsiflexion",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing on ground bodyweight calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing on ground single leg bodyweight calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing on step bodyweight calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing on step single leg bodyweight calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing on step single leg dumbbell calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing pause barbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing pin-loaded machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing pin-loaded machine glute kickback",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing pin-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing pin-loaded machine lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing plate-loaded machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing plate-loaded machine chest press",
+    "c": "Chest"
+  },
+  {
+    "n": "Standing plate-loaded machine glute kickback",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing plate-loaded machine hamstring curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing plate-loaded machine lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing single arm cable row",
+    "c": "Back"
+  },
+  {
+    "n": "Standing single arm cross-body dumbbell hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing single arm dumbbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing single arm dumbbell overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing single arm high-to-low cable row",
+    "c": "Back"
+  },
+  {
+    "n": "Standing single arm kettlebell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing single arm landmine press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing single kettlebell hammer curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing single kettlebell overhead triceps extension",
+    "c": "Arms"
+  },
+  {
+    "n": "Standing single leg pin-loaded machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing single leg plate-loaded machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing Smith machine calf raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Standing super ROM dumbbell lateral raise",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing wide grip barbell behind-the-neck overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Standing wide grip barbell overhead press",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Static long lever Copenhagen plank",
+    "c": "Core"
+  },
+  {
+    "n": "Static short lever Copenhagen plank",
+    "c": "Core"
+  },
+  {
+    "n": "Step-into overhead medicine ball slam",
+    "c": "Core"
+  },
+  {
+    "n": "Sternum chin-up",
+    "c": "Back"
+  },
+  {
+    "n": "Stiff-leg deadlift from floor",
+    "c": "Legs"
+  },
+  {
+    "n": "Stir the pot",
+    "c": "Core"
+  },
+  {
+    "n": "Stomach vacuum",
+    "c": "Core"
+  },
+  {
+    "n": "Straight leg reverse crunch",
+    "c": "Core"
+  },
+  {
+    "n": "Straight-arm sled push",
+    "c": "Legs"
+  },
+  {
+    "n": "Strap front squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Sumo deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Sumo low block pull",
+    "c": "Back"
+  },
+  {
+    "n": "Sumo mid-shin block pull",
+    "c": "Back"
+  },
+  {
+    "n": "Sumo Romanian deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Superman",
+    "c": "Back"
+  },
+  {
+    "n": "Tabletop reverse plank",
+    "c": "Core"
+  },
+  {
+    "n": "Tall plank",
+    "c": "Core"
+  },
+  {
+    "n": "Tall plank bird dog",
+    "c": "Core"
+  },
+  {
+    "n": "Tall plank scapular protraction",
+    "c": "Core"
+  },
+  {
+    "n": "Tall plank with alternating leg lifts",
+    "c": "Core"
+  },
+  {
+    "n": "Tall plank with shoulder taps",
+    "c": "Core"
+  },
+  {
+    "n": "Tempo back squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Tempo bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Thigh-banded bodyweight frog pump",
+    "c": "Legs"
+  },
+  {
+    "n": "Thigh-banded bodyweight glute bridge",
+    "c": "Legs"
+  },
+  {
+    "n": "Thigh-banded bodyweight hip thrust",
+    "c": "Legs"
+  },
+  {
+    "n": "Thigh-banded bodyweight squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Thigh-banded lateral walk",
+    "c": "Legs"
+  },
+  {
+    "n": "Three-board press",
+    "c": "Chest"
+  },
+  {
+    "n": "Touch-and-go conventional deadlift",
+    "c": "Back"
+  },
+  {
+    "n": "Touch-and-go sumo deadlift",
+    "c": "Legs"
+  },
+  {
+    "n": "Trap bar block pull",
+    "c": "Back"
+  },
+  {
+    "n": "Trap bar farmer’s carry",
+    "c": "Core"
+  },
+  {
+    "n": "Trap bar shrug",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Two-arms two-legs flat-back dead bug",
+    "c": "Core"
+  },
+  {
+    "n": "Two-arms two-legs neutral dead bug",
+    "c": "Core"
+  },
+  {
+    "n": "Two-board press",
+    "c": "Chest"
+  },
+  {
+    "n": "Underhand close grip cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Underhand grip band pull-apart",
+    "c": "Shoulders"
+  },
+  {
+    "n": "Underhand grip barbell inverted row",
+    "c": "Back"
+  },
+  {
+    "n": "Underhand grip barbell seal row",
+    "c": "Back"
+  },
+  {
+    "n": "Underhand grip cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Underhand grip cable straight bar triceps pushdown",
+    "c": "Arms"
+  },
+  {
+    "n": "Underhand grip cable triceps kickback",
+    "c": "Arms"
+  },
+  {
+    "n": "Underhand grip plate-loaded machine lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Underhand grip Smith machine deficit row",
+    "c": "Back"
+  },
+  {
+    "n": "Underhand grip Smith machine row",
+    "c": "Back"
+  },
+  {
+    "n": "Underhand grip Yates row",
+    "c": "Back"
+  },
+  {
+    "n": "Underhand wide grip cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "V sit-up",
+    "c": "Core"
+  },
+  {
+    "n": "Weighted chest dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Weighted chin-up",
+    "c": "Back"
+  },
+  {
+    "n": "Weighted crunch (holding weight on chest)",
+    "c": "Core"
+  },
+  {
+    "n": "Weighted crunch (holding weight overhead)",
+    "c": "Core"
+  },
+  {
+    "n": "Weighted dip",
+    "c": "Chest"
+  },
+  {
+    "n": "Weighted glute ham developer back extension",
+    "c": "Legs"
+  },
+  {
+    "n": "Weighted glute ham developer hip hinge",
+    "c": "Legs"
+  },
+  {
+    "n": "Weighted glute ham raise",
+    "c": "Legs"
+  },
+  {
+    "n": "Weighted machine sissy squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Weighted push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Weighted reverse Nordic curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Weighted Roman chair back extension",
+    "c": "Back"
+  },
+  {
+    "n": "Weighted Roman chair hip hinge (holding weight to chest)",
+    "c": "Back"
+  },
+  {
+    "n": "Weighted Roman chair hip hinge (holding weight with straight elbows)",
+    "c": "Back"
+  },
+  {
+    "n": "Weighted Russian twist",
+    "c": "Core"
+  },
+  {
+    "n": "Weighted sit-up",
+    "c": "Core"
+  },
+  {
+    "n": "Weighted Spanish squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Weighted triceps dip",
+    "c": "Arms"
+  },
+  {
+    "n": "Weighted wall sit",
+    "c": "Legs"
+  },
+  {
+    "n": "Weighted wall squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Wide grip band-assisted pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Wide grip behind-the-neck cable lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Wide grip bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Wide grip chin-up",
+    "c": "Back"
+  },
+  {
+    "n": "Wide grip EZ bar biceps curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Wide grip EZ bar preacher curl",
+    "c": "Arms"
+  },
+  {
+    "n": "Wide grip pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Wide grip push-up",
+    "c": "Chest"
+  },
+  {
+    "n": "Wide grip Smith machine bench press",
+    "c": "Chest"
+  },
+  {
+    "n": "Wide grip weighted pull-up",
+    "c": "Back"
+  },
+  {
+    "n": "Wide overhand grip pin-loaded machine lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Wide overhand grip plate-loaded machine lat pulldown",
+    "c": "Back"
+  },
+  {
+    "n": "Wide stance barbell box squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Wide stance barbell good morning",
+    "c": "Legs"
+  },
+  {
+    "n": "Wide stance safety squat bar good morning",
+    "c": "Legs"
+  },
+  {
+    "n": "Wide stance Smith machine good morning",
+    "c": "Legs"
+  },
+  {
+    "n": "Windshield wiper",
+    "c": "Core"
+  },
+  {
+    "n": "Wrist roller wrist curl with arms directed down",
+    "c": "Arms"
+  },
+  {
+    "n": "Wrist roller wrist curl with arms raised",
+    "c": "Arms"
+  },
+  {
+    "n": "Wrist roller wrist curl with bent elbows",
+    "c": "Arms"
+  },
+  {
+    "n": "Wrist roller wrist extension with arms directed down",
+    "c": "Arms"
+  },
+  {
+    "n": "Wrist roller wrist extension with arms raised",
+    "c": "Arms"
+  },
+  {
+    "n": "Wrist roller wrist extension with bent elbows",
+    "c": "Arms"
+  },
+  {
+    "n": "Zercher squat",
+    "c": "Legs"
+  },
+  {
+    "n": "Zombie front squat",
+    "c": "Legs"
+  }
+]
