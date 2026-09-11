@@ -3,17 +3,13 @@ typedef PickerExercise = ({String name, String category, bool isCustom});
 
 /// What the picker should render for the current search and filter.
 ///
-/// When [sectioned] is true, [custom] is shown under its own heading above
-/// [defaults]. Otherwise [custom] is empty and [defaults] holds every match in
-/// one ranking, each still carrying its own `isCustom` flag.
+/// While browsing, [custom] holds its own section shown above [defaults].
+/// Once a search or category filter narrows things down, [custom] is empty
+/// and [defaults] holds every match in one ranking, each still carrying its
+/// own `isCustom` flag.
 class ExercisePickerResults {
-  const ExercisePickerResults({
-    required this.sectioned,
-    required this.custom,
-    required this.defaults,
-  });
+  const ExercisePickerResults({required this.custom, required this.defaults});
 
-  final bool sectioned;
   final List<PickerExercise> custom;
   final List<PickerExercise> defaults;
 }
@@ -48,14 +44,12 @@ ExercisePickerResults exercisePickerResults({
 
   if (!sectioned) {
     return ExercisePickerResults(
-      sectioned: false,
       custom: const [],
       defaults: _matching([...catalog, ...custom], query, filter),
     );
   }
 
   return ExercisePickerResults(
-    sectioned: true,
     custom: _matching(custom, query, filter),
     defaults: _matching(catalog, query, filter),
   );

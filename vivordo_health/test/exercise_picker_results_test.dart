@@ -27,7 +27,6 @@ void main() {
   test('browsing splits custom into its own section', () {
     final result = results();
 
-    expect(result.sectioned, isTrue);
     expect(result.custom.map((e) => e.name), [
       'Aardvark Cable Curl',
       'Sled Push',
@@ -42,7 +41,6 @@ void main() {
   test('a search collapses to one merged, sorted list', () {
     final result = results(search: 'cable');
 
-    expect(result.sectioned, isFalse);
     expect(result.custom, isEmpty);
     expect(result.defaults.map((e) => e.name), [
       'Aardvark Cable Curl',
@@ -64,7 +62,7 @@ void main() {
   test('a category filter collapses sections and filters both sources', () {
     final result = results(filter: 'Shoulders');
 
-    expect(result.sectioned, isFalse);
+    expect(result.custom, isEmpty);
     expect(result.defaults.map((e) => e.name), [
       'Aardvark Cable Curl',
       'Arnold Press',
@@ -84,7 +82,13 @@ void main() {
   });
 
   test('whitespace-only search still counts as browsing', () {
-    expect(results(search: '   ').sectioned, isTrue);
+    final result = results(search: '   ');
+
+    expect(result.custom.map((e) => e.name), [
+      'Aardvark Cable Curl',
+      'Sled Push',
+    ]);
+    expect(result.defaults, hasLength(3));
   });
 
   test('no custom exercises yields an empty custom section', () {
@@ -95,7 +99,6 @@ void main() {
       custom: const [],
     );
 
-    expect(result.sectioned, isTrue);
     expect(result.custom, isEmpty);
     expect(result.defaults, hasLength(3));
   });
