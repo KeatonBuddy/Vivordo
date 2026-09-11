@@ -4,7 +4,6 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
-import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
@@ -39,8 +38,6 @@ class _SettingsScreenState extends State<SettingsScreen>
   String? _togglingMetric; // key of metric currently being toggled
   bool _isGoogleCalendarConnected = false;
   bool _isUpdatingGoogleCalendar = false;
-  bool _isOutlookCalendarConnected = false;
-  bool _isUpdatingOutlookCalendar = false;
   bool _isUpdatingFitbit = false;
   bool _isUpdatingWhoop = false;
   bool _isUpdatingScanReminder = false;
@@ -75,9 +72,6 @@ class _SettingsScreenState extends State<SettingsScreen>
       _handleGoogleCalendarConnectionChange,
     );
     _refreshGoogleCalendarConnection();
-    if (OutlookCalendarService.enabled) {
-      _refreshOutlookCalendarConnection();
-    }
 
     // Skip the first emission — it just reflects current login state, not a change
     bool isFirstEmission = true;
@@ -328,50 +322,6 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
     } finally {
       if (mounted) setState(() => _isUpdatingGoogleCalendar = false);
-    }
-  }
-
-  Future<void> _refreshOutlookCalendarConnection() async {
-    final isConnected = await OutlookCalendarService.isSignedIn();
-    if (mounted) {
-      setState(() => _isOutlookCalendarConnected = isConnected);
-    }
-  }
-
-  Future<void> _updateOutlookCalendarConnection() async {
-    setState(() => _isUpdatingOutlookCalendar = true);
-    try {
-      if (_isOutlookCalendarConnected) {
-        await OutlookCalendarService.signOut();
-      } else {
-        final today = DateTime.now();
-        final weekStart = today.subtract(Duration(days: today.weekday - 1));
-        await OutlookCalendarService.connectAndGetWeekEvents(
-          DateTime(weekStart.year, weekStart.month, weekStart.day),
-        );
-      }
-
-      final isConnected = await OutlookCalendarService.isSignedIn();
-      if (mounted) {
-        setState(() => _isOutlookCalendarConnected = isConnected);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isConnected
-                  ? 'Outlook Calendar has been signed in.'
-                  : 'Outlook Calendar has been logged out.',
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update Outlook Calendar: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isUpdatingOutlookCalendar = false);
     }
   }
 
@@ -726,9 +676,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     // where they tap the verification link while the app is already open
     if (state == AppLifecycleState.resumed) {
       _checkEmailSync();
-      if (OutlookCalendarService.enabled) {
-        _refreshOutlookCalendarConnection();
-      }
     }
   }
 
@@ -1619,95 +1566,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                           ],
                         ),
                       ),
-                      if (OutlookCalendarService.enabled) ...[
-                        _buildDivider(),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFF0078D4,
-                                  ).withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(
-                                  Icons.calendar_month_rounded,
-                                  size: 18,
-                                  color: Color(0xFF0078D4),
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Outlook Calendar',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      _isOutlookCalendarConnected
-                                          ? 'Connected - calendar access enabled'
-                                          : 'Not connected',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: _isOutlookCalendarConnected
-                                            ? const Color(0xFF34C759)
-                                            : const Color(0xFF8E8E93),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              TextButton.icon(
-                                onPressed: _isUpdatingOutlookCalendar
-                                    ? null
-                                    : _updateOutlookCalendarConnection,
-                                icon: _isUpdatingOutlookCalendar
-                                    ? const SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Color(0xFF0078D4),
-                                        ),
-                                      )
-                                    : Icon(
-                                        _isOutlookCalendarConnected
-                                            ? Icons.logout_rounded
-                                            : Icons.login_rounded,
-                                        size: 16,
-                                      ),
-                                label: Text(
-                                  _isUpdatingOutlookCalendar
-                                      ? (_isOutlookCalendarConnected
-                                            ? 'Logging out...'
-                                            : 'Signing in...')
-                                      : (_isOutlookCalendarConnected
-                                            ? 'Log Out'
-                                            : 'Sign In'),
-                                ),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: _isOutlookCalendarConnected
-                                      ? const Color(0xFFFF3B30)
-                                      : const Color(0xFF0078D4),
-                                  textStyle: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                   const SizedBox(height: 24),

@@ -5,7 +5,6 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
-import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
 import 'package:vivordo_health/src/services/workout_live_activity_service.dart';
 
@@ -46,7 +45,6 @@ class AccountDeletionService {
     await WhoopBleHeartRateService.instance.handleSignedOut().catchError(
       (Object _) {},
     );
-    await OutlookCalendarService.signOut().catchError((Object _) {});
     await CalendarService.signOut().catchError((Object _) {});
     await NotificationService().clearAfterAccountDeletion().catchError(
       (Object _) {},

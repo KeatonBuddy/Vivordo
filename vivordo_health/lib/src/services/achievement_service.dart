@@ -8,7 +8,6 @@ import 'activity_goals_service.dart';
 import 'achievement_unlock_service.dart';
 import 'calendar_service.dart';
 import 'circle_profile_service.dart';
-import 'outlook_calendar_service.dart';
 
 class AchievementProgress {
   const AchievementProgress({
@@ -313,7 +312,6 @@ class AchievementService {
       userRef.collection('achievements').get(),
       CircleProfileService.watchFriends().first,
       _hasGoogleCalendar(),
-      _hasOutlookCalendar(),
       userRef.get(),
     ]);
 
@@ -323,8 +321,8 @@ class AchievementService {
         (results[2] as AggregateQuerySnapshot).count?.toInt() ?? 0;
     final savedAchievements = results[3] as QuerySnapshot<Map<String, dynamic>>;
     final friends = results[4] as List<CircleProfile>;
-    final calendarConnected = (results[5] as bool) || (results[6] as bool);
-    final userSnapshot = results[7] as DocumentSnapshot<Map<String, dynamic>>;
+    final calendarConnected = results[5] as bool;
+    final userSnapshot = results[6] as DocumentSnapshot<Map<String, dynamic>>;
     final activityGoals = ActivityGoals.fromUserData(userSnapshot.data());
     final savedById = {
       for (final document in savedAchievements.docs) document.id: document,
@@ -687,14 +685,6 @@ class AchievementService {
   static Future<bool> _hasGoogleCalendar() async {
     try {
       return await CalendarService.hasCalendarAccess();
-    } catch (_) {
-      return false;
-    }
-  }
-
-  static Future<bool> _hasOutlookCalendar() async {
-    try {
-      return await OutlookCalendarService.isSignedIn();
     } catch (_) {
       return false;
     }

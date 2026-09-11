@@ -12,7 +12,6 @@ import 'package:vivordo_health/src/services/metrics_service.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
-import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
@@ -1699,7 +1698,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final events = <_ScheduleEvent>[];
 
     bool googleSignedIn = false;
-    bool outlookSignedIn = false;
 
     try {
       googleSignedIn = await CalendarService.isSignedIn().timeout(
@@ -1710,16 +1708,7 @@ class _HomeScreenState extends State<HomeScreen> {
       googleSignedIn = false;
     }
 
-    try {
-      outlookSignedIn = await OutlookCalendarService.isSignedIn().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => false,
-      );
-    } catch (_) {
-      outlookSignedIn = false;
-    }
-
-    if (!googleSignedIn && !outlookSignedIn) return null;
+    if (!googleSignedIn) return null;
 
     if (googleSignedIn) {
       try {
@@ -1742,29 +1731,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       } catch (e) {
         debugPrint('Schedule insight Google load failed: $e');
-      }
-    }
-
-    if (outlookSignedIn) {
-      try {
-        final outlookEvents =
-            await OutlookCalendarService.getWeekEvents(todayStart).timeout(
-              const Duration(seconds: 8),
-              onTimeout: () => <OutlookEvent>[],
-            );
-        events.addAll(
-          outlookEvents.map((event) {
-            return _ScheduleEvent(
-              title: event.subject.trim().isNotEmpty
-                  ? event.subject.trim()
-                  : 'Calendar event',
-              start: event.start.toLocal(),
-              end: event.end.toLocal(),
-            );
-          }),
-        );
-      } catch (e) {
-        debugPrint('Schedule insight Outlook load failed: $e');
       }
     }
 
@@ -2544,31 +2510,6 @@ class _HomeScreenState extends State<HomeScreen> {
       debugPrint('Heart insight Google Calendar match failed: $error');
     }
 
-    try {
-      if (await OutlookCalendarService.isSignedIn()) {
-        final outlookEvents =
-            await OutlookCalendarService.getWeekEvents(
-              timestamp.toLocal(),
-            ).timeout(
-              const Duration(seconds: 8),
-              onTimeout: () => <OutlookEvent>[],
-            );
-        for (final event in outlookEvents) {
-          events.add(
-            HeartRateCalendarEvent(
-              title: event.subject.trim().isNotEmpty
-                  ? event.subject.trim()
-                  : 'Calendar event',
-              start: event.start.toLocal(),
-              end: event.end.toLocal(),
-            ),
-          );
-        }
-      }
-    } catch (error) {
-      debugPrint('Heart insight Outlook Calendar match failed: $error');
-    }
-
     return buildHeartRateCalendarInsight(
       bpm: reading.bpm,
       timestamp: timestamp,
@@ -3167,16 +3108,12 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
   int _weekOffset = 0;
   final ScrollController _scrollController = ScrollController();
   List<gcal.Event> _googleEvents = [];
-  List<OutlookEvent> _outlookEvents = [];
   bool _isGoogleConnected = false;
-  bool _isOutlookConnected = false;
   bool _isLoading = false;
   DateTime? _lastGoogleCalendarAttempt;
   DateTime? _lastGoogleCalendarFailure;
   int? _lastGoogleCalendarWeekOffset;
-  bool get _hasConnectedCalendar =>
-      _isGoogleConnected ||
-      (OutlookCalendarService.enabled && _isOutlookConnected);
+  bool get _hasConnectedCalendar => _isGoogleConnected;
 
   static const double _cellH = 52;
   static const double _timeColW = 52;
@@ -3234,9 +3171,6 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
       _handleGoogleCalendarConnectionChange,
     );
     _loadExistingGoogleCalendar();
-    if (OutlookCalendarService.enabled) {
-      _loadExistingOutlookCalendar();
-    }
   }
 
   void _scrollToFirstTodayEvent() {
@@ -3251,7 +3185,6 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
               ..._googleEvents
                   .map((event) => event.start?.dateTime?.toLocal())
                   .whereType<DateTime>(),
-              ..._outlookEvents.map((event) => event.start.toLocal()),
             ].where((start) {
               return start.year == now.year &&
                   start.month == now.month &&
@@ -3338,47 +3271,6 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
     }
   }
 
-  Future<void> _loadExistingOutlookCalendar() async {
-    try {
-      final signedIn = await OutlookCalendarService.isSignedIn().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => false,
-      );
-
-      if (!signedIn) {
-        if (!mounted) return;
-        setState(() {
-          _outlookEvents = [];
-          _isOutlookConnected = false;
-        });
-        _publishCalendarWidgetSnapshot();
-        return;
-      }
-
-      final dates = _getWeekDates();
-      final weekStart = dates.first;
-      final events = await OutlookCalendarService.getWeekEvents(
-        weekStart,
-      ).timeout(const Duration(seconds: 8), onTimeout: () => <OutlookEvent>[]);
-
-      if (!mounted) return;
-      setState(() {
-        _outlookEvents = events;
-        _isOutlookConnected = true;
-      });
-      _publishCalendarWidgetSnapshot();
-      _scrollToFirstTodayEvent();
-    } catch (e) {
-      debugPrint('Existing Outlook calendar load failed: $e');
-      if (!mounted) return;
-      setState(() {
-        _outlookEvents = [];
-        _isOutlookConnected = false;
-      });
-      _publishCalendarWidgetSnapshot();
-    }
-  }
-
   @override
   void dispose() {
     CalendarService.connectionNotifier.removeListener(
@@ -3412,10 +3304,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
 
   void _publishCalendarWidgetSnapshot() {
     unawaited(
-      HomeWidgetService.publishCalendarEvents(
-        googleEvents: _googleEvents,
-        outlookEvents: _outlookEvents,
-      ),
+      HomeWidgetService.publishCalendarEvents(googleEvents: _googleEvents),
     );
   }
 
@@ -3440,28 +3329,6 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
       debugPrint('Calendar error: $e');
     } finally {
       setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _connectOutlook() async {
-    setState(() => _isLoading = true);
-    try {
-      final dates = _getWeekDates();
-      final weekStart = dates.first;
-      final events = await OutlookCalendarService.connectAndGetWeekEvents(
-        weekStart,
-      );
-      if (!mounted) return;
-      setState(() {
-        _outlookEvents = events;
-        _isOutlookConnected = true;
-      });
-      _publishCalendarWidgetSnapshot();
-      _scrollToFirstTodayEvent();
-    } catch (e) {
-      debugPrint('Outlook calendar connect error: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -4034,46 +3901,10 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                     ),
                             ),
                           ),
-                        if (OutlookCalendarService.enabled &&
-                            !_isOutlookConnected) ...[
-                          const SizedBox(width: 4),
-                          GestureDetector(
-                            onTap: _isLoading ? null : _connectOutlook,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0078D4),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      width: 12,
-                                      height: 12,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Connect Outlook',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ],
                         const SizedBox(width: 4),
                         _navBtn(Icons.chevron_left_rounded, () {
                           setState(() => _weekOffset--);
                           if (_isGoogleConnected) _loadExistingGoogleCalendar();
-                          if (_isOutlookConnected)
-                            _loadExistingOutlookCalendar();
                         }),
                         const SizedBox(width: 4),
                         GestureDetector(
@@ -4102,8 +3933,6 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                         _navBtn(Icons.chevron_right_rounded, () {
                           setState(() => _weekOffset++);
                           if (_isGoogleConnected) _loadExistingGoogleCalendar();
-                          if (_isOutlookConnected)
-                            _loadExistingOutlookCalendar();
                         }),
                       ],
                     ),
@@ -4254,50 +4083,6 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                 ),
                         ),
                       ),
-                      if (OutlookCalendarService.enabled) ...[
-                        const SizedBox(height: 10),
-                        GestureDetector(
-                          onTap: _isLoading ? null : _connectOutlook,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0078D4),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.calendar_month_rounded,
-                                        size: 14,
-                                        color: Colors.white,
-                                      ),
-                                      SizedBox(width: 6),
-                                      Text(
-                                        'Connect Outlook Calendar',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -4357,14 +4142,6 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                     start.month == d.month;
                               }).toList()
                             : <gcal.Event>[];
-                        final outlookDayEvents = _isOutlookConnected
-                            ? _outlookEvents.where((e) {
-                                final start = e.start.toLocal();
-                                return start.day == d.day &&
-                                    start.month == d.month &&
-                                    start.year == d.year;
-                              }).toList()
-                            : <OutlookEvent>[];
 
                         return Expanded(
                           child: Container(
@@ -4472,72 +4249,6 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                                         .vivordoColors
                                                         .textPrimary
                                                   : const Color(0xFF1557b0),
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }),
-                                // Outlook Calendar events
-                                ...outlookDayEvents.map((ev) {
-                                  final start = ev.start.toLocal();
-                                  final end = ev.end.toLocal();
-                                  final startH =
-                                      start.hour + start.minute / 60.0;
-                                  final endH = end.hour + end.minute / 60.0;
-                                  final top = startH * _cellH;
-                                  final height = ((endH - startH) * _cellH - 2)
-                                      .clamp(18.0, double.infinity);
-                                  return Positioned(
-                                    top: top,
-                                    left: 4,
-                                    right: 0,
-                                    height: height,
-                                    child: Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(4),
-                                        onTap: () {},
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 5,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                Theme.of(context).brightness ==
-                                                    Brightness.dark
-                                                ? context
-                                                      .vivordoColors
-                                                      .cardMuted
-                                                : const Color(0xFFE6F2FB),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                            border: const Border(
-                                              left: BorderSide(
-                                                color: Color(0xFF0078D4),
-                                                width: 3,
-                                              ),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            ev.subject,
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
-                                              color:
-                                                  Theme.of(
-                                                        context,
-                                                      ).brightness ==
-                                                      Brightness.dark
-                                                  ? context
-                                                        .vivordoColors
-                                                        .textPrimary
-                                                  : const Color(0xFF005A9E),
                                             ),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
