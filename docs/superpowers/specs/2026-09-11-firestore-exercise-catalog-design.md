@@ -36,7 +36,7 @@ lifts is unfindable among 1,128 alphabetically sorted defaults.
 }
 ```
 
-Approximately 45KB against a 1MB document limit. Short field names (`n`, `c`)
+Measured at 57KB against a 1MB document limit. Short field names (`n`, `c`)
 keep the payload small; they are read in exactly one place.
 
 **Array, not a category map.** `circle_screen` renders the catalog unsorted, in
@@ -191,7 +191,7 @@ the console.
 
 ### Cost
 
-One document read per user per app launch, against a document of roughly 45KB.
+One document read per user per app launch, against a document of roughly 57KB.
 At Firestore's read pricing this is immaterial at any plausible user count, and
 it replaces zero reads today, so it is a real but very small increase.
 
