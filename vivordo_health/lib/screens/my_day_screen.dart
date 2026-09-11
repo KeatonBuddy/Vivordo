@@ -814,13 +814,33 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         .take(showFreeUntil ? 2 : 3)
         .toList();
     if (upcoming.isEmpty && !showFreeUntil) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(
-          child: Text(
-            'Nothing else scheduled today',
-            style: TextStyle(color: MyDayScreen.muted),
-          ),
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            const Icon(Icons.circle, color: Color(0xFF89CF68), size: 18),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Free now',
+                    style: TextStyle(
+                      color: context.vivordoColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'No more events scheduled today.',
+                    style: TextStyle(color: context.vivordoColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       );
     }
