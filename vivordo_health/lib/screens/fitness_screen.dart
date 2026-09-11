@@ -17,6 +17,7 @@ import '../src/services/recent_activity_service.dart';
 import '../src/services/exercise_catalog_service.dart';
 import '../src/services/workout_service.dart';
 import '../src/utils/custom_exercise_backfill.dart';
+import '../src/utils/exercise_picker_results.dart';
 import '../src/services/personal_profile_service.dart';
 import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
@@ -3311,18 +3312,25 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
     }
   }
 
-  List<_ExerciseDefinition> get _filteredExercises {
-    final query = _search.trim().toLowerCase();
-    return [..._exerciseLibrary, ..._customExercises].where((exercise) {
-        final matchesFilter = _filter == 'All' || exercise.category == _filter;
-        final matchesSearch =
-            query.isEmpty ||
-            exercise.name.toLowerCase().contains(query) ||
-            exercise.category.toLowerCase().contains(query);
-        return matchesFilter && matchesSearch;
-      }).toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-  }
+  PickerExercise _entry(_ExerciseDefinition exercise) => (
+    name: exercise.name,
+    category: exercise.category,
+    isCustom: exercise.isCustom,
+  );
+
+  _ExerciseDefinition _definitionFor(PickerExercise entry) =>
+      _ExerciseDefinition(
+        name: entry.name,
+        category: entry.category,
+        isCustom: entry.isCustom,
+      );
+
+  ExercisePickerResults get _pickerResults => exercisePickerResults(
+    search: _search,
+    filter: _filter,
+    catalog: _exerciseLibrary.map(_entry),
+    custom: _customExercises.map(_entry),
+  );
 
   void _toggle(_ExerciseDefinition exercise) {
     setState(() {
@@ -3437,7 +3445,9 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final exercises = _filteredExercises;
+    final results = _pickerResults;
+    final customResults = results.custom.map(_definitionFor).toList();
+    final exercises = results.defaults.map(_definitionFor).toList();
 
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
@@ -3516,6 +3526,36 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (customResults.isNotEmpty) ...[
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 18),
+                      child: _PickerSectionTitle('YOUR EXERCISES'),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: context.vivordoColors.card,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: context.vivordoColors.border),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: customResults.length,
+                        itemBuilder: (context, index) {
+                          final exercise = customResults[index];
+                          return _ExercisePickerRow(
+                            exercise: exercise,
+                            selected: _selected.contains(exercise.name),
+                            onTap: () => _toggle(exercise),
+                          );
+                        },
+                        separatorBuilder: (_, _) =>
+                            const Divider(height: 1, indent: 72),
+                      ),
+                    ),
+                  ],
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 18),
                     child: _PickerSectionTitle('ALL EXERCISES'),
@@ -3651,9 +3691,17 @@ class _ExercisePickerRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    exercise.category,
-                    style: const TextStyle(color: _muted),
+                  Row(
+                    children: [
+                      Text(
+                        exercise.category,
+                        style: const TextStyle(color: _muted),
+                      ),
+                      if (exercise.isCustom) ...[
+                        const SizedBox(width: 8),
+                        const _CustomExerciseBadge(),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -4578,6 +4626,28 @@ class _GoalTile extends StatelessWidget {
           backgroundColor: context.vivordoColors.input,
         ),
       ],
+    ),
+  );
+}
+
+class _CustomExerciseBadge extends StatelessWidget {
+  const _CustomExerciseBadge();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: _purple.withValues(alpha: .12),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: const Text(
+      'CUSTOM',
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w800,
+        letterSpacing: .8,
+        color: _purple,
+      ),
     ),
   );
 }
