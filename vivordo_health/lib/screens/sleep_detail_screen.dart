@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/services/fitbit_service.dart';
+import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
@@ -21,6 +23,29 @@ bool hasRecordedSleep(Map<String, dynamic>? dailyMetrics) {
 
 bool hasConnectedWhoop(Map<String, dynamic>? userData) =>
     userData?['whoopConnected'] == true;
+
+/// Refresh sequentially so the existing wearable/Apple fallback policy applies.
+/// A failed provider must not prevent the other connected providers from syncing.
+Future<void> refreshConnectedSleepSources(
+  Map<String, dynamic> userData, {
+  required Future<void> Function() whoop,
+  required Future<void> Function() fitbit,
+  required Future<void> Function() appleHealth,
+}) async {
+  final consent = userData['healthKitConsent'];
+  final sources = <Future<void> Function()>[
+    if (userData['whoopConnected'] == true) whoop,
+    if (userData['fitbitConnected'] == true) fitbit,
+    if (consent is Map && consent['sleep'] == true) appleHealth,
+  ];
+  for (final sync in sources) {
+    try {
+      await sync();
+    } catch (error) {
+      debugPrint('[SleepDetailScreen] Sleep source refresh failed: $error');
+    }
+  }
+}
 
 bool includesWhoopSleepSource(Iterable<String?> sources) =>
     sources.any((source) => source?.toLowerCase() == 'whoop');
@@ -41,7 +66,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   static const _purple = Color(0xFF5420DE);
   int _rangeIndex = 0;
   DateTime? _lastRefreshAt;
-  bool _refreshingWhoopSleep = false;
+  bool _refreshingSleep = false;
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,
@@ -54,9 +79,9 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     _ => 'Monthly',
   };
 
-  Future<void> _refreshWhoopSleepIfMissing() async {
+  Future<void> _refreshSleepIfMissing() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null || _refreshingWhoopSleep) return;
+    if (uid == null || _refreshingSleep) return;
 
     final firestore = FirebaseFirestore.instance;
     final userReference = firestore.collection('users').doc(uid);
@@ -65,7 +90,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         .doc(localDayKey(DateTime.now()));
 
     try {
-      _refreshingWhoopSleep = true;
+      _refreshingSleep = true;
       final today = await todayReference.get(
         const GetOptions(source: Source.server),
       );
@@ -75,21 +100,13 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
       }
 
       final user = await userReference.get();
-      if (user.data()?['whoopConnected'] != true) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Connect WHOOP to refresh today\'s sleep.'),
-            ),
-          );
-        }
-        return;
-      }
-
-      // Include yesterday as well as today. WHOOP sleep crosses midnight and
-      // its wake-day assignment can otherwise sit outside a one-day request
-      // around UTC/local-day boundaries.
-      await WhoopService.instance.sync(daysBack: 2, force: true);
+      // Include yesterday to cover sleep spanning midnight.
+      await refreshConnectedSleepSources(
+        user.data() ?? {},
+        whoop: () => WhoopService.instance.sync(daysBack: 2, force: true),
+        fitbit: () => FitbitService.instance.sync(daysBack: 2),
+        appleHealth: () => HealthService().syncMetric('sleep', daysBack: 2),
+      );
 
       final refreshed = await todayReference.get(
         const GetOptions(source: Source.server),
@@ -99,24 +116,20 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
       setState(() => _lastRefreshAt = DateTime.now());
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            updated
-                ? 'Sleep updated from WHOOP.'
-                : 'WHOOP has not finished processing today\'s sleep yet.',
-          ),
+          content: Text(updated ? 'Sleep updated.' : 'No sleep data available'),
         ),
       );
     } catch (error) {
-      debugPrint('[SleepDetailScreen] WHOOP refresh failed: $error');
+      debugPrint('[SleepDetailScreen] Sleep refresh failed: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('WHOOP sleep could not be refreshed. Try again.'),
+            content: Text('Sleep could not be refreshed. Try again.'),
           ),
         );
       }
     } finally {
-      _refreshingWhoopSleep = false;
+      _refreshingSleep = false;
     }
   }
 
@@ -227,7 +240,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
 
     return RefreshIndicator(
       color: _purple,
-      onRefresh: _refreshWhoopSleepIfMissing,
+      onRefresh: _refreshSleepIfMissing,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),

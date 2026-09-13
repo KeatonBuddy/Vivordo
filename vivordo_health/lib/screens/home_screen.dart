@@ -936,7 +936,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       hrVal,
                       Icons.favorite_rounded,
                       const Color(0xFFFF3B30),
-                      showConnectHint: false,
                       loading: hrLoading,
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
@@ -954,8 +953,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       const Color(0xFFF97316),
                       loading: moodLoading,
                       onTap: _showMoodCheck,
-                      emptyAction: _showMoodCheck,
-                      emptyActionLabel: 'Check in →',
                     ),
                   ),
                 ],
@@ -1249,16 +1246,17 @@ class _HomeScreenState extends State<HomeScreen> {
     String value,
     IconData icon,
     Color color, {
-    bool showConnectHint = true,
     bool loading = false,
     VoidCallback? onTap,
-    VoidCallback? emptyAction,
-    String emptyActionLabel = 'Connect Health →',
   }) {
     final bool isEmpty = value == '--';
+    final noData = isEmpty && !loading;
+    final displayValue = noData ? 'No data' : value;
     return Semantics(
       button: onTap != null,
-      label: onTap == null ? null : '$label, $value. Tap to view details.',
+      label: onTap == null
+          ? null
+          : '$label, $displayValue. Tap to view details.',
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
@@ -1271,7 +1269,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         child: Material(
-          color: context.vivordoColors.card,
+          color: noData
+              ? (Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF242428)
+                    : const Color(0xFFEEEEF0))
+              : context.vivordoColors.card,
           borderRadius: BorderRadius.circular(16),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
@@ -1282,7 +1284,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Icon(
                     icon,
-                    color: isEmpty ? const Color(0xFFC7C7CC) : color,
+                    color: isEmpty ? const Color(0xFF8E8E93) : color,
                     size: 20,
                   ),
                   const SizedBox(height: 6),
@@ -1296,7 +1298,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         )
                       : Text(
-                          value,
+                          displayValue,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -1310,29 +1312,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     label,
                     style: TextStyle(
                       fontSize: 10,
-                      color: context.vivordoColors.textPrimary,
+                      color: noData
+                          ? context.vivordoColors.textSecondary
+                          : context.vivordoColors.textPrimary,
                     ),
                   ),
-                  if (isEmpty && showConnectHint) ...[
-                    const SizedBox(height: 4),
-                    GestureDetector(
-                      onTap:
-                          emptyAction ??
-                          () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const SettingsScreen(),
-                            ),
-                          ),
-                      child: Text(
-                        emptyActionLabel,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: context.vivordoColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
