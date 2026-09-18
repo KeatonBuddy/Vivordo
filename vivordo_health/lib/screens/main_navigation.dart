@@ -106,10 +106,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _achievementMonitor = AchievementMonitor.start();
     // HealthKit does not push new values into Firestore. Keep the shared data
     // source current for both Home and Dashboard while the app is in use.
-    _healthRefreshTimer = Timer.periodic(
-      const Duration(minutes: 1),
-      (_) => _refreshTodayFromHealth(),
-    );
+    // A full sync walks every consented metric, so keep the interval long and
+    // skip it while backgrounded — resuming triggers its own refresh below.
+    _healthRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (WidgetsBinding.instance.lifecycleState !=
+          AppLifecycleState.resumed) {
+        return;
+      }
+      _refreshTodayFromHealth();
+    });
     if (widget.initialIndex == 5) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openChat());
     }
@@ -493,33 +498,38 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isWorkoutPulse)
-              AnimatedBuilder(
-                animation: _fitnessPulseController,
-                builder: (context, child) {
-                  final pulse = _fitnessPulseController.value;
-                  return Transform.scale(
-                    scale: 1 + (pulse * .18),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: primaryPurple.withValues(
-                              alpha: .16 + (pulse * .34),
+              // Without this boundary the pulse repaints the whole liquid
+              // glass nav bar every frame.
+              RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: _fitnessPulseController,
+                  child: Icon(
+                    icon,
+                    color: isActive ? Colors.white : primaryPurple,
+                    size: 23,
+                  ),
+                  builder: (context, child) {
+                    final pulse = _fitnessPulseController.value;
+                    return Transform.scale(
+                      scale: 1 + (pulse * .18),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: primaryPurple.withValues(
+                                alpha: .16 + (pulse * .34),
+                              ),
+                              blurRadius: 5 + (pulse * 10),
+                              spreadRadius: pulse * 2,
                             ),
-                            blurRadius: 5 + (pulse * 10),
-                            spreadRadius: pulse * 2,
-                          ),
-                        ],
+                          ],
+                        ),
+                        child: child,
                       ),
-                      child: Icon(
-                        icon,
-                        color: isActive ? Colors.white : primaryPurple,
-                        size: 23,
-                      ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               )
             else
               Icon(

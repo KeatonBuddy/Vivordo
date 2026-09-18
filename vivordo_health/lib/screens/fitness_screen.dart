@@ -1932,8 +1932,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       title: draft.liveActivityTitle,
       exerciseCount: draft.exercises.length,
     );
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+    // The elapsed clock ticks inside _WorkoutElapsedLabel so this timer only
+    // drives the distance refresh, which is already gated to 15s intervals.
+    timer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (_hasCardioExercise &&
           !refreshingDistance &&
           (lastDistanceRefresh == null ||
@@ -2270,8 +2271,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final elapsed =
-        '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
     final setCount = exercises.fold<int>(
       0,
       (total, exercise) => total + exercise.sets.length,
@@ -2309,13 +2308,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    Text(
-                      elapsed,
-                      style: const TextStyle(
-                        fontSize: 42,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+                    _WorkoutElapsedLabel(startedAt: startedAt),
                   ],
                 ),
               ),
@@ -2474,6 +2467,46 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Ticks the workout clock in isolation so the surrounding exercise list does
+/// not rebuild once per second.
+class _WorkoutElapsedLabel extends StatefulWidget {
+  const _WorkoutElapsedLabel({required this.startedAt});
+
+  final DateTime startedAt;
+
+  @override
+  State<_WorkoutElapsedLabel> createState() => _WorkoutElapsedLabelState();
+}
+
+class _WorkoutElapsedLabelState extends State<_WorkoutElapsedLabel> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = DateTime.now().difference(widget.startedAt).inSeconds;
+    final elapsed =
+        '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
+    return Text(
+      elapsed,
+      style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w800),
     );
   }
 }
