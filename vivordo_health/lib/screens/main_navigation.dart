@@ -49,6 +49,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   late final List<Widget> _tabPages;
   late final PandaScreen _persistentChatScreen;
   final Color primaryPurple = VivordoTheme.brand;
+  LiquidGlassSettings? _cachedGlassSettings;
+  bool? _cachedGlassSettingsIsDark;
 
   /// Analytics screen name per tab index, aligned with the nav bar order.
   static const List<String> _screenNames = [
@@ -407,55 +409,64 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Widget _buildFloatingNavBar() {
     final colors = context.vivordoColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final glassSettings = LiquidGlassSettings(
-      refractiveIndex: 1.16,
-      thickness: 22,
-      blur: 10,
-      chromaticAberration: .006,
-      saturation: isDark ? 1.25 : 1.4,
-      lightIntensity: isDark ? .55 : .9,
-      ambientStrength: isDark ? .18 : .4,
-      lightAngle: math.pi / 4,
-      glassColor: isDark
-          ? colors.card.withValues(alpha: .48)
-          : Colors.white.withValues(alpha: .42),
-    );
+    if (_cachedGlassSettingsIsDark != isDark) {
+      _cachedGlassSettingsIsDark = isDark;
+      _cachedGlassSettings = LiquidGlassSettings(
+        refractiveIndex: 1.16,
+        thickness: 22,
+        blur: 10,
+        chromaticAberration: .006,
+        saturation: isDark ? 1.25 : 1.4,
+        lightIntensity: isDark ? .55 : .9,
+        ambientStrength: isDark ? .18 : .4,
+        lightAngle: math.pi / 4,
+        glassColor: isDark
+            ? colors.card.withValues(alpha: .48)
+            : Colors.white.withValues(alpha: .42),
+      );
+    }
+    final glassSettings = _cachedGlassSettings!;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: colors.shadow,
-            blurRadius: 20,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: LiquidGlassLayer(
-        settings: glassSettings,
-        child: LiquidGlass(
-          shape: const LiquidRoundedSuperellipse(borderRadius: 24),
-          clipBehavior: Clip.antiAlias,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: isDark ? .14 : .68),
+    return RepaintBoundary(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: colors.shadow,
+              blurRadius: 20,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: LiquidGlassLayer(
+          settings: glassSettings,
+          child: LiquidGlass(
+            shape: const LiquidRoundedSuperellipse(borderRadius: 24),
+            clipBehavior: Clip.antiAlias,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
                 ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _navItem(Icons.home_rounded, "Home", 0),
-                  _navItem(Icons.calendar_month_rounded, "My Day", 1),
-                  _navItem(Icons.fingerprint_rounded, "Scan", 2),
-                  _navItem(Icons.fitness_center_rounded, "Fitness", 3),
-                  _navItem(Icons.bar_chart_rounded, "Metrics", 4),
-                ],
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: isDark ? .14 : .68),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _navItem(Icons.home_rounded, "Home", 0),
+                    _navItem(Icons.calendar_month_rounded, "My Day", 1),
+                    _navItem(Icons.fingerprint_rounded, "Scan", 2),
+                    _navItem(Icons.fitness_center_rounded, "Fitness", 3),
+                    _navItem(Icons.bar_chart_rounded, "Metrics", 4),
+                  ],
+                ),
               ),
             ),
           ),

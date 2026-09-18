@@ -15,15 +15,7 @@ struct VivordoLiveActivitiesBundle: WidgetBundle {
 
 private enum VivordoWidgetData {
   static let suite = "group.com.vivordo.health"
-
-  static var defaults: UserDefaults {
-    UserDefaults(suiteName: suite) ?? .standard
-  }
-
-  static func number(_ key: String, fallback: Double) -> Double {
-    guard defaults.object(forKey: key) != nil else { return fallback }
-    return defaults.double(forKey: key)
-  }
+  static let defaults: UserDefaults = UserDefaults(suiteName: suite) ?? .standard
 
   static func integer(_ key: String, fallback: Int) -> Int {
     guard defaults.object(forKey: key) != nil else { return fallback }

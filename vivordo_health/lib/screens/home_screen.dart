@@ -98,6 +98,8 @@ class _CircleAvatarCluster extends StatelessWidget {
               width: 42,
               height: 42,
               fit: BoxFit.cover,
+              cacheWidth: 126,
+              cacheHeight: 126,
               errorBuilder: (_, _, _) => _initialOrIcon(
                 text: text,
                 icon: icon,
@@ -176,6 +178,8 @@ class _HomeCircleProfileButton extends StatelessWidget {
                   ? Image.network(
                       photoUrl!,
                       fit: BoxFit.cover,
+                      cacheWidth: 120,
+                      cacheHeight: 120,
                       errorBuilder: (_, _, _) => Center(child: fallback),
                     )
                   : ColoredBox(

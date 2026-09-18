@@ -1023,6 +1023,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 child: Image.network(
                                   userData.photoUrl!,
                                   fit: BoxFit.cover,
+                                  cacheWidth: 156,
+                                  cacheHeight: 156,
                                 ),
                               )
                             : const Icon(

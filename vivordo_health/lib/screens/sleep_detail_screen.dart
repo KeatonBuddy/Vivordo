@@ -1276,7 +1276,7 @@ class _SleepingHeartRatePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SleepingHeartRatePainter oldDelegate) =>
-      oldDelegate.readings != readings ||
+      !listEquals(oldDelegate.readings, readings) ||
       oldDelegate.bedtime != bedtime ||
       oldDelegate.wakeTime != wakeTime ||
       oldDelegate.selectedIndex != selectedIndex ||

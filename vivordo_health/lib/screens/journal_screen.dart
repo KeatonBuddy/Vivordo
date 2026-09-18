@@ -95,6 +95,7 @@ class _JournalScreenState extends State<JournalScreen> {
             : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: entries
                     .orderBy('entryDate', descending: true)
+                    .limit(200)
                     .snapshots(),
                 builder: (context, snapshot) => ListView(
                   keyboardDismissBehavior:

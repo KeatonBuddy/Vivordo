@@ -57,12 +57,39 @@ import WidgetKit
           return
         }
         if call.method == "updateSnapshot",
-           let values = call.arguments as? [String: Any],
-           let defaults = UserDefaults(suiteName: "group.com.vivordo.health") {
-          values.forEach { defaults.set($0.value, forKey: $0.key) }
-          defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
-          WidgetCenter.shared.reloadAllTimelines()
-          result(nil)
+           let values = call.arguments as? [String: Any] {
+          let changedKeys = Set(values.keys)
+          DispatchQueue.global(qos: .utility).async {
+            guard let defaults = UserDefaults(suiteName: "group.com.vivordo.health") else {
+              DispatchQueue.main.async { result(nil) }
+              return
+            }
+            values.forEach { defaults.set($0.value, forKey: $0.key) }
+            defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
+
+            let stressKeys: Set<String> = ["stressScore"]
+            let wellnessKeys: Set<String> = ["wellnessScore", "wellnessDelta"]
+            let fitnessKeys: Set<String> = [
+              "steps", "stepsGoal", "activeCalories", "activeCaloriesGoal",
+              "exerciseMinutes", "exerciseGoal",
+            ]
+            let calendarKeys: Set<String> = ["calendarEvents"]
+
+            if !changedKeys.isDisjoint(with: stressKeys) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoStressScore")
+            }
+            if !changedKeys.isDisjoint(with: wellnessKeys) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoWellnessScore")
+            }
+            if !changedKeys.isDisjoint(with: fitnessKeys) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoFitnessRings")
+            }
+            if !changedKeys.isDisjoint(with: calendarKeys) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoCalendar")
+            }
+
+            DispatchQueue.main.async { result(nil) }
+          }
           return
         }
         result(FlutterMethodNotImplemented)
@@ -197,6 +224,8 @@ private enum WorkoutActivityError: LocalizedError {
 
 @available(iOS 16.1, *)
 private final class WorkoutLiveActivityManager {
+  private var lastAppliedState: WorkoutActivityAttributes.ContentState?
+
   private func state(title: String, exerciseCount: Int) -> WorkoutActivityAttributes.ContentState {
     WorkoutActivityAttributes.ContentState(
       title: title,
@@ -213,6 +242,7 @@ private final class WorkoutLiveActivityManager {
     let contentState = state(title: title, exerciseCount: exerciseCount)
     if let existing = Activity<WorkoutActivityAttributes>.activities.first {
       await existing.update(using: contentState)
+      lastAppliedState = contentState
       return
     }
 
@@ -222,13 +252,18 @@ private final class WorkoutLiveActivityManager {
       contentState: contentState,
       pushType: nil
     )
+    lastAppliedState = contentState
   }
 
   func update(title: String, exerciseCount: Int) async {
     let contentState = state(title: title, exerciseCount: exerciseCount)
+    // Skip redundant ActivityKit calls when nothing actually changed —
+    // each update consumes part of iOS's per-Live-Activity update budget.
+    guard contentState != lastAppliedState else { return }
     for activity in Activity<WorkoutActivityAttributes>.activities {
       await activity.update(using: contentState)
     }
+    lastAppliedState = contentState
   }
 
   func end() async {
@@ -240,5 +275,6 @@ private final class WorkoutLiveActivityManager {
     for activity in Activity<WorkoutActivityAttributes>.activities {
       await activity.end(using: finalState, dismissalPolicy: .immediate)
     }
+    lastAppliedState = nil
   }
 }

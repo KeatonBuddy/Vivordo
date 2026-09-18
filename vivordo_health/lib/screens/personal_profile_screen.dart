@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
@@ -839,7 +840,7 @@ class _TrendPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TrendPainter oldDelegate) =>
-      oldDelegate.points != points ||
+      !listEquals(oldDelegate.points, points) ||
       oldDelegate.color != color ||
       oldDelegate.suffix != suffix ||
       oldDelegate.minimumY != minimumY ||

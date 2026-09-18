@@ -290,13 +290,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   _DayInsight _calculateDayInsight() {
-    if (_isLoading) {
-      return const _DayInsight(
-        title: 'Analyzing today’s calendar',
-        detail: 'Looking for open windows and heavier calendar blocks.',
-      );
-    }
-
     final now = DateTime.now();
     final workStart = DateTime(now.year, now.month, now.day, 9);
     final workEnd = DateTime(now.year, now.month, now.day, 17);
@@ -310,6 +303,28 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             )
             .toList()
           ..sort((a, b) => a.start.compareTo(b.start));
+
+    final gaps = <(DateTime, DateTime)>[];
+    var cursor = workStart;
+    for (final event in timedEvents) {
+      final start = event.start.isBefore(workStart) ? workStart : event.start;
+      final end = event.end.isAfter(workEnd) ? workEnd : event.end;
+      if (start.isAfter(cursor)) gaps.add((cursor, start));
+      if (end.isAfter(cursor)) cursor = end;
+    }
+    if (cursor.isBefore(workEnd)) gaps.add((cursor, workEnd));
+    gaps.sort((a, b) => b.$2.difference(b.$1).compareTo(a.$2.difference(a.$1)));
+    final longestOpening = gaps.isEmpty
+        ? Duration.zero
+        : gaps.first.$2.difference(gaps.first.$1);
+
+    if (_isLoading) {
+      return _DayInsight(
+        title: 'Analyzing today’s calendar',
+        detail: 'Looking for open windows and heavier calendar blocks.',
+        longestOpening: longestOpening,
+      );
+    }
 
     String range(DateTime start, DateTime end) =>
         '${DateFormat('h:mm a').format(start)}–${DateFormat('h:mm a').format(end)}';
@@ -330,19 +345,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         detail: allDayCount == 0
             ? 'No timed events are scheduled between 9:00 AM and 5:00 PM. You have a large window for focused work, movement, or recovery.'
             : 'You have $allDayCount all-day ${allDayCount == 1 ? 'event' : 'events'}, but no timed events between 9:00 AM and 5:00 PM.',
+        longestOpening: longestOpening,
       );
     }
-
-    final gaps = <(DateTime, DateTime)>[];
-    var cursor = workStart;
-    for (final event in timedEvents) {
-      final start = event.start.isBefore(workStart) ? workStart : event.start;
-      final end = event.end.isAfter(workEnd) ? workEnd : event.end;
-      if (start.isAfter(cursor)) gaps.add((cursor, start));
-      if (end.isAfter(cursor)) cursor = end;
-    }
-    if (cursor.isBefore(workEnd)) gaps.add((cursor, workEnd));
-    gaps.sort((a, b) => b.$2.difference(b.$1).compareTo(a.$2.difference(a.$1)));
 
     if (gaps.isNotEmpty) {
       final longest = gaps.first;
@@ -352,6 +357,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           title: 'Protect your longest opening',
           detail:
               'Your ${range(longest.$1, longest.$2)} window is the longest open block in today’s calendar (${duration(gapDuration)}). Consider using it for focused work, movement, or recovery.',
+          longestOpening: longestOpening,
         );
       }
     }
@@ -367,6 +373,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       title: 'Your calendar is tightly packed',
       detail:
           'You have ${timedEvents.length} timed ${timedEvents.length == 1 ? 'event' : 'events'} during the workday. “${longestEvent.title}” is the longest block (${range(longestEvent.start, longestEvent.end)}), so leave recovery time around it if possible.',
+      longestOpening: longestOpening,
     );
   }
 
@@ -377,13 +384,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       Duration.zero,
       (total, event) => total + event.end.difference(event.start),
     );
-    final longestOpening = _longestOpening();
+    final dayInsight = _calculateDayInsight();
+    final longestOpening = dayInsight.longestOpening;
     final load = scheduled.inHours >= 6
         ? 'High'
         : scheduled.inHours >= 3
         ? 'Moderate'
         : 'Low';
-    final dayInsight = _calculateDayInsight();
     final watchItem = findNextBackToBackEventBlock(
       _events
           .where((event) => !event.isAllDay)
@@ -637,33 +644,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         ),
       ),
     );
-  }
-
-  Duration _longestOpening() {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day, 9);
-    final end = DateTime(now.year, now.month, now.day, 17);
-    final events =
-        _events
-            .where(
-              (e) =>
-                  !e.isAllDay && e.end.isAfter(start) && e.start.isBefore(end),
-            )
-            .toList()
-          ..sort((a, b) => a.start.compareTo(b.start));
-    var cursor = start;
-    var longest = Duration.zero;
-    for (final event in events) {
-      if (event.start.isAfter(cursor)) {
-        final gap = event.start.difference(cursor);
-        if (gap > longest) longest = gap;
-      }
-      if (event.end.isAfter(cursor)) cursor = event.end;
-    }
-    if (cursor.isBefore(end) && end.difference(cursor) > longest) {
-      return end.difference(cursor);
-    }
-    return longest;
   }
 
   String _shortDuration(Duration duration) {
@@ -2108,10 +2088,15 @@ class _SummaryDetailRow extends StatelessWidget {
 }
 
 class _DayInsight {
-  const _DayInsight({required this.title, required this.detail});
+  const _DayInsight({
+    required this.title,
+    required this.detail,
+    required this.longestOpening,
+  });
 
   final String title;
   final String detail;
+  final Duration longestOpening;
 }
 
 class _CalendarEvent {

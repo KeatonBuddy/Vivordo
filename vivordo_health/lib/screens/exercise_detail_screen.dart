@@ -970,8 +970,8 @@ class _ExerciseBarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ExerciseBarPainter oldDelegate) =>
-      oldDelegate.values != values ||
-      oldDelegate.dates != dates ||
+      !listEquals(oldDelegate.values, values) ||
+      !listEquals(oldDelegate.dates, dates) ||
       oldDelegate.dailyGoal != dailyGoal ||
       oldDelegate.selected != selected ||
       oldDelegate.dark != dark;
@@ -1047,5 +1047,5 @@ class _WeightChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _WeightChartPainter oldDelegate) =>
-      oldDelegate.points != points || oldDelegate.dark != dark;
+      !listEquals(oldDelegate.points, points) || oldDelegate.dark != dark;
 }
