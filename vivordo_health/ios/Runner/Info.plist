@@ -45,10 +45,10 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>Vivordo uses the rear camera and flash for heart-rate scans and the front camera when you choose to take a Circle profile picture.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Vivordo connects to your WHOOP to record heart-rate readings while monitoring is enabled, including while the app is in the background.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Vivordo uses the rear camera and flash for heart-rate scans and the front camera when you choose to take a Circle profile picture.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Vivordo uses Face ID to protect access to your private journal.</string>
 	<key>NSHealthClinicalHealthRecordsShareUsageDescription</key>
@@ -63,6 +63,27 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneConfigurationName</key>
+					<string>flutter</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

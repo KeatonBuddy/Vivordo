@@ -4,7 +4,7 @@ import UIKit
 import WidgetKit
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let workoutActivities = WorkoutLiveActivityManager()
   private var workoutActivityChannel: FlutterMethodChannel?
   private var homeWidgetChannel: FlutterMethodChannel?
@@ -22,7 +22,6 @@ import WidgetKit
         pendingWidgetDestination = destination
       }
     }
-    GeneratedPluginRegistrant.register(with: self)
     let launched = super.application(
       application,
       didFinishLaunchingWithOptions: launchOptions
@@ -31,10 +30,14 @@ import WidgetKit
     UNUserNotificationCenter.current().delegate = self
     application.registerForRemoteNotifications()
 
-    if let controller = window?.rootViewController as? FlutterViewController {
+    return launched
+  }
+
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
       let channel = FlutterMethodChannel(
         name: "com.vivordo.health/workout_activity",
-        binaryMessenger: controller.binaryMessenger
+        binaryMessenger: engineBridge.applicationRegistrar.messenger()
       )
       workoutActivityChannel = channel
       channel.setMethodCallHandler { [weak self] call, result in
@@ -43,7 +46,7 @@ import WidgetKit
 
       let widgetChannel = FlutterMethodChannel(
         name: "com.vivordo.health/home_widgets",
-        binaryMessenger: controller.binaryMessenger
+        binaryMessenger: engineBridge.applicationRegistrar.messenger()
       )
       homeWidgetChannel = widgetChannel
       widgetChannel.setMethodCallHandler { [weak self] call, result in
@@ -64,9 +67,6 @@ import WidgetKit
         }
         result(FlutterMethodNotImplemented)
       }
-    }
-
-    return launched
   }
 
   override func application(
@@ -74,16 +74,22 @@ import WidgetKit
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
+    if handleVivordoURL(url) { return true }
+    return super.application(app, open: url, options: options)
+  }
+
+  @discardableResult
+  func handleVivordoURL(_ url: URL, notify: Bool = true) -> Bool {
     if let destination = widgetDestination(from: url) {
       pendingWidgetDestination = destination
-      homeWidgetChannel?.invokeMethod("widgetTapped", arguments: destination)
+      if notify { homeWidgetChannel?.invokeMethod("widgetTapped", arguments: destination) }
       return true
     }
     guard isWorkoutActivityURL(url) else {
-      return super.application(app, open: url, options: options)
+      return false
     }
     pendingWorkoutLaunch = true
-    workoutActivityChannel?.invokeMethod("workoutActivityTapped", arguments: nil)
+    if notify { workoutActivityChannel?.invokeMethod("workoutActivityTapped", arguments: nil) }
     return true
   }
 
@@ -149,6 +155,29 @@ import WidgetKit
         }
       }
     }
+  }
+}
+
+// Kept in this compiled source file so both device and simulator targets include it.
+class SceneDelegate: FlutterSceneDelegate {
+  override func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    // Queue cold-start destinations before Flutter initializes its channels.
+    let app = UIApplication.shared.delegate as? AppDelegate
+    for context in connectionOptions.urlContexts {
+      app?.handleVivordoURL(context.url, notify: false)
+    }
+    // Preserve Flutter/plugin delivery, including authentication callbacks.
+    super.scene(scene, willConnectTo: session, options: connectionOptions)
+  }
+
+  override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+    let app = UIApplication.shared.delegate as? AppDelegate
+    let remaining = Set(URLContexts.filter { app?.handleVivordoURL($0.url) != true })
+    if !remaining.isEmpty { super.scene(scene, openURLContexts: remaining) }
   }
 }
 

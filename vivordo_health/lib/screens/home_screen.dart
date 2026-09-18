@@ -19,7 +19,7 @@ import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
-import 'package:vivordo_health/src/utils/heart_rate_calendar_insight.dart';
+import 'package:vivordo_health/widgets/hourly_heart_insight_card.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
@@ -239,6 +239,7 @@ class _HomeWidgetSnapshot {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _hourlyHeartKey = GlobalKey<HourlyHeartInsightCardState>();
   String _currentMood = 'Good';
   double _currentMoodScore = 75;
   String? _pendingMoodSync;
@@ -257,9 +258,6 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _reachableWindowScoresDate;
   Future<_ScheduleInsight?>? _scheduleInsightFuture;
   DateTime? _scheduleInsightDate;
-  Future<HeartRateCalendarInsight>? _heartInsightFuture;
-  DateTime? _heartInsightReadingTime;
-  int? _heartInsightReadingBpm;
   ActivityGoals _activityGoals = const ActivityGoals();
   StreamSubscription<ActivityGoals>? _activityGoalsSubscription;
   _HomeWidgetSnapshot? _latestHomeWidgetSnapshot;
@@ -874,127 +872,138 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(
-                hasWhoopData:
-                    sleepIsWhoop || latestHeartRate?.source == 'whoop_ble',
-              ),
-              const SizedBox(height: 24),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const StressDetailScreen()),
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await _hourlyHeartKey.currentState?.refresh(force: true);
+          },
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(
+                  hasWhoopData:
+                      sleepIsWhoop || latestHeartRate?.source == 'whoop_ble',
                 ),
-                child: HomeStressCard(
-                  score: stressScore,
-                  updatedAt: stressUpdatedAt,
-                  sevenDayAverage: sevenDayStressAverage,
-                  drivers: stressDrivers,
+                const SizedBox(height: 24),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const StressDetailScreen(),
+                    ),
+                  ),
+                  child: HomeStressCard(
+                    score: stressScore,
+                    updatedAt: stressUpdatedAt,
+                    sevenDayAverage: sevenDayStressAverage,
+                    drivers: stressDrivers,
+                    steps: steps,
+                    loading: stressLoading,
+                    updating: stressUpdating,
+                    revealScore: widget.revealStress,
+                    onInfoTap: _showStressScoreExplanation,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildMetricTile(
+                        'Sleep',
+                        sleepVal,
+                        Icons.bedtime_rounded,
+                        accentPurple,
+                        loading: sleepLoading,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildMetricTile(
+                        'Steps',
+                        stepsVal,
+                        Icons.directions_walk_rounded,
+                        greenColor,
+                        loading: stepsLoading,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const StepsDetailScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildMetricTile(
+                        'Heart Rate',
+                        hrVal,
+                        Icons.favorite_rounded,
+                        const Color(0xFFFF3B30),
+                        loading: hrLoading,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const HeartRateDetailScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildMetricTile(
+                        'Mood',
+                        moodVal,
+                        Icons.mood_rounded,
+                        const Color(0xFFF97316),
+                        loading: moodLoading,
+                        onTap: _showMoodCheck,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildFitnessSummaryCard(
                   steps: steps,
-                  loading: stressLoading,
-                  updating: stressUpdating,
-                  revealScore: widget.revealStress,
-                  onInfoTap: _showStressScoreExplanation,
+                  activeCalories: activeCalories,
+                  exerciseMinutes: exerciseMinutes,
                 ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildMetricTile(
-                      'Sleep',
-                      sleepVal,
-                      Icons.bedtime_rounded,
-                      accentPurple,
-                      loading: sleepLoading,
-                    ),
+                const SizedBox(height: 14),
+                _buildCircleCard(),
+                const SizedBox(height: 28),
+                _buildSectionTitle("TODAY'S INSIGHTS"),
+                const SizedBox(height: 12),
+                _buildScheduleInsightCard(),
+                if (sleepVal != '--')
+                  _buildInsightCard(
+                    icon: Icons.nightlight_round,
+                    iconColor: accentPurple,
+                    iconBg: const Color(0x1F7B6EF6),
+                    title: _getSleepInsightTitle(sleepVal),
+                    subtitle: _getSleepInsightSubtitle(sleepVal, hrVal),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildMetricTile(
-                      'Steps',
-                      stepsVal,
-                      Icons.directions_walk_rounded,
-                      greenColor,
-                      loading: stepsLoading,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const StepsDetailScreen(),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildMetricTile(
-                      'Heart Rate',
-                      hrVal,
-                      Icons.favorite_rounded,
-                      const Color(0xFFFF3B30),
-                      loading: hrLoading,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const HeartRateDetailScreen(),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildMetricTile(
-                      'Mood',
-                      moodVal,
-                      Icons.mood_rounded,
-                      const Color(0xFFF97316),
-                      loading: moodLoading,
-                      onTap: _showMoodCheck,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildFitnessSummaryCard(
-                steps: steps,
-                activeCalories: activeCalories,
-                exerciseMinutes: exerciseMinutes,
-              ),
-              const SizedBox(height: 14),
-              _buildCircleCard(),
-              const SizedBox(height: 28),
-              _buildSectionTitle("TODAY'S INSIGHTS"),
-              const SizedBox(height: 12),
-              _buildScheduleInsightCard(),
-              if (sleepVal != '--')
-                _buildInsightCard(
-                  icon: Icons.nightlight_round,
-                  iconColor: accentPurple,
-                  iconBg: const Color(0x1F7B6EF6),
-                  title: _getSleepInsightTitle(sleepVal),
-                  subtitle: _getSleepInsightSubtitle(sleepVal, hrVal),
+                if (sleepVal != '--') const SizedBox(height: 10),
+                HourlyHeartInsightCard(
+                  key: _hourlyHeartKey,
+                  isActive: widget.isActive,
                 ),
-              if (sleepVal != '--') const SizedBox(height: 10),
-              if (latestHeartRate != null)
-                _buildHeartRateInsightCard(latestHeartRate),
-              if (sleepVal == '--' && hrVal == '--')
-                _buildInsightCard(
-                  icon: Icons.info_outline_rounded,
-                  iconColor: textGrey,
-                  iconBg: const Color(0x1F8E8E93),
-                  title: 'No insights yet',
-                  subtitle:
-                      'Connect Apple Health or complete a scan to see your daily insights.',
-                ),
-              const SizedBox(height: 28),
-              _buildReachableWindowsTitle(),
-              const SizedBox(height: 12),
-              _buildReachableWindows(),
-              const SizedBox(height: 160),
-            ],
+                if (sleepVal == '--' && hrVal == '--')
+                  _buildInsightCard(
+                    icon: Icons.info_outline_rounded,
+                    iconColor: textGrey,
+                    iconBg: const Color(0x1F8E8E93),
+                    title: 'No insights yet',
+                    subtitle:
+                        'Connect Apple Health or complete a scan to see your daily insights.',
+                  ),
+                const SizedBox(height: 28),
+                _buildReachableWindowsTitle(),
+                const SizedBox(height: 12),
+                _buildReachableWindows(),
+                const SizedBox(height: 160),
+              ],
+            ),
           ),
         ),
       ),
@@ -2457,107 +2466,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _getSleepInsightSubtitle(String sleepVal, String hrVal) {
     return '$sleepVal of sleep recorded';
-  }
-
-  Widget _buildHeartRateInsightCard(LatestHeartRateReading reading) {
-    return FutureBuilder<HeartRateCalendarInsight>(
-      future: _getHeartRateInsightFuture(reading),
-      builder: (context, snapshot) {
-        final insight =
-            snapshot.data ??
-            buildHeartRateCalendarInsight(
-              bpm: reading.bpm,
-              timestamp: reading.timestamp,
-            );
-        return _buildInsightCard(
-          icon: Icons.favorite_rounded,
-          iconColor: const Color(0xFFFF3B30),
-          iconBg: const Color(0x1FFF3B30),
-          title: insight.title,
-          subtitle: insight.subtitle,
-        );
-      },
-    );
-  }
-
-  Future<HeartRateCalendarInsight> _getHeartRateInsightFuture(
-    LatestHeartRateReading reading,
-  ) {
-    if (_heartInsightFuture != null &&
-        _heartInsightReadingTime == reading.timestamp &&
-        _heartInsightReadingBpm == reading.bpm) {
-      return _heartInsightFuture!;
-    }
-    _heartInsightReadingTime = reading.timestamp;
-    _heartInsightReadingBpm = reading.bpm;
-    _heartInsightFuture = _loadHeartRateInsight(reading);
-    return _heartInsightFuture!;
-  }
-
-  Future<HeartRateCalendarInsight> _loadHeartRateInsight(
-    LatestHeartRateReading reading,
-  ) async {
-    final timestamp = reading.timestamp;
-    if (timestamp == null) {
-      return buildHeartRateCalendarInsight(bpm: reading.bpm, timestamp: null);
-    }
-
-    final events = <HeartRateCalendarEvent>[];
-    try {
-      if (await CalendarService.isSignedIn()) {
-        final googleEvents = await CalendarService.getWeekEvents(
-          timestamp.toLocal(),
-        ).timeout(const Duration(seconds: 8), onTimeout: () => <gcal.Event>[]);
-        for (final event in googleEvents) {
-          if (event.status == 'cancelled') continue;
-          final start = event.start?.dateTime?.toLocal();
-          final end = event.end?.dateTime?.toLocal();
-          if (start == null || end == null) continue;
-          events.add(
-            HeartRateCalendarEvent(
-              title: event.summary?.trim().isNotEmpty == true
-                  ? event.summary!.trim()
-                  : 'Calendar event',
-              start: start,
-              end: end,
-            ),
-          );
-        }
-      }
-    } catch (error) {
-      debugPrint('Heart insight Google Calendar match failed: $error');
-    }
-
-    try {
-      if (await OutlookCalendarService.isSignedIn()) {
-        final outlookEvents =
-            await OutlookCalendarService.getWeekEvents(
-              timestamp.toLocal(),
-            ).timeout(
-              const Duration(seconds: 8),
-              onTimeout: () => <OutlookEvent>[],
-            );
-        for (final event in outlookEvents) {
-          events.add(
-            HeartRateCalendarEvent(
-              title: event.subject.trim().isNotEmpty
-                  ? event.subject.trim()
-                  : 'Calendar event',
-              start: event.start.toLocal(),
-              end: event.end.toLocal(),
-            ),
-          );
-        }
-      }
-    } catch (error) {
-      debugPrint('Heart insight Outlook Calendar match failed: $error');
-    }
-
-    return buildHeartRateCalendarInsight(
-      bpm: reading.bpm,
-      timestamp: timestamp,
-      events: events,
-    );
   }
 
   String _formatCalendarDate(DateTime dt) {

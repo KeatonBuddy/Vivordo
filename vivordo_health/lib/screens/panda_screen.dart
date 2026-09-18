@@ -503,8 +503,9 @@ class _PandaScreenState extends State<PandaScreen>
       setState(() {
         _analyzingSpikes = false;
         _loading = false;
-        _error = 'Something went wrong: $e';
+        _error = 'Panda couldn’t load right now. Please try again.';
       });
+      debugPrint('[PandaScreen] Session load failed: $e');
       _saveLocalHistory(startedAt, success: false, error: e.toString());
     }
   }
@@ -1572,7 +1573,7 @@ class _PandaScreenState extends State<PandaScreen>
 
     if (_error != null) {
       return Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,

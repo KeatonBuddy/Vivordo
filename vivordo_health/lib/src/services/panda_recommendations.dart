@@ -44,15 +44,24 @@ enum RecCategory {
 
 RecCategory _parseCategory(String s) {
   switch (s.toLowerCase()) {
-    case 'music':     return RecCategory.music;
-    case 'breathing': return RecCategory.breathing;
-    case 'movement':  return RecCategory.movement;
-    case 'sleep':     return RecCategory.sleep;
-    case 'focus':     return RecCategory.focus;
-    case 'social':    return RecCategory.social;
-    case 'nutrition': return RecCategory.nutrition;
-    case 'journal':   return RecCategory.journal;
-    default:          return RecCategory.focus; // safe fallback
+    case 'music':
+      return RecCategory.music;
+    case 'breathing':
+      return RecCategory.breathing;
+    case 'movement':
+      return RecCategory.movement;
+    case 'sleep':
+      return RecCategory.sleep;
+    case 'focus':
+      return RecCategory.focus;
+    case 'social':
+      return RecCategory.social;
+    case 'nutrition':
+      return RecCategory.nutrition;
+    case 'journal':
+      return RecCategory.journal;
+    default:
+      return RecCategory.focus; // safe fallback
   }
 }
 
@@ -149,9 +158,8 @@ class PandaRecommendations {
     try {
       final raw = await rootBundle.loadString('assets/recommendations.json');
 
-      // Strip single-line // comments before parsing (JSON5-ish)
-      final stripped = raw.replaceAll(RegExp(r'//[^\n]*'), '');
-      final decoded = jsonDecode(stripped) as Map<String, dynamic>;
+      // The catalog is standard JSON; preserve // inside HTTPS URLs.
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
       final items = decoded['recommendations'] as List? ?? [];
 
       _cache = items
@@ -185,6 +193,5 @@ class PandaRecommendations {
   static List<PandaRec> byCategory(RecCategory cat) =>
       all.where((r) => r.category == cat).toList();
 
-  static PandaRec? byId(String id) =>
-      all.where((r) => r.id == id).firstOrNull;
+  static PandaRec? byId(String id) => all.where((r) => r.id == id).firstOrNull;
 }
