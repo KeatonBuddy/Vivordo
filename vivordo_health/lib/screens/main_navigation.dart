@@ -18,7 +18,12 @@ import '../theme/vivordo_theme.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final int initialIndex;
-  const MainNavigationScreen({super.key, this.initialIndex = 0});
+  final bool openMoodCheckIn;
+  const MainNavigationScreen({
+    super.key,
+    this.initialIndex = 0,
+    this.openMoodCheckIn = false,
+  });
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -109,8 +114,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     // A full sync walks every consented metric, so keep the interval long and
     // skip it while backgrounded — resuming triggers its own refresh below.
     _healthRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (WidgetsBinding.instance.lifecycleState !=
-          AppLifecycleState.resumed) {
+      if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
         return;
       }
       _refreshTodayFromHealth();
@@ -165,6 +169,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
               valueListenable: _homeStressReveal,
               builder: (context, revealStress, _) => HomeScreen(
                 isActive: isActive,
+                openMoodCheckIn: widget.openMoodCheckIn,
                 onScanTap: _openScan,
                 onFitnessTap: () => _selectTab(3),
                 revealStress: revealStress,

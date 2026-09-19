@@ -9,6 +9,10 @@ struct VivordoLiveActivitiesBundle: WidgetBundle {
     WellnessScoreWidget()
     FitnessRingWidget()
     CalendarWidget()
+    TodayAgendaWidget()
+    if #available(iOS 27.0, *) {
+      DayDashboardWidget()
+    }
     WorkoutLiveActivity()
   }
 }
@@ -405,8 +409,8 @@ private struct VivordoCalendarEvent: Identifiable {
 
   var id: String { "\(title)|\(start.timeIntervalSince1970)" }
 
-  static func current() -> [VivordoCalendarEvent] {
-    guard let rawEvents = VivordoWidgetData.defaults.array(forKey: "calendarEvents") as? [[String: Any]] else {
+  static func current(key: String = "calendarEvents") -> [VivordoCalendarEvent] {
+    guard let rawEvents = VivordoWidgetData.defaults.array(forKey: key) as? [[String: Any]] else {
       return []
     }
     return rawEvents.compactMap { raw in
@@ -763,5 +767,426 @@ private struct CalendarWidget: Widget {
     .description("See this week’s events and switch days without opening Vivordo.")
     .supportedFamilies([.systemMedium])
     .contentMarginsDisabled()
+  }
+}
+
+// A separate iOS 27 family leaves the existing small and medium widgets intact.
+@available(iOS 27.0, *)
+private struct DayDashboardWidget: Widget {
+  var body: some WidgetConfiguration {
+    StaticConfiguration(kind: "VivordoDayDashboard", provider: DayDashboardProvider()) { entry in
+      DayDashboardView(entry: entry)
+        .containerBackground(for: .widget) {
+          LinearGradient(colors: [Color(red: 0.20, green: 0.16, blue: 0.48),
+                                  Color(red: 0.06, green: 0.07, blue: 0.22),
+                                  Color(red: 0.25, green: 0.15, blue: 0.52)],
+                         startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+        .widgetURL(URL(string: "com.vivordo.health://widget/myday"))
+        .privacySensitive()
+    }
+    .configurationDisplayName("My Day Overview")
+    .description("Your stress, schedule, activity and priorities, with quick access to mood and workouts.")
+    .supportedFamilies([.systemExtraLargePortrait])
+    .contentMarginsDisabled()
+  }
+}
+
+private struct DashboardPriority: Identifiable {
+  let id: Int
+  let title: String
+  let time: String
+  let completed: Bool
+  let start: Date?
+  let source: String
+  let isAllDay: Bool
+}
+
+private struct DayDashboardEntry: TimelineEntry {
+  let date: Date
+  let metrics: VivordoWidgetEntry
+  let name: String
+  let hasMetrics: Bool
+  let hasStress: Bool
+  let calendarConnected: Bool
+  let events: [VivordoCalendarEvent]
+  let priorities: [DashboardPriority]
+
+  static func current(date: Date = .now) -> Self {
+    let defaults = VivordoWidgetData.defaults
+    let day = VivordoCalendarDates.dayKey(for: date)
+    let fresh = defaults.string(forKey: "dashboardMetricsDay") == day
+    let calendarUpdated = Date(timeIntervalSince1970: defaults.double(forKey: "calendarWeekUpdatedAt") / 1000)
+    let raw = defaults.string(forKey: "dashboardPrioritiesDay") == day
+      ? (defaults.array(forKey: "dashboardPriorities") as? [[String: Any]] ?? []) : []
+    return Self(date: date, metrics: .current(date: date),
+                name: defaults.string(forKey: "dashboardName") ?? "",
+                hasMetrics: fresh, hasStress: fresh && defaults.bool(forKey: "dashboardHasStress"),
+                calendarConnected: defaults.bool(forKey: "dashboardCalendarConnected") &&
+                  Calendar.current.isDate(calendarUpdated, inSameDayAs: date),
+                events: VivordoCalendarEvent.current(key: "dashboardEvents"),
+                priorities: raw.enumerated().map { index, value in
+                  DashboardPriority(id: index, title: value["title"] as? String ?? "Priority",
+                                    time: value["time"] as? String ?? "Anytime",
+                                    completed: value["completed"] as? Bool ?? false,
+                                    start: (value["startAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) },
+                                    source: value["source"] as? String ?? "manual",
+                                    isAllDay: value["isAllDay"] as? Bool ?? false)
+                })
+  }
+
+  var timedEvents: [VivordoCalendarEvent] {
+    let start = Calendar.current.startOfDay(for: date)
+    let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
+    return events.filter { !$0.isAllDay && $0.start < end && $0.end > start }
+  }
+
+  var load: String {
+    guard calendarConnected else { return "—" }
+    let start = Calendar.current.startOfDay(for: date)
+    let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
+    let hours = timedEvents.reduce(0.0) { $0 + max(0, min($1.end, end).timeIntervalSince(max($1.start, start))) } / 3600
+    return hours >= 6 ? "High" : hours >= 3 ? "Moderate" : "Low"
+  }
+
+  var longestOpening: TimeInterval {
+    let calendar = Calendar.current
+    let start = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: date)!
+    let end = calendar.date(bySettingHour: 17, minute: 0, second: 0, of: date)!
+    var cursor = start
+    var longest: TimeInterval = 0
+    for event in timedEvents where event.end > start && event.start < end {
+      longest = max(longest, min(event.start, end).timeIntervalSince(cursor))
+      cursor = max(cursor, min(event.end, end))
+    }
+    return max(longest, end.timeIntervalSince(cursor))
+  }
+}
+
+private struct DayDashboardProvider: TimelineProvider {
+  func placeholder(in context: Context) -> DayDashboardEntry { .current() }
+  func getSnapshot(in context: Context, completion: @escaping (DayDashboardEntry) -> Void) {
+    completion(.current())
+  }
+  func getTimeline(in context: Context, completion: @escaping (Timeline<DayDashboardEntry>) -> Void) {
+    let now = Date.now
+    // Time-driven entries let Now & Next advance even when Flutter is asleep.
+    let events = VivordoCalendarEvent.current(key: "dashboardEvents")
+    let horizon = now.addingTimeInterval(3600)
+    var dates = [now, Calendar.current.date(byAdding: .day, value: 1,
+                        to: Calendar.current.startOfDay(for: now))!]
+    dates += (1...4).map { now.addingTimeInterval(Double($0) * 900) }
+    dates += events.flatMap { [$0.start, $0.end] }.filter { $0 > now && $0 < horizon }
+    completion(Timeline(entries: Array(Set(dates)).sorted().map { .current(date: $0) },
+                        policy: .after(horizon)))
+  }
+}
+
+private struct DayDashboardView: View {
+  let entry: DayDashboardEntry
+  private let lavender = Color(red: 0.73, green: 0.63, blue: 1)
+  private var greeting: String {
+    let hour = Calendar.current.component(.hour, from: entry.date)
+    return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
+  }
+  private func destination(_ name: String) -> URL {
+    URL(string: "com.vivordo.health://widget/\(name)")!
+  }
+  private func duration(_ seconds: TimeInterval) -> String {
+    let minutes = max(0, Int(seconds / 60))
+    return minutes >= 60 ? "\(minutes / 60)h\(minutes % 60 == 0 ? "" : " \(minutes % 60)m")" : "\(minutes)m"
+  }
+  private func panel<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+    content().padding(12).frame(maxWidth: .infinity)
+      .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 19))
+      .overlay(RoundedRectangle(cornerRadius: 19).stroke(.white.opacity(0.20), lineWidth: 0.7))
+  }
+  private func heading(_ title: String) -> some View {
+    Text(title).font(.system(size: 11, weight: .semibold)).tracking(2).foregroundStyle(lavender)
+  }
+
+  var body: some View {
+    GeometryReader { geometry in
+      // Fit the whole composition on the smaller supported iPhones without
+      // clipping the actions below the fold. No scrolling inside WidgetKit.
+      let scale = min(geometry.size.width / 360, geometry.size.height / 740)
+      VStack(alignment: .leading, spacing: 9) {
+        HStack {
+          Image(systemName: "leaf.fill").font(.title2).foregroundStyle(lavender)
+          Text("VIVORDO").font(.system(size: 16, weight: .semibold)).tracking(4)
+          Spacer(minLength: 4)
+          Text(entry.date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
+            .font(.caption).foregroundStyle(lavender)
+        }
+        VStack(alignment: .leading, spacing: 4) {
+          (Text("\(greeting)\(entry.name.isEmpty ? "" : ", ")") + Text(entry.name).foregroundColor(lavender))
+            .font(.system(size: 25, weight: .bold)).lineLimit(1).minimumScaleFactor(0.65)
+          Text(entry.calendarConnected ? (entry.load == "Low" ? "Room to shape your day." : "Make space for a reset today.") : "Your day, at a glance.")
+            .font(.subheadline).foregroundStyle(lavender)
+        }
+        HStack(spacing: 10) {
+          Link(destination: destination("home")) {
+            panel {
+              VStack(spacing: 7) {
+                ZStack {
+                  FitnessArc(progress: entry.hasStress ? Double(entry.metrics.stress) / 100 : 0,
+                             color: lavender, lineWidth: 9)
+                  VStack(spacing: 1) {
+                    Text(entry.hasStress ? "\(entry.metrics.stress)%" : "—").font(.system(size: 28, weight: .bold))
+                    Text("Stress").font(.caption).foregroundStyle(lavender)
+                  }
+                }.frame(width: 96, height: 96).padding(5)
+                Text(entry.hasStress ? "Latest score" : "No data today").font(.caption).foregroundStyle(lavender)
+              }
+            }
+          }
+          Link(destination: destination("myday")) {
+            panel {
+              VStack(spacing: 7) {
+                Image(systemName: "gauge.with.needle").font(.system(size: 49)).foregroundStyle(lavender).frame(height: 62)
+                Text(entry.load).font(.title2.bold())
+                Text("Schedule load").font(.caption).foregroundStyle(lavender)
+                Text(entry.calendarConnected ? "\(duration(entry.longestOpening)) longest opening" : "Open Vivordo to refresh")
+                  .font(.system(size: 10)).foregroundStyle(lavender).lineLimit(1).minimumScaleFactor(0.7)
+              }.frame(height: 127)
+            }
+          }
+        }
+        heading("NOW & NEXT")
+        Link(destination: destination("calendar")) { panel { nowAndNext } }
+        heading("TODAY’S ACTIVITY")
+        Link(destination: destination("fitness")) {
+          panel {
+            HStack(spacing: 8) {
+              activity("figure.walk", value: entry.metrics.steps, goal: entry.metrics.stepsGoal, unit: "steps", color: .green)
+              Divider().overlay(lavender.opacity(0.3))
+              activity("flame.fill", value: entry.metrics.calories, goal: entry.metrics.caloriesGoal, unit: "cal", color: .orange)
+              Divider().overlay(lavender.opacity(0.3))
+              activity("stopwatch.fill", value: entry.metrics.exerciseMinutes, goal: entry.metrics.exerciseGoal, unit: "min", color: .blue)
+            }.frame(height: 45)
+          }
+        }
+        HStack {
+          heading("PRIORITIES")
+          Spacer()
+          Link("Open My Day ›", destination: destination("myday")).font(.caption).foregroundStyle(lavender)
+        }
+        Link(destination: destination("myday")) {
+          panel {
+            VStack(alignment: .leading, spacing: 10) {
+              if entry.priorities.isEmpty {
+                Text("Open My Day to view your priorities.").font(.subheadline).foregroundStyle(lavender)
+              } else {
+                ForEach(Array(entry.priorities.prefix(2))) { priority in
+                  if priority.id > 0 { Divider().overlay(lavender.opacity(0.2)) }
+                  HStack(spacing: 9) {
+                    Image(systemName: priority.completed ? "checkmark.circle.fill" : "circle")
+                      .font(.title3).foregroundStyle(lavender)
+                    Text(priority.title).font(.system(size: 13)).strikethrough(priority.completed).lineLimit(1)
+                    Spacer(minLength: 2)
+                    Text(priority.time).font(.system(size: 10)).foregroundStyle(lavender)
+                      .padding(6).background(lavender.opacity(0.12), in: Capsule())
+                  }
+                }
+              }
+            }
+          }
+        }
+        Spacer(minLength: 0)
+        HStack(spacing: 10) {
+          shortcut("Mood check-in", icon: "heart.fill", route: "mood")
+          shortcut("Start workout", icon: "dumbbell.fill", route: "workout")
+        }
+      }
+      .padding(16)
+      .frame(width: 360, height: 740, alignment: .top)
+      .foregroundStyle(.white)
+      .scaleEffect(scale)
+      .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+    }
+  }
+
+  private var nowAndNext: some View {
+    let active = entry.timedEvents.first { $0.start <= entry.date && $0.end > entry.date }
+    let next = entry.timedEvents.first { $0.start > entry.date }
+    return VStack(alignment: .leading, spacing: 10) {
+      HStack(spacing: 10) {
+        Image(systemName: active == nil ? "circle.fill" : "calendar")
+          .foregroundStyle(active == nil ? Color.green : lavender).frame(width: 26)
+        VStack(alignment: .leading, spacing: 3) {
+          if !entry.calendarConnected {
+            Text("Open Vivordo for your schedule").font(.subheadline.bold())
+          } else if let active {
+            Text(active.title).font(.subheadline.bold()).lineLimit(1)
+            Text("Until \(active.end.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(lavender)
+          } else {
+            Text(next.map { "Free until \($0.start.formatted(date: .omitted, time: .shortened))" } ?? "No more timed events")
+              .font(.subheadline.bold()).lineLimit(1)
+            Text(next.map { "\(duration($0.start.timeIntervalSince(entry.date))) open" } ?? "Enjoy your open time")
+              .font(.caption).foregroundStyle(lavender)
+          }
+        }
+        Spacer(minLength: 0)
+      }
+      if let next {
+        Divider().overlay(lavender.opacity(0.2))
+        HStack(spacing: 10) {
+          Image(systemName: "calendar").foregroundStyle(lavender).frame(width: 26)
+          VStack(alignment: .leading, spacing: 3) {
+            Text(next.title).font(.subheadline.bold()).lineLimit(1)
+            Text("\(next.start.formatted(date: .omitted, time: .shortened)) · \(duration(next.end.timeIntervalSince(next.start)))")
+              .font(.caption).foregroundStyle(lavender)
+          }
+          Spacer(minLength: 0)
+        }
+      }
+    }
+  }
+
+  private func activity(_ icon: String, value: Int, goal: Int, unit: String, color: Color) -> some View {
+    HStack(spacing: 7) {
+      ZStack {
+        FitnessArc(progress: entry.hasMetrics ? Double(value) / Double(max(goal, 1)) : 0, color: color, lineWidth: 4)
+        Image(systemName: icon).font(.system(size: 17)).foregroundStyle(color)
+      }.frame(width: 35, height: 35)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(entry.hasMetrics ? value.formatted() : "—").font(.system(size: 14, weight: .bold)).lineLimit(1).minimumScaleFactor(0.6)
+        Text(unit).font(.caption2).foregroundStyle(lavender)
+      }
+    }.frame(maxWidth: .infinity)
+  }
+
+  private func shortcut(_ title: String, icon: String, route: String) -> some View {
+    Link(destination: destination(route)) {
+      HStack(spacing: 9) {
+        Image(systemName: icon).font(.title3).foregroundStyle(lavender)
+        Text(title).font(.system(size: 13, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+      }.frame(maxWidth: .infinity).padding(.vertical, 16)
+        .background(lavender.opacity(0.17), in: RoundedRectangle(cornerRadius: 17))
+        .overlay(RoundedRectangle(cornerRadius: 17).stroke(lavender.opacity(0.65)))
+    }
+  }
+}
+
+private struct TodayAgendaWidget: Widget {
+  var body: some WidgetConfiguration {
+    StaticConfiguration(kind: "VivordoTodayAgenda", provider: DayDashboardProvider()) { entry in
+      TodayAgendaView(entry: entry)
+        .containerBackground(for: .widget) {
+          LinearGradient(colors: [Color(red: 0.23, green: 0.16, blue: 0.52),
+                                  Color(red: 0.06, green: 0.07, blue: 0.23)],
+                         startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+        .widgetURL(URL(string: "com.vivordo.health://widget/myday"))
+        .privacySensitive()
+    }
+    .configurationDisplayName("Today: Events & Priorities")
+    .description("Your remaining calendar events and unfinished priorities in one timeline.")
+    .supportedFamilies([.systemMedium, .systemLarge])
+    .contentMarginsDisabled()
+  }
+}
+
+private struct TodayAgendaItem: Identifiable {
+  let id: String
+  let title: String
+  let time: String
+  let badge: String
+  let start: Date?
+  let isPriority: Bool
+}
+
+private extension DayDashboardEntry {
+  var agendaItems: [TodayAgendaItem] {
+    let calendar = Calendar.current
+    let dayStart = calendar.startOfDay(for: date)
+    let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
+    let todayEvents = calendarConnected ? events.filter {
+      $0.start < dayEnd && $0.end > date
+    } : []
+    var items = todayEvents.enumerated().map { index, event in
+      let minutes = max(0, Int(event.end.timeIntervalSince(event.start) / 60))
+      let duration = minutes >= 60
+        ? "\(minutes / 60)h\(minutes % 60 == 0 ? "" : " \(minutes % 60)m")"
+        : "\(minutes)m"
+      return TodayAgendaItem(id: "event-\(index)-\(event.id)", title: event.title,
+                             time: event.isAllDay ? "All day" : event.start.formatted(date: .omitted, time: .shortened),
+                             badge: event.isAllDay ? "Event" : duration,
+                             start: event.isAllDay ? dayStart : event.start, isPriority: false)
+    }
+    for priority in priorities where !priority.completed {
+      // Generated priorities mirror their source event. Keep the calendar row
+      // rather than showing the same commitment twice.
+      let mirrorsEvent = priority.source == "calendar" && todayEvents.contains {
+        $0.title == priority.title && $0.start == priority.start
+      }
+      if mirrorsEvent { continue }
+      items.append(TodayAgendaItem(id: "priority-\(priority.id)", title: priority.title,
+                                   time: priority.time, badge: "Priority",
+                                   start: priority.isAllDay ? nil : priority.start, isPriority: true))
+    }
+    return items.sorted {
+      let lhs = $0.start ?? .distantFuture
+      let rhs = $1.start ?? .distantFuture
+      if lhs != rhs { return lhs < rhs }
+      if $0.isPriority != $1.isPriority { return !$0.isPriority }
+      return $0.id < $1.id
+    }
+  }
+}
+
+private struct TodayAgendaView: View {
+  @Environment(\.widgetFamily) private var family
+  let entry: DayDashboardEntry
+  private let lavender = Color(red: 0.73, green: 0.63, blue: 1)
+
+  var body: some View {
+    let items = entry.agendaItems
+    let shown = Array(items.prefix(family == .systemLarge ? 7 : 3))
+    VStack(alignment: .leading, spacing: 8) {
+      Link(destination: URL(string: "com.vivordo.health://widget/myday")!) {
+        HStack(spacing: 7) {
+          Image(systemName: "leaf.fill").foregroundStyle(lavender)
+          Text("Today").font(.system(size: 20, weight: .bold))
+          Spacer(minLength: 4)
+          Text(entry.date, format: .dateTime.month(.abbreviated).day()).font(.caption)
+          Text("· \(items.count) \(items.count == 1 ? "item" : "items")").font(.caption)
+          Image(systemName: "chevron.right").font(.caption.bold())
+        }.foregroundStyle(lavender)
+      }
+      if shown.isEmpty {
+        Spacer(minLength: 0)
+        Text(entry.calendarConnected ? "You’re all caught up" : "Your day at a glance").font(.subheadline.bold())
+        Text(entry.calendarConnected ? "No remaining events or priorities." : "Open Vivordo to refresh your day.")
+          .font(.caption).foregroundStyle(lavender)
+        Spacer(minLength: 0)
+      } else {
+        VStack(spacing: 0) {
+          ForEach(Array(shown.enumerated()), id: \.element.id) { index, item in
+            Link(destination: URL(string: "com.vivordo.health://widget/\(item.isPriority ? "myday" : "calendar")")!) {
+              HStack(spacing: 7) {
+                Image(systemName: item.isPriority ? "circle" : "calendar")
+                  .font(.system(size: 19)).foregroundStyle(lavender).frame(width: 23)
+                ZStack {
+                  Rectangle().fill(lavender.opacity(0.35)).frame(width: 1)
+                  Circle().fill(item.isPriority ? lavender : Color.purple).frame(width: 6, height: 6)
+                }.frame(width: 8)
+                Text(item.time).font(.system(size: 10)).foregroundStyle(lavender)
+                  .frame(width: 53, alignment: .leading).lineLimit(1).minimumScaleFactor(0.7)
+                Text(item.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                Text(item.badge).font(.system(size: 9)).foregroundStyle(lavender)
+                  .padding(.horizontal, 6).padding(.vertical, 4)
+                  .background(lavender.opacity(0.15), in: Capsule())
+              }.frame(maxHeight: .infinity).foregroundStyle(.white)
+            }
+            if index < shown.count - 1 { Divider().overlay(lavender.opacity(0.2)) }
+          }
+        }
+      }
+    }
+    .padding(14)
+    .foregroundStyle(.white)
+    .overlay(RoundedRectangle(cornerRadius: 23).stroke(lavender.opacity(0.4), lineWidth: 1))
   }
 }

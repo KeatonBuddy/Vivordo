@@ -40,14 +40,20 @@ const _whatsNewReleaseId = 'my_day_refresh_2026_08';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 bool _openingExternalWorkout = false;
 
-Future<void> openActiveWorkoutFromExternal() async {
+Future<void> openActiveWorkoutFromExternal({
+  bool createIfMissing = false,
+}) async {
   if (FirebaseAuth.instance.currentUser == null) return;
   if (ActiveWorkoutNavigation.focusExisting() || _openingExternalWorkout) {
     return;
   }
   _openingExternalWorkout = true;
   try {
-    if (!await prepareActiveWorkoutForLaunch()) return;
+    if (!await prepareActiveWorkoutForLaunch(
+      createIfMissing: createIfMissing,
+    )) {
+      return;
+    }
     NavigatorState? navigator;
     for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
       navigator = navigatorKey.currentState;
@@ -240,6 +246,9 @@ class _MyAppState extends State<MyApp> {
       'wellness',
       'fitness',
       'calendar',
+      'myday',
+      'mood',
+      'workout',
     }.contains(destination)) {
       return;
     }
@@ -253,6 +262,24 @@ class _MyAppState extends State<MyApp> {
         }
       }
       if (navigator == null || !mounted) return;
+
+      if (destination == 'workout') {
+        await openActiveWorkoutFromExternal(createIfMissing: true);
+        return;
+      }
+      if (destination == 'mood') {
+        navigator.pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => const MainNavigationScreen(openMoodCheckIn: true),
+          ),
+          (_) => false,
+        );
+        return;
+      }
+      if (destination == 'myday') {
+        navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
+        return;
+      }
 
       if (destination == 'fitness') {
         navigator.pushNamedAndRemoveUntil('/fitness', (_) => false);

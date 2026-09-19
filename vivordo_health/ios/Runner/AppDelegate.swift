@@ -65,6 +65,10 @@ import WidgetKit
               return
             }
             values.forEach { defaults.set($0.value, forKey: $0.key) }
+            WidgetCenter.shared.reloadTimelines(ofKind: "VivordoDayDashboard")
+            if !changedKeys.isDisjoint(with: ["dashboardEvents", "dashboardPriorities", "dashboardCalendarConnected"]) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoTodayAgenda")
+            }
             defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
 
             let stressKeys: Set<String> = ["stressScore"]
@@ -131,7 +135,7 @@ import WidgetKit
       return nil
     }
     let destination = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
-    return ["home", "wellness", "fitness", "calendar"].contains(destination) ? destination : nil
+    return ["home", "wellness", "fitness", "calendar", "myday", "mood", "workout"].contains(destination) ? destination : nil
   }
 
   private func handleWorkoutActivity(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

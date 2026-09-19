@@ -1225,6 +1225,7 @@ class _SectionCard extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) => Container(
+    clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(20),

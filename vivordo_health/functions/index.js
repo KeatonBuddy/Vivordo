@@ -33,6 +33,7 @@ const {whoopDeletionPlan} = require("./whoop_deletion");
 const {
   challengeDeletionPlan,
   hasRecentAuthentication,
+  writeUnlessDeleting,
 } = require("./account_deletion");
 
 admin.initializeApp();
@@ -2113,6 +2114,9 @@ async function deleteGlobalUserReferences(uid) {
     db.collection("insights").where("userId", "==", uid),
     db.collection("bug_reports").where("userId", "==", uid),
     db.collection("batch_jobs").where("userId", "==", uid),
+    db.collection("baas_scores").where("userId", "==", uid),
+    db.collection("baas_scores_full").where("userId", "==", uid),
+    db.collection("baas_training_samples").where("user_id", "==", uid),
     db.collectionGroup("friend_requests").where("fromUid", "==", uid),
     db.collectionGroup("comments").where("authorUid", "==", uid),
     db.collectionGroup("likes").where("userUid", "==", uid),
@@ -2148,6 +2152,8 @@ async function deleteVivordoAccountData(uid) {
   await Promise.all([
     db.recursiveDelete(db.collection("challenge_memberships").doc(uid)),
     db.recursiveDelete(db.collection("challenge_medal_awards").doc(uid)),
+    db.recursiveDelete(db.collection("baas_state").doc(uid)),
+    db.recursiveDelete(db.collection("baas_weights").doc(uid)),
   ]);
   await admin.storage().bucket().deleteFiles({
     prefix: `circle_profiles/${uid}/`,
@@ -2516,29 +2522,30 @@ exports.pandaBatchPoller = onSchedule({
         prefix: "weekly-trend-",
         // rest = userId
         write: (rest, text) =>
-          db.collection("users").doc(rest).collection("weekly_trends")
-              .doc(weekOf)
-              .set({content: text, generatedAt: ts(), weekOf}, {merge: true}),
+          writeUnlessDeleting(db, rest,
+              db.collection("users").doc(rest).collection("weekly_trends")
+                  .doc(weekOf), {content: text, generatedAt: ts(), weekOf}),
       },
       {
         prefix: "insight-summary-",
         // rest = userId
         write: (rest, text) =>
-          db.collection("users").doc(rest).collection("insight_summaries")
-              .doc(weekOf)
-              .set({content: text, generatedAt: ts(), weekOf}, {merge: true}),
+          writeUnlessDeleting(db, rest,
+              db.collection("users").doc(rest).collection("insight_summaries")
+                  .doc(weekOf), {content: text, generatedAt: ts(), weekOf}),
       },
       {
         prefix: "questionnaire-",
         // rest = insightId; userId comes from the batch_jobs doc (the
         // custom_id alone doesn't carry it for this workload).
         write: (rest, text) =>
-          db.collection("users").doc(jobData.userId)
-              .collection("insights").doc(rest).update({
+          writeUnlessDeleting(db, jobData.userId,
+              db.collection("users").doc(jobData.userId)
+                  .collection("insights").doc(rest), {
                 questionnaireAnalysis: text,
                 questionnaireAnalysisStatus: "completed",
                 questionnaireAnalyzedAt: ts(),
-              }),
+              }, true),
       },
     ];
 
@@ -2556,8 +2563,9 @@ exports.pandaBatchPoller = onSchedule({
         const text = result.result.message.content?.[0]?.text ?? "";
         const route = routes.find((r) => result.custom_id.startsWith(r.prefix));
         if (!route) continue;
-        await route.write(result.custom_id.slice(route.prefix.length), text);
-        written++;
+        const saved = await route.write(
+            result.custom_id.slice(route.prefix.length), text);
+        if (saved) written++;
       }
     } catch (err) {
       console.error(

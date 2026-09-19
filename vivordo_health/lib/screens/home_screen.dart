@@ -202,12 +202,14 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onFitnessTap;
   final bool revealStress;
   final bool isActive;
+  final bool openMoodCheckIn;
   const HomeScreen({
     super.key,
     this.onScanTap,
     this.onFitnessTap,
     this.revealStress = true,
     this.isActive = true,
+    this.openMoodCheckIn = false,
   });
 
   @override
@@ -257,6 +259,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late Stream<QuerySnapshot<Map<String, dynamic>>> _latestScanStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
   late final Stream<CircleProfile?> _circleProfileStream;
+
   /// Local day and account the metric listeners above were built for.
   String? _streamsDayKey;
   String? _streamsUid;
@@ -295,6 +298,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     StressScoreService.submitPendingFeedback().catchError((_) {});
     WidgetsBinding.instance.addObserver(this);
     _connectMetricStreams();
+    if (widget.openMoodCheckIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_showMoodCheck());
+      });
+    }
     _circleProfileStream = CircleProfileService.watchCurrentProfile();
     _goalsStreamCached = _goalsStream();
     _activityGoalsSubscription = ActivityGoalsService.watch().listen(

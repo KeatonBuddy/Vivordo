@@ -6,7 +6,35 @@ const {
   challengeDeletionPlan,
   hasRecentAuthentication,
   withoutUid,
+  writeUnlessDeleting,
 } = require("../account_deletion");
+
+for (const deleting of [false, true]) {
+  test(`delayed results ${deleting ? "skip deleted" : "save active"} accounts`,
+      async () => {
+        const writes = [];
+        const transaction = {
+          get: async () => ({exists: deleting}),
+          set: (...args) => writes.push(args),
+          update: (...args) => writes.push(args),
+        };
+        const db = {
+          collection: (name) => {
+            assert.equal(name, "account_deletion_jobs");
+            return {doc: (id) => {
+              assert.match(id, /^[a-f0-9]{64}$/);
+              return id;
+            }};
+          },
+          runTransaction: (callback) => callback(transaction),
+        };
+        for (const updateOnly of [false, true]) {
+          assert.equal(await writeUnlessDeleting(
+              db, "test-user", "result", {value: 1}, updateOnly), !deleting);
+        }
+        assert.equal(writes.length, deleting ? 0 : 2);
+      });
+}
 
 test("recent authentication accepts only tokens within the window", () => {
   assert.equal(

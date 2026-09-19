@@ -1750,10 +1750,16 @@ _ActiveWorkoutDraft? _activeWorkoutDraft;
 /// Restores the persisted workout before a Live Activity deep link opens the
 /// workout route. This prevents [ActiveWorkoutScreen] from creating a blank
 /// draft while the app is launching from a terminated state.
-Future<bool> prepareActiveWorkoutForLaunch() async {
-  final restored = await _ActiveWorkoutDraft.restore();
+Future<bool> prepareActiveWorkoutForLaunch({
+  bool createIfMissing = false,
+}) async {
+  final restored =
+      _activeWorkoutDraft ??
+      await _ActiveWorkoutDraft.restore() ??
+      (createIfMissing ? _ActiveWorkoutDraft() : null);
   if (restored == null) return false;
   _activeWorkoutDraft = restored;
+  if (createIfMissing) await restored.persist();
   FitnessWorkoutTimerState.start(
     startedAt: restored.startedAt,
     title: restored.liveActivityTitle,
@@ -1906,6 +1912,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _registeredRoute = ModalRoute.of(context);
     ActiveWorkoutNavigation.register(context);
   }
+
   Timer? timer;
   late final _ActiveWorkoutDraft draft;
   bool saving = false;
@@ -2355,7 +2362,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ],
           ),
           const SizedBox(height: 18),
-          WorkoutRestTimer(onDeadlineChanged: (deadline) => NotificationService().updateRestTimerNotification(deadline)),
+          WorkoutRestTimer(
+            onDeadlineChanged: (deadline) =>
+                NotificationService().updateRestTimerNotification(deadline),
+          ),
           const SizedBox(height: 14),
           _Card(
             child: Row(
