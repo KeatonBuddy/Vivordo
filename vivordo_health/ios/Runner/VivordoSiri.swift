@@ -40,6 +40,23 @@ enum VivordoSnapshotError: Error, Equatable {
   case accountUnavailable
 }
 
+enum VivordoHealthMetric: String, CaseIterable, Sendable {
+  case stress
+  case sleep
+  case heartRate
+  case steps
+  case wellness
+
+  var destinationURL: URL {
+    URL(string: "com.vivordo.health://widget/\(rawValue.lowercased())")!
+  }
+}
+
+struct VivordoSiriAnswer: Equatable, Sendable {
+  let dialog: String
+  let destinationURL: URL
+}
+
 struct VivordoSnapshotStore {
   private let defaults: UserDefaults?
 
@@ -116,9 +133,150 @@ struct VivordoSnapshotStore {
   }
 }
 
-/// A small discovery intent verifies that the App Intents catalog is wired.
-/// Health query intents are intentionally added in Phase 2 after the snapshot
-/// contract has been exercised on-device.
+/// Converts the cached snapshot into short, privacy-safe spoken responses.
+/// Keeping this separate from AppIntent makes every response path unit-testable.
+struct VivordoSiriQueryService {
+  static let maximumSnapshotAge: TimeInterval = 6 * 60 * 60
+
+  private let store: VivordoSnapshotStore
+
+  init(store: VivordoSnapshotStore = VivordoSnapshotStore()) {
+    self.store = store
+  }
+
+  func answer(for metric: VivordoHealthMetric, now: Date = Date()) -> VivordoSiriAnswer {
+    let destination = metric.destinationURL
+    let snapshot: VivordoSiriSnapshot
+    do {
+      snapshot = try store.load()
+    } catch {
+      return VivordoSiriAnswer(
+        dialog: "Open Vivordo to sign in and refresh your health data.",
+        destinationURL: destination
+      )
+    }
+
+    guard store.isFresh(snapshot, now: now, maximumAge: Self.maximumSnapshotAge) else {
+      return VivordoSiriAnswer(
+        dialog: "Your Vivordo data needs a refresh. Open the app to update it.",
+        destinationURL: destination
+      )
+    }
+
+    let dialog: String
+    switch metric {
+    case .stress:
+      if let score = snapshot.stressScore {
+        let drivers = snapshot.stressDrivers.prefix(2)
+        let detail = drivers.isEmpty ? "" : " Your main drivers are \(drivers.joined(separator: " and "))."
+        dialog = "Your Vivordo stress score is \(score) out of 100.\(detail)"
+      } else {
+        dialog = "Vivordo doesn't have a stress score for you yet today."
+      }
+    case .sleep:
+      if let hours = snapshot.sleepHours {
+        dialog = "Vivordo recorded \(Self.hoursText(hours)) of sleep."
+      } else {
+        dialog = "Vivordo doesn't have sleep data for you yet."
+      }
+    case .heartRate:
+      if let beatsPerMinute = snapshot.latestHeartRate {
+        dialog = "Your latest heart rate is \(beatsPerMinute) beats per minute."
+      } else {
+        dialog = "Vivordo doesn't have a recent heart rate reading for you."
+      }
+    case .steps:
+      if let steps = snapshot.steps {
+        dialog = "You've taken \(steps.formatted()) steps today."
+      } else {
+        dialog = "Vivordo doesn't have a step count for you yet today."
+      }
+    case .wellness:
+      if let score = snapshot.wellnessScore {
+        dialog = "Your Vivordo wellness score is \(score) out of 100 today."
+      } else {
+        dialog = "Vivordo doesn't have a wellness score for you yet today."
+      }
+    }
+    return VivordoSiriAnswer(dialog: dialog, destinationURL: destination)
+  }
+
+  private static func hoursText(_ hours: Double) -> String {
+    let totalMinutes = Int((hours * 60).rounded())
+    let wholeHours = totalMinutes / 60
+    let minutes = totalMinutes % 60
+    if wholeHours == 0 { return "\(minutes) minutes" }
+    if minutes == 0 { return "\(wholeHours) hours" }
+    return "\(wholeHours) hours and \(minutes) minutes"
+  }
+}
+
+private protocol VivordoHealthQueryIntent: AppIntent {
+  static var metric: VivordoHealthMetric { get }
+}
+
+private extension VivordoHealthQueryIntent {
+  func healthResult() -> some IntentResult & ProvidesDialog & OpensIntent {
+    let answer = VivordoSiriQueryService().answer(for: Self.metric)
+    return .result(
+      opensIntent: OpenURLIntent(answer.destinationURL),
+      dialog: IntentDialog(stringLiteral: answer.dialog)
+    )
+  }
+}
+
+struct CheckStressIntent: VivordoHealthQueryIntent {
+  static var title: LocalizedStringResource = "Check Stress Score"
+  static var description = IntentDescription("Get today's Vivordo stress score.")
+  static let metric = VivordoHealthMetric.stress
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+    healthResult()
+  }
+}
+
+struct CheckSleepIntent: VivordoHealthQueryIntent {
+  static var title: LocalizedStringResource = "Check Sleep"
+  static var description = IntentDescription("Get your latest sleep duration from Vivordo.")
+  static let metric = VivordoHealthMetric.sleep
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+    healthResult()
+  }
+}
+
+struct CheckHeartRateIntent: VivordoHealthQueryIntent {
+  static var title: LocalizedStringResource = "Check Heart Rate"
+  static var description = IntentDescription("Get your latest heart rate from Vivordo.")
+  static let metric = VivordoHealthMetric.heartRate
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+    healthResult()
+  }
+}
+
+struct CheckStepsIntent: VivordoHealthQueryIntent {
+  static var title: LocalizedStringResource = "Check Steps"
+  static var description = IntentDescription("Get today's step count from Vivordo.")
+  static let metric = VivordoHealthMetric.steps
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+    healthResult()
+  }
+}
+
+struct CheckWellnessIntent: VivordoHealthQueryIntent {
+  static var title: LocalizedStringResource = "Check Wellness Score"
+  static var description = IntentDescription("Get today's Vivordo wellness score.")
+  static let metric = VivordoHealthMetric.wellness
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+    healthResult()
+  }
+}
+
+/// A small discovery intent lets users launch Vivordo independently of a
+/// health query.
 struct OpenVivordoIntent: AppIntent {
   static var title: LocalizedStringResource = "Open Vivordo"
   static var description = IntentDescription("Open the Vivordo app.")
@@ -139,6 +297,39 @@ struct VivordoAppShortcuts: AppShortcutsProvider {
       ],
       shortTitle: "Open Vivordo",
       systemImageName: "heart.text.square"
+    )
+    AppShortcut(
+      intent: CheckStressIntent(),
+      phrases: ["What's my stress score in \(.applicationName)", "Check my stress with \(.applicationName)"],
+      shortTitle: "Stress Score",
+      systemImageName: "waveform.path.ecg"
+    )
+    AppShortcut(
+      intent: CheckSleepIntent(),
+      phrases: ["How did I sleep with \(.applicationName)", "Check my sleep in \(.applicationName)"],
+      shortTitle: "Sleep",
+      systemImageName: "bed.double.fill"
+    )
+    AppShortcut(
+      intent: CheckHeartRateIntent(),
+      phrases: ["What's my heart rate in \(.applicationName)", "Check my heart rate with \(.applicationName)"],
+      shortTitle: "Heart Rate",
+      systemImageName: "heart.fill"
+    )
+    AppShortcut(
+      intent: CheckStepsIntent(),
+      phrases: ["How many steps in \(.applicationName)", "Check my steps with \(.applicationName)"],
+      shortTitle: "Steps",
+      systemImageName: "figure.walk"
+    )
+    AppShortcut(
+      intent: CheckWellnessIntent(),
+      phrases: [
+        "What's my wellness score in \(.applicationName)",
+        "Tell me my wellness score with \(.applicationName)"
+      ],
+      shortTitle: "Wellness Score",
+      systemImageName: "heart.text.square.fill"
     )
   }
 }

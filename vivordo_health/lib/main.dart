@@ -29,6 +29,10 @@ import 'screens/force_update_screen.dart';
 import 'screens/circle_screen.dart';
 import 'screens/fitness_screen.dart';
 import 'screens/wellness_detail_screen.dart';
+import 'screens/stress_detail_screen.dart';
+import 'screens/sleep_detail_screen.dart';
+import 'screens/heart_rate_detail_screen.dart';
+import 'screens/steps_detail_screen.dart';
 import 'screens/month_calendar_screen.dart';
 import 'screens/whats_new_screen.dart';
 
@@ -243,6 +247,10 @@ class _MyAppState extends State<MyApp> {
       'wellness',
       'fitness',
       'calendar',
+      'stress',
+      'sleep',
+      'heartrate',
+      'steps',
     }.contains(destination)) {
       return;
     }
@@ -272,9 +280,17 @@ class _MyAppState extends State<MyApp> {
       }
 
       navigator.pushNamedAndRemoveUntil('/home', (_) => false);
-      if (destination == 'wellness') {
+      final detailRoute = switch (destination) {
+        'wellness' => '/wellness',
+        'stress' => '/stress',
+        'sleep' => '/sleep',
+        'heartrate' => '/heart-rate',
+        'steps' => '/steps',
+        _ => null,
+      };
+      if (detailRoute != null) {
         await WidgetsBinding.instance.endOfFrame;
-        if (mounted) unawaited(navigator.pushNamed('/wellness'));
+        if (mounted) unawaited(navigator.pushNamed(detailRoute));
       }
     } finally {
       _openingWidget = false;
@@ -324,6 +340,10 @@ class _MyAppState extends State<MyApp> {
         '/full-calendar': (context) => const MonthCalendarScreen(),
         '/fitness': (context) => const MainNavigationScreen(initialIndex: 3),
         '/wellness': (context) => const WellnessDetailScreen(),
+        '/stress': (context) => const StressDetailScreen(),
+        '/sleep': (context) => const SleepDetailScreen(),
+        '/heart-rate': (context) => const HeartRateDetailScreen(),
+        '/steps': (context) => const StepsDetailScreen(),
         '/scan': (context) => const MainNavigationScreen(initialIndex: 2),
         '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 5),
         '/circle': (context) => const CircleScreen(),

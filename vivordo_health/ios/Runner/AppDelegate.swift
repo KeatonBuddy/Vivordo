@@ -131,7 +131,10 @@ import WidgetKit
       return nil
     }
     let destination = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
-    return ["home", "wellness", "fitness", "calendar"].contains(destination) ? destination : nil
+    return [
+      "home", "wellness", "fitness", "calendar", "stress", "sleep",
+      "heartrate", "steps"
+    ].contains(destination) ? destination : nil
   }
 
   private func handleWorkoutActivity(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
