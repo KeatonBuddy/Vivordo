@@ -4,40 +4,80 @@
       "collectionGroup": "metrics_daily",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "period", "order": "ASCENDING" }
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "period",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "metrics_daily",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "metricType", "order": "ASCENDING" }
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "metricType",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "insights",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "source", "order": "ASCENDING" },
-        { "fieldPath": "sessionDate", "order": "DESCENDING" }
+        {
+          "fieldPath": "source",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "challenges",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "endAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "endAt",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "challenges",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "pendingExpiresAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "pendingExpiresAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "metrics_daily",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],
@@ -46,45 +86,72 @@
       "collectionGroup": "insights",
       "fieldPath": "createdAt",
       "indexes": [
-        { "queryScope": "COLLECTION", "order": "ASCENDING" },
-        { "queryScope": "COLLECTION", "order": "DESCENDING" },
-        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" },
-        { "queryScope": "COLLECTION_GROUP", "order": "DESCENDING" }
+        {
+          "queryScope": "COLLECTION",
+          "order": "ASCENDING"
+        },
+        {
+          "queryScope": "COLLECTION",
+          "order": "DESCENDING"
+        },
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        },
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "friend_requests",
       "fieldPath": "fromUid",
       "indexes": [
-        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "comments",
       "fieldPath": "authorUid",
       "indexes": [
-        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "likes",
       "fieldPath": "userUid",
       "indexes": [
-        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "contributions",
       "fieldPath": "uid",
       "indexes": [
-        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "circle_engagement",
       "fieldPath": "actorUid",
       "indexes": [
-        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
       ]
     }
   ]
