@@ -67,6 +67,9 @@ Future<void> openActiveWorkoutFromExternal() async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  FirebaseAuth.instance.authStateChanges().listen((user) {
+    if (user == null) unawaited(HomeWidgetService.clearAccountSnapshot());
+  });
 
   // Uncomment to route Cloud Function calls to the local emulator instead of
   // the deployed function. Requires `firebase emulators:start --only functions`.

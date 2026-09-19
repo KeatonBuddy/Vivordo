@@ -222,6 +222,15 @@ class _HomeWidgetSnapshot {
     required this.activeCalories,
     required this.exerciseMinutes,
     required this.goals,
+    required this.latestHeartRate,
+    required this.averageHeartRate,
+    required this.minimumHeartRate,
+    required this.maximumHeartRate,
+    required this.sleepHours,
+    required this.sleepUpdatedAt,
+    required this.sleepStages,
+    required this.stressUpdatedAt,
+    required this.stressDrivers,
   });
 
   final double? stressScore;
@@ -230,6 +239,15 @@ class _HomeWidgetSnapshot {
   final int activeCalories;
   final int exerciseMinutes;
   final ActivityGoals goals;
+  final LatestHeartRateReading? latestHeartRate;
+  final double? averageHeartRate;
+  final double? minimumHeartRate;
+  final double? maximumHeartRate;
+  final double? sleepHours;
+  final DateTime? sleepUpdatedAt;
+  final List<String> sleepStages;
+  final DateTime? stressUpdatedAt;
+  final List<String> stressDrivers;
 
   String get signature => <Object?>[
     stressScore?.round(),
@@ -240,6 +258,16 @@ class _HomeWidgetSnapshot {
     goals.steps,
     goals.activeCalories,
     goals.exerciseMinutes,
+    latestHeartRate?.bpm,
+    latestHeartRate?.timestamp?.millisecondsSinceEpoch,
+    averageHeartRate,
+    minimumHeartRate,
+    maximumHeartRate,
+    sleepHours,
+    sleepUpdatedAt?.millisecondsSinceEpoch,
+    sleepStages.join(','),
+    stressUpdatedAt?.millisecondsSinceEpoch,
+    stressDrivers.join(','),
   ].join('|');
 }
 
@@ -257,6 +285,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late Stream<QuerySnapshot<Map<String, dynamic>>> _latestScanStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
   late final Stream<CircleProfile?> _circleProfileStream;
+
   /// Local day and account the metric listeners above were built for.
   String? _streamsDayKey;
   String? _streamsUid;
@@ -310,6 +339,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             activeCalories: snapshot.activeCalories,
             exerciseMinutes: snapshot.exerciseMinutes,
             goals: goals,
+            latestHeartRate: snapshot.latestHeartRate,
+            averageHeartRate: snapshot.averageHeartRate,
+            minimumHeartRate: snapshot.minimumHeartRate,
+            maximumHeartRate: snapshot.maximumHeartRate,
+            sleepHours: snapshot.sleepHours,
+            sleepUpdatedAt: snapshot.sleepUpdatedAt,
+            sleepStages: snapshot.sleepStages,
+            stressUpdatedAt: snapshot.stressUpdatedAt,
+            stressDrivers: snapshot.stressDrivers,
           ),
         );
       },
@@ -479,6 +517,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           activeCalories: snapshot.activeCalories,
           exerciseMinutes: snapshot.exerciseMinutes,
           goals: snapshot.goals,
+          latestHeartRate: snapshot.latestHeartRate?.bpm,
+          latestHeartRateAt: snapshot.latestHeartRate?.timestamp,
+          averageHeartRate: snapshot.averageHeartRate,
+          minimumHeartRate: snapshot.minimumHeartRate,
+          maximumHeartRate: snapshot.maximumHeartRate,
+          sleepHours: snapshot.sleepHours,
+          sleepUpdatedAt: snapshot.sleepUpdatedAt,
+          sleepStages: snapshot.sleepStages,
+          stressUpdatedAt: snapshot.stressUpdatedAt,
+          stressDrivers: snapshot.stressDrivers,
         );
         if (!mounted) return;
         _lastPublishedHomeWidgetSignature = snapshot.signature;
@@ -513,6 +561,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (raw is DateTime) return raw;
     if (raw is String) return DateTime.tryParse(raw);
     return null;
+  }
+
+  DateTime? _metricUpdatedAt(Map? metric) {
+    final raw = metric?['syncedAt'] ?? metric?['updatedAt'];
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is String) return DateTime.tryParse(raw);
+    return null;
+  }
+
+  double? _metricNumber(
+    Map<String, dynamic>? day,
+    String metric,
+    String field,
+  ) {
+    final value = (day?[metric] as Map?)?[field];
+    return value is num ? value.toDouble() : null;
+  }
+
+  List<String> _sleepStageNames(Map? sleep) {
+    final stages = sleep?['stages'];
+    if (stages is! Map) return const [];
+    return stages.entries
+        .where((entry) => entry.value is num && (entry.value as num) > 0)
+        .map((entry) => entry.key.toString())
+        .toList(growable: false);
   }
 
   void _showStressScoreExplanation() {
@@ -684,6 +758,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       activeCalories: activeCalories,
                       exerciseMinutes: exerciseMinutes,
                       goals: _activityGoals,
+                      latestHeartRate: latestHeartRate,
+                      averageHeartRate: _metricNumber(
+                        data,
+                        'heart_rate',
+                        'avg',
+                      ),
+                      minimumHeartRate: _metricNumber(
+                        data,
+                        'heart_rate',
+                        'min',
+                      ),
+                      maximumHeartRate: _metricNumber(
+                        data,
+                        'heart_rate',
+                        'max',
+                      ),
+                      sleepHours: (sleepMap?['avg'] as num?)?.toDouble(),
+                      sleepUpdatedAt: _metricUpdatedAt(sleepMap),
+                      sleepStages: _sleepStageNames(sleepMap),
+                      stressUpdatedAt: _stressUpdatedAt(stressMap),
+                      stressDrivers: stressDrivers
+                          .map((driver) => driver.label)
+                          .toList(growable: false),
                     ),
                   );
                 }

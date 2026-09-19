@@ -14,6 +14,8 @@ import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 class HomeWidgetService {
   const HomeWidgetService._();
 
+  static const int siriSnapshotSchemaVersion = 1;
+
   static const MethodChannel _channel = MethodChannel(
     'com.vivordo.health/home_widgets',
   );
@@ -22,6 +24,17 @@ class HomeWidgetService {
   static bool _publishing = false;
   static bool _publishingCalendar = false;
   static DateTime? _lastCalendarRefresh;
+  static String? _snapshotUid;
+  static String? _accountGeneration;
+
+  static String _generationFor(String uid) {
+    if (_snapshotUid != uid || _accountGeneration == null) {
+      _snapshotUid = uid;
+      _accountGeneration =
+          '${DateTime.now().microsecondsSinceEpoch}-${uid.hashCode}';
+    }
+    return _accountGeneration!;
+  }
 
   static Future<void> configureLaunchHandler(
     Future<void> Function(String destination) onWidgetLaunch,
@@ -54,11 +67,21 @@ class HomeWidgetService {
     _lastSignature = null;
     _lastCalendarSignature = null;
     _lastCalendarRefresh = null;
+    _snapshotUid = null;
+    _accountGeneration = null;
     if (!Platform.isIOS) return;
     try {
       await _channel.invokeMethod<void>('updateSnapshot', {
+        'siriSchemaVersion': 0,
+        'siriAccountGeneration': '',
+        'siriPublishedAt': 0,
+        'siriDataDay': '',
         'stressScore': 0,
+        'siriStressScore': -1,
+        'stressUpdatedAt': 0,
+        'stressDrivers': <String>[],
         'wellnessScore': 0,
+        'siriWellnessScore': -1,
         'wellnessDelta': 0,
         'steps': 0,
         'stepsGoal': 0,
@@ -66,6 +89,19 @@ class HomeWidgetService {
         'activeCaloriesGoal': 0,
         'exerciseMinutes': 0,
         'exerciseGoal': 0,
+        'heartRateLatest': 0,
+        'siriHeartRateLatest': -1,
+        'heartRateLatestAt': 0,
+        'heartRateAverage': 0,
+        'siriHeartRateAverage': -1,
+        'heartRateMinimum': 0,
+        'siriHeartRateMinimum': -1,
+        'heartRateMaximum': 0,
+        'siriHeartRateMaximum': -1,
+        'sleepHours': 0,
+        'siriSleepHours': -1,
+        'sleepUpdatedAt': 0,
+        'sleepStages': <String>[],
         'calendarEvents': <Map<String, Object>>[],
         'calendarWeekUpdatedAt': 0,
       });
@@ -83,6 +119,16 @@ class HomeWidgetService {
     required int activeCalories,
     required int exerciseMinutes,
     required ActivityGoals goals,
+    int? latestHeartRate,
+    DateTime? latestHeartRateAt,
+    double? averageHeartRate,
+    double? minimumHeartRate,
+    double? maximumHeartRate,
+    double? sleepHours,
+    DateTime? sleepUpdatedAt,
+    List<String> sleepStages = const [],
+    DateTime? stressUpdatedAt,
+    List<String> stressDrivers = const [],
   }) async {
     if (!Platform.isIOS) return;
     unawaited(refreshCalendarSnapshot());
@@ -92,7 +138,11 @@ class HomeWidgetService {
     try {
       var wellnessDelta = 0;
       final user = FirebaseAuth.instance.currentUser;
-      if (user != null && wellnessScore != null) {
+      if (user == null) {
+        await clearAccountSnapshot();
+        return;
+      }
+      if (wellnessScore != null) {
         final yesterday = DateTime.now().subtract(const Duration(days: 1));
         final snapshot = await FirebaseFirestore.instance
             .collection('users')
@@ -106,8 +156,16 @@ class HomeWidgetService {
       }
 
       final values = <String, Object>{
+        'siriSchemaVersion': siriSnapshotSchemaVersion,
+        'siriAccountGeneration': _generationFor(user.uid),
+        'siriPublishedAt': DateTime.now().millisecondsSinceEpoch,
+        'siriDataDay': DateFormat('yyyy-MM-dd').format(DateTime.now()),
         'stressScore': stressScore?.round().clamp(0, 100) ?? 0,
+        'siriStressScore': stressScore?.round().clamp(0, 100) ?? -1,
+        'stressUpdatedAt': stressUpdatedAt?.millisecondsSinceEpoch ?? 0,
+        'stressDrivers': stressDrivers,
         'wellnessScore': wellnessScore?.round().clamp(0, 100) ?? 0,
+        'siriWellnessScore': wellnessScore?.round().clamp(0, 100) ?? -1,
         'wellnessDelta': wellnessDelta,
         'steps': steps,
         'stepsGoal': goals.steps,
@@ -115,8 +173,22 @@ class HomeWidgetService {
         'activeCaloriesGoal': goals.activeCalories,
         'exerciseMinutes': exerciseMinutes,
         'exerciseGoal': goals.exerciseMinutes,
+        'heartRateLatest': latestHeartRate ?? 0,
+        'siriHeartRateLatest': latestHeartRate ?? -1,
+        'heartRateLatestAt': latestHeartRateAt?.millisecondsSinceEpoch ?? 0,
+        'heartRateAverage': averageHeartRate ?? 0,
+        'siriHeartRateAverage': averageHeartRate ?? -1,
+        'heartRateMinimum': minimumHeartRate ?? 0,
+        'siriHeartRateMinimum': minimumHeartRate ?? -1,
+        'heartRateMaximum': maximumHeartRate ?? 0,
+        'siriHeartRateMaximum': maximumHeartRate ?? -1,
+        'sleepHours': sleepHours ?? 0,
+        'siriSleepHours': sleepHours ?? -1,
+        'sleepUpdatedAt': sleepUpdatedAt?.millisecondsSinceEpoch ?? 0,
+        'sleepStages': sleepStages,
       };
       final signature = values.entries
+          .where((entry) => entry.key != 'siriPublishedAt')
           .map((entry) => '${entry.key}:${entry.value}')
           .join('|');
       if (_lastSignature == signature) return;
