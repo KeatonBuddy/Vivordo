@@ -1,3 +1,4 @@
+import 'heart_rate_history.dart';
 import 'latest_heart_rate.dart';
 
 /// Number of calendar days of metric history Home keeps live, counting today.
@@ -74,12 +75,52 @@ HomeMetricsSummary summarizeHomeMetrics({
   final newestFirst = [...days]
     ..sort((a, b) => b.dayKey.compareTo(a.dayKey));
   return HomeMetricsSummary(
-    latestHeartRate: latestHeartRateReadingFromMetricDays(
-      newestFirst.map((entry) => entry.data),
-    ),
+    latestHeartRate: _latestHeartRate(newestFirst, now),
     stressAnchor: _latestStressAnchor(newestFirst),
     sevenDayStressAverage: _sevenDayStressAverage(newestFirst, now),
   );
+}
+
+bool _isLiveBleSource(String? source) =>
+    source == 'whoop_ble' || source == 'fitbit_ble' || source == 'wearable_ble';
+
+/// The most recent heart rate on record, from any source.
+///
+/// Built on [mergedHeartRateHistory] — the same resolution the detail,
+/// dashboard, sleep and hourly-insight screens use — so Home agrees with the
+/// rest of the app about what the latest reading is. A wearable sample stays
+/// visible however long ago it was taken; only a *live* strap gets to override
+/// a later sample from another source, because Apple Health can backfill
+/// samples whose timestamps land ahead of the strap that is still on the wrist.
+LatestHeartRateReading? _latestHeartRate(
+  List<MetricDayEntry> newestFirst,
+  DateTime now,
+) {
+  for (final entry in newestFirst) {
+    final readings = mergedHeartRateHistory(
+      entry.data,
+      fallbackDate: DateTime.tryParse(entry.dayKey) ?? now,
+    );
+    if (readings.isEmpty) continue;
+
+    final live = readings
+        .where(
+          (reading) =>
+              _isLiveBleSource(reading.source) &&
+              now.difference(reading.timestamp) <= const Duration(minutes: 5),
+        )
+        .toList(growable: false);
+
+    final chosen = (live.isEmpty ? readings : live).reduce(
+      (a, b) => b.timestamp.isAfter(a.timestamp) ? b : a,
+    );
+    return LatestHeartRateReading(
+      bpm: chosen.bpm.round(),
+      timestamp: chosen.timestamp,
+      source: chosen.source,
+    );
+  }
+  return null;
 }
 
 /// The personalized value a new stress day should open at while the first
