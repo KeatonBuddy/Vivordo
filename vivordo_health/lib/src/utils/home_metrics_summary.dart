@@ -1,3 +1,4 @@
+import 'heart_rate_history.dart';
 import 'latest_heart_rate.dart';
 
 /// Number of calendar days of metric history Home keeps live, counting today.
@@ -60,22 +61,66 @@ String homeMetricsWindowStartKey(DateTime now, {int days = kHomeMetricsWindowDay
       '${start.day.toString().padLeft(2, '0')}';
 }
 
-/// Derives Home's fallback values from [newestFirst].
+/// Derives Home's fallback values from [days], in any order.
 ///
-/// [newestFirst] must already be ordered newest day first — the Firestore
-/// query orders by document id descending, so re-sorting here would be
-/// redundant work on every snapshot.
+/// Ordering is established here rather than assumed from the query. Both the
+/// latest-reading and anchor lookups walk newest to oldest and take the first
+/// match, so borrowing the query's ordering would silently invert them if that
+/// query ever changed. Sorting costs one pass per snapshot, not per rebuild,
+/// because the caller caches the result.
 HomeMetricsSummary summarizeHomeMetrics({
-  required List<MetricDayEntry> newestFirst,
+  required List<MetricDayEntry> days,
   required DateTime now,
 }) {
+  final newestFirst = [...days]
+    ..sort((a, b) => b.dayKey.compareTo(a.dayKey));
   return HomeMetricsSummary(
-    latestHeartRate: latestHeartRateReadingFromMetricDays(
-      newestFirst.map((entry) => entry.data),
-    ),
+    latestHeartRate: _latestHeartRate(newestFirst, now),
     stressAnchor: _latestStressAnchor(newestFirst),
     sevenDayStressAverage: _sevenDayStressAverage(newestFirst, now),
   );
+}
+
+bool _isLiveBleSource(String? source) =>
+    source == 'whoop_ble' || source == 'fitbit_ble' || source == 'wearable_ble';
+
+/// The most recent heart rate on record, from any source.
+///
+/// Built on [mergedHeartRateHistory] — the same resolution the detail,
+/// dashboard, sleep and hourly-insight screens use — so Home agrees with the
+/// rest of the app about what the latest reading is. A wearable sample stays
+/// visible however long ago it was taken; only a *live* strap gets to override
+/// a later sample from another source, because Apple Health can backfill
+/// samples whose timestamps land ahead of the strap that is still on the wrist.
+LatestHeartRateReading? _latestHeartRate(
+  List<MetricDayEntry> newestFirst,
+  DateTime now,
+) {
+  for (final entry in newestFirst) {
+    final readings = mergedHeartRateHistory(
+      entry.data,
+      fallbackDate: DateTime.tryParse(entry.dayKey) ?? now,
+    );
+    if (readings.isEmpty) continue;
+
+    final live = readings
+        .where(
+          (reading) =>
+              _isLiveBleSource(reading.source) &&
+              now.difference(reading.timestamp) <= const Duration(minutes: 5),
+        )
+        .toList(growable: false);
+
+    final chosen = (live.isEmpty ? readings : live).reduce(
+      (a, b) => b.timestamp.isAfter(a.timestamp) ? b : a,
+    );
+    return LatestHeartRateReading(
+      bpm: chosen.bpm.round(),
+      timestamp: chosen.timestamp,
+      source: chosen.source,
+    );
+  }
+  return null;
 }
 
 /// The personalized value a new stress day should open at while the first
@@ -137,7 +182,7 @@ class HomeMetricsSummaryCache {
     required String dayKey,
     required String? uid,
     required DateTime now,
-    required List<MetricDayEntry> Function() newestFirst,
+    required List<MetricDayEntry> Function() days,
   }) {
     final cached = _summary;
     if (cached != null &&
@@ -148,7 +193,7 @@ class HomeMetricsSummaryCache {
     }
 
     _computeCount++;
-    final summary = summarizeHomeMetrics(newestFirst: newestFirst(), now: now);
+    final summary = summarizeHomeMetrics(days: days(), now: now);
     _snapshotKey = snapshotKey;
     _dayKey = dayKey;
     _uid = uid;

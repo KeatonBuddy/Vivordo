@@ -405,9 +405,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Points both metric listeners at the current local day.
   ///
-  /// The history listener is bounded to [kHomeMetricsWindowDays] using a range
-  /// on the `YYYY-MM-DD` document ids, so it carries a fixed window rather
-  /// than every day the account has ever recorded.
+  /// The history listener carries a [kHomeMetricsWindowDays] window rather
+  /// than every day the account has recorded, bounded by a range on the
+  /// `YYYY-MM-DD` document ids.
+  ///
+  /// Ordering newest-first needs the descending `__name__` index on
+  /// metrics_daily, which Firestore does not create automatically. Without it
+  /// the query is rejected, and since this listener is the only source for
+  /// heart rate, that shows up as "No data" on an otherwise working screen —
+  /// which is exactly how it shipped once before. The index is declared in
+  /// firestore.indexes.json; the builder logs if the query fails anyway.
   void _connectMetricStreams() {
     final today = _todayPeriod();
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -451,7 +458,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       dayKey: _todayPeriod(),
       uid: FirebaseAuth.instance.currentUser?.uid,
       now: now,
-      newestFirst: () => (snapshot?.docs ?? const [])
+      days: () => (snapshot?.docs ?? const [])
           .map((doc) => MetricDayEntry(dayKey: doc.id, data: doc.data()))
           .toList(growable: false),
     );
@@ -718,6 +725,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _latestScanStream,
           builder: (context, scanSnap) {
+            if (scanSnap.hasError) {
+              // Heart rate is the only value this listener feeds, so a failure
+              // here reads as "No data" on an otherwise working screen. Say so
+              // rather than letting it pass as an empty result.
+              debugPrint(
+                'HomeScreen: metrics history listener failed, heart rate will '
+                'show no data: ${scanSnap.error}',
+              );
+            }
             final metricsSummary = _metricsSummaryFor(scanSnap.data);
             final latestHeartRate = metricsSummary.latestHeartRate;
             final latestHeartRateBpm = latestHeartRate?.bpm;
