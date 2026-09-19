@@ -40,21 +40,17 @@ enum VivordoSnapshotError: Error, Equatable {
   case accountUnavailable
 }
 
-enum VivordoHealthMetric: String, CaseIterable, Sendable {
+enum VivordoHealthMetric: String, Sendable {
   case stress
   case sleep
   case heartRate
   case steps
   case wellness
 
-  var destinationURL: URL {
-    URL(string: "com.vivordo.health://widget/\(rawValue.lowercased())")!
-  }
 }
 
 struct VivordoSiriAnswer: Equatable, Sendable {
   let dialog: String
-  let destinationURL: URL
 }
 
 struct VivordoSnapshotStore {
@@ -145,21 +141,18 @@ struct VivordoSiriQueryService {
   }
 
   func answer(for metric: VivordoHealthMetric, now: Date = Date()) -> VivordoSiriAnswer {
-    let destination = metric.destinationURL
     let snapshot: VivordoSiriSnapshot
     do {
       snapshot = try store.load()
     } catch {
       return VivordoSiriAnswer(
-        dialog: "Open Vivordo to sign in and refresh your health data.",
-        destinationURL: destination
+        dialog: "Open Vivordo to sign in and refresh your health data."
       )
     }
 
     guard store.isFresh(snapshot, now: now, maximumAge: Self.maximumSnapshotAge) else {
       return VivordoSiriAnswer(
-        dialog: "Your Vivordo data needs a refresh. Open the app to update it.",
-        destinationURL: destination
+        dialog: "Your Vivordo data needs a refresh. Open the app to update it."
       )
     }
 
@@ -198,7 +191,7 @@ struct VivordoSiriQueryService {
         dialog = "Vivordo doesn't have a wellness score for you yet today."
       }
     }
-    return VivordoSiriAnswer(dialog: dialog, destinationURL: destination)
+    return VivordoSiriAnswer(dialog: dialog)
   }
 
   private static func hoursText(_ hours: Double) -> String {
@@ -216,12 +209,9 @@ private protocol VivordoHealthQueryIntent: AppIntent {
 }
 
 private extension VivordoHealthQueryIntent {
-  func healthResult() -> some IntentResult & ProvidesDialog & OpensIntent {
+  func healthResult() -> some IntentResult & ProvidesDialog {
     let answer = VivordoSiriQueryService().answer(for: Self.metric)
-    return .result(
-      opensIntent: OpenURLIntent(answer.destinationURL),
-      dialog: IntentDialog(stringLiteral: answer.dialog)
-    )
+    return .result(dialog: IntentDialog(stringLiteral: answer.dialog))
   }
 }
 
@@ -230,7 +220,7 @@ struct CheckStressIntent: VivordoHealthQueryIntent {
   static var description = IntentDescription("Get today's Vivordo stress score.")
   static let metric = VivordoHealthMetric.stress
 
-  func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+  func perform() async throws -> some IntentResult & ProvidesDialog {
     healthResult()
   }
 }
@@ -240,7 +230,7 @@ struct CheckSleepIntent: VivordoHealthQueryIntent {
   static var description = IntentDescription("Get your latest sleep duration from Vivordo.")
   static let metric = VivordoHealthMetric.sleep
 
-  func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+  func perform() async throws -> some IntentResult & ProvidesDialog {
     healthResult()
   }
 }
@@ -250,7 +240,7 @@ struct CheckHeartRateIntent: VivordoHealthQueryIntent {
   static var description = IntentDescription("Get your latest heart rate from Vivordo.")
   static let metric = VivordoHealthMetric.heartRate
 
-  func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+  func perform() async throws -> some IntentResult & ProvidesDialog {
     healthResult()
   }
 }
@@ -260,17 +250,17 @@ struct CheckStepsIntent: VivordoHealthQueryIntent {
   static var description = IntentDescription("Get today's step count from Vivordo.")
   static let metric = VivordoHealthMetric.steps
 
-  func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+  func perform() async throws -> some IntentResult & ProvidesDialog {
     healthResult()
   }
 }
 
-struct CheckWellnessIntent: VivordoHealthQueryIntent {
-  static var title: LocalizedStringResource = "Check Wellness Score"
+struct GetWellnessScoreIntent: VivordoHealthQueryIntent {
+  static var title: LocalizedStringResource = "Get Wellness Score"
   static var description = IntentDescription("Get today's Vivordo wellness score.")
   static let metric = VivordoHealthMetric.wellness
 
-  func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
+  func perform() async throws -> some IntentResult & ProvidesDialog {
     healthResult()
   }
 }
@@ -300,33 +290,55 @@ struct VivordoAppShortcuts: AppShortcutsProvider {
     )
     AppShortcut(
       intent: CheckStressIntent(),
-      phrases: ["What's my stress score in \(.applicationName)", "Check my stress with \(.applicationName)"],
+      phrases: [
+        "What's my stress score in \(.applicationName)",
+        "What's my \(.applicationName) stress score",
+        "Tell me my stress score with \(.applicationName)",
+        "Check my stress score in \(.applicationName)"
+      ],
       shortTitle: "Stress Score",
       systemImageName: "waveform.path.ecg"
     )
     AppShortcut(
       intent: CheckSleepIntent(),
-      phrases: ["How did I sleep with \(.applicationName)", "Check my sleep in \(.applicationName)"],
+      phrases: [
+        "How did I sleep with \(.applicationName)",
+        "How did I sleep in \(.applicationName)",
+        "What's my \(.applicationName) sleep",
+        "Tell me my sleep from \(.applicationName)"
+      ],
       shortTitle: "Sleep",
       systemImageName: "bed.double.fill"
     )
     AppShortcut(
       intent: CheckHeartRateIntent(),
-      phrases: ["What's my heart rate in \(.applicationName)", "Check my heart rate with \(.applicationName)"],
+      phrases: [
+        "What's my heart rate in \(.applicationName)",
+        "What's my \(.applicationName) heart rate",
+        "Tell me my heart rate with \(.applicationName)",
+        "Check my pulse in \(.applicationName)"
+      ],
       shortTitle: "Heart Rate",
       systemImageName: "heart.fill"
     )
     AppShortcut(
       intent: CheckStepsIntent(),
-      phrases: ["How many steps in \(.applicationName)", "Check my steps with \(.applicationName)"],
+      phrases: [
+        "How many steps in \(.applicationName)",
+        "How many steps have I taken in \(.applicationName)",
+        "What's my \(.applicationName) step count",
+        "Tell me my steps with \(.applicationName)"
+      ],
       shortTitle: "Steps",
       systemImageName: "figure.walk"
     )
     AppShortcut(
-      intent: CheckWellnessIntent(),
+      intent: GetWellnessScoreIntent(),
       phrases: [
         "What's my wellness score in \(.applicationName)",
-        "Tell me my wellness score with \(.applicationName)"
+        "What's my \(.applicationName) wellness score",
+        "Tell me my wellness score with \(.applicationName)",
+        "Check my wellness score in \(.applicationName)"
       ],
       shortTitle: "Wellness Score",
       systemImageName: "heart.text.square.fill"

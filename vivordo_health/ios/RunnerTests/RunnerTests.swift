@@ -135,16 +135,6 @@ final class RunnerTests: XCTestCase {
     )
   }
 
-  func testSiriQueryProvidesMetricDeepLink() {
-    seedSnapshot(publishedAt: 1_000)
-    let service = VivordoSiriQueryService(store: VivordoSnapshotStore(defaults: defaults))
-
-    XCTAssertEqual(
-      service.answer(for: .heartRate, now: Date(timeIntervalSince1970: 1_001)).destinationURL.absoluteString,
-      "com.vivordo.health://widget/heartrate"
-    )
-  }
-
   private func seedSnapshot(publishedAt: TimeInterval) {
     defaults.set(1, forKey: "siriSchemaVersion")
     defaults.set("account-generation", forKey: "siriAccountGeneration")

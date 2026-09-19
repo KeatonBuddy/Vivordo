@@ -240,8 +240,8 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  Future<void> _openWidgetDestination(String destination) async {
-    if (_openingWidget || FirebaseAuth.instance.currentUser == null) return;
+  Future<bool> _openWidgetDestination(String destination) async {
+    if (_openingWidget) return false;
     if (!const {
       'home',
       'wellness',
@@ -252,22 +252,34 @@ class _MyAppState extends State<MyApp> {
       'heartrate',
       'steps',
     }.contains(destination)) {
-      return;
+      return false;
     }
     _openingWidget = true;
     try {
+      var user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        try {
+          user = await FirebaseAuth.instance
+              .authStateChanges()
+              .firstWhere((candidate) => candidate != null)
+              .timeout(const Duration(seconds: 5));
+        } on TimeoutException {
+          return false;
+        }
+      }
+
       NavigatorState? navigator;
-      for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
+      for (var attempt = 0; attempt < 50 && navigator == null; attempt++) {
         navigator = navigatorKey.currentState;
         if (navigator == null) {
           await Future<void>.delayed(const Duration(milliseconds: 100));
         }
       }
-      if (navigator == null || !mounted) return;
+      if (navigator == null || !mounted) return false;
 
       if (destination == 'fitness') {
         navigator.pushNamedAndRemoveUntil('/fitness', (_) => false);
-        return;
+        return true;
       }
 
       if (destination == 'calendar') {
@@ -276,7 +288,7 @@ class _MyAppState extends State<MyApp> {
         if (mounted && navigator.mounted) {
           unawaited(navigator.pushNamed('/full-calendar'));
         }
-        return;
+        return mounted && navigator.mounted;
       }
 
       navigator.pushNamedAndRemoveUntil('/home', (_) => false);
@@ -290,8 +302,10 @@ class _MyAppState extends State<MyApp> {
       };
       if (detailRoute != null) {
         await WidgetsBinding.instance.endOfFrame;
-        if (mounted) unawaited(navigator.pushNamed(detailRoute));
+        if (!mounted || !navigator.mounted) return false;
+        unawaited(navigator.pushNamed(detailRoute));
       }
+      return true;
     } finally {
       _openingWidget = false;
     }

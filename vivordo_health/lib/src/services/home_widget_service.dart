@@ -37,20 +37,23 @@ class HomeWidgetService {
   }
 
   static Future<void> configureLaunchHandler(
-    Future<void> Function(String destination) onWidgetLaunch,
+    Future<bool> Function(String destination) onWidgetLaunch,
   ) async {
     if (!Platform.isIOS) return;
     _channel.setMethodCallHandler((call) async {
-      if (call.method != 'widgetTapped') return;
+      if (call.method != 'widgetTapped') return false;
       final destination = call.arguments as String?;
-      if (destination != null) await onWidgetLaunch(destination);
+      if (destination == null) return false;
+      return onWidgetLaunch(destination);
     });
 
     try {
       final destination = await _channel.invokeMethod<String>(
         'consumeWidgetLaunch',
       );
-      if (destination != null) await onWidgetLaunch(destination);
+      if (destination != null && await onWidgetLaunch(destination)) {
+        await _channel.invokeMethod<void>('completeWidgetLaunch', destination);
+      }
     } on MissingPluginException {
       // Expected until the native widget-enabled build has been installed.
     } on PlatformException catch (error) {

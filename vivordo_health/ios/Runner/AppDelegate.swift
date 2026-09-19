@@ -1,4 +1,5 @@
 import ActivityKit
+import AppIntents
 import Flutter
 import UIKit
 import WidgetKit
@@ -27,6 +28,10 @@ import WidgetKit
       didFinishLaunchingWithOptions: launchOptions
     )
 
+    // App Shortcut phrases are cached by iOS across app upgrades. Refresh the
+    // catalog so renamed or corrected Siri phrases become active immediately.
+    VivordoAppShortcuts.updateAppShortcutParameters()
+
     UNUserNotificationCenter.current().delegate = self
     application.registerForRemoteNotifications()
 
@@ -51,9 +56,15 @@ import WidgetKit
       homeWidgetChannel = widgetChannel
       widgetChannel.setMethodCallHandler { [weak self] call, result in
         if call.method == "consumeWidgetLaunch" {
-          let destination = self?.pendingWidgetDestination
-          self?.pendingWidgetDestination = nil
-          result(destination)
+          result(self?.pendingWidgetDestination)
+          return
+        }
+        if call.method == "completeWidgetLaunch" {
+          let destination = call.arguments as? String
+          if destination == self?.pendingWidgetDestination {
+            self?.pendingWidgetDestination = nil
+          }
+          result(nil)
           return
         }
         if call.method == "updateSnapshot",
@@ -94,6 +105,17 @@ import WidgetKit
         }
         result(FlutterMethodNotImplemented)
       }
+  }
+
+  private func deliverPendingWidgetDestination() {
+    guard let destination = pendingWidgetDestination,
+          let homeWidgetChannel else { return }
+    homeWidgetChannel.invokeMethod("widgetTapped", arguments: destination) { [weak self] result in
+      if result as? Bool == true,
+         self?.pendingWidgetDestination == destination {
+        self?.pendingWidgetDestination = nil
+      }
+    }
   }
 
   override func application(
