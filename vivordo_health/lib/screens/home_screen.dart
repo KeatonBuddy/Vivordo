@@ -367,12 +367,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Points both metric listeners at the current local day.
   ///
-  /// The history listener reads the whole collection. It was briefly bounded
-  /// to a 90-day window with a range on the document ids, which the backend
-  /// rejected — and because the failure surfaced as an empty snapshot rather
-  /// than an error, Home silently showed "No data" for heart rate, the one
-  /// value this listener alone feeds. Rebound it only alongside a check that
-  /// the query actually returns.
+  /// The history listener carries a [kHomeMetricsWindowDays] window rather
+  /// than every day the account has recorded, bounded by a range on the
+  /// `YYYY-MM-DD` document ids.
+  ///
+  /// Ordering newest-first needs the descending `__name__` index on
+  /// metrics_daily, which Firestore does not create automatically. Without it
+  /// the query is rejected, and since this listener is the only source for
+  /// heart rate, that shows up as "No data" on an otherwise working screen —
+  /// which is exactly how it shipped once before. The index is declared in
+  /// firestore.indexes.json; the builder logs if the query fails anyway.
   void _connectMetricStreams() {
     final today = _todayPeriod();
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -393,6 +397,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               .collection('users')
               .doc(uid)
               .collection('metrics_daily')
+              .where(
+                FieldPath.documentId,
+                isGreaterThanOrEqualTo: homeMetricsWindowStartKey(
+                  DateTime.now(),
+                ),
+                isLessThanOrEqualTo: today,
+              )
+              .orderBy(FieldPath.documentId, descending: true)
               .snapshots()
         : const Stream.empty();
   }
