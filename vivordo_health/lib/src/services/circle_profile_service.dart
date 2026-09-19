@@ -6,8 +6,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/request_coalescer.dart';
 
 class CircleProfile {
   const CircleProfile({
@@ -155,9 +156,54 @@ class CircleProfileService {
   static final _random = Random.secure();
   static const _friendCodeCharacters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
+  /// How long a friend's profile is reused before it is read again. Long
+  /// enough to collapse the burst of reads when several screens attach at
+  /// once, short enough that a friend's rename or new photo shows up without
+  /// restarting the app.
+  static const _friendProfileTtl = Duration(minutes: 2);
+
+  // Shared state behind watchFriends(). One Firestore listener and one
+  // profile fan-out serve every screen watching the friends list.
+  static final RequestCoalescer<CircleProfile?> _profileRequests =
+      RequestCoalescer<CircleProfile?>(ttl: _friendProfileTtl);
+  static StreamController<List<CircleProfile>>? _friendsController;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _friendsSubscription;
+  static StreamSubscription<String?>? _authSubscription;
+  static List<CircleProfile>? _friendsLatest;
+  static String? _friendsUid;
+  static int _friendsGeneration = 0;
+
+  /// Seams for tests. The shared friends listener spans accounts and stream
+  /// lifetimes, which only a fake backend can exercise.
+  @visibleForTesting
+  static FirebaseFirestore? firestoreOverride;
+  @visibleForTesting
+  static String? Function()? currentUidOverride;
+  @visibleForTesting
+  static Stream<String?>? authUidStreamOverride;
+
+  /// Profile documents actually read, as opposed to served from the shared
+  /// cache. Test-only signal.
+  @visibleForTesting
+  static int profileReadCount = 0;
+
+  static FirebaseFirestore get _firestore =>
+      firestoreOverride ?? FirebaseFirestore.instance;
+
+  static String? get _currentUid {
+    final override = currentUidOverride;
+    if (override != null) return override();
+    return FirebaseAuth.instance.currentUser?.uid;
+  }
+
+  static Stream<String?> get _authUidStream =>
+      authUidStreamOverride ??
+      FirebaseAuth.instance.authStateChanges().map((user) => user?.uid);
+
   static DocumentReference<Map<String, dynamic>> _profileReference(
     String uid,
-  ) => FirebaseFirestore.instance
+  ) => _firestore
       .collection('users')
       .doc(uid)
       .collection('circle')
@@ -385,6 +431,8 @@ class CircleProfileService {
       }
     });
 
+    invalidateFriendProfile(user.uid);
+
     return CircleProfile(
       uid: user.uid,
       username: cleanUsername,
@@ -489,46 +537,168 @@ class CircleProfileService {
         .map((snapshot) => snapshot.docs.length);
   }
 
+  /// Friends, with their profiles, shared across every caller.
+  ///
+  /// Friend profiles live under each friend's own document, so there is no
+  /// single query that returns them all. What this avoids instead is the
+  /// duplication: one Firestore listener and one profile fan-out serve every
+  /// screen watching the list, rather than each opening its own.
+  ///
+  /// Profiles are cached for [_friendProfileTtl] and evicted immediately when
+  /// a friend is removed or blocked, when the list stops containing them, or
+  /// when the signed-in account changes.
   static Stream<List<CircleProfile>> watchFriends() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return Stream.value(const []);
-    return FirebaseFirestore.instance
+    final uid = _currentUid;
+    if (uid == null) {
+      resetFriendCaches();
+      return Stream.value(const <CircleProfile>[]);
+    }
+    if (_friendsUid != uid) resetFriendCaches();
+    _friendsUid = uid;
+    _watchAuthChanges();
+
+    final controller =
+        _friendsController ??= StreamController<List<CircleProfile>>.broadcast(
+          // Resolve the account when a listener actually attaches rather than
+          // capturing it here. A controller outlives individual subscriptions,
+          // and a captured id would restart the previous account's query after
+          // a sign-out and sign-in.
+          onListen: () {
+            final current = _friendsUid;
+            if (current != null) _startFriendsSubscription(current);
+          },
+          onCancel: () {
+            _friendsSubscription?.cancel();
+            _friendsSubscription = null;
+          },
+        );
+
+    return _friendsWithReplay(controller.stream);
+  }
+
+  /// Hands a newly attached screen the list already loaded, so it paints
+  /// without waiting for Firestore to round-trip again.
+  static Stream<List<CircleProfile>> _friendsWithReplay(
+    Stream<List<CircleProfile>> source,
+  ) async* {
+    final latest = _friendsLatest;
+    if (latest != null) yield latest;
+    yield* source;
+  }
+
+  static void _startFriendsSubscription(String uid) {
+    _friendsSubscription?.cancel();
+    _friendsSubscription = _firestore
         .collection('users')
-        .doc(user.uid)
+        .doc(uid)
         .collection('circle')
         .doc('relationships')
         .collection('friends')
         .snapshots()
-        .asyncMap((snapshot) async {
-          final documents = snapshot.docs.toList()
-            ..sort((a, b) {
-              final aDate = a.data()['createdAt'] as Timestamp?;
-              final bDate = b.data()['createdAt'] as Timestamp?;
-              if (aDate == null && bDate == null) {
-                return a.id.compareTo(b.id);
-              }
-              if (aDate == null) return 1;
-              if (bDate == null) return -1;
-              return bDate.compareTo(aDate);
-            });
-          final profiles = await Future.wait(
-            documents.map((document) async {
-              final storedUid = document.data()['uid'] as String?;
-              final friendUid = storedUid?.trim().isNotEmpty == true
-                  ? storedUid!
-                  : document.id;
-              try {
-                return await _loadProfile(friendUid);
-              } catch (error) {
-                debugPrint(
-                  'Could not load Circle friend profile $friendUid: $error',
-                );
-                return null;
-              }
-            }),
+        .listen(
+          (snapshot) async {
+            final generation = ++_friendsGeneration;
+            try {
+              final profiles = await _resolveFriendProfiles(snapshot);
+              // A newer snapshot landed while these profiles were loading.
+              if (generation != _friendsGeneration) return;
+              _friendsLatest = profiles;
+              _friendsController?.add(profiles);
+            } catch (error, stack) {
+              if (generation != _friendsGeneration) return;
+              _friendsController?.addError(error, stack);
+            }
+          },
+          onError: (Object error, StackTrace stack) {
+            _friendsController?.addError(error, stack);
+          },
+        );
+  }
+
+  static Future<List<CircleProfile>> _resolveFriendProfiles(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    final documents = snapshot.docs.toList()
+      ..sort((a, b) {
+        final aDate = a.data()['createdAt'] as Timestamp?;
+        final bDate = b.data()['createdAt'] as Timestamp?;
+        if (aDate == null && bDate == null) {
+          return a.id.compareTo(b.id);
+        }
+        if (aDate == null) return 1;
+        if (bDate == null) return -1;
+        return bDate.compareTo(aDate);
+      });
+
+    final friendUids = documents.map((document) {
+      final storedUid = document.data()['uid'] as String?;
+      return storedUid?.trim().isNotEmpty == true ? storedUid! : document.id;
+    }).toList(growable: false);
+
+    // Someone removed or blocked since the last snapshot must not linger.
+    _profileRequests.retainOnly(friendUids);
+
+    final profiles = await Future.wait(
+      friendUids.map((friendUid) async {
+        try {
+          return await _cachedProfile(friendUid);
+        } catch (error) {
+          debugPrint(
+            'Could not load Circle friend profile $friendUid: $error',
           );
-          return profiles.whereType<CircleProfile>().toList();
-        });
+          return null;
+        }
+      }),
+    );
+    return profiles.whereType<CircleProfile>().toList();
+  }
+
+  /// Reads a friend profile through the shared coalescer, which collapses
+  /// concurrent requests for the same friend into one Firestore read and
+  /// refuses to cache a result that a sign-out or invalidation has since
+  /// superseded.
+  static Future<CircleProfile?> _cachedProfile(String uid) =>
+      _profileRequests.run(uid, () => _loadProfile(uid));
+
+  /// Drops [uid] from the shared profile cache so the next read is fresh, and
+  /// disowns any read already in flight for them.
+  /// Call after anything that changes what a viewer should see of them.
+  static void invalidateFriendProfile(String uid) {
+    _profileRequests.invalidate(uid);
+  }
+
+  /// Clears all shared friend state. Used on sign-out and account switches.
+  ///
+  /// The controller is closed and dropped rather than reused: anything still
+  /// listening belongs to the account that just went away, and the next
+  /// [watchFriends] call builds a fresh one bound to the new account.
+  static void resetFriendCaches() {
+    _friendsGeneration++;
+    _friendsSubscription?.cancel();
+    _friendsSubscription = null;
+    final controller = _friendsController;
+    _friendsController = null;
+    controller?.close();
+    _profileRequests.invalidateAll();
+    _friendsLatest = null;
+    _friendsUid = null;
+  }
+
+  /// Tears down every piece of shared state, including the auth watcher, so
+  /// each test starts from nothing.
+  @visibleForTesting
+  static void resetForTesting() {
+    _authSubscription?.cancel();
+    _authSubscription = null;
+    resetFriendCaches();
+    profileReadCount = 0;
+  }
+
+  static void _watchAuthChanges() {
+    _authSubscription ??= _authUidStream.listen((uid) {
+      if (uid == _friendsUid) return;
+      resetFriendCaches();
+    });
   }
 
   static Future<void> publishTodayFitness({
@@ -1072,15 +1242,18 @@ class CircleProfileService {
     await FirebaseFunctions.instance
         .httpsCallable('removeCircleFriend')
         .call<void>({'userId': friendUid});
+    invalidateFriendProfile(friendUid);
   }
 
   static Future<void> blockUser(String userId) async {
     await FirebaseFunctions.instance
         .httpsCallable('blockCircleUser')
         .call<void>({'userId': userId});
+    invalidateFriendProfile(userId);
   }
 
   static Future<CircleProfile?> _loadProfile(String uid) async {
+    profileReadCount++;
     try {
       final snapshot = await _profileReference(uid).get();
       final data = snapshot.data();

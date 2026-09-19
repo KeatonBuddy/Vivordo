@@ -9,6 +9,7 @@ import 'activity_goals_service.dart';
 import 'stress_score_service.dart';
 import '../utils/activity_score.dart';
 import '../utils/heart_health_score.dart';
+import '../utils/metric_cleanup.dart';
 import '../utils/sleep_stage_aggregation.dart';
 
 // ─── Metric definitions ──────────────────────────────────────────────────────
@@ -1068,6 +1069,10 @@ class HealthService {
     required DateTime end,
     required Set<String> daysWithData,
   }) async {
+    // Applies per day: every day the read did not produce data is protected,
+    // including when other days in the same query did produce some.
+    if (!emptyReadMayClearSavedMetric(metricKey)) return;
+
     final startDay = DateTime(start.year, start.month, start.day);
     final endDay = DateTime(end.year, end.month, end.day);
     final days = endDay.difference(startDay).inDays + 1;

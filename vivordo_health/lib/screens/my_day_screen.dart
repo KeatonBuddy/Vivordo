@@ -86,7 +86,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  Future<void> _loadTodayEvents() async {
+  /// [forceRefresh] bypasses the shared calendar cache. Used by pull-to-refresh
+  /// and after the user edits an event, where reusing a cached range would
+  /// show them what they just changed away from.
+  Future<void> _loadTodayEvents({bool forceRefresh = false}) async {
     final generation = ++_loadGeneration;
     if (mounted) setState(() => _isLoading = true);
     final now = DateTime.now();
@@ -100,10 +103,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         CalendarService.getEventsBetween(
           dayStart,
           tomorrowEnd,
+          forceRefresh: forceRefresh,
         ).timeout(const Duration(seconds: 8)),
         OutlookCalendarService.getEventsBetween(
           dayStart,
           tomorrowEnd,
+          forceRefresh: forceRefresh,
         ).timeout(const Duration(seconds: 8)),
       ]);
     } catch (error) {
@@ -407,7 +412,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _loadTodayEvents,
+          onRefresh: () => _loadTodayEvents(forceRefresh: true),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
             children: [

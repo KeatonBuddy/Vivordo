@@ -40,7 +40,8 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
     return first.subtract(Duration(days: first.weekday % 7));
   }
 
-  Future<void> _loadEvents() async {
+  /// [forceRefresh] bypasses the shared calendar cache for pull-to-refresh.
+  Future<void> _loadEvents({bool forceRefresh = false}) async {
     final generation = ++_loadGeneration;
     if (mounted) setState(() => _loading = true);
     final start = _gridStart;
@@ -50,10 +51,12 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
       CalendarService.getEventsBetween(
         start,
         end,
+        forceRefresh: forceRefresh,
       ).timeout(const Duration(seconds: 10), onTimeout: () => <gcal.Event>[]),
       OutlookCalendarService.getEventsBetween(
         start,
         end,
+        forceRefresh: forceRefresh,
       ).timeout(const Duration(seconds: 10), onTimeout: () => <OutlookEvent>[]),
     ]);
 
@@ -292,7 +295,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _loadEvents,
+        onRefresh: () => _loadEvents(forceRefresh: true),
         child: ListView(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 40),
           children: [

@@ -18,6 +18,7 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
+import 'package:vivordo_health/src/utils/home_metrics_summary.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/widgets/hourly_heart_insight_card.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
@@ -242,7 +243,7 @@ class _HomeWidgetSnapshot {
   ].join('|');
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _hourlyHeartKey = GlobalKey<HourlyHeartInsightCardState>();
   String _currentMood = 'Good';
   double _currentMoodScore = 75;
@@ -256,6 +257,11 @@ class _HomeScreenState extends State<HomeScreen> {
   late Stream<QuerySnapshot<Map<String, dynamic>>> _latestScanStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
   late final Stream<CircleProfile?> _circleProfileStream;
+  /// Local day and account the metric listeners above were built for.
+  String? _streamsDayKey;
+  String? _streamsUid;
+  Timer? _dayRolloverTimer;
+  HomeMetricsSummaryCache _metricsSummaryCache = HomeMetricsSummaryCache();
   Future<List<gcal.Event>>? _reachableWindowEventsFuture;
   DateTime? _reachableWindowEventsDate;
   Future<List<_ScoredReachableEvent>>? _reachableWindowScoresFuture;
@@ -287,23 +293,8 @@ class _HomeScreenState extends State<HomeScreen> {
     // on every load. This is where yesterday's check-in actually gets
     // submitted — by now its day is closed and its metrics are complete.
     StressScoreService.submitPendingFeedback().catchError((_) {});
-    final today = _todayPeriod();
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    _todayStream = uid != null
-        ? FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('metrics_daily')
-              .doc(today)
-              .snapshots()
-        : const Stream.empty();
-    _latestScanStream = uid != null
-        ? FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('metrics_daily')
-              .snapshots()
-        : const Stream.empty();
+    WidgetsBinding.instance.addObserver(this);
+    _connectMetricStreams();
     _circleProfileStream = CircleProfileService.watchCurrentProfile();
     _goalsStreamCached = _goalsStream();
     _activityGoalsSubscription = ActivityGoalsService.watch().listen(
@@ -339,8 +330,93 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _dayRolloverTimer?.cancel();
     _activityGoalsSubscription?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The metrics window and today's document are both pinned to the local
+    // day and account they were built for, so a day that turned over — or an
+    // account that changed — while the app was away needs fresh queries.
+    if (state == AppLifecycleState.resumed) _reconnectMetricStreamsIfStale();
+  }
+
+  /// Fires at the next local midnight so a session left open across the date
+  /// change does not keep querying yesterday. Resume alone is not enough: an
+  /// app sitting in the foreground, or on another tab, gets no lifecycle
+  /// event at midnight.
+  void _scheduleDayRollover() {
+    _dayRolloverTimer?.cancel();
+    _dayRolloverTimer = Timer(durationUntilNextLocalDay(DateTime.now()), () {
+      _reconnectMetricStreamsIfStale();
+      // Re-arm regardless: if the clock drifted and the day has not actually
+      // turned over yet, the next timer covers the remainder.
+      if (mounted) _scheduleDayRollover();
+    });
+  }
+
+  void _reconnectMetricStreamsIfStale() {
+    if (!mounted) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (_streamsDayKey == _todayPeriod() && _streamsUid == uid) return;
+    setState(_connectMetricStreams);
+  }
+
+  /// Points both metric listeners at the current local day.
+  ///
+  /// The history listener is bounded to [kHomeMetricsWindowDays] using a range
+  /// on the `YYYY-MM-DD` document ids, so it carries a fixed window rather
+  /// than every day the account has ever recorded.
+  void _connectMetricStreams() {
+    final today = _todayPeriod();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    _streamsDayKey = today;
+    _streamsUid = uid;
+    _metricsSummaryCache = HomeMetricsSummaryCache();
+    _scheduleDayRollover();
+    _todayStream = uid != null
+        ? FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('metrics_daily')
+              .doc(today)
+              .snapshots()
+        : const Stream.empty();
+    _latestScanStream = uid != null
+        ? FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('metrics_daily')
+              .where(
+                FieldPath.documentId,
+                isGreaterThanOrEqualTo: homeMetricsWindowStartKey(
+                  DateTime.now(),
+                ),
+                isLessThanOrEqualTo: today,
+              )
+              .orderBy(FieldPath.documentId, descending: true)
+              .snapshots()
+        : const Stream.empty();
+  }
+
+  /// Derived Home values for [snapshot], reused across rebuilds that did not
+  /// change the data, the local day, or the signed-in account.
+  HomeMetricsSummary _metricsSummaryFor(
+    QuerySnapshot<Map<String, dynamic>>? snapshot,
+  ) {
+    final now = DateTime.now();
+    return _metricsSummaryCache.summarize(
+      snapshotKey: snapshot,
+      dayKey: _todayPeriod(),
+      uid: FirebaseAuth.instance.currentUser?.uid,
+      now: now,
+      newestFirst: () => (snapshot?.docs ?? const [])
+          .map((doc) => MetricDayEntry(dayKey: doc.id, data: doc.data()))
+          .toList(growable: false),
+    );
   }
 
   void _syncMoodAfterBuild(String savedMood, double savedMoodScore) {
@@ -429,65 +505,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String _todayPeriod() {
     final now = DateTime.now();
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-  }
-
-  LatestHeartRateReading? _latestHeartRateFrom(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
-    return latestHeartRateReadingFromMetricDays(
-      sortedDocs.map((doc) => doc.data()),
-    );
-  }
-
-  /// Returns the personalized value a new stress day should open at while the
-  /// first BaaS reading is still being computed.
-  ///
-  /// The accumulating stress scorer persists an `anchor` with every successful
-  /// response. That anchor is the user's learned reset point for the start of a
-  /// local day, so it is a better midnight fallback than yesterday's final
-  /// score. Older documents predate anchors and fall back to their last live or
-  /// daily value instead.
-  double? _latestStressAnchorFrom(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
-
-    for (final doc in sortedDocs) {
-      final stress = doc.data()['stress'] as Map?;
-      if (stress == null) continue;
-
-      final anchor = stress['anchor'];
-      if (anchor is num) return anchor.toDouble();
-
-      final current = stress['current'];
-      if (current is num) return current.toDouble();
-
-      final average = stress['avg'];
-      if (average is num) return average.toDouble();
-    }
-    return null;
-  }
-
-  double? _sevenDayStressAverage(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final oldest = today.subtract(const Duration(days: 7));
-    final values = <double>[];
-    for (final doc in docs) {
-      final date = DateTime.tryParse(doc.id);
-      if (date == null || date.isBefore(oldest) || !date.isBefore(today)) {
-        continue;
-      }
-      final stress = doc.data()['stress'] as Map?;
-      final value =
-          (stress?['avg'] as num?)?.toDouble() ??
-          (stress?['current'] as num?)?.toDouble();
-      if (value != null) values.add(value);
-    }
-    if (values.isEmpty) return null;
-    return values.reduce((a, b) => a + b) / values.length;
   }
 
   DateTime? _stressUpdatedAt(Map? stress) {
@@ -627,15 +644,15 @@ class _HomeScreenState extends State<HomeScreen> {
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _latestScanStream,
           builder: (context, scanSnap) {
-            final metricDocs = scanSnap.data?.docs ?? [];
-            final latestHeartRate = _latestHeartRateFrom(metricDocs);
+            final metricsSummary = _metricsSummaryFor(scanSnap.data);
+            final latestHeartRate = metricsSummary.latestHeartRate;
             final latestHeartRateBpm = latestHeartRate?.bpm;
             final hrVal = latestHeartRateBpm == null
                 ? '--'
                 : '$latestHeartRateBpm bpm';
             final displayedStressScore =
-                stressScore ?? _latestStressAnchorFrom(metricDocs);
-            final sevenDayStressAverage = _sevenDayStressAverage(metricDocs);
+                stressScore ?? metricsSummary.stressAnchor;
+            final sevenDayStressAverage = metricsSummary.sevenDayStressAverage;
             final stressDrivers = homeStressDrivers(stressMap?['top_drivers']);
             final stressStillLoading =
                 loading ||

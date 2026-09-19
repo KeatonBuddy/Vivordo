@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:msal_auth/msal_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:vivordo_health/src/utils/request_coalescer.dart';
 
 class OutlookEvent {
   const OutlookEvent({
@@ -29,6 +30,16 @@ class OutlookCalendarService {
 
   static const String clientId = '07c05b6e-07ad-4ed3-bfd2-35af418decdf';
   static const String authority = 'https://login.microsoftonline.com/common';
+
+  /// Matches CalendarService: long enough to collapse simultaneous requests
+  /// for the same range, short enough to stay close to the server.
+  static const _eventCacheTtl = Duration(seconds: 30);
+
+  static final RequestCoalescer<List<OutlookEvent>> _eventRequests =
+      RequestCoalescer<List<OutlookEvent>>(ttl: _eventCacheTtl);
+
+  /// Drops cached ranges after an edit, deletion or account change.
+  static void invalidateEventCache() => _eventRequests.invalidateAll();
 
   static const List<String> scopes = [
     'https://graph.microsoft.com/User.Read',
@@ -61,16 +72,37 @@ class OutlookCalendarService {
     return _pca!;
   }
 
-  static Future<List<OutlookEvent>> getWeekEvents(DateTime weekStart) {
-    return getEventsBetween(weekStart, weekStart.add(const Duration(days: 7)));
+  static Future<List<OutlookEvent>> getWeekEvents(
+    DateTime weekStart, {
+    bool forceRefresh = false,
+  }) {
+    return getEventsBetween(
+      weekStart,
+      weekStart.add(const Duration(days: 7)),
+      forceRefresh: forceRefresh,
+    );
   }
 
+  /// Identical range requests are coalesced and reused briefly, since several
+  /// screens ask for the same window at once. Pass [forceRefresh] for a
+  /// pull-to-refresh, which always reaches Graph.
   static Future<List<OutlookEvent>> getEventsBetween(
+    DateTime start,
+    DateTime end, {
+    bool forceRefresh = false,
+  }) {
+    if (!enabled) return Future.value(const <OutlookEvent>[]);
+    return _eventRequests.run(
+      '${start.toIso8601String()}|${end.toIso8601String()}',
+      () => _fetchEventsBetween(start, end),
+      forceRefresh: forceRefresh,
+    );
+  }
+
+  static Future<List<OutlookEvent>> _fetchEventsBetween(
     DateTime start,
     DateTime end,
   ) async {
-    if (!enabled) return const <OutlookEvent>[];
-
     try {
       final savedToken = await _getSavedAccessToken();
       if (savedToken != null) {
@@ -160,6 +192,9 @@ class OutlookCalendarService {
     final accessToken = result.accessToken as String?;
     if (accessToken == null || accessToken.isEmpty) return;
 
+    // A newly authenticated account must not read the previous one's events.
+    invalidateEventCache();
+
     final dynamic rawExpiry = result.expiresOn;
     final DateTime expiry = rawExpiry is DateTime
         ? rawExpiry
@@ -190,6 +225,7 @@ class OutlookCalendarService {
       }
     }
 
+    invalidateEventCache();
     await _secureStorage.delete(key: _accessTokenKey);
     await _secureStorage.delete(key: _accessTokenExpiryKey);
     await _secureStorage.delete(key: _outlookSignedInKey);
