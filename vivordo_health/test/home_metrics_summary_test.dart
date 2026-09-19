@@ -97,7 +97,7 @@ void main() {
     test('spans today-7 inclusive through yesterday, excluding today', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18, 14),
-        newestFirst: [
+        days: [
           day('2026-09-18', stressDay({'avg': 100})), // today, excluded
           day('2026-09-17', stressDay({'avg': 10})),
           day('2026-09-11', stressDay({'avg': 20})), // today-7, included
@@ -110,7 +110,7 @@ void main() {
     test('prefers avg over current, matching the previous definition', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
-        newestFirst: [
+        days: [
           day('2026-09-17', stressDay({'avg': 40, 'current': 90})),
           day('2026-09-16', stressDay({'current': 60})),
         ],
@@ -121,7 +121,7 @@ void main() {
     test('is null rather than zero when no day in range has stress', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
-        newestFirst: [day('2026-09-17', {'steps': {'sum': 900}})],
+        days: [day('2026-09-17', {'steps': {'sum': 900}})],
       );
       expect(summary.sevenDayStressAverage, isNull);
     });
@@ -129,7 +129,7 @@ void main() {
     test('skips documents whose id is not a date', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
-        newestFirst: [
+        days: [
           day('not-a-date', stressDay({'avg': 999})),
           day('2026-09-17', stressDay({'avg': 30})),
         ],
@@ -143,7 +143,7 @@ void main() {
       expect(
         summarizeHomeMetrics(
           now: DateTime(2026, 9, 18),
-          newestFirst: [
+          days: [
             day('2026-09-18', stressDay({'anchor': 41, 'current': 70})),
           ],
         ).stressAnchor,
@@ -152,14 +152,14 @@ void main() {
       expect(
         summarizeHomeMetrics(
           now: DateTime(2026, 9, 18),
-          newestFirst: [day('2026-09-18', stressDay({'current': 70}))],
+          days: [day('2026-09-18', stressDay({'current': 70}))],
         ).stressAnchor,
         70,
       );
       expect(
         summarizeHomeMetrics(
           now: DateTime(2026, 9, 18),
-          newestFirst: [day('2026-09-18', stressDay({'avg': 55}))],
+          days: [day('2026-09-18', stressDay({'avg': 55}))],
         ).stressAnchor,
         55,
       );
@@ -168,7 +168,7 @@ void main() {
     test('falls through days that carry no usable stress value', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
-        newestFirst: [
+        days: [
           day('2026-09-18', {'steps': {'sum': 10}}),
           day('2026-09-17', stressDay({'note': 'nothing numeric'})),
           day('2026-09-16', stressDay({'anchor': 33})),
@@ -180,7 +180,7 @@ void main() {
     test('is null rather than zero when the window holds no stress', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
-        newestFirst: [day('2026-09-18', {'steps': {'sum': 10}})],
+        days: [day('2026-09-18', {'steps': {'sum': 10}})],
       );
       expect(summary.stressAnchor, isNull);
     });
@@ -190,7 +190,7 @@ void main() {
     test('takes the newest timestamped reading in the window', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
-        newestFirst: [
+        days: [
           day('2026-09-18', {
             'heart_rate': {
               'source': 'apple_health',
@@ -216,9 +216,93 @@ void main() {
     test('is null rather than zero when the window holds no reading', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
-        newestFirst: [day('2026-09-18', {'steps': {'sum': 10}})],
+        days: [day('2026-09-18', {'steps': {'sum': 10}})],
       );
       expect(summary.latestHeartRate, isNull);
+    });
+
+    test('finds a camera scan saved today', () {
+      // The shape scan_screen writes: heart_rate without entries, plus
+      // heart_rate_scan carrying one entry per scan.
+      final summary = summarizeHomeMetrics(
+        now: DateTime(2026, 9, 19, 14),
+        days: [
+          day('2026-09-19', {
+            'heart_rate': {'avg': 72, 'source': 'camera_ppg'},
+            'heart_rate_scan': {
+              'avg': 72,
+              'source': 'camera_ppg',
+              'entries': [
+                {'bpm': 70, 'timestamp': '2026-09-19T09:00:00Z'},
+                {'bpm': 74, 'timestamp': '2026-09-19T13:00:00Z'},
+              ],
+            },
+          }),
+        ],
+      );
+      expect(summary.latestHeartRate?.bpm, 74);
+    });
+  });
+
+  group('ordering is not borrowed from the query', () {
+    // A previous version relied on the Firestore query returning documents
+    // newest first. A collection query without an orderBy returns them
+    // oldest first, which silently inverted every "latest" lookup.
+    final unordered = [
+      day('2026-09-16', stressDay({'anchor': 16})),
+      day('2026-09-19', stressDay({'anchor': 19})),
+      day('2026-09-17', stressDay({'anchor': 17})),
+    ];
+
+    test('the newest anchor wins whatever order the days arrive in', () {
+      expect(
+        summarizeHomeMetrics(
+          now: DateTime(2026, 9, 20),
+          days: unordered,
+        ).stressAnchor,
+        19,
+      );
+      expect(
+        summarizeHomeMetrics(
+          now: DateTime(2026, 9, 20),
+          days: unordered.reversed.toList(),
+        ).stressAnchor,
+        19,
+      );
+    });
+
+    test('oldest-first input still yields the newest heart rate', () {
+      final oldestFirst = [
+        day('2026-09-17', {
+          'heart_rate': {
+            'source': 'apple_health',
+            'entries': [
+              {'bpm': 55, 'timestamp': '2026-09-17T09:00:00Z'},
+            ],
+          },
+        }),
+        day('2026-09-19', {
+          'heart_rate': {
+            'source': 'apple_health',
+            'entries': [
+              {'bpm': 88, 'timestamp': '2026-09-19T09:00:00Z'},
+            ],
+          },
+        }),
+      ];
+      expect(
+        summarizeHomeMetrics(
+          now: DateTime(2026, 9, 20),
+          days: oldestFirst,
+        ).latestHeartRate?.bpm,
+        88,
+      );
+    });
+
+    test('does not mutate the caller\'s list', () {
+      final original = [...unordered];
+      summarizeHomeMetrics(now: DateTime(2026, 9, 20), days: original);
+      expect(original.map((e) => e.dayKey), unordered.map((e) => e.dayKey));
     });
   });
 
@@ -235,14 +319,14 @@ void main() {
         dayKey: '2026-09-18',
         uid: 'user-a',
         now: DateTime(2026, 9, 18),
-        newestFirst: build,
+        days: build,
       );
       final second = cache.summarize(
         snapshotKey: snapshot,
         dayKey: '2026-09-18',
         uid: 'user-a',
         now: DateTime(2026, 9, 18),
-        newestFirst: build,
+        days: build,
       );
 
       expect(cache.computeCount, 1);
@@ -257,7 +341,7 @@ void main() {
           dayKey: '2026-09-18',
           uid: 'user-a',
           now: DateTime(2026, 9, 18),
-          newestFirst: build,
+          days: build,
         );
       }
       expect(cache.computeCount, 2);
@@ -271,14 +355,14 @@ void main() {
         dayKey: '2026-09-18',
         uid: 'user-a',
         now: DateTime(2026, 9, 18, 23, 59),
-        newestFirst: build,
+        days: build,
       );
       cache.summarize(
         snapshotKey: snapshot,
         dayKey: '2026-09-19',
         uid: 'user-a',
         now: DateTime(2026, 9, 19, 0, 1),
-        newestFirst: build,
+        days: build,
       );
       expect(cache.computeCount, 2);
     });
@@ -291,14 +375,14 @@ void main() {
         dayKey: '2026-09-18',
         uid: 'user-a',
         now: DateTime(2026, 9, 18),
-        newestFirst: build,
+        days: build,
       );
       cache.summarize(
         snapshotKey: snapshot,
         dayKey: '2026-09-18',
         uid: 'user-b',
         now: DateTime(2026, 9, 18),
-        newestFirst: build,
+        days: build,
       );
       expect(cache.computeCount, 2);
     });
@@ -310,14 +394,14 @@ void main() {
         dayKey: '2026-09-18',
         uid: 'user-a',
         now: DateTime(2026, 9, 18),
-        newestFirst: () => const [],
+        days: () => const [],
       );
       final second = cache.summarize(
         snapshotKey: null,
         dayKey: '2026-09-18',
         uid: 'user-a',
         now: DateTime(2026, 9, 18),
-        newestFirst: () => const [],
+        days: () => const [],
       );
       expect(cache.computeCount, 1);
       expect(second.latestHeartRate, isNull);

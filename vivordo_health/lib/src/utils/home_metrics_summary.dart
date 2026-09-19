@@ -60,15 +60,19 @@ String homeMetricsWindowStartKey(DateTime now, {int days = kHomeMetricsWindowDay
       '${start.day.toString().padLeft(2, '0')}';
 }
 
-/// Derives Home's fallback values from [newestFirst].
+/// Derives Home's fallback values from [days], in any order.
 ///
-/// [newestFirst] must already be ordered newest day first — the Firestore
-/// query orders by document id descending, so re-sorting here would be
-/// redundant work on every snapshot.
+/// Ordering is established here rather than assumed from the query. Both the
+/// latest-reading and anchor lookups walk newest to oldest and take the first
+/// match, so borrowing the query's ordering would silently invert them if that
+/// query ever changed. Sorting costs one pass per snapshot, not per rebuild,
+/// because the caller caches the result.
 HomeMetricsSummary summarizeHomeMetrics({
-  required List<MetricDayEntry> newestFirst,
+  required List<MetricDayEntry> days,
   required DateTime now,
 }) {
+  final newestFirst = [...days]
+    ..sort((a, b) => b.dayKey.compareTo(a.dayKey));
   return HomeMetricsSummary(
     latestHeartRate: latestHeartRateReadingFromMetricDays(
       newestFirst.map((entry) => entry.data),
@@ -137,7 +141,7 @@ class HomeMetricsSummaryCache {
     required String dayKey,
     required String? uid,
     required DateTime now,
-    required List<MetricDayEntry> Function() newestFirst,
+    required List<MetricDayEntry> Function() days,
   }) {
     final cached = _summary;
     if (cached != null &&
@@ -148,7 +152,7 @@ class HomeMetricsSummaryCache {
     }
 
     _computeCount++;
-    final summary = summarizeHomeMetrics(newestFirst: newestFirst(), now: now);
+    final summary = summarizeHomeMetrics(days: days(), now: now);
     _snapshotKey = snapshotKey;
     _dayKey = dayKey;
     _uid = uid;
