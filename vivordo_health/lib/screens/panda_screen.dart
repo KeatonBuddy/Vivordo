@@ -15,6 +15,7 @@ import '../src/services/panda_recommendations.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/workout_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import '../widgets/privacy_support_links.dart';
 
 // Robot mascot inlined as a string so it renders via SvgPicture.string —
 // bypasses the asset bundle + web service-worker cache that was serving a
@@ -3054,11 +3055,25 @@ class _PandaScreenState extends State<PandaScreen>
             ),
           ],
         ),
-        content: const Text(
-          'All health insights and conversations are encrypted and private.',
-          style: TextStyle(fontSize: 15, height: 1.4),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Panda uses Anthropic’s Claude through Vivordo’s servers to generate '
+            'responses and insights. Your messages and relevant health, fitness, '
+            'calendar, journal, and previous-session information may be sent to '
+            'Anthropic for processing. This is not on-device processing.\n\n'
+            'Avoid sharing information you do not want processed by these services. '
+            'Read our Privacy Policy for details about data use, storage, and your choices.\n\n'
+            'Panda provides wellness information, not medical advice. Responses can '
+            'be inaccurate. Consult a qualified healthcare professional before '
+            'making medical decisions.',
+            style: TextStyle(fontSize: 15, height: 1.4),
+          ),
         ),
         actions: [
+          TextButton(
+            onPressed: () => openVivordoLink(ctx, Uri.parse(vivordoPrivacyUrl)),
+            child: const Text('Privacy Policy'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text(
