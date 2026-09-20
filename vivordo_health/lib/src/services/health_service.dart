@@ -1071,7 +1071,12 @@ class HealthService {
   }) async {
     // Applies per day: every day the read did not produce data is protected,
     // including when other days in the same query did produce some.
-    if (!emptyReadMayClearSavedMetric(metricKey)) return;
+    if (!readMayClearMissingDays(
+      metricKey: metricKey,
+      readCoveredAnyDay: daysWithData.isNotEmpty,
+    )) {
+      return;
+    }
 
     final startDay = DateTime(start.year, start.month, start.day);
     final endDay = DateTime(end.year, end.month, end.day);
