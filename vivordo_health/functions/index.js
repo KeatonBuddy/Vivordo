@@ -17,6 +17,7 @@ const {
 const {
   shouldDeleteWhoopSleep,
   whoopDateKey,
+  whoopFetchMayClearSleep,
   whoopPresentSleepDays,
   whoopReconciliationDays,
 } = require("./whoop_reconciliation");
@@ -1588,11 +1589,18 @@ async function saveAndReconcileWhoopSleep(
       (day) => metricsCollection.doc(day),
   );
 
+  // A fetch that returned no sleep at all cannot distinguish "no nights" from
+  // "could not read nights", so it clears nothing.
+  const mayClear = whoopFetchMayClearSleep(presentDays);
+
   return firestore.runTransaction(async (transaction) => {
-    const existingSnapshots = reconciliationReferences.length > 0 ?
+    const existingSnapshots = reconciliationReferences.length > 0 && mayClear ?
       await transaction.getAll(...reconciliationReferences) : [];
     let removed = 0;
-    for (let index = 0; index < reconciliationDays.length; index += 1) {
+    // Only the deletions are skipped — the writes below still run, so an
+    // empty fetch leaves saved nights alone without stalling the sync.
+    for (let index = 0; mayClear && index < reconciliationDays.length;
+      index += 1) {
       const day = reconciliationDays[index];
       const snapshot = existingSnapshots[index];
       const existingSleep = snapshot.data()?.sleep;

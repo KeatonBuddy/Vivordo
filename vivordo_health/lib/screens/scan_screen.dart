@@ -592,8 +592,14 @@ class _ScanScreenState extends State<ScanScreen>
               entries.length;
 
           transaction.set(ref, {
-            'heart_rate': heartRateScan,
-            // Keep camera scans separate from HealthKit's daily heart-rate data.
+            // Camera scans live here and nowhere else. They used to be
+            // mirrored into `heart_rate` as well, which overwrote that day's
+            // HealthKit average with a single spot reading: `heart_rate.avg`
+            // means "the average across today", and one measurement is not
+            // that. Everything that needs scans reads them from here — both
+            // scores, the merged history and Home's latest reading — so the
+            // mirror only ever misinformed the consumers that had not learned
+            // to distrust it.
             'heart_rate_scan': {
               ...heartRateScan,
               'avg': average,
