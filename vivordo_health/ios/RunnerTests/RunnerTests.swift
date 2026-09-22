@@ -127,6 +127,33 @@ final class RunnerTests: XCTestCase {
     )
   }
 
+  func testSiriQueryBuildsDistinctStressAndWellnessCards() {
+    seedSnapshot(publishedAt: 1_000)
+    defaults.set(32, forKey: "siriStressScore")
+    defaults.set(["Busy calendar"], forKey: "stressDrivers")
+    defaults.set(84, forKey: "siriWellnessScore")
+
+    let service = VivordoSiriQueryService(store: VivordoSnapshotStore(defaults: defaults))
+    let now = Date(timeIntervalSince1970: 1_100)
+    let stress = service.answer(for: .stress, now: now)
+    let wellness = service.answer(for: .wellness, now: now)
+
+    XCTAssertEqual(stress.metric, .stress)
+    XCTAssertEqual(stress.title, "Stress Score")
+    XCTAssertEqual(stress.value, "32")
+    XCTAssertEqual(stress.status, "Low stress")
+    XCTAssertEqual(stress.detail, "Main drivers: Busy calendar")
+    XCTAssertEqual(stress.progress, 0.32)
+
+    XCTAssertEqual(wellness.metric, .wellness)
+    XCTAssertEqual(wellness.title, "Wellness Score")
+    XCTAssertEqual(wellness.value, "84")
+    XCTAssertEqual(wellness.status, "Great")
+    XCTAssertEqual(wellness.detail, "Today")
+    XCTAssertEqual(wellness.progress, 0.84)
+    XCTAssertNotEqual(stress.dialog, wellness.dialog)
+  }
+
   func testSiriQueryHandlesMissingSnapshot() {
     let service = VivordoSiriQueryService(store: VivordoSnapshotStore(defaults: defaults))
     XCTAssertEqual(

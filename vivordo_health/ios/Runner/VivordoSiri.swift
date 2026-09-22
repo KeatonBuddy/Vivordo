@@ -1,5 +1,6 @@
 import AppIntents
 import Foundation
+import SwiftUI
 
 /// The native boundary for Vivordo information exposed to Siri.
 ///
@@ -50,7 +51,14 @@ enum VivordoHealthMetric: String, Sendable {
 }
 
 struct VivordoSiriAnswer: Equatable, Sendable {
+  let metric: VivordoHealthMetric
   let dialog: String
+  let title: String
+  let value: String
+  let unit: String?
+  let status: String
+  let detail: String?
+  let progress: Double?
 }
 
 struct VivordoSnapshotStore {
@@ -146,52 +154,166 @@ struct VivordoSiriQueryService {
       snapshot = try store.load()
     } catch {
       return VivordoSiriAnswer(
-        dialog: "Open Vivordo to sign in and refresh your health data."
+        metric: metric,
+        dialog: "Open Vivordo to sign in and refresh your health data.",
+        title: Self.title(for: metric),
+        value: "--",
+        unit: nil,
+        status: "Data unavailable",
+        detail: "Open Vivordo to sign in and refresh your health data.",
+        progress: nil
       )
     }
 
     guard store.isFresh(snapshot, now: now, maximumAge: Self.maximumSnapshotAge) else {
       return VivordoSiriAnswer(
-        dialog: "Your Vivordo data needs a refresh. Open the app to update it."
+        metric: metric,
+        dialog: "Your Vivordo data needs a refresh. Open the app to update it.",
+        title: Self.title(for: metric),
+        value: "--",
+        unit: nil,
+        status: "Refresh needed",
+        detail: "Open Vivordo to update your health data.",
+        progress: nil
       )
     }
 
-    let dialog: String
     switch metric {
     case .stress:
       if let score = snapshot.stressScore {
         let drivers = snapshot.stressDrivers.prefix(2)
         let detail = drivers.isEmpty ? "" : " Your main drivers are \(drivers.joined(separator: " and "))."
-        dialog = "Your Vivordo stress score is \(score) out of 100.\(detail)"
+        return VivordoSiriAnswer(
+          metric: metric,
+          dialog: "Your Vivordo stress score is \(score) out of 100.\(detail)",
+          title: "Stress Score",
+          value: "\(score)",
+          unit: "out of 100",
+          status: Self.stressStatus(score),
+          detail: drivers.isEmpty ? "Today" : "Main drivers: \(drivers.joined(separator: " • "))",
+          progress: Double(score) / 100
+        )
       } else {
-        dialog = "Vivordo doesn't have a stress score for you yet today."
+        return Self.missing(metric, dialog: "Vivordo doesn't have a stress score for you yet today.")
       }
     case .sleep:
       if let hours = snapshot.sleepHours {
-        dialog = "Vivordo recorded \(Self.hoursText(hours)) of sleep."
+        return VivordoSiriAnswer(
+          metric: metric,
+          dialog: "Vivordo recorded \(Self.hoursText(hours)) of sleep.",
+          title: "Sleep",
+          value: Self.shortHoursText(hours),
+          unit: nil,
+          status: Self.sleepStatus(hours),
+          detail: snapshot.sleepStages.isEmpty ? "Latest sleep" : snapshot.sleepStages.prefix(4).joined(separator: " • "),
+          progress: min(hours / 8, 1)
+        )
       } else {
-        dialog = "Vivordo doesn't have sleep data for you yet."
+        return Self.missing(metric, dialog: "Vivordo doesn't have sleep data for you yet.")
       }
     case .heartRate:
       if let beatsPerMinute = snapshot.latestHeartRate {
-        dialog = "Your latest heart rate is \(beatsPerMinute) beats per minute."
+        return VivordoSiriAnswer(
+          metric: metric,
+          dialog: "Your latest heart rate is \(beatsPerMinute) beats per minute.",
+          title: "Heart Rate",
+          value: "\(beatsPerMinute)",
+          unit: "BPM",
+          status: "Latest reading",
+          detail: Self.heartRateDetail(snapshot),
+          progress: nil
+        )
       } else {
-        dialog = "Vivordo doesn't have a recent heart rate reading for you."
+        return Self.missing(metric, dialog: "Vivordo doesn't have a recent heart rate reading for you.")
       }
     case .steps:
       if let steps = snapshot.steps {
-        dialog = "You've taken \(steps.formatted()) steps today."
+        return VivordoSiriAnswer(
+          metric: metric,
+          dialog: "You've taken \(steps.formatted()) steps today.",
+          title: "Steps",
+          value: steps.formatted(),
+          unit: "steps",
+          status: "Today",
+          detail: nil,
+          progress: min(Double(steps) / 10_000, 1)
+        )
       } else {
-        dialog = "Vivordo doesn't have a step count for you yet today."
+        return Self.missing(metric, dialog: "Vivordo doesn't have a step count for you yet today.")
       }
     case .wellness:
       if let score = snapshot.wellnessScore {
-        dialog = "Your Vivordo wellness score is \(score) out of 100 today."
+        return VivordoSiriAnswer(
+          metric: metric,
+          dialog: "Your Vivordo wellness score is \(score) out of 100 today.",
+          title: "Wellness Score",
+          value: "\(score)",
+          unit: "out of 100",
+          status: Self.wellnessStatus(score),
+          detail: "Today",
+          progress: Double(score) / 100
+        )
       } else {
-        dialog = "Vivordo doesn't have a wellness score for you yet today."
+        return Self.missing(metric, dialog: "Vivordo doesn't have a wellness score for you yet today.")
       }
     }
-    return VivordoSiriAnswer(dialog: dialog)
+  }
+
+  private static func missing(_ metric: VivordoHealthMetric, dialog: String) -> VivordoSiriAnswer {
+    VivordoSiriAnswer(
+      metric: metric,
+      dialog: dialog,
+      title: title(for: metric),
+      value: "--",
+      unit: nil,
+      status: "Not available yet",
+      detail: "Refresh Vivordo after new health data is recorded.",
+      progress: nil
+    )
+  }
+
+  private static func title(for metric: VivordoHealthMetric) -> String {
+    switch metric {
+    case .stress: "Stress Score"
+    case .sleep: "Sleep"
+    case .heartRate: "Heart Rate"
+    case .steps: "Steps"
+    case .wellness: "Wellness Score"
+    }
+  }
+
+  private static func stressStatus(_ score: Int) -> String {
+    if score < 34 { return "Low stress" }
+    if score < 67 { return "Moderate stress" }
+    return "High stress"
+  }
+
+  private static func wellnessStatus(_ score: Int) -> String {
+    if score >= 80 { return "Great" }
+    if score >= 60 { return "Good" }
+    if score >= 40 { return "Fair" }
+    return "Needs attention"
+  }
+
+  private static func sleepStatus(_ hours: Double) -> String {
+    if hours >= 7 { return "Restful night" }
+    if hours >= 6 { return "A little short" }
+    return "Short sleep"
+  }
+
+  private static func shortHoursText(_ hours: Double) -> String {
+    let totalMinutes = Int((hours * 60).rounded())
+    let wholeHours = totalMinutes / 60
+    let minutes = totalMinutes % 60
+    if wholeHours == 0 { return "\(minutes) min" }
+    if minutes == 0 { return "\(wholeHours) hr" }
+    return "\(wholeHours) hr \(minutes) min"
+  }
+
+  private static func heartRateDetail(_ snapshot: VivordoSiriSnapshot) -> String? {
+    guard let minimum = snapshot.minimumHeartRate,
+          let maximum = snapshot.maximumHeartRate else { return nil }
+    return "Today's range: \(Int(minimum.rounded()))–\(Int(maximum.rounded())) BPM"
   }
 
   private static func hoursText(_ hours: Double) -> String {
@@ -204,14 +326,96 @@ struct VivordoSiriQueryService {
   }
 }
 
+/// A compact, read-only result that system surfaces can show without opening
+/// the Flutter application. Siri still receives `dialog` as the spoken and
+/// accessibility fallback when a visual result isn't appropriate.
+struct VivordoMetricSnippetView: View {
+  let answer: VivordoSiriAnswer
+
+  private let accent = Color(red: 0.49, green: 0.32, blue: 0.96)
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Label(answer.title, systemImage: systemImage)
+        .font(.headline)
+        .foregroundStyle(.secondary)
+
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Text(answer.value)
+          .font(.system(size: 42, weight: .bold, design: .rounded))
+          .contentTransition(.numericText())
+
+        if let unit = answer.unit {
+          Text(unit)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+        }
+
+        Spacer(minLength: 12)
+
+        if answer.metric == .heartRate, answer.value != "--" {
+          Image(systemName: "waveform.path.ecg")
+            .font(.system(size: 34, weight: .medium))
+            .foregroundStyle(accent)
+            .accessibilityHidden(true)
+        } else if let progress = answer.progress {
+          progressRing(progress)
+        }
+      }
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text(answer.status)
+          .font(.headline)
+          .foregroundStyle(accent)
+        if let detail = answer.detail {
+          Text(detail)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+        }
+      }
+    }
+    .padding(18)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(answer.dialog)
+  }
+
+  private var systemImage: String {
+    switch answer.metric {
+    case .stress: "waveform.path.ecg"
+    case .sleep: "bed.double.fill"
+    case .heartRate: "heart.fill"
+    case .steps: "figure.walk"
+    case .wellness: "heart.text.square.fill"
+    }
+  }
+
+  private func progressRing(_ progress: Double) -> some View {
+    ZStack {
+      Circle()
+        .stroke(accent.opacity(0.18), lineWidth: 7)
+      Circle()
+        .trim(from: 0, to: max(0, min(progress, 1)))
+        .stroke(accent, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+        .rotationEffect(.degrees(-90))
+    }
+    .frame(width: 54, height: 54)
+    .accessibilityHidden(true)
+  }
+}
+
 private protocol VivordoHealthQueryIntent: AppIntent {
   static var metric: VivordoHealthMetric { get }
 }
 
 private extension VivordoHealthQueryIntent {
-  func healthResult() -> some IntentResult & ProvidesDialog {
+  func healthResult() -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     let answer = VivordoSiriQueryService().answer(for: Self.metric)
-    return .result(dialog: IntentDialog(stringLiteral: answer.dialog))
+    return .result(
+      dialog: IntentDialog(stringLiteral: answer.dialog),
+      view: VivordoMetricSnippetView(answer: answer)
+    )
   }
 }
 
@@ -220,7 +424,7 @@ struct CheckStressIntent: VivordoHealthQueryIntent {
   static var description = IntentDescription("Get today's Vivordo stress score.")
   static let metric = VivordoHealthMetric.stress
 
-  func perform() async throws -> some IntentResult & ProvidesDialog {
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     healthResult()
   }
 }
@@ -230,7 +434,7 @@ struct CheckSleepIntent: VivordoHealthQueryIntent {
   static var description = IntentDescription("Get your latest sleep duration from Vivordo.")
   static let metric = VivordoHealthMetric.sleep
 
-  func perform() async throws -> some IntentResult & ProvidesDialog {
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     healthResult()
   }
 }
@@ -240,7 +444,7 @@ struct CheckHeartRateIntent: VivordoHealthQueryIntent {
   static var description = IntentDescription("Get your latest heart rate from Vivordo.")
   static let metric = VivordoHealthMetric.heartRate
 
-  func perform() async throws -> some IntentResult & ProvidesDialog {
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     healthResult()
   }
 }
@@ -250,7 +454,7 @@ struct CheckStepsIntent: VivordoHealthQueryIntent {
   static var description = IntentDescription("Get today's step count from Vivordo.")
   static let metric = VivordoHealthMetric.steps
 
-  func perform() async throws -> some IntentResult & ProvidesDialog {
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     healthResult()
   }
 }
@@ -260,7 +464,7 @@ struct GetWellnessScoreIntent: VivordoHealthQueryIntent {
   static var description = IntentDescription("Get today's Vivordo wellness score.")
   static let metric = VivordoHealthMetric.wellness
 
-  func perform() async throws -> some IntentResult & ProvidesDialog {
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     healthResult()
   }
 }
