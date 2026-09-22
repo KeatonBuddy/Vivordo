@@ -106,6 +106,7 @@ class HomeWidgetService {
         'sleepUpdatedAt': 0,
         'sleepStages': <String>[],
         'calendarEvents': <Map<String, Object>>[],
+        'siriCalendarEvents': <Map<String, Object>>[],
         'calendarWeekUpdatedAt': 0,
       });
     } on MissingPluginException {
@@ -284,20 +285,25 @@ class HomeWidgetService {
     events.sort((a, b) => (a['startAt'] as int).compareTo(b['startAt'] as int));
 
     final seen = <String>{};
+    final siriEvents = <Map<String, Object>>[];
+    for (final event in events) {
+      final signature = '${event['title']}|${event['startAt']}';
+      if (seen.add(signature)) siriEvents.add(event);
+    }
+
     final perDay = <String, int>{};
     final compactEvents = <Map<String, Object>>[];
-    for (final event in events) {
+    for (final event in siriEvents) {
       final start = DateTime.fromMillisecondsSinceEpoch(
         event['startAt'] as int,
       );
       final dayKey = DateFormat('yyyy-MM-dd').format(start);
-      final signature = '${event['title']}|${event['startAt']}';
-      if (!seen.add(signature) || (perDay[dayKey] ?? 0) >= 3) continue;
+      if ((perDay[dayKey] ?? 0) >= 3) continue;
       perDay[dayKey] = (perDay[dayKey] ?? 0) + 1;
       compactEvents.add(event);
     }
 
-    final signature = compactEvents
+    final signature = siriEvents
         .map(
           (event) => '${event['title']}:${event['startAt']}:${event['kind']}',
         )
@@ -308,6 +314,7 @@ class HomeWidgetService {
     try {
       await _channel.invokeMethod<void>('updateSnapshot', {
         'calendarEvents': compactEvents,
+        'siriCalendarEvents': siriEvents.take(100).toList(growable: false),
         'calendarWeekUpdatedAt': DateTime.now().millisecondsSinceEpoch,
       });
     } on MissingPluginException {

@@ -469,6 +469,794 @@ struct GetWellnessScoreIntent: VivordoHealthQueryIntent {
   }
 }
 
+struct VivordoCalendarEvent: Equatable, Identifiable, Sendable {
+  let title: String
+  let start: Date
+  let end: Date
+  let isAllDay: Bool
+  let kind: String
+
+  var id: String { "\(title)|\(start.timeIntervalSince1970)" }
+}
+
+struct VivordoCalendarSnapshot: Equatable, Sendable {
+  let updatedAt: Date
+  let events: [VivordoCalendarEvent]
+}
+
+enum VivordoCalendarSnapshotError: Error, Equatable {
+  case unavailable
+}
+
+struct VivordoCalendarSnapshotStore {
+  private let defaults: UserDefaults?
+
+  init(defaults: UserDefaults? = UserDefaults(
+    suiteName: VivordoSiriConfiguration.appGroupIdentifier
+  )) {
+    self.defaults = defaults
+  }
+
+  func load() throws -> VivordoCalendarSnapshot {
+    guard let defaults else {
+      throw VivordoCalendarSnapshotError.unavailable
+    }
+    let rawEvents =
+      defaults.array(forKey: "siriCalendarEvents") as? [[String: Any]] ??
+      defaults.array(forKey: "calendarEvents") as? [[String: Any]]
+    guard let rawEvents else { throw VivordoCalendarSnapshotError.unavailable }
+    let updatedMilliseconds = defaults.double(forKey: "calendarWeekUpdatedAt")
+    guard updatedMilliseconds > 0 else {
+      throw VivordoCalendarSnapshotError.unavailable
+    }
+
+    let events = rawEvents.compactMap { raw -> VivordoCalendarEvent? in
+      guard let title = raw["title"] as? String,
+            let startMilliseconds = raw["startAt"] as? NSNumber else { return nil }
+      let endMilliseconds = raw["endAt"] as? NSNumber
+      let start = Date(timeIntervalSince1970: startMilliseconds.doubleValue / 1_000)
+      let end = Date(
+        timeIntervalSince1970: (endMilliseconds?.doubleValue ?? startMilliseconds.doubleValue) / 1_000
+      )
+      return VivordoCalendarEvent(
+        title: title,
+        start: start,
+        end: end,
+        isAllDay: raw["isAllDay"] as? Bool ?? false,
+        kind: raw["kind"] as? String ?? "calendar"
+      )
+    }
+    .sorted { $0.start < $1.start }
+
+    return VivordoCalendarSnapshot(
+      updatedAt: Date(timeIntervalSince1970: updatedMilliseconds / 1_000),
+      events: events
+    )
+  }
+
+  func isFresh(
+    _ snapshot: VivordoCalendarSnapshot,
+    now: Date = .now,
+    maximumAge: TimeInterval
+  ) -> Bool {
+    now.timeIntervalSince(snapshot.updatedAt) >= 0 &&
+      now.timeIntervalSince(snapshot.updatedAt) <= maximumAge
+  }
+}
+
+enum VivordoCalendarQuery: Sendable {
+  case today
+  case next
+}
+
+struct VivordoCalendarAnswer: Equatable, Sendable {
+  let dialog: String
+  let title: String
+  let status: String
+  let events: [VivordoCalendarEvent]
+  let detail: String?
+}
+
+struct VivordoCalendarQueryService {
+  static let maximumSnapshotAge: TimeInterval = 2 * 60 * 60
+
+  private let store: VivordoCalendarSnapshotStore
+  private let calendar: Calendar
+
+  init(
+    store: VivordoCalendarSnapshotStore = VivordoCalendarSnapshotStore(),
+    calendar: Calendar = .autoupdatingCurrent
+  ) {
+    self.store = store
+    self.calendar = calendar
+  }
+
+  func answer(for query: VivordoCalendarQuery, now: Date = .now) -> VivordoCalendarAnswer {
+    let snapshot: VivordoCalendarSnapshot
+    do {
+      snapshot = try store.load()
+    } catch {
+      return unavailable(
+        dialog: "Open Vivordo to connect and refresh your calendar.",
+        status: "Calendar unavailable"
+      )
+    }
+
+    guard store.isFresh(snapshot, now: now, maximumAge: Self.maximumSnapshotAge) else {
+      return unavailable(
+        dialog: "Your Vivordo calendar needs a refresh. Open the app to update it.",
+        status: "Refresh needed"
+      )
+    }
+
+    switch query {
+    case .today:
+      let remaining = snapshot.events.filter {
+        calendar.isDate($0.start, inSameDayAs: now) && $0.end > now
+      }
+      guard let first = remaining.first else {
+        return VivordoCalendarAnswer(
+          dialog: "You have no more events today in Vivordo.",
+          title: "Today's Schedule",
+          status: "You're clear",
+          events: [],
+          detail: "No remaining events"
+        )
+      }
+      let countText = remaining.count == 1 ? "one event" : "\(remaining.count) events"
+      return VivordoCalendarAnswer(
+        dialog: "You have \(countText) remaining today in Vivordo. Next is \(first.title) \(spokenTime(for: first, now: now)).",
+        title: "Today's Schedule",
+        status: remaining.count == 1 ? "1 event remaining" : "\(remaining.count) events remaining",
+        events: Array(remaining.prefix(3)),
+        detail: remaining.count > 3 ? "+ \(remaining.count - 3) more" : nil
+      )
+
+    case .next:
+      guard let event = snapshot.events.first(where: { $0.end > now }) else {
+        return VivordoCalendarAnswer(
+          dialog: "You don't have another event in Vivordo's saved schedule.",
+          title: "Next Event",
+          status: "Nothing scheduled",
+          events: [],
+          detail: nil
+        )
+      }
+      return VivordoCalendarAnswer(
+        dialog: "Your next Vivordo event is \(event.title) \(spokenTime(for: event, now: now)).",
+        title: "Next Event",
+        status: relativeDay(for: event.start, now: now),
+        events: [event],
+        detail: nil
+      )
+    }
+  }
+
+  private func unavailable(dialog: String, status: String) -> VivordoCalendarAnswer {
+    VivordoCalendarAnswer(
+      dialog: dialog,
+      title: "Vivordo Calendar",
+      status: status,
+      events: [],
+      detail: "Open Vivordo to update your schedule."
+    )
+  }
+
+  private func spokenTime(for event: VivordoCalendarEvent, now: Date) -> String {
+    if event.isAllDay { return "all day" }
+    let time = event.start.formatted(date: .omitted, time: .shortened)
+    if calendar.isDateInToday(event.start) || calendar.isDate(event.start, inSameDayAs: now) {
+      return "at \(time)"
+    }
+    if calendar.isDateInTomorrow(event.start) ||
+        calendar.isDate(event.start, inSameDayAs: calendar.date(byAdding: .day, value: 1, to: now) ?? now) {
+      return "tomorrow at \(time)"
+    }
+    return "on \(event.start.formatted(.dateTime.weekday(.wide).hour().minute()))"
+  }
+
+  private func relativeDay(for date: Date, now: Date) -> String {
+    if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+    if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
+       calendar.isDate(date, inSameDayAs: tomorrow) { return "Tomorrow" }
+    return date.formatted(.dateTime.weekday(.wide))
+  }
+}
+
+struct VivordoCalendarSnippetView: View {
+  let answer: VivordoCalendarAnswer
+
+  private let accent = Color(red: 0.49, green: 0.32, blue: 0.96)
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Label(answer.title, systemImage: "calendar")
+        .font(.headline)
+        .foregroundStyle(.secondary)
+
+      Text(answer.status)
+        .font(.title2.bold())
+
+      if answer.events.isEmpty {
+        if let detail = answer.detail {
+          Text(detail)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+      } else {
+        VStack(spacing: 10) {
+          ForEach(answer.events) { event in
+            HStack(spacing: 12) {
+              Image(systemName: symbol(for: event.kind))
+                .foregroundStyle(accent)
+                .frame(width: 24)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(event.title)
+                  .font(.headline)
+                  .lineLimit(1)
+                Text(timeText(for: event))
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              Spacer(minLength: 0)
+            }
+          }
+        }
+        if let detail = answer.detail {
+          Text(detail)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(accent)
+        }
+      }
+    }
+    .padding(18)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(answer.dialog)
+  }
+
+  private func timeText(for event: VivordoCalendarEvent) -> String {
+    if event.isAllDay { return "All day" }
+    return "\(event.start.formatted(date: .omitted, time: .shortened))–\(event.end.formatted(date: .omitted, time: .shortened))"
+  }
+
+  private func symbol(for kind: String) -> String {
+    switch kind {
+    case "running": "figure.run"
+    case "fitness": "dumbbell.fill"
+    case "sport": "sportscourt.fill"
+    default: "calendar"
+    }
+  }
+}
+
+private protocol VivordoCalendarQueryIntent: AppIntent {
+  static var query: VivordoCalendarQuery { get }
+}
+
+private extension VivordoCalendarQueryIntent {
+  func calendarResult() -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+    let answer = VivordoCalendarQueryService().answer(for: Self.query)
+    return .result(
+      dialog: IntentDialog(stringLiteral: answer.dialog),
+      view: VivordoCalendarSnippetView(answer: answer)
+    )
+  }
+}
+
+struct GetTodayScheduleIntent: VivordoCalendarQueryIntent {
+  static var title: LocalizedStringResource = "Get Today's Schedule"
+  static var description = IntentDescription("Get today's remaining events from Vivordo.")
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+  static let query = VivordoCalendarQuery.today
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+    calendarResult()
+  }
+}
+
+struct GetNextCalendarEventIntent: VivordoCalendarQueryIntent {
+  static var title: LocalizedStringResource = "Get Next Calendar Event"
+  static var description = IntentDescription("Get the next event from Vivordo.")
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+  static let query = VivordoCalendarQuery.next
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+    calendarResult()
+  }
+}
+
+enum VivordoPlanningQuery: Sendable {
+  case scheduleLoad
+  case recoveryWindow
+}
+
+struct VivordoRecoveryWindow: Equatable, Sendable {
+  let start: Date
+  let end: Date
+}
+
+struct VivordoPlanningAnswer: Equatable, Sendable {
+  let dialog: String
+  let title: String
+  let headline: String
+  let detail: String
+  let drivers: [String]
+  let events: [VivordoCalendarEvent]
+  let priorities: [String]
+  let loadScore: Int?
+  let recoveryWindow: VivordoRecoveryWindow?
+}
+
+/// Combines Vivordo's cached health context with the user's saved schedule.
+/// The load score describes calendar density only; it is deliberately kept
+/// separate from Vivordo's physiological stress score.
+struct VivordoPlanningService {
+  private let healthStore: VivordoSnapshotStore
+  private let calendarStore: VivordoCalendarSnapshotStore
+  private let calendar: Calendar
+
+  init(
+    healthStore: VivordoSnapshotStore = VivordoSnapshotStore(),
+    calendarStore: VivordoCalendarSnapshotStore = VivordoCalendarSnapshotStore(),
+    calendar: Calendar = .autoupdatingCurrent
+  ) {
+    self.healthStore = healthStore
+    self.calendarStore = calendarStore
+    self.calendar = calendar
+  }
+
+  func answer(for query: VivordoPlanningQuery, now: Date = .now) -> VivordoPlanningAnswer {
+    let calendarSnapshot: VivordoCalendarSnapshot
+    do {
+      calendarSnapshot = try calendarStore.load()
+    } catch {
+      return unavailable("Open Vivordo to connect and refresh your calendar.")
+    }
+    guard calendarStore.isFresh(
+      calendarSnapshot,
+      now: now,
+      maximumAge: VivordoCalendarQueryService.maximumSnapshotAge
+    ) else {
+      return unavailable("Your Vivordo calendar needs a refresh. Open the app to update it.")
+    }
+
+    let healthSnapshot = freshHealthSnapshot(now: now)
+    switch query {
+    case .scheduleLoad:
+      return scheduleLoadAnswer(
+        events: calendarSnapshot.events,
+        health: healthSnapshot,
+        now: now
+      )
+    case .recoveryWindow:
+      return recoveryWindowAnswer(
+        events: calendarSnapshot.events,
+        health: healthSnapshot,
+        now: now
+      )
+    }
+  }
+
+  private func freshHealthSnapshot(now: Date) -> VivordoSiriSnapshot? {
+    guard let snapshot = try? healthStore.load(),
+          healthStore.isFresh(
+            snapshot,
+            now: now,
+            maximumAge: VivordoSiriQueryService.maximumSnapshotAge
+          ) else { return nil }
+    return snapshot
+  }
+
+  private func scheduleLoadAnswer(
+    events: [VivordoCalendarEvent],
+    health: VivordoSiriSnapshot?,
+    now: Date
+  ) -> VivordoPlanningAnswer {
+    let remaining = remainingTimedEvents(events, now: now)
+    let todayEvents = eventsForToday(events, now: now)
+    guard !remaining.isEmpty else {
+      return VivordoPlanningAnswer(
+        dialog: "Your remaining schedule is clear today in Vivordo.",
+        title: "Schedule Load",
+        headline: "Clear",
+        detail: "No timed events remaining today",
+        drivers: healthDrivers(health),
+        events: todayEvents,
+        priorities: schedulePriorities(
+          remaining: [],
+          backToBack: 0,
+          health: health
+        ),
+        loadScore: 0,
+        recoveryWindow: nil
+      )
+    }
+
+    let occupiedMinutes = remaining.reduce(0.0) { total, event in
+      let effectiveStart = max(event.start, now)
+      return total + max(0, event.end.timeIntervalSince(effectiveStart) / 60)
+    }
+    let backToBack = backToBackCount(remaining)
+    var score = min(36, remaining.count * 12)
+    score += min(34, Int((occupiedMinutes / 480 * 34).rounded()))
+    score += min(20, backToBack * 10)
+
+    let healthContext = healthDrivers(health)
+    if let stress = health?.stressScore {
+      score += stress >= 67 ? 10 : stress >= 34 ? 5 : 0
+    }
+    if let sleep = health?.sleepHours {
+      score += sleep < 6 ? 10 : sleep < 7 ? 5 : 0
+    }
+    if let wellness = health?.wellnessScore {
+      score += wellness < 40 ? 10 : wellness < 60 ? 5 : 0
+    }
+    score = min(score, 100)
+
+    let label = score >= 67 ? "Demanding" : score >= 34 ? "Moderate" : "Light"
+    var scheduleDrivers = [
+      remaining.count == 1 ? "1 event remaining" : "\(remaining.count) events remaining",
+      "\(Int(occupiedMinutes.rounded())) scheduled minutes",
+    ]
+    if backToBack > 0 {
+      scheduleDrivers.append(backToBack == 1 ? "1 back-to-back transition" : "\(backToBack) back-to-back transitions")
+    }
+    scheduleDrivers.append(contentsOf: healthContext.prefix(2))
+
+    let transitionText = backToBack == 0
+      ? "You have no back-to-back events."
+      : "You have \(backToBack) back-to-back \(backToBack == 1 ? "transition" : "transitions")."
+    return VivordoPlanningAnswer(
+      dialog: "Your Vivordo schedule load is \(label.lowercased()) today. You have \(remaining.count) remaining \(remaining.count == 1 ? "event" : "events") and \(Int(occupiedMinutes.rounded())) scheduled minutes. \(transitionText)",
+      title: "Schedule Load",
+      headline: label,
+      detail: "Calendar load \(score) out of 100",
+      drivers: scheduleDrivers,
+      events: todayEvents,
+      priorities: schedulePriorities(
+        remaining: remaining,
+        backToBack: backToBack,
+        health: health
+      ),
+      loadScore: score,
+      recoveryWindow: nil
+    )
+  }
+
+  private func recoveryWindowAnswer(
+    events: [VivordoCalendarEvent],
+    health: VivordoSiriSnapshot?,
+    now: Date
+  ) -> VivordoPlanningAnswer {
+    let duration: TimeInterval = 30 * 60
+    let startOfDay = calendar.startOfDay(for: now)
+    let dayEnd = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: startOfDay) ?? now
+    let searchStart = roundUpToQuarterHour(now)
+    guard searchStart.addingTimeInterval(duration) <= dayEnd else {
+      return noRecoveryWindow(health: health)
+    }
+
+    let busy = mergedBusyIntervals(
+      remainingTimedEvents(events, now: now),
+      lowerBound: searchStart,
+      upperBound: dayEnd
+    )
+    var candidate = searchStart
+    var found: VivordoRecoveryWindow?
+    for interval in busy {
+      if candidate.addingTimeInterval(duration) <= interval.start {
+        found = VivordoRecoveryWindow(
+          start: candidate,
+          end: candidate.addingTimeInterval(duration)
+        )
+        break
+      }
+      candidate = max(candidate, interval.end)
+    }
+    if found == nil, candidate.addingTimeInterval(duration) <= dayEnd {
+      found = VivordoRecoveryWindow(
+        start: candidate,
+        end: candidate.addingTimeInterval(duration)
+      )
+    }
+    guard let window = found else { return noRecoveryWindow(health: health) }
+
+    let timeRange = "\(timeText(window.start)) to \(timeText(window.end))"
+    let healthContext = healthDrivers(health)
+    let reason = healthContext.first.map { " \($0)." } ?? ""
+    return VivordoPlanningAnswer(
+      dialog: "You have a 30 minute recovery window from \(timeRange) today.\(reason)",
+      title: "Recovery Window",
+      headline: timeRange,
+      detail: "30 minutes available today",
+      drivers: healthContext,
+      events: [],
+      priorities: [],
+      loadScore: nil,
+      recoveryWindow: window
+    )
+  }
+
+  private func noRecoveryWindow(health: VivordoSiriSnapshot?) -> VivordoPlanningAnswer {
+    VivordoPlanningAnswer(
+      dialog: "Vivordo couldn't find a free 30 minute recovery window before 8 PM today.",
+      title: "Recovery Window",
+      headline: "No 30-minute opening",
+      detail: "Your schedule is full through 8 PM",
+      drivers: healthDrivers(health),
+      events: [],
+      priorities: [],
+      loadScore: nil,
+      recoveryWindow: nil
+    )
+  }
+
+  private func unavailable(_ dialog: String) -> VivordoPlanningAnswer {
+    VivordoPlanningAnswer(
+      dialog: dialog,
+      title: "Vivordo Planning",
+      headline: "Refresh needed",
+      detail: "Open Vivordo to update your schedule.",
+      drivers: [],
+      events: [],
+      priorities: [],
+      loadScore: nil,
+      recoveryWindow: nil
+    )
+  }
+
+  private func remainingTimedEvents(
+    _ events: [VivordoCalendarEvent],
+    now: Date
+  ) -> [VivordoCalendarEvent] {
+    events.filter {
+      !$0.isAllDay && calendar.isDate($0.start, inSameDayAs: now) && $0.end > now
+    }
+    .sorted { $0.start < $1.start }
+  }
+
+  private func eventsForToday(
+    _ events: [VivordoCalendarEvent],
+    now: Date
+  ) -> [VivordoCalendarEvent] {
+    events.filter { calendar.isDate($0.start, inSameDayAs: now) }
+      .sorted { lhs, rhs in
+        if lhs.isAllDay != rhs.isAllDay { return lhs.isAllDay }
+        return lhs.start < rhs.start
+      }
+  }
+
+  private func schedulePriorities(
+    remaining: [VivordoCalendarEvent],
+    backToBack: Int,
+    health: VivordoSiriSnapshot?
+  ) -> [String] {
+    var priorities: [String] = []
+    if let next = remaining.first {
+      priorities.append("Prepare for \(next.title)")
+    }
+
+    let recoveryIsImportant =
+      (health?.stressScore ?? 0) >= 67 ||
+      (health?.sleepHours ?? 24) < 7 ||
+      (health?.wellnessScore ?? 100) < 60
+    if recoveryIsImportant {
+      priorities.append("Protect time for recovery")
+    } else if !remaining.isEmpty {
+      priorities.append("Protect your open focus time")
+    } else {
+      priorities.append("Keep the rest of the day flexible")
+    }
+
+    if backToBack > 0 {
+      priorities.append("Create a buffer between meetings")
+    }
+    return Array(priorities.prefix(3))
+  }
+
+  private func backToBackCount(_ events: [VivordoCalendarEvent]) -> Int {
+    guard events.count > 1 else { return 0 }
+    return zip(events, events.dropFirst()).reduce(0) { count, pair in
+      let gap = pair.1.start.timeIntervalSince(pair.0.end)
+      return count + (gap <= 15 * 60 ? 1 : 0)
+    }
+  }
+
+  private func healthDrivers(_ health: VivordoSiriSnapshot?) -> [String] {
+    guard let health else { return [] }
+    var drivers: [String] = []
+    if let stress = health.stressScore, stress >= 67 {
+      drivers.append("Stress is elevated at \(stress)")
+    }
+    if let sleep = health.sleepHours, sleep < 7 {
+      drivers.append("Sleep was \(shortHoursText(sleep))")
+    }
+    if let wellness = health.wellnessScore, wellness < 60 {
+      drivers.append("Wellness is \(wellness)")
+    }
+    return drivers
+  }
+
+  private func shortHoursText(_ hours: Double) -> String {
+    let totalMinutes = Int((hours * 60).rounded())
+    return "\(totalMinutes / 60) hr \(totalMinutes % 60) min"
+  }
+
+  private func roundUpToQuarterHour(_ date: Date) -> Date {
+    let startOfDay = calendar.startOfDay(for: date)
+    let seconds = max(0, date.timeIntervalSince(startOfDay))
+    let rounded = ceil(seconds / (15 * 60)) * (15 * 60)
+    return startOfDay.addingTimeInterval(rounded)
+  }
+
+  private func mergedBusyIntervals(
+    _ events: [VivordoCalendarEvent],
+    lowerBound: Date,
+    upperBound: Date
+  ) -> [VivordoRecoveryWindow] {
+    let intervals = events.compactMap { event -> VivordoRecoveryWindow? in
+      let start = max(event.start, lowerBound)
+      let end = min(event.end, upperBound)
+      guard end > start else { return nil }
+      return VivordoRecoveryWindow(start: start, end: end)
+    }
+    var merged: [VivordoRecoveryWindow] = []
+    for interval in intervals {
+      if let last = merged.last, interval.start <= last.end {
+        merged[merged.count - 1] = VivordoRecoveryWindow(
+          start: last.start,
+          end: max(last.end, interval.end)
+        )
+      } else {
+        merged.append(interval)
+      }
+    }
+    return merged
+  }
+
+  private func timeText(_ date: Date) -> String {
+    date.formatted(date: .omitted, time: .shortened)
+  }
+}
+
+struct VivordoPlanningSnippetView: View {
+  let answer: VivordoPlanningAnswer
+
+  private let accent = Color(red: 0.49, green: 0.32, blue: 0.96)
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Label(answer.title, systemImage: answer.recoveryWindow == nil ? "chart.bar.fill" : "leaf.fill")
+        .font(.headline)
+        .foregroundStyle(.secondary)
+
+      HStack(alignment: .center, spacing: 12) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(answer.headline)
+            .font(.title2.bold())
+          Text(answer.detail)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 8)
+        if let score = answer.loadScore {
+          ZStack {
+            Circle().stroke(accent.opacity(0.18), lineWidth: 7)
+            Circle()
+              .trim(from: 0, to: Double(score) / 100)
+              .stroke(accent, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+              .rotationEffect(.degrees(-90))
+            Text("\(score)")
+              .font(.headline.monospacedDigit())
+          }
+          .frame(width: 58, height: 58)
+          .accessibilityHidden(true)
+        }
+      }
+
+      if !answer.drivers.isEmpty {
+        VStack(alignment: .leading, spacing: 7) {
+          ForEach(answer.drivers.prefix(4), id: \.self) { driver in
+            Label(driver, systemImage: "circle.fill")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .symbolRenderingMode(.hierarchical)
+          }
+        }
+      }
+
+      if !answer.events.isEmpty {
+        Divider()
+        VStack(alignment: .leading, spacing: 8) {
+          Text("TODAY'S EVENTS")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+
+          ForEach(answer.events.prefix(5)) { event in
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+              Text(event.isAllDay ? "All day" : event.start.formatted(date: .omitted, time: .shortened))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(accent)
+                .frame(width: 58, alignment: .leading)
+              Text(event.title)
+                .font(.caption)
+                .lineLimit(1)
+            }
+          }
+
+          if answer.events.count > 5 {
+            Text("+ \(answer.events.count - 5) more")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+
+      if !answer.priorities.isEmpty {
+        Divider()
+        VStack(alignment: .leading, spacing: 8) {
+          Text("PRIORITIES FOR TODAY")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+
+          ForEach(Array(answer.priorities.enumerated()), id: \.offset) { index, priority in
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
+              Text("\(index + 1)")
+                .font(.caption2.bold())
+                .foregroundStyle(.white)
+                .frame(width: 18, height: 18)
+                .background(accent, in: Circle())
+              Text(priority)
+                .font(.caption)
+            }
+          }
+        }
+      }
+    }
+    .padding(18)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(answer.dialog)
+  }
+}
+
+private protocol VivordoPlanningIntent: AppIntent {
+  static var query: VivordoPlanningQuery { get }
+}
+
+private extension VivordoPlanningIntent {
+  func planningResult() -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+    let answer = VivordoPlanningService().answer(for: Self.query)
+    return .result(
+      dialog: IntentDialog(stringLiteral: answer.dialog),
+      view: VivordoPlanningSnippetView(answer: answer)
+    )
+  }
+}
+
+struct AnalyzeScheduleLoadIntent: VivordoPlanningIntent {
+  static var title: LocalizedStringResource = "Analyze Schedule Load"
+  static var description = IntentDescription("Relate today's schedule density to your current Vivordo health context.")
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+  static let query = VivordoPlanningQuery.scheduleLoad
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+    planningResult()
+  }
+}
+
+struct FindRecoveryWindowIntent: VivordoPlanningIntent {
+  static var title: LocalizedStringResource = "Find Recovery Window"
+  static var description = IntentDescription("Find a free 30-minute recovery window in today's Vivordo schedule.")
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+  static let query = VivordoPlanningQuery.recoveryWindow
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+    planningResult()
+  }
+}
+
 /// A small discovery intent lets users launch Vivordo independently of a
 /// health query.
 struct OpenVivordoIntent: AppIntent {
@@ -546,6 +1334,60 @@ struct VivordoAppShortcuts: AppShortcutsProvider {
       ],
       shortTitle: "Wellness Score",
       systemImageName: "heart.text.square.fill"
+    )
+    AppShortcut(
+      intent: GetTodayScheduleIntent(),
+      phrases: [
+        "What's on my schedule today in \(.applicationName)",
+        "What's my schedule on \(.applicationName)",
+        "What's my schedule in \(.applicationName)",
+        "What's my schedule for today on \(.applicationName)",
+        "What do I have today in \(.applicationName)",
+        "Tell me my schedule on \(.applicationName)",
+        "Tell me today's events from \(.applicationName)",
+        "Show my \(.applicationName) schedule today"
+      ],
+      shortTitle: "Today's Schedule",
+      systemImageName: "calendar"
+    )
+    AppShortcut(
+      intent: GetNextCalendarEventIntent(),
+      phrases: [
+        "What's next on my calendar in \(.applicationName)",
+        "What's my next event in \(.applicationName)",
+        "Tell me my next event from \(.applicationName)",
+        "Show my next \(.applicationName) event"
+      ],
+      shortTitle: "Next Event",
+      systemImageName: "calendar.badge.clock"
+    )
+    AppShortcut(
+      intent: AnalyzeScheduleLoadIntent(),
+      phrases: [
+        "How stressful is my schedule in \(.applicationName)",
+        "How busy is my schedule in \(.applicationName)",
+        "How busy is my \(.applicationName) schedule",
+        "How packed is my schedule in \(.applicationName)",
+        "How hectic is my day in \(.applicationName)",
+        "How full is my \(.applicationName) schedule today",
+        "Is my \(.applicationName) schedule busy today",
+        "How demanding is my day in \(.applicationName)",
+        "Analyze my schedule with \(.applicationName)",
+        "What's my schedule load in \(.applicationName)"
+      ],
+      shortTitle: "Schedule Load",
+      systemImageName: "chart.bar.fill"
+    )
+    AppShortcut(
+      intent: FindRecoveryWindowIntent(),
+      phrases: [
+        "Find me a recovery break in \(.applicationName)",
+        "When can I take a break with \(.applicationName)",
+        "Find a free wellness break in \(.applicationName)",
+        "Where can I fit a break in \(.applicationName)"
+      ],
+      shortTitle: "Recovery Window",
+      systemImageName: "leaf.fill"
     )
   }
 }

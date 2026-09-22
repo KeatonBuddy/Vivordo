@@ -162,11 +162,235 @@ final class RunnerTests: XCTestCase {
     )
   }
 
+  func testCalendarSnapshotDecodesAndSortsEvents() throws {
+    let morning = Date(timeIntervalSince1970: 2_000)
+    let afternoon = Date(timeIntervalSince1970: 4_000)
+    defaults.set(
+      [
+        calendarEvent("Afternoon", start: afternoon, duration: 1_800),
+        calendarEvent("Morning", start: morning, duration: 3_600, kind: "fitness"),
+      ],
+      forKey: "calendarEvents"
+    )
+    defaults.set(1_900_000.0, forKey: "calendarWeekUpdatedAt")
+
+    let snapshot = try VivordoCalendarSnapshotStore(defaults: defaults).load()
+
+    XCTAssertEqual(snapshot.updatedAt, Date(timeIntervalSince1970: 1_900))
+    XCTAssertEqual(snapshot.events.map(\.title), ["Morning", "Afternoon"])
+    XCTAssertEqual(snapshot.events.first?.kind, "fitness")
+  }
+
+  func testCalendarQueriesReturnTodayAndNextEvent() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = calendar.date(from: DateComponents(
+      year: 2026,
+      month: 9,
+      day: 22,
+      hour: 12
+    ))!
+    let first = calendar.date(byAdding: .hour, value: 1, to: now)!
+    let second = calendar.date(byAdding: .hour, value: 3, to: now)!
+    defaults.set(
+      [
+        calendarEvent("Team meeting", start: first, duration: 3_600),
+        calendarEvent("Workout", start: second, duration: 2_700, kind: "fitness"),
+      ],
+      forKey: "calendarEvents"
+    )
+    defaults.set(now.addingTimeInterval(-600).timeIntervalSince1970 * 1_000, forKey: "calendarWeekUpdatedAt")
+
+    let service = VivordoCalendarQueryService(
+      store: VivordoCalendarSnapshotStore(defaults: defaults),
+      calendar: calendar
+    )
+    let today = service.answer(for: .today, now: now)
+    let next = service.answer(for: .next, now: now)
+
+    XCTAssertEqual(today.title, "Today's Schedule")
+    XCTAssertEqual(today.status, "2 events remaining")
+    XCTAssertEqual(today.events.map(\.title), ["Team meeting", "Workout"])
+    XCTAssertTrue(today.dialog.contains("Team meeting"))
+
+    XCTAssertEqual(next.title, "Next Event")
+    XCTAssertEqual(next.status, "Today")
+    XCTAssertEqual(next.events.map(\.title), ["Team meeting"])
+    XCTAssertTrue(next.dialog.contains("Team meeting"))
+  }
+
+  func testCalendarQueryRejectsStaleCache() {
+    let now = Date(timeIntervalSince1970: 10_000)
+    defaults.set(
+      [calendarEvent("Old event", start: now, duration: 3_600)],
+      forKey: "calendarEvents"
+    )
+    defaults.set(
+      (now.timeIntervalSince1970 - VivordoCalendarQueryService.maximumSnapshotAge - 1) * 1_000,
+      forKey: "calendarWeekUpdatedAt"
+    )
+
+    let answer = VivordoCalendarQueryService(
+      store: VivordoCalendarSnapshotStore(defaults: defaults)
+    ).answer(for: .next, now: now)
+
+    XCTAssertEqual(answer.status, "Refresh needed")
+    XCTAssertTrue(answer.events.isEmpty)
+  }
+
+  func testPlanningServiceCombinesScheduleAndHealthContext() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = calendar.date(from: DateComponents(
+      year: 2026,
+      month: 9,
+      day: 22,
+      hour: 12
+    ))!
+    seedSnapshot(publishedAt: now.timeIntervalSince1970 - 300)
+    defaults.set(72, forKey: "siriStressScore")
+    defaults.set(45, forKey: "siriWellnessScore")
+    defaults.set(5.5, forKey: "siriSleepHours")
+    defaults.set(
+      [
+        calendarEvent("Planning", start: now.addingTimeInterval(1_800), duration: 1_800),
+        calendarEvent("Review", start: now.addingTimeInterval(4_200), duration: 3_000),
+        calendarEvent("Interview", start: now.addingTimeInterval(7_800), duration: 3_000),
+      ],
+      forKey: "siriCalendarEvents"
+    )
+    defaults.set((now.timeIntervalSince1970 - 300) * 1_000, forKey: "calendarWeekUpdatedAt")
+
+    let answer = VivordoPlanningService(
+      healthStore: VivordoSnapshotStore(defaults: defaults),
+      calendarStore: VivordoCalendarSnapshotStore(defaults: defaults),
+      calendar: calendar
+    ).answer(for: .scheduleLoad, now: now)
+
+    XCTAssertEqual(answer.title, "Schedule Load")
+    XCTAssertEqual(answer.headline, "Demanding")
+    XCTAssertNotNil(answer.loadScore)
+    XCTAssertGreaterThanOrEqual(answer.loadScore ?? 0, 67)
+    XCTAssertTrue(answer.drivers.contains("Stress is elevated at 72"))
+    XCTAssertTrue(answer.drivers.contains("Sleep was 5 hr 30 min"))
+    XCTAssertTrue(answer.dialog.contains("back-to-back"))
+    XCTAssertEqual(answer.events.map(\.title), ["Planning", "Review", "Interview"])
+    XCTAssertEqual(
+      answer.priorities,
+      [
+        "Prepare for Planning",
+        "Protect time for recovery",
+        "Create a buffer between meetings",
+      ]
+    )
+  }
+
+  func testScheduleLoadCardIncludesAllDayAndCompletedEventsForToday() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = calendar.date(from: DateComponents(
+      year: 2026,
+      month: 9,
+      day: 22,
+      hour: 12
+    ))!
+    let morning = now.addingTimeInterval(-3_600)
+    defaults.set(
+      [
+        calendarEvent("Morning review", start: morning, duration: 1_800),
+        calendarEvent("Next meeting", start: now.addingTimeInterval(3_600), duration: 1_800),
+        calendarEvent("Conference", start: now, duration: 86_400, isAllDay: true),
+      ],
+      forKey: "siriCalendarEvents"
+    )
+    defaults.set((now.timeIntervalSince1970 - 300) * 1_000, forKey: "calendarWeekUpdatedAt")
+
+    let answer = VivordoPlanningService(
+      healthStore: VivordoSnapshotStore(defaults: defaults),
+      calendarStore: VivordoCalendarSnapshotStore(defaults: defaults),
+      calendar: calendar
+    ).answer(for: .scheduleLoad, now: now)
+
+    XCTAssertEqual(
+      answer.events.map(\.title),
+      ["Conference", "Morning review", "Next meeting"]
+    )
+    XCTAssertEqual(
+      answer.priorities,
+      ["Prepare for Next meeting", "Protect your open focus time"]
+    )
+  }
+
+  func testPlanningServiceFindsFirstThirtyMinuteRecoveryWindow() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = calendar.date(from: DateComponents(
+      year: 2026,
+      month: 9,
+      day: 22,
+      hour: 12,
+      minute: 7
+    ))!
+    let first = calendar.date(from: DateComponents(
+      year: 2026,
+      month: 9,
+      day: 22,
+      hour: 12
+    ))!
+    let second = calendar.date(from: DateComponents(
+      year: 2026,
+      month: 9,
+      day: 22,
+      hour: 14
+    ))!
+    defaults.set(
+      [
+        calendarEvent("Current meeting", start: first, duration: 3_600),
+        calendarEvent("Later meeting", start: second, duration: 3_600),
+      ],
+      forKey: "siriCalendarEvents"
+    )
+    defaults.set((now.timeIntervalSince1970 - 300) * 1_000, forKey: "calendarWeekUpdatedAt")
+
+    let answer = VivordoPlanningService(
+      healthStore: VivordoSnapshotStore(defaults: defaults),
+      calendarStore: VivordoCalendarSnapshotStore(defaults: defaults),
+      calendar: calendar
+    ).answer(for: .recoveryWindow, now: now)
+
+    let expectedStart = calendar.date(from: DateComponents(
+      year: 2026,
+      month: 9,
+      day: 22,
+      hour: 13
+    ))!
+    XCTAssertEqual(answer.title, "Recovery Window")
+    XCTAssertEqual(answer.recoveryWindow?.start, expectedStart)
+    XCTAssertEqual(answer.recoveryWindow?.end, expectedStart.addingTimeInterval(1_800))
+    XCTAssertTrue(answer.dialog.contains("30 minute recovery window"))
+  }
+
   private func seedSnapshot(publishedAt: TimeInterval) {
     defaults.set(1, forKey: "siriSchemaVersion")
     defaults.set("account-generation", forKey: "siriAccountGeneration")
     defaults.set(publishedAt * 1000, forKey: "siriPublishedAt")
     defaults.set("2026-09-19", forKey: "siriDataDay")
+  }
+
+  private func calendarEvent(
+    _ title: String,
+    start: Date,
+    duration: TimeInterval,
+    kind: String = "calendar",
+    isAllDay: Bool = false
+  ) -> [String: Any] {
+    [
+      "title": title,
+      "startAt": start.timeIntervalSince1970 * 1_000,
+      "endAt": start.addingTimeInterval(duration).timeIntervalSince1970 * 1_000,
+      "isAllDay": isAllDay,
+      "kind": kind,
+    ]
   }
 
 }
