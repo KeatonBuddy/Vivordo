@@ -2,6 +2,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 
 void main() {
+  test(
+    'planned day can precede stored due date without changing carry-over rules',
+    () {
+      final priority = <String, dynamic>{
+        'source': 'manual',
+        'completed': false,
+        'planning': {'plannedDay': '2026-09-10'},
+      };
+      expect(
+        DailyPriorityService.visibleOnDay(priority, '2026-09-15', '2026-09-10'),
+        isTrue,
+      );
+      expect(
+        DailyPriorityService.visibleOnDay(priority, '2026-09-15', '2026-09-11'),
+        isFalse,
+      );
+      expect(
+        DailyPriorityService.visibleOnDay(
+          {...priority, 'dismissed': true},
+          '2026-09-15',
+          '2026-09-10',
+        ),
+        isFalse,
+      );
+    },
+  );
   const original = '2026-09-09';
   const today = '2026-09-10';
   final untimed = <String, dynamic>{'source': 'manual', 'completed': false};

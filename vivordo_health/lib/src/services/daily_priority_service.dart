@@ -42,6 +42,8 @@ class DailyPriority {
     this.reminderTimeMinutes,
     this.date,
     this.templateId,
+    this.planning = const {},
+    this.sourceEventKey,
   });
 
   final String id;
@@ -55,6 +57,8 @@ class DailyPriority {
   final int? reminderTimeMinutes;
   final DateTime? date;
   final String? templateId;
+  final Map<String, dynamic> planning;
+  final String? sourceEventKey;
   final DocumentReference<Map<String, dynamic>> reference;
 
   factory DailyPriority.fromDocument(
@@ -74,6 +78,8 @@ class DailyPriority {
       reference: document.reference,
       date: DateTime.tryParse(document.reference.parent.parent?.id ?? ''),
       templateId: data['templateId'] as String?,
+      planning: Map<String, dynamic>.from(data['planning'] as Map? ?? {}),
+      sourceEventKey: data['sourceEventKey'] as String?,
     );
   }
 }
@@ -236,6 +242,13 @@ class DailyPriorityService {
           }
         }
         userSubscription = user.snapshots().listen((snapshot) {
+          final plannedSources =
+              (snapshot.data()?['priorityPlanSources'] as Map?)?[dayKey]
+                  as List? ??
+              const [];
+          for (final key in plannedSources.whereType<String>()) {
+            if (DateTime.tryParse(key) != null) subscribe(key);
+          }
           final days =
               snapshot.data()?['priorityReminderDays'] as List? ?? const [];
           for (final key in days.whereType<String>().toSet()) {
@@ -276,6 +289,10 @@ class DailyPriorityService {
     String storedDay,
     String viewingDay,
   ) {
+    if (data['dismissed'] != true &&
+        (data['planning'] as Map?)?['plannedDay'] == viewingDay) {
+      return true;
+    }
     if (data['dismissed'] == true || storedDay.compareTo(viewingDay) > 0) {
       return false;
     }
@@ -348,36 +365,42 @@ class DailyPriorityService {
     }
   }
 
-  static Future<void> createManual({
+  static Future<DocumentReference<Map<String, dynamic>>?> createManual({
     required String title,
     required DateTime date,
     DateTime? scheduledAt,
     String recurrence = 'none',
     Set<int> selectedWeekdays = const {},
     DateTime? recurrenceEnd,
+    Map<String, dynamic> planning = const {},
     int reminderMinutes = 60,
     int? reminderTimeMinutes,
   }) async {
     final userDocument = _userDocument();
     final value = title.trim();
-    if (userDocument == null || value.isEmpty) return;
+    if (userDocument == null || value.isEmpty) return null;
     await userDocument.update({
       'priorityReminderDays': FieldValue.arrayUnion([localDayKey(date)]),
+      if (planning['plannedDay'] is String)
+        'priorityPlanSources.${planning['plannedDay']}': FieldValue.arrayUnion([
+          localDayKey(date),
+        ]),
     });
     if (recurrence == 'none') {
-      await _addManualItem(
+      return _addManualItem(
+        planning: planning,
         date: date,
         title: value,
         scheduledAt: scheduledAt,
         reminderMinutes: reminderMinutes,
         reminderTimeMinutes: reminderTimeMinutes,
       );
-      return;
     }
 
     final template = userDocument.collection('priority_templates').doc();
     await template.set({
       'title': value,
+      'planning': planning,
       'reminderMinutes': reminderMinutes,
       'reminderTimeMinutes': reminderTimeMinutes,
       'startDate': Timestamp.fromDate(_dateOnly(date)),
@@ -394,6 +417,7 @@ class DailyPriorityService {
     });
     await materializeRecurring(date);
     await refreshReminders(force: true);
+    return _collection(date)?.doc('template_${template.id}');
   }
 
   static Future<void> materializeRecurring(
@@ -438,12 +462,19 @@ class DailyPriorityService {
       if (existingIds.contains(priorityId)) continue;
       batch.set(collection.doc(priorityId), {
         'title': data['title'],
+        'planning': {
+          ...Map<String, dynamic>.from(data['planning'] as Map? ?? {}),
+          if ((data['planning'] as Map?)?['plannedDay'] != null)
+            'plannedDay': localDayKey(date),
+        },
         'reminderMinutes': data['reminderMinutes'] ?? 60,
         'reminderTimeMinutes': data['reminderTimeMinutes'],
         'completed': false,
         'dismissed': false,
         'source': 'recurring_manual',
         'templateId': template.id,
+        if (data['sourceEventKey'] != null)
+          'sourceEventKey': data['sourceEventKey'],
         'sourceStart': scheduledAt == null
             ? null
             : Timestamp.fromDate(scheduledAt),
@@ -456,17 +487,19 @@ class DailyPriorityService {
     if (writes > 0) await batch.commit();
   }
 
-  static Future<void> _addManualItem({
+  static Future<DocumentReference<Map<String, dynamic>>?> _addManualItem({
     required DateTime date,
     required String title,
     DateTime? scheduledAt,
+    Map<String, dynamic> planning = const {},
     int reminderMinutes = 60,
     int? reminderTimeMinutes,
   }) async {
     final collection = _collection(date);
-    if (collection == null) return;
+    if (collection == null) return null;
     final reference = await collection.add({
       'title': title,
+      'planning': planning,
       'completed': false,
       'dismissed': false,
       'source': 'manual',
@@ -480,6 +513,7 @@ class DailyPriorityService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
     await _syncReminder(reference);
+    return reference;
   }
 
   static Future<void> setCompleted(
@@ -522,7 +556,7 @@ class DailyPriorityService {
     await _syncReminder(priority.reference);
   }
 
-  static Future<void> editPriority(
+  static Future<DocumentReference<Map<String, dynamic>>?> editPriority(
     DailyPriority priority, {
     required String title,
     required DateTime date,
@@ -530,13 +564,14 @@ class DailyPriorityService {
     required bool completed,
     required int reminderMinutes,
     required int? reminderTimeMinutes,
+    Map<String, dynamic>? planning,
     String recurrence = 'none',
     Set<int> selectedWeekdays = const {},
     DateTime? recurrenceEnd,
   }) async {
     final user = _userDocument();
     final collection = _collection(date);
-    if (user == null || collection == null) return;
+    if (user == null || collection == null) return null;
     final template = priority.source == 'manual' && recurrence != 'none'
         ? user.collection('priority_templates').doc()
         : null;
@@ -557,6 +592,7 @@ class DailyPriorityService {
       }
       transaction.set(destination, {
         ...data,
+        'planning': ?planning,
         'title': title.trim(),
         'sourceStart': scheduledAt == null
             ? null
@@ -589,6 +625,7 @@ class DailyPriorityService {
         transaction.set(template, {
           'title': title.trim(),
           'enabled': true,
+          'planning': planning ?? priority.planning,
           'startDate': Timestamp.fromDate(_dateOnly(date)),
           'scheduledHour': scheduledAt?.hour,
           'scheduledMinute': scheduledAt?.minute,
@@ -605,6 +642,9 @@ class DailyPriorityService {
       }
       transaction.update(user, {
         'priorityReminderDays': FieldValue.arrayUnion([localDayKey(date)]),
+        if (planning?['plannedDay'] is String)
+          'priorityPlanSources.${planning!['plannedDay']}':
+              FieldValue.arrayUnion([localDayKey(date)]),
       });
     });
     if (destination.path != priority.reference.path) {
@@ -612,6 +652,7 @@ class DailyPriorityService {
     }
     await _syncReminder(destination);
     if (template != null) await refreshReminders(force: true);
+    return destination;
   }
 
   static Future<void> _syncReminder(

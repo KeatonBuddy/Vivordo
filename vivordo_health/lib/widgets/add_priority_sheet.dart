@@ -22,8 +22,10 @@ class PriorityDraft {
     this.reminderTimeMinutes,
     this.completed = false,
     this.deleteRequested = false,
+    this.planning = const {},
   });
 
+  final Map<String, dynamic> planning;
   final String title;
   final DateTime date;
   final TimeOfDay? time;
@@ -111,12 +113,15 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   int _reminderMinutes = 60;
   TimeOfDay? _reminderTime;
   bool _completed = false;
+  late Map<String, dynamic> _planning;
+  bool _invalidEstimate = false;
   bool get _editing => widget.initial != null;
 
   @override
   void initState() {
     super.initState();
     final initial = widget.initial;
+    _planning = {...?initial?.planning};
     _controller = TextEditingController(text: initial?.title)
       ..addListener(_changed);
     _date = initial?.date ?? _date;
@@ -214,10 +219,34 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   void _submit({bool deleteRequested = false}) {
     final title = _controller.text.trim();
     if (!deleteRequested && title.isEmpty) return;
+    if (!deleteRequested &&
+        _addToCalendar &&
+        _time != null &&
+        _planning['minutes'] == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Add an estimated duration before creating a timed calendar event.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (!deleteRequested && _invalidEstimate) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Enter an estimate from 1 to 1440 minutes, or leave it blank.',
+          ),
+        ),
+      );
+      return;
+    }
     Navigator.pop(
       context,
       PriorityDraft(
         title: title,
+        planning: _planning,
         date: _date,
         time: _time,
         addToCalendar: _addToCalendar,
@@ -330,6 +359,92 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                       ),
                     ),
                     const SizedBox(height: 26),
+                    const _Label('WORKLOAD ESTIMATE'),
+                    TextFormField(
+                      initialValue: _planning['minutes']?.toString() ?? '',
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Estimated minutes (optional)',
+                        errorText: _invalidEstimate
+                            ? 'Use 1–1440 minutes'
+                            : null,
+                        helperText:
+                            'Your estimate, not an automatic prediction',
+                      ),
+                      onChanged: (value) {
+                        final minutes = int.tryParse(value);
+                        setState(
+                          () => _invalidEstimate =
+                              value.trim().isNotEmpty &&
+                              (minutes == null ||
+                                  minutes < 1 ||
+                                  minutes > 1440),
+                        );
+                        _planning['minutes'] =
+                            minutes != null && minutes > 0 && minutes <= 1440
+                            ? minutes
+                            : null;
+                      },
+                    ),
+                    DropdownButtonFormField<String>(
+                      initialValue: _planning['effort'] as String?,
+                      decoration: const InputDecoration(
+                        labelText: 'Effort (optional)',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'light', child: Text('Light')),
+                        DropdownMenuItem(
+                          value: 'moderate',
+                          child: Text('Moderate'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'demanding',
+                          child: Text('Demanding'),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _planning['effort'] = value),
+                    ),
+                    Material(
+                      color: Colors.transparent,
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Planned work day'),
+                        subtitle: Text(
+                          _planning['plannedDay'] as String? ??
+                              'Unplanned — does not add flexible workload',
+                        ),
+                        trailing: _planning['plannedDay'] == null
+                            ? const Icon(Icons.calendar_today)
+                            : IconButton(
+                                tooltip: 'Clear planned day',
+                                icon: const Icon(Icons.close),
+                                onPressed: () => setState(
+                                  () => _planning['plannedDay'] = null,
+                                ),
+                              ),
+                        onTap: () async {
+                          final day = await showDatePicker(
+                            context: context,
+                            initialDate:
+                                DateTime.tryParse(
+                                  _planning['plannedDay'] as String? ?? '',
+                                ) ??
+                                DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2100),
+                          );
+                          if (day != null && mounted) {
+                            setState(
+                              () => _planning['plannedDay'] = DateFormat(
+                                'yyyy-MM-dd',
+                              ).format(day),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     const _Label('SCHEDULE'),
                     const SizedBox(height: 10),
                     _Card(
@@ -790,6 +905,17 @@ Future<PriorityDraft?> showEditPrioritySheet(
     context,
     PriorityDraft(
       title: priority.title,
+      planning: {
+        ...priority.planning,
+        if (priority.planning['minutes'] == null &&
+            !priority.isAllDay &&
+            priority.sourceStart != null &&
+            priority.sourceEnd != null &&
+            priority.sourceEnd!.isAfter(priority.sourceStart!))
+          'minutes': priority.sourceEnd!
+              .difference(priority.sourceStart!)
+              .inMinutes,
+      },
       date: DateUtils.dateOnly(date),
       time: start == null || priority.isAllDay
           ? null

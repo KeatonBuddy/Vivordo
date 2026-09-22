@@ -173,6 +173,7 @@ class CalendarService {
     bool isAllDay = false,
     String calendarId = 'primary',
     bool isPriority = false,
+    String? priorityReference,
   }) async {
     if (!end.isAfter(start)) {
       throw ArgumentError('The end time must be after the start time.');
@@ -205,7 +206,10 @@ class CalendarService {
       }
       ..extendedProperties = isPriority
           ? (gcal.EventExtendedProperties()
-              ..private = const {'vivordoPriority': 'true'})
+              ..private = {
+                'vivordoPriority': 'true',
+                'vivordoPriorityReference': ?priorityReference,
+              })
           : null;
 
     final calendarApi = await _authorizedCalendarApi();

@@ -13,6 +13,7 @@ import '../src/services/daily_priority_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
 import '../src/utils/daily_outlook_score.dart';
+import '../src/utils/daily_brief_analysis.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
@@ -20,6 +21,7 @@ import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
 import 'all_priorities_screen.dart';
 import '../widgets/tomorrow_preview.dart';
+import '../widgets/daily_brief_card.dart';
 import '../src/utils/owned_stream_snapshot.dart';
 
 class MyDayScreen extends StatefulWidget {
@@ -40,9 +42,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   String? _calendarLoadError;
   int _loadGeneration = 0;
   bool _isLoading = true;
+  DateTime? _calendarLoadedAt;
   Timer? _clockTimer;
   late DateTime _priorityDay;
-  Stream<DocumentSnapshot<Map<String, dynamic>>>? _todayMetricsStream;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _todayMetricsStream;
   final _prioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
   final _tomorrowPrioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
   DateTime get _tomorrow =>
@@ -84,9 +87,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     return true;
   }
 
-  Stream<DocumentSnapshot<Map<String, dynamic>>>? _metricsStreamFor(
-    DateTime day,
-  ) {
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _metricsStreamFor(DateTime day) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return null;
     final period = DateFormat('yyyy-MM-dd').format(day);
@@ -94,7 +95,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         .collection('users')
         .doc(uid)
         .collection('metrics_daily')
-        .doc(period)
+        .where(
+          FieldPath.documentId,
+          isGreaterThanOrEqualTo: DateFormat(
+            'yyyy-MM-dd',
+          ).format(DateTime(day.year, day.month, day.day - 28)),
+        )
+        .where(FieldPath.documentId, isLessThanOrEqualTo: period)
+        .orderBy(FieldPath.documentId)
         .snapshots();
   }
 
@@ -160,6 +168,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
     if (!mounted || generation != _loadGeneration) return;
     setState(() {
+      _calendarLoadedAt = DateTime.now();
       _events = events;
       _tomorrowEvents = tomorrowEvents;
       _calendarLoadError = null;
@@ -586,10 +595,19 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   Widget _buildDayOutlookCard({
     required List<_CalendarEvent> timedEvents,
-  }) => StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+  }) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
     stream: _todayMetricsStream,
     builder: (context, snapshot) {
-      final data = snapshot.data?.data();
+      final todayKey = DateFormat('yyyy-MM-dd').format(_priorityDay);
+      final documents = snapshot.data?.docs ?? [];
+      final todayDocuments = documents.where((d) => d.id == todayKey);
+      final data = todayDocuments.isEmpty ? null : todayDocuments.first.data();
+      final previous = documents.where((d) => d.id.compareTo(todayKey) < 0);
+      final usualSleep = sleepBaseline(
+        previous.map(
+          (d) => ((d.data()['sleep'] as Map?)?['avg'] as num?)?.toDouble() ?? 0,
+        ),
+      );
       final sleep = ((data?['sleep'] as Map?)?['avg'] as num?)?.toDouble();
       final stressMap = data?['stress'] as Map?;
       final hrvMap = data?['hrv'] as Map?;
@@ -600,75 +618,175 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       final latestHeartRate = data == null
           ? null
           : summarizeHomeMetrics(
-              days: [MetricDayEntry(dayKey: snapshot.data!.id, data: data)],
+              days: [MetricDayEntry(dayKey: todayKey, data: data)],
               now: DateTime.now(),
             ).latestHeartRate;
-      final heartRate = latestHeartRate?.bpm.toDouble();
       final capacity = calculateDailyCapacity(
         sleepHours: sleep,
         stressScore: stress,
-        heartRate: heartRate,
       );
       final now = DateTime.now();
-      final dayStart = DateTime(now.year, now.month, now.day);
-      final schedule = calculateScheduleDemand(
-        events: timedEvents.map(
-          (event) => DailyScheduleEvent(
-            title: event.title,
-            start: event.start,
-            end: event.end,
-          ),
-        ),
-        dayStart: dayStart,
-        dayEnd: dayStart.add(const Duration(days: 1)),
-      );
-      final signals = <_OutlookSignal>[
-        if (sleep != null)
-          _OutlookSignal(
-            icon: Icons.bedtime_outlined,
-            label: 'Sleep ${sleep.toStringAsFixed(1)}h',
-          ),
-        if (stress != null)
-          _OutlookSignal(
-            icon: Icons.monitor_heart_outlined,
-            label: 'Stress ${stress.round()}',
-          ),
-        if (heartRate != null)
-          _OutlookSignal(
-            icon: Icons.favorite_border_rounded,
-            label: 'Heart ${heartRate.round()}',
-          ),
-        _OutlookSignal(
-          icon: Icons.schedule_rounded,
-          label:
-              '${_shortDuration(Duration(minutes: schedule.unscheduledMinutes))} unscheduled today',
-        ),
-      ];
-      final signalCount = capacity.availableSignals + (_isLoading ? 0 : 1);
-      final confidence = signalCount >= 4
-          ? 'High confidence'
-          : signalCount >= 2
-          ? 'Moderate confidence'
-          : 'Limited data';
-
-      return _DayOutlookCard(
-        capacityScore: capacity.score,
-        capacityLabel: capacity.score == null ? 'Needs data' : capacity.label,
-        scheduleScore: _isLoading ? null : schedule.score,
-        scheduleLabel: _isLoading ? 'Analyzing' : schedule.label,
-        signals: signals,
-        footer:
-            '$confidence · $signalCount ${signalCount == 1 ? 'signal' : 'signals'} available',
+      final calendarReady = !_isLoading && _calendarLoadError == null;
+      final computedAt = stressMap?['computedAt'];
+      final stressTime = computedAt is Timestamp ? computedAt.toDate() : null;
+      final healthTime = latestHeartRate?.timestamp;
+      final stale =
+          sleep == null ||
+          sleep <= 0 ||
+          stressTime == null ||
+          stressTime.isAfter(now) ||
+          now.difference(stressTime) > const Duration(hours: 2);
+      final historyCapacity = <double>[];
+      for (final document in previous) {
+        final day = document.data();
+        if (stress != null &&
+            (stressMap?['algorithm_version'] == null ||
+                (day['stress'] as Map?)?['algorithm_version'] !=
+                    stressMap?['algorithm_version'])) {
+          continue;
+        }
+        final pastSleep = ((day['sleep'] as Map?)?['avg'] as num?)?.toDouble();
+        final historicalDay = DateTime.tryParse(document.id);
+        if (historicalDay == null) continue;
+        final cutoff = DateTime(
+          historicalDay.year,
+          historicalDay.month,
+          historicalDay.day,
+          now.hour,
+          now.minute,
+        );
+        final entries =
+            ((day['stress'] as Map?)?['entries'] as List? ?? [])
+                .whereType<Map>()
+                .where((entry) {
+                  final timestamp = entry['timestamp'];
+                  return timestamp is Timestamp &&
+                      !timestamp.toDate().isAfter(cutoff) &&
+                      cutoff.difference(timestamp.toDate()) <=
+                          const Duration(hours: 2);
+                })
+                .toList()
+              ..sort(
+                (a, b) => (b['timestamp'] as Timestamp).compareTo(
+                  a['timestamp'] as Timestamp,
+                ),
+              );
+        final pastStress = entries.isEmpty
+            ? null
+            : (entries.first['score'] as num?)?.toDouble();
+        if ((pastSleep != null) != (sleep != null) ||
+            (pastStress != null) != (stress != null)) {
+          continue;
+        }
+        final value = calculateDailyCapacity(
+          sleepHours: pastSleep,
+          stressScore: pastStress,
+        ).score;
+        if (value != null) historyCapacity.add(value.toDouble());
+      }
+      historyCapacity.sort();
+      final usualCapacity = historyCapacity.length < 7 || stale
+          ? null
+          : historyCapacity.length.isOdd
+          ? historyCapacity[historyCapacity.length ~/ 2]
+          : (historyCapacity[historyCapacity.length ~/ 2 - 1] +
+                    historyCapacity[historyCapacity.length ~/ 2]) /
+                2;
+      final capacityNote = usualCapacity == null || capacity.score == null
+          ? 'Building your capacity baseline'
+          : (capacity.score! - usualCapacity).abs() < 10
+          ? 'Near your recent capacity estimate'
+          : capacity.score! < usualCapacity
+          ? 'Below your recent capacity estimate'
+          : 'Above your recent capacity estimate';
+      return ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+        valueListenable: _prioritySnapshot,
+        builder: (context, priorities, _) {
+          final plan = analyzeBriefPlan(
+            now,
+            timedEvents
+                .map(
+                  (e) => BriefCommitment(
+                    e.sourceEventKey,
+                    e.title,
+                    e.start,
+                    e.end,
+                  ),
+                )
+                .toList(),
+            (priorities.data ?? [])
+                .map(
+                  (p) => BriefPriority(
+                    id: p.id,
+                    completed: p.completed,
+                    start: p.isAllDay ? null : p.sourceStart,
+                    plannedDay: DateTime.tryParse(
+                      p.planning['plannedDay'] as String? ?? '',
+                    ),
+                    minutes: (p.planning['minutes'] as num?)?.toInt(),
+                    effort: p.planning['effort'] as String?,
+                    eventKey: p.isAllDay ? null : _linkedKey(p),
+                  ),
+                )
+                .toList(),
+          );
+          final ready =
+              calendarReady && priorities.hasData && !priorities.hasError;
+          final headline = capacity.score == null
+              ? 'Make space for your day'
+              : capacity.score! < 40 || (ready && plan.score >= 65)
+              ? 'Give yourself a little more room today'
+              : 'Find a steady rhythm today';
+          final calendarText = ready
+              ? plan.observation
+              : 'Your plan is not fully available yet.';
+          final estimateText = plan.missingEstimates > 0
+              ? ' ${plan.missingEstimates} priorities need estimates or calendar details.'
+              : '';
+          String timeLabel(DateTime? t) =>
+              t == null ? 'unknown' : DateFormat('MMM d, h:mm a').format(t);
+          return DailyBriefCard(
+            headline: headline,
+            summary:
+                '${sleepComparison(sleep, usualSleep)} $calendarText$estimateText',
+            capacityScore: capacity.score,
+            capacityLabel: capacity.score == null
+                ? 'Needs health data'
+                : capacityNote,
+            scheduleScore: ready ? plan.score : null,
+            scheduleLabel: !ready
+                ? 'Plan unavailable'
+                : 'Remaining demand${plan.missingEstimates > 0 ? ' · partial' : ''}',
+            footer:
+                '${stale || !ready || plan.missingEstimates > 0 ? 'Limited data' : 'Available data'} · View data freshness',
+            onDetails: () => showDialog<void>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Daily Brief data'),
+                content: SingleChildScrollView(
+                  child: Text(
+                    'Calendar loaded: ${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).\n'
+                    'Heart rate measured: ${timeLabel(healthTime)}.\n'
+                    'Stress calculated: ${timeLabel(stressTime)}.\n'
+                    '${snapshot.data?.metadata.isFromCache == true ? 'Health data is from the local cache.\n' : ''}'
+                    'Sleep baseline: ${previous.where((d) => ((d.data()['sleep'] as Map?)?['avg'] as num? ?? 0) > 0).length} prior nights in the last 28 days; at least 7 required.\n'
+                    'Capacity uses sleep and stress, not raw heart rate. Comparisons require 7 days with matching inputs and stress readings at a similar time of day. These are wellness estimates, not clinical assessments.\n'
+                    'Remaining demand includes unfinished planned priorities and upcoming events. Openings use a 9 AM–5 PM planning window. Untimed work does not block a specific opening.',
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       );
     },
   );
-
-  String _shortDuration(Duration duration) {
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    if (hours == 0) return '${minutes}m';
-    return minutes == 0 ? '${hours}h' : '${hours}h ${minutes}m';
-  }
 
   Widget _buildWatchItem(BackToBackEventBlock block) {
     final count = block.events.length;
@@ -831,7 +949,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   const SizedBox(height: 4),
                   Text(
                     'No more events scheduled today.',
-                    style: TextStyle(color: context.vivordoColors.textSecondary),
+                    style: TextStyle(
+                      color: context.vivordoColors.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -940,9 +1060,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         await DailyPriorityService.delete(priority);
         return;
       }
-      await DailyPriorityService.editPriority(
+      final destination = await DailyPriorityService.editPriority(
         priority,
         title: result.title,
+        planning: result.planning,
         date: result.date,
         scheduledAt: result.scheduledAt,
         completed: result.completed,
@@ -952,7 +1073,39 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         selectedWeekdays: result.selectedWeekdays,
         recurrenceEnd: result.repeatEnd,
       );
-      if (result.addToCalendar) await _addPriorityCalendarEvent(result);
+      final linkedKey = _linkedKey(priority);
+      if (linkedKey != null && linkedKey.startsWith('google:')) {
+        final linked = _events
+            .where((e) => e.sourceEventKey == linkedKey)
+            .firstOrNull;
+        if (linked?.googleEvent != null) {
+          final start = result.scheduledAt ?? DateUtils.dateOnly(result.date);
+          await CalendarService.updateEvent(
+            linked!.googleEvent!,
+            title: result.title,
+            start: start,
+            end: result.scheduledAt == null
+                ? start.add(const Duration(days: 1))
+                : start.add(
+                    Duration(
+                      minutes:
+                          (result.planning['minutes'] as num?)?.toInt() ??
+                          linked.end.difference(linked.start).inMinutes,
+                    ),
+                  ),
+            isAllDay: result.scheduledAt == null,
+          );
+          await _loadTodayEvents(forceRefresh: true);
+        } else {
+          _showMessage(
+            'Priority saved. Its linked calendar event was not available to update.',
+          );
+        }
+      } else if (result.addToCalendar &&
+          linkedKey == null &&
+          destination != null) {
+        await _addPriorityCalendarEvent(result, reference: destination);
+      }
     } catch (error) {
       if (sheetContext != null && sheetContext.mounted) {
         ScaffoldMessenger.of(sheetContext).showSnackBar(
@@ -969,8 +1122,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     if (draft == null || !mounted) return;
 
     try {
-      await DailyPriorityService.createManual(
+      final reference = await DailyPriorityService.createManual(
         title: draft.title,
+        planning: draft.planning,
         date: draft.date,
         scheduledAt: draft.scheduledAt,
         recurrence: draft.recurrence,
@@ -979,35 +1133,84 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         reminderMinutes: draft.reminderMinutes,
         reminderTimeMinutes: draft.reminderTimeMinutes,
       );
+      if (draft.addToCalendar && reference != null) {
+        await _addPriorityCalendarEvent(draft, reference: reference);
+      }
     } catch (error) {
       _showMessage('Could not add priority: $error');
       return;
     }
-
-    if (!draft.addToCalendar) return;
-    await _addPriorityCalendarEvent(draft);
   }
 
-  Future<void> _addPriorityCalendarEvent(PriorityDraft draft) async {
+  Future<void> _addPriorityCalendarEvent(
+    PriorityDraft draft, {
+    required DocumentReference<Map<String, dynamic>> reference,
+  }) async {
     final start = draft.scheduledAt ?? DateUtils.dateOnly(draft.date);
     final end = draft.scheduledAt == null
         ? start.add(const Duration(days: 1))
-        : start.add(const Duration(hours: 1));
+        : start.add(
+            Duration(
+              minutes: (draft.planning['minutes'] as num?)?.toInt() ?? 60,
+            ),
+          );
     try {
-      await CalendarService.createEvent(
+      final event = await CalendarService.createEvent(
         title: draft.title,
         start: start,
         end: end,
         recurrence: draft.calendarRecurrence,
         isAllDay: draft.scheduledAt == null,
         isPriority: true,
+        priorityReference: reference.path,
       );
-      if (mounted) await _loadTodayEvents();
+      await reference.update({
+        'sourceEventKey': 'google:${event.id}',
+        'linkedCalendarId': 'primary',
+        'sourceEnd': Timestamp.fromDate(end),
+      });
+      final saved = (await reference.get()).data();
+      final templateId = saved?['templateId'] as String?;
+      if (templateId != null) {
+        await reference.parent.parent!.parent.parent!
+            .collection('priority_templates')
+            .doc(templateId)
+            .update({'sourceEventKey': 'google:${event.id}'});
+      }
+      if (mounted) await _loadTodayEvents(forceRefresh: true);
     } catch (error) {
       _showMessage(
         'Priority saved, but the calendar event could not be added: $error',
       );
+      if (mounted) await _loadTodayEvents(forceRefresh: true);
     }
+  }
+
+  String? _linkedKey(DailyPriority priority) {
+    for (final event in _events) {
+      final google = event.googleEvent;
+      if (event.sourceEventKey == priority.sourceEventKey ||
+          (google?.recurringEventId != null &&
+              'google:${google!.recurringEventId}' ==
+                  priority.sourceEventKey) ||
+          google?.extendedProperties?.private?['vivordoPriorityReference'] ==
+              priority.reference.path) {
+        return event.sourceEventKey;
+      }
+    }
+    if (priority.sourceEventKey == null &&
+        _events.any(
+          (event) =>
+              event.isPriorityLinked &&
+              event.title.trim().toLowerCase() ==
+                  priority.title.trim().toLowerCase() &&
+              event.start == priority.sourceStart,
+        )) {
+      // Old exports have no stable backlink. Exclude ambiguous extra work and
+      // disclose the unresolved link rather than counting the same task twice.
+      return 'unresolved:${priority.id}';
+    }
+    return priority.sourceEventKey;
   }
 
   Widget _buildJournalTile() => Material(
@@ -1499,252 +1702,6 @@ class _PriorityRowState extends State<_PriorityRow> {
       }
     }
   }
-}
-
-class _DayOutlookCard extends StatelessWidget {
-  const _DayOutlookCard({
-    required this.capacityScore,
-    required this.capacityLabel,
-    required this.scheduleScore,
-    required this.scheduleLabel,
-    required this.signals,
-    required this.footer,
-  });
-
-  final int? capacityScore;
-  final String capacityLabel;
-  final int? scheduleScore;
-  final String scheduleLabel;
-  final List<_OutlookSignal> signals;
-  final String footer;
-
-  @override
-  Widget build(BuildContext context) {
-    final headline = capacityScore == null
-        ? 'Daily Capacity needs health data · $scheduleLabel schedule demand'
-        : '$capacityLabel daily capacity · $scheduleLabel schedule demand';
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF5848D8), Color(0xFF3020A9)],
-        ),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF3422B8).withValues(alpha: .24),
-            blurRadius: 18,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              _OutlookHeaderIcon(),
-              SizedBox(width: 10),
-              Text(
-                'DAY OUTLOOK',
-                style: TextStyle(
-                  color: Color(0xFFE7E3FF),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.15,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 15),
-          Text(
-            headline,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              height: 1.18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _OutlookScoreRing(
-                  title: 'Daily Capacity',
-                  score: capacityScore,
-                  label: capacityLabel,
-                ),
-              ),
-              Container(width: 1, height: 118, color: Colors.white24),
-              Expanded(
-                child: _OutlookScoreRing(
-                  title: 'Schedule',
-                  score: scheduleScore,
-                  label: scheduleLabel,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Center(
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 7,
-              runSpacing: 7,
-              children: [
-                for (final signal in signals) _OutlookSignalChip(signal),
-              ],
-            ),
-          ),
-          const SizedBox(height: 13),
-          Center(
-            child: Text(
-              footer,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFFE7E3FF),
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OutlookHeaderIcon extends StatelessWidget {
-  const _OutlookHeaderIcon();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 34,
-    height: 34,
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: .16),
-      shape: BoxShape.circle,
-    ),
-    child: const Icon(Icons.show_chart_rounded, color: Colors.white, size: 23),
-  );
-}
-
-class _OutlookScoreRing extends StatelessWidget {
-  const _OutlookScoreRing({
-    required this.title,
-    required this.score,
-    required this.label,
-  });
-
-  final String title;
-  final int? score;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: SizedBox(
-      width: 132,
-      height: 132,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          SizedBox.expand(
-            child: CircularProgressIndicator(
-              value: score == null ? 0 : score! / 100,
-              strokeWidth: 10,
-              strokeCap: StrokeCap.round,
-              backgroundColor: Colors.white.withValues(alpha: .22),
-              valueColor: const AlwaysStoppedAnimation(Color(0xFFDCD7FF)),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(17),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: title == 'Daily Capacity' ? 10 : 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  score?.toString() ?? '—',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 36,
-                    height: 1.05,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      color: Color(0xFFE7E3FF),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _OutlookSignal {
-  const _OutlookSignal({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-}
-
-class _OutlookSignalChip extends StatelessWidget {
-  const _OutlookSignalChip(this.signal);
-
-  final _OutlookSignal signal;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: .10),
-      borderRadius: BorderRadius.circular(11),
-      border: Border.all(color: Colors.white.withValues(alpha: .24)),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(signal.icon, color: Colors.white, size: 18),
-        const SizedBox(width: 6),
-        Text(
-          signal.label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    ),
-  );
 }
 
 class _TimelineEvent extends StatelessWidget {
