@@ -912,7 +912,10 @@ private struct DayDashboardView: View {
       let scale = min(geometry.size.width / 360, geometry.size.height / 740)
       VStack(alignment: .leading, spacing: 9) {
         HStack {
-          Image(systemName: "leaf.fill").font(.title2).foregroundStyle(lavender)
+          VivordoMark()
+            .fill(lavender)
+            .frame(width: 30, height: 27)
+            .accessibilityHidden(true)
           Text("VIVORDO").font(.system(size: 16, weight: .semibold)).tracking(4)
           Spacer(minLength: 4)
           Text(entry.date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
@@ -1146,7 +1149,10 @@ private struct TodayAgendaView: View {
     VStack(alignment: .leading, spacing: 8) {
       Link(destination: URL(string: "com.vivordo.health://widget/myday")!) {
         HStack(spacing: 7) {
-          Image(systemName: "leaf.fill").foregroundStyle(lavender)
+          VivordoMark()
+            .fill(lavender)
+            .frame(width: 24, height: 22)
+            .accessibilityHidden(true)
           Text("Today").font(.system(size: 20, weight: .bold))
           Spacer(minLength: 4)
           Text(entry.date, format: .dateTime.month(.abbreviated).day()).font(.caption)

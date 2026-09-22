@@ -7,3 +7,6 @@ graphify-out/
 design_concepts/
 deliverables/
 instagram-carousel/
+
+# generated HyperFrames projects and video exports (keep locally, never commit)
+videos/
