@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -32,8 +33,6 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     _ => 'Monthly',
   };
 
-  String _dayKey(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
-
   Stream<QuerySnapshot<Map<String, dynamic>>> _stepsStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -43,8 +42,11 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
         .collection('users')
         .doc(uid)
         .collection('metrics_daily')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: _dayKey(oldest))
-        .where(FieldPath.documentId, isLessThanOrEqualTo: _dayKey(now))
+        .where(
+          FieldPath.documentId,
+          isGreaterThanOrEqualTo: localDayKey(oldest),
+        )
+        .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(now))
         .orderBy(FieldPath.documentId)
         .snapshots();
   }
@@ -61,7 +63,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     return List.generate(_rangeDays, (index) {
       final date = today.subtract(Duration(days: _rangeDays - index - 1));
-      final key = _dayKey(date);
+      final key = localDayKey(date);
       return _StepDay(date, stepsByDay[key] ?? 0, distanceByDay[key] ?? 0);
     });
   }

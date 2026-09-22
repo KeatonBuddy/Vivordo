@@ -97,24 +97,32 @@ class PersonalProfileService {
     final measurementReference = userReference
         .collection('personal_profile_measurements')
         .doc();
-    final batch = db.batch();
-    batch.set(userReference, {
-      'preferences': {
-        'personalProfile': {
-          'heightCm': heightCm,
-          'weightKg': weightKg,
-          'bodyFatPercent': ?bodyFatPercent,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-      },
-    }, SetOptions(merge: true));
-    batch.set(measurementReference, {
-      'heightCm': heightCm,
-      'weightKg': weightKg,
-      'bodyFatPercent': ?bodyFatPercent,
-      'recordedAt': Timestamp.fromDate(recordedAt ?? DateTime.now()),
-      'createdAt': FieldValue.serverTimestamp(),
+    final measurementDate = recordedAt ?? DateTime.now();
+    await db.runTransaction((transaction) async {
+      final current = PersonalProfile.fromUserData(
+        (await transaction.get(userReference)).data(),
+      );
+      // A historical entry belongs on its recorded date, not in today's summary.
+      if (current.updatedAt == null ||
+          !measurementDate.isBefore(current.updatedAt!)) {
+        transaction.set(userReference, {
+          'preferences': {
+            'personalProfile': {
+              'heightCm': heightCm,
+              'weightKg': weightKg,
+              'bodyFatPercent': ?bodyFatPercent,
+              'updatedAt': Timestamp.fromDate(measurementDate),
+            },
+          },
+        }, SetOptions(merge: true));
+      }
+      transaction.set(measurementReference, {
+        'heightCm': heightCm,
+        'weightKg': weightKg,
+        'bodyFatPercent': ?bodyFatPercent,
+        'recordedAt': Timestamp.fromDate(measurementDate),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
     });
-    await batch.commit();
   }
 }

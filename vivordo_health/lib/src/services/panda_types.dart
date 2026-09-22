@@ -1,5 +1,5 @@
 // Shared data types for the Panda AI service abstraction.
-// Imported by GeminiService, ClaudeService, AIService, and PandaScreen.
+// Imported by PandaPrompts, ClaudeService, and PandaScreen.
 
 class PandaSessionData {
   PandaSessionData({

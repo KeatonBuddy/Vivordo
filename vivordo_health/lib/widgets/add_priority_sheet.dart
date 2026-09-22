@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
+import 'priority_reminder_picker.dart';
 
 const _purple = Color(0xFF6254F4);
 
@@ -15,6 +18,10 @@ class PriorityDraft {
     required this.repeat,
     required this.selectedWeekdays,
     required this.repeatEnd,
+    this.reminderMinutes = 60,
+    this.reminderTimeMinutes,
+    this.completed = false,
+    this.deleteRequested = false,
   });
 
   final String title;
@@ -24,6 +31,10 @@ class PriorityDraft {
   final PriorityRepeat repeat;
   final Set<int> selectedWeekdays;
   final DateTime? repeatEnd;
+  final int reminderMinutes;
+  final int? reminderTimeMinutes;
+  final bool completed;
+  final bool deleteRequested;
 
   DateTime? get scheduledAt => time == null
       ? null
@@ -66,8 +77,24 @@ Future<PriorityDraft?> showAddPrioritySheet(BuildContext context) =>
       builder: (_) => const _AddPrioritySheet(),
     );
 
+Future<PriorityDraft?> showPriorityEditor(
+  BuildContext context,
+  PriorityDraft initial, {
+  bool occurrenceOnly = false,
+}) => showModalBottomSheet<PriorityDraft>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  backgroundColor: Colors.transparent,
+  barrierColor: Colors.black.withValues(alpha: .68),
+  builder: (_) =>
+      _AddPrioritySheet(initial: initial, occurrenceOnly: occurrenceOnly),
+);
+
 class _AddPrioritySheet extends StatefulWidget {
-  const _AddPrioritySheet();
+  const _AddPrioritySheet({this.initial, this.occurrenceOnly = false});
+  final PriorityDraft? initial;
+  final bool occurrenceOnly;
 
   @override
   State<_AddPrioritySheet> createState() => _AddPrioritySheetState();
@@ -81,12 +108,30 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   PriorityRepeat _repeat = PriorityRepeat.once;
   late Set<int> _selectedWeekdays;
   DateTime? _repeatEnd;
+  int _reminderMinutes = 60;
+  TimeOfDay? _reminderTime;
+  bool _completed = false;
+  bool get _editing => widget.initial != null;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController()..addListener(_changed);
-    _selectedWeekdays = {_date.weekday};
+    final initial = widget.initial;
+    _controller = TextEditingController(text: initial?.title)
+      ..addListener(_changed);
+    _date = initial?.date ?? _date;
+    _time = initial?.time;
+    _repeat = initial?.repeat ?? PriorityRepeat.once;
+    _repeatEnd = initial?.repeatEnd;
+    _completed = initial?.completed ?? false;
+    _reminderMinutes = initial?.reminderMinutes ?? 60;
+    final reminder = initial?.reminderTimeMinutes;
+    _reminderTime = reminder == null
+        ? null
+        : TimeOfDay(hour: reminder ~/ 60, minute: reminder % 60);
+    _selectedWeekdays = initial == null
+        ? {_date.weekday}
+        : {...initial.selectedWeekdays};
   }
 
   @override
@@ -103,14 +148,16 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     final value = await showDatePicker(
       context: context,
       initialDate: _date,
-      firstDate: DateUtils.dateOnly(DateTime.now()),
+      firstDate: _date.isBefore(DateUtils.dateOnly(DateTime.now()))
+          ? _date
+          : DateUtils.dateOnly(DateTime.now()),
       lastDate: DateTime(2100),
     );
     if (value != null) setState(() => _date = value);
   }
 
   Future<void> _pickTime() async {
-    final value = await showTimePicker(
+    final value = await showVivordoTimePicker(
       context: context,
       initialTime: _time ?? TimeOfDay.now(),
     );
@@ -164,9 +211,9 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     if (value != null) setState(() => _repeatEnd = value);
   }
 
-  void _submit() {
+  void _submit({bool deleteRequested = false}) {
     final title = _controller.text.trim();
-    if (title.isEmpty) return;
+    if (!deleteRequested && title.isEmpty) return;
     Navigator.pop(
       context,
       PriorityDraft(
@@ -177,6 +224,12 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
         repeat: _repeat,
         selectedWeekdays: _selectedWeekdays,
         repeatEnd: _repeatEnd,
+        reminderMinutes: _reminderMinutes,
+        completed: _completed,
+        deleteRequested: deleteRequested,
+        reminderTimeMinutes: _reminderTime == null
+            ? null
+            : _reminderTime!.hour * 60 + _reminderTime!.minute,
       ),
     );
   }
@@ -235,7 +288,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                   const SizedBox(width: 42),
                   Expanded(
                     child: Text(
-                      'Add Priority',
+                      _editing ? 'Edit Priority' : 'Add Priority',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: colors.textPrimary,
@@ -261,7 +314,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                     const SizedBox(height: 10),
                     TextField(
                       controller: _controller,
-                      autofocus: true,
+                      autofocus: !_editing,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
                         hintText: 'What do you want to accomplish?',
@@ -293,6 +346,38 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           value: _time?.format(context) ?? 'Add time',
                           onTap: _pickTime,
                         ),
+                        _Row(
+                          icon: Icons.notifications_outlined,
+                          label: 'Reminder',
+                          value: _time == null
+                              ? (_reminderTime?.format(context) ??
+                                    'Choose reminder time')
+                              : priorityReminderLabel(_reminderMinutes),
+                          onTap: () async {
+                            if (_time == null) {
+                              final value = await showVivordoTimePicker(
+                                context: context,
+                                initialTime: _reminderTime ?? TimeOfDay.now(),
+                              );
+                              if (value != null && mounted) {
+                                setState(() => _reminderTime = value);
+                              }
+                              return;
+                            }
+                            final value = await showPriorityReminderPicker(
+                              context,
+                              _reminderMinutes,
+                            );
+                            if (value != null && mounted) {
+                              setState(() => _reminderMinutes = value);
+                            }
+                          },
+                        ),
+                        if (_time != null)
+                          TextButton(
+                            onPressed: () => setState(() => _time = null),
+                            child: const Text('Remove time'),
+                          ),
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
@@ -340,12 +425,19 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                       ],
                     ),
                     const SizedBox(height: 26),
-                    const _Label('REPEAT'),
-                    const SizedBox(height: 10),
-                    _RepeatSelector(
-                      value: _repeat,
-                      onChanged: (value) => setState(() => _repeat = value),
+                    _Label(
+                      widget.occurrenceOnly ? 'THIS OCCURRENCE' : 'REPEAT',
                     ),
+                    const SizedBox(height: 10),
+                    if (widget.occurrenceOnly)
+                      const Text(
+                        'Changes apply to this priority only, not the original calendar event or recurring schedule.',
+                      )
+                    else
+                      _RepeatSelector(
+                        value: _repeat,
+                        onChanged: (value) => setState(() => _repeat = value),
+                      ),
                     if (_repeat == PriorityRepeat.selectedDays) ...[
                       const SizedBox(height: 16),
                       _Weekdays(
@@ -380,6 +472,21 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                       ),
                     ],
                     const SizedBox(height: 28),
+                    if (_editing) ...[
+                      _Card(
+                        children: [
+                          CheckboxListTile(
+                            value: _completed,
+                            onChanged: (value) =>
+                                setState(() => _completed = value ?? false),
+                            activeColor: _purple,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            title: const Text('Mark as completed'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                    ],
                     SizedBox(
                       width: double.infinity,
                       height: 54,
@@ -391,7 +498,10 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: FilledButton(
-                          onPressed: _controller.text.trim().isEmpty
+                          onPressed:
+                              _controller.text.trim().isEmpty ||
+                                  (_repeat == PriorityRepeat.selectedDays &&
+                                      _selectedWeekdays.isEmpty)
                               ? null
                               : _submit,
                           style: FilledButton.styleFrom(
@@ -403,13 +513,51 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             ),
                             shadowColor: Colors.transparent,
                           ),
-                          child: const Text(
-                            'Add Priority',
-                            style: TextStyle(fontSize: 17),
+                          child: Text(
+                            _editing ? 'Save Changes' : 'Add Priority',
+                            style: const TextStyle(fontSize: 17),
                           ),
                         ),
                       ),
                     ),
+                    if (_editing) ...[
+                      const SizedBox(height: 16),
+                      Center(
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                          ),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Delete Priority'),
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (dialogContext) => AlertDialog(
+                                title: const Text('Delete priority?'),
+                                content: const Text(
+                                  'Remove this priority? This will not delete the original calendar event or recurring schedule.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, true),
+                                    child: const Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed == true && mounted) {
+                              _submit(deleteRequested: true);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -448,19 +596,22 @@ class _Card extends StatelessWidget {
         color: context.vivordoColors.textPrimary.withValues(alpha: .13),
       ),
     ),
-    child: Column(
-      children: [
-        for (var index = 0; index < children.length; index++) ...[
-          children[index],
-          if (index < children.length - 1)
-            Divider(
-              height: 1,
-              indent: 16,
-              endIndent: 16,
-              color: context.vivordoColors.textPrimary.withValues(alpha: .09),
-            ),
+    child: Material(
+      color: Colors.transparent,
+      child: Column(
+        children: [
+          for (var index = 0; index < children.length; index++) ...[
+            children[index],
+            if (index < children.length - 1)
+              Divider(
+                height: 1,
+                indent: 16,
+                endIndent: 16,
+                color: context.vivordoColors.textPrimary.withValues(alpha: .09),
+              ),
+          ],
         ],
-      ],
+      ),
     ),
   );
 }
@@ -627,4 +778,30 @@ class _Weekdays extends StatelessWidget {
       ],
     );
   }
+}
+
+Future<PriorityDraft?> showEditPrioritySheet(
+  BuildContext context,
+  DailyPriority priority,
+) {
+  final start = priority.sourceStart;
+  final date = priority.date ?? start ?? DateTime.now();
+  return showPriorityEditor(
+    context,
+    PriorityDraft(
+      title: priority.title,
+      date: DateUtils.dateOnly(date),
+      time: start == null || priority.isAllDay
+          ? null
+          : TimeOfDay.fromDateTime(start),
+      addToCalendar: false,
+      repeat: PriorityRepeat.once,
+      selectedWeekdays: {date.weekday},
+      repeatEnd: null,
+      reminderMinutes: priority.reminderMinutes,
+      reminderTimeMinutes: priority.reminderTimeMinutes,
+      completed: priority.completed,
+    ),
+    occurrenceOnly: priority.source != 'manual',
+  );
 }

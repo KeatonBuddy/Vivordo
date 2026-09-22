@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
@@ -258,16 +259,21 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
     required PersonalProfile profile,
     required String title,
   }) async {
-    final result = await showDialog<(double, double, double?)>(
-      context: context,
-      builder: (_) => _MeasurementEditorDialog(title: title, profile: profile),
-    );
+    final result =
+        await showModalBottomSheet<(double, double, double?, DateTime)>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) =>
+              MeasurementEditorSheet(title: title, profile: profile),
+        );
     if (result == null || !context.mounted) return;
     try {
       await PersonalProfileService.save(
         heightCm: result.$1,
         weightKg: result.$2,
         bodyFatPercent: result.$3,
+        recordedAt: result.$4,
       );
     } catch (error) {
       if (!context.mounted) return;
@@ -834,7 +840,7 @@ class _TrendPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TrendPainter oldDelegate) =>
-      oldDelegate.points != points ||
+      !listEquals(oldDelegate.points, points) ||
       oldDelegate.color != color ||
       oldDelegate.suffix != suffix ||
       oldDelegate.minimumY != minimumY ||
@@ -866,22 +872,28 @@ class _Panel extends StatelessWidget {
   );
 }
 
-class _MeasurementEditorDialog extends StatefulWidget {
-  const _MeasurementEditorDialog({required this.title, required this.profile});
+class MeasurementEditorSheet extends StatefulWidget {
+  const MeasurementEditorSheet({
+    super.key,
+    required this.title,
+    required this.profile,
+  });
 
   final String title;
   final PersonalProfile profile;
 
   @override
-  State<_MeasurementEditorDialog> createState() =>
+  State<MeasurementEditorSheet> createState() =>
       _MeasurementEditorDialogState();
 }
 
-class _MeasurementEditorDialogState extends State<_MeasurementEditorDialog> {
+class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
   late final TextEditingController feetController;
   late final TextEditingController inchesController;
   late final TextEditingController weightController;
   late final TextEditingController bodyFatController;
+  DateTime selectedDate = DateUtils.dateOnly(DateTime.now());
+  String? error;
 
   String _text(double? value) =>
       value?.toStringAsFixed(value % 1 == 0 ? 0 : 1) ?? '';
@@ -930,79 +942,310 @@ class _MeasurementEditorDialogState extends State<_MeasurementEditorDialog> {
         inches < 0 ||
         inches >= 12 ||
         pounds == null ||
+        !pounds.isFinite ||
         pounds <= 0 ||
-        (bodyFat != null && (bodyFat < 0 || bodyFat > 100))) {
+        !inches.isFinite ||
+        (bodyFatController.text.trim().isNotEmpty && bodyFat == null) ||
+        (bodyFat != null &&
+            (!bodyFat.isFinite || bodyFat < 0 || bodyFat > 100))) {
+      setState(
+        () => error =
+            'Enter a valid height and weight. Body fat is optional (0–100%).',
+      );
       return;
     }
     final height = (feet * 12 + inches) * 2.54;
     final weight = pounds / _poundsPerKilogram;
     FocusScope.of(context).unfocus();
-    Navigator.pop(context, (height, weight, bodyFat));
+    final now = DateTime.now();
+    final recordedAt = DateUtils.isSameDay(selectedDate, now)
+        ? now
+        : DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+    Navigator.pop(context, (height, weight, bodyFat, recordedAt));
   }
 
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: () => FocusScope.of(context).unfocus(),
-    child: AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _MeasurementLabel('Height'),
-          const SizedBox(height: 7),
-          Row(
-            children: [
-              Expanded(
-                child: _MeasurementField(
-                  controller: feetController,
-                  hint: 'ft',
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _MeasurementField(
-                  controller: inchesController,
-                  hint: 'in',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          const _MeasurementLabel('Weight'),
-          const SizedBox(height: 7),
-          _MeasurementField(controller: weightController, hint: 'lbs'),
-          const SizedBox(height: 14),
-          const _MeasurementLabel('Body Fat %'),
-          const SizedBox(height: 7),
-          _MeasurementField(
-            controller: bodyFatController,
-            hint: '% (optional)',
-          ),
-        ],
+  Future<void> _pickDate() async {
+    FocusScope.of(context).unfocus();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(1900),
+      lastDate: DateUtils.dateOnly(DateTime.now()),
+    );
+    if (date != null && mounted) setState(() => selectedDate = date);
+  }
+
+  Widget _group(Widget child) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+    decoration: BoxDecoration(
+      color: context.vivordoColors.card,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(
+        color: context.vivordoColors.textSecondary.withValues(alpha: .18),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _save, child: const Text('Save')),
-      ],
+    ),
+    child: child,
+  );
+
+  Widget _row(
+    IconData icon,
+    String title,
+    Widget input, {
+    bool optional = false,
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final label = Row(
+          children: [
+            Icon(icon, color: const Color(0xFFAA9AFF), size: 27),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (optional)
+                    Text(
+                      'Optional',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: context.vivordoColors.textSecondary,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        );
+        if (constraints.maxWidth < 300 ||
+            MediaQuery.textScalerOf(context).scale(16) > 21) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [label, const SizedBox(height: 10), input],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: label),
+            const SizedBox(width: 10),
+            Expanded(flex: 1, child: input),
+          ],
+        );
+      },
     ),
   );
-}
-
-class _MeasurementLabel extends StatelessWidget {
-  const _MeasurementLabel(this.text);
-
-  final String text;
 
   @override
-  Widget build(BuildContext context) => Text(
-    text,
-    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-  );
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Container(
+        decoration: BoxDecoration(
+          color: colors.page,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border.all(
+            color: colors.textSecondary.withValues(alpha: .25),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 30,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colors.textSecondary,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const SizedBox(width: 44),
+                    Expanded(
+                      child: Text(
+                        widget.title,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'MEASUREMENTS',
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Update your height and weight. Body fat is optional.',
+                  style: TextStyle(color: colors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                _group(
+                  Column(
+                    children: [
+                      _row(
+                        Icons.straighten_rounded,
+                        'Height',
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _MeasurementField(
+                                controller: feetController,
+                                hint: 'ft',
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _MeasurementField(
+                                controller: inchesController,
+                                hint: 'in',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      _row(
+                        Icons.monitor_weight_outlined,
+                        'Weight',
+                        _MeasurementField(
+                          controller: weightController,
+                          hint: 'lb',
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      _row(
+                        Icons.percent_rounded,
+                        'Body fat',
+                        _MeasurementField(
+                          controller: bodyFatController,
+                          hint: '%',
+                        ),
+                        optional: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  'DATE',
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _group(
+                  InkWell(
+                    onTap: _pickDate,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.calendar_month_rounded,
+                            color: Color(0xFFAA9AFF),
+                            size: 27,
+                          ),
+                          const SizedBox(width: 12),
+                          const Text('Date'),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if (DateUtils.isSameDay(
+                                  selectedDate,
+                                  DateTime.now(),
+                                ))
+                                  const Text('Today'),
+                                Text(
+                                  DateFormat.yMMMMd().format(selectedDate),
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(color: colors.textSecondary),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Icon(Icons.chevron_right),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 24),
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF4935F4), Color(0xFF7865F5)],
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: TextButton(
+                    onPressed: _save,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                    ),
+                    child: const Text(
+                      'Save Measurement',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _MeasurementField extends StatelessWidget {
@@ -1014,12 +1257,15 @@ class _MeasurementField extends StatelessWidget {
     controller: controller,
     keyboardType: const TextInputType.numberWithOptions(decimal: true),
     decoration: InputDecoration(
-      hintText: hint,
-      hintStyle: const TextStyle(color: _muted),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      suffixText: hint,
+      filled: true,
+      fillColor: context.vivordoColors.textSecondary.withValues(alpha: .08),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.black.withValues(alpha: .18)),
+        borderSide: BorderSide(
+          color: context.vivordoColors.textSecondary.withValues(alpha: .18),
+        ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),

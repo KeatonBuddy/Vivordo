@@ -439,6 +439,10 @@ class _HomeStressCardState extends State<HomeStressCard>
         Icons.insights_rounded,
         const Color(0xFF9B8CFF),
       ),
+      HomeStressDriverType.calendar => (
+        Icons.calendar_month_rounded,
+        const Color(0xFF9B8CFF),
+      ),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),

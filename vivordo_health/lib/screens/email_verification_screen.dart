@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'login_screen.dart';
 
 /// Shown by AuthGate whenever a signed-in user's email isn't verified yet.
@@ -21,7 +22,7 @@ class EmailVerificationScreen extends StatefulWidget {
 }
 
 class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
-  static const Color accentPurple = Color(0xFF7B6EF6);
+  static const Color accentPurple = VivordoTheme.brand;
   static const Color textDark = Color(0xFF1C1C1E);
   static const Color textGrey = Color(0xFF8E8E93);
 

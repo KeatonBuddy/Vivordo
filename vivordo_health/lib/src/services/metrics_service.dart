@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'achievement_service.dart';
 import 'stress_score_service.dart';
 
@@ -19,7 +20,7 @@ class MetricsService {
     if (user == null) return;
 
     final checkInTime = occurredAt ?? DateTime.now();
-    final period = _formatDate(checkInTime);
+    final period = localDayKey(checkInTime);
     final resolvedMoodScore = (moodScore ?? moodScoreForLabel(moodLabel))
         .clamp(0, 100)
         .toDouble();
@@ -84,9 +85,6 @@ class MetricsService {
   }
 
   // ─── HELPERS ──────────────────────────────────────────────────────
-
-  static String _formatDate(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   /// Keeps the familiar mood wording while allowing precise 0–100 check-ins.
   static String moodLabelForScore(num score) {

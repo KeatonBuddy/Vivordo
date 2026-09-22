@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/calendar_event_summary_sheet.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -17,11 +18,15 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
+import 'package:vivordo_health/src/utils/home_metrics_summary.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
-import 'package:vivordo_health/src/utils/heart_rate_calendar_insight.dart';
+import 'package:vivordo_health/widgets/hourly_heart_insight_card.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
+import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
+import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
+import 'package:vivordo_health/src/services/hourly_calendar_load.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'steps_detail_screen.dart';
@@ -94,6 +99,8 @@ class _CircleAvatarCluster extends StatelessWidget {
               width: 42,
               height: 42,
               fit: BoxFit.cover,
+              cacheWidth: 126,
+              cacheHeight: 126,
               errorBuilder: (_, _, _) => _initialOrIcon(
                 text: text,
                 icon: icon,
@@ -172,6 +179,8 @@ class _HomeCircleProfileButton extends StatelessWidget {
                   ? Image.network(
                       photoUrl!,
                       fit: BoxFit.cover,
+                      cacheWidth: 120,
+                      cacheHeight: 120,
                       errorBuilder: (_, _, _) => Center(child: fallback),
                     )
                   : ColoredBox(
@@ -193,12 +202,14 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onFitnessTap;
   final bool revealStress;
   final bool isActive;
+  final bool openMoodCheckIn;
   const HomeScreen({
     super.key,
     this.onScanTap,
     this.onFitnessTap,
     this.revealStress = true,
     this.isActive = true,
+    this.openMoodCheckIn = false,
   });
 
   @override
@@ -234,7 +245,8 @@ class _HomeWidgetSnapshot {
   ].join('|');
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  final _hourlyHeartKey = GlobalKey<HourlyHeartInsightCardState>();
   String _currentMood = 'Good';
   double _currentMoodScore = 75;
   String? _pendingMoodSync;
@@ -247,15 +259,18 @@ class _HomeScreenState extends State<HomeScreen> {
   late Stream<QuerySnapshot<Map<String, dynamic>>> _latestScanStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
   late final Stream<CircleProfile?> _circleProfileStream;
+
+  /// Local day and account the metric listeners above were built for.
+  String? _streamsDayKey;
+  String? _streamsUid;
+  Timer? _dayRolloverTimer;
+  HomeMetricsSummaryCache _metricsSummaryCache = HomeMetricsSummaryCache();
   Future<List<gcal.Event>>? _reachableWindowEventsFuture;
   DateTime? _reachableWindowEventsDate;
   Future<List<_ScoredReachableEvent>>? _reachableWindowScoresFuture;
   DateTime? _reachableWindowScoresDate;
   Future<_ScheduleInsight?>? _scheduleInsightFuture;
   DateTime? _scheduleInsightDate;
-  Future<HeartRateCalendarInsight>? _heartInsightFuture;
-  DateTime? _heartInsightReadingTime;
-  int? _heartInsightReadingBpm;
   ActivityGoals _activityGoals = const ActivityGoals();
   StreamSubscription<ActivityGoals>? _activityGoalsSubscription;
   _HomeWidgetSnapshot? _latestHomeWidgetSnapshot;
@@ -265,7 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _homeWidgetPublishScheduled = false;
   bool _homeWidgetPublishInProgress = false;
 
-  static const Color accentPurple = Color(0xFF7B6EF6);
+  static const Color accentPurple = VivordoTheme.brand;
   static const Color textDark = Color(0xFF1C1C1E);
   static const Color textGrey = Color(0xFF8E8E93);
   static const Color greenColor = Color(0xFF34C759);
@@ -281,23 +296,13 @@ class _HomeScreenState extends State<HomeScreen> {
     // on every load. This is where yesterday's check-in actually gets
     // submitted — by now its day is closed and its metrics are complete.
     StressScoreService.submitPendingFeedback().catchError((_) {});
-    final today = _todayPeriod();
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    _todayStream = uid != null
-        ? FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('metrics_daily')
-              .doc(today)
-              .snapshots()
-        : const Stream.empty();
-    _latestScanStream = uid != null
-        ? FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('metrics_daily')
-              .snapshots()
-        : const Stream.empty();
+    WidgetsBinding.instance.addObserver(this);
+    _connectMetricStreams();
+    if (widget.openMoodCheckIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_showMoodCheck());
+      });
+    }
     _circleProfileStream = CircleProfileService.watchCurrentProfile();
     _goalsStreamCached = _goalsStream();
     _activityGoalsSubscription = ActivityGoalsService.watch().listen(
@@ -333,8 +338,100 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _dayRolloverTimer?.cancel();
     _activityGoalsSubscription?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The metrics window and today's document are both pinned to the local
+    // day and account they were built for, so a day that turned over — or an
+    // account that changed — while the app was away needs fresh queries.
+    if (state == AppLifecycleState.resumed) _reconnectMetricStreamsIfStale();
+  }
+
+  /// Fires at the next local midnight so a session left open across the date
+  /// change does not keep querying yesterday. Resume alone is not enough: an
+  /// app sitting in the foreground, or on another tab, gets no lifecycle
+  /// event at midnight.
+  void _scheduleDayRollover() {
+    _dayRolloverTimer?.cancel();
+    _dayRolloverTimer = Timer(durationUntilNextLocalDay(DateTime.now()), () {
+      _reconnectMetricStreamsIfStale();
+      // Re-arm regardless: if the clock drifted and the day has not actually
+      // turned over yet, the next timer covers the remainder.
+      if (mounted) _scheduleDayRollover();
+    });
+  }
+
+  void _reconnectMetricStreamsIfStale() {
+    if (!mounted) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (_streamsDayKey == _todayPeriod() && _streamsUid == uid) return;
+    setState(_connectMetricStreams);
+  }
+
+  /// Points both metric listeners at the current local day.
+  ///
+  /// The history listener carries a [kHomeMetricsWindowDays] window rather
+  /// than every day the account has recorded, bounded by a range on the
+  /// `YYYY-MM-DD` document ids.
+  ///
+  /// Ordering newest-first needs the descending `__name__` index on
+  /// metrics_daily, which Firestore does not create automatically. Without it
+  /// the query is rejected, and since this listener is the only source for
+  /// heart rate, that shows up as "No data" on an otherwise working screen —
+  /// which is exactly how it shipped once before. The index is declared in
+  /// firestore.indexes.json; the builder logs if the query fails anyway.
+  void _connectMetricStreams() {
+    final today = _todayPeriod();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    _streamsDayKey = today;
+    _streamsUid = uid;
+    _metricsSummaryCache = HomeMetricsSummaryCache();
+    _scheduleDayRollover();
+    _todayStream = uid != null
+        ? FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('metrics_daily')
+              .doc(today)
+              .snapshots()
+        : const Stream.empty();
+    _latestScanStream = uid != null
+        ? FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('metrics_daily')
+              .where(
+                FieldPath.documentId,
+                isGreaterThanOrEqualTo: homeMetricsWindowStartKey(
+                  DateTime.now(),
+                ),
+                isLessThanOrEqualTo: today,
+              )
+              .orderBy(FieldPath.documentId, descending: true)
+              .snapshots()
+        : const Stream.empty();
+  }
+
+  /// Derived Home values for [snapshot], reused across rebuilds that did not
+  /// change the data, the local day, or the signed-in account.
+  HomeMetricsSummary _metricsSummaryFor(
+    QuerySnapshot<Map<String, dynamic>>? snapshot,
+  ) {
+    final now = DateTime.now();
+    return _metricsSummaryCache.summarize(
+      snapshotKey: snapshot,
+      dayKey: _todayPeriod(),
+      uid: FirebaseAuth.instance.currentUser?.uid,
+      now: now,
+      days: () => (snapshot?.docs ?? const [])
+          .map((doc) => MetricDayEntry(dayKey: doc.id, data: doc.data()))
+          .toList(growable: false),
+    );
   }
 
   void _syncMoodAfterBuild(String savedMood, double savedMoodScore) {
@@ -425,65 +522,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
-  LatestHeartRateReading? _latestHeartRateFrom(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
-    return latestHeartRateReadingFromMetricDays(
-      sortedDocs.map((doc) => doc.data()),
-    );
-  }
-
-  /// Returns the personalized value a new stress day should open at while the
-  /// first BaaS reading is still being computed.
-  ///
-  /// The accumulating stress scorer persists an `anchor` with every successful
-  /// response. That anchor is the user's learned reset point for the start of a
-  /// local day, so it is a better midnight fallback than yesterday's final
-  /// score. Older documents predate anchors and fall back to their last live or
-  /// daily value instead.
-  double? _latestStressAnchorFrom(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
-
-    for (final doc in sortedDocs) {
-      final stress = doc.data()['stress'] as Map?;
-      if (stress == null) continue;
-
-      final anchor = stress['anchor'];
-      if (anchor is num) return anchor.toDouble();
-
-      final current = stress['current'];
-      if (current is num) return current.toDouble();
-
-      final average = stress['avg'];
-      if (average is num) return average.toDouble();
-    }
-    return null;
-  }
-
-  double? _sevenDayStressAverage(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final oldest = today.subtract(const Duration(days: 7));
-    final values = <double>[];
-    for (final doc in docs) {
-      final date = DateTime.tryParse(doc.id);
-      if (date == null || date.isBefore(oldest) || !date.isBefore(today)) {
-        continue;
-      }
-      final stress = doc.data()['stress'] as Map?;
-      final value =
-          (stress?['avg'] as num?)?.toDouble() ??
-          (stress?['current'] as num?)?.toDouble();
-      if (value != null) values.add(value);
-    }
-    if (values.isEmpty) return null;
-    return values.reduce((a, b) => a + b) / values.length;
-  }
-
   DateTime? _stressUpdatedAt(Map? stress) {
     final raw = stress?['computedAt'];
     if (raw is Timestamp) return raw.toDate();
@@ -533,6 +571,7 @@ class _HomeScreenState extends State<HomeScreen> {
         stressDrivers: const [],
         stressLoading: false,
         sleepVal: '--',
+        sleepIsWhoop: false,
         sleepLoading: false,
         stepsVal: '--',
         steps: 0,
@@ -561,6 +600,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final stressMap = data?['stress'] as Map?;
         final hrvMap = data?['hrv'] as Map?;
         final sleepMap = data?['sleep'] as Map?;
+        final sleepIsWhoop = sleepMap?['source'] == 'whoop';
         final stepsMap = data?['steps'] as Map?;
         final activeCaloriesMap = data?['active_calories'] as Map?;
         final exerciseTimeMap = data?['exercise_time'] as Map?;
@@ -619,15 +659,24 @@ class _HomeScreenState extends State<HomeScreen> {
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _latestScanStream,
           builder: (context, scanSnap) {
-            final metricDocs = scanSnap.data?.docs ?? [];
-            final latestHeartRate = _latestHeartRateFrom(metricDocs);
+            if (scanSnap.hasError) {
+              // Heart rate is the only value this listener feeds, so a failure
+              // here reads as "No data" on an otherwise working screen. Say so
+              // rather than letting it pass as an empty result.
+              debugPrint(
+                'HomeScreen: metrics history listener failed, heart rate will '
+                'show no data: ${scanSnap.error}',
+              );
+            }
+            final metricsSummary = _metricsSummaryFor(scanSnap.data);
+            final latestHeartRate = metricsSummary.latestHeartRate;
             final latestHeartRateBpm = latestHeartRate?.bpm;
             final hrVal = latestHeartRateBpm == null
                 ? '--'
                 : '$latestHeartRateBpm bpm';
             final displayedStressScore =
-                stressScore ?? _latestStressAnchorFrom(metricDocs);
-            final sevenDayStressAverage = _sevenDayStressAverage(metricDocs);
+                stressScore ?? metricsSummary.stressAnchor;
+            final sevenDayStressAverage = metricsSummary.sevenDayStressAverage;
             final stressDrivers = homeStressDrivers(stressMap?['top_drivers']);
             final stressStillLoading =
                 loading ||
@@ -679,6 +728,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     stressUpdating: computingStress,
                     stressLoading: stressStillLoading,
                     sleepVal: sleepVal,
+                    sleepIsWhoop: sleepIsWhoop,
                     sleepLoading: loading,
                     stepsVal: stepsVal,
                     steps: steps ?? 0,
@@ -790,6 +840,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final events = await _getReachableWindowEventsFuture(todayStart);
     final timedEvents = events.where((event) {
       return event.status != 'cancelled' &&
+          event.transparency != 'transparent' &&
+          !(event.attendees?.any(
+                (a) => a.self == true && a.responseStatus == 'declined',
+              ) ??
+              false) &&
           event.start?.dateTime != null &&
           event.end?.dateTime != null;
     }).toList();
@@ -802,19 +857,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final selfAttendee = event.attendees
           ?.where((attendee) => attendee.self == true)
           .firstOrNull;
-      final hasTightTransition = timedEvents.any((other) {
-        if (identical(other, event) ||
-            other.start?.dateTime == null ||
-            other.end?.dateTime == null) {
-          return false;
-        }
-        final otherStart = other.start!.dateTime!.toLocal();
-        final otherEnd = other.end!.dateTime!.toLocal();
-        final gapBefore = start.difference(otherEnd).inMinutes;
-        final gapAfter = otherStart.difference(end).inMinutes;
-        return (gapBefore >= 0 && gapBefore <= 15) ||
-            (gapAfter >= 0 && gapAfter <= 15);
-      });
       inputs.add(
         CalendarCognitiveEvent(
           id: _reachableEventKey(event, i),
@@ -829,7 +871,6 @@ class _HomeScreenState extends State<HomeScreen> {
               event.hangoutLink?.isNotEmpty == true ||
               event.conferenceData != null,
           showsAsFree: event.transparency == 'transparent',
-          hasTightTransition: hasTightTransition,
         ),
       );
     }
@@ -840,12 +881,14 @@ class _HomeScreenState extends State<HomeScreen> {
       (index) => _ScoredReachableEvent(
         event: timedEvents[index],
         score: scores[index],
+        input: inputs[index],
       ),
     );
   }
 
   String _reachableEventKey(gcal.Event event, int index) =>
-      'google:${event.id ?? event.iCalUID ?? index}';
+      'google:${CalendarService.calendarIdForEvent(event) ?? ''}:'
+      '${event.id ?? event.iCalUID ?? index}:${event.start?.dateTime?.toUtc().toIso8601String()}';
 
   Widget _buildScaffold({
     required double? stressScore,
@@ -855,6 +898,7 @@ class _HomeScreenState extends State<HomeScreen> {
     bool stressUpdating = false,
     required bool stressLoading,
     required String sleepVal,
+    required bool sleepIsWhoop,
     required bool sleepLoading,
     required String stepsVal,
     required int steps,
@@ -873,134 +917,145 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(),
-              const SizedBox(height: 24),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const StressDetailScreen()),
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await _hourlyHeartKey.currentState?.refresh(force: true);
+          },
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(
+                  hasWhoopData:
+                      sleepIsWhoop || latestHeartRate?.source == 'whoop_ble',
                 ),
-                child: HomeStressCard(
-                  score: stressScore,
-                  updatedAt: stressUpdatedAt,
-                  sevenDayAverage: sevenDayStressAverage,
-                  drivers: stressDrivers,
+                const SizedBox(height: 24),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const StressDetailScreen(),
+                    ),
+                  ),
+                  child: HomeStressCard(
+                    score: stressScore,
+                    updatedAt: stressUpdatedAt,
+                    sevenDayAverage: sevenDayStressAverage,
+                    drivers: stressDrivers,
+                    steps: steps,
+                    loading: stressLoading,
+                    updating: stressUpdating,
+                    revealScore: widget.revealStress,
+                    onInfoTap: _showStressScoreExplanation,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildMetricTile(
+                        'Sleep',
+                        sleepVal,
+                        Icons.bedtime_rounded,
+                        accentPurple,
+                        loading: sleepLoading,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildMetricTile(
+                        'Steps',
+                        stepsVal,
+                        Icons.directions_walk_rounded,
+                        greenColor,
+                        loading: stepsLoading,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const StepsDetailScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildMetricTile(
+                        'Heart Rate',
+                        hrVal,
+                        Icons.favorite_rounded,
+                        const Color(0xFFFF3B30),
+                        loading: hrLoading,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const HeartRateDetailScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildMetricTile(
+                        'Mood',
+                        moodVal,
+                        Icons.mood_rounded,
+                        const Color(0xFFF97316),
+                        loading: moodLoading,
+                        onTap: _showMoodCheck,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildFitnessSummaryCard(
                   steps: steps,
-                  loading: stressLoading,
-                  updating: stressUpdating,
-                  revealScore: widget.revealStress,
-                  onInfoTap: _showStressScoreExplanation,
+                  activeCalories: activeCalories,
+                  exerciseMinutes: exerciseMinutes,
                 ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildMetricTile(
-                      'Sleep',
-                      sleepVal,
-                      Icons.bedtime_rounded,
-                      accentPurple,
-                      loading: sleepLoading,
-                    ),
+                const SizedBox(height: 14),
+                _buildCircleCard(),
+                const SizedBox(height: 28),
+                _buildSectionTitle("TODAY'S INSIGHTS"),
+                const SizedBox(height: 12),
+                _buildScheduleInsightCard(),
+                if (sleepVal != '--')
+                  _buildInsightCard(
+                    icon: Icons.nightlight_round,
+                    iconColor: accentPurple,
+                    iconBg: const Color(0x1F7B6EF6),
+                    title: _getSleepInsightTitle(sleepVal),
+                    subtitle: _getSleepInsightSubtitle(sleepVal, hrVal),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildMetricTile(
-                      'Steps',
-                      stepsVal,
-                      Icons.directions_walk_rounded,
-                      greenColor,
-                      loading: stepsLoading,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const StepsDetailScreen(),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildMetricTile(
-                      'Heart Rate',
-                      hrVal,
-                      Icons.favorite_rounded,
-                      const Color(0xFFFF3B30),
-                      showConnectHint: false,
-                      loading: hrLoading,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const HeartRateDetailScreen(),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildMetricTile(
-                      'Mood',
-                      moodVal,
-                      Icons.mood_rounded,
-                      const Color(0xFFF97316),
-                      loading: moodLoading,
-                      onTap: _showMoodCheck,
-                      emptyAction: _showMoodCheck,
-                      emptyActionLabel: 'Check in →',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildFitnessSummaryCard(
-                steps: steps,
-                activeCalories: activeCalories,
-                exerciseMinutes: exerciseMinutes,
-              ),
-              const SizedBox(height: 14),
-              _buildCircleCard(),
-              const SizedBox(height: 28),
-              _buildSectionTitle("TODAY'S INSIGHTS"),
-              const SizedBox(height: 12),
-              _buildScheduleInsightCard(),
-              if (sleepVal != '--')
-                _buildInsightCard(
-                  icon: Icons.nightlight_round,
-                  iconColor: accentPurple,
-                  iconBg: const Color(0x1F7B6EF6),
-                  title: _getSleepInsightTitle(sleepVal),
-                  subtitle: _getSleepInsightSubtitle(sleepVal, hrVal),
+                if (sleepVal != '--') const SizedBox(height: 10),
+                HourlyHeartInsightCard(
+                  key: _hourlyHeartKey,
+                  isActive: widget.isActive,
                 ),
-              if (sleepVal != '--') const SizedBox(height: 10),
-              if (latestHeartRate != null)
-                _buildHeartRateInsightCard(latestHeartRate),
-              if (sleepVal == '--' && hrVal == '--')
-                _buildInsightCard(
-                  icon: Icons.info_outline_rounded,
-                  iconColor: textGrey,
-                  iconBg: const Color(0x1F8E8E93),
-                  title: 'No insights yet',
-                  subtitle:
-                      'Connect Apple Health or complete a scan to see your daily insights.',
-                ),
-              const SizedBox(height: 28),
-              _buildReachableWindowsTitle(),
-              const SizedBox(height: 12),
-              _buildReachableWindows(),
-              const SizedBox(height: 160),
-            ],
+                if (sleepVal == '--' && hrVal == '--')
+                  _buildInsightCard(
+                    icon: Icons.info_outline_rounded,
+                    iconColor: textGrey,
+                    iconBg: const Color(0x1F8E8E93),
+                    title: 'No insights yet',
+                    subtitle:
+                        'Connect Apple Health or complete a scan to see your daily insights.',
+                  ),
+                const SizedBox(height: 28),
+                _buildReachableWindowsTitle(),
+                const SizedBox(height: 12),
+                _buildReachableWindows(),
+                const SizedBox(height: 160),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader({required bool hasWhoopData}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1038,6 +1093,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   const Text('👋', style: TextStyle(fontSize: 26)),
                 ],
               ),
+              if (hasWhoopData) ...[
+                const SizedBox(height: 6),
+                const Row(
+                  children: [
+                    Text(
+                      'Synced · Data includes',
+                      style: TextStyle(
+                        color: textGrey,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(width: 7),
+                    WhoopSourceBadge(compact: true),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -1228,16 +1300,17 @@ class _HomeScreenState extends State<HomeScreen> {
     String value,
     IconData icon,
     Color color, {
-    bool showConnectHint = true,
     bool loading = false,
     VoidCallback? onTap,
-    VoidCallback? emptyAction,
-    String emptyActionLabel = 'Connect Health →',
   }) {
     final bool isEmpty = value == '--';
+    final noData = isEmpty && !loading;
+    final displayValue = noData ? 'No data' : value;
     return Semantics(
       button: onTap != null,
-      label: onTap == null ? null : '$label, $value. Tap to view details.',
+      label: onTap == null
+          ? null
+          : '$label, $displayValue. Tap to view details.',
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
@@ -1250,7 +1323,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         child: Material(
-          color: context.vivordoColors.card,
+          color: noData
+              ? (Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF242428)
+                    : const Color(0xFFEEEEF0))
+              : context.vivordoColors.card,
           borderRadius: BorderRadius.circular(16),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
@@ -1261,7 +1338,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Icon(
                     icon,
-                    color: isEmpty ? const Color(0xFFC7C7CC) : color,
+                    color: isEmpty ? const Color(0xFF8E8E93) : color,
                     size: 20,
                   ),
                   const SizedBox(height: 6),
@@ -1275,7 +1352,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         )
                       : Text(
-                          value,
+                          displayValue,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -1289,29 +1366,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     label,
                     style: TextStyle(
                       fontSize: 10,
-                      color: context.vivordoColors.textPrimary,
+                      color: noData
+                          ? context.vivordoColors.textSecondary
+                          : context.vivordoColors.textPrimary,
                     ),
                   ),
-                  if (isEmpty && showConnectHint) ...[
-                    const SizedBox(height: 4),
-                    GestureDetector(
-                      onTap:
-                          emptyAction ??
-                          () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const SettingsScreen(),
-                            ),
-                          ),
-                      child: Text(
-                        emptyActionLabel,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: context.vivordoColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -1871,6 +1930,60 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${minutes}m';
   }
 
+  Future<void> _showReachableEventSummary(gcal.Event event) async {
+    final start = event.start?.dateTime?.toLocal() ?? event.start?.date;
+    final end = event.end?.dateTime?.toLocal() ?? event.end?.date;
+    if (start == null || end == null) return;
+    final action = await showCalendarEventSummarySheet(
+      context,
+      event: CalendarEventSummaryData(
+        title: event.summary ?? 'Untitled event',
+        start: start,
+        end: end,
+        isAllDay: event.start?.dateTime == null,
+        isRecurring:
+            event.recurringEventId != null ||
+            event.recurrence?.isNotEmpty == true,
+        color: const Color(0xFF4285F4),
+        calendarName: 'Google Calendar',
+        canEdit: true,
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == CalendarEventSummaryAction.edit) {
+      await _editReachableEvent(event);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete event?'),
+        content: Text(
+          'This will delete “${event.summary ?? 'Untitled event'}” from Google Calendar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await CalendarService.deleteEvent(event);
+      if (!mounted) return;
+      _refreshHomeCalendarCards();
+      _showHomeCalendarMessage('Event deleted.');
+    } catch (error) {
+      if (mounted) _showHomeCalendarMessage('Could not delete event: $error');
+    }
+  }
+
   Future<void> _editReachableEvent(gcal.Event event) async {
     final originalStart = event.start?.dateTime?.toLocal();
     final originalEnd = event.end?.dateTime?.toLocal();
@@ -1926,9 +2039,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: const Text('Start time'),
                   trailing: Text(startTime.format(context)),
                   onTap: () async {
-                    final picked = await showTimePicker(
+                    final picked = await showVivordoTimePicker(
                       context: context,
                       initialTime: startTime,
+                      title: 'Start Time',
                     );
                     if (picked != null) {
                       setDialogState(() => startTime = picked);
@@ -1941,9 +2055,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: const Text('End time'),
                   trailing: Text(endTime.format(context)),
                   onTap: () async {
-                    final picked = await showTimePicker(
+                    final picked = await showVivordoTimePicker(
                       context: context,
                       initialTime: endTime,
+                      title: 'End Time',
                     );
                     if (picked != null) setDialogState(() => endTime = picked);
                   },
@@ -2104,10 +2219,11 @@ class _HomeScreenState extends State<HomeScreen> {
             (snapshot.data ?? const <_ScoredReachableEvent>[]).where((item) {
               final event = item.event;
               final start = event.start?.dateTime?.toLocal();
+              final end = event.end?.dateTime?.toLocal();
               return start != null &&
-                  start.year == now.year &&
-                  start.month == now.month &&
-                  start.day == now.day;
+                  end != null &&
+                  start.isBefore(DateTime(now.year, now.month, now.day + 1)) &&
+                  end.isAfter(todayStart);
             }).toList()..sort((a, b) {
               final aStart = a.event.start?.dateTime?.toLocal() ?? todayStart;
               final bStart = b.event.start?.dateTime?.toLocal() ?? todayStart;
@@ -2143,34 +2259,34 @@ class _HomeScreenState extends State<HomeScreen> {
           return '${minutes}m';
         }
 
-        final highLoadWindows =
-            scoredEvents
-                .where((item) => item.score.level == CognitiveLoadLevel.high)
-                .map((item) {
-                  final event = item.event;
-                  final start = event.start?.dateTime?.toLocal();
-                  final end = event.end?.dateTime?.toLocal();
-                  if (start == null || end == null) return null;
-
-                  final clippedStart = clampStart(start);
-                  final clippedEnd = clampEnd(end);
-                  if (!clippedEnd.isAfter(clippedStart)) return null;
-
-                  return {
-                    'time': formatRange(clippedStart, clippedEnd),
-                    'label': event.summary?.trim().isNotEmpty == true
-                        ? event.summary!.trim()
-                        : 'Calendar event',
-                    'duration': clippedEnd.difference(clippedStart),
-                    'event': event,
-                    'score': item.score.score,
-                  };
-                })
-                .whereType<Map<String, dynamic>>()
-                .toList()
-              ..sort(
-                (a, b) => (b['score'] as int).compareTo(a['score'] as int),
-              );
+        // This section is a schedule forecast. Live BaaS callers must pass
+        // asOf to the calculator to exclude time that has not elapsed.
+        final hourly = HourlyCalendarLoadCalculator.calculate(
+          events: scoredEvents.map((e) => e.input).toList(),
+          scores: scoredEvents.map((e) => e.score).toList(),
+          from: workStart,
+          until: workEnd,
+        );
+        final highLoadWindows = <Map<String, dynamic>>[];
+        for (final hour in hourly.where((h) => (h.score ?? 0) >= 60)) {
+          final contributors =
+              scoredEvents
+                  .where(
+                    (e) =>
+                        e.input.start.isBefore(hour.end) &&
+                        e.input.end.isAfter(hour.start),
+                  )
+                  .toList()
+                ..sort((a, b) => b.score.score.compareTo(a.score.score));
+          highLoadWindows.add({
+            'time': formatRange(hour.start, hour.end),
+            'label':
+                '${hour.score!.round()}/100 calendar load · ${contributors.length} event${contributors.length == 1 ? '' : 's'}',
+            'duration': hour.end.difference(hour.start),
+            'event': contributors.first.event,
+            'score': hour.score!.round(),
+          });
+        }
 
         final lowLoadWindows = <Map<String, dynamic>>[];
         var cursor = workStart;
@@ -2246,15 +2362,16 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildCognitiveLoadSection(
-                title: 'Here are your times of high cognitive load',
+                title: 'Expected high calendar load',
                 icon: Icons.psychology_alt_rounded,
                 color: orangeColor,
-                emptyText: 'No high cognitive-load events found today.',
+                emptyText:
+                    'No high-load hours identified from classified events.',
                 windows: highLoadWindows.take(2).toList(),
               ),
               const SizedBox(height: 18),
               _buildCognitiveLoadSection(
-                title: 'Here are your times with the lowest cognitive load',
+                title: 'Open recovery windows',
                 icon: Icons.self_improvement_rounded,
                 color: greenColor,
                 emptyText: 'No open 30+ minute windows found today.',
@@ -2335,7 +2452,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? openStart == null || openEnd == null
                             ? null
                             : () => _createReachableEvent(openStart, openEnd)
-                      : () => _editReachableEvent(event),
+                      : () => _showReachableEventSummary(event),
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Row(
@@ -2394,107 +2511,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _getSleepInsightSubtitle(String sleepVal, String hrVal) {
     return '$sleepVal of sleep recorded';
-  }
-
-  Widget _buildHeartRateInsightCard(LatestHeartRateReading reading) {
-    return FutureBuilder<HeartRateCalendarInsight>(
-      future: _getHeartRateInsightFuture(reading),
-      builder: (context, snapshot) {
-        final insight =
-            snapshot.data ??
-            buildHeartRateCalendarInsight(
-              bpm: reading.bpm,
-              timestamp: reading.timestamp,
-            );
-        return _buildInsightCard(
-          icon: Icons.favorite_rounded,
-          iconColor: const Color(0xFFFF3B30),
-          iconBg: const Color(0x1FFF3B30),
-          title: insight.title,
-          subtitle: insight.subtitle,
-        );
-      },
-    );
-  }
-
-  Future<HeartRateCalendarInsight> _getHeartRateInsightFuture(
-    LatestHeartRateReading reading,
-  ) {
-    if (_heartInsightFuture != null &&
-        _heartInsightReadingTime == reading.timestamp &&
-        _heartInsightReadingBpm == reading.bpm) {
-      return _heartInsightFuture!;
-    }
-    _heartInsightReadingTime = reading.timestamp;
-    _heartInsightReadingBpm = reading.bpm;
-    _heartInsightFuture = _loadHeartRateInsight(reading);
-    return _heartInsightFuture!;
-  }
-
-  Future<HeartRateCalendarInsight> _loadHeartRateInsight(
-    LatestHeartRateReading reading,
-  ) async {
-    final timestamp = reading.timestamp;
-    if (timestamp == null) {
-      return buildHeartRateCalendarInsight(bpm: reading.bpm, timestamp: null);
-    }
-
-    final events = <HeartRateCalendarEvent>[];
-    try {
-      if (await CalendarService.isSignedIn()) {
-        final googleEvents = await CalendarService.getWeekEvents(
-          timestamp.toLocal(),
-        ).timeout(const Duration(seconds: 8), onTimeout: () => <gcal.Event>[]);
-        for (final event in googleEvents) {
-          if (event.status == 'cancelled') continue;
-          final start = event.start?.dateTime?.toLocal();
-          final end = event.end?.dateTime?.toLocal();
-          if (start == null || end == null) continue;
-          events.add(
-            HeartRateCalendarEvent(
-              title: event.summary?.trim().isNotEmpty == true
-                  ? event.summary!.trim()
-                  : 'Calendar event',
-              start: start,
-              end: end,
-            ),
-          );
-        }
-      }
-    } catch (error) {
-      debugPrint('Heart insight Google Calendar match failed: $error');
-    }
-
-    try {
-      if (await OutlookCalendarService.isSignedIn()) {
-        final outlookEvents =
-            await OutlookCalendarService.getWeekEvents(
-              timestamp.toLocal(),
-            ).timeout(
-              const Duration(seconds: 8),
-              onTimeout: () => <OutlookEvent>[],
-            );
-        for (final event in outlookEvents) {
-          events.add(
-            HeartRateCalendarEvent(
-              title: event.subject.trim().isNotEmpty
-                  ? event.subject.trim()
-                  : 'Calendar event',
-              start: event.start.toLocal(),
-              end: event.end.toLocal(),
-            ),
-          );
-        }
-      }
-    } catch (error) {
-      debugPrint('Heart insight Outlook Calendar match failed: $error');
-    }
-
-    return buildHeartRateCalendarInsight(
-      bpm: reading.bpm,
-      timestamp: timestamp,
-      events: events,
-    );
   }
 
   String _formatCalendarDate(DateTime dt) {
@@ -3053,10 +3069,15 @@ class _ScheduleEvent {
 }
 
 class _ScoredReachableEvent {
-  const _ScoredReachableEvent({required this.event, required this.score});
+  const _ScoredReachableEvent({
+    required this.event,
+    required this.score,
+    required this.input,
+  });
 
   final gcal.Event event;
   final CognitiveLoadScore score;
+  final CalendarCognitiveEvent input;
 }
 
 class _ScheduleInsight {
@@ -3090,11 +3111,13 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
   DateTime? _lastGoogleCalendarAttempt;
   DateTime? _lastGoogleCalendarFailure;
   int? _lastGoogleCalendarWeekOffset;
-  bool get _hasConnectedCalendar => _isGoogleConnected || _isOutlookConnected;
+  bool get _hasConnectedCalendar =>
+      _isGoogleConnected ||
+      (OutlookCalendarService.enabled && _isOutlookConnected);
 
   static const double _cellH = 52;
   static const double _timeColW = 52;
-  static const Color _accentPurple = Color(0xFF7B6EF6);
+  static const Color _accentPurple = VivordoTheme.brand;
   static const Color _textDark = Color(0xFF1C1C1E);
   static const Color _textGrey = Color(0xFF8E8E93);
   static const Color _border = Color(0xFFE5E5EA);
@@ -3148,7 +3171,9 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
       _handleGoogleCalendarConnectionChange,
     );
     _loadExistingGoogleCalendar();
-    _loadExistingOutlookCalendar();
+    if (OutlookCalendarService.enabled) {
+      _loadExistingOutlookCalendar();
+    }
   }
 
   void _scrollToFirstTodayEvent() {
@@ -3538,9 +3563,10 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                 title: const Text('Start time'),
                 trailing: Text(startTime.format(context)),
                 onTap: () async {
-                  final picked = await showTimePicker(
+                  final picked = await showVivordoTimePicker(
                     context: context,
                     initialTime: startTime,
+                    title: 'Start Time',
                   );
                   if (picked != null) setDialogState(() => startTime = picked);
                 },
@@ -3551,9 +3577,10 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                 title: const Text('End time'),
                 trailing: Text(endTime.format(context)),
                 onTap: () async {
-                  final picked = await showTimePicker(
+                  final picked = await showVivordoTimePicker(
                     context: context,
                     initialTime: endTime,
+                    title: 'End Time',
                   );
                   if (picked != null) setDialogState(() => endTime = picked);
                 },
@@ -3944,7 +3971,8 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                     ),
                             ),
                           ),
-                        if (!_isOutlookConnected) ...[
+                        if (OutlookCalendarService.enabled &&
+                            !_isOutlookConnected) ...[
                           const SizedBox(width: 4),
                           GestureDetector(
                             onTap: _isLoading ? null : _connectOutlook,
@@ -4113,7 +4141,7 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Connect Google or Outlook above\nto see your events here.',
+                        'Connect Google Calendar above\nto see your events here.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12,
@@ -4163,48 +4191,50 @@ class _WeeklyCalendarState extends State<WeeklyCalendar> {
                                 ),
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: _isLoading ? null : _connectOutlook,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0078D4),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.calendar_month_rounded,
-                                      size: 14,
+                      if (OutlookCalendarService.enabled) ...[
+                        const SizedBox(height: 10),
+                        GestureDetector(
+                          onTap: _isLoading ? null : _connectOutlook,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0078D4),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
                                       color: Colors.white,
                                     ),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'Connect Outlook Calendar',
-                                      style: TextStyle(
-                                        fontSize: 12,
+                                  )
+                                : const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_month_rounded,
+                                        size: 14,
                                         color: Colors.white,
-                                        fontWeight: FontWeight.w600,
                                       ),
-                                    ),
-                                  ],
-                                ),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Connect Outlook Calendar',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -4578,18 +4608,20 @@ class _CreateCalendarEventDialogState
   }
 
   Future<void> _pickStartTime() async {
-    final picked = await showTimePicker(
+    final picked = await showVivordoTimePicker(
       context: context,
       initialTime: _startTime,
+      title: 'Start Time',
     );
     if (!context.mounted || picked == null) return;
     setState(() => _startTime = picked);
   }
 
   Future<void> _pickEndTime() async {
-    final picked = await showTimePicker(
+    final picked = await showVivordoTimePicker(
       context: context,
       initialTime: _endTime,
+      title: 'End Time',
     );
     if (!context.mounted || picked == null) return;
     setState(() => _endTime = picked);

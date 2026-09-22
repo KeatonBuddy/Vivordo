@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
@@ -9,12 +11,16 @@ import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
+import 'package:vivordo_health/src/services/account_deletion_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
+import 'blocked_users_screen.dart';
+import '../widgets/privacy_support_links.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -28,6 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _autoSyncData = true;
 
   bool _isEmailVerificationSignOut = false;
+  bool _isAccountDeletionSignOut = false;
 
   // Loading states for HealthKit actions
   bool _isConnectingAll = false; // "Connect Apple Health" button
@@ -46,6 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   // Bug report
   final TextEditingController _bugReportController = TextEditingController();
   bool _isSubmittingBugReport = false;
+  bool _isDeletingAccount = false;
 
   StreamSubscription<User?>? _authSubscription;
 
@@ -69,7 +77,9 @@ class _SettingsScreenState extends State<SettingsScreen>
       _handleGoogleCalendarConnectionChange,
     );
     _refreshGoogleCalendarConnection();
-    _refreshOutlookCalendarConnection();
+    if (OutlookCalendarService.enabled) {
+      _refreshOutlookCalendarConnection();
+    }
 
     // Skip the first emission — it just reflects current login state, not a change
     bool isFirstEmission = true;
@@ -79,9 +89,15 @@ class _SettingsScreenState extends State<SettingsScreen>
         return;
       }
       if (user == null && mounted) {
-        final message = _isEmailVerificationSignOut
-            ? 'Email verified! Please log in again with your new email.'
-            : 'You have been signed out.';
+        final message = switch ((
+          _isEmailVerificationSignOut,
+          _isAccountDeletionSignOut,
+        )) {
+          (true, _) =>
+            'Email verified! Please log in again with your new email.',
+          (_, true) => 'Your Vivordo account has been deleted.',
+          _ => 'You have been signed out.',
+        };
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -143,6 +159,128 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
     } finally {
       if (mounted) setState(() => _isSubmittingBugReport = false);
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    final confirmation = await _showAccountDeletionConfirmation();
+    if (confirmation == null || !mounted) return;
+
+    setState(() {
+      _isDeletingAccount = true;
+      _isAccountDeletionSignOut = true;
+    });
+    try {
+      await AccountDeletionService.deleteAccount(
+        password: confirmation.password,
+      );
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      setState(() => _isAccountDeletionSignOut = false);
+      final message = switch (error.code) {
+        'wrong-password' || 'invalid-credential' =>
+          'That password is incorrect. Your account was not deleted.',
+        'user-mismatch' => 'Sign in with the same account to confirm deletion.',
+        _ => error.message ?? 'Your account could not be deleted.',
+      };
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isAccountDeletionSignOut = false);
+      final message = error is FirebaseFunctionsException
+          ? error.message ?? 'Your account could not be deleted.'
+          : error.toString().replaceFirst('Bad state: ', '');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _isDeletingAccount = false);
+    }
+  }
+
+  Future<_AccountDeletionConfirmation?>
+  _showAccountDeletionConfirmation() async {
+    final passwordController = TextEditingController();
+    final needsPassword = AccountDeletionService.requiresPassword;
+    var passwordReady = !needsPassword;
+    try {
+      return await showDialog<_AccountDeletionConfirmation>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Permanently delete account?'),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 240, maxWidth: 320),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'This permanently deletes your Vivordo profile, health '
+                        'and wellness history, journal entries, workouts, '
+                        'insights, Circle content, challenges, connected-provider '
+                        'credentials, and uploaded profile photo. This cannot be '
+                        'undone.',
+                      ),
+                      if (needsPassword) ...[
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: passwordController,
+                          autofocus: true,
+                          obscureText: true,
+                          enableSuggestions: false,
+                          autocorrect: false,
+                          onChanged: (value) => setDialogState(
+                            () => passwordReady = value.isNotEmpty,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Current password',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      SlideToDelete(
+                        enabled: passwordReady,
+                        onConfirmed: () => Navigator.of(dialogContext).pop(
+                          _AccountDeletionConfirmation(
+                            password: needsPassword
+                                ? passwordController.text
+                                : null,
+                          ),
+                        ),
+                      ),
+                      if (!passwordReady) ...[
+                        const SizedBox(height: 8),
+                        const Center(
+                          child: Text(
+                            'Enter your password to enable the slider.',
+                            style: TextStyle(fontSize: 12),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } finally {
+      passwordController.dispose();
     }
   }
 
@@ -276,12 +414,77 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  Future<bool?> _showWhoopDisconnectDialog() {
+    var deleteImportedData = false;
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Disconnect WHOOP?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Vivordo will stop syncing new WHOOP data and revoke access '
+                'to your WHOOP account.',
+              ),
+              const SizedBox(height: 12),
+              RadioGroup<bool>(
+                groupValue: deleteImportedData,
+                onChanged: (value) =>
+                    setDialogState(() => deleteImportedData = value!),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const RadioListTile<bool>(
+                      contentPadding: EdgeInsets.zero,
+                      value: false,
+                      title: Text('Disconnect and keep history'),
+                      subtitle: Text(
+                        'Keep measurements already imported into Vivordo.',
+                      ),
+                    ),
+                    const RadioListTile<bool>(
+                      contentPadding: EdgeInsets.zero,
+                      value: true,
+                      title: Text('Disconnect and delete WHOOP data'),
+                      subtitle: Text(
+                        'Delete WHOOP measurements and invalidate affected scores.',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, deleteImportedData),
+              child: const Text('Disconnect'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _updateWhoopConnection(bool isConnected) async {
     if (_isUpdatingWhoop) return;
+    final deleteImportedData = isConnected
+        ? await _showWhoopDisconnectDialog()
+        : null;
+    if (isConnected && deleteImportedData == null) return;
     setState(() => _isUpdatingWhoop = true);
     try {
       if (isConnected) {
-        await WhoopService.instance.disconnect();
+        await WhoopService.instance.disconnect(
+          deleteImportedData: deleteImportedData!,
+        );
       } else {
         await WhoopService.instance.connect();
       }
@@ -290,7 +493,12 @@ class _SettingsScreenState extends State<SettingsScreen>
           SnackBar(
             content: Text(
               isConnected
-                  ? 'WHOOP has been disconnected.'
+                  ? deleteImportedData!
+                        ? 'WHOOP has been disconnected and imported WHOOP '
+                              'data has been deleted. Affected scores will be '
+                              'recalculated when new data is available.'
+                        : 'WHOOP has been disconnected. Previously imported '
+                              'WHOOP data remains in Vivordo.'
                   : 'WHOOP connected and the last 30 days were synced.',
             ),
           ),
@@ -456,12 +664,13 @@ class _SettingsScreenState extends State<SettingsScreen>
     final currentMinutes = isAdding
         ? (reminderTimes.last + 4 * 60) % (24 * 60)
         : reminderTimes[index!];
-    final selected = await showTimePicker(
+    final selected = await showVivordoTimePicker(
       context: context,
       initialTime: TimeOfDay(
         hour: currentMinutes ~/ 60,
         minute: currentMinutes % 60,
       ),
+      title: 'Reminder Time',
     );
     if (selected == null || !mounted) return;
 
@@ -519,7 +728,9 @@ class _SettingsScreenState extends State<SettingsScreen>
     // where they tap the verification link while the app is already open
     if (state == AppLifecycleState.resumed) {
       _checkEmailSync();
-      _refreshOutlookCalendarConnection();
+      if (OutlookCalendarService.enabled) {
+        _refreshOutlookCalendarConnection();
+      }
     }
   }
 
@@ -799,10 +1010,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                         width: 52,
                         height: 52,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF7B6EF6).withOpacity(0.12),
+                          color: VivordoTheme.brand.withOpacity(0.12),
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: const Color(0xFF7B6EF6).withOpacity(0.25),
+                            color: VivordoTheme.brand.withOpacity(0.25),
                             width: 2,
                           ),
                         ),
@@ -813,12 +1024,14 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 child: Image.network(
                                   userData.photoUrl!,
                                   fit: BoxFit.cover,
+                                  cacheWidth: 156,
+                                  cacheHeight: 156,
                                 ),
                               )
                             : const Icon(
                                 Icons.person_outline_rounded,
                                 size: 26,
-                                color: Color(0xFF7B6EF6),
+                                color: VivordoTheme.brand,
                               ),
                       ),
                     ],
@@ -1028,7 +1241,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   : 'Select all health metrics',
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF7B6EF6),
+                              backgroundColor: VivordoTheme.brand,
                               foregroundColor: Colors.white,
                               elevation: 0,
                               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1218,18 +1431,19 @@ class _SettingsScreenState extends State<SettingsScreen>
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFF00D4A8,
-                                ).withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(
-                                Icons.monitor_heart_outlined,
-                                size: 18,
-                                color: Color(0xFF00A884),
+                            SizedBox(
+                              width: 40,
+                              height: 40,
+                              child: Center(
+                                child: SvgPicture.asset(
+                                  Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? 'assets/whoop_puck_white.svg'
+                                      : 'assets/whoop_puck_black.svg',
+                                  width: 30,
+                                  height: 30,
+                                  semanticsLabel: 'WHOOP',
+                                ),
                               ),
                             ),
                             const SizedBox(width: 14),
@@ -1247,7 +1461,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   const SizedBox(height: 2),
                                   Text(
                                     whoopConnected
-                                        ? 'Connected — recovery and activity sync enabled'
+                                        ? 'Connected — sleep sync enabled'
                                         : 'Connect your WHOOP account',
                                     style: TextStyle(
                                       fontSize: 12,
@@ -1338,7 +1552,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               child: const Icon(
                                 Icons.calendar_month_rounded,
                                 size: 18,
-                                color: Color(0xFF7B6EF6),
+                                color: VivordoTheme.brand,
                               ),
                             ),
                             const SizedBox(width: 14),
@@ -1378,7 +1592,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                       height: 14,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        color: Color(0xFF7B6EF6),
+                                        color: VivordoTheme.brand,
                                       ),
                                     )
                                   : Icon(
@@ -1399,7 +1613,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               style: TextButton.styleFrom(
                                 foregroundColor: _isGoogleCalendarConnected
                                     ? const Color(0xFFFF3B30)
-                                    : const Color(0xFF7B6EF6),
+                                    : VivordoTheme.brand,
                                 textStyle: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
@@ -1409,93 +1623,95 @@ class _SettingsScreenState extends State<SettingsScreen>
                           ],
                         ),
                       ),
-                      _buildDivider(),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFF0078D4,
-                                ).withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(10),
+                      if (OutlookCalendarService.enabled) ...[
+                        _buildDivider(),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF0078D4,
+                                  ).withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.calendar_month_rounded,
+                                  size: 18,
+                                  color: Color(0xFF0078D4),
+                                ),
                               ),
-                              child: const Icon(
-                                Icons.calendar_month_rounded,
-                                size: 18,
-                                color: Color(0xFF0078D4),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Outlook Calendar',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    _isOutlookCalendarConnected
-                                        ? 'Connected - calendar access enabled'
-                                        : 'Not connected',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: _isOutlookCalendarConnected
-                                          ? const Color(0xFF34C759)
-                                          : const Color(0xFF8E8E93),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: _isUpdatingOutlookCalendar
-                                  ? null
-                                  : _updateOutlookCalendarConnection,
-                              icon: _isUpdatingOutlookCalendar
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Color(0xFF0078D4),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Outlook Calendar',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                    )
-                                  : Icon(
-                                      _isOutlookCalendarConnected
-                                          ? Icons.logout_rounded
-                                          : Icons.login_rounded,
-                                      size: 16,
                                     ),
-                              label: Text(
-                                _isUpdatingOutlookCalendar
-                                    ? (_isOutlookCalendarConnected
-                                          ? 'Logging out...'
-                                          : 'Signing in...')
-                                    : (_isOutlookCalendarConnected
-                                          ? 'Log Out'
-                                          : 'Sign In'),
-                              ),
-                              style: TextButton.styleFrom(
-                                foregroundColor: _isOutlookCalendarConnected
-                                    ? const Color(0xFFFF3B30)
-                                    : const Color(0xFF0078D4),
-                                textStyle: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _isOutlookCalendarConnected
+                                          ? 'Connected - calendar access enabled'
+                                          : 'Not connected',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: _isOutlookCalendarConnected
+                                            ? const Color(0xFF34C759)
+                                            : const Color(0xFF8E8E93),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
-                          ],
+                              TextButton.icon(
+                                onPressed: _isUpdatingOutlookCalendar
+                                    ? null
+                                    : _updateOutlookCalendarConnection,
+                                icon: _isUpdatingOutlookCalendar
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Color(0xFF0078D4),
+                                        ),
+                                      )
+                                    : Icon(
+                                        _isOutlookCalendarConnected
+                                            ? Icons.logout_rounded
+                                            : Icons.login_rounded,
+                                        size: 16,
+                                      ),
+                                label: Text(
+                                  _isUpdatingOutlookCalendar
+                                      ? (_isOutlookCalendarConnected
+                                            ? 'Logging out...'
+                                            : 'Signing in...')
+                                      : (_isOutlookCalendarConnected
+                                            ? 'Log Out'
+                                            : 'Sign In'),
+                                ),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: _isOutlookCalendarConnected
+                                      ? const Color(0xFFFF3B30)
+                                      : const Color(0xFF0078D4),
+                                  textStyle: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -1532,7 +1748,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               trackColor: WidgetStateProperty.resolveWith(
                                 (states) =>
                                     states.contains(WidgetState.selected)
-                                    ? const Color(0xFF7B6EF6)
+                                    ? VivordoTheme.brand
                                     : const Color(0xFFD1D1D6),
                               ),
                               trackOutlineColor: const WidgetStatePropertyAll(
@@ -1591,7 +1807,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: isToggling
-                                      ? const Color(0xFF7B6EF6)
+                                      ? VivordoTheme.brand
                                       : const Color(0xFF8E8E93),
                                 ),
                               ),
@@ -1601,13 +1817,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                                       height: 20,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        color: Color(0xFF7B6EF6),
+                                        color: VivordoTheme.brand,
                                       ),
                                     )
                                   : Icon(
                                       _metricIcon(metric.key),
                                       color: enabled
-                                          ? const Color(0xFF7B6EF6)
+                                          ? VivordoTheme.brand
                                           : const Color(0xFF8E8E93),
                                       size: 20,
                                     ),
@@ -1726,7 +1942,31 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                   const SizedBox(height: 24),
 
+                  _buildSectionLabel('Circle Settings'),
+                  _buildCard(
+                    children: [
+                      ListTile(
+                        leading: const Icon(
+                          Icons.block,
+                          color: Color(0xFF7B6EF6),
+                        ),
+                        title: const Text('Blocked Users'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const BlockedUsersScreen(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
                   // ── Report a Bug ───────────────────────────────────────────
+                  _buildSectionLabel('Privacy & Support'),
+                  _buildCard(children: const [PrivacySupportLinks()]),
+                  const SizedBox(height: 24),
+
                   _buildSectionLabel('Report a Bug'),
                   _buildCard(
                     children: [
@@ -1748,7 +1988,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   child: const Icon(
                                     Icons.bug_report_outlined,
                                     size: 16,
-                                    color: Color(0xFF7B6EF6),
+                                    color: VivordoTheme.brand,
                                   ),
                                 ),
                                 const SizedBox(width: 14),
@@ -1803,7 +2043,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(14),
                                   borderSide: const BorderSide(
-                                    color: Color(0xFF7B6EF6),
+                                    color: VivordoTheme.brand,
                                     width: 1.5,
                                   ),
                                 ),
@@ -1832,7 +2072,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                       : 'Send Report',
                                 ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF7B6EF6),
+                                  backgroundColor: VivordoTheme.brand,
                                   foregroundColor: Colors.white,
                                   elevation: 0,
                                   padding: const EdgeInsets.symmetric(
@@ -1875,6 +2115,40 @@ class _SettingsScreenState extends State<SettingsScreen>
                         backgroundColor: const Color(0xFFFFE5E5),
                         foregroundColor: const Color(0xFFFF3B30),
                         elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: OutlinedButton.icon(
+                      onPressed: _isDeletingAccount ? null : _deleteAccount,
+                      icon: _isDeletingAccount
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFFFF3B30),
+                              ),
+                            )
+                          : const Icon(Icons.delete_forever_rounded, size: 18),
+                      label: Text(
+                        _isDeletingAccount
+                            ? 'Deleting Account…'
+                            : 'Delete Account',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFFF3B30),
+                        side: const BorderSide(color: Color(0xFFFF3B30)),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
@@ -1968,7 +2242,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               ])
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(option.$2, color: const Color(0xFF7B6EF6)),
+                  leading: Icon(option.$2, color: VivordoTheme.brand),
                   title: Text(option.$3),
                   subtitle: option.$1 == ThemeMode.system
                       ? const Text('Match your iPhone appearance')
@@ -1976,7 +2250,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   trailing: controller.mode == option.$1
                       ? const Icon(
                           Icons.check_circle_rounded,
-                          color: Color(0xFF7B6EF6),
+                          color: VivordoTheme.brand,
                         )
                       : null,
                   onTap: () => Navigator.pop(sheetContext, option.$1),
@@ -2003,7 +2277,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         padding: const EdgeInsets.symmetric(vertical: 13),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: const Color(0xFF7B6EF6)),
+            Icon(icon, size: 18, color: VivordoTheme.brand),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -2060,7 +2334,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   const Icon(
                     Icons.alarm_rounded,
                     size: 18,
-                    color: Color(0xFF7B6EF6),
+                    color: VivordoTheme.brand,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -2123,10 +2397,10 @@ class _SettingsScreenState extends State<SettingsScreen>
           Container(
             padding: const EdgeInsets.all(7),
             decoration: BoxDecoration(
-              color: const Color(0xFF7B6EF6).withOpacity(0.1),
+              color: VivordoTheme.brand.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 16, color: const Color(0xFF7B6EF6)),
+            child: Icon(icon, size: 16, color: VivordoTheme.brand),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -2154,7 +2428,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: const Color(0xFF7B6EF6),
+            activeColor: VivordoTheme.brand,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ],
@@ -2197,5 +2471,203 @@ class _SettingsScreenState extends State<SettingsScreen>
       default:
         return Icons.monitor_heart_outlined;
     }
+  }
+}
+
+class _AccountDeletionConfirmation {
+  const _AccountDeletionConfirmation({this.password});
+
+  final String? password;
+}
+
+class SlideToDelete extends StatefulWidget {
+  const SlideToDelete({
+    required this.enabled,
+    required this.onConfirmed,
+    super.key,
+  });
+
+  final bool enabled;
+  final VoidCallback onConfirmed;
+
+  @override
+  State<SlideToDelete> createState() => _SlideToDeleteState();
+}
+
+class _SlideToDeleteState extends State<SlideToDelete> {
+  static const _confirmThreshold = 0.92;
+  static const _height = 56.0;
+  static const _thumbSize = 48.0;
+  static const _inset = 4.0;
+  final GlobalKey _trackKey = GlobalKey();
+  double _position = 0;
+  bool _dragging = false;
+  bool _confirmed = false;
+
+  void _setPosition(double value) {
+    if (!widget.enabled || _confirmed) return;
+    final next = value.clamp(0.0, 1.0);
+    setState(() => _position = next);
+  }
+
+  void _increaseForAccessibility() {
+    final next = (_position + 0.25).clamp(0.0, 1.0);
+    if (next >= _confirmThreshold) {
+      _confirm();
+    } else {
+      _setPosition(next);
+    }
+  }
+
+  void _updateFromDrag(DragUpdateDetails details) {
+    final renderBox =
+        _trackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final travel = renderBox.size.width - _thumbSize - _inset * 2;
+    if (travel <= 0) return;
+    _setPosition(_position + details.delta.dx / travel);
+  }
+
+  void _confirm() {
+    if (_confirmed) return;
+    setState(() {
+      _confirmed = true;
+      _dragging = false;
+      _position = 1;
+    });
+    widget.onConfirmed();
+  }
+
+  void _reset() {
+    if (_confirmed) return;
+    setState(() {
+      _dragging = false;
+      _position = 0;
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant SlideToDelete oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled && oldWidget.enabled) _reset();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final disabledColor = Theme.of(context).disabledColor;
+    const destructiveColor = Color(0xFFFF3B30);
+    return Semantics(
+      slider: true,
+      enabled: widget.enabled,
+      label: 'Slide to permanently delete account',
+      value: '${(_position * 100).round()} percent',
+      increasedValue: widget.enabled ? 'Move toward delete' : null,
+      decreasedValue: widget.enabled ? 'Move away from delete' : null,
+      onIncrease: widget.enabled ? _increaseForAccessibility : null,
+      onDecrease: widget.enabled ? () => _setPosition(_position - 0.25) : null,
+      child: GestureDetector(
+        key: _trackKey,
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: widget.enabled
+            ? (_) => setState(() => _dragging = true)
+            : null,
+        onHorizontalDragUpdate: widget.enabled ? _updateFromDrag : null,
+        onHorizontalDragEnd: widget.enabled
+            ? (_) {
+                if (_position >= _confirmThreshold) {
+                  _confirm();
+                } else {
+                  _reset();
+                }
+              }
+            : null,
+        onHorizontalDragCancel: widget.enabled ? _reset : null,
+        child: SizedBox(
+          height: _height,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: widget.enabled
+                        ? destructiveColor.withValues(alpha: 0.10)
+                        : disabledColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(_height / 2),
+                    border: Border.all(
+                      color: widget.enabled
+                          ? destructiveColor.withValues(alpha: 0.32)
+                          : disabledColor.withValues(alpha: 0.20),
+                    ),
+                  ),
+                ),
+              ),
+              AnimatedOpacity(
+                opacity: 1 - (_position * 0.75),
+                duration: const Duration(milliseconds: 80),
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: widget.enabled ? 12 : _thumbSize + 12,
+                    right: 12,
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      widget.enabled ? 'Slide to delete' : 'Enter password',
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: widget.enabled
+                            ? destructiveColor
+                            : disabledColor,
+                        fontSize: widget.enabled ? 14 : 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.all(_inset),
+                  child: AnimatedAlign(
+                    duration: _dragging
+                        ? Duration.zero
+                        : const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment(-1 + 2 * _position, 0),
+                    child: Container(
+                      width: _thumbSize,
+                      height: _thumbSize,
+                      decoration: BoxDecoration(
+                        color: widget.enabled
+                            ? destructiveColor
+                            : disabledColor,
+                        shape: BoxShape.circle,
+                        boxShadow: widget.enabled
+                            ? [
+                                BoxShadow(
+                                  color: destructiveColor.withValues(
+                                    alpha: 0.28,
+                                  ),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.white,
+                        size: 30,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

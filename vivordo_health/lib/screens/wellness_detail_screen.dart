@@ -10,6 +10,7 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/activity_score.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
+import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 class WellnessDetailScreen extends StatefulWidget {
   const WellnessDetailScreen({super.key});
@@ -58,11 +59,13 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
     double? avg(String metric) =>
         ((data[metric] as Map?)?['avg'] as num?)?.toDouble();
     final heartHealth = data['heart_health'] as Map?;
+    final sleepMap = data['sleep'] as Map?;
     return _WellnessDay(
       DateTime.parse(doc.id),
       wellness: avg('wellness'),
       stress: avg('stress'),
       sleep: avg('sleep'),
+      sleepSource: sleepMap?['source'] as String?,
       steps: ((data['steps'] as Map?)?['sum'] as num?)?.toDouble(),
       exerciseMinutes: ((data['exercise_time'] as Map?)?['sum'] as num?)
           ?.toDouble(),
@@ -162,6 +165,9 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
         ? null
         : ((currentAverage - previousAverage) / previousAverage * 100).round();
     final usual = _average(previous);
+    final hasWhoopSleepData = days.any(
+      (day) => day.sleep != null && day.sleepSource == 'whoop',
+    );
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -170,9 +176,26 @@ class _WellnessDetailScreenState extends State<WellnessDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Center(
-            child: Text(
-              'Updated ${DateFormat('h:mm a').format(DateTime.now())}',
-              style: TextStyle(color: context.vivordoColors.textSecondary),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                Text(
+                  'Updated ${DateFormat('h:mm a').format(DateTime.now())}',
+                  style: TextStyle(color: context.vivordoColors.textSecondary),
+                ),
+                if (hasWhoopSleepData) ...[
+                  Text(
+                    '· Data includes',
+                    style: TextStyle(
+                      color: context.vivordoColors.textSecondary,
+                    ),
+                  ),
+                  const WhoopSourceBadge(compact: true),
+                ],
+              ],
             ),
           ),
           const SizedBox(height: 18),
@@ -760,6 +783,7 @@ class _WellnessDay {
     this.wellness,
     this.stress,
     this.sleep,
+    this.sleepSource,
     this.steps,
     this.exerciseMinutes,
     this.activeCalories,
@@ -771,6 +795,7 @@ class _WellnessDay {
   final double? wellness;
   final double? stress;
   final double? sleep;
+  final String? sleepSource;
   final double? steps;
   final double? exerciseMinutes;
   final double? activeCalories;

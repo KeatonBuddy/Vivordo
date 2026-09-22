@@ -4,7 +4,7 @@ import UIKit
 import WidgetKit
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let workoutActivities = WorkoutLiveActivityManager()
   private var workoutActivityChannel: FlutterMethodChannel?
   private var homeWidgetChannel: FlutterMethodChannel?
@@ -22,7 +22,6 @@ import WidgetKit
         pendingWidgetDestination = destination
       }
     }
-    GeneratedPluginRegistrant.register(with: self)
     let launched = super.application(
       application,
       didFinishLaunchingWithOptions: launchOptions
@@ -31,10 +30,14 @@ import WidgetKit
     UNUserNotificationCenter.current().delegate = self
     application.registerForRemoteNotifications()
 
-    if let controller = window?.rootViewController as? FlutterViewController {
+    return launched
+  }
+
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
       let channel = FlutterMethodChannel(
         name: "com.vivordo.health/workout_activity",
-        binaryMessenger: controller.binaryMessenger
+        binaryMessenger: engineBridge.applicationRegistrar.messenger()
       )
       workoutActivityChannel = channel
       channel.setMethodCallHandler { [weak self] call, result in
@@ -43,7 +46,7 @@ import WidgetKit
 
       let widgetChannel = FlutterMethodChannel(
         name: "com.vivordo.health/home_widgets",
-        binaryMessenger: controller.binaryMessenger
+        binaryMessenger: engineBridge.applicationRegistrar.messenger()
       )
       homeWidgetChannel = widgetChannel
       widgetChannel.setMethodCallHandler { [weak self] call, result in
@@ -54,19 +57,47 @@ import WidgetKit
           return
         }
         if call.method == "updateSnapshot",
-           let values = call.arguments as? [String: Any],
-           let defaults = UserDefaults(suiteName: "group.com.vivordo.health") {
-          values.forEach { defaults.set($0.value, forKey: $0.key) }
-          defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
-          WidgetCenter.shared.reloadAllTimelines()
-          result(nil)
+           let values = call.arguments as? [String: Any] {
+          let changedKeys = Set(values.keys)
+          DispatchQueue.global(qos: .utility).async {
+            guard let defaults = UserDefaults(suiteName: "group.com.vivordo.health") else {
+              DispatchQueue.main.async { result(nil) }
+              return
+            }
+            values.forEach { defaults.set($0.value, forKey: $0.key) }
+            WidgetCenter.shared.reloadTimelines(ofKind: "VivordoDayDashboard")
+            if !changedKeys.isDisjoint(with: ["dashboardEvents", "dashboardPriorities", "dashboardCalendarConnected"]) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoTodayAgenda")
+            }
+            defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
+
+            let stressKeys: Set<String> = ["stressScore"]
+            let wellnessKeys: Set<String> = ["wellnessScore", "wellnessDelta"]
+            let fitnessKeys: Set<String> = [
+              "steps", "stepsGoal", "activeCalories", "activeCaloriesGoal",
+              "exerciseMinutes", "exerciseGoal",
+            ]
+            let calendarKeys: Set<String> = ["calendarEvents"]
+
+            if !changedKeys.isDisjoint(with: stressKeys) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoStressScore")
+            }
+            if !changedKeys.isDisjoint(with: wellnessKeys) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoWellnessScore")
+            }
+            if !changedKeys.isDisjoint(with: fitnessKeys) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoFitnessRings")
+            }
+            if !changedKeys.isDisjoint(with: calendarKeys) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoCalendar")
+            }
+
+            DispatchQueue.main.async { result(nil) }
+          }
           return
         }
         result(FlutterMethodNotImplemented)
       }
-    }
-
-    return launched
   }
 
   override func application(
@@ -74,16 +105,22 @@ import WidgetKit
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
+    if handleVivordoURL(url) { return true }
+    return super.application(app, open: url, options: options)
+  }
+
+  @discardableResult
+  func handleVivordoURL(_ url: URL, notify: Bool = true) -> Bool {
     if let destination = widgetDestination(from: url) {
       pendingWidgetDestination = destination
-      homeWidgetChannel?.invokeMethod("widgetTapped", arguments: destination)
+      if notify { homeWidgetChannel?.invokeMethod("widgetTapped", arguments: destination) }
       return true
     }
     guard isWorkoutActivityURL(url) else {
-      return super.application(app, open: url, options: options)
+      return false
     }
     pendingWorkoutLaunch = true
-    workoutActivityChannel?.invokeMethod("workoutActivityTapped", arguments: nil)
+    if notify { workoutActivityChannel?.invokeMethod("workoutActivityTapped", arguments: nil) }
     return true
   }
 
@@ -98,7 +135,7 @@ import WidgetKit
       return nil
     }
     let destination = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
-    return ["home", "wellness", "fitness", "calendar"].contains(destination) ? destination : nil
+    return ["home", "wellness", "fitness", "calendar", "myday", "mood", "workout"].contains(destination) ? destination : nil
   }
 
   private func handleWorkoutActivity(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -152,6 +189,29 @@ import WidgetKit
   }
 }
 
+// Kept in this compiled source file so both device and simulator targets include it.
+class SceneDelegate: FlutterSceneDelegate {
+  override func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    // Queue cold-start destinations before Flutter initializes its channels.
+    let app = UIApplication.shared.delegate as? AppDelegate
+    for context in connectionOptions.urlContexts {
+      app?.handleVivordoURL(context.url, notify: false)
+    }
+    // Preserve Flutter/plugin delivery, including authentication callbacks.
+    super.scene(scene, willConnectTo: session, options: connectionOptions)
+  }
+
+  override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+    let app = UIApplication.shared.delegate as? AppDelegate
+    let remaining = Set(URLContexts.filter { app?.handleVivordoURL($0.url) != true })
+    if !remaining.isEmpty { super.scene(scene, openURLContexts: remaining) }
+  }
+}
+
 private enum WorkoutActivityError: LocalizedError {
   case invalidStartDate
   case activitiesDisabled
@@ -168,6 +228,8 @@ private enum WorkoutActivityError: LocalizedError {
 
 @available(iOS 16.1, *)
 private final class WorkoutLiveActivityManager {
+  private var lastAppliedState: WorkoutActivityAttributes.ContentState?
+
   private func state(title: String, exerciseCount: Int) -> WorkoutActivityAttributes.ContentState {
     WorkoutActivityAttributes.ContentState(
       title: title,
@@ -184,6 +246,7 @@ private final class WorkoutLiveActivityManager {
     let contentState = state(title: title, exerciseCount: exerciseCount)
     if let existing = Activity<WorkoutActivityAttributes>.activities.first {
       await existing.update(using: contentState)
+      lastAppliedState = contentState
       return
     }
 
@@ -193,13 +256,18 @@ private final class WorkoutLiveActivityManager {
       contentState: contentState,
       pushType: nil
     )
+    lastAppliedState = contentState
   }
 
   func update(title: String, exerciseCount: Int) async {
     let contentState = state(title: title, exerciseCount: exerciseCount)
+    // Skip redundant ActivityKit calls when nothing actually changed —
+    // each update consumes part of iOS's per-Live-Activity update budget.
+    guard contentState != lastAppliedState else { return }
     for activity in Activity<WorkoutActivityAttributes>.activities {
       await activity.update(using: contentState)
     }
+    lastAppliedState = contentState
   }
 
   func end() async {
@@ -211,5 +279,6 @@ private final class WorkoutLiveActivityManager {
     for activity in Activity<WorkoutActivityAttributes>.activities {
       await activity.end(using: finalState, dismissalPolicy: .immediate)
     }
+    lastAppliedState = nil
   }
 }

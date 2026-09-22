@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'signup_screen.dart';
 
 class WelcomeBetaScreen extends StatefulWidget {
@@ -14,7 +15,7 @@ class _WelcomeBetaScreenState extends State<WelcomeBetaScreen>
   late Animation<double> _fadeIn;
   late Animation<Offset> _slideUp;
 
-  static const accentPurple = Color(0xFF7B6EF6);
+  static const accentPurple = VivordoTheme.brand;
   static const textDark = Color(0xFF1C1C1E);
   static const textGrey = Color(0xFF8E8E93);
 

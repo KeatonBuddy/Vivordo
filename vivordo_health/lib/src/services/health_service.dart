@@ -4,11 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
-import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'activity_goals_service.dart';
 import 'stress_score_service.dart';
 import '../utils/activity_score.dart';
 import '../utils/heart_health_score.dart';
+import '../utils/metric_cleanup.dart';
 import '../utils/sleep_stage_aggregation.dart';
 
 // ─── Metric definitions ──────────────────────────────────────────────────────
@@ -512,7 +513,7 @@ class HealthService {
     if (summaries.isNotEmpty) {
       final batch = _db.batch();
       for (final summary in summaries) {
-        final day = _formatDate(summary.date);
+        final day = localDayKey(summary.date);
         daysWithData.add(day);
         final hours = summary.totalAsleepMinutes / 60;
         final entries = summary.asleepIntervals
@@ -860,7 +861,7 @@ class HealthService {
               // Used only while assembling the stress payload. A sleep
               // interval can start before midnight, while its canonical daily
               // metric is keyed by the day on which the user woke up.
-              '_metric_date': _formatDate(summary.date),
+              '_metric_date': localDayKey(summary.date),
             };
           }),
         )
@@ -998,18 +999,18 @@ class HealthService {
 
       if (total == null) {
         debugPrint(
-          'HealthService.syncMetric(steps): total API returned null for ${_formatDate(day)}. Trying raw step samples.',
+          'HealthService.syncMetric(steps): total API returned null for ${localDayKey(day)}. Trying raw step samples.',
         );
         total = await _readRawStepTotal(day, end);
         if (total == null) {
           debugPrint(
-            'HealthService.syncMetric(steps): no raw step data returned for ${_formatDate(day)}',
+            'HealthService.syncMetric(steps): no raw step data returned for ${localDayKey(day)}',
           );
           continue;
         }
       }
 
-      final dayKey = _formatDate(day);
+      final dayKey = localDayKey(day);
       daysWithData.add(dayKey);
       final ref = _db
           .collection('users')
@@ -1068,6 +1069,15 @@ class HealthService {
     required DateTime end,
     required Set<String> daysWithData,
   }) async {
+    // Applies per day: every day the read did not produce data is protected,
+    // including when other days in the same query did produce some.
+    if (!readMayClearMissingDays(
+      metricKey: metricKey,
+      readCoveredAnyDay: daysWithData.isNotEmpty,
+    )) {
+      return;
+    }
+
     final startDay = DateTime(start.year, start.month, start.day);
     final endDay = DateTime(end.year, end.month, end.day);
     final days = endDay.difference(startDay).inDays + 1;
@@ -1077,7 +1087,7 @@ class HealthService {
     var deletes = 0;
 
     for (var i = 0; i < days; i++) {
-      final dayKey = _formatDate(startDay.add(Duration(days: i)));
+      final dayKey = localDayKey(startDay.add(Duration(days: i)));
       if (daysWithData.contains(dayKey)) continue;
 
       final ref = _db
@@ -1150,7 +1160,7 @@ class HealthService {
     final Map<String, List<Map<String, dynamic>>> sleepEntriesByDay = {};
     for (final point in dataPoints) {
       if (point.value is! NumericHealthValue) continue;
-      final day = _formatDate(point.dateFrom);
+      final day = localDayKey(point.dateFrom);
       final val = (point.value as NumericHealthValue).numericValue.toDouble();
       byDay.putIfAbsent(day, () => []).add(val);
       if (def.type == HealthDataType.HEART_RATE) {
@@ -1409,8 +1419,6 @@ class HealthService {
     }
   }
 
-  String _formatDate(DateTime dt) => DateFormat('yyyy-MM-dd').format(dt);
-
   double? _metricAverage(Map<String, dynamic>? data, String key) {
     final value = ((data?[key] as Map?)?['avg'] as num?)?.toDouble();
     return value != null && value.isFinite && value > 0 ? value : null;
@@ -1474,9 +1482,9 @@ class HealthService {
         .collection('metrics_daily')
         .where(
           FieldPath.documentId,
-          isGreaterThanOrEqualTo: _formatDate(firstBaselineDay),
+          isGreaterThanOrEqualTo: localDayKey(firstBaselineDay),
         )
-        .where(FieldPath.documentId, isLessThanOrEqualTo: _formatDate(now))
+        .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(now))
         .orderBy(FieldPath.documentId)
         .get();
     final storedDays = {
@@ -1485,7 +1493,7 @@ class HealthService {
 
     for (int i = 0; i < daysBack; i++) {
       final day = now.subtract(Duration(days: i));
-      final period = _formatDate(day);
+      final period = localDayKey(day);
       final data = storedDays[period];
       if (data == null) continue;
 
@@ -1508,7 +1516,7 @@ class HealthService {
         current: _heartHealthSignals(data),
         history: List.generate(heartHealthBaselineWindowDays, (index) {
           final historicalDay = day.subtract(Duration(days: index + 1));
-          return _heartHealthSignals(storedDays[_formatDate(historicalDay)]);
+          return _heartHealthSignals(storedDays[localDayKey(historicalDay)]);
         }),
       );
 

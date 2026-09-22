@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
+import 'package:vivordo_health/src/services/daily_priority_service.dart';
 
 class HomeWidgetService {
   const HomeWidgetService._();
@@ -22,6 +23,50 @@ class HomeWidgetService {
   static bool _publishing = false;
   static bool _publishingCalendar = false;
   static DateTime? _lastCalendarRefresh;
+  static StreamSubscription<List<DailyPriority>>? _prioritySubscription;
+  static String? _priorityScope;
+  static int _accountGeneration = 0;
+
+  static void _watchWidgetPriorities() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final day = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final scope = '${user.uid}|$day';
+    if (_priorityScope == scope) return;
+    _priorityScope = scope;
+    unawaited(_prioritySubscription?.cancel());
+    _prioritySubscription = DailyPriorityService.watch(DateTime.now()).listen(
+      (priorities) async {
+        if (_priorityScope != scope) return;
+        try {
+          await _channel.invokeMethod<void>('updateSnapshot', {
+            'dashboardPrioritiesDay': day,
+            'dashboardPriorities': priorities
+                .map(
+                  (priority) => {
+                    'title': priority.title,
+                    'source': priority.source,
+                    'isAllDay': priority.isAllDay,
+                    if (priority.sourceStart != null)
+                      'startAt': priority.sourceStart!.millisecondsSinceEpoch,
+                    'completed': priority.completed,
+                    'time': priority.isAllDay
+                        ? 'All day'
+                        : priority.sourceStart == null
+                        ? 'Anytime'
+                        : DateFormat('h:mm a').format(priority.sourceStart!),
+                  },
+                )
+                .toList(),
+          });
+        } catch (error) {
+          debugPrint('Dashboard widget priorities failed: $error');
+        }
+      },
+      onError: (Object error) =>
+          debugPrint('Widget priorities unavailable: $error'),
+    );
+  }
 
   static Future<void> configureLaunchHandler(
     Future<void> Function(String destination) onWidgetLaunch,
@@ -50,6 +95,43 @@ class HomeWidgetService {
     _channel.setMethodCallHandler(null);
   }
 
+  static Future<void> clearAccountSnapshot() async {
+    _accountGeneration++;
+    _priorityScope = null;
+    await _prioritySubscription?.cancel();
+    _prioritySubscription = null;
+    _lastSignature = null;
+    _lastCalendarSignature = null;
+    _lastCalendarRefresh = null;
+    if (!Platform.isIOS) return;
+    try {
+      await _channel.invokeMethod<void>('updateSnapshot', {
+        'stressScore': 0,
+        'wellnessScore': 0,
+        'wellnessDelta': 0,
+        'steps': 0,
+        'stepsGoal': 0,
+        'activeCalories': 0,
+        'activeCaloriesGoal': 0,
+        'exerciseMinutes': 0,
+        'exerciseGoal': 0,
+        'calendarEvents': <Map<String, Object>>[],
+        'calendarWeekUpdatedAt': 0,
+        'dashboardEvents': <Map<String, Object>>[],
+        'dashboardPriorities': <Map<String, Object>>[],
+        'dashboardPrioritiesDay': '',
+        'dashboardMetricsDay': '',
+        'dashboardName': '',
+        'dashboardHasStress': false,
+        'dashboardCalendarConnected': false,
+      });
+    } on MissingPluginException {
+      // The native widget is available after installing an iOS build.
+    } on PlatformException catch (error) {
+      debugPrint('Home widget account cleanup failed: ${error.message}');
+    }
+  }
+
   static Future<void> publish({
     required double? stressScore,
     required double? wellnessScore,
@@ -59,9 +141,11 @@ class HomeWidgetService {
     required ActivityGoals goals,
   }) async {
     if (!Platform.isIOS) return;
+    _watchWidgetPriorities();
     unawaited(refreshCalendarSnapshot());
     if (_publishing) return;
     _publishing = true;
+    final generation = _accountGeneration;
 
     try {
       var wellnessDelta = 0;
@@ -80,6 +164,9 @@ class HomeWidgetService {
       }
 
       final values = <String, Object>{
+        'dashboardName': user?.displayName?.trim().split(' ').first ?? '',
+        'dashboardMetricsDay': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+        'dashboardHasStress': stressScore != null,
         'stressScore': stressScore?.round().clamp(0, 100) ?? 0,
         'wellnessScore': wellnessScore?.round().clamp(0, 100) ?? 0,
         'wellnessDelta': wellnessDelta,
@@ -94,6 +181,7 @@ class HomeWidgetService {
           .map((entry) => '${entry.key}:${entry.value}')
           .join('|');
       if (_lastSignature == signature) return;
+      if (generation != _accountGeneration) return;
       _lastSignature = signature;
 
       await _channel.invokeMethod<void>('updateSnapshot', values);
@@ -118,6 +206,7 @@ class HomeWidgetService {
     }
 
     _publishingCalendar = true;
+    final generation = _accountGeneration;
     _lastCalendarRefresh = now;
     try {
       final monday = DateTime(
@@ -129,6 +218,7 @@ class HomeWidgetService {
       final outlookFuture = OutlookCalendarService.getWeekEvents(monday);
       final googleEvents = await googleFuture;
       final outlookEvents = await outlookFuture;
+      if (generation != _accountGeneration) return;
       await publishCalendarEvents(
         googleEvents: googleEvents,
         outlookEvents: outlookEvents,
@@ -198,17 +288,28 @@ class HomeWidgetService {
 
     final signature = compactEvents
         .map(
-          (event) => '${event['title']}:${event['startAt']}:${event['kind']}',
+          (event) =>
+              '${event['title']}:${event['startAt']}:${event['endAt']}:${event['kind']}',
         )
         .join('|');
-    if (_lastCalendarSignature == signature) return;
-    _lastCalendarSignature = signature;
-
     try {
+      final generation = _accountGeneration;
+      final connected =
+          CalendarService.connectionNotifier.value ||
+          await OutlookCalendarService.isSignedIn();
+      if (generation != _accountGeneration) return;
+      final dashboardSignature =
+          '$signature|${events.toString()}|$connected|${DateFormat('yyyy-MM-dd').format(DateTime.now())}';
+      if (_lastCalendarSignature == dashboardSignature) return;
       await _channel.invokeMethod<void>('updateSnapshot', {
         'calendarEvents': compactEvents,
+        'dashboardEvents': events,
+        'dashboardCalendarConnected': connected,
         'calendarWeekUpdatedAt': DateTime.now().millisecondsSinceEpoch,
       });
+      if (generation == _accountGeneration) {
+        _lastCalendarSignature = dashboardSignature;
+      }
     } on MissingPluginException {
       // The native calendar widget is available after installing an iOS build.
     } on PlatformException catch (error) {

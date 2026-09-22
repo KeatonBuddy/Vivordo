@@ -2,6 +2,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:flutter/foundation.dart';
+import 'package:vivordo_health/src/utils/request_coalescer.dart';
 
 class WritableCalendar {
   const WritableCalendar({
@@ -18,6 +19,48 @@ class WritableCalendar {
 }
 
 class CalendarService {
+  /// Window in which an identical range request is reused. Short on purpose:
+  /// long enough to collapse the burst when several screens and the home
+  /// widget load together, short enough that a change made in Google Calendar
+  /// itself shows up quickly.
+  static const _eventCacheTtl = Duration(seconds: 30);
+
+  static final RequestCoalescer<List<gcal.Event>> _eventRequests =
+      RequestCoalescer<List<gcal.Event>>(ttl: _eventCacheTtl);
+
+  /// Drops cached ranges after a local edit, deletion or account change.
+  static void invalidateEventCache() => _eventRequests.invalidateAll();
+
+  /// Silent, all-or-nothing fetch for scoring. Null means unavailable, while
+  /// an empty list means a successful fetch with no events.
+  static Future<List<gcal.Event>?> getScoringEvents(
+    DateTime start,
+    DateTime end,
+  ) async {
+    try {
+      await initialize();
+      final user = _currentUser;
+      if (user == null) return null;
+      const scopes = [gcal.CalendarApi.calendarScope];
+      final authorization = await user.authorizationClient
+          .authorizationForScopes(scopes);
+      if (authorization == null) return null;
+      final client = authorization.authClient(scopes: scopes);
+      try {
+        return await _fetchEventsFromCalendars(
+          gcal.CalendarApi(client),
+          start: start,
+          end: end,
+          requireComplete: true,
+        );
+      } finally {
+        client.close();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
   static bool _initialized = false;
   static Future<void>? _initializationFuture;
   static GoogleSignInAccount? _currentUser;
@@ -88,6 +131,7 @@ class CalendarService {
     final calendarApi = await _authorizedCalendarApi();
     await calendarApi.events.delete(calendarId, eventId);
     _eventCalendarIds.remove(eventId);
+    invalidateEventCache();
   }
 
   static Future<List<WritableCalendar>> getWritableCalendars() async {
@@ -167,6 +211,7 @@ class CalendarService {
     final calendarApi = await _authorizedCalendarApi();
     final result = await calendarApi.events.insert(event, calendarId);
     if (result.id != null) _eventCalendarIds[result.id!] = calendarId;
+    invalidateEventCache();
     return result;
   }
 
@@ -204,6 +249,7 @@ class CalendarService {
     final calendarApi = await _authorizedCalendarApi();
     final result = await calendarApi.events.patch(updated, calendarId, eventId);
     if (result.id != null) _eventCalendarIds[result.id!] = calendarId;
+    invalidateEventCache();
     return result;
   }
 
@@ -281,6 +327,7 @@ class CalendarService {
     if (result.id != null) {
       _eventCalendarIds[result.id!] = destinationCalendarId ?? sourceCalendarId;
     }
+    invalidateEventCache();
     return result;
   }
 
@@ -315,10 +362,14 @@ class CalendarService {
         .listen((event) {
           switch (event) {
             case GoogleSignInAuthenticationEventSignIn():
+              final previous = _currentUser?.id;
               _currentUser = event.user;
+              // Anything cached belonged to whoever was signed in before.
+              if (previous != event.user.id) invalidateEventCache();
             case GoogleSignInAuthenticationEventSignOut():
               _currentUser = null;
               connectionNotifier.value = false;
+              invalidateEventCache();
           }
         })
         .onError((e) => debugPrint('Auth error: $e'));
@@ -333,13 +384,41 @@ class CalendarService {
     _initialized = true;
   }
 
-  static Future<List<gcal.Event>> getWeekEvents(DateTime weekStart) =>
-      getEventsBetween(weekStart, weekStart.add(const Duration(days: 7)));
+  static Future<List<gcal.Event>> getWeekEvents(
+    DateTime weekStart, {
+    bool forceRefresh = false,
+  }) => getEventsBetween(
+    weekStart,
+    weekStart.add(const Duration(days: 7)),
+    forceRefresh: forceRefresh,
+  );
 
   /// Returns the user's visible Google Calendar events between [start] and [end]
   /// (expanded recurrences, ordered by start time). Returns [] when the user
   /// hasn't connected Google Calendar or on any auth/network error.
+  ///
+  /// Several screens and the home widget ask for the same range at once, so
+  /// identical requests are coalesced and the result is reused briefly. Pass
+  /// [forceRefresh] for a pull-to-refresh, which always reaches the network.
   static Future<List<gcal.Event>> getEventsBetween(
+    DateTime start,
+    DateTime end, {
+    bool forceRefresh = false,
+  }) => _eventRequests.run(
+    _eventCacheKey(start, end),
+    () => _fetchEventsBetween(start, end),
+    forceRefresh: forceRefresh,
+  );
+
+  /// Cache key for a range, scoped to the signed-in Google account so one
+  /// account can never be served another's events. The auth listener also
+  /// clears the cache outright; this is the second line of defence for the
+  /// window before a sign-in event is observed.
+  static String _eventCacheKey(DateTime start, DateTime end) =>
+      '${_currentUser?.id ?? 'signed-out'}'
+      '|${start.toIso8601String()}|${end.toIso8601String()}';
+
+  static Future<List<gcal.Event>> _fetchEventsBetween(
     DateTime start,
     DateTime end,
   ) async {
@@ -457,15 +536,23 @@ class CalendarService {
     await GoogleSignIn.instance.disconnect();
     _currentUser = null;
     connectionNotifier.value = false;
+    invalidateEventCache();
   }
 
   static Future<List<gcal.Event>> _fetchEventsFromCalendars(
     gcal.CalendarApi calendarApi, {
     required DateTime start,
     required DateTime end,
+    bool requireComplete = false,
   }) async {
-    final calendarList = await calendarApi.calendarList.list();
-    final calendars = (calendarList.items ?? const <gcal.CalendarListEntry>[])
+    final entries = <gcal.CalendarListEntry>[];
+    String? calendarPage;
+    do {
+      final page = await calendarApi.calendarList.list(pageToken: calendarPage);
+      entries.addAll(page.items ?? const []);
+      calendarPage = page.nextPageToken;
+    } while (calendarPage != null && calendarPage.isNotEmpty);
+    final calendars = entries
         .where((calendar) => calendar.id != null)
         .where((calendar) => calendar.hidden != true)
         // Google omits `selected` when a calendar is not selected. Requiring an
@@ -481,19 +568,26 @@ class CalendarService {
     final eventLists = await Future.wait(
       calendars.map((calendar) async {
         try {
-          final events = await calendarApi.events.list(
-            calendar.id!,
-            timeMin: start.toUtc(),
-            timeMax: end.toUtc(),
-            singleEvents: true,
-            orderBy: 'startTime',
-          );
-          final items = events.items ?? const <gcal.Event>[];
+          final items = <gcal.Event>[];
+          String? eventPage;
+          do {
+            final events = await calendarApi.events.list(
+              calendar.id!,
+              timeMin: start.toUtc(),
+              timeMax: end.toUtc(),
+              singleEvents: true,
+              orderBy: 'startTime',
+              pageToken: eventPage,
+            );
+            items.addAll(events.items ?? const []);
+            eventPage = events.nextPageToken;
+          } while (eventPage != null && eventPage.isNotEmpty);
           for (final event in items) {
             if (event.id != null) _eventCalendarIds[event.id!] = calendar.id!;
           }
           return items;
         } catch (e) {
+          if (requireComplete) rethrow;
           debugPrint(
             'CalendarService calendar fetch skipped ${calendar.summary ?? calendar.id}: $e',
           );

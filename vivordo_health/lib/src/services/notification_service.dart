@@ -10,11 +10,15 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:vivordo_health/main.dart' show navigatorKey;
+import 'package:vivordo_health/main.dart'
+    show navigatorKey, openActiveWorkoutFromExternal;
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/fitness_goal_notifications.dart';
 import 'package:vivordo_health/src/utils/notification_navigation.dart';
+import 'package:vivordo_health/src/services/daily_priority_service.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/priority_reminder.dart';
 
 /// Function to handle background messages
 @pragma('vm:entry-point')
@@ -45,6 +49,46 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _isInitialized = false;
+  Future<void> _priorityOperations = Future<void>.value();
+  Future<void> _restTimerOperations = Future<void>.value();
+  static const _restTimerNotificationId = 1301;
+
+  Future<void> updateRestTimerNotification(DateTime? deadline) {
+    final operation = _restTimerOperations.then((_) async {
+      if (kIsWeb) return;
+      await _localNotificationsPlugin.cancel(_restTimerNotificationId);
+      if (deadline == null || !deadline.isAfter(DateTime.now())) return;
+      await _localNotificationsPlugin.zonedSchedule(
+        _restTimerNotificationId,
+        'Rest timer finished',
+        'Your rest is over. Ready for your next set?',
+        tz.TZDateTime.from(deadline, tz.local),
+        const NotificationDetails(
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentSound: true,
+            presentBanner: true,
+            presentList: true,
+          ),
+          android: AndroidNotificationDetails(
+            'workout_rest',
+            'Workout rest timer',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+        ),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: '{"screen":"active_workout","type":"rest_timer"}',
+      );
+    });
+    _restTimerOperations = operation.catchError((Object error) {
+      debugPrint('Rest notification failed: $error');
+    });
+    return operation;
+  }
+
   bool _dailyScanRemindersEnabled = true;
   bool _calendarCheckInReminderEnabled = true;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
@@ -56,6 +100,8 @@ class NotificationService {
   Future<void> configureForUser(String uid) async {
     if (_configuredUid != uid) {
       await _removeCurrentFcmToken();
+      _configuredUid = null;
+      await cancelPriorityReminders();
       await cancelCalendarCheckIn();
       await _fitnessGoalSubscription?.cancel();
       _fitnessGoalSubscription = null;
@@ -100,11 +146,18 @@ class NotificationService {
       preferences?['checkInReminderEnabled'] != false,
     );
     await _startFitnessGoalListener(uid);
+    try {
+      await DailyPriorityService.refreshReminders(force: true);
+    } catch (error) {
+      debugPrint('Could not refresh priority reminders: $error');
+    }
   }
 
   Future<void> clearUserReminders() async {
+    await updateRestTimerNotification(null);
     await _removeCurrentFcmToken();
     _configuredUid = null;
+    await cancelPriorityReminders();
     _lastCalendarEventEnd = null;
     _dailyScanRemindersEnabled = false;
     _calendarCheckInReminderEnabled = false;
@@ -112,6 +165,21 @@ class NotificationService {
     _fitnessGoalSubscription = null;
     await cancelDailyScanReminder();
     await cancelCalendarCheckIn();
+  }
+
+  /// Removes local notification state after the server has deleted an account.
+  Future<void> clearAfterAccountDeletion() async {
+    await updateRestTimerNotification(null);
+    _configuredUid = null;
+    await _priorityOperations;
+    _lastCalendarEventEnd = null;
+    _dailyScanRemindersEnabled = false;
+    _calendarCheckInReminderEnabled = false;
+    await _fitnessGoalSubscription?.cancel();
+    _fitnessGoalSubscription = null;
+    if (kIsWeb) return;
+    await _localNotificationsPlugin.cancelAll();
+    await _firebaseMessaging.deleteToken();
   }
 
   Future<void> setDailyScanRemindersEnabled(bool enabled) async {
@@ -202,7 +270,10 @@ class NotificationService {
     String uid,
     QueryDocumentSnapshot<Map<String, dynamic>> dailyDocument,
   ) async {
-    if (_configuredUid != uid || dailyDocument.id != _localDayKey()) return;
+    if (_configuredUid != uid ||
+        dailyDocument.id != localDayKey(DateTime.now())) {
+      return;
+    }
 
     try {
       final dayKey = dailyDocument.id;
@@ -292,13 +363,6 @@ class NotificationService {
         'type': 'fitness_goal_${type.storageKey}',
       }),
     );
-  }
-
-  String _localDayKey() {
-    final now = DateTime.now();
-    return '${now.year.toString().padLeft(4, '0')}-'
-        '${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}';
   }
 
   String _formattedNumber(int value) => value.toString().replaceAllMapped(
@@ -475,6 +539,10 @@ class NotificationService {
       notificationType: message.data['type'] as String? ?? 'remote',
       screen: screen,
     );
+    if (message.data['type'] == 'rest_timer') {
+      unawaited(openActiveWorkoutFromExternal());
+      return;
+    }
     _navigateToNotificationScreen(screen);
   }
 
@@ -501,6 +569,10 @@ class NotificationService {
       notificationType: type ?? 'local',
       screen: screen,
     );
+    if (type == 'rest_timer') {
+      unawaited(openActiveWorkoutFromExternal());
+      return;
+    }
     _navigateToNotificationScreen(screen);
   }
 
@@ -509,6 +581,10 @@ class NotificationService {
   }
 
   Future<void> _openNotificationRouteStack(String? screen) async {
+    if (screen == 'active_workout') {
+      await openActiveWorkoutFromExternal();
+      return;
+    }
     NavigatorState? navigator;
     for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
       navigator = navigatorKey.currentState;
@@ -758,6 +834,81 @@ class NotificationService {
   Future<void> cancelCalendarCheckIn() async {
     if (kIsWeb) return;
     await _localNotificationsPlugin.cancel(_calendarCheckInReminderId);
+  }
+
+  Future<void> cancelPriorityReminders() async {
+    if (kIsWeb) return;
+    await _priorityOperations;
+    for (final request
+        in await _localNotificationsPlugin.pendingNotificationRequests()) {
+      if (request.payload?.contains('priority_reminder') == true) {
+        await _localNotificationsPlugin.cancel(request.id);
+      }
+    }
+  }
+
+  Future<void> updatePriorityReminder({
+    required String path,
+    required String title,
+    required DateTime? time,
+  }) {
+    final operation = _priorityOperations.then(
+      (_) => _updatePriorityReminder(path: path, title: title, time: time),
+    );
+    _priorityOperations = operation.catchError((Object error) {
+      debugPrint('Priority reminder scheduling failed: $error');
+    });
+    return operation;
+  }
+
+  Future<void> _updatePriorityReminder({
+    required String path,
+    required String title,
+    required DateTime? time,
+  }) async {
+    if (kIsWeb) return;
+    final id = priorityNotificationId(path);
+    await _localNotificationsPlugin.cancel(id);
+    if (_configuredUid != path.split('/')[1]) return;
+    if (time == null || !time.isAfter(DateTime.now())) return;
+    // Leave room for scan/check-in reminders within iOS's pending limit.
+    final pending =
+        (await _localNotificationsPlugin.pendingNotificationRequests())
+            .where(
+              (request) =>
+                  request.payload?.contains('priority_reminder') == true,
+            )
+            .toList();
+    if (pending.length >= 40) {
+      int scheduledAt(PendingNotificationRequest request) =>
+          (jsonDecode(request.payload!) as Map)['scheduledAt'] as int? ?? 0;
+      pending.sort((a, b) => scheduledAt(b).compareTo(scheduledAt(a)));
+      if (scheduledAt(pending.first) <= time.millisecondsSinceEpoch) return;
+      await _localNotificationsPlugin.cancel(pending.first.id);
+    }
+    await _localNotificationsPlugin.zonedSchedule(
+      id,
+      'Priority reminder',
+      title,
+      tz.TZDateTime.from(time, tz.local),
+      const NotificationDetails(
+        iOS: DarwinNotificationDetails(presentAlert: true, presentSound: true),
+        android: AndroidNotificationDetails(
+          'priority_reminders',
+          'Priority reminders',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      payload: jsonEncode({
+        'screen': 'calendar',
+        'type': 'priority_reminder',
+        'scheduledAt': time.millisecondsSinceEpoch,
+      }),
+    );
   }
 
   /// Get the current FCM token

@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:vivordo_health/src/services/active_workout_navigation.dart';
+import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -27,6 +29,7 @@ import 'screens/force_update_screen.dart';
 import 'screens/circle_screen.dart';
 import 'screens/fitness_screen.dart';
 import 'screens/wellness_detail_screen.dart';
+import 'screens/month_calendar_screen.dart';
 import 'screens/whats_new_screen.dart';
 
 // Change this identifier whenever a new release should display a fresh
@@ -35,6 +38,37 @@ const _whatsNewReleaseId = 'my_day_refresh_2026_08';
 
 // Global navigator key for notification navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+bool _openingExternalWorkout = false;
+
+Future<void> openActiveWorkoutFromExternal({
+  bool createIfMissing = false,
+}) async {
+  if (FirebaseAuth.instance.currentUser == null) return;
+  if (ActiveWorkoutNavigation.focusExisting() || _openingExternalWorkout) {
+    return;
+  }
+  _openingExternalWorkout = true;
+  try {
+    if (!await prepareActiveWorkoutForLaunch(
+      createIfMissing: createIfMissing,
+    )) {
+      return;
+    }
+    NavigatorState? navigator;
+    for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
+      navigator = navigatorKey.currentState;
+      if (navigator == null) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
+    if (navigator == null || FirebaseAuth.instance.currentUser == null) return;
+    if (ActiveWorkoutNavigation.focusExisting()) return;
+    unawaited(navigator.pushNamed('/active-workout'));
+    await WidgetsBinding.instance.endOfFrame;
+  } finally {
+    _openingExternalWorkout = false;
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -142,7 +176,6 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  bool _openingWorkout = false;
   bool _openingWidget = false;
   StreamSubscription<AchievementUnlock>? _achievementUnlockSubscription;
   final List<AchievementUnlock> _pendingAchievementUnlocks = [];
@@ -213,6 +246,9 @@ class _MyAppState extends State<MyApp> {
       'wellness',
       'fitness',
       'calendar',
+      'myday',
+      'mood',
+      'workout',
     }.contains(destination)) {
       return;
     }
@@ -227,6 +263,24 @@ class _MyAppState extends State<MyApp> {
       }
       if (navigator == null || !mounted) return;
 
+      if (destination == 'workout') {
+        await openActiveWorkoutFromExternal(createIfMissing: true);
+        return;
+      }
+      if (destination == 'mood') {
+        navigator.pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => const MainNavigationScreen(openMoodCheckIn: true),
+          ),
+          (_) => false,
+        );
+        return;
+      }
+      if (destination == 'myday') {
+        navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
+        return;
+      }
+
       if (destination == 'fitness') {
         navigator.pushNamedAndRemoveUntil('/fitness', (_) => false);
         return;
@@ -234,6 +288,10 @@ class _MyAppState extends State<MyApp> {
 
       if (destination == 'calendar') {
         navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
+        await WidgetsBinding.instance.endOfFrame;
+        if (mounted && navigator.mounted) {
+          unawaited(navigator.pushNamed('/full-calendar'));
+        }
         return;
       }
 
@@ -248,25 +306,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _openActiveWorkout() async {
-    if (_openingWorkout) return;
-    _openingWorkout = true;
-    try {
-      if (FirebaseAuth.instance.currentUser == null) return;
-      final hasWorkout = await prepareActiveWorkoutForLaunch();
-      if (!hasWorkout) return;
-
-      NavigatorState? navigator;
-      for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
-        navigator = navigatorKey.currentState;
-        if (navigator == null) {
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-        }
-      }
-      if (navigator == null || !mounted) return;
-      await navigator.pushNamed('/active-workout');
-    } finally {
-      _openingWorkout = false;
-    }
+    await openActiveWorkoutFromExternal();
   }
 
   @override
@@ -305,6 +345,7 @@ class _MyAppState extends State<MyApp> {
         '/signup': (context) => const SignupScreen(),
         '/home': (context) => const MainNavigationScreen(),
         '/calendar': (context) => const MainNavigationScreen(initialIndex: 1),
+        '/full-calendar': (context) => const MonthCalendarScreen(),
         '/fitness': (context) => const MainNavigationScreen(initialIndex: 3),
         '/wellness': (context) => const WellnessDetailScreen(),
         '/scan': (context) => const MainNavigationScreen(initialIndex: 2),
@@ -399,6 +440,11 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
           await WhoopService.instance.syncInBackground();
         });
         unawaited(HomeWidgetService.refreshCalendarSnapshot());
+        unawaited(
+          DailyPriorityService.refreshReminders().catchError((Object error) {
+            debugPrint('Could not refresh priority reminders: $error');
+          }),
+        );
         AnalyticsService().startSession();
       }
     } else if (state == AppLifecycleState.paused) {

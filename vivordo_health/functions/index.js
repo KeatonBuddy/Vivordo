@@ -9,6 +9,7 @@ const {defineSecret} = require("firebase-functions/params");
 const Anthropic = require("@anthropic-ai/sdk");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+const {removalPlan} = require("./circle_removal");
 const {
   dueWhoopEndpoints,
   isWhoopAuthorizationFailureCode,
@@ -16,6 +17,7 @@ const {
 const {
   shouldDeleteWhoopSleep,
   whoopDateKey,
+  whoopFetchMayClearSleep,
   whoopPresentSleepDays,
   whoopReconciliationDays,
 } = require("./whoop_reconciliation");
@@ -28,9 +30,138 @@ const {
   HEART_HEALTH_BASELINE_WINDOW_DAYS,
 } = require("./heart_health_score");
 const {normalizeGoogleHealthSleep} = require("./google_health_sleep");
+const {whoopDeletionPlan} = require("./whoop_deletion");
+const {
+  challengeDeletionPlan,
+  hasRecentAuthentication,
+  writeUnlessDeleting,
+} = require("./account_deletion");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
+
+// Server-owned block records cannot be forged or removed by the other user.
+exports.blockCircleUser = onCall(async (request) => {
+  const uid = requireAuth(request);
+  const target = request.data?.userId;
+  if (typeof target !== "string" || !target || target.includes("/") ||
+      target === uid || target.length > 128) {
+    throw new HttpsError("invalid-argument", "Choose another Circle user.");
+  }
+  const db = admin.firestore();
+  const batch = db.batch();
+  batch.set(db.doc(`circle_blocks/${uid}/users/${target}`), {
+    userId: target,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  for (const [owner, other] of [[uid, target], [target, uid]]) {
+    for (const collection of ["friends", "friend_requests"]) {
+      batch.delete(db.doc(
+          `users/${owner}/circle/relationships/${collection}/${other}`,
+      ));
+    }
+  }
+  await batch.commit();
+  await removeSharedCircleChallenges(uid, target);
+  return {blocked: true};
+});
+
+exports.removeCircleFriend = onCall(async (request) => {
+  const uid = requireAuth(request);
+  const target = request.data?.userId;
+  if (typeof target !== "string" || !target || target.includes("/") ||
+      target === uid || target.length > 128) {
+    throw new HttpsError("invalid-argument", "Choose another Circle user.");
+  }
+  await removeSharedCircleChallenges(uid, target);
+  const db = admin.firestore();
+  const batch = db.batch();
+  for (const [owner, other] of [[uid, target], [target, uid]]) {
+    for (const collection of ["friends", "friend_requests"]) {
+      batch.delete(db.doc(
+          `users/${owner}/circle/relationships/${collection}/${other}`,
+      ));
+    }
+  }
+  await batch.commit();
+  return {removed: true};
+});
+
+/**
+ * Remove shared challenges from the departing user's list, preserving groups.
+ * @param {string} uid Caller.
+ * @param {string} target Removed friend.
+ */
+async function removeSharedCircleChallenges(uid, target) {
+  const db = admin.firestore();
+  const challenges = await db.collection("challenges")
+      .where("participantUids", "array-contains", uid).get();
+  for (const document of challenges.docs) {
+    await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(document.ref);
+      const challenge = fresh.data();
+      if (!challenge?.participantUids?.includes(uid) ||
+          !challenge.participantUids.includes(target)) return;
+      const participant = document.ref.collection("participants").doc(uid);
+      const participation = await tx.get(participant);
+      const update = removalPlan(
+          challenge, uid, participation.data()?.progress || 0,
+      );
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      tx.update(document.ref, {...update, updatedAt: now});
+      tx.delete(participant);
+      for (const member of challenge.participantUids) {
+        const mirror = db.doc(
+            `challenge_memberships/${member}/items/${document.id}`,
+        );
+        if (!update.participantUids.includes(member)) {
+          tx.delete(mirror);
+        } else {
+          tx.set(mirror, {
+            participantUids: update.participantUids,
+            participantCount: update.participantCount,
+            creatorUid: update.creatorUid,
+            creatorName: update.creatorName,
+            role: member === update.creatorUid ? "creator" : "participant",
+            updatedAt: now,
+          }, {merge: true});
+        }
+      }
+      if (update.creatorUid && update.creatorUid !== challenge.creatorUid) {
+        tx.set(document.ref.collection("participants").doc(update.creatorUid), {
+          role: "creator", status: "accepted", updatedAt: now,
+        }, {merge: true});
+      }
+    });
+  }
+}
+
+exports.listBlockedCircleUsers = onCall(async (request) => {
+  const uid = requireAuth(request);
+  const db = admin.firestore();
+  const blocks = await db.collection(`circle_blocks/${uid}/users`).get();
+  const users = await Promise.all(blocks.docs.map(async (block) => {
+    const profile = await db.doc(`users/${block.id}/circle/profile`).get();
+    return {
+      userId: block.id,
+      username: profile.data()?.username || "Deleted user",
+    };
+  }));
+  return {users};
+});
+
+exports.unblockCircleUser = onCall(async (request) => {
+  const uid = requireAuth(request);
+  const target = request.data?.userId;
+  if (typeof target !== "string" || !target || target.includes("/") ||
+      target === uid || target.length > 128) {
+    throw new HttpsError("invalid-argument", "Choose another Circle user.");
+  }
+  // Only remove the caller's block. Never recreate friendship or remove a
+  // block that the other person placed against the caller.
+  await admin.firestore().doc(`circle_blocks/${uid}/users/${target}`).delete();
+  return {unblocked: true};
+});
 
 // Circle challenge callables, progress triggers, and expiration scheduler.
 // Loading this module after Firebase Admin initialization keeps all functions
@@ -603,6 +734,28 @@ async function getGoogleHealthAccessToken(uid) {
   });
   await saveGoogleHealthTokens(uid, tokens);
   return tokens.access_token;
+}
+
+async function revokeGoogleHealthAccess(uid) {
+  const reference =
+      admin.firestore().collection("google_health_credentials").doc(uid);
+  const snapshot = await reference.get();
+  if (!snapshot.exists) return;
+  const token = snapshot.data()?.refreshToken || snapshot.data()?.accessToken;
+  if (!token) return;
+  const response = await fetch("https://oauth2.googleapis.com/revoke", {
+    method: "POST",
+    signal: AbortSignal.timeout(15000),
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({token}),
+  });
+  // Google returns 400 when the token was already invalidated. In that case
+  // there is no remaining authorization for Vivordo to revoke.
+  if (!response.ok && response.status !== 400) {
+    throw new Error(`Google Health revoke failed: ${response.status}`);
+  }
 }
 
 async function googleHealthDailyRollup(accessToken, dataType, start, end) {
@@ -1436,11 +1589,18 @@ async function saveAndReconcileWhoopSleep(
       (day) => metricsCollection.doc(day),
   );
 
+  // A fetch that returned no sleep at all cannot distinguish "no nights" from
+  // "could not read nights", so it clears nothing.
+  const mayClear = whoopFetchMayClearSleep(presentDays);
+
   return firestore.runTransaction(async (transaction) => {
-    const existingSnapshots = reconciliationReferences.length > 0 ?
+    const existingSnapshots = reconciliationReferences.length > 0 && mayClear ?
       await transaction.getAll(...reconciliationReferences) : [];
     let removed = 0;
-    for (let index = 0; index < reconciliationDays.length; index += 1) {
+    // Only the deletions are skipped — the writes below still run, so an
+    // empty fetch leaves saved nights alone without stalling the sync.
+    for (let index = 0; mayClear && index < reconciliationDays.length;
+      index += 1) {
       const day = reconciliationDays[index];
       const snapshot = existingSnapshots[index];
       const existingSleep = snapshot.data()?.sleep;
@@ -1625,10 +1785,63 @@ exports.syncWhoop = onCall(
     },
 );
 
+/**
+ * Deletes imported WHOOP measurements while preserving other providers in the
+ * same daily documents. Kept separate so full account deletion can invoke the
+ * same cleanup before removing the user tree.
+ *
+ * @param {string} uid Authenticated Firebase user ID.
+ * @return {Promise<number>} Number of affected daily documents.
+ */
+async function deleteWhoopImportedData(uid) {
+  const firestore = admin.firestore();
+  const userReference = firestore.collection("users").doc(uid);
+  await userReference.set({
+    whoopDataDeletionStatus: "pending",
+    whoopDataDeletionStartedAt:
+      admin.firestore.FieldValue.serverTimestamp(),
+  }, {merge: true});
+
+  try {
+    const metrics = await userReference.collection("metrics_daily").get();
+    const writer = firestore.bulkWriter();
+    let affectedDays = 0;
+    for (const document of metrics.docs) {
+      const plan = whoopDeletionPlan(document.data());
+      if (!plan.changed) continue;
+      const update = {
+        ...plan.setFields,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      for (const path of plan.deletePaths) {
+        update[path] = admin.firestore.FieldValue.delete();
+      }
+      writer.update(document.ref, update);
+      affectedDays += 1;
+    }
+    await writer.close();
+    await userReference.set({
+      whoopImportedDataRetained: false,
+      whoopDataDeletionStatus: "complete",
+      whoopDataDeletedAt: admin.firestore.FieldValue.serverTimestamp(),
+      whoopDataDeletionAffectedDays: affectedDays,
+    }, {merge: true});
+    return affectedDays;
+  } catch (error) {
+    await userReference.set({
+      whoopDataDeletionStatus: "failed",
+      whoopDataDeletionFailedAt:
+        admin.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true});
+    throw error;
+  }
+}
+
 exports.disconnectWhoop = onCall(
     {secrets: _WHOOP_SECRETS},
     async (request) => {
       const uid = requireAuth(request);
+      const deleteImportedData = request.data?.deleteImportedData === true;
       const credentials = admin.firestore()
           .collection("whoop_credentials")
           .doc(uid);
@@ -1650,9 +1863,18 @@ exports.disconnectWhoop = onCall(
       batch.set(admin.firestore().collection("users").doc(uid), {
         whoopConnected: false,
         whoopDisconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+        whoopImportedDataRetained: deleteImportedData ? null : true,
+        whoopDataDeletionStatus: deleteImportedData ?
+          "pending" : "not_requested",
       }, {merge: true});
       await batch.commit();
-      return {connected: false};
+      const affectedDays = deleteImportedData ?
+        await deleteWhoopImportedData(uid) : 0;
+      return {
+        connected: false,
+        importedDataDeleted: deleteImportedData,
+        affectedDays,
+      };
     },
 );
 
@@ -1799,28 +2021,231 @@ exports.syncFitbit = onCall(
     },
 );
 
+async function deleteQueryDocuments(query) {
+  const snapshot = await query.get();
+  if (snapshot.empty) return 0;
+  const writer = admin.firestore().bulkWriter();
+  for (const document of snapshot.docs) writer.delete(document.ref);
+  await writer.close();
+  return snapshot.size;
+}
+
+async function deleteCircleRelationships(uid) {
+  const db = admin.firestore();
+  const friends = await db.collection("users").doc(uid)
+      .collection("circle").doc("relationships")
+      .collection("friends").get();
+  if (!friends.empty) {
+    const writer = db.bulkWriter();
+    for (const friend of friends.docs) {
+      const friendUid = friend.data()?.uid || friend.id;
+      if (typeof friendUid !== "string" || !friendUid) continue;
+      writer.delete(db.collection("users").doc(friendUid)
+          .collection("circle").doc("relationships")
+          .collection("friends").doc(uid));
+    }
+    await writer.close();
+  }
+}
+
+async function deleteUserChallenges(uid) {
+  const db = admin.firestore();
+  const challenges = await db.collection("challenges")
+      .where("participantUids", "array-contains", uid).get();
+  for (const challengeDocument of challenges.docs) {
+    const challengeReference = challengeDocument.ref;
+    const outcome = await db.runTransaction(async (transaction) => {
+      const challengeSnapshot = await transaction.get(challengeReference);
+      if (!challengeSnapshot.exists) return null;
+      const participantReference = challengeReference
+          .collection("participants").doc(uid);
+      const participantSnapshot = await transaction.get(participantReference);
+      const participantProgress = participantSnapshot.data()?.progress || 0;
+      const plan = challengeDeletionPlan(
+          challengeSnapshot.data(),
+          uid,
+          participantProgress,
+      );
+      if (plan.deleteChallenge) return plan;
+
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      transaction.update(challengeReference, {...plan.update, updatedAt: now});
+      transaction.delete(participantReference);
+      for (const remainingUid of plan.remainingParticipantUids) {
+        const membership = db.collection("challenge_memberships")
+            .doc(remainingUid).collection("items")
+            .doc(challengeReference.id);
+        const update = {
+          participantUids: plan.remainingParticipantUids,
+          participantCount: plan.remainingParticipantUids.length,
+          creatorUid: plan.update.creatorUid,
+          creatorName: plan.update.creatorName,
+          updatedAt: now,
+        };
+        if (plan.update.status === "cancelled") {
+          update.status = "cancelled";
+        }
+        if (remainingUid === plan.newCreatorUid) {
+          update.role = "creator";
+          if (plan.update.status !== "cancelled") update.status = "waiting";
+        }
+        transaction.set(membership, update, {merge: true});
+      }
+      if (plan.newCreatorUid) {
+        const participantUpdate = {role: "creator", updatedAt: now};
+        if (plan.newCreatorWasPending) {
+          participantUpdate.status = "accepted";
+          participantUpdate.acceptedAt = now;
+        }
+        transaction.set(challengeReference.collection("participants")
+            .doc(plan.newCreatorUid), participantUpdate, {merge: true});
+      }
+      return plan;
+    });
+    if (outcome?.deleteChallenge) {
+      await db.recursiveDelete(challengeReference);
+    }
+  }
+}
+
+async function deleteGlobalUserReferences(uid) {
+  const db = admin.firestore();
+  const queries = [
+    db.collection("circle_usernames").where("uid", "==", uid),
+    db.collection("circle_friend_codes").where("uid", "==", uid),
+    db.collection("whoop_oauth_states").where("uid", "==", uid),
+    db.collection("google_health_oauth_states").where("uid", "==", uid),
+    db.collection("goals").where("userId", "==", uid),
+    db.collection("metrics_daily").where("userId", "==", uid),
+    db.collection("questionnaire_responses").where("userId", "==", uid),
+    db.collection("questionaire_responses").where("userId", "==", uid),
+    db.collection("insights").where("userId", "==", uid),
+    db.collection("bug_reports").where("userId", "==", uid),
+    db.collection("batch_jobs").where("userId", "==", uid),
+    db.collection("baas_scores").where("userId", "==", uid),
+    db.collection("baas_scores_full").where("userId", "==", uid),
+    db.collection("baas_training_samples").where("user_id", "==", uid),
+    db.collectionGroup("friend_requests").where("fromUid", "==", uid),
+    db.collectionGroup("comments").where("authorUid", "==", uid),
+    db.collectionGroup("likes").where("userUid", "==", uid),
+    db.collectionGroup("contributions").where("uid", "==", uid),
+    db.collectionGroup("circle_engagement").where("actorUid", "==", uid),
+  ];
+  for (const query of queries) await deleteQueryDocuments(query);
+}
+
+async function revokeConnectedProviders(uid) {
+  const db = admin.firestore();
+  const whoopCredentials = db.collection("whoop_credentials").doc(uid);
+  const googleCredentials = db.collection("google_health_credentials").doc(uid);
+  const [whoopSnapshot, googleSnapshot] = await Promise.all([
+    whoopCredentials.get(),
+    googleCredentials.get(),
+  ]);
+  if (whoopSnapshot.exists) {
+    await revokeWhoopAccess(uid);
+  }
+  if (googleSnapshot.exists) {
+    await revokeGoogleHealthAccess(uid);
+  }
+  await Promise.all([whoopCredentials.delete(), googleCredentials.delete()]);
+}
+
+async function deleteVivordoAccountData(uid) {
+  const db = admin.firestore();
+  await revokeConnectedProviders(uid);
+  await deleteCircleRelationships(uid);
+  await deleteUserChallenges(uid);
+  await deleteGlobalUserReferences(uid);
+  await Promise.all([
+    db.recursiveDelete(db.collection("challenge_memberships").doc(uid)),
+    db.recursiveDelete(db.collection("challenge_medal_awards").doc(uid)),
+    db.recursiveDelete(db.collection("baas_state").doc(uid)),
+    db.recursiveDelete(db.collection("baas_weights").doc(uid)),
+  ]);
+  await admin.storage().bucket().deleteFiles({
+    prefix: `circle_profiles/${uid}/`,
+  });
+  await db.recursiveDelete(db.collection("users").doc(uid));
+}
+
+exports.deleteVivordoAccount = onCall(
+    {
+      secrets: [..._WHOOP_SECRETS, ..._GOOGLE_HEALTH_SECRETS],
+      timeoutSeconds: 540,
+      memory: "512MiB",
+    },
+    async (request) => {
+      const uid = requireAuth(request);
+      if (request.data?.confirmation !== "DELETE") {
+        throw new HttpsError(
+            "invalid-argument",
+            "Type DELETE to confirm permanent account deletion.",
+        );
+      }
+      if (!hasRecentAuthentication(request.auth)) {
+        throw new HttpsError(
+            "failed-precondition",
+            "Sign in again before deleting your account.",
+        );
+      }
+
+      const db = admin.firestore();
+      const deletionId = crypto.createHash("sha256").update(uid).digest("hex");
+      const deletionJob = db.collection("account_deletion_jobs")
+          .doc(deletionId);
+      await deletionJob.set({
+        status: "deleting",
+        startedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+
+      await admin.auth().updateUser(uid, {disabled: true});
+      try {
+        await deleteVivordoAccountData(uid);
+        await admin.auth().deleteUser(uid);
+        await deletionJob.set({
+          status: "complete",
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          error: admin.firestore.FieldValue.delete(),
+        }, {merge: true});
+        return {deleted: true};
+      } catch (error) {
+        console.error("[Account deletion] failed", {uid, error});
+        try {
+          await admin.auth().updateUser(uid, {disabled: false});
+        } catch (restoreError) {
+          if (restoreError?.code !== "auth/user-not-found") {
+            console.error("[Account deletion] could not restore user", {
+              uid,
+              restoreError,
+            });
+          }
+        }
+        await deletionJob.set({
+          status: "failed",
+          failedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          error: "cleanup_failed",
+        }, {merge: true});
+        throw new HttpsError(
+            "internal",
+            "Your account could not be deleted. Please try again.",
+        );
+      }
+    },
+);
+
 exports.disconnectFitbit = onCall(
     {secrets: _GOOGLE_HEALTH_SECRETS},
     async (request) => {
       const uid = requireAuth(request);
       const reference =
           admin.firestore().collection("google_health_credentials").doc(uid);
-      const snapshot = await reference.get();
-      if (snapshot.exists) {
-        const token = snapshot.data()?.refreshToken ||
-            snapshot.data()?.accessToken;
-        if (token) {
-          await fetch("https://oauth2.googleapis.com/revoke", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({token}),
-          }).catch((error) => {
-            console.warn("[Google Health] revoke request failed", error);
-          });
-        }
-      }
+      await revokeGoogleHealthAccess(uid).catch((error) => {
+        console.warn("[Google Health] revoke request failed", error);
+      });
       await reference.delete();
       await admin.firestore().collection("users").doc(uid).set({
         fitbitConnected: false,
@@ -2105,29 +2530,30 @@ exports.pandaBatchPoller = onSchedule({
         prefix: "weekly-trend-",
         // rest = userId
         write: (rest, text) =>
-          db.collection("users").doc(rest).collection("weekly_trends")
-              .doc(weekOf)
-              .set({content: text, generatedAt: ts(), weekOf}, {merge: true}),
+          writeUnlessDeleting(db, rest,
+              db.collection("users").doc(rest).collection("weekly_trends")
+                  .doc(weekOf), {content: text, generatedAt: ts(), weekOf}),
       },
       {
         prefix: "insight-summary-",
         // rest = userId
         write: (rest, text) =>
-          db.collection("users").doc(rest).collection("insight_summaries")
-              .doc(weekOf)
-              .set({content: text, generatedAt: ts(), weekOf}, {merge: true}),
+          writeUnlessDeleting(db, rest,
+              db.collection("users").doc(rest).collection("insight_summaries")
+                  .doc(weekOf), {content: text, generatedAt: ts(), weekOf}),
       },
       {
         prefix: "questionnaire-",
         // rest = insightId; userId comes from the batch_jobs doc (the
         // custom_id alone doesn't carry it for this workload).
         write: (rest, text) =>
-          db.collection("users").doc(jobData.userId)
-              .collection("insights").doc(rest).update({
+          writeUnlessDeleting(db, jobData.userId,
+              db.collection("users").doc(jobData.userId)
+                  .collection("insights").doc(rest), {
                 questionnaireAnalysis: text,
                 questionnaireAnalysisStatus: "completed",
                 questionnaireAnalyzedAt: ts(),
-              }),
+              }, true),
       },
     ];
 
@@ -2145,8 +2571,9 @@ exports.pandaBatchPoller = onSchedule({
         const text = result.result.message.content?.[0]?.text ?? "";
         const route = routes.find((r) => result.custom_id.startsWith(r.prefix));
         if (!route) continue;
-        await route.write(result.custom_id.slice(route.prefix.length), text);
-        written++;
+        const saved = await route.write(
+            result.custom_id.slice(route.prefix.length), text);
+        if (saved) written++;
       }
     } catch (err) {
       console.error(

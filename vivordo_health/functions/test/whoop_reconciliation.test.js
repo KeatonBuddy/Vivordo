@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   shouldDeleteWhoopSleep,
+  whoopFetchMayClearSleep,
   whoopPresentSleepDays,
   whoopReconciliationDays,
 } = require("../whoop_reconciliation");
@@ -60,4 +61,38 @@ test("a moved record leaves its old day eligible for removal", () => {
   assert.equal(present.has("2026-08-19"), true);
   assert.equal(present.has("2026-08-18"), false);
   assert.equal(shouldDeleteWhoopSleep({source: "whoop"}, false), true);
+});
+
+test("a fetch returning no sleep clears nothing", () => {
+  // Indistinguishable from an upstream incident or a token that lost its
+  // sleep scope, so reconciliation must not delete the whole window.
+  assert.equal(whoopFetchMayClearSleep(whoopPresentSleepDays([])), false);
+  assert.equal(whoopFetchMayClearSleep(new Set()), false);
+});
+
+test("a fetch returning at least one night may clear the rest", () => {
+  const present = whoopPresentSleepDays([
+    {end: "2026-08-18T13:30:00.000Z", timezone_offset: "-06:00"},
+  ]);
+  assert.equal(whoopFetchMayClearSleep(present), true);
+});
+
+test("a night missing from a populated fetch is still deleted", () => {
+  const present = whoopPresentSleepDays([
+    {end: "2026-08-18T13:30:00.000Z", timezone_offset: "-06:00"},
+  ]);
+  assert.equal(whoopFetchMayClearSleep(present), true);
+  assert.equal(
+      shouldDeleteWhoopSleep({source: "whoop"}, present.has("2026-08-17")),
+      true,
+  );
+});
+
+test("a non-WHOOP night is never deleted by reconciliation", () => {
+  assert.equal(shouldDeleteWhoopSleep({source: "apple_health"}, false), false);
+});
+
+test("missing present-day sets are treated as empty", () => {
+  assert.equal(whoopFetchMayClearSleep(undefined), false);
+  assert.equal(whoopFetchMayClearSleep(null), false);
 });

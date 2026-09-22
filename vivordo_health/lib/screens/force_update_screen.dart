@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 /// Full-screen, non-dismissible block shown when VersionGateService
 /// determines the installed app version is below the Remote Config minimum.
@@ -10,7 +11,7 @@ class ForceUpdateScreen extends StatelessWidget {
 
   const ForceUpdateScreen({super.key, required this.updateUrl});
 
-  static const Color accentPurple = Color(0xFF7B6EF6);
+  static const Color accentPurple = VivordoTheme.brand;
   static const Color textDark = Color(0xFF1C1C1E);
   static const Color textGrey = Color(0xFF8E8E93);
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'email_verification_screen.dart';
 import 'welcome_beta_screen.dart';
 
@@ -43,7 +44,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final int _totalQuestions = 9;
   bool _isLoading = false; // prevents double-tap triggering emailSignup twice
 
-  static const accentPurple = Color(0xFF7B6EF6);
+  static const accentPurple = VivordoTheme.brand;
   static const bgColor = Color(0xFFF2F2F7);
   static const textDark = Color(0xFF1C1C1E);
   static const textGrey = Color(0xFF8E8E93);

@@ -53,7 +53,7 @@ class _ScanScreenState extends State<ScanScreen>
   int _tutorialPageIndex = 0;
   bool _dismissedFirstScanTutorial = false;
 
-  static const Color accentPurple = Color(0xFF7B6EF6);
+  static const Color accentPurple = VivordoTheme.brand;
   static const Color bgColor = Color(0xFFF2F2F7);
   static const Color cardWhite = Colors.white;
   static const Color textDark = Color(0xFF1C1C1E);
@@ -592,8 +592,14 @@ class _ScanScreenState extends State<ScanScreen>
               entries.length;
 
           transaction.set(ref, {
-            'heart_rate': heartRateScan,
-            // Keep camera scans separate from HealthKit's daily heart-rate data.
+            // Camera scans live here and nowhere else. They used to be
+            // mirrored into `heart_rate` as well, which overwrote that day's
+            // HealthKit average with a single spot reading: `heart_rate.avg`
+            // means "the average across today", and one measurement is not
+            // that. Everything that needs scans reads them from here — both
+            // scores, the merged history and Home's latest reading — so the
+            // mirror only ever misinformed the consumers that had not learned
+            // to distrust it.
             'heart_rate_scan': {
               ...heartRateScan,
               'avg': average,

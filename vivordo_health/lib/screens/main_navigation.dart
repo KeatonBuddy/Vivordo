@@ -18,7 +18,12 @@ import '../theme/vivordo_theme.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final int initialIndex;
-  const MainNavigationScreen({super.key, this.initialIndex = 0});
+  final bool openMoodCheckIn;
+  const MainNavigationScreen({
+    super.key,
+    this.initialIndex = 0,
+    this.openMoodCheckIn = false,
+  });
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -49,6 +54,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   late final List<Widget> _tabPages;
   late final PandaScreen _persistentChatScreen;
   final Color primaryPurple = VivordoTheme.brand;
+  LiquidGlassSettings? _cachedGlassSettings;
+  bool? _cachedGlassSettingsIsDark;
 
   /// Analytics screen name per tab index, aligned with the nav bar order.
   static const List<String> _screenNames = [
@@ -104,10 +111,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _achievementMonitor = AchievementMonitor.start();
     // HealthKit does not push new values into Firestore. Keep the shared data
     // source current for both Home and Dashboard while the app is in use.
-    _healthRefreshTimer = Timer.periodic(
-      const Duration(minutes: 1),
-      (_) => _refreshTodayFromHealth(),
-    );
+    // A full sync walks every consented metric, so keep the interval long and
+    // skip it while backgrounded — resuming triggers its own refresh below.
+    _healthRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+        return;
+      }
+      _refreshTodayFromHealth();
+    });
     if (widget.initialIndex == 5) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openChat());
     }
@@ -158,6 +169,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
               valueListenable: _homeStressReveal,
               builder: (context, revealStress, _) => HomeScreen(
                 isActive: isActive,
+                openMoodCheckIn: widget.openMoodCheckIn,
                 onScanTap: _openScan,
                 onFitnessTap: () => _selectTab(3),
                 revealStress: revealStress,
@@ -407,55 +419,64 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Widget _buildFloatingNavBar() {
     final colors = context.vivordoColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final glassSettings = LiquidGlassSettings(
-      refractiveIndex: 1.16,
-      thickness: 22,
-      blur: 10,
-      chromaticAberration: .006,
-      saturation: isDark ? 1.25 : 1.4,
-      lightIntensity: isDark ? .55 : .9,
-      ambientStrength: isDark ? .18 : .4,
-      lightAngle: math.pi / 4,
-      glassColor: isDark
-          ? colors.card.withValues(alpha: .48)
-          : Colors.white.withValues(alpha: .42),
-    );
+    if (_cachedGlassSettingsIsDark != isDark) {
+      _cachedGlassSettingsIsDark = isDark;
+      _cachedGlassSettings = LiquidGlassSettings(
+        refractiveIndex: 1.16,
+        thickness: 22,
+        blur: 10,
+        chromaticAberration: .006,
+        saturation: isDark ? 1.25 : 1.4,
+        lightIntensity: isDark ? .55 : .9,
+        ambientStrength: isDark ? .18 : .4,
+        lightAngle: math.pi / 4,
+        glassColor: isDark
+            ? colors.card.withValues(alpha: .48)
+            : Colors.white.withValues(alpha: .42),
+      );
+    }
+    final glassSettings = _cachedGlassSettings!;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: colors.shadow,
-            blurRadius: 20,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: LiquidGlassLayer(
-        settings: glassSettings,
-        child: LiquidGlass(
-          shape: const LiquidRoundedSuperellipse(borderRadius: 24),
-          clipBehavior: Clip.antiAlias,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: isDark ? .14 : .68),
+    return RepaintBoundary(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: colors.shadow,
+              blurRadius: 20,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: LiquidGlassLayer(
+          settings: glassSettings,
+          child: LiquidGlass(
+            shape: const LiquidRoundedSuperellipse(borderRadius: 24),
+            clipBehavior: Clip.antiAlias,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
                 ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _navItem(Icons.home_rounded, "Home", 0),
-                  _navItem(Icons.calendar_month_rounded, "My Day", 1),
-                  _navItem(Icons.fingerprint_rounded, "Scan", 2),
-                  _navItem(Icons.fitness_center_rounded, "Fitness", 3),
-                  _navItem(Icons.bar_chart_rounded, "Metrics", 4),
-                ],
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: isDark ? .14 : .68),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _navItem(Icons.home_rounded, "Home", 0),
+                    _navItem(Icons.calendar_month_rounded, "My Day", 1),
+                    _navItem(Icons.fingerprint_rounded, "Scan", 2),
+                    _navItem(Icons.fitness_center_rounded, "Fitness", 3),
+                    _navItem(Icons.bar_chart_rounded, "Metrics", 4),
+                  ],
+                ),
               ),
             ),
           ),
@@ -482,33 +503,38 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isWorkoutPulse)
-              AnimatedBuilder(
-                animation: _fitnessPulseController,
-                builder: (context, child) {
-                  final pulse = _fitnessPulseController.value;
-                  return Transform.scale(
-                    scale: 1 + (pulse * .18),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: primaryPurple.withValues(
-                              alpha: .16 + (pulse * .34),
+              // Without this boundary the pulse repaints the whole liquid
+              // glass nav bar every frame.
+              RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: _fitnessPulseController,
+                  child: Icon(
+                    icon,
+                    color: isActive ? Colors.white : primaryPurple,
+                    size: 23,
+                  ),
+                  builder: (context, child) {
+                    final pulse = _fitnessPulseController.value;
+                    return Transform.scale(
+                      scale: 1 + (pulse * .18),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: primaryPurple.withValues(
+                                alpha: .16 + (pulse * .34),
+                              ),
+                              blurRadius: 5 + (pulse * 10),
+                              spreadRadius: pulse * 2,
                             ),
-                            blurRadius: 5 + (pulse * 10),
-                            spreadRadius: pulse * 2,
-                          ),
-                        ],
+                          ],
+                        ),
+                        child: child,
                       ),
-                      child: Icon(
-                        icon,
-                        color: isActive ? Colors.white : primaryPurple,
-                        size: 23,
-                      ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               )
             else
               Icon(

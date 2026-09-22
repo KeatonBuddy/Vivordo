@@ -88,9 +88,11 @@ class WhoopService {
     });
   }
 
-  Future<void> disconnect() async {
+  Future<void> disconnect({required bool deleteImportedData}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    await _functions.httpsCallable('disconnectWhoop').call<void>();
+    await _functions.httpsCallable('disconnectWhoop').call<void>({
+      'deleteImportedData': deleteImportedData,
+    });
     await _clearLocalConnection(uid);
   }
 

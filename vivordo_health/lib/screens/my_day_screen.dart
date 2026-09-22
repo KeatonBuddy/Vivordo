@@ -13,11 +13,14 @@ import '../src/services/daily_priority_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
 import '../src/utils/daily_outlook_score.dart';
-import '../src/utils/latest_heart_rate.dart';
+import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
+import 'all_priorities_screen.dart';
+import '../widgets/tomorrow_preview.dart';
+import '../src/utils/owned_stream_snapshot.dart';
 
 class MyDayScreen extends StatefulWidget {
   const MyDayScreen({super.key});
@@ -33,19 +36,26 @@ class MyDayScreen extends StatefulWidget {
 
 class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   List<_CalendarEvent> _events = const [];
+  List<_CalendarEvent> _tomorrowEvents = const [];
+  String? _calendarLoadError;
+  int _loadGeneration = 0;
   bool _isLoading = true;
   Timer? _clockTimer;
   late DateTime _priorityDay;
-  late Stream<List<DailyPriority>> _priorityStream;
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _todayMetricsStream;
+  final _prioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
+  final _tomorrowPrioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
+  DateTime get _tomorrow =>
+      DateTime(_priorityDay.year, _priorityDay.month, _priorityDay.day + 1);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _priorityDay = DateUtils.dateOnly(DateTime.now());
-    _priorityStream = DailyPriorityService.watch(_priorityDay);
     _todayMetricsStream = _metricsStreamFor(_priorityDay);
+    _prioritySnapshot.connect(DailyPriorityService.watch(_priorityDay));
+    _tomorrowPrioritySnapshot.connect(DailyPriorityService.watch(_tomorrow));
     _loadTodayEvents();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
@@ -66,8 +76,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
     setState(() {
       _priorityDay = today;
-      _priorityStream = DailyPriorityService.watch(today);
       _todayMetricsStream = _metricsStreamFor(today);
+      _prioritySnapshot.connect(DailyPriorityService.watch(today));
+      _tomorrowPrioritySnapshot.connect(DailyPriorityService.watch(_tomorrow));
     });
     unawaited(_loadTodayEvents());
     return true;
@@ -91,45 +102,67 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
+    _prioritySnapshot.dispose();
+    _tomorrowPrioritySnapshot.dispose();
     super.dispose();
   }
 
-  Future<void> _loadTodayEvents() async {
+  /// [forceRefresh] bypasses the shared calendar cache. Used by pull-to-refresh
+  /// and after the user edits an event, where reusing a cached range would
+  /// show them what they just changed away from.
+  Future<void> _loadTodayEvents({bool forceRefresh = false}) async {
+    final generation = ++_loadGeneration;
     if (mounted) setState(() => _isLoading = true);
     final now = DateTime.now();
     final dayStart = DateTime(now.year, now.month, now.day);
-    final dayEnd = dayStart.add(const Duration(days: 1));
+    final dayEnd = DateTime(now.year, now.month, now.day + 1);
+    final tomorrowEnd = DateTime(now.year, now.month, now.day + 2);
 
-    final results = await Future.wait([
-      CalendarService.getEventsBetween(
-        dayStart,
-        dayEnd,
-      ).timeout(const Duration(seconds: 8), onTimeout: () => <gcal.Event>[]),
-      OutlookCalendarService.getEventsBetween(
-        dayStart,
-        dayEnd,
-      ).timeout(const Duration(seconds: 8), onTimeout: () => <OutlookEvent>[]),
-    ]);
+    late List<dynamic> results;
+    try {
+      results = await Future.wait([
+        CalendarService.getEventsBetween(
+          dayStart,
+          tomorrowEnd,
+          forceRefresh: forceRefresh,
+        ).timeout(const Duration(seconds: 8)),
+        OutlookCalendarService.getEventsBetween(
+          dayStart,
+          tomorrowEnd,
+          forceRefresh: forceRefresh,
+        ).timeout(const Duration(seconds: 8)),
+      ]);
+    } catch (error) {
+      if (mounted && generation == _loadGeneration) {
+        setState(() {
+          _isLoading = false;
+          _calendarLoadError =
+              'Could not refresh the schedule. Pull down to retry.';
+        });
+      }
+      return;
+    }
 
     final googleEvents = results[0] as List<gcal.Event>;
     final outlookEvents = results[1] as List<OutlookEvent>;
-    final events =
-        <_CalendarEvent>[
-              ...googleEvents
-                  .map(_CalendarEvent.fromGoogle)
-                  .whereType<_CalendarEvent>(),
-              ...outlookEvents.map(_CalendarEvent.fromOutlook),
-            ]
-            .where(
-              (event) =>
-                  event.start.isBefore(dayEnd) && event.end.isAfter(dayStart),
-            )
-            .toList()
-          ..sort((a, b) => a.start.compareTo(b.start));
+    final allEvents = <_CalendarEvent>[
+      ...googleEvents
+          .map(_CalendarEvent.fromGoogle)
+          .whereType<_CalendarEvent>(),
+      ...outlookEvents.map(_CalendarEvent.fromOutlook),
+    ].toList()..sort((a, b) => a.start.compareTo(b.start));
+    final events = allEvents
+        .where((e) => e.start.isBefore(dayEnd) && e.end.isAfter(dayStart))
+        .toList();
+    final tomorrowEvents = allEvents
+        .where((e) => e.start.isBefore(tomorrowEnd) && e.end.isAfter(dayEnd))
+        .toList();
 
-    if (!mounted) return;
+    if (!mounted || generation != _loadGeneration) return;
     setState(() {
       _events = events;
+      _tomorrowEvents = tomorrowEvents;
+      _calendarLoadError = null;
       _isLoading = false;
     });
     try {
@@ -140,6 +173,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             .where((event) => !event.isPriorityLinked)
             .map((event) => event.priorityCandidate),
       );
+      await DailyPriorityService.materializeRecurring(dayEnd);
+      await DailyPriorityService.seedFromCalendar(
+        dayEnd,
+        tomorrowEvents
+            .where((e) => !e.isPriorityLinked)
+            .map((e) => e.priorityCandidate),
+      );
     } catch (error) {
       debugPrint('Could not generate daily priorities: $error');
     }
@@ -148,15 +188,23 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Future<void> _handleEventTap(_CalendarEvent event) async {
     final googleEvent = event.googleEvent;
     if (!mounted) return;
-    final shouldEdit = await showModalBottomSheet<bool>(
+    final action = await showModalBottomSheet<_EventSummaryAction>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _EventSummarySheet(event: event),
     );
-    if (shouldEdit == true && googleEvent != null && mounted) {
-      await _editGoogleEvent(googleEvent);
+    if (googleEvent == null || !mounted) return;
+    switch (action) {
+      case _EventSummaryAction.edit:
+        await _editGoogleEvent(googleEvent);
+        return;
+      case _EventSummaryAction.delete:
+        await _deleteGoogleEvent(googleEvent);
+        return;
+      case null:
+        return;
     }
   }
 
@@ -189,6 +237,40 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     } catch (error) {
       if (mounted) setState(() => _isLoading = false);
       _showMessage('Could not save event: $error');
+    }
+  }
+
+  Future<void> _deleteGoogleEvent(gcal.Event event) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete event?'),
+        content: Text(
+          'This will delete “${event.summary ?? 'Untitled event'}” from Google Calendar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      setState(() => _isLoading = true);
+      await CalendarService.deleteEvent(event);
+      await _loadTodayEvents();
+      _showMessage('Event deleted.');
+    } catch (error) {
+      if (mounted) setState(() => _isLoading = false);
+      _showMessage('Could not delete event: $error');
     }
   }
 
@@ -234,13 +316,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   _DayInsight _calculateDayInsight() {
-    if (_isLoading) {
-      return const _DayInsight(
-        title: 'Analyzing today’s calendar',
-        detail: 'Looking for open windows and heavier calendar blocks.',
-      );
-    }
-
     final now = DateTime.now();
     final workStart = DateTime(now.year, now.month, now.day, 9);
     final workEnd = DateTime(now.year, now.month, now.day, 17);
@@ -254,6 +329,28 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             )
             .toList()
           ..sort((a, b) => a.start.compareTo(b.start));
+
+    final gaps = <(DateTime, DateTime)>[];
+    var cursor = workStart;
+    for (final event in timedEvents) {
+      final start = event.start.isBefore(workStart) ? workStart : event.start;
+      final end = event.end.isAfter(workEnd) ? workEnd : event.end;
+      if (start.isAfter(cursor)) gaps.add((cursor, start));
+      if (end.isAfter(cursor)) cursor = end;
+    }
+    if (cursor.isBefore(workEnd)) gaps.add((cursor, workEnd));
+    gaps.sort((a, b) => b.$2.difference(b.$1).compareTo(a.$2.difference(a.$1)));
+    final longestOpening = gaps.isEmpty
+        ? Duration.zero
+        : gaps.first.$2.difference(gaps.first.$1);
+
+    if (_isLoading) {
+      return _DayInsight(
+        title: 'Analyzing today’s calendar',
+        detail: 'Looking for open windows and heavier calendar blocks.',
+        longestOpening: longestOpening,
+      );
+    }
 
     String range(DateTime start, DateTime end) =>
         '${DateFormat('h:mm a').format(start)}–${DateFormat('h:mm a').format(end)}';
@@ -274,19 +371,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         detail: allDayCount == 0
             ? 'No timed events are scheduled between 9:00 AM and 5:00 PM. You have a large window for focused work, movement, or recovery.'
             : 'You have $allDayCount all-day ${allDayCount == 1 ? 'event' : 'events'}, but no timed events between 9:00 AM and 5:00 PM.',
+        longestOpening: longestOpening,
       );
     }
-
-    final gaps = <(DateTime, DateTime)>[];
-    var cursor = workStart;
-    for (final event in timedEvents) {
-      final start = event.start.isBefore(workStart) ? workStart : event.start;
-      final end = event.end.isAfter(workEnd) ? workEnd : event.end;
-      if (start.isAfter(cursor)) gaps.add((cursor, start));
-      if (end.isAfter(cursor)) cursor = end;
-    }
-    if (cursor.isBefore(workEnd)) gaps.add((cursor, workEnd));
-    gaps.sort((a, b) => b.$2.difference(b.$1).compareTo(a.$2.difference(a.$1)));
 
     if (gaps.isNotEmpty) {
       final longest = gaps.first;
@@ -296,6 +383,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           title: 'Protect your longest opening',
           detail:
               'Your ${range(longest.$1, longest.$2)} window is the longest open block in today’s calendar (${duration(gapDuration)}). Consider using it for focused work, movement, or recovery.',
+          longestOpening: longestOpening,
         );
       }
     }
@@ -311,6 +399,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       title: 'Your calendar is tightly packed',
       detail:
           'You have ${timedEvents.length} timed ${timedEvents.length == 1 ? 'event' : 'events'} during the workday. “${longestEvent.title}” is the longest block (${range(longestEvent.start, longestEvent.end)}), so leave recovery time around it if possible.',
+      longestOpening: longestOpening,
     );
   }
 
@@ -334,7 +423,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _loadTodayEvents,
+          onRefresh: () => _loadTodayEvents(forceRefresh: true),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
             children: [
@@ -403,7 +492,26 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 _buildWatchItem(watchItem),
               ],
               const SizedBox(height: 24),
-              const _SectionLabel("TODAY'S PRIORITIES"),
+              Row(
+                children: [
+                  const Expanded(child: _SectionLabel("TODAY'S PRIORITIES")),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => AllPrioritiesScreen(
+                          onAdd: (sheetContext) =>
+                              _addManualPriority(sheetContext: sheetContext),
+                          onEdit: (sheetContext, priority) => _editPriority(
+                            priority,
+                            sheetContext: sheetContext,
+                          ),
+                        ),
+                      ),
+                    ),
+                    child: const Text('View all'),
+                  ),
+                ],
+              ),
               const SizedBox(height: 10),
               _SectionCard(child: _buildPriorities()),
               const SizedBox(height: 24),
@@ -431,6 +539,44 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 4),
               _SectionCard(child: _buildTimeline()),
+              const SizedBox(height: 24),
+              ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+                valueListenable: _tomorrowPrioritySnapshot,
+                builder: (context, snapshot, _) => TomorrowPreview(
+                  day: _tomorrow,
+                  loading:
+                      _isLoading ||
+                      snapshot.connectionState == ConnectionState.waiting,
+                  error:
+                      _calendarLoadError ??
+                      (snapshot.hasError
+                          ? 'Could not load tomorrow’s priorities.'
+                          : null),
+                  events: _tomorrowEvents
+                      .map(
+                        (e) => TomorrowPreviewEvent(
+                          title: e.title,
+                          start: e.start,
+                          end: e.end,
+                          allDay: e.isAllDay,
+                          onTap: () => _handleEventTap(e),
+                        ),
+                      )
+                      .toList(),
+                  priorities: snapshot.data ?? const [],
+                  onEdit: _editPriority,
+                  onToggle: _togglePriority,
+                  onViewDay: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            MonthCalendarScreen(initialDay: _tomorrow),
+                      ),
+                    );
+                    if (mounted) await _loadTodayEvents();
+                  },
+                ),
+              ),
             ],
           ),
         ),
@@ -453,7 +599,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           (hrvMap?['stressScore'] as num?)?.toDouble();
       final latestHeartRate = data == null
           ? null
-          : latestHeartRateReadingFromMetricDays([data]);
+          : summarizeHomeMetrics(
+              days: [MetricDayEntry(dayKey: snapshot.data!.id, data: data)],
+              now: DateTime.now(),
+            ).latestHeartRate;
       final heartRate = latestHeartRate?.bpm.toDouble();
       final capacity = calculateDailyCapacity(
         sleepHours: sleep,
@@ -661,13 +810,33 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         .take(showFreeUntil ? 2 : 3)
         .toList();
     if (upcoming.isEmpty && !showFreeUntil) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(
-          child: Text(
-            'Nothing else scheduled today',
-            style: TextStyle(color: MyDayScreen.muted),
-          ),
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            const Icon(Icons.circle, color: Color(0xFF89CF68), size: 18),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Free now',
+                    style: TextStyle(
+                      color: context.vivordoColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'No more events scheduled today.',
+                    style: TextStyle(color: context.vivordoColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -685,59 +854,61 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildPriorities() => StreamBuilder<List<DailyPriority>>(
-    stream: _priorityStream,
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting &&
-          !snapshot.hasData) {
-        return const SizedBox(
-          height: 72,
-          child: Center(child: CircularProgressIndicator()),
-        );
-      }
-      if (snapshot.hasError) {
-        return const Padding(
-          padding: EdgeInsets.all(20),
-          child: Text(
-            'Could not load today’s priorities',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: MyDayScreen.muted),
-          ),
-        );
-      }
-      final priorities = snapshot.data ?? const <DailyPriority>[];
-      return Column(
-        children: [
-          if (priorities.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(18, 20, 18, 12),
+  Widget _buildPriorities() =>
+      ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+        valueListenable: _prioritySnapshot,
+        builder: (context, snapshot, _) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const SizedBox(
+              height: 72,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (snapshot.hasError) {
+            return const Padding(
+              padding: EdgeInsets.all(20),
               child: Text(
-                'No calendar events qualify as priorities yet.',
+                'Could not load today’s priorities',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: MyDayScreen.muted, fontSize: 12),
+                style: TextStyle(color: MyDayScreen.muted),
               ),
-            ),
-          for (var index = 0; index < priorities.length; index++) ...[
-            _PriorityRow(
-              key: ValueKey(priorities[index].id),
-              priority: priorities[index],
-              onToggle: () => _togglePriority(priorities[index]),
-              onDelete: () => _deletePriority(priorities[index]),
-            ),
-            if (index < priorities.length - 1)
-              const Divider(height: 1, indent: 58, endIndent: 16),
-          ],
-          if (priorities.isNotEmpty) const Divider(height: 1),
-          TextButton.icon(
-            onPressed: _addManualPriority,
-            icon: const Icon(Icons.add_rounded, size: 19),
-            label: const Text('Add priority'),
-          ),
-          const SizedBox(height: 4),
-        ],
+            );
+          }
+          final priorities = snapshot.data ?? const <DailyPriority>[];
+          return Column(
+            children: [
+              if (priorities.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 20, 18, 12),
+                  child: Text(
+                    'No calendar events qualify as priorities yet.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: MyDayScreen.muted, fontSize: 12),
+                  ),
+                ),
+              for (var index = 0; index < priorities.length; index++) ...[
+                _PriorityRow(
+                  key: ValueKey(priorities[index].reference.path),
+                  priority: priorities[index],
+                  onToggle: () => _togglePriority(priorities[index]),
+                  onDelete: () => _deletePriority(priorities[index]),
+                  onEdit: () => _editPriority(priorities[index]),
+                ),
+                if (index < priorities.length - 1)
+                  const Divider(height: 1, indent: 58, endIndent: 16),
+              ],
+              if (priorities.isNotEmpty) const Divider(height: 1),
+              TextButton.icon(
+                onPressed: _addManualPriority,
+                icon: const Icon(Icons.add_rounded, size: 19),
+                label: const Text('Add priority'),
+              ),
+              const SizedBox(height: 4),
+            ],
+          );
+        },
       );
-    },
-  );
 
   Future<void> _togglePriority(DailyPriority priority) async {
     try {
@@ -755,8 +926,46 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _addManualPriority() async {
-    final draft = await showAddPrioritySheet(context);
+  Future<void> _editPriority(
+    DailyPriority priority, {
+    BuildContext? sheetContext,
+  }) async {
+    final result = await showEditPrioritySheet(
+      sheetContext ?? context,
+      priority,
+    );
+    if (result == null || !mounted) return;
+    try {
+      if (result.deleteRequested) {
+        await DailyPriorityService.delete(priority);
+        return;
+      }
+      await DailyPriorityService.editPriority(
+        priority,
+        title: result.title,
+        date: result.date,
+        scheduledAt: result.scheduledAt,
+        completed: result.completed,
+        reminderMinutes: result.reminderMinutes,
+        reminderTimeMinutes: result.reminderTimeMinutes,
+        recurrence: result.recurrence,
+        selectedWeekdays: result.selectedWeekdays,
+        recurrenceEnd: result.repeatEnd,
+      );
+      if (result.addToCalendar) await _addPriorityCalendarEvent(result);
+    } catch (error) {
+      if (sheetContext != null && sheetContext.mounted) {
+        ScaffoldMessenger.of(sheetContext).showSnackBar(
+          SnackBar(content: Text('Could not update priority: $error')),
+        );
+      } else {
+        _showMessage('Could not update priority: $error');
+      }
+    }
+  }
+
+  Future<void> _addManualPriority({BuildContext? sheetContext}) async {
+    final draft = await showAddPrioritySheet(sheetContext ?? context);
     if (draft == null || !mounted) return;
 
     try {
@@ -767,6 +976,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         recurrence: draft.recurrence,
         selectedWeekdays: draft.selectedWeekdays,
         recurrenceEnd: draft.repeatEnd,
+        reminderMinutes: draft.reminderMinutes,
+        reminderTimeMinutes: draft.reminderTimeMinutes,
       );
     } catch (error) {
       _showMessage('Could not add priority: $error');
@@ -774,6 +985,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
 
     if (!draft.addToCalendar) return;
+    await _addPriorityCalendarEvent(draft);
+  }
+
+  Future<void> _addPriorityCalendarEvent(PriorityDraft draft) async {
     final start = draft.scheduledAt ?? DateUtils.dateOnly(draft.date);
     final end = draft.scheduledAt == null
         ? start.add(const Duration(days: 1))
@@ -1022,6 +1237,7 @@ class _SectionCard extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) => Container(
+    clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(20),
@@ -1031,17 +1247,31 @@ class _SectionCard extends StatelessWidget {
   );
 }
 
+@visibleForTesting
+Widget priorityRowForTesting({
+  required DailyPriority priority,
+  required Future<void> Function() onDelete,
+  VoidCallback? onEdit,
+}) => _PriorityRow(
+  priority: priority,
+  onToggle: () {},
+  onDelete: onDelete,
+  onEdit: onEdit,
+);
+
 class _PriorityRow extends StatefulWidget {
   const _PriorityRow({
     super.key,
     required this.priority,
     required this.onToggle,
     required this.onDelete,
+    this.onEdit,
   });
 
   final DailyPriority priority;
   final VoidCallback onToggle;
   final Future<void> Function() onDelete;
+  final VoidCallback? onEdit;
 
   @override
   State<_PriorityRow> createState() => _PriorityRowState();
@@ -1052,6 +1282,7 @@ class _PriorityRowState extends State<_PriorityRow> {
   double _dragOffset = 0;
   bool _dragging = false;
   bool _deleting = false;
+  bool _confirmingDelete = false;
 
   DailyPriority get priority => widget.priority;
 
@@ -1116,7 +1347,9 @@ class _PriorityRowState extends State<_PriorityRow> {
             ),
           ),
           GestureDetector(
-            behavior: HitTestBehavior.opaque,
+            // Let taps in the revealed action area reach the Delete button.
+            behavior: HitTestBehavior.deferToChild,
+            onTap: widget.onEdit,
             onHorizontalDragStart: (_) => setState(() => _dragging = true),
             onHorizontalDragUpdate: (details) {
               setState(() {
@@ -1228,13 +1461,43 @@ class _PriorityRowState extends State<_PriorityRow> {
   }
 
   Future<void> _delete() async {
-    setState(() => _deleting = true);
-    await widget.onDelete();
-    if (!mounted) return;
-    setState(() {
-      _deleting = false;
-      _dragOffset = 0;
-    });
+    if (_deleting || _confirmingDelete) return;
+    _confirmingDelete = true;
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Delete priority?'),
+          content: Text(
+            'Remove “${priority.title}” from your priorities?'
+            '${priority.source == 'manual' ? '' : '\n\nThis will not delete the original calendar event or recurring schedule.'}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true && mounted) {
+        setState(() => _deleting = true);
+        await widget.onDelete();
+      }
+    } finally {
+      _confirmingDelete = false;
+      if (mounted) {
+        setState(() {
+          _deleting = false;
+          _dragOffset = 0;
+        });
+      }
+    }
   }
 }
 
@@ -1693,6 +1956,8 @@ class _DayEvent extends StatelessWidget {
   );
 }
 
+enum _EventSummaryAction { edit, delete }
+
 class _EventSummarySheet extends StatelessWidget {
   const _EventSummarySheet({required this.event});
 
@@ -1751,7 +2016,7 @@ class _EventSummarySheet extends StatelessWidget {
                     ),
                   ),
                   IconButton.filledTonal(
-                    onPressed: () => Navigator.pop(context, false),
+                    onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close_rounded),
                     tooltip: 'Close',
                   ),
@@ -1879,7 +2144,10 @@ class _EventSummarySheet extends StatelessWidget {
                       child: FilledButton(
                         onPressed: event.googleEvent == null
                             ? null
-                            : () => Navigator.pop(context, true),
+                            : () => Navigator.pop(
+                                context,
+                                _EventSummaryAction.edit,
+                              ),
                         style: FilledButton.styleFrom(
                           backgroundColor: MyDayScreen.purple,
                           shape: RoundedRectangleBorder(
@@ -1897,6 +2165,26 @@ class _EventSummarySheet extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (event.googleEvent != null) ...[
+                      const SizedBox(height: 12),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () => Navigator.pop(
+                            context,
+                            _EventSummaryAction.delete,
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFFF453A),
+                            textStyle: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          label: const Text('Delete'),
+                        ),
+                      ),
+                    ],
                     if (event.googleEvent == null) ...[
                       const SizedBox(height: 10),
                       Text(
@@ -1979,16 +2267,30 @@ class _SummaryDetailRow extends StatelessWidget {
             children: [
               Icon(icon, color: MyDayScreen.purple, size: 23),
               const SizedBox(width: 14),
-              Text(
-                label,
-                style: TextStyle(color: colors.textPrimary, fontSize: 15),
+              SizedBox(
+                width: 92,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(color: colors.textPrimary, fontSize: 15),
+                ),
               ),
-              const Spacer(),
-              Flexible(
+              const SizedBox(width: 12),
+              Expanded(
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (valueDotColor != null) ...[
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: valueDotColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     Flexible(
                       child: Text(
                         value,
@@ -2001,17 +2303,6 @@ class _SummaryDetailRow extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (valueDotColor != null) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: valueDotColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -2025,10 +2316,15 @@ class _SummaryDetailRow extends StatelessWidget {
 }
 
 class _DayInsight {
-  const _DayInsight({required this.title, required this.detail});
+  const _DayInsight({
+    required this.title,
+    required this.detail,
+    required this.longestOpening,
+  });
 
   final String title;
   final String detail;
+  final Duration longestOpening;
 }
 
 class _CalendarEvent {

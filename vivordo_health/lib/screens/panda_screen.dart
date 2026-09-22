@@ -7,9 +7,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
-import '../src/services/ai_service.dart';
-import '../src/services/ai_service_factory.dart';
-import '../src/services/gemini_service.dart' show GeminiService;
+import '../src/services/claude_service.dart';
 import '../src/services/recommendation_engine.dart';
 import '../src/services/insight_service.dart';
 import '../src/models/insights.dart';
@@ -17,6 +15,7 @@ import '../src/services/panda_recommendations.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/workout_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import '../widgets/privacy_support_links.dart';
 
 // Robot mascot inlined as a string so it renders via SvgPicture.string —
 // bypasses the asset bundle + web service-worker cache that was serving a
@@ -155,7 +154,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Day',
     icon: Icons.wb_sunny_outlined,
-    color: Color(0xFF7B6EF6),
+    color: VivordoTheme.brand,
     categoryMessage:
         "Here's what I can help you with for today — pick what feels most useful 👇",
     prompts: [
@@ -169,7 +168,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Patterns',
     icon: Icons.insights_rounded,
-    color: Color(0xFF7B6EF6),
+    color: VivordoTheme.brand,
     categoryMessage:
         "I can dig into your stress patterns — what would you like to understand? 👇",
     prompts: [
@@ -182,7 +181,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'My Energy',
     icon: Icons.bolt_rounded,
-    color: Color(0xFF7B6EF6),
+    color: VivordoTheme.brand,
     categoryMessage:
         "Let's look at what's shaping your energy and recovery — choose a question 👇",
     prompts: [
@@ -196,7 +195,7 @@ const List<_PromptSet> _kPromptSets = [
   _PromptSet(
     label: 'Plans & People',
     icon: Icons.people_outline_rounded,
-    color: Color(0xFF7B6EF6),
+    color: VivordoTheme.brand,
     categoryMessage:
         "I can help you navigate plans and people based on how you're doing — what do you need? 👇",
     prompts: [
@@ -223,11 +222,11 @@ class PandaScreen extends StatefulWidget {
 
 class _PandaScreenState extends State<PandaScreen>
     with SingleTickerProviderStateMixin {
-  static const Color _purple = Color(0xFF7B6EF6);
+  static const Color _purple = VivordoTheme.brand;
   static const Color _teal = Color(0xFF0ABFBC);
   static const Color _ink = Color(0xFF2D3142);
 
-  late AIService _svc;
+  final ClaudeService _svc = ClaudeService();
   final InsightService _insightSvc = InsightService();
 
   // ── Session ────────────────────────────────────────────────────────────────
@@ -350,15 +349,7 @@ class _PandaScreenState extends State<PandaScreen>
       _subscribeToInsights(_currentUserId);
     }
 
-    _initAIService();
-  }
-
-  // Resolves the active AIService backend (via Remote Config feature flag)
-  // and then starts the session.  The loading indicator is already visible
-  // (_loading = true by default), so there is no UI gap.
-  Future<void> _initAIService() async {
-    _svc = await AIServiceFactory.get();
-    if (mounted) _loadSession();
+    _loadSession();
   }
 
   // ── Subscribe to Firestore insights stream ─────────────────────────────────
@@ -397,7 +388,7 @@ class _PandaScreenState extends State<PandaScreen>
   /// it never delays session init. Once it lands, subsequent dialogue turns get
   /// the schedule and Panda can answer availability/planning questions.
   Future<void> _loadScheduleContext() async {
-    final ctx = await GeminiService.fetchScheduleContext();
+    final ctx = await PandaPrompts.fetchScheduleContext();
     if (!mounted || ctx == null || ctx.isEmpty) return;
     setState(() => _scheduleContext = ctx);
   }
@@ -513,8 +504,9 @@ class _PandaScreenState extends State<PandaScreen>
       setState(() {
         _analyzingSpikes = false;
         _loading = false;
-        _error = 'Something went wrong: $e';
+        _error = 'Panda couldn’t load right now. Please try again.';
       });
+      debugPrint('[PandaScreen] Session load failed: $e');
       _saveLocalHistory(startedAt, success: false, error: e.toString());
     }
   }
@@ -1569,7 +1561,7 @@ class _PandaScreenState extends State<PandaScreen>
                 width: 200,
                 child: LinearProgressIndicator(
                   backgroundColor: Color(0xFFE5E5EA),
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7B6EF6)),
+                  valueColor: AlwaysStoppedAnimation<Color>(VivordoTheme.brand),
                 ),
               ),
             ),
@@ -1582,7 +1574,7 @@ class _PandaScreenState extends State<PandaScreen>
 
     if (_error != null) {
       return Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -3063,11 +3055,25 @@ class _PandaScreenState extends State<PandaScreen>
             ),
           ],
         ),
-        content: const Text(
-          'All health insights and conversations are encrypted and private.',
-          style: TextStyle(fontSize: 15, height: 1.4),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Panda uses Anthropic’s Claude through Vivordo’s servers to generate '
+            'responses and insights. Your messages and relevant health, fitness, '
+            'calendar, journal, and previous-session information may be sent to '
+            'Anthropic for processing. This is not on-device processing.\n\n'
+            'Avoid sharing information you do not want processed by these services. '
+            'Read our Privacy Policy for details about data use, storage, and your choices.\n\n'
+            'Panda provides wellness information, not medical advice. Responses can '
+            'be inaccurate. Consult a qualified healthcare professional before '
+            'making medical decisions.',
+            style: TextStyle(fontSize: 15, height: 1.4),
+          ),
         ),
         actions: [
+          TextButton(
+            onPressed: () => openVivordoLink(ctx, Uri.parse(vivordoPrivacyUrl)),
+            child: const Text('Privacy Policy'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text(

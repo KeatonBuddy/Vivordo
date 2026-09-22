@@ -3,16 +3,14 @@ import 'dart:convert';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
-import 'ai_service.dart';
-import 'gemini_service.dart';
+import 'panda_prompts.dart';
 
-export 'ai_service.dart'
-    show kMaxInputTokens, kMaxOutputTokensChat, kMaxOutputTokensSpike;
+export 'panda_prompts.dart';
 
 // =============================================================================
 // ClaudeService
 //
-// Implements AIService by proxying every LLM call through the `pandaClaude`
+// Proxies every LLM call through the `pandaClaude`
 // Firebase HTTPS Callable Cloud Function.  The function holds the Anthropic
 // API key in Secret Manager — the key NEVER leaves the server (VIV-309).
 //
@@ -21,13 +19,13 @@ export 'ai_service.dart'
 //   Response: { "text": String }   (raw JSON from Claude)
 //
 // All data-processing logic (Firestore fetch, compact payload, JSON parsing)
-// delegates to GeminiService static helpers to avoid duplication.
+// delegates to PandaPrompts to avoid duplication.
 // =============================================================================
 
-class ClaudeService implements AIService {
+class ClaudeService {
   static final _fn = FirebaseFunctions.instance.httpsCallable('pandaClaude');
 
-  // Appended to GeminiService.spikeSystemPrompt for Claude calls.
+  // Appended to PandaPrompts.spikeSystemPrompt for Claude calls.
   // Together they must exceed 1,024 tokens so Anthropic caches the prefix.
   static const _spikeJsonSuffix = '''
 
@@ -316,7 +314,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
   static String _buildAppleHealthContext(
     List<Map<String, dynamic>> spikeContext,
   ) {
-    final trimmed = GeminiService.trimSpikeContext(spikeContext);
+    final trimmed = PandaPrompts.trimSpikeContext(spikeContext);
     return 'APPLE HEALTH CONTEXT\n${jsonEncode(trimmed)}';
   }
 
@@ -330,22 +328,21 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
   // analyzePandaSession
   // ---------------------------------------------------------------------------
 
-  @override
   Future<PandaSessionData> analyzePandaSession({
     String? extraUserContext,
     String? userName,
     String? userId,
   }) async {
     if (userId == null || userId.isEmpty) {
-      return GeminiService.emptyStateSession(userName ?? 'there');
+      return PandaPrompts.emptyStateSession(userName ?? 'there');
     }
 
-    final payload = await GeminiService.fetchRealUserPayload(userId);
+    final payload = await PandaPrompts.fetchRealUserPayload(userId);
     if (payload == null) {
-      return GeminiService.emptyStateSession(userName ?? 'there');
+      return PandaPrompts.emptyStateSession(userName ?? 'there');
     }
 
-    final compact = GeminiService.buildCompactPayload(payload, topK: 1);
+    final compact = PandaPrompts.buildCompactPayload(payload, topK: 1);
 
     // Nothing to analyze (no spike candidates — e.g. every detected spike day
     // was already surfaced once). Skip the LLM round trip entirely: it would
@@ -354,7 +351,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       if (kDebugMode) {
         debugPrint('[Claude][spike] no spike candidates — skipping LLM call');
       }
-      return GeminiService.noSpikesSession(payload, overrideName: userName);
+      return PandaPrompts.noSpikesSession(payload, overrideName: userName);
     }
 
     return _runSpikeAnalysis(
@@ -366,7 +363,6 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     );
   }
 
-  @override
   Future<PandaSessionBootstrap> startSession({
     String? extraUserContext,
     String? userName,
@@ -374,18 +370,18 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
   }) async {
     if (userId == null || userId.isEmpty) {
       return PandaSessionBootstrap(
-        session: GeminiService.emptyStateSession(userName ?? 'there'),
+        session: PandaPrompts.emptyStateSession(userName ?? 'there'),
       );
     }
 
-    final payload = await GeminiService.fetchRealUserPayload(userId);
+    final payload = await PandaPrompts.fetchRealUserPayload(userId);
     if (payload == null) {
       return PandaSessionBootstrap(
-        session: GeminiService.emptyStateSession(userName ?? 'there'),
+        session: PandaPrompts.emptyStateSession(userName ?? 'there'),
       );
     }
 
-    final compact = GeminiService.buildCompactPayload(payload, topK: 1);
+    final compact = PandaPrompts.buildCompactPayload(payload, topK: 1);
 
     // Nothing to analyze → no LLM call at all; the chat is already final.
     if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
@@ -393,13 +389,13 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
         debugPrint('[Claude][spike] no spike candidates — skipping LLM call');
       }
       return PandaSessionBootstrap(
-        session: GeminiService.noSpikesSession(payload, overrideName: userName),
+        session: PandaPrompts.noSpikesSession(payload, overrideName: userName),
       );
     }
 
     // Opener NOW; the labeling questions stream in behind it.
     return PandaSessionBootstrap(
-      session: GeminiService.bootstrapSession(
+      session: PandaPrompts.bootstrapSession(
         payload,
         overrideName: userName,
         hasSpikes: true,
@@ -427,8 +423,8 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     compact['_variability_seed'] =
         DateTime.now().millisecondsSinceEpoch % 100000;
 
-    final userPrompt = GeminiService.buildSpikeUserPrompt(compact);
-    final systemPrompt = '${GeminiService.spikeSystemPrompt}$_spikeJsonSuffix';
+    final userPrompt = PandaPrompts.buildSpikeUserPrompt(compact);
+    final systemPrompt = '${PandaPrompts.spikeSystemPrompt}$_spikeJsonSuffix';
 
     final result = await _fn.call<dynamic>({
       'system': [_cacheBlock(systemPrompt)],
@@ -450,17 +446,17 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       );
     }
 
-    final session = GeminiService.parsePandaSession(
+    final session = PandaPrompts.parsePandaSession(
       raw,
       payload,
       overrideName: userName,
     );
     // Record the surfaced spike's day so Panda doesn't re-ask about it.
-    if (AppFlags.dedupeAnalyzedSpikes && session.rawSpikes.isNotEmpty) {
+    if (session.rawSpikes.isNotEmpty) {
       unawaited(
-        GeminiService.markSpikeDaysAnalyzed(
+        PandaPrompts.markSpikeDaysAnalyzed(
           userId,
-          GeminiService.spikeDaysFromCompact(compact),
+          PandaPrompts.spikeDaysFromCompact(compact),
         ),
       );
     }
@@ -471,7 +467,6 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
   // processTurn
   // ---------------------------------------------------------------------------
 
-  @override
   Future<PandaTurnReply> processTurn({
     required String userMessage,
     required List<Map<String, String>> conversationHistory,
@@ -492,7 +487,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     // returned a canned "we've covered a lot of ground — let's wrap up" reply,
     // which ended the chat before the user was finished. Panda now always
     // answers, so the conversation reaches its own natural conclusion.
-    final fitted = GeminiService.fitConversation(
+    final fitted = PandaPrompts.fitConversation(
       conversationHistory,
       userMessage,
     );
@@ -509,7 +504,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     // embedSpikeContext/embedPersona/embedTaskInstructions: false — all three
     // are already in the cached system blocks (_dialogueSystem + healthCtx),
     // so omitting them from the user prompt saves ~110–130 uncached tokens/turn.
-    final userPrompt = GeminiService.buildDialoguePrompt(
+    final userPrompt = PandaPrompts.buildDialoguePrompt(
       userMessage: effectiveMessage,
       conversationHistory: cappedHistory,
       spikeContext: spikeContext,
@@ -565,39 +560,38 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       );
     }
 
-    return GeminiService.parseTurnReply(raw);
+    return PandaPrompts.parseTurnReply(raw);
   }
 
   // ---------------------------------------------------------------------------
   // summarizeSession
   //
   // Generates the brief end-of-session continuity note via the pandaClaude
-  // proxy. Reuses GeminiService.summarySystemPrompt + buildSummaryPrompt so
+  // proxy. Reuses PandaPrompts.summarySystemPrompt + buildSummaryPrompt so
   // both backends produce the same shape. Returns '' on any failure so the
   // caller falls back to the deterministic summary.
   // ---------------------------------------------------------------------------
 
-  @override
   Future<String> summarizeSession({
     required List<Map<String, String>> conversation,
     required Map<String, String> slots,
     required Map<String, String> labeledAnswers,
   }) async {
     try {
-      final userPrompt = GeminiService.buildSummaryPrompt(
+      final userPrompt = PandaPrompts.buildSummaryPrompt(
         conversation: conversation,
         slots: slots,
         labeledAnswers: labeledAnswers,
       );
 
-      final estimated = GeminiService.estimateTokens(
-        GeminiService.summarySystemPrompt + userPrompt,
+      final estimated = PandaPrompts.estimateTokens(
+        PandaPrompts.summarySystemPrompt + userPrompt,
       );
       if (estimated > kMaxInputTokens) return '';
 
       final result = await _fn.call<dynamic>({
         'system': [
-          {'type': 'text', 'text': GeminiService.summarySystemPrompt},
+          {'type': 'text', 'text': PandaPrompts.summarySystemPrompt},
         ],
         'user': [
           {'type': 'text', 'text': userPrompt},
