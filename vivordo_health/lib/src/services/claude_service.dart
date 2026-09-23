@@ -184,6 +184,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '    "other": string\n'
       '  },\n'
       '  "rec_hint": string,\n'
+      '  "priority_action": {"operation": "create|update|delete", "title": string, "target_title": string, "target_date": "YYYY-MM-DD", "date": "YYYY-MM-DD", "scheduled_at": "YYYY-MM-DDTHH:mm", "reminder_at": "YYYY-MM-DDTHH:mm"},\n'
       '  "calendar_action": {"operation": string, "title": string, '
       '"target_title": string, "start": string, "end": string, "recurrence": string}\n'
       '}\n'
@@ -212,6 +213,15 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '                        Fill calendar_action; use local ISO-8601 start/end. title is the\n'
       '                        new title and target_title identifies an existing event. Never\n'
       '                        guess missing title/date/time; ask a chitchat clarification.\n'
+      '"priority_action"     — Create/edit/delete a Vivordo priority or task. "Remind me" and\n'
+      '                        "set a reminder" MUST create a priority with reminder_at, not a calendar event.\n'
+      '                        Ask for a reminder date/time if missing; never invent one. Use local times\n'
+      '                        to the minute without offsets. Omit all unchanged/unused fields.\n'
+      '                        Create requires title. Update/delete requires exact target_title;\n'
+      '                        target_date is the ORIGINAL date to disambiguate, date is the NEW day.\n'
+      '                        Undated priorities may omit date. Recurring series changes are not supported;\n'
+      '                        clarify single-occurrence scope. Reminders must be on the priority day, at or\n'
+      '                        before its scheduled time. Never claim success: user confirmation is required.\n'
       '\n'
       'TONE PRINCIPLES\n'
       '• Warm peer, never clinical. Say "may be related to" — never diagnose.\n'
@@ -543,7 +553,11 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     final result = await _fn.call<dynamic>({
       'system': cachedSystem,
       'user': [
-        {'type': 'text', 'text': userPrompt},
+        {
+          'type': 'text',
+          'text':
+              'Local current time: ${DateTime.now().toIso8601String()}\n$userPrompt',
+        },
       ],
       'maxTokens': kMaxOutputTokensChat,
     });

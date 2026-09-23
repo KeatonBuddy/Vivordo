@@ -516,6 +516,41 @@ class DailyPriorityService {
     return reference;
   }
 
+  /// One-shot lookup for a user-confirmed Panda action; never trusts model paths.
+  static Future<List<DailyPriority>> findByTitle(
+    String title, {
+    DateTime? day,
+  }) async {
+    final user = _userDocument();
+    if (user == null) throw StateError('Please sign in first.');
+    final data = (await user.get(
+      const GetOptions(source: Source.server),
+    )).data();
+    final keys = day != null
+        ? {localDayKey(day)}
+        : {
+            localDayKey(DateTime.now()),
+            ...((data?['priorityReminderDays'] as List?) ?? [])
+                .whereType<String>(),
+          };
+    final matches = <DailyPriority>[];
+    for (final key in keys) {
+      if (DateTime.tryParse(key) == null) continue;
+      final snapshot = await user
+          .collection('daily_priorities')
+          .doc(key)
+          .collection('items')
+          .where('title', isEqualTo: title)
+          .get(const GetOptions(source: Source.server));
+      matches.addAll(
+        snapshot.docs
+            .where((doc) => doc.data()['dismissed'] != true)
+            .map(DailyPriority.fromDocument),
+      );
+    }
+    return matches;
+  }
+
   static Future<void> setCompleted(
     DailyPriority priority,
     bool completed,

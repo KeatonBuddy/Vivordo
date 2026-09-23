@@ -12,7 +12,7 @@ import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
-import '../src/utils/daily_outlook_score.dart';
+import '../src/utils/daily_brief_metrics.dart';
 import '../src/utils/daily_brief_analysis.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
@@ -45,7 +45,40 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   DateTime? _calendarLoadedAt;
   Timer? _clockTimer;
   late DateTime _priorityDay;
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _todayMetricsStream;
+  final _briefSnapshot = OwnedStreamSnapshot<DailyBriefMetricsSummary>();
+  DailyBriefMetrics? _briefMetrics;
+
+  void _connectBriefMetrics(DateTime day) {
+    _briefMetrics = null;
+    final stream = _metricsStreamFor(day);
+    _briefSnapshot.connect(
+      (stream ?? const Stream<QuerySnapshot<Map<String, dynamic>>>.empty()).map(
+        (snapshot) {
+          final metrics = DailyBriefMetrics(
+            snapshot.docs
+                .map((d) => MetricDayEntry(dayKey: d.id, data: d.data()))
+                .toList(),
+            isFromCache: snapshot.metadata.isFromCache,
+          );
+          _briefMetrics = metrics;
+          return metrics.summarize(DateTime.now());
+        },
+      ),
+    );
+  }
+
+  void _refreshBriefClock() {
+    final metrics = _briefMetrics;
+    if (metrics == null || _briefSnapshot.value.hasError) return;
+    final summary = metrics.summarize(DateTime.now());
+    if (!identical(summary, _briefSnapshot.value.data)) {
+      _briefSnapshot.value = AsyncSnapshot.withData(
+        _briefSnapshot.value.connectionState,
+        summary,
+      );
+    }
+  }
+
   final _prioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
   final _tomorrowPrioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
   DateTime get _tomorrow =>
@@ -56,20 +89,23 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _priorityDay = DateUtils.dateOnly(DateTime.now());
-    _todayMetricsStream = _metricsStreamFor(_priorityDay);
+    _connectBriefMetrics(_priorityDay);
     _prioritySnapshot.connect(DailyPriorityService.watch(_priorityDay));
     _tomorrowPrioritySnapshot.connect(DailyPriorityService.watch(_tomorrow));
     _loadTodayEvents();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
-      if (!_handleDayRollover()) setState(() {});
+      if (!_handleDayRollover()) {
+        _refreshBriefClock();
+        setState(() {});
+      }
     });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
-      _handleDayRollover();
+      if (!_handleDayRollover()) _refreshBriefClock();
     }
   }
 
@@ -79,7 +115,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
     setState(() {
       _priorityDay = today;
-      _todayMetricsStream = _metricsStreamFor(today);
+      _connectBriefMetrics(today);
       _prioritySnapshot.connect(DailyPriorityService.watch(today));
       _tomorrowPrioritySnapshot.connect(DailyPriorityService.watch(_tomorrow));
     });
@@ -110,6 +146,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
+    _briefSnapshot.dispose();
     _prioritySnapshot.dispose();
     _tomorrowPrioritySnapshot.dispose();
     super.dispose();
@@ -595,110 +632,20 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   Widget _buildDayOutlookCard({
     required List<_CalendarEvent> timedEvents,
-  }) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-    stream: _todayMetricsStream,
-    builder: (context, snapshot) {
-      final todayKey = DateFormat('yyyy-MM-dd').format(_priorityDay);
-      final documents = snapshot.data?.docs ?? [];
-      final todayDocuments = documents.where((d) => d.id == todayKey);
-      final data = todayDocuments.isEmpty ? null : todayDocuments.first.data();
-      final previous = documents.where((d) => d.id.compareTo(todayKey) < 0);
-      final usualSleep = sleepBaseline(
-        previous.map(
-          (d) => ((d.data()['sleep'] as Map?)?['avg'] as num?)?.toDouble() ?? 0,
-        ),
-      );
-      final sleep = ((data?['sleep'] as Map?)?['avg'] as num?)?.toDouble();
-      final stressMap = data?['stress'] as Map?;
-      final hrvMap = data?['hrv'] as Map?;
-      final stress =
-          (stressMap?['current'] as num?)?.toDouble() ??
-          (stressMap?['avg'] as num?)?.toDouble() ??
-          (hrvMap?['stressScore'] as num?)?.toDouble();
-      final latestHeartRate = data == null
-          ? null
-          : summarizeHomeMetrics(
-              days: [MetricDayEntry(dayKey: todayKey, data: data)],
-              now: DateTime.now(),
-            ).latestHeartRate;
-      final capacity = calculateDailyCapacity(
-        sleepHours: sleep,
-        stressScore: stress,
-      );
+  }) => ValueListenableBuilder<AsyncSnapshot<DailyBriefMetricsSummary>>(
+    valueListenable: _briefSnapshot,
+    builder: (context, snapshot, _) {
+      final summary = snapshot.data;
+      final sleep = summary?.sleep;
+      final usualSleep = summary?.usualSleep;
+      final capacity = summary?.capacity;
+      final capacityNote =
+          summary?.capacityNote ?? 'Building your capacity baseline';
+      final stale = summary?.stale ?? true;
+      final stressTime = summary?.stressTime;
+      final healthTime = summary?.healthTime;
       final now = DateTime.now();
       final calendarReady = !_isLoading && _calendarLoadError == null;
-      final computedAt = stressMap?['computedAt'];
-      final stressTime = computedAt is Timestamp ? computedAt.toDate() : null;
-      final healthTime = latestHeartRate?.timestamp;
-      final stale =
-          sleep == null ||
-          sleep <= 0 ||
-          stressTime == null ||
-          stressTime.isAfter(now) ||
-          now.difference(stressTime) > const Duration(hours: 2);
-      final historyCapacity = <double>[];
-      for (final document in previous) {
-        final day = document.data();
-        if (stress != null &&
-            (stressMap?['algorithm_version'] == null ||
-                (day['stress'] as Map?)?['algorithm_version'] !=
-                    stressMap?['algorithm_version'])) {
-          continue;
-        }
-        final pastSleep = ((day['sleep'] as Map?)?['avg'] as num?)?.toDouble();
-        final historicalDay = DateTime.tryParse(document.id);
-        if (historicalDay == null) continue;
-        final cutoff = DateTime(
-          historicalDay.year,
-          historicalDay.month,
-          historicalDay.day,
-          now.hour,
-          now.minute,
-        );
-        final entries =
-            ((day['stress'] as Map?)?['entries'] as List? ?? [])
-                .whereType<Map>()
-                .where((entry) {
-                  final timestamp = entry['timestamp'];
-                  return timestamp is Timestamp &&
-                      !timestamp.toDate().isAfter(cutoff) &&
-                      cutoff.difference(timestamp.toDate()) <=
-                          const Duration(hours: 2);
-                })
-                .toList()
-              ..sort(
-                (a, b) => (b['timestamp'] as Timestamp).compareTo(
-                  a['timestamp'] as Timestamp,
-                ),
-              );
-        final pastStress = entries.isEmpty
-            ? null
-            : (entries.first['score'] as num?)?.toDouble();
-        if ((pastSleep != null) != (sleep != null) ||
-            (pastStress != null) != (stress != null)) {
-          continue;
-        }
-        final value = calculateDailyCapacity(
-          sleepHours: pastSleep,
-          stressScore: pastStress,
-        ).score;
-        if (value != null) historyCapacity.add(value.toDouble());
-      }
-      historyCapacity.sort();
-      final usualCapacity = historyCapacity.length < 7 || stale
-          ? null
-          : historyCapacity.length.isOdd
-          ? historyCapacity[historyCapacity.length ~/ 2]
-          : (historyCapacity[historyCapacity.length ~/ 2 - 1] +
-                    historyCapacity[historyCapacity.length ~/ 2]) /
-                2;
-      final capacityNote = usualCapacity == null || capacity.score == null
-          ? 'Building your capacity baseline'
-          : (capacity.score! - usualCapacity).abs() < 10
-          ? 'Near your recent capacity estimate'
-          : capacity.score! < usualCapacity
-          ? 'Below your recent capacity estimate'
-          : 'Above your recent capacity estimate';
       return ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
         valueListenable: _prioritySnapshot,
         builder: (context, priorities, _) {
@@ -732,9 +679,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           );
           final ready =
               calendarReady && priorities.hasData && !priorities.hasError;
-          final headline = capacity.score == null
+          final headline = capacity?.score == null
               ? 'Make space for your day'
-              : capacity.score! < 40 || (ready && plan.score >= 65)
+              : capacity!.score! < 40 || (ready && plan.score >= 65)
               ? 'Give yourself a little more room today'
               : 'Find a steady rhythm today';
           final calendarText = ready
@@ -749,8 +696,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             headline: headline,
             summary:
                 '${sleepComparison(sleep, usualSleep)} $calendarText$estimateText',
-            capacityScore: capacity.score,
-            capacityLabel: capacity.score == null
+            capacityScore: capacity?.score,
+            capacityLabel: capacity?.score == null
                 ? 'Needs health data'
                 : capacityNote,
             scheduleScore: ready ? plan.score : null,
@@ -768,8 +715,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     'Calendar loaded: ${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).\n'
                     'Heart rate measured: ${timeLabel(healthTime)}.\n'
                     'Stress calculated: ${timeLabel(stressTime)}.\n'
-                    '${snapshot.data?.metadata.isFromCache == true ? 'Health data is from the local cache.\n' : ''}'
-                    'Sleep baseline: ${previous.where((d) => ((d.data()['sleep'] as Map?)?['avg'] as num? ?? 0) > 0).length} prior nights in the last 28 days; at least 7 required.\n'
+                    '${summary?.isFromCache == true ? 'Health data is from the local cache.\n' : ''}'
+                    'Sleep baseline: ${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.\n'
                     'Capacity uses sleep and stress, not raw heart rate. Comparisons require 7 days with matching inputs and stress readings at a similar time of day. These are wellness estimates, not clinical assessments.\n'
                     'Remaining demand includes unfinished planned priorities and upcoming events. Openings use a 9 AM–5 PM planning window. Untimed work does not block a specific opening.',
                   ),

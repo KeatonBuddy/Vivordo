@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'priority_reminder_picker.dart';
+import 'priority_duration_picker.dart';
 
 const _purple = Color(0xFF6254F4);
 
@@ -114,7 +116,6 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   TimeOfDay? _reminderTime;
   bool _completed = false;
   late Map<String, dynamic> _planning;
-  bool _invalidEstimate = false;
   bool get _editing => widget.initial != null;
 
   @override
@@ -227,16 +228,6 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
         const SnackBar(
           content: Text(
             'Add an estimated duration before creating a timed calendar event.',
-          ),
-        ),
-      );
-      return;
-    }
-    if (!deleteRequested && _invalidEstimate) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Enter an estimate from 1 to 1440 minutes, or leave it blank.',
           ),
         ),
       );
@@ -360,91 +351,94 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                     ),
                     const SizedBox(height: 26),
                     const _Label('WORKLOAD ESTIMATE'),
-                    TextFormField(
-                      initialValue: _planning['minutes']?.toString() ?? '',
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Estimated minutes (optional)',
-                        errorText: _invalidEstimate
-                            ? 'Use 1–1440 minutes'
-                            : null,
-                        helperText:
-                            'Your estimate, not an automatic prediction',
-                      ),
-                      onChanged: (value) {
-                        final minutes = int.tryParse(value);
-                        setState(
-                          () => _invalidEstimate =
-                              value.trim().isNotEmpty &&
-                              (minutes == null ||
-                                  minutes < 1 ||
-                                  minutes > 1440),
-                        );
-                        _planning['minutes'] =
-                            minutes != null && minutes > 0 && minutes <= 1440
-                            ? minutes
-                            : null;
-                      },
-                    ),
-                    DropdownButtonFormField<String>(
-                      initialValue: _planning['effort'] as String?,
-                      decoration: const InputDecoration(
-                        labelText: 'Effort (optional)',
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'light', child: Text('Light')),
-                        DropdownMenuItem(
-                          value: 'moderate',
-                          child: Text('Moderate'),
+                    const SizedBox(height: 10),
+                    _Card(
+                      children: [
+                        _Row(
+                          icon: Icons.timer_outlined,
+                          label: 'Estimated duration',
+                          value: _planning['minutes'] == null
+                              ? 'Not set'
+                              : '${(_planning['minutes'] as num).toInt() ~/ 60} hr ${(_planning['minutes'] as num).toInt() % 60} min',
+                          onTap: () async {
+                            FocusScope.of(context).unfocus();
+                            final minutes = await showPriorityDurationPicker(
+                              context,
+                              initialMinutes: (_planning['minutes'] as num?)
+                                  ?.toInt(),
+                            );
+                            if (minutes != null && mounted) {
+                              setState(
+                                () => _planning['minutes'] = minutes == 0
+                                    ? null
+                                    : minutes,
+                              );
+                            }
+                          },
                         ),
-                        DropdownMenuItem(
-                          value: 'demanding',
-                          child: Text('Demanding'),
+                        _Row(
+                          icon: Icons.bar_chart_rounded,
+                          label: 'Effort (optional)',
+                          value: switch (_planning['effort']) {
+                            'light' => 'Light',
+                            'moderate' => 'Moderate',
+                            'demanding' => 'Demanding',
+                            _ => 'Not set',
+                          },
+                          onTap: () async {
+                            FocusScope.of(context).unfocus();
+                            final selected =
+                                await showCupertinoModalPopup<String>(
+                                  context: context,
+                                  builder: (sheetContext) => CupertinoTheme(
+                                    data: CupertinoThemeData(
+                                      brightness: Theme.of(context).brightness,
+                                      primaryColor: _purple,
+                                    ),
+                                    child: CupertinoActionSheet(
+                                      title: const Text('Effort'),
+                                      message: const Text(
+                                        'How demanding will this priority feel?',
+                                      ),
+                                      actions: [
+                                        for (final choice in const [
+                                          ('light', 'Light'),
+                                          ('moderate', 'Moderate'),
+                                          ('demanding', 'Demanding'),
+                                          ('clear', 'Not set'),
+                                        ])
+                                          CupertinoActionSheetAction(
+                                            isDefaultAction:
+                                                (_planning['effort'] ??
+                                                    'clear') ==
+                                                choice.$1,
+                                            onPressed: () => Navigator.pop(
+                                              sheetContext,
+                                              choice.$1,
+                                            ),
+                                            child: Text(choice.$2),
+                                          ),
+                                      ],
+                                      cancelButton: CupertinoActionSheetAction(
+                                        onPressed: () =>
+                                            Navigator.pop(sheetContext),
+                                        child: const Text('Cancel'),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                            if (selected != null && mounted) {
+                              setState(
+                                () => _planning['effort'] = selected == 'clear'
+                                    ? null
+                                    : selected,
+                              );
+                            }
+                          },
                         ),
                       ],
-                      onChanged: (value) =>
-                          setState(() => _planning['effort'] = value),
                     ),
-                    Material(
-                      color: Colors.transparent,
-                      child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Planned work day'),
-                        subtitle: Text(
-                          _planning['plannedDay'] as String? ??
-                              'Unplanned — does not add flexible workload',
-                        ),
-                        trailing: _planning['plannedDay'] == null
-                            ? const Icon(Icons.calendar_today)
-                            : IconButton(
-                                tooltip: 'Clear planned day',
-                                icon: const Icon(Icons.close),
-                                onPressed: () => setState(
-                                  () => _planning['plannedDay'] = null,
-                                ),
-                              ),
-                        onTap: () async {
-                          final day = await showDatePicker(
-                            context: context,
-                            initialDate:
-                                DateTime.tryParse(
-                                  _planning['plannedDay'] as String? ?? '',
-                                ) ??
-                                DateTime.now(),
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime(2100),
-                          );
-                          if (day != null && mounted) {
-                            setState(
-                              () => _planning['plannedDay'] = DateFormat(
-                                'yyyy-MM-dd',
-                              ).format(day),
-                            );
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 26),
                     const _Label('SCHEDULE'),
                     const SizedBox(height: 10),
                     _Card(
@@ -488,6 +482,12 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             }
                           },
                         ),
+                        if (_time == null && _reminderTime != null)
+                          TextButton(
+                            onPressed: () =>
+                                setState(() => _reminderTime = null),
+                            child: const Text('Remove reminder time'),
+                          ),
                         if (_time != null)
                           TextButton(
                             onPressed: () => setState(() => _time = null),

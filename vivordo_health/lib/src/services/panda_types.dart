@@ -77,6 +77,7 @@ enum PandaIntent {
   chitchat,
   skip,
   calendarAction,
+  priorityAction,
 }
 
 enum PandaCalendarOperation { create, update, delete }
@@ -111,6 +112,7 @@ class PandaTurnReply {
     this.filledSlots,
     this.recHint,
     this.calendarAction,
+    this.priorityAction,
   });
 
   final PandaIntent intent;
@@ -132,4 +134,5 @@ class PandaTurnReply {
 
   /// Present only when [intent] is [PandaIntent.calendarAction].
   final PandaCalendarAction? calendarAction;
+  final Map<String, dynamic>? priorityAction;
 }

@@ -13,6 +13,8 @@ import '../src/services/insight_service.dart';
 import '../src/models/insights.dart';
 import '../src/services/panda_recommendations.dart';
 import '../src/services/calendar_service.dart';
+import '../src/services/daily_priority_service.dart';
+import '../src/services/panda_priority_action.dart';
 import '../src/services/workout_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../widgets/privacy_support_links.dart';
@@ -950,6 +952,16 @@ class _PandaScreenState extends State<PandaScreen>
           await _pandaSay(reply.message, typingMs: 0);
 
         case PandaIntent.calendarAction:
+          if (RegExp(
+            r'\b(remind me|set (a |an )?reminder)\b',
+            caseSensitive: false,
+          ).hasMatch(text)) {
+            await _pandaSay(
+              'I can save that as a priority with a reminder. What should I remind you about, and on which day and time?',
+              typingMs: 0,
+            );
+            break;
+          }
           if (reply.calendarAction == null) {
             await _pandaSay(
               'I need a little more detail before I can prepare that calendar change.',
@@ -963,6 +975,19 @@ class _PandaScreenState extends State<PandaScreen>
               calendarAction: reply.calendarAction,
             );
           }
+        case PandaIntent.priorityAction:
+          if (RegExp(
+                r'\b(remind me|set (a |an )?reminder)\b',
+                caseSensitive: false,
+              ).hasMatch(text) &&
+              reply.priorityAction?['reminder_at'] == null) {
+            await _pandaSay(
+              'What day and time should I remind you?',
+              typingMs: 0,
+            );
+            break;
+          }
+          await _handlePriorityAction(reply.priorityAction);
       }
     } catch (e) {
       if (!mounted) return;
@@ -971,6 +996,194 @@ class _PandaScreenState extends State<PandaScreen>
         "I hit a small issue. Try sending that again.",
         typingMs: 0,
       );
+    }
+  }
+
+  Future<void> _handlePriorityAction(Map<String, dynamic>? raw) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    try {
+      if (uid == null || raw == null) {
+        throw StateError(
+          'Please specify the priority, date, and change you want.',
+        );
+      }
+      final action = PandaPriorityAction(raw);
+      DailyPriority? existing;
+      if (action.operation != 'create') {
+        final matches = await DailyPriorityService.findByTitle(
+          action.targetTitle!,
+          day: action.targetDate,
+        );
+        if (matches.length != 1) {
+          throw StateError(
+            matches.isEmpty
+                ? 'I could not find that priority. Please give its exact title and original date.'
+                : 'Several priorities match. Please specify the original date.',
+          );
+        }
+        existing = matches.single;
+        if (action.operation == 'update' && existing.sourceEventKey != null) {
+          throw StateError(
+            'Please edit this calendar-linked priority in My Day so its calendar event stays in sync.',
+          );
+        }
+      }
+      final title = action.operation == 'delete'
+          ? existing!.title
+          : action.title ?? existing!.title;
+      final date =
+          action.date ??
+          action.scheduledAt ??
+          action.reminderAt ??
+          existing?.date ??
+          DateTime.now();
+      final oldTime = existing?.sourceStart;
+      final scheduled =
+          action.scheduledAt ??
+          (oldTime == null
+              ? null
+              : DateTime(
+                  date.year,
+                  date.month,
+                  date.day,
+                  oldTime.hour,
+                  oldTime.minute,
+                ));
+      final reminder = action.reminderAt;
+      if (reminder != null &&
+          (!reminder.isAfter(DateTime.now()) ||
+              (scheduled != null && reminder.isAfter(scheduled)))) {
+        throw StateError(
+          'Choose a future reminder at or before the priority’s scheduled time.',
+        );
+      }
+      final minutesBefore = reminder != null && scheduled != null
+          ? scheduled.difference(reminder).inMinutes
+          : existing?.reminderMinutes ?? 0;
+      final reminderClock = reminder != null && scheduled == null
+          ? reminder.hour * 60 + reminder.minute
+          : existing?.reminderTimeMinutes;
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            '${action.operation == 'create'
+                ? 'Create'
+                : action.operation == 'update'
+                ? 'Edit'
+                : 'Delete'} priority?',
+          ),
+          content: SingleChildScrollView(
+            child: Text(
+              [
+                title,
+                DateFormat('EEE, MMM d, yyyy').format(date),
+                scheduled == null
+                    ? 'No scheduled time'
+                    : 'Scheduled: ${DateFormat('h:mm a').format(scheduled)}',
+                if (reminder != null)
+                  'Remind: ${DateFormat('MMM d, h:mm a').format(reminder)}',
+                if (reminder == null &&
+                    scheduled != null &&
+                    action.operation != 'delete')
+                  'Reminder: $minutesBefore minutes before scheduled time',
+                if (reminder == null &&
+                    scheduled == null &&
+                    reminderClock != null &&
+                    action.operation != 'delete')
+                  'Reminder: ${DateFormat('h:mm a').format(DateTime(date.year, date.month, date.day, reminderClock ~/ 60, reminderClock % 60))}',
+                if (existing?.templateId != null)
+                  'This occurrence only; future repetitions stay unchanged.',
+                if (existing?.sourceEventKey != null)
+                  'The calendar event will not be deleted.',
+                if (action.operation != 'delete')
+                  'Notifications depend on your device notification permissions.',
+              ].join('\n\n'),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Confirm'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      if (confirmed != true) {
+        await _pandaSay('Cancelled — no priority changes made.', typingMs: 0);
+        return;
+      }
+      if (FirebaseAuth.instance.currentUser?.uid != uid)
+        throw StateError('Your account changed. Please try again.');
+      if (reminder != null && !reminder.isAfter(DateTime.now()))
+        throw StateError(
+          'That reminder time has passed. Please choose a new time.',
+        );
+      if (existing != null) {
+        final latest = await DailyPriorityService.findByTitle(
+          existing.title,
+          day: existing.date,
+        );
+        final same = latest.where(
+          (p) => p.reference.path == existing!.reference.path,
+        );
+        if (same.length != 1 ||
+            same.single.sourceStart != existing.sourceStart ||
+            same.single.completed != existing.completed ||
+            same.single.reminderMinutes != existing.reminderMinutes ||
+            same.single.reminderTimeMinutes != existing.reminderTimeMinutes) {
+          throw StateError(
+            'That priority changed. Please ask again to review its latest details.',
+          );
+        }
+      }
+      if (FirebaseAuth.instance.currentUser?.uid != uid)
+        throw StateError('Your account changed. Please try again.');
+      if (action.operation == 'delete') {
+        await DailyPriorityService.delete(existing!);
+      } else if (existing == null) {
+        final saved = await DailyPriorityService.createManual(
+          title: title,
+          date: date,
+          scheduledAt: scheduled,
+          reminderMinutes: minutesBefore,
+          reminderTimeMinutes: reminderClock,
+        );
+        if (saved == null) throw StateError('Could not save the priority.');
+      } else {
+        final saved = await DailyPriorityService.editPriority(
+          existing,
+          title: title,
+          date: date,
+          scheduledAt: scheduled,
+          completed: existing.completed,
+          reminderMinutes: minutesBefore,
+          reminderTimeMinutes: reminderClock,
+        );
+        if (saved == null) throw StateError('Could not save the priority.');
+      }
+      if (mounted)
+        await _pandaSay(
+          action.operation == 'delete'
+              ? 'Priority removed.'
+              : 'Priority saved in My Day.${reminder != null ? ' Reminder requested; notifications must be enabled on your device.' : ''}',
+          typingMs: 0,
+        );
+    } catch (error) {
+      if (mounted)
+        await _pandaSay(
+          error.toString().replaceFirst(
+            RegExp(r'^(Bad state|FormatException): '),
+            '',
+          ),
+          typingMs: 0,
+        );
     }
   }
 

@@ -726,7 +726,7 @@ Write the continuity note now.''';
     final tasksSection = embedTaskInstructions
         ? '\n\nTASKS:\n\n'
               '1. INTENT (pick one): "answer_label" | "want_deeper_answer" | "digress" |\n'
-              '   "digression_complete" | "new_stressor" | "recommend" | "chitchat" | "skip" | "calendar_action"\n'
+              '   "digression_complete" | "new_stressor" | "recommend" | "chitchat" | "skip" | "calendar_action" | "priority_action"\n'
               '\n'
               '2. MESSAGE (2–4 sentences):\n'
               '   • Never ask the next predefined question — the app handles that automatically.\n'
@@ -740,6 +740,17 @@ Write the continuity note now.''';
               '     best time(s). Name specific day + time range. If SCHEDULE is absent,\n'
               '     say their calendar isn\'t connected. intent stays "chitchat".\n'
               '   • Calendar mutation asks: set intent="calendar_action" and fill calendar_action.\n'
+              '   • Priority/task/reminder mutations: use intent="priority_action", NEVER calendar_action.\n'
+              '     Include priority_action: {operation:create|update|delete, title?:string,\n'
+              '     target_title?:string, target_date?:YYYY-MM-DD, date?:YYYY-MM-DD,\n'
+              '     scheduled_at?:local ISO-8601 date-time, reminder_at?:local ISO-8601 date-time}.\n'
+              '     Create requires title; update/delete requires exact target_title. target_date is\n'
+              '     the ORIGINAL day of an existing priority, date is the NEW day. Omit unchanged fields.\n'
+              '     "Remind me" means create a priority with reminder_at, not a calendar event.\n'
+              '     Ask what time/date to remind if unspecified; do not claim a notification is set.\n'
+              '     Do not invent recurrence or change entire recurring series: only single occurrences\n'
+              '     are supported here. Ask clarification for recurring requests. The user must confirm.\n'
+              '     Local current time: ${DateTime.now().toIso8601String()}.\n'
               '     operation is create/update/delete; target_title identifies an existing event.\n'
               '     start/end must be local ISO-8601 date-times. Resolve relative dates using the\n'
               '     dates shown in SCHEDULE. Ask for missing required title/date/time instead of\n'
@@ -1156,6 +1167,11 @@ Write the continuity note now.''';
         filledSlots: slots,
         recHint: recHint,
         calendarAction: calendarAction,
+        priorityAction:
+            intent == PandaIntent.priorityAction &&
+                obj['priority_action'] is Map
+            ? Map<String, dynamic>.from(obj['priority_action'] as Map)
+            : null,
       );
     } catch (_) {
       return PandaTurnReply(intent: PandaIntent.chitchat, message: 'Got it');
@@ -1216,6 +1232,8 @@ Write the continuity note now.''';
         return PandaIntent.skip;
       case 'calendar_action':
         return PandaIntent.calendarAction;
+      case 'priority_action':
+        return PandaIntent.priorityAction;
       default:
         return PandaIntent.chitchat;
     }
