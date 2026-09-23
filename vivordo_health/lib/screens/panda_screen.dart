@@ -1395,7 +1395,7 @@ class _PandaScreenState extends State<PandaScreen>
   }
 
   PreferredSizeWidget _buildAppBar() {
-    final (String statusText, Color statusColor) = switch (_state) {
+    final (String statusText, _) = switch (_state) {
       _DialogueState.inDigression => ('side chat', _teal),
       _DialogueState.inDepth => ('going deeper…', _purple),
       _ when _loading => ('analysing…', Colors.orange),
@@ -1407,10 +1407,11 @@ class _PandaScreenState extends State<PandaScreen>
     };
 
     return AppBar(
-      backgroundColor: context.vivordoColors.card,
+      backgroundColor: context.vivordoColors.page,
       foregroundColor: context.vivordoColors.textPrimary,
       surfaceTintColor: Colors.transparent,
-      elevation: 0.5,
+      elevation: 0,
+      toolbarHeight: 80,
       automaticallyImplyLeading: false,
       leading: widget.onClose == null
           ? null
@@ -1424,31 +1425,60 @@ class _PandaScreenState extends State<PandaScreen>
         children: [
           _avatar(size: 42),
           const SizedBox(width: 8),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'AI Assistant',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                statusText,
-                style: TextStyle(color: statusColor, fontSize: 12),
-              ),
-            ],
+          Flexible(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Vivordo AI',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  statusText.isEmpty || statusText == 'online'
+                      ? 'Personal health companion'
+                      : statusText,
+                  maxLines: 2,
+                  style: TextStyle(
+                    color: context.vivordoColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
       centerTitle: true,
-      bottom: TabBar(
-        controller: _tabCtrl,
-        tabs: const [
-          Tab(text: 'Chat'),
-          Tab(text: 'History'),
-        ],
-        labelColor: _purple,
-        unselectedLabelColor: Colors.grey,
-        indicatorColor: _purple,
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(64),
+        child: Container(
+          height: 44,
+          margin: const EdgeInsets.fromLTRB(24, 4, 24, 16),
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: context.vivordoColors.card,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: context.vivordoColors.border),
+          ),
+          child: TabBar(
+            controller: _tabCtrl,
+            tabs: const [
+              Tab(text: 'Chat'),
+              Tab(text: 'History'),
+            ],
+            labelColor: Colors.white,
+            unselectedLabelColor: context.vivordoColors.textSecondary,
+            dividerColor: Colors.transparent,
+            indicatorSize: TabBarIndicatorSize.tab,
+            indicator: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF6350FF), Color(0xFF8A74FF)],
+              ),
+              borderRadius: BorderRadius.circular(24),
+            ),
+          ),
+        ),
       ),
       actions: [
         if (!_loading && _error == null)
@@ -1479,13 +1509,23 @@ class _PandaScreenState extends State<PandaScreen>
       children: [
         _buildPathStrip(),
         Expanded(child: _buildChatArea()),
+        if (MediaQuery.viewInsetsOf(context).bottom == 0)
+          TextButton.icon(
+            onPressed: _showSafetyDialog,
+            icon: const Icon(Icons.shield_outlined, size: 18),
+            label: const Text('Your health data · Data & privacy'),
+            style: TextButton.styleFrom(
+              foregroundColor: context.vivordoColors.textSecondary,
+            ),
+          ),
         _buildInputArea(),
       ],
     );
   }
 
   Widget _buildPathStrip() {
-    if (_loading || _sessionComplete) return const SizedBox.shrink();
+    if (_loading || _sessionComplete || _questionQueue.isEmpty)
+      return const SizedBox.shrink();
 
     final total = _questionQueue.length;
     final done = _qIdx.clamp(0, total);
@@ -1648,6 +1688,14 @@ class _PandaScreenState extends State<PandaScreen>
           final turnIdx = i - pillsFirst;
           if (turnIdx < _turns.length) {
             final t = _turns[turnIdx];
+            if (turnIdx == 0 &&
+                t.role == _Role.assistant &&
+                t.kind == _TurnKind.normal &&
+                t.calendarAction == null &&
+                t.recs.isEmpty &&
+                t.categoryOptions.isEmpty) {
+              return _openingInsight(t.text);
+            }
             final isLastAssistant =
                 t.role == _Role.assistant &&
                 !_turns
@@ -1685,6 +1733,94 @@ class _PandaScreenState extends State<PandaScreen>
   // ===========================================================================
   // Bubbles
   // ===========================================================================
+
+  Widget _openingInsight(String text) {
+    final colors = context.vivordoColors;
+    final enabled = !_loading && !_pandaTyping && !_startingNewSession;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: colors.card,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: _purple.withOpacity(0.75)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _avatar(size: 40),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'YOUR WELLNESS INSIGHT',
+                      style: TextStyle(
+                        color: _purple,
+                        fontSize: 11,
+                        letterSpacing: 1.4,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      text,
+                      style: TextStyle(
+                        color: colors.textPrimary,
+                        fontSize: 17,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (!_turns.any((turn) => turn.role == _Role.user))
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final suggestion in [
+                (
+                  Icons.bar_chart_rounded,
+                  'Explore patterns',
+                  'Help me explore patterns in my recent health data.',
+                ),
+                (
+                  Icons.calendar_month_outlined,
+                  'Plan my day',
+                  'Help me plan my day around my calendar and wellbeing.',
+                ),
+                (
+                  Icons.chat_bubble_outline_rounded,
+                  'Something else',
+                  'I would like to talk about something else.',
+                ),
+              ])
+                ActionChip(
+                  avatar: Icon(suggestion.$1, size: 18, color: _purple),
+                  label: Text(suggestion.$2),
+                  backgroundColor: colors.card,
+                  shape: StadiumBorder(side: BorderSide(color: colors.border)),
+                  onPressed: !enabled
+                      ? null
+                      : () {
+                          _inputCtrl.text = suggestion.$3;
+                          _submit();
+                        },
+                ),
+            ],
+          ),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
 
   Widget _assistantBubble(
     String text, {
@@ -1968,7 +2104,7 @@ class _PandaScreenState extends State<PandaScreen>
           Padding(
             padding: const EdgeInsets.only(left: 2, bottom: 8),
             child: Text(
-              'Explore with AI Assistant',
+              'Explore with Vivordo AI',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -2146,7 +2282,7 @@ class _PandaScreenState extends State<PandaScreen>
 
     String hint;
     if (_sessionComplete) {
-      hint = 'Ask AI Assistant anything';
+      hint = 'Ask Vivordo anything';
     } else if (disabled) {
       hint = 'Panda is thinking…';
     } else if (_state == _DialogueState.inDigression) {
@@ -2154,7 +2290,7 @@ class _PandaScreenState extends State<PandaScreen>
     } else if (_state == _DialogueState.inDepth) {
       hint = 'Tell me more, or type "done" to move on…';
     } else {
-      hint = 'Answer or ask AI Assistant anything…';
+      hint = 'Ask Vivordo anything';
     }
 
     return Container(
@@ -2165,7 +2301,7 @@ class _PandaScreenState extends State<PandaScreen>
         MediaQuery.of(context).padding.bottom + 10,
       ),
       decoration: BoxDecoration(
-        color: colors.card,
+        color: colors.page,
         border: Border(top: BorderSide(color: colors.border, width: 0.5)),
       ),
       child: Column(
@@ -2195,7 +2331,8 @@ class _PandaScreenState extends State<PandaScreen>
                   style: TextStyle(color: colors.textPrimary),
                   cursorColor: _purple,
                   textInputAction: TextInputAction.send,
-                  maxLines: null,
+                  minLines: 1,
+                  maxLines: 4,
                   decoration: InputDecoration(
                     hintText: hint,
                     hintStyle: TextStyle(
@@ -2203,10 +2340,10 @@ class _PandaScreenState extends State<PandaScreen>
                       fontSize: 14,
                     ),
                     filled: true,
-                    fillColor: disabled ? colors.cardMuted : colors.input,
+                    fillColor: colors.card,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 12,
+                      vertical: 18,
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
