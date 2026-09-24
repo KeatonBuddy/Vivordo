@@ -151,6 +151,10 @@ flutter:
           weight: 700
 
 
+dependency_overrides:
+  cloud_firestore:
+    path: vendor/cloud_firestore
+
 flutter_launcher_icons:
   ios: true
   android: false

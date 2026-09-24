@@ -18,6 +18,7 @@ import 'package:vivordo_health/src/utils/fitness_goal_notifications.dart';
 import 'package:vivordo_health/src/utils/notification_navigation.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import '../utils/foreground_transaction.dart';
 import 'package:vivordo_health/src/utils/priority_reminder.dart';
 
 /// Function to handle background messages
@@ -94,6 +95,14 @@ class NotificationService {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _fitnessGoalSubscription;
   String? _configuredUid;
+  bool _evaluatingFitnessGoals = false;
+  QueryDocumentSnapshot<Map<String, dynamic>>? _queuedFitnessDocument;
+
+  Future<void> resumeFitnessGoals() async {
+    final uid = _configuredUid;
+    if (uid != null) await _evaluateLatestFitnessGoals(uid);
+  }
+
   DateTime? _lastCalendarEventEnd;
   List<int> _scanReminderMinutes = [9 * 60, 17 * 60];
 
@@ -270,11 +279,18 @@ class NotificationService {
     String uid,
     QueryDocumentSnapshot<Map<String, dynamic>> dailyDocument,
   ) async {
-    if (_configuredUid != uid ||
+    if (_configuredUid == uid && _evaluatingFitnessGoals) {
+      _queuedFitnessDocument = dailyDocument;
+      return;
+    }
+    if (!canRunForegroundTransaction ||
+        _evaluatingFitnessGoals ||
+        _configuredUid != uid ||
         dailyDocument.id != localDayKey(DateTime.now())) {
       return;
     }
 
+    _evaluatingFitnessGoals = true;
     try {
       final dayKey = dailyDocument.id;
       final userReference = FirebaseFirestore.instance
@@ -284,6 +300,7 @@ class NotificationService {
           .runTransaction<List<FitnessGoalNotificationType>>((
             transaction,
           ) async {
+            requireForegroundTransaction();
             final userSnapshot = await transaction.get(userReference);
             final userData = userSnapshot.data();
             final preferences = userData?['preferences'] as Map?;
@@ -322,6 +339,15 @@ class NotificationService {
       }
     } catch (error) {
       print('NotificationService: Could not evaluate fitness goals: $error');
+    } finally {
+      _evaluatingFitnessGoals = false;
+      final queued = _queuedFitnessDocument;
+      _queuedFitnessDocument = null;
+      if (queued != null &&
+          _configuredUid == uid &&
+          canRunForegroundTransaction) {
+        unawaited(_evaluateFitnessGoals(uid, queued));
+      }
     }
   }
 

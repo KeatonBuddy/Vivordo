@@ -433,6 +433,9 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(
+        NotificationService().resumeFitnessGoals().catchError((Object _) {}),
+      );
       if (FirebaseAuth.instance.currentUser != null) {
         unawaited(WhoopBleHeartRateService.instance.startIfPaired());
         HealthService().syncToday().whenComplete(() async {

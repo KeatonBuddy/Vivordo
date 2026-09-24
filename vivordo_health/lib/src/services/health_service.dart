@@ -11,6 +11,7 @@ import '../utils/activity_score.dart';
 import '../utils/heart_health_score.dart';
 import '../utils/metric_cleanup.dart';
 import '../utils/sleep_stage_aggregation.dart';
+import '../utils/foreground_transaction.dart';
 
 // ─── Metric definitions ──────────────────────────────────────────────────────
 
@@ -1281,12 +1282,14 @@ class HealthService {
     String day,
     Map<String, dynamic> payload,
   ) async {
+    if (!canRunForegroundTransaction) return;
     final reference = _db
         .collection('users')
         .doc(uid)
         .collection('metrics_daily')
         .doc(day);
     await _db.runTransaction((transaction) async {
+      requireForegroundTransaction();
       final snapshot = await transaction.get(reference);
       final sources = snapshot.data()?['heart_rate_sources'] as Map?;
       final whoopBle = sources?['whoop_ble'] as Map?;
