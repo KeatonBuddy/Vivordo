@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/contextual_insight_bar.dart';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -728,6 +729,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   ),
                 ],
               ),
+            ),
+          ).withScreenInsight(
+            ScreenInsight(
+              'my_day',
+              'Your day',
+              '${sleepComparison(sleep, usualSleep)} $calendarText$estimateText '
+                  '${ready ? "Want help finding room for a priority or a break?" : "Refresh your plan before making scheduling decisions."}',
             ),
           );
         },

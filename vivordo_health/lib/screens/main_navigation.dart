@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../widgets/contextual_insight_bar.dart';
+import '../widgets/vivordo_robot.dart';
 import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -39,7 +41,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   final GlobalKey _chatBubbleKey = GlobalKey();
   final GlobalKey<NavigatorState> _contentNavigatorKey =
       GlobalKey<NavigatorState>();
-  late final NavigatorObserver _contentNavigatorObserver;
+  late final _ContentNavigatorObserver _contentNavigatorObserver;
+  final _insights = ScreenInsightController();
+  final _contextPrompt = ValueNotifier<String?>(null);
+  final _scrolling = ValueNotifier<bool>(false);
+  Timer? _scrollIdle;
   Offset _chatRevealOrigin = Offset.zero;
   bool _chatOpen = false;
   bool _detailRouteOpen = false;
@@ -86,7 +92,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _handleContentNavigationChanged,
     );
     _tabPages = List.generate(5, _buildCachedTabPage);
-    _persistentChatScreen = PandaScreen(onClose: _closeChat);
+    _persistentChatScreen = PandaScreen(
+      onClose: _closeChat,
+      contextPrompt: _contextPrompt,
+    );
     _pandaHasBeenOpened = widget.initialIndex == 5;
     _chatRevealController = AnimationController(
       vsync: this,
@@ -154,6 +163,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       activity.dispose();
     }
     _homeStressReveal.dispose();
+    _insights.dispose();
+    _contextPrompt.dispose();
+    _scrollIdle?.cancel();
+    _scrolling.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -215,6 +228,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _loadedTabs.add(index);
       _selectedIndex = index;
     });
+    _insights.select(_contentNavigatorObserver.topRoute, _screenNames[index]);
   }
 
   void _preloadTabs() {
@@ -280,6 +294,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final detailOpen = _contentNavigatorKey.currentState?.canPop() ?? false;
+      _insights.select(
+        _contentNavigatorObserver.topRoute,
+        _screenNames[_selectedIndex],
+      );
       if (detailOpen != _detailRouteOpen) {
         setState(() => _detailRouteOpen = detailOpen);
       }
@@ -306,16 +324,30 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             : const SizedBox.shrink(),
       ),
     );
-    final contentNavigator = Navigator(
-      key: _contentNavigatorKey,
-      observers: [_contentNavigatorObserver],
-      pages: [
-        MaterialPage<void>(
-          key: const ValueKey('main-content-tabs'),
-          child: activePage,
-        ),
-      ],
-      onDidRemovePage: (_) {},
+    final contentNavigator = NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollStartNotification ||
+            notification is ScrollUpdateNotification) {
+          _scrollIdle?.cancel();
+          _scrolling.value = true;
+          _scrollIdle = Timer(const Duration(milliseconds: 350), () {
+            if (mounted) _scrolling.value = false;
+          });
+        }
+        return false;
+      },
+      child: Navigator(
+        key: _contentNavigatorKey,
+        observers: [_contentNavigatorObserver],
+        pages: [
+          MaterialPage<void>(
+            name: 'main-tabs',
+            key: const ValueKey('main-content-tabs'),
+            child: activePage,
+          ),
+        ],
+        onDidRemovePage: (_) {},
+      ),
     );
 
     return PopScope(
@@ -331,7 +363,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       child: Scaffold(
         body: Stack(
           children: [
-            Positioned.fill(child: RepaintBoundary(child: contentNavigator)),
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: ScreenInsightScope(
+                  controller: _insights,
+                  child: contentNavigator,
+                ),
+              ),
+            ),
             if (!detailRouteVisible)
               Positioned(
                 bottom: 30,
@@ -342,13 +381,29 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             Positioned(
               key: const ValueKey('ai-chat-bubble-layer'),
               right: 30,
+              left: 20,
               bottom: detailRouteVisible ? 30 : 116,
               child: IgnorePointer(
                 ignoring: _chatOpen,
                 child: AnimatedOpacity(
                   opacity: _chatOpen ? 0 : 1,
                   duration: const Duration(milliseconds: 140),
-                  child: _buildChatBubble(),
+                  child: AnimatedBuilder(
+                    animation: Listenable.merge([_insights, _scrolling]),
+                    builder: (context, _) => ContextualInsightBar(
+                      insight: _insights.current,
+                      suppressed:
+                          _chatOpen ||
+                          _scrolling.value ||
+                          MediaQuery.viewInsetsOf(context).bottom > 0 ||
+                          FitnessWorkoutTimerState.isRunning.value,
+                      collapsed: _buildChatBubble(),
+                      onAsk: (prompt) {
+                        _contextPrompt.value = prompt;
+                        _openChat();
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -411,7 +466,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       child: const SizedBox(
         width: 64,
         height: 64,
-        child: Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 30),
+        child: VivordoRobot(size: 34, faceOnly: true),
       ),
     ),
   );
@@ -570,24 +625,37 @@ class _ContentNavigatorObserver extends NavigatorObserver {
   _ContentNavigatorObserver(this.onChanged);
 
   final VoidCallback onChanged;
+  final List<Route<dynamic>> _routes = [];
+  Route<dynamic>? get topRoute => _routes.lastOrNull;
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _routes.add(route);
     onChanged();
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _routes.remove(route);
     onChanged();
   }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _routes.remove(route);
     onChanged();
   }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    final index = oldRoute == null ? -1 : _routes.indexOf(oldRoute);
+    if (index >= 0) {
+      if (newRoute == null) {
+        _routes.removeAt(index);
+      } else {
+        _routes[index] = newRoute;
+      }
+    }
     onChanged();
   }
 }

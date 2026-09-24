@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/contextual_insight_bar.dart';
 import '../src/services/active_workout_navigation.dart';
 import '../widgets/workout_rest_timer.dart';
 import '../src/services/notification_service.dart';
@@ -587,6 +588,18 @@ class _TodayActivityRings extends StatelessWidget {
                     const Icon(Icons.chevron_right_rounded, color: _muted),
                   ],
                 ),
+              ),
+            ).withScreenInsight(
+              ScreenInsight(
+                'fitness',
+                'Your activity',
+                !snapshot.hasData ||
+                        !goalsSnapshot.hasData ||
+                        data?['active_calories'] == null
+                    ? 'There is not enough activity data here yet. Sync a connected source before comparing progress with your goals.'
+                    : calories >= goals.activeCalories
+                    ? 'You have reached your ${goals.activeCalories}-calorie active energy goal. Consider how you feel when planning more activity.'
+                    : 'You are ${goals.activeCalories - calories} active calories from your saved goal. Want to explore an activity that fits your day?',
               ),
             );
           },
