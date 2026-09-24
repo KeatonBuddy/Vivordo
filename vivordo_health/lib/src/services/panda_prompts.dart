@@ -1162,6 +1162,7 @@ Write the continuity note now.''';
       return PandaTurnReply(
         intent: intent,
         message: message,
+        offerEndSession: obj['offer_end_session'] == true,
         depthFollowUp: depthFollowUp,
         injectedQuestion: injected,
         filledSlots: slots,

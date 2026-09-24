@@ -141,7 +141,7 @@ class ContextualInsightBar extends StatefulWidget {
 }
 
 class _ContextualInsightBarState extends State<ContextualInsightBar> {
-  final Set<String> _dismissed = {};
+  bool _dismissed = false;
   Timer? _delay;
   bool _ready = false;
   bool _expanded = false;
@@ -164,6 +164,9 @@ class _ContextualInsightBarState extends State<ContextualInsightBar> {
   @override
   void didUpdateWidget(covariant ContextualInsightBar oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.insight?.screen != widget.insight?.screen) {
+      _dismissed = false;
+    }
     if (oldWidget.insight?.screen != widget.insight?.screen ||
         oldWidget.suppressed != widget.suppressed) {
       _schedule();
@@ -179,10 +182,7 @@ class _ContextualInsightBarState extends State<ContextualInsightBar> {
   @override
   Widget build(BuildContext context) {
     final insight = widget.insight;
-    if (!_ready ||
-        insight == null ||
-        widget.suppressed ||
-        _dismissed.contains(insight.screen)) {
+    if (!_ready || insight == null || widget.suppressed || _dismissed) {
       return _animate(
         Align(
           key: const ValueKey('button'),
@@ -252,8 +252,7 @@ class _ContextualInsightBarState extends State<ContextualInsightBar> {
                           ),
                           IconButton(
                             tooltip: 'Dismiss insights for this screen',
-                            onPressed: () =>
-                                setState(() => _dismissed.add(insight.screen)),
+                            onPressed: () => setState(() => _dismissed = true),
                             icon: const Icon(Icons.close, size: 20),
                           ),
                         ],

@@ -43,9 +43,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       GlobalKey<NavigatorState>();
   late final _ContentNavigatorObserver _contentNavigatorObserver;
   final _insights = ScreenInsightController();
-  final _contextPrompt = ValueNotifier<String?>(null);
-  final _scrolling = ValueNotifier<bool>(false);
-  Timer? _scrollIdle;
+  final _contextPrompt = ValueNotifier<ScreenInsight?>(null);
   Offset _chatRevealOrigin = Offset.zero;
   bool _chatOpen = false;
   bool _detailRouteOpen = false;
@@ -165,8 +163,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _homeStressReveal.dispose();
     _insights.dispose();
     _contextPrompt.dispose();
-    _scrollIdle?.cancel();
-    _scrolling.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -324,30 +320,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             : const SizedBox.shrink(),
       ),
     );
-    final contentNavigator = NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification is ScrollStartNotification ||
-            notification is ScrollUpdateNotification) {
-          _scrollIdle?.cancel();
-          _scrolling.value = true;
-          _scrollIdle = Timer(const Duration(milliseconds: 350), () {
-            if (mounted) _scrolling.value = false;
-          });
-        }
-        return false;
-      },
-      child: Navigator(
-        key: _contentNavigatorKey,
-        observers: [_contentNavigatorObserver],
-        pages: [
-          MaterialPage<void>(
-            name: 'main-tabs',
-            key: const ValueKey('main-content-tabs'),
-            child: activePage,
-          ),
-        ],
-        onDidRemovePage: (_) {},
-      ),
+    final contentNavigator = Navigator(
+      key: _contentNavigatorKey,
+      observers: [_contentNavigatorObserver],
+      pages: [
+        MaterialPage<void>(
+          name: 'main-tabs',
+          key: const ValueKey('main-content-tabs'),
+          child: activePage,
+        ),
+      ],
+      onDidRemovePage: (_) {},
     );
 
     return PopScope(
@@ -389,17 +372,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                   opacity: _chatOpen ? 0 : 1,
                   duration: const Duration(milliseconds: 140),
                   child: AnimatedBuilder(
-                    animation: Listenable.merge([_insights, _scrolling]),
+                    animation: Listenable.merge([
+                      _insights,
+                      FitnessWorkoutTimerState.isRunning,
+                    ]),
                     builder: (context, _) => ContextualInsightBar(
                       insight: _insights.current,
                       suppressed:
                           _chatOpen ||
-                          _scrolling.value ||
                           MediaQuery.viewInsetsOf(context).bottom > 0 ||
                           FitnessWorkoutTimerState.isRunning.value,
                       collapsed: _buildChatBubble(),
                       onAsk: (prompt) {
-                        _contextPrompt.value = prompt;
+                        _contextPrompt.value = _insights.current;
                         _openChat();
                       },
                     ),

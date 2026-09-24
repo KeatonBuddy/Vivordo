@@ -113,9 +113,11 @@ class PandaTurnReply {
     this.recHint,
     this.calendarAction,
     this.priorityAction,
+    this.offerEndSession = false,
   });
 
   final PandaIntent intent;
+  final bool offerEndSession;
 
   /// What Panda says (always present, never empty).
   final String message;

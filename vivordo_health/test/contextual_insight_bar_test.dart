@@ -3,6 +3,46 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/widgets/contextual_insight_bar.dart';
 
 void main() {
+  testWidgets('dismissal lasts only for the current screen visit', (
+    tester,
+  ) async {
+    Future<void> show(String? screen, {bool suppressed = false}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ContextualInsightBar(
+              insight: screen == null
+                  ? null
+                  : ScreenInsight(screen, 'Title', 'Advice'),
+              suppressed: suppressed,
+              collapsed: const Text('Robot'),
+              onAsk: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+    }
+
+    await show('my_day');
+    await tester.tap(find.byTooltip('Dismiss insights for this screen'));
+    await tester.pumpAndSettle();
+    await show('my_day');
+    expect(find.text('Advice'), findsNothing);
+    await show('my_day', suppressed: true);
+    await show('my_day');
+    expect(find.text('Advice'), findsNothing);
+    await show('fitness');
+    await show('my_day');
+    expect(find.text('Advice'), findsOneWidget);
+    await tester.tap(find.byTooltip('Dismiss insights for this screen'));
+    await tester.pumpAndSettle();
+    await show(null);
+    await show('my_day');
+    expect(find.text('Advice'), findsOneWidget);
+  });
+
   test('only the selected tab and top route provide advice', () {
     final controller = ScreenInsightController();
     final root = MaterialPageRoute<void>(

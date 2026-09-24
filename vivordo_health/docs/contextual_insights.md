@@ -6,13 +6,18 @@ health syncs, or Claude calls are added by the bar.
 
 The navigation-scoped controller selects the top route and active tab. Dialogs,
 unrelated detail pages and other tabs cannot inherit advice from a covered page.
-The preview appears after two quiet seconds and collapses during scrolling,
-keyboard use, chat and active workouts. Dismissal lasts for the current navigation
-session, per screen. The normal robot remains available to open chat.
+The preview appears after two seconds and stays wide during scrolling. It
+collapses during keyboard use, chat and active workouts. Dismissal lasts for
+the current screen visit; leaving and returning restores it. The normal robot
+remains available to open chat.
 
-Expand shows the full message and an Ask Vivordo AI action. That action appends
-the context to Panda's composer (preserving any existing draft), rather than
-sending it. The existing consent/send flow still controls model requests.
+Expand shows the full message and an Ask Vivordo AI action. On My Day, that
+action opens a local planning introduction with prioritize, break and schedule
+suggestions. It leaves the composer untouched (empty unless a draft exists)
+and supplies the screen summary as contextual data on subsequent user sends.
+A new My Day session skips automatic spike analysis. Existing conversations
+are retained; starting a new chat clears the planning handoff. Other screens
+still prefill their context. The existing consent/send flow controls requests.
 
 Sleep comparisons require seven valid prior nights when available in the loaded
 history. Missing data is disclosed. Stress drivers are described as recorded

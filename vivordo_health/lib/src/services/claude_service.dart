@@ -184,10 +184,12 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '    "other": string\n'
       '  },\n'
       '  "rec_hint": string,\n'
+      '  "offer_end_session": boolean,\n'
       '  "priority_action": {"operation": "create|update|delete", "title": string, "target_title": string, "target_date": "YYYY-MM-DD", "date": "YYYY-MM-DD", "scheduled_at": "YYYY-MM-DDTHH:mm", "reminder_at": "YYYY-MM-DDTHH:mm"},\n'
       '  "calendar_action": {"operation": string, "title": string, '
       '"target_title": string, "start": string, "end": string, "recurrence": string}\n'
       '}\n'
+      'Set offer_end_session=true only when the user clearly says they are finished, or you have fully answered their planning request with no unresolved question. Never offer while clarification, distress support, or an action confirmation is pending. Do not end automatically or claim the session is saved.\n'
       '\n'
       'INTENT VALUES — choose exactly one:\n'
       '"answer_label"        — User answered a predefined question. Acknowledge\n'
@@ -374,6 +376,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
   }
 
   Future<PandaSessionBootstrap> startSession({
+    bool analyzeSpikes = true,
     String? extraUserContext,
     String? userName,
     String? userId,
@@ -394,7 +397,8 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     final compact = PandaPrompts.buildCompactPayload(payload, topK: 1);
 
     // Nothing to analyze → no LLM call at all; the chat is already final.
-    if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
+    if (!analyzeSpikes ||
+        (compact['spike_candidates'] as List? ?? const []).isEmpty) {
       if (kDebugMode) {
         debugPrint('[Claude][spike] no spike candidates — skipping LLM call');
       }
