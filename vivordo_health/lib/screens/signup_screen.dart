@@ -484,7 +484,7 @@ class _SignupScreenState extends State<SignupScreen> {
               'First Last',
             ),
             _buildField(
-              'Work Email',
+              'Email',
               _emailController,
               Icons.mail_outline_rounded,
               'you@company.com',
@@ -709,7 +709,7 @@ class _SignupScreenState extends State<SignupScreen> {
               // own inline errorText — keeps every password alert in one place.
               if (isPass) return null;
               if (v == null || v.isEmpty) return 'Required';
-              if (label == 'Work Email' &&
+              if (label == 'Email' &&
                   !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
                 return 'Invalid email';
               }
