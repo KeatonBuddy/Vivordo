@@ -1951,7 +1951,32 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       }
     });
     unawaited(draft.persist());
+    unawaited(_restorePreviousSets());
     if (_hasCardioExercise) unawaited(_refreshTrackedDistance());
+  }
+
+  Future<void> _restorePreviousSets() async {
+    final missing = exercises.where((e) => !e.historyLoaded).toList();
+    if (missing.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final history = await WorkoutService.loadLatestExerciseSets(
+        missing.map((e) => e.name),
+      );
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != uid) return;
+      setState(() {
+        for (final exercise in missing) {
+          if (!exercises.contains(exercise) || exercise.historyLoaded) continue;
+          exercise.applyHistory(
+            history[exercise.name.trim().toLowerCase()] ?? [],
+          );
+        }
+      });
+      await draft.persist();
+    } catch (error) {
+      debugPrint('Could not restore previous exercise sets: $error');
+    }
   }
 
   @override
@@ -2052,14 +2077,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       setState(() {
         for (final exercise in exercises) {
           final saved = previousSets[exercise.name.trim().toLowerCase()];
-          if (saved == null) continue;
-          for (
-            var index = 0;
-            index < exercise.sets.length && index < saved.length;
-            index++
-          ) {
-            exercise.sets[index].previous = saved[index];
-          }
+          if (!newDefinitions.any((d) => d.name == exercise.name)) continue;
+          exercise.applyHistory(saved ?? []);
         }
       });
       await draft.persist();
@@ -2858,14 +2877,28 @@ class _WorkoutSet {
   String lbs = '';
   String reps = '';
 
-  Map<String, dynamic> toJson() => {'lbs': lbs, 'reps': reps};
+  Map<String, dynamic> toJson() => {
+    'lbs': lbs,
+    'reps': reps,
+    'previous': previous?.toMap(),
+  };
+}
+
+WorkoutSetRecord? _previousSetFromJson(dynamic value) {
+  if (value is! Map) return null;
+  final weight = value['weightLbs'];
+  final reps = value['reps'];
+  if (weight is! num || reps is! num || !weight.isFinite || !reps.isFinite) {
+    return null;
+  }
+  return WorkoutSetRecord(weightLbs: weight.toDouble(), reps: reps.toInt());
 }
 
 class _WorkoutExercise {
   _WorkoutExercise(
     this.definition, {
     List<WorkoutSetRecord> previousSets = const [],
-  }) : previousSets = previousSets,
+  }) : previousSets = List.of(previousSets),
        sets = [
          _WorkoutSet(previous: previousSets.firstOrNull),
          _WorkoutSet(previous: previousSets.elementAtOrNull(1)),
@@ -2873,6 +2906,18 @@ class _WorkoutExercise {
 
   final _ExerciseDefinition definition;
   final List<WorkoutSetRecord> previousSets;
+  bool historyLoaded = false;
+
+  void applyHistory(List<WorkoutSetRecord> history) {
+    previousSets
+      ..clear()
+      ..addAll(history);
+    historyLoaded = true;
+    for (var i = 0; i < sets.length; i++) {
+      sets[i].previous ??= history.elementAtOrNull(i);
+    }
+  }
+
   final List<_WorkoutSet> sets;
   String distanceKm = '';
 
@@ -2884,6 +2929,8 @@ class _WorkoutExercise {
     'name': definition.name,
     'category': definition.category,
     'distanceKm': distanceKm,
+    'historyLoaded': historyLoaded,
+    'previousSets': previousSets.map((s) => s.toMap()).toList(),
     'sets': sets.map((set) => set.toJson()).toList(),
   };
 
@@ -2893,7 +2940,12 @@ class _WorkoutExercise {
         name: json['name'] as String? ?? 'Exercise',
         category: json['category'] as String? ?? 'Other',
       ),
+      previousSets: (json['previousSets'] as List? ?? [])
+          .map(_previousSetFromJson)
+          .whereType<WorkoutSetRecord>()
+          .toList(),
     );
+    exercise.historyLoaded = json['historyLoaded'] == true;
     exercise.distanceKm = json['distanceKm'] as String? ?? '';
     final savedSets = json['sets'];
     if (savedSets is List) {
@@ -2902,7 +2954,9 @@ class _WorkoutExercise {
         ..addAll(
           savedSets.whereType<Map>().map((value) {
             final map = Map<String, dynamic>.from(value);
-            final set = _WorkoutSet();
+            final set = _WorkoutSet(
+              previous: _previousSetFromJson(map['previous']),
+            );
             set.lbs = map['lbs'] as String? ?? '';
             set.reps = map['reps'] as String? ?? '';
             return set;
@@ -2911,6 +2965,17 @@ class _WorkoutExercise {
     }
     return exercise;
   }
+}
+
+/// Exercises the same draft codec used when resuming a workout.
+@visibleForTesting
+Map<String, dynamic> roundTripWorkoutExerciseForTesting(
+  Map<String, dynamic> json, {
+  List<WorkoutSetRecord>? recoveredHistory,
+}) {
+  final exercise = _WorkoutExercise.fromJson(json);
+  if (recoveredHistory != null) exercise.applyHistory(recoveredHistory);
+  return exercise.toJson();
 }
 
 class _WorkoutExerciseCard extends StatelessWidget {
@@ -3227,6 +3292,7 @@ class _AddExerciseScreen extends StatefulWidget {
 class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   static const _filters = [
     'All',
+    'Favourites',
     'Chest',
     'Back',
     'Shoulders',
@@ -3242,6 +3308,73 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   final List<_ExerciseDefinition> _customExercises = [];
   String _filter = 'All';
   String _search = '';
+  final Set<String> _favourites = {};
+  final Set<String> _savingFavourites = {};
+  bool _favouritesLoaded = false;
+  final String? _favouritesUid = FirebaseAuth.instance.currentUser?.uid;
+
+  Future<void> _loadFavourites() async {
+    try {
+      if (_favouritesUid == null) return;
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_favouritesUid)
+          .get();
+      if (!mounted) return;
+      setState(() {
+        _favourites.addAll(
+          (doc.data()?['favouriteExercises'] as List? ?? [])
+              .whereType<String>(),
+        );
+        _favouritesLoaded = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not load favourites. Reopen Add Exercise to retry.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _toggleFavourite(_ExerciseDefinition exercise) async {
+    final key = _exerciseNameKey(exercise.name);
+    if (!_favouritesLoaded ||
+        _savingFavourites.contains(key) ||
+        FirebaseAuth.instance.currentUser?.uid != _favouritesUid) {
+      return;
+    }
+    final removing = _favourites.contains(key);
+    setState(() {
+      _savingFavourites.add(key);
+      removing ? _favourites.remove(key) : _favourites.add(key);
+    });
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_favouritesUid)
+          .update({
+            'favouriteExercises': removing
+                ? FieldValue.arrayRemove([key])
+                : FieldValue.arrayUnion([key]),
+          });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        removing ? _favourites.add(key) : _favourites.remove(key);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save favourite. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _savingFavourites.remove(key));
+    }
+  }
 
   @override
   void initState() {
@@ -3261,6 +3394,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
       ),
     );
     unawaited(_loadCustomExercises());
+    unawaited(_loadFavourites());
   }
 
   Future<void> _loadCustomExercises() async {
@@ -3318,7 +3452,11 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   List<_ExerciseDefinition> get _filteredExercises {
     final query = _search.trim().toLowerCase();
     return [..._exerciseLibrary, ..._customExercises].where((exercise) {
-        final matchesFilter = _filter == 'All' || exercise.category == _filter;
+        final matchesFilter =
+            _filter == 'All' ||
+            (_filter == 'Favourites'
+                ? _favourites.contains(_exerciseNameKey(exercise.name))
+                : exercise.category == _filter);
         final matchesSearch =
             query.isEmpty ||
             exercise.name.toLowerCase().contains(query) ||
@@ -3516,13 +3654,21 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 18),
-                    child: _PickerSectionTitle('ALL EXERCISES'),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    child: _PickerSectionTitle(
+                      _filter == 'Favourites' ? 'FAVOURITES' : 'ALL EXERCISES',
+                    ),
                   ),
                   if (exercises.isEmpty)
-                    const Expanded(
-                      child: Center(child: Text('No exercises found.')),
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          _filter == 'Favourites' && _search.trim().isEmpty
+                              ? 'Star exercises to add them to your favourites.'
+                              : 'No exercises found.',
+                        ),
+                      ),
                     )
                   else
                     Expanded(
@@ -3543,6 +3689,16 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                             return _ExercisePickerRow(
                               exercise: exercise,
                               selected: _selected.contains(exercise.name),
+                              favourite: _favourites.contains(
+                                _exerciseNameKey(exercise.name),
+                              ),
+                              onFavourite:
+                                  !_favouritesLoaded ||
+                                      _savingFavourites.contains(
+                                        _exerciseNameKey(exercise.name),
+                                      )
+                                  ? null
+                                  : () => _toggleFavourite(exercise),
                               onTap: () => _toggle(exercise),
                             );
                           },
@@ -3621,11 +3777,15 @@ class _ExercisePickerRow extends StatelessWidget {
     required this.exercise,
     required this.selected,
     required this.onTap,
+    required this.favourite,
+    required this.onFavourite,
   });
 
   final _ExerciseDefinition exercise;
   final bool selected;
   final VoidCallback onTap;
+  final bool favourite;
+  final VoidCallback? onFavourite;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -3656,6 +3816,16 @@ class _ExercisePickerRow extends StatelessWidget {
                     style: const TextStyle(color: _muted),
                   ),
                 ],
+              ),
+            ),
+            IconButton(
+              tooltip: favourite
+                  ? 'Remove from favourites'
+                  : 'Add to favourites',
+              onPressed: onFavourite,
+              icon: Icon(
+                favourite ? Icons.star_rounded : Icons.star_border_rounded,
+                color: favourite ? _purple : _muted,
               ),
             ),
             Icon(
