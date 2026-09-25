@@ -5,7 +5,19 @@ import 'vivordo_robot.dart';
 
 @immutable
 class ScreenInsight {
-  const ScreenInsight(this.screen, this.title, this.message);
+  const ScreenInsight(
+    this.screen,
+    this.title,
+    this.message, {
+    this.context,
+    this.onAction,
+    this.actionLabel,
+    this.busy = false,
+  });
+  final VoidCallback? onAction;
+  final String? actionLabel;
+  final bool busy;
+  final String? context;
   final String screen;
   final String title;
   final String message;
@@ -42,7 +54,11 @@ class ScreenInsightController extends ChangeNotifier {
     final old = _sources[owner];
     if (old?.$1 == route &&
         old?.$2.screen == insight.screen &&
-        old?.$2.message == insight.message) {
+        old?.$2.message == insight.message &&
+        old?.$2.context == insight.context &&
+        old?.$2.busy == insight.busy &&
+        old?.$2.actionLabel == insight.actionLabel &&
+        old?.$2.onAction == insight.onAction) {
       return;
     }
     _sources[owner] = (route, insight);
@@ -222,7 +238,9 @@ class _ContextualInsightBarState extends State<ContextualInsightBar> {
                         children: [
                           const CircleAvatar(
                             backgroundColor: VivordoTheme.brand,
-                            child: VivordoRobot(size: 26, faceOnly: true),
+                            child: Center(
+                              child: VivordoRobot(size: 24, faceOnly: true),
+                            ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -273,9 +291,12 @@ class _ContextualInsightBarState extends State<ContextualInsightBar> {
                         ),
                         const SizedBox(height: 12),
                         FilledButton.icon(
-                          onPressed: () => widget.onAsk(insight.prompt),
+                          onPressed: insight.busy
+                              ? null
+                              : insight.onAction ??
+                                    () => widget.onAsk(insight.prompt),
                           icon: const Icon(Icons.chat_bubble_outline),
-                          label: const Text('Ask Vivordo AI'),
+                          label: Text(insight.actionLabel ?? 'Ask Vivordo AI'),
                         ),
                       ],
                     ],

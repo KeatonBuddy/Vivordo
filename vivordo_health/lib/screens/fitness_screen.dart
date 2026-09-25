@@ -20,6 +20,7 @@ import '../src/services/workout_service.dart';
 import '../src/services/personal_profile_service.dart';
 import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
+import '../src/utils/fitness_goal_insight.dart';
 import 'exercise_detail_screen.dart';
 import 'personal_profile_screen.dart';
 import 'workout_summary_screen.dart';
@@ -514,18 +515,32 @@ class _TodayActivityRings extends StatelessWidget {
     final dayKey =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final stream = user == null
-        ? const Stream<DocumentSnapshot<Map<String, dynamic>>>.empty()
+        ? const Stream<QuerySnapshot<Map<String, dynamic>>>.empty()
         : FirebaseFirestore.instance
               .collection('users')
               .doc(user.uid)
               .collection('metrics_daily')
-              .doc(dayKey)
+              .where(
+                FieldPath.documentId,
+                isGreaterThanOrEqualTo: DateFormat(
+                  'yyyy-MM-dd',
+                ).format(DateTime(now.year, now.month, now.day - 14)),
+              )
+              .where(FieldPath.documentId, isLessThanOrEqualTo: dayKey)
+              .orderBy(FieldPath.documentId)
+              .limit(15)
               .snapshots();
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: stream,
       builder: (context, snapshot) {
-        final data = snapshot.data?.data();
+        final history = {
+          for (final doc
+              in snapshot.data?.docs ??
+                  <QueryDocumentSnapshot<Map<String, dynamic>>>[])
+            doc.id: doc.data(),
+        };
+        final data = history[dayKey];
         final steps = ((data?['steps'] as Map?)?['sum'] as num?)?.round() ?? 0;
         final calories =
             ((data?['active_calories'] as Map?)?['sum'] as num?)?.round() ?? 0;
@@ -593,13 +608,18 @@ class _TodayActivityRings extends StatelessWidget {
               ScreenInsight(
                 'fitness',
                 'Your activity',
-                !snapshot.hasData ||
-                        !goalsSnapshot.hasData ||
-                        data?['active_calories'] == null
-                    ? 'There is not enough activity data here yet. Sync a connected source before comparing progress with your goals.'
-                    : calories >= goals.activeCalories
-                    ? 'You have reached your ${goals.activeCalories}-calorie active energy goal. Consider how you feel when planning more activity.'
-                    : 'You are ${goals.activeCalories - calories} active calories from your saved goal. Want to explore an activity that fits your day?',
+                snapshot.hasError || goalsSnapshot.hasError
+                    ? 'Your activity or goals could not be loaded. Refresh before comparing progress.'
+                    : !snapshot.hasData ||
+                          goalsSnapshot.connectionState ==
+                              ConnectionState.waiting
+                    ? 'Loading your activity and saved goals…'
+                    : fitnessGoalInsight(
+                        data,
+                        goals,
+                        history: history,
+                        now: now,
+                      ),
               ),
             );
           },

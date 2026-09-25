@@ -451,7 +451,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       child: const SizedBox(
         width: 64,
         height: 64,
-        child: VivordoRobot(size: 34, faceOnly: true),
+        child: Center(child: VivordoRobot(size: 30, faceOnly: true)),
       ),
     ),
   );
