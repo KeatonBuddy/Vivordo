@@ -144,8 +144,19 @@ service cloud.firestore {
                            && request.auth.uid == userId;
       }
 
+      match /metric_summaries_daily/{dayId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
+      }
+
+      match /metrics_summary_migrations/{version} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
+      }
+
       match /{subcollection}/{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if request.auth != null && request.auth.uid == userId
+          && !(subcollection in ['metric_summaries_daily', 'metrics_summary_migrations']);
       }
     }
 

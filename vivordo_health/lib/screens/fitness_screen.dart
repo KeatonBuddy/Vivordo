@@ -22,7 +22,7 @@ import '../src/services/personal_profile_service.dart';
 import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import '../src/utils/fitness_goal_insight.dart';
-import '../src/utils/fitness_activity_history.dart';
+import '../src/services/metrics_repository.dart';
 import 'exercise_detail_screen.dart';
 import 'personal_profile_screen.dart';
 import 'workout_summary_screen.dart';
@@ -521,7 +521,7 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
   String? _uid;
   late DateTime _day;
   late String _dayKey;
-  late Stream<Map<String, Map<String, dynamic>>> _historyStream;
+  late Stream<MetricWindow> _historyStream;
   late Stream<ActivityGoals> _goalsStream;
   Object? _insightKey;
   String _insight = '';
@@ -543,48 +543,19 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
     _day = DateTime(now.year, now.month, now.day);
     _dayKey = DateFormat('yyyy-MM-dd').format(_day);
     _insightKey = null;
-    final cache = FitnessActivityHistory();
-    var historyHadError = false;
     var goalsHadError = false;
     _historyStream = _uid == null
         ? Stream.multi((controller) {
-            controller.add(const <String, Map<String, dynamic>>{});
+            controller.add(const MetricWindow(days: {}));
             controller.close();
           })
-        : FirebaseFirestore.instance
-              .collection('users')
-              .doc(_uid)
-              .collection('metrics_daily')
-              .where(
-                FieldPath.documentId,
-                isGreaterThanOrEqualTo: DateFormat(
-                  'yyyy-MM-dd',
-                ).format(DateTime(now.year, now.month, now.day - 14)),
-              )
-              .where(FieldPath.documentId, isLessThanOrEqualTo: _dayKey)
-              .orderBy(FieldPath.documentId)
-              .limit(15)
-              .snapshots()
-              .map(
-                (snapshot) => cache.update(snapshot.docs.map((doc) => doc.id), {
-                  for (final change in snapshot.docChanges)
-                    if (change.type != DocumentChangeType.removed)
-                      change.doc.id: (
-                        steps: _total(change.doc, 'steps'),
-                        calories: _total(change.doc, 'active_calories'),
-                        minutes: _total(change.doc, 'exercise_time'),
-                      ),
-                }),
-              )
-              .handleError((Object error, StackTrace stack) {
-                historyHadError = true;
-                Error.throwWithStackTrace(error, stack);
-              })
-              .distinct((a, b) {
-                final recovering = historyHadError;
-                historyHadError = false;
-                return !recovering && identical(a, b);
-              });
+        : MetricsRepository.instance.watchActivity(
+            uid: _uid!,
+            endDay: _dayKey,
+            startDay: DateFormat(
+              'yyyy-MM-dd',
+            ).format(DateTime(now.year, now.month, now.day - 14)),
+          );
     _goalsStream = ActivityGoalsService.watch()
         .handleError((Object error, StackTrace stack) {
           goalsHadError = true;
@@ -598,20 +569,6 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
               a.activeCalories == b.activeCalories &&
               a.exerciseMinutes == b.exerciseMinutes;
         });
-  }
-
-  static num? _total(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-    String metric,
-  ) {
-    // get() converts just this scalar, rather than recursively copying every
-    // metric (including sample arrays) via doc.data(). Missing isn't zero.
-    try {
-      final value = doc.get('$metric.sum');
-      return value is num && value.isFinite && value >= 0 ? value : null;
-    } on StateError {
-      return null;
-    }
   }
 
   void _refreshIfStale() {
@@ -654,11 +611,12 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
 
   @override
   Widget build(BuildContext context) {
-    return VisibleStreamBuilder<Map<String, Map<String, dynamic>>>(
+    return VisibleStreamBuilder<MetricWindow>(
       key: ValueKey((_uid, _dayKey)),
       stream: _historyStream,
       builder: (context, snapshot) {
-        final history = snapshot.data ?? const <String, Map<String, dynamic>>{};
+        final history =
+            snapshot.data?.days ?? const <String, Map<String, dynamic>>{};
         final data = history[_dayKey];
         final steps = ((data?['steps'] as Map?)?['sum'] as num?)?.round() ?? 0;
         final calories =
@@ -743,7 +701,9 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
               ScreenInsight(
                 'fitness',
                 'Your activity',
-                snapshot.hasError || goalsSnapshot.hasError
+                snapshot.hasError ||
+                        snapshot.data?.error != null ||
+                        goalsSnapshot.hasError
                     ? 'Your activity or goals could not be loaded. Refresh before comparing progress.'
                     : !snapshot.hasData ||
                           goalsSnapshot.connectionState ==

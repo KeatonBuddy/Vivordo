@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'daily_brief_analysis.dart';
 import 'daily_outlook_score.dart';
 import 'home_metrics_summary.dart';
+import 'screen_metric_projection.dart';
+import 'performance_trace.dart';
 
 /// A decoded snapshot retained between clock ticks. Firestore documents are
 /// decoded once on arrival, never from a widget builder.
@@ -14,7 +16,12 @@ class DailyBriefMetrics {
   DateTime? _minute;
   DailyBriefMetricsSummary? _summary;
 
-  DailyBriefMetricsSummary summarize(DateTime now) {
+  DailyBriefMetricsSummary summarize(DateTime now) => PerformanceTrace.measure(
+    'metrics.summary.dailyBrief',
+    () => _summarize(now),
+  );
+
+  DailyBriefMetricsSummary _summarize(DateTime now) {
     final minute = DateTime(now.year, now.month, now.day, now.hour, now.minute);
     if (_minute == minute && _summary != null) return _summary!;
     final todayKey = DateFormat('yyyy-MM-dd').format(now);
@@ -71,23 +78,27 @@ class DailyBriefMetrics {
         now.hour,
         now.minute,
       );
-      final entries =
-          ((day['stress'] as Map?)?['entries'] as List? ?? [])
-              .whereType<Map>()
-              .where((entry) {
-                final timestamp = entry['timestamp'];
-                return timestamp is Timestamp &&
-                    !timestamp.toDate().isAfter(cutoff) &&
-                    cutoff.difference(timestamp.toDate()) <=
-                        const Duration(hours: 2);
-              })
-              .toList()
-            ..sort(
-              (a, b) => (b['timestamp'] as Timestamp).compareTo(
-                a['timestamp'] as Timestamp,
-              ),
-            );
-      final pastStress = entries.isEmpty
+      final prepared = day[preparedStressKey];
+      final entries = prepared is PreparedStressHistory
+          ? const <Map>[]
+          : (((day['stress'] as Map?)?['entries'] as List? ?? [])
+                .whereType<Map>()
+                .where((entry) {
+                  final timestamp = entry['timestamp'];
+                  return timestamp is Timestamp &&
+                      !timestamp.toDate().isAfter(cutoff) &&
+                      cutoff.difference(timestamp.toDate()) <=
+                          const Duration(hours: 2);
+                })
+                .toList()
+              ..sort(
+                (a, b) => (b['timestamp'] as Timestamp).compareTo(
+                  a['timestamp'] as Timestamp,
+                ),
+              ));
+      final pastStress = prepared is PreparedStressHistory
+          ? prepared.at(cutoff)
+          : entries.isEmpty
           ? null
           : (entries.first['score'] as num?)?.toDouble();
       if ((pastSleep != null) != (sleep != null) ||

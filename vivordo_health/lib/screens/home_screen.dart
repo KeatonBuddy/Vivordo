@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../widgets/visible_stream_builder.dart';
+import '../src/services/metrics_repository.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -256,8 +257,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // _messageCopied removed — smart message card replaced with calendar
 
   // Single stream for today's unified metrics doc
-  late Stream<DocumentSnapshot<Map<String, dynamic>>> _todayStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _latestScanStream;
+  late Stream<MetricWindow> _todayStream;
+  late Stream<MetricWindow> _latestScanStream;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
   late final Stream<CircleProfile?> _circleProfileStream;
 
@@ -380,12 +381,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// than every day the account has recorded, bounded by a range on the
   /// `YYYY-MM-DD` document ids.
   ///
-  /// Ordering newest-first needs the descending `__name__` index on
-  /// metrics_daily, which Firestore does not create automatically. Without it
-  /// the query is rejected, and since this listener is the only source for
-  /// heart rate, that shows up as "No data" on an otherwise working screen —
-  /// which is exactly how it shipped once before. The index is declared in
-  /// firestore.indexes.json; the builder logs if the query fails anyway.
+  /// The repository uses ascending document IDs; derived values explicitly
+  /// choose the latest measurement instead of depending on query order.
   void _connectMetricStreams() {
     final today = _todayPeriod();
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -394,44 +391,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _metricsSummaryCache = HomeMetricsSummaryCache();
     _scheduleDayRollover();
     _todayStream = uid != null
-        ? FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('metrics_daily')
-              .doc(today)
-              .snapshots()
+        ? MetricsRepository.instance.watch(
+            uid: uid,
+            startDay: today,
+            endDay: today,
+            projection: MetricsProjection.homeToday,
+          )
         : const Stream.empty();
     _latestScanStream = uid != null
-        ? FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('metrics_daily')
-              .where(
-                FieldPath.documentId,
-                isGreaterThanOrEqualTo: homeMetricsWindowStartKey(
-                  DateTime.now(),
-                ),
-                isLessThanOrEqualTo: today,
-              )
-              .orderBy(FieldPath.documentId, descending: true)
-              .snapshots()
+        ? MetricsRepository.instance.watch(
+            uid: uid,
+            startDay: homeMetricsWindowStartKey(DateTime.now()),
+            endDay: today,
+            projection: MetricsProjection.homeHistory,
+          )
         : const Stream.empty();
   }
 
   /// Derived Home values for [snapshot], reused across rebuilds that did not
   /// change the data, the local day, or the signed-in account.
-  HomeMetricsSummary _metricsSummaryFor(
-    QuerySnapshot<Map<String, dynamic>>? snapshot,
-  ) {
+  HomeMetricsSummary _metricsSummaryFor(MetricWindow? snapshot) {
     final now = DateTime.now();
     return _metricsSummaryCache.summarize(
-      snapshotKey: snapshot,
+      snapshotKey: snapshot?.days,
       dayKey: _todayPeriod(),
       uid: FirebaseAuth.instance.currentUser?.uid,
       now: now,
-      days: () => (snapshot?.docs ?? const [])
-          .map((doc) => MetricDayEntry(dayKey: doc.id, data: doc.data()))
-          .toList(growable: false),
+      days: () =>
+          (snapshot?.days.entries ??
+                  const <MapEntry<String, Map<String, dynamic>>>[])
+              .map((doc) => MetricDayEntry(dayKey: doc.key, data: doc.value))
+              .toList(growable: false),
     );
   }
 
@@ -590,13 +580,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     }
 
-    return VisibleStreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    return VisibleStreamBuilder<MetricWindow>(
+      key: ValueKey((_streamsUid, _streamsDayKey)),
       stream: _todayStream,
       builder: (context, todaySnap) {
         final bool loading =
             !todaySnap.hasData &&
             todaySnap.connectionState == ConnectionState.waiting;
-        final data = todaySnap.data?.data();
+        final data = todaySnap.data?.days[_streamsDayKey];
 
         final stressMap = data?['stress'] as Map?;
         final hrvMap = data?['hrv'] as Map?;
@@ -657,16 +648,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ? '${(wellnessMap['avg'] as num?)?.round() ?? '--'}'
             : '--';
 
-        return VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        return VisibleStreamBuilder<MetricWindow>(
           stream: _latestScanStream,
           builder: (context, scanSnap) {
-            if (scanSnap.hasError) {
-              // Heart rate is the only value this listener feeds, so a failure
-              // here reads as "No data" on an otherwise working screen. Say so
-              // rather than letting it pass as an empty result.
+            if (scanSnap.hasError || scanSnap.data?.error != null) {
+              // Keep a transport failure distinguishable from missing readings;
+              // the repository retains the last successfully received window.
               debugPrint(
-                'HomeScreen: metrics history listener failed, heart rate will '
-                'show no data: ${scanSnap.error}',
+                'HomeScreen: metrics history listener failed, heart rate '
+                'may be cached: ${scanSnap.error ?? scanSnap.data?.error}',
               );
             }
             final metricsSummary = _metricsSummaryFor(scanSnap.data);

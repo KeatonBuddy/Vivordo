@@ -40,6 +40,17 @@ const {
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
 
+// Deploy explicitly after emulator validation; readers remain opt-in until
+// the account's bounded backfill is verified and its rollout marker enabled.
+exports.projectDailyActivitySummary = onDocumentWritten(
+    {document: "users/{uid}/metrics_daily/{day}", retry: true},
+    async (event) => {
+      const {refreshActivitySummary} = require("./metrics_summary");
+      await refreshActivitySummary(admin.firestore(), event.params.uid,
+          event.params.day, () => admin.firestore.FieldValue.serverTimestamp());
+    },
+);
+
 // Server-owned block records cannot be forged or removed by the other user.
 exports.blockCircleUser = onCall(async (request) => {
   const uid = requireAuth(request);

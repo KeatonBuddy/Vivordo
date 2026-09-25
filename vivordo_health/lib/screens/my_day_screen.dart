@@ -25,6 +25,7 @@ import 'all_priorities_screen.dart';
 import '../widgets/tomorrow_preview.dart';
 import '../widgets/daily_brief_card.dart';
 import '../src/utils/owned_stream_snapshot.dart';
+import '../src/services/metrics_repository.dart';
 
 class MyDayScreen extends StatefulWidget {
   const MyDayScreen({super.key});
@@ -55,18 +56,19 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _briefMetrics = null;
     final stream = _metricsStreamFor(day);
     _briefSnapshot.connect(
-      (stream ?? const Stream<QuerySnapshot<Map<String, dynamic>>>.empty()).map(
-        (snapshot) {
-          final metrics = DailyBriefMetrics(
-            snapshot.docs
-                .map((d) => MetricDayEntry(dayKey: d.id, data: d.data()))
-                .toList(),
-            isFromCache: snapshot.metadata.isFromCache,
-          );
-          _briefMetrics = metrics;
-          return metrics.summarize(DateTime.now());
-        },
-      ),
+      (stream ?? const Stream<MetricWindow>.empty()).map((snapshot) {
+        if (snapshot.error != null && snapshot.days.isEmpty) {
+          throw snapshot.error!;
+        }
+        final metrics = DailyBriefMetrics(
+          snapshot.days.entries
+              .map((d) => MetricDayEntry(dayKey: d.key, data: d.value))
+              .toList(),
+          isFromCache: snapshot.isFromCache || snapshot.error != null,
+        );
+        _briefMetrics = metrics;
+        return metrics.summarize(DateTime.now());
+      }),
     );
   }
 
@@ -93,9 +95,17 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _priorityDay = DateUtils.dateOnly(DateTime.now());
     _connectBriefMetrics(_priorityDay);
-    _prioritySnapshot.connect(DailyPriorityService.watch(_priorityDay));
-    _tomorrowPrioritySnapshot.connect(DailyPriorityService.watch(_tomorrow));
+    _connectPriorities();
     _loadTodayEvents();
+  }
+
+  void _connectPriorities() {
+    final today = _priorityDay;
+    final tomorrow = _tomorrow;
+    _prioritySnapshot.connectFactory(() => DailyPriorityService.watch(today));
+    _tomorrowPrioritySnapshot.connectFactory(
+      () => DailyPriorityService.watch(tomorrow),
+    );
   }
 
   @override
@@ -133,30 +143,24 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     setState(() {
       _priorityDay = today;
       _connectBriefMetrics(today);
-      _prioritySnapshot.connect(DailyPriorityService.watch(today));
-      _tomorrowPrioritySnapshot.connect(DailyPriorityService.watch(_tomorrow));
+      _connectPriorities();
     });
     unawaited(_loadTodayEvents());
     return true;
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _metricsStreamFor(DateTime day) {
+  Stream<MetricWindow>? _metricsStreamFor(DateTime day) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return null;
     final period = DateFormat('yyyy-MM-dd').format(day);
-    return FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('metrics_daily')
-        .where(
-          FieldPath.documentId,
-          isGreaterThanOrEqualTo: DateFormat(
-            'yyyy-MM-dd',
-          ).format(DateTime(day.year, day.month, day.day - 28)),
-        )
-        .where(FieldPath.documentId, isLessThanOrEqualTo: period)
-        .orderBy(FieldPath.documentId)
-        .snapshots();
+    return MetricsRepository.instance.watch(
+      uid: uid,
+      endDay: period,
+      projection: MetricsProjection.dailyBrief,
+      startDay: DateFormat(
+        'yyyy-MM-dd',
+      ).format(DateTime(day.year, day.month, day.day - 28)),
+    );
   }
 
   @override

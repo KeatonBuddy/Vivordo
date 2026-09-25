@@ -8,7 +8,7 @@ class OwnedStreamSnapshot<T> extends ValueNotifier<AsyncSnapshot<T>> {
 
   StreamSubscription<T>? _subscription;
   int _generation = 0;
-  Stream<T>? _stream;
+  Stream<T> Function()? _streamFactory;
   bool _active = true;
 
   void setActive(bool active) {
@@ -17,16 +17,23 @@ class OwnedStreamSnapshot<T> extends ValueNotifier<AsyncSnapshot<T>> {
     ++_generation;
     unawaited(_subscription?.cancel());
     _subscription = null;
-    if (active && _stream != null) _listen(_stream!);
+    if (active && _streamFactory != null) _listen(_streamFactory!());
   }
 
+  /// Use only with streams that support listening again after cancellation.
   void connect(Stream<T> stream) {
-    _stream = stream;
+    connectFactory(() => stream);
+  }
+
+  /// Creates a fresh stream each time the owner becomes active. Required for
+  /// single-subscription controllers such as DailyPriorityService.watch().
+  void connectFactory(Stream<T> Function() createStream) {
+    _streamFactory = createStream;
     ++_generation;
     unawaited(_subscription?.cancel());
     _subscription = null;
     value = AsyncSnapshot<T>.waiting();
-    if (_active) _listen(stream);
+    if (_active) _listen(createStream());
   }
 
   void _listen(Stream<T> stream) {

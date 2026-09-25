@@ -4,6 +4,73 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/owned_stream_snapshot.dart';
 
 void main() {
+  test(
+    'single-use priority streams reconnect after hiding or opening a route',
+    () async {
+      var latestPriorities = ['First priority'];
+      final sources = <StreamController<List<String>>>[];
+      var cancellations = 0;
+      Stream<List<String>> createStream() {
+        late StreamController<List<String>> source;
+        source = StreamController<List<String>>(
+          onListen: () => source.add(List.of(latestPriorities)),
+          onCancel: () => cancellations++,
+        );
+        sources.add(source);
+        return source.stream;
+      }
+
+      final owner = OwnedStreamSnapshot<List<String>>()
+        ..connectFactory(createStream);
+      await Future<void>.delayed(Duration.zero);
+      expect(owner.value.data, ['First priority']);
+      for (var index = 0; index < 3; index++) {
+        final cached = owner.value.data;
+        owner.setActive(false);
+        expect(cancellations, index + 1);
+        latestPriorities = ['Edited while hidden $index'];
+        // Opening a modal or another tab must not build a hidden listener.
+        expect(sources.length, index + 1);
+        owner.setActive(true);
+        expect(owner.value.data, cached);
+        await Future<void>.delayed(Duration.zero);
+        expect(sources.length, index + 2);
+        expect(owner.value.data, latestPriorities);
+        expect(owner.value.hasError, false);
+      }
+      owner.dispose();
+      expect(cancellations, sources.length);
+      for (final source in sources) {
+        await source.close();
+      }
+    },
+  );
+
+  test(
+    'inactive startup and hidden day rollover use only the latest factory',
+    () async {
+      var oldListens = 0;
+      var newListens = 0;
+      final owner = OwnedStreamSnapshot<int>()..setActive(false);
+      owner.connectFactory(() {
+        oldListens++;
+        return Stream.value(1);
+      });
+      expect(oldListens, 0);
+      owner.connectFactory(() {
+        newListens++;
+        return Stream.value(2);
+      });
+      expect(newListens, 0);
+      owner.setActive(true);
+      await Future<void>.delayed(Duration.zero);
+      expect(oldListens, 0);
+      expect(newListens, 1);
+      expect(owner.value.data, 2);
+      owner.dispose();
+    },
+  );
+
   testWidgets('section can unmount and remount without resubscribing', (
     tester,
   ) async {

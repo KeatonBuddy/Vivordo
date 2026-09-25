@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../utils/performance_trace.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -441,7 +442,13 @@ class StressScoreService {
   /// connection, against a free-tier container that cold-starts.
   static const kRawSampleDays = 3;
 
-  static Future<Map<String, dynamic>> _buildPayload(
+  static Future<Map<String, dynamic>> _buildPayload(String uid, String today) =>
+      PerformanceTrace.async(
+        'stress.payload',
+        () => _buildPayloadMeasured(uid, today),
+      );
+
+  static Future<Map<String, dynamic>> _buildPayloadMeasured(
     String uid,
     String today,
   ) async {

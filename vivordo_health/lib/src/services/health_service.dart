@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import '../utils/performance_trace.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -610,7 +611,12 @@ class HealthService {
     }
   }
 
-  Future<void> _performSync({required int daysBack}) async {
+  Future<void> _performSync({required int daysBack}) => PerformanceTrace.async(
+    'health.sync',
+    () => _performSyncMeasured(daysBack: daysBack),
+  );
+
+  Future<void> _performSyncMeasured({required int daysBack}) async {
     final authorized = await ensureHealthAuthorization();
     if (!authorized) {
       debugPrint(
@@ -625,10 +631,13 @@ class HealthService {
     for (final m in kHealthMetrics) {
       if (consent[m.key] == true) {
         try {
-          await _syncMetric(
-            m.key,
-            daysBack: daysBack,
-            refreshWearableConnections: false,
+          await PerformanceTrace.async(
+            'health.metric.${m.key}',
+            () => _syncMetric(
+              m.key,
+              daysBack: daysBack,
+              refreshWearableConnections: false,
+            ),
           );
         } catch (e) {
           // One metric failing (e.g. permissions) shouldn't stop the others.
