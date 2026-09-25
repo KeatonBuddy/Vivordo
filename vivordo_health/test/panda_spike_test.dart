@@ -300,8 +300,8 @@ void main() {
           reason: '10 turns must stay under the $kMaxInputTokens-token budget');
     });
 
-    test('kMaxOutputTokensChat is 300 and kMaxOutputTokensSpike is 1800', () {
-      expect(kMaxOutputTokensChat, equals(300));
+    test('kMaxOutputTokensChat is 800 and kMaxOutputTokensSpike is 1800', () {
+      expect(kMaxOutputTokensChat, equals(800));
       expect(kMaxOutputTokensSpike, equals(1800));
     });
 

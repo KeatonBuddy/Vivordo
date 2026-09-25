@@ -17,7 +17,7 @@ export 'panda_types.dart';
 const int kMaxInputTokens = 2500;
 
 /// Output cap for a single dialogue turn (processTurn).
-const int kMaxOutputTokensChat = 300;
+const int kMaxOutputTokensChat = 800;
 
 /// Output cap for session spike analysis (analyzePandaSession).
 const int kMaxOutputTokensSpike = 1800;
@@ -1175,7 +1175,31 @@ Write the continuity note now.''';
             : null,
       );
     } catch (_) {
-      return PandaTurnReply(intent: PandaIntent.chitchat, message: 'Got it');
+      // Never present a partial action as a completed operation. Only salvage
+      // explicitly conversational replies, and clearly label them incomplete.
+      final message = _salvageMessage(raw);
+      final conversational =
+          RegExp(r'"intent"\s*:\s*"chitchat"').hasMatch(raw) &&
+          !RegExp(r'"(?:calendar_action|priority_action)"\s*:').hasMatch(raw);
+      return PandaTurnReply(
+        intent: PandaIntent.chitchat,
+        message: conversational && message != null
+            ? 'Incomplete response — please retry for the full answer. No changes were made.\n\n$message'
+            : 'The response was interrupted. No changes were made—please try again.',
+      );
+    }
+  }
+
+  /// Best-effort recovery of the "message" string from truncated JSON.
+  static String? _salvageMessage(String raw) {
+    final m = RegExp(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)').firstMatch(raw);
+    final body = m?.group(1)?.replaceFirst(RegExp(r'\\u[0-9a-fA-F]{0,3}$'), '');
+    if (body == null) return null;
+    try {
+      final text = (jsonDecode('"$body"') as String).trim();
+      return text.isEmpty ? null : text;
+    } catch (_) {
+      return null;
     }
   }
 

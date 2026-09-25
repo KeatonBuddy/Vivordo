@@ -17,6 +17,7 @@ import '../src/services/daily_priority_service.dart';
 import '../src/services/panda_priority_action.dart';
 import '../src/services/workout_service.dart';
 import '../src/services/workout_ai_advice.dart';
+import '../src/utils/workout_opening.dart';
 import '../widgets/vivordo_robot.dart';
 import '../widgets/contextual_insight_bar.dart';
 import '../src/utils/panda_priority_context.dart';
@@ -243,6 +244,7 @@ class _PandaScreenState extends State<PandaScreen>
       }
       setState(() {
         _ended = true;
+        _invalidateWorkoutOpening();
         _offerEndSession = false;
         _screenInsight = null;
         _inputCtrl.clear();
@@ -260,19 +262,30 @@ class _PandaScreenState extends State<PandaScreen>
 
   final TextEditingController _inputCtrl = TextEditingController();
   ScreenInsight? _screenInsight;
+  WorkoutOpening? _workoutOpening;
+  void _invalidateWorkoutOpening() {
+    _workoutOpening?.invalidate();
+    _workoutOpening = null;
+    _workoutAdviceBusy = false;
+  }
+
   bool _workoutAdviceBusy = false;
   Future<void> _loadWorkoutOpening(ScreenInsight source) async {
+    final opening = _workoutOpening;
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (!mounted ||
         uid == null ||
         source.context == null ||
-        _screenInsight != source)
+        _screenInsight != source ||
+        opening == null ||
+        !opening.active)
       return;
     setState(() => _workoutAdviceBusy = true);
     String advice;
     try {
       final allowed = await ensureWorkoutAiConsent(context, uid);
-      if (!mounted || _screenInsight != source || _ended) return;
+      if (!mounted || !opening.active || _screenInsight != source || _ended)
+        return;
       advice = allowed
           ? await loadWorkoutAiAdvice(uid, source.context!)
           : 'Workout analysis was not started. You can ask for advice when you’re ready to allow sharing this workout with Claude.';
@@ -280,24 +293,23 @@ class _PandaScreenState extends State<PandaScreen>
       advice =
           'I couldn’t analyze this workout right now. You can ask me to try again or ask a specific question about it.';
     } finally {
-      if (mounted) setState(() => _workoutAdviceBusy = false);
+      if (mounted && identical(_workoutOpening, opening))
+        setState(() => _workoutAdviceBusy = false);
     }
     if (!mounted ||
         _screenInsight != source ||
+        !opening.active ||
         _ended ||
         FirebaseAuth.instance.currentUser?.uid != uid)
       return;
     setState(() {
+      opening.complete(advice);
       _screenInsight = ScreenInsight(
         source.screen,
         source.title,
         advice,
         context: source.context,
       );
-      final index = _turns.lastIndexWhere(
-        (t) => t.role == _Role.assistant && t.text == source.message,
-      );
-      if (index >= 0) _turns[index] = _Turn.assistant(advice);
     });
   }
 
@@ -305,6 +317,7 @@ class _PandaScreenState extends State<PandaScreen>
   void _receiveContextPrompt() {
     final insight = widget.contextPrompt?.value;
     if (insight == null) return;
+    _invalidateWorkoutOpening();
     if (insight.screen == 'my_day' ||
         insight.screen == 'fitness' ||
         insight.screen == 'workout_summary') {
@@ -314,12 +327,21 @@ class _PandaScreenState extends State<PandaScreen>
         _qIdx = 0;
         _sessionComplete = true;
         _state = _DialogueState.free;
+        if (insight.screen == 'workout_summary') {
+          _workoutOpening = WorkoutOpening();
+          _workoutAdviceBusy = true;
+        }
         if (_turns.isNotEmpty) {
           if (!_turns.any((turn) => turn.role == _Role.user)) {
             _turns.clear();
           }
-          _turns.add(_Turn.assistant(_screenOpening));
+          if (_workoutOpening == null)
+            _turns.add(_Turn.assistant(_screenOpening));
         }
+        if (_workoutOpening != null)
+          _turns.add(
+            _Turn(role: _Role.assistant, text: '', opening: _workoutOpening),
+          );
       });
       _tabCtrl.animateTo(0);
       widget.contextPrompt?.value = null;
@@ -389,7 +411,6 @@ class _PandaScreenState extends State<PandaScreen>
 
   void _subscribeToInsights(String userId) {
     _historyStream?.cancel();
-    widget.contextPrompt?.removeListener(_receiveContextPrompt);
     _historyStream = _insightSvc
         .streamPandaInsights(userId, limit: 50)
         .listen(
@@ -407,6 +428,8 @@ class _PandaScreenState extends State<PandaScreen>
 
   @override
   void dispose() {
+    widget.contextPrompt?.removeListener(_receiveContextPrompt);
+    _invalidateWorkoutOpening();
     _historyStream?.cancel();
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
@@ -437,6 +460,11 @@ class _PandaScreenState extends State<PandaScreen>
       _offerEndSession = false;
       _error = null;
       _turns.clear();
+      if (_workoutOpening != null) {
+        _turns.add(
+          _Turn(role: _Role.assistant, text: '', opening: _workoutOpening),
+        );
+      }
       _spikeAnswers.clear();
       _categoryInsights.clear();
       _questionQueue.clear();
@@ -473,7 +501,7 @@ class _PandaScreenState extends State<PandaScreen>
           )
           .timeout(const Duration(seconds: 30));
 
-      if (!mounted) return;
+      if (!mounted || _ended || _sessionStart != startedAt) return;
       setState(() {
         _session = boot.session;
         _loading = false;
@@ -484,10 +512,12 @@ class _PandaScreenState extends State<PandaScreen>
       // dialogue turns once it lands.
       unawaited(_loadScheduleContext());
 
-      // 1. Warm opener — shown right away.
-      await _pandaSay(
-        _screenInsight == null ? boot.session.openerMessage : _screenOpening,
-      );
+      // Workout openings already have a stable slot; never delay or duplicate it.
+      if (_workoutOpening == null) {
+        await _pandaSay(
+          _screenInsight == null ? boot.session.openerMessage : _screenOpening,
+        );
+      }
 
       // Nothing to analyze → the session is already final.
       if (boot.spikeAnalysis == null) {
@@ -1688,6 +1718,7 @@ class _PandaScreenState extends State<PandaScreen>
         }
       }
 
+      _invalidateWorkoutOpening();
       _screenInsight = null;
       await _loadSession();
       if (mounted) _tabCtrl.animateTo(0);
@@ -2060,7 +2091,8 @@ class _PandaScreenState extends State<PandaScreen>
             final t = _turns[turnIdx];
             if (_screenInsight != null &&
                 t.role == _Role.assistant &&
-                t.text == _screenOpening) {
+                (t.opening?.id == _workoutOpening?.id && t.opening != null ||
+                    t.text == _screenOpening)) {
               return _openingInsight(
                 t.text,
                 myDay: _screenInsight!.screen == 'my_day',
@@ -3967,16 +3999,19 @@ enum _CalendarActionStatus { pending, running, done, cancelled, failed }
 class _Turn {
   _Turn({
     required this.role,
-    required this.text,
+    required String text,
+    this.opening,
     this.kind = _TurnKind.normal,
     this.recs = const [],
     this.categoryOptions = const [],
     this.categoryColor,
     this.categoryLabel,
     this.calendarAction,
-  });
+  }) : _text = text;
   final _Role role;
-  final String text;
+  final String _text;
+  final WorkoutOpening? opening;
+  String get text => opening?.text ?? _text;
   final _TurnKind kind;
   final List<PandaRec> recs;
   final List<String> categoryOptions;
