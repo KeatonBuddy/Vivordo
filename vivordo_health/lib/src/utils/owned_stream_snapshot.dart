@@ -8,11 +8,29 @@ class OwnedStreamSnapshot<T> extends ValueNotifier<AsyncSnapshot<T>> {
 
   StreamSubscription<T>? _subscription;
   int _generation = 0;
+  Stream<T>? _stream;
+  bool _active = true;
+
+  void setActive(bool active) {
+    if (_active == active) return;
+    _active = active;
+    ++_generation;
+    unawaited(_subscription?.cancel());
+    _subscription = null;
+    if (active && _stream != null) _listen(_stream!);
+  }
 
   void connect(Stream<T> stream) {
-    final generation = ++_generation;
+    _stream = stream;
+    ++_generation;
     unawaited(_subscription?.cancel());
+    _subscription = null;
     value = AsyncSnapshot<T>.waiting();
+    if (_active) _listen(stream);
+  }
+
+  void _listen(Stream<T> stream) {
+    final generation = ++_generation;
     _subscription = stream.listen(
       (data) {
         if (generation == _generation) {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/visible_stream_builder.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -589,7 +590,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     }
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    return VisibleStreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: _todayStream,
       builder: (context, todaySnap) {
         final bool loading =
@@ -656,7 +657,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ? '${(wellnessMap['avg'] as num?)?.round() ?? '--'}'
             : '--';
 
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        return VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _latestScanStream,
           builder: (context, scanSnap) {
             if (scanSnap.hasError) {
@@ -684,7 +685,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     scanSnap.connectionState == ConnectionState.waiting &&
                     !scanSnap.hasData);
 
-            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            return VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: _goalsStreamCached,
               builder: (context, goalSnap) {
                 final goalDocs = goalSnap.data?.docs ?? [];
@@ -1117,7 +1118,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            StreamBuilder<CircleProfile?>(
+            VisibleStreamBuilder<CircleProfile?>(
               stream: _circleProfileStream,
               builder: (context, snapshot) {
                 final profile = snapshot.data;
@@ -1178,7 +1179,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required int activeCalories,
     required int exerciseMinutes,
   }) {
-    return StreamBuilder<ActivityGoals>(
+    return VisibleStreamBuilder<ActivityGoals>(
       stream: ActivityGoalsService.watch(),
       initialData: const ActivityGoals(),
       builder: (context, snapshot) {
@@ -1506,7 +1507,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
             child: Row(
               children: [
-                StreamBuilder<CircleProfile?>(
+                VisibleStreamBuilder<CircleProfile?>(
                   stream: _circleProfileStream,
                   builder: (context, snapshot) {
                     final profile = snapshot.data;
@@ -1520,7 +1521,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   },
                 ),
                 const SizedBox(width: 14),
-                StreamBuilder<CircleDailyEngagement>(
+                VisibleStreamBuilder<CircleDailyEngagement>(
                   stream: CircleProfileService.watchTodayEngagement(),
                   initialData: const CircleDailyEngagement(
                     likes: 0,
@@ -1544,7 +1545,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   ),
                                 ),
                                 const SizedBox(height: 4),
-                                StreamBuilder<List<CircleProfile>>(
+                                VisibleStreamBuilder<List<CircleProfile>>(
                                   stream: CircleProfileService.watchFriends(),
                                   builder: (context, snapshot) {
                                     final friendCount =
@@ -3019,39 +3020,40 @@ class _HomeWorkoutStreakBadgeState extends State<_HomeWorkoutStreakBadge> {
   }
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<SavedWorkout>>(
-    stream: _workoutsStream,
-    builder: (context, snapshot) {
-      final streak = WorkoutService.calculateCurrentStreak(
-        snapshot.data ?? const [],
-      );
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF1E7),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.local_fire_department_rounded,
-              size: 16,
-              color: Colors.orange,
+  Widget build(BuildContext context) =>
+      VisibleStreamBuilder<List<SavedWorkout>>(
+        stream: _workoutsStream,
+        builder: (context, snapshot) {
+          final streak = WorkoutService.calculateCurrentStreak(
+            snapshot.data ?? const [],
+          );
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF1E7),
+              borderRadius: BorderRadius.circular(20),
             ),
-            const SizedBox(width: 3),
-            Text(
-              '$streak-day',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: Colors.orange,
-              ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.local_fire_department_rounded,
+                  size: 16,
+                  color: Colors.orange,
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  '$streak-day',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.orange,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       );
-    },
-  );
 }
 
 class _ScheduleEvent {

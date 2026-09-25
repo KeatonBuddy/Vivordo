@@ -46,6 +46,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   bool _isLoading = true;
   DateTime? _calendarLoadedAt;
   Timer? _clockTimer;
+  bool _screenActive = false;
   late DateTime _priorityDay;
   final _briefSnapshot = OwnedStreamSnapshot<DailyBriefMetricsSummary>();
   DailyBriefMetrics? _briefMetrics;
@@ -95,6 +96,20 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _prioritySnapshot.connect(DailyPriorityService.watch(_priorityDay));
     _tomorrowPrioritySnapshot.connect(DailyPriorityService.watch(_tomorrow));
     _loadTodayEvents();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final active = TickerMode.valuesOf(context).enabled;
+    _briefSnapshot.setActive(active);
+    _prioritySnapshot.setActive(active);
+    _tomorrowPrioritySnapshot.setActive(active);
+    if (_screenActive == active) return;
+    _screenActive = active;
+    _clockTimer?.cancel();
+    if (!active) return;
+    if (!_handleDayRollover()) _refreshBriefClock();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
       if (!_handleDayRollover()) {
@@ -106,7 +121,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
+    if (state == AppLifecycleState.resumed && mounted && _screenActive) {
       if (!_handleDayRollover()) _refreshBriefClock();
     }
   }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/visible_stream_builder.dart';
 import '../widgets/contextual_insight_bar.dart';
 import '../src/services/active_workout_navigation.dart';
 import '../widgets/workout_rest_timer.dart';
@@ -21,6 +22,7 @@ import '../src/services/personal_profile_service.dart';
 import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import '../src/utils/fitness_goal_insight.dart';
+import '../src/utils/fitness_activity_history.dart';
 import 'exercise_detail_screen.dart';
 import 'personal_profile_screen.dart';
 import 'workout_summary_screen.dart';
@@ -503,22 +505,55 @@ class _FitnessScreenState extends State<FitnessScreen> {
       showDialog(context: context, builder: (_) => const MonthlyRingsDialog());
 }
 
-class _TodayActivityRings extends StatelessWidget {
+class _TodayActivityRings extends StatefulWidget {
   const _TodayActivityRings({required this.onTap});
 
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+  State<_TodayActivityRings> createState() => _TodayActivityRingsState();
+}
+
+class _TodayActivityRingsState extends State<_TodayActivityRings>
+    with WidgetsBindingObserver {
+  StreamSubscription<User?>? _authSubscription;
+  Timer? _midnightTimer;
+  String? _uid;
+  late DateTime _day;
+  late String _dayKey;
+  late Stream<Map<String, Map<String, dynamic>>> _historyStream;
+  late Stream<ActivityGoals> _goalsStream;
+  Object? _insightKey;
+  String _insight = '';
+  bool _active = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _connect();
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((_) {
+      if (mounted) _refreshIfStale();
+    });
+  }
+
+  void _connect() {
+    _uid = FirebaseAuth.instance.currentUser?.uid;
     final now = DateTime.now();
-    final dayKey =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final stream = user == null
-        ? const Stream<QuerySnapshot<Map<String, dynamic>>>.empty()
+    _day = DateTime(now.year, now.month, now.day);
+    _dayKey = DateFormat('yyyy-MM-dd').format(_day);
+    _insightKey = null;
+    final cache = FitnessActivityHistory();
+    var historyHadError = false;
+    var goalsHadError = false;
+    _historyStream = _uid == null
+        ? Stream.multi((controller) {
+            controller.add(const <String, Map<String, dynamic>>{});
+            controller.close();
+          })
         : FirebaseFirestore.instance
               .collection('users')
-              .doc(user.uid)
+              .doc(_uid)
               .collection('metrics_daily')
               .where(
                 FieldPath.documentId,
@@ -526,35 +561,135 @@ class _TodayActivityRings extends StatelessWidget {
                   'yyyy-MM-dd',
                 ).format(DateTime(now.year, now.month, now.day - 14)),
               )
-              .where(FieldPath.documentId, isLessThanOrEqualTo: dayKey)
+              .where(FieldPath.documentId, isLessThanOrEqualTo: _dayKey)
               .orderBy(FieldPath.documentId)
               .limit(15)
-              .snapshots();
+              .snapshots()
+              .map(
+                (snapshot) => cache.update(snapshot.docs.map((doc) => doc.id), {
+                  for (final change in snapshot.docChanges)
+                    if (change.type != DocumentChangeType.removed)
+                      change.doc.id: (
+                        steps: _total(change.doc, 'steps'),
+                        calories: _total(change.doc, 'active_calories'),
+                        minutes: _total(change.doc, 'exercise_time'),
+                      ),
+                }),
+              )
+              .handleError((Object error, StackTrace stack) {
+                historyHadError = true;
+                Error.throwWithStackTrace(error, stack);
+              })
+              .distinct((a, b) {
+                final recovering = historyHadError;
+                historyHadError = false;
+                return !recovering && identical(a, b);
+              });
+    _goalsStream = ActivityGoalsService.watch()
+        .handleError((Object error, StackTrace stack) {
+          goalsHadError = true;
+          Error.throwWithStackTrace(error, stack);
+        })
+        .distinct((a, b) {
+          final recovering = goalsHadError;
+          goalsHadError = false;
+          return !recovering &&
+              a.steps == b.steps &&
+              a.activeCalories == b.activeCalories &&
+              a.exerciseMinutes == b.exerciseMinutes;
+        });
+  }
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: stream,
+  static num? _total(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+    String metric,
+  ) {
+    // get() converts just this scalar, rather than recursively copying every
+    // metric (including sample arrays) via doc.data(). Missing isn't zero.
+    try {
+      final value = doc.get('$metric.sum');
+      return value is num && value.isFinite && value >= 0 ? value : null;
+    } on StateError {
+      return null;
+    }
+  }
+
+  void _refreshIfStale() {
+    if (_uid != FirebaseAuth.instance.currentUser?.uid ||
+        _dayKey != DateFormat('yyyy-MM-dd').format(DateTime.now())) {
+      setState(_connect);
+    }
+    _scheduleMidnight();
+  }
+
+  void _scheduleMidnight() {
+    _midnightTimer?.cancel();
+    if (!_active) return;
+    final now = DateTime.now();
+    _midnightTimer = Timer(
+      DateTime(now.year, now.month, now.day + 1).difference(now),
+      _refreshIfStale,
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _active = TickerMode.valuesOf(context).enabled;
+    _refreshIfStale();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshIfStale();
+  }
+
+  @override
+  void dispose() {
+    _midnightTimer?.cancel();
+    _authSubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return VisibleStreamBuilder<Map<String, Map<String, dynamic>>>(
+      key: ValueKey((_uid, _dayKey)),
+      stream: _historyStream,
       builder: (context, snapshot) {
-        final history = {
-          for (final doc
-              in snapshot.data?.docs ??
-                  <QueryDocumentSnapshot<Map<String, dynamic>>>[])
-            doc.id: doc.data(),
-        };
-        final data = history[dayKey];
+        final history = snapshot.data ?? const <String, Map<String, dynamic>>{};
+        final data = history[_dayKey];
         final steps = ((data?['steps'] as Map?)?['sum'] as num?)?.round() ?? 0;
         final calories =
             ((data?['active_calories'] as Map?)?['sum'] as num?)?.round() ?? 0;
         final exercise =
             ((data?['exercise_time'] as Map?)?['sum'] as num?)?.round() ?? 0;
 
-        return StreamBuilder<ActivityGoals>(
-          stream: ActivityGoalsService.watch(),
+        return VisibleStreamBuilder<ActivityGoals>(
+          stream: _goalsStream,
           initialData: const ActivityGoals(),
           builder: (context, goalsSnapshot) {
             final goals = goalsSnapshot.data ?? const ActivityGoals();
+            final insightKey = (
+              history,
+              goals.steps,
+              goals.activeCalories,
+              goals.exerciseMinutes,
+              _dayKey,
+            );
+            if (_insightKey != insightKey) {
+              _insightKey = insightKey;
+              _insight = fitnessGoalInsight(
+                data,
+                goals,
+                history: history,
+                now: _day,
+              );
+            }
             return InkWell(
               borderRadius: BorderRadius.circular(22),
-              onTap: onTap,
+              onTap: widget.onTap,
               child: _Card(
                 child: Row(
                   children: [
@@ -614,12 +749,7 @@ class _TodayActivityRings extends StatelessWidget {
                           goalsSnapshot.connectionState ==
                               ConnectionState.waiting
                     ? 'Loading your activity and saved goals…'
-                    : fitnessGoalInsight(
-                        data,
-                        goals,
-                        history: history,
-                        now: now,
-                      ),
+                    : _insight,
               ),
             );
           },
@@ -653,7 +783,7 @@ class _DailyStepRecommendation extends StatelessWidget {
         .collection('metrics_daily')
         .doc(dayKey)
         .snapshots();
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    return VisibleStreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
@@ -735,19 +865,20 @@ class _WorkoutStreakPillState extends State<_WorkoutStreakPill> {
   }
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<SavedWorkout>>(
-    stream: _workoutsStream,
-    builder: (context, snapshot) {
-      final streak = WorkoutService.calculateCurrentStreak(
-        snapshot.data ?? const [],
+  Widget build(BuildContext context) =>
+      VisibleStreamBuilder<List<SavedWorkout>>(
+        stream: _workoutsStream,
+        builder: (context, snapshot) {
+          final streak = WorkoutService.calculateCurrentStreak(
+            snapshot.data ?? const [],
+          );
+          return _PillButton(
+            icon: Icons.local_fire_department_rounded,
+            label: '$streak-day streak',
+            color: Colors.orange,
+          );
+        },
       );
-      return _PillButton(
-        icon: Icons.local_fire_department_rounded,
-        label: '$streak-day streak',
-        color: Colors.orange,
-      );
-    },
-  );
 }
 
 class _LatestHeartScanCard extends StatefulWidget {
@@ -775,7 +906,7 @@ class _LatestHeartScanCardState extends State<_LatestHeartScanCard> {
 
   @override
   Widget build(BuildContext context) =>
-      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _scanStream,
         builder: (context, snapshot) {
           final bpm = _latestBpmFrom(snapshot.data?.docs ?? const []);
@@ -892,11 +1023,11 @@ class _PersonalProfileCardState extends State<_PersonalProfileCard> {
   }
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<PersonalProfile>(
+  Widget build(BuildContext context) => VisibleStreamBuilder<PersonalProfile>(
     stream: profileStream,
     initialData: const PersonalProfile(),
     builder: (context, profileSnapshot) =>
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: metricsStream,
           builder: (context, metricsSnapshot) {
             final profile = profileSnapshot.data ?? const PersonalProfile();
@@ -1082,7 +1213,7 @@ class _ThisWeekActivityCard extends StatelessWidget {
         .orderBy(FieldPath.documentId)
         .snapshots();
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    return VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: stream,
       builder: (context, snapshot) {
         final dataByDay = {
@@ -1255,41 +1386,44 @@ class _RecentWorkoutSessions extends StatelessWidget {
   const _RecentWorkoutSessions();
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<SavedWorkout>>(
-    stream: WorkoutService.watchRecent(limit: 3),
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting &&
-          !snapshot.hasData) {
-        return const _Card(child: Center(child: CircularProgressIndicator()));
-      }
-      if (snapshot.hasError) {
-        return const _Card(
-          child: Center(child: Text('Could not load recent workouts.')),
-        );
-      }
-      final workouts = snapshot.data ?? const <SavedWorkout>[];
-      if (workouts.isEmpty) {
-        return const _Card(
-          child: Center(
-            child: Text(
-              'No workouts completed yet.',
-              style: TextStyle(color: _muted),
+  Widget build(BuildContext context) =>
+      VisibleStreamBuilder<List<SavedWorkout>>(
+        stream: WorkoutService.watchRecent(limit: 3),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const _Card(
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (snapshot.hasError) {
+            return const _Card(
+              child: Center(child: Text('Could not load recent workouts.')),
+            );
+          }
+          final workouts = snapshot.data ?? const <SavedWorkout>[];
+          if (workouts.isEmpty) {
+            return const _Card(
+              child: Center(
+                child: Text(
+                  'No workouts completed yet.',
+                  style: TextStyle(color: _muted),
+                ),
+              ),
+            );
+          }
+          return _Card(
+            child: Column(
+              children: [
+                for (var index = 0; index < workouts.length; index++) ...[
+                  _RecentWorkoutRow(workout: workouts[index]),
+                  if (index < workouts.length - 1) const Divider(),
+                ],
+              ],
             ),
-          ),
-        );
-      }
-      return _Card(
-        child: Column(
-          children: [
-            for (var index = 0; index < workouts.length; index++) ...[
-              _RecentWorkoutRow(workout: workouts[index]),
-              if (index < workouts.length - 1) const Divider(),
-            ],
-          ],
-        ),
+          );
+        },
       );
-    },
-  );
 }
 
 class _AllWorkoutsScreen extends StatelessWidget {
@@ -1307,7 +1441,7 @@ class _AllWorkoutsScreen extends StatelessWidget {
       ),
       centerTitle: true,
     ),
-    body: StreamBuilder<List<SavedWorkout>>(
+    body: VisibleStreamBuilder<List<SavedWorkout>>(
       stream: WorkoutService.watchAll(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
@@ -1395,36 +1529,39 @@ class _RecentActivitiesCard extends StatelessWidget {
   const _RecentActivitiesCard();
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<RecentActivity>>(
-    stream: RecentActivityService.watch(),
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting &&
-          !snapshot.hasData) {
-        return const _Card(child: Center(child: CircularProgressIndicator()));
-      }
-      final activities = snapshot.data ?? const <RecentActivity>[];
-      if (activities.isEmpty) {
-        return const _Card(
-          child: Center(
-            child: Text(
-              'No activities logged yet.',
-              style: TextStyle(color: _muted),
+  Widget build(BuildContext context) =>
+      VisibleStreamBuilder<List<RecentActivity>>(
+        stream: RecentActivityService.watch(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const _Card(
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final activities = snapshot.data ?? const <RecentActivity>[];
+          if (activities.isEmpty) {
+            return const _Card(
+              child: Center(
+                child: Text(
+                  'No activities logged yet.',
+                  style: TextStyle(color: _muted),
+                ),
+              ),
+            );
+          }
+          return _Card(
+            child: Column(
+              children: [
+                for (var index = 0; index < activities.length; index++) ...[
+                  _RecentActivityRow(activity: activities[index]),
+                  if (index < activities.length - 1) const Divider(),
+                ],
+              ],
             ),
-          ),
-        );
-      }
-      return _Card(
-        child: Column(
-          children: [
-            for (var index = 0; index < activities.length; index++) ...[
-              _RecentActivityRow(activity: activities[index]),
-              if (index < activities.length - 1) const Divider(),
-            ],
-          ],
-        ),
+          );
+        },
       );
-    },
-  );
 }
 
 class _RecentActivityRow extends StatelessWidget {
@@ -1812,10 +1949,12 @@ class _WorkoutStatusMessage extends StatefulWidget {
 
 class _WorkoutStatusMessageState extends State<_WorkoutStatusMessage> {
   Timer? timer;
+  bool _visible = false;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _visible = TickerMode.valuesOf(context).enabled;
     _updateTimer();
   }
 
@@ -1827,7 +1966,7 @@ class _WorkoutStatusMessageState extends State<_WorkoutStatusMessage> {
 
   void _updateTimer() {
     timer?.cancel();
-    timer = widget.draft == null
+    timer = !_visible || widget.draft == null
         ? null
         : Timer.periodic(const Duration(seconds: 1), (_) {
             if (mounted) setState(() {});
@@ -1952,6 +2091,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   bool savingTemplate = false;
   bool refreshingDistance = false;
   double? trackedDistanceKm;
+  final _distanceDisplay = ValueNotifier<({double? km, bool loading})>((
+    km: null,
+    loading: false,
+  ));
+  final _setCount = ValueNotifier<int>(0);
+
+  void _updateSetCount() {
+    _setCount.value = exercises.fold<int>(
+      0,
+      (total, exercise) => total + exercise.sets.length,
+    );
+  }
+
   DateTime? lastDistanceRefresh;
 
   DateTime get startedAt => draft.startedAt;
@@ -1967,6 +2119,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   void initState() {
     super.initState();
     draft = _activeWorkoutDraft ??= _ActiveWorkoutDraft();
+    _updateSetCount();
     FitnessWorkoutTimerState.start(
       startedAt: draft.startedAt,
       title: draft.liveActivityTitle,
@@ -2016,6 +2169,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   void dispose() {
     timer?.cancel();
     ActiveWorkoutNavigation.unregister(_registeredRoute);
+    _distanceDisplay.dispose();
+    _setCount.dispose();
     super.dispose();
   }
 
@@ -2031,14 +2186,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
 
     refreshingDistance = true;
-    if (mounted) setState(() {});
-    final distance = await HealthService().readWalkingRunningDistanceKm(
-      start: startedAt,
-    );
-    lastDistanceRefresh = DateTime.now();
-    refreshingDistance = false;
-    if (distance != null) trackedDistanceKm = distance;
-    if (mounted) setState(() {});
+    if (mounted) {
+      _distanceDisplay.value = (km: trackedDistanceKm, loading: true);
+    }
+    try {
+      final distance = await HealthService().readWalkingRunningDistanceKm(
+        start: startedAt,
+      );
+      if (distance != null) trackedDistanceKm = distance;
+    } finally {
+      lastDistanceRefresh = DateTime.now();
+      refreshingDistance = false;
+      if (mounted) {
+        _distanceDisplay.value = (km: trackedDistanceKm, loading: false);
+      }
+    }
     return trackedDistanceKm;
   }
 
@@ -2092,6 +2254,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       exercises
         ..clear()
         ..addAll(updated);
+      _updateSetCount();
     });
     await draft.persist();
     FitnessWorkoutTimerState.update(
@@ -2330,10 +2493,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final setCount = exercises.fold<int>(
-      0,
-      (total, exercise) => total + exercise.sets.length,
-    );
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
       appBar: AppBar(
@@ -2429,7 +2588,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   ),
                 ),
                 Expanded(
-                  child: _ActivityStat(value: '$setCount', label: 'Sets'),
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _setCount,
+                    builder: (_, totalSets, _) =>
+                        _ActivityStat(value: '$totalSets', label: 'Sets'),
+                  ),
                 ),
               ],
             ),
@@ -2483,15 +2646,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           const SizedBox(height: 14),
           for (final exercise in exercises) ...[
             _WorkoutExerciseCard(
+              key: ObjectKey(exercise),
               exercise: exercise,
-              trackedDistanceKm: trackedDistanceKm,
-              refreshingDistance: refreshingDistance,
+              distanceDisplay: _distanceDisplay,
               onChanged: () {
-                setState(() {});
+                _updateSetCount();
                 unawaited(draft.persist());
               },
               onRemove: () {
                 setState(() => exercises.remove(exercise));
+                _updateSetCount();
                 unawaited(draft.persist());
                 FitnessWorkoutTimerState.update(
                   title: draft.liveActivityTitle,
@@ -2629,7 +2793,9 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<WorkoutTemplate>>(
+  Widget build(
+    BuildContext context,
+  ) => VisibleStreamBuilder<List<WorkoutTemplate>>(
     stream: WorkoutService.watchTemplates(),
     builder: (context, snapshot) {
       final query = _search.trim().toLowerCase();
@@ -3011,20 +3177,48 @@ Map<String, dynamic> roundTripWorkoutExerciseForTesting(
   return exercise.toJson();
 }
 
-class _WorkoutExerciseCard extends StatelessWidget {
+/// Builds the production card without starting health/Firebase services.
+@visibleForTesting
+Widget workoutExerciseCardForTesting({
+  required Map<String, dynamic> initialExercise,
+  required ValueNotifier<({double? km, bool loading})> distance,
+  required ValueChanged<Map<String, dynamic>> onChanged,
+}) {
+  final exercise = _WorkoutExercise.fromJson(initialExercise);
+  return _WorkoutExerciseCard(
+    key: ObjectKey(exercise),
+    exercise: exercise,
+    distanceDisplay: distance,
+    onChanged: () => onChanged(exercise.toJson()),
+    onRemove: () {},
+  );
+}
+
+class _WorkoutExerciseCard extends StatefulWidget {
   const _WorkoutExerciseCard({
+    super.key,
     required this.exercise,
-    required this.trackedDistanceKm,
-    required this.refreshingDistance,
+    required this.distanceDisplay,
     required this.onChanged,
     required this.onRemove,
   });
 
   final _WorkoutExercise exercise;
-  final double? trackedDistanceKm;
-  final bool refreshingDistance;
+  final ValueNotifier<({double? km, bool loading})> distanceDisplay;
   final VoidCallback onChanged;
   final VoidCallback onRemove;
+
+  @override
+  State<_WorkoutExerciseCard> createState() => _WorkoutExerciseCardState();
+}
+
+class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
+  _WorkoutExercise get exercise => widget.exercise;
+  void onRemove() => widget.onRemove();
+  void onChanged() {
+    setState(() {});
+    widget.onChanged();
+  }
 
   @override
   Widget build(BuildContext context) => _Card(
@@ -3084,47 +3278,50 @@ class _WorkoutExerciseCard extends StatelessWidget {
             ),
           )
         else if (exercise.isDistanceExercise)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            decoration: BoxDecoration(
-              color: context.vivordoColors.cardMuted,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                if (refreshingDistance)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  const Icon(Icons.route_rounded, color: _purple, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        trackedDistanceKm == null
-                            ? 'Tracking distance automatically'
-                            : '${trackedDistanceKm!.toStringAsFixed(2)} km',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 2),
-                      const Text(
-                        'Using walking and running distance from Apple Health',
-                        style: TextStyle(
-                          color: _muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+          ValueListenableBuilder<({double? km, bool loading})>(
+            valueListenable: widget.distanceDisplay,
+            builder: (context, distance, _) => Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              decoration: BoxDecoration(
+                color: context.vivordoColors.cardMuted,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  if (distance.loading)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    const Icon(Icons.route_rounded, color: _purple, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          distance.km == null
+                              ? 'Tracking distance automatically'
+                              : '${distance.km!.toStringAsFixed(2)} km',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Using walking and running distance from Apple Health',
+                          style: TextStyle(
+                            color: _muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           )
         else ...[
@@ -3991,7 +4188,7 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
         .orderBy(FieldPath.documentId)
         .snapshots();
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    return VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -4006,7 +4203,7 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
                   const <QueryDocumentSnapshot<Map<String, dynamic>>>[])
             doc.id: doc.data(),
         };
-        return StreamBuilder<ActivityGoals>(
+        return VisibleStreamBuilder<ActivityGoals>(
           stream: ActivityGoalsService.watch(),
           initialData: const ActivityGoals(),
           builder: (context, goalsSnapshot) => _buildContent(
@@ -4365,12 +4562,12 @@ class _TodayStepsMetricCard extends StatelessWidget {
         .doc(dayKey)
         .snapshots();
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    return VisibleStreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: stepsStream,
       builder: (context, stepsSnapshot) {
         final data = stepsSnapshot.data?.data();
         final steps = ((data?['steps'] as Map?)?['sum'] as num?)?.round();
-        return StreamBuilder<ActivityGoals>(
+        return VisibleStreamBuilder<ActivityGoals>(
           stream: ActivityGoalsService.watch(),
           initialData: const ActivityGoals(),
           builder: (context, goalsSnapshot) {
@@ -4554,7 +4751,7 @@ class _WeeklyStrengthProgress extends StatelessWidget {
     final today = DateUtils.dateOnly(now);
     final monday = today.subtract(Duration(days: today.weekday - 1));
     final nextMonday = monday.add(const Duration(days: 7));
-    return StreamBuilder<List<SavedWorkout>>(
+    return VisibleStreamBuilder<List<SavedWorkout>>(
       stream: WorkoutService.watchBetween(start: monday, end: nextMonday),
       builder: (context, snapshot) {
         final workouts = snapshot.data ?? const <SavedWorkout>[];

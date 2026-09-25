@@ -219,7 +219,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final previousIndex = _selectedIndex;
     _logScreenView(index);
     _tabActivity[previousIndex].value = false;
-    _tabActivity[index].value = !_chatOpen;
+    _tabActivity[index].value = !_chatOpen && !_detailRouteOpen;
     setState(() {
       _loadedTabs.add(index);
       _selectedIndex = index;
@@ -282,7 +282,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     await _chatRevealController.reverse();
     if (mounted) {
       setState(() => _chatOpen = false);
-      _tabActivity[_selectedIndex].value = true;
+      _tabActivity[_selectedIndex].value = !_detailRouteOpen;
     }
   }
 
@@ -290,6 +290,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final detailOpen = _contentNavigatorKey.currentState?.canPop() ?? false;
+      _tabActivity[_selectedIndex].value = !detailOpen && !_chatOpen;
       _insights.select(
         _contentNavigatorObserver.topRoute,
         _screenNames[_selectedIndex],

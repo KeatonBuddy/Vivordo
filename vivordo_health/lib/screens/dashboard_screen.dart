@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/visible_stream_builder.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/material.dart';
@@ -534,7 +535,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        VisibleStreamBuilder<
+                          QuerySnapshot<Map<String, dynamic>>
+                        >(
                           stream: _allMetricsStream,
                           builder: (context, snapshot) => Wrap(
                             crossAxisAlignment: WrapCrossAlignment.center,
@@ -587,7 +590,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
               const SizedBox(height: 28),
-              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: _allMetricsStream,
                 builder: (_, metricsSnap) => _buildMetricsOverview(
                   metricsSnap.data,
