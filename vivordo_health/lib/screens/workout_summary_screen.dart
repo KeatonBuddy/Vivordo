@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import '../widgets/workout_ai_insight.dart';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -26,118 +27,122 @@ class WorkoutSummaryScreen extends StatelessWidget {
     );
     final overview = _WorkoutOverview.fromWorkout(workout);
 
-    return Scaffold(
-      backgroundColor: colors.page,
-      appBar: AppBar(
+    return WorkoutAiInsight(
+      key: ValueKey(workout),
+      workout: workout,
+      child: Scaffold(
         backgroundColor: colors.page,
-        surfaceTintColor: Colors.transparent,
-        centerTitle: true,
-        title: Text(
-          'Workout Summary',
-          style: TextStyle(color: primaryText, fontWeight: FontWeight.w800),
-        ),
-        actions: [
-          PopupMenuButton<_WorkoutSummaryAction>(
-            tooltip: 'Workout actions',
-            icon: Icon(Icons.more_horiz_rounded, color: primaryText),
-            onSelected: (action) {
-              if (action == _WorkoutSummaryAction.delete) {
-                _deleteWorkout(context);
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: _WorkoutSummaryAction.delete,
-                child: Row(
-                  children: [
-                    Icon(Icons.delete_outline_rounded, color: Colors.red),
-                    SizedBox(width: 10),
-                    Text('Delete workout'),
-                  ],
-                ),
-              ),
-            ],
+        appBar: AppBar(
+          backgroundColor: colors.page,
+          surfaceTintColor: Colors.transparent,
+          centerTitle: true,
+          title: Text(
+            'Workout Summary',
+            style: TextStyle(color: primaryText, fontWeight: FontWeight.w800),
           ),
-          const SizedBox(width: 6),
-        ],
-      ),
-      body: Stack(
-        children: [
-          Positioned(
-            top: -90,
-            right: -80,
-            child: IgnorePointer(
-              child: Container(
-                width: 230,
-                height: 230,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      _summaryPurple.withValues(alpha: isDark ? .16 : .10),
-                      Colors.transparent,
+          actions: [
+            PopupMenuButton<_WorkoutSummaryAction>(
+              tooltip: 'Workout actions',
+              icon: Icon(Icons.more_horiz_rounded, color: primaryText),
+              onSelected: (action) {
+                if (action == _WorkoutSummaryAction.delete) {
+                  _deleteWorkout(context);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: _WorkoutSummaryAction.delete,
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline_rounded, color: Colors.red),
+                      SizedBox(width: 10),
+                      Text('Delete workout'),
                     ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 6),
+          ],
+        ),
+        body: Stack(
+          children: [
+            Positioned(
+              top: -90,
+              right: -80,
+              child: IgnorePointer(
+                child: Container(
+                  width: 230,
+                  height: 230,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        _summaryPurple.withValues(alpha: isDark ? .16 : .10),
+                        Colors.transparent,
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-            children: [
-              _WorkoutHeader(
-                title: overview.title,
-                subtitle: _workoutDateLabel(workout.completedAt),
-                visual: visual,
-              ),
-              const SizedBox(height: 24),
-              _HeroStats(workout: workout),
-              const SizedBox(height: 14),
-              _SummaryCard(overview: overview),
-              const SizedBox(height: 28),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'EXERCISES',
-                      style: TextStyle(
-                        color: _summaryPink,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.4,
+            ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              children: [
+                _WorkoutHeader(
+                  title: overview.title,
+                  subtitle: _workoutDateLabel(workout.completedAt),
+                  visual: visual,
+                ),
+                const SizedBox(height: 24),
+                _HeroStats(workout: workout),
+                const SizedBox(height: 14),
+                _SummaryCard(overview: overview),
+                const SizedBox(height: 28),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'EXERCISES',
+                        style: TextStyle(
+                          color: _summaryPink,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.4,
+                        ),
                       ),
                     ),
+                    Text(
+                      '${workout.exerciseCount} ${workout.exerciseCount == 1 ? 'exercise' : 'exercises'}',
+                      style: TextStyle(color: colors.textSecondary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                for (
+                  var index = 0;
+                  index < workout.exercises.length;
+                  index++
+                ) ...[
+                  _ExerciseSummaryCard(
+                    number: index + 1,
+                    exercise: workout.exercises[index],
                   ),
-                  Text(
-                    '${workout.exerciseCount} ${workout.exerciseCount == 1 ? 'exercise' : 'exercises'}',
-                    style: TextStyle(color: colors.textSecondary),
-                  ),
+                  if (index < workout.exercises.length - 1)
+                    const SizedBox(height: 12),
                 ],
-              ),
-              const SizedBox(height: 10),
-              for (
-                var index = 0;
-                index < workout.exercises.length;
-                index++
-              ) ...[
-                _ExerciseSummaryCard(
-                  number: index + 1,
-                  exercise: workout.exercises[index],
-                ),
-                if (index < workout.exercises.length - 1)
-                  const SizedBox(height: 12),
-              ],
-              if (workout.exercises.isEmpty)
-                _SurfaceCard(
-                  child: Text(
-                    'No exercise details were saved for this workout.',
-                    style: TextStyle(color: colors.textSecondary),
+                if (workout.exercises.isEmpty)
+                  _SurfaceCard(
+                    child: Text(
+                      'No exercise details were saved for this workout.',
+                      style: TextStyle(color: colors.textSecondary),
+                    ),
                   ),
-                ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -16,6 +16,7 @@ import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'blocked_users_screen.dart';
 import '../widgets/privacy_support_links.dart';
+import '../src/services/workout_ai_consent.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
@@ -1965,6 +1966,26 @@ class _SettingsScreenState extends State<SettingsScreen>
                   // ── Report a Bug ───────────────────────────────────────────
                   _buildSectionLabel('Privacy & Support'),
                   _buildCard(children: const [PrivacySupportLinks()]),
+                  _buildSectionLabel('AI Workout Analysis'),
+                  _buildCard(children: [
+                    ListTile(
+                      leading: const Icon(Icons.privacy_tip_outlined),
+                      title: const Text('Reset workout AI consent'),
+                      subtitle: const Text('Require permission again before the next workout analysis on this device. Existing insights are kept.'),
+                      onTap: () async {
+                        final uid = FirebaseAuth.instance.currentUser?.uid;
+                        if (uid == null) return;
+                        try {
+                          await WorkoutAiConsent.revoke(uid);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Workout AI consent reset. You will be asked again next time.')));
+                        } catch (_) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not reset consent. Please try again.')));
+                        }
+                      },
+                    ),
+                  ]),
                   const SizedBox(height: 24),
 
                   _buildSectionLabel('Report a Bug'),

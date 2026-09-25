@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import '../widgets/contextual_insight_bar.dart';
 import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -235,6 +236,17 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           _section('Personalized to you'),
           _personalizationCard(),
         ],
+      ),
+    ).withScreenInsight(
+      ScreenInsight(
+        'stress',
+        "Today's stress estimate",
+        score == null
+            ? 'There is no stress estimate available for today yet. An empty reading does not mean low stress.'
+            : 'Your latest displayed stress estimate is ${score.round()}/100. '
+                  '${today.computedAt == null ? "Its update time is unavailable." : "Calculated ${DateFormat('MMM d, h:mm a').format(today.computedAt!.toLocal())}."} '
+                  '${today.drivers.isEmpty ? "There are no recorded drivers to explain it yet." : "Recorded drivers include ${today.drivers.take(2).map((d) => d.name).join(' and ')}; these are contributions to the estimate, not proven causes."} '
+                  'Want to explore a manageable next step?',
       ),
     );
   }

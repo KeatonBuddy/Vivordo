@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import '../widgets/contextual_insight_bar.dart';
+import '../src/utils/daily_brief_analysis.dart' show sleepBaseline;
 import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -230,6 +232,25 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         ? null
         : ((average - previousAverage) * 60).round();
     final latest = recorded.isEmpty ? null : recorded.last.value;
+    final baseline = sleepBaseline(
+      byDay.entries
+          .where((entry) {
+            final date = DateTime.tryParse(entry.key);
+            return date != null &&
+                date.isBefore(today) &&
+                !date.isBefore(
+                  DateTime(today.year, today.month, today.day - 28),
+                );
+          })
+          .map((entry) => entry.value.hours),
+    );
+    final planningAdvice =
+        _rangeIndex == 0 &&
+            latest != null &&
+            baseline != null &&
+            latest.hours < baseline - .75
+        ? 'That is less sleep than your recent usual. Consider keeping your plan flexible and leaving room for a break, especially if you feel tired.'
+        : 'Consider how rested you feel alongside this measurement when planning your day. Want help leaving room for rest?';
     final hasWhoopSleepData = includesWhoopSleepSource(
       recorded.map((day) => day.value?.source),
     );
@@ -299,6 +320,14 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
             _insightCard(recorded, average),
           ],
         ),
+      ),
+    ).withScreenInsight(
+      ScreenInsight(
+        'sleep',
+        '$_rangeName sleep',
+        recorded.isEmpty
+            ? 'No sleep data is available for this period. Refresh your connected source before drawing conclusions about recovery.'
+            : 'You averaged ${average.toStringAsFixed(1)} hours across ${recorded.length} recorded nights in this view. $planningAdvice',
       ),
     );
   }

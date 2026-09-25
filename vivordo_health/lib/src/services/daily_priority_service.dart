@@ -269,6 +269,46 @@ class DailyPriorityService {
     return controller.stream;
   }
 
+  /// One-shot snapshot using the same day/rollover rules as My Day.
+  static Future<List<DailyPriority>> incompleteForDay(DateTime day) async {
+    final user = _userDocument();
+    if (user == null) throw StateError('Please sign in first.');
+    const options = GetOptions(source: Source.server);
+    final data = (await user.get(options)).data();
+    final key = localDayKey(day);
+    final sources =
+        (data?['priorityPlanSources'] as Map?)?[key] as List? ?? const [];
+    final keys = {
+      key,
+      ...sources.whereType<String>().where((s) => DateTime.tryParse(s) != null),
+      ...((data?['priorityReminderDays'] as List?) ?? const [])
+          .whereType<String>()
+          .where((s) => DateTime.tryParse(s) != null && s.compareTo(key) < 0),
+    };
+    final result = <DailyPriority>[];
+    for (final source in keys) {
+      final snapshot = await user
+          .collection('daily_priorities')
+          .doc(source)
+          .collection('items')
+          .where('completed', isEqualTo: false)
+          .get(options);
+      result.addAll(
+        snapshot.docs
+            .where((doc) => visibleOnDay(doc.data(), source, key))
+            .map(DailyPriority.fromDocument),
+      );
+    }
+    if (_userDocument()?.path != user.path)
+      throw StateError('Account changed.');
+    result.sort(
+      (a, b) => (a.sourceStart ?? DateTime(9999)).compareTo(
+        b.sourceStart ?? DateTime(9999),
+      ),
+    );
+    return result;
+  }
+
   static Stream<Map<String, String>> watchRecurrenceLabels() {
     final user = _userDocument();
     if (user == null) return Stream.value(const {});

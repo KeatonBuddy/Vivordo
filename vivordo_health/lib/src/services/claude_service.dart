@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'panda_prompts.dart';
+import 'workout_coach_prompt.dart';
 
 export 'panda_prompts.dart';
 
@@ -23,6 +24,27 @@ export 'panda_prompts.dart';
 // =============================================================================
 
 class ClaudeService {
+  Future<String> workoutInsight(String context) async {
+    if (context.length > 20000)
+      throw StateError('Workout is too large for analysis.');
+    final result = await _fn.call<dynamic>({
+      'system': [
+        {
+          'type': 'text',
+          'text':
+              '$workoutCoachPrompt\nGive one grounded observation and one practical suggestion in at most 80 words. Return plain text.',
+        },
+      ],
+      'user': [
+        {'type': 'text', 'text': context},
+      ],
+      'maxTokens': 250,
+    });
+    final text = (result.data as Map?)?['text']?.toString().trim() ?? '';
+    if (text.isEmpty) throw StateError('No workout insight returned.');
+    return text;
+  }
+
   static final _fn = FirebaseFunctions.instance.httpsCallable('pandaClaude');
 
   // Appended to PandaPrompts.spikeSystemPrompt for Claude calls.
@@ -184,10 +206,12 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '    "other": string\n'
       '  },\n'
       '  "rec_hint": string,\n'
+      '  "offer_end_session": boolean,\n'
       '  "priority_action": {"operation": "create|update|delete", "title": string, "target_title": string, "target_date": "YYYY-MM-DD", "date": "YYYY-MM-DD", "scheduled_at": "YYYY-MM-DDTHH:mm", "reminder_at": "YYYY-MM-DDTHH:mm"},\n'
       '  "calendar_action": {"operation": string, "title": string, '
       '"target_title": string, "start": string, "end": string, "recurrence": string}\n'
       '}\n'
+      'Set offer_end_session=true only when the user clearly says they are finished, or you have fully answered their planning request with no unresolved question. Never offer while clarification, distress support, or an action confirmation is pending. Do not end automatically or claim the session is saved.\n'
       '\n'
       'INTENT VALUES — choose exactly one:\n'
       '"answer_label"        — User answered a predefined question. Acknowledge\n'
@@ -374,6 +398,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
   }
 
   Future<PandaSessionBootstrap> startSession({
+    bool analyzeSpikes = true,
     String? extraUserContext,
     String? userName,
     String? userId,
@@ -394,7 +419,8 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     final compact = PandaPrompts.buildCompactPayload(payload, topK: 1);
 
     // Nothing to analyze → no LLM call at all; the chat is already final.
-    if ((compact['spike_candidates'] as List? ?? const []).isEmpty) {
+    if (!analyzeSpikes ||
+        (compact['spike_candidates'] as List? ?? const []).isEmpty) {
       if (kDebugMode) {
         debugPrint('[Claude][spike] no spike candidates — skipping LLM call');
       }
@@ -492,6 +518,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     String? insightsContext,
     String? dashboardContext,
     String? workoutContext,
+    bool workoutCoach = false,
   }) async {
     // Trim the conversation to fit rather than REFUSING the turn. The old guard
     // returned a canned "we've covered a lot of ground — let's wrap up" reply,
@@ -546,6 +573,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     // buildDialoguePrompt ("SLOTS SO FAR: ...").
     final cachedSystem = [
       _cacheBlock(_dialogueSystem),
+      if (workoutCoach) {'type': 'text', 'text': workoutCoachPrompt},
       _cacheBlock(healthCtx),
       if (scheduleCtx != null) _cacheBlock(scheduleCtx),
     ];

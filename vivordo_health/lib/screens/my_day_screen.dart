@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/contextual_insight_bar.dart';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -14,6 +15,7 @@ import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
 import '../src/utils/daily_brief_metrics.dart';
 import '../src/utils/daily_brief_analysis.dart';
+import '../src/utils/my_day_planning_insight.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
@@ -649,34 +651,28 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       return ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
         valueListenable: _prioritySnapshot,
         builder: (context, priorities, _) {
-          final plan = analyzeBriefPlan(
-            now,
-            timedEvents
-                .map(
-                  (e) => BriefCommitment(
-                    e.sourceEventKey,
-                    e.title,
-                    e.start,
-                    e.end,
+          final briefEvents = timedEvents
+              .map(
+                (e) =>
+                    BriefCommitment(e.sourceEventKey, e.title, e.start, e.end),
+              )
+              .toList();
+          final briefPriorities = (priorities.data ?? [])
+              .map(
+                (p) => BriefPriority(
+                  id: p.id,
+                  completed: p.completed,
+                  start: p.isAllDay ? null : p.sourceStart,
+                  plannedDay: DateTime.tryParse(
+                    p.planning['plannedDay'] as String? ?? '',
                   ),
-                )
-                .toList(),
-            (priorities.data ?? [])
-                .map(
-                  (p) => BriefPriority(
-                    id: p.id,
-                    completed: p.completed,
-                    start: p.isAllDay ? null : p.sourceStart,
-                    plannedDay: DateTime.tryParse(
-                      p.planning['plannedDay'] as String? ?? '',
-                    ),
-                    minutes: (p.planning['minutes'] as num?)?.toInt(),
-                    effort: p.planning['effort'] as String?,
-                    eventKey: p.isAllDay ? null : _linkedKey(p),
-                  ),
-                )
-                .toList(),
-          );
+                  minutes: (p.planning['minutes'] as num?)?.toInt(),
+                  effort: p.planning['effort'] as String?,
+                  eventKey: _linkedKey(p),
+                ),
+              )
+              .toList();
+          final plan = analyzeBriefPlan(now, briefEvents, briefPriorities);
           final ready =
               calendarReady && priorities.hasData && !priorities.hasError;
           final headline = capacity?.score == null
@@ -727,6 +723,21 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     child: const Text('Close'),
                   ),
                 ],
+              ),
+            ),
+          ).withScreenInsight(
+            ScreenInsight(
+              'my_day',
+              'Your day',
+              myDayPlanningInsight(
+                now: now,
+                events: briefEvents,
+                priorities: briefPriorities,
+                calendarReady: calendarReady,
+                prioritiesReady: priorities.hasData && !priorities.hasError,
+                allDayEvents: _events
+                    .where((e) => e.isAllDay && e.end.isAfter(now))
+                    .length,
               ),
             ),
           );
