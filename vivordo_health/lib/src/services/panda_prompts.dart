@@ -61,6 +61,22 @@ const int kMaxOutputTokensSummary = 180;
 /// the Panda check-in. Holds no transport of its own; ClaudeService calls these
 /// to talk to the model.
 class PandaPrompts {
+  static const reminderInstructions =
+      'REMINDER REQUESTS: These are priority actions, not health-question answers. '
+      'Recognize month names and abbreviations (Oct 1 = October 1). If no year is '
+      'given, use the next occurrence on or after the local current date, not dates '
+      'from health readings or calendar context. Keep the supplied task and date. '
+      'Time is optional: never ask for a time or invent one. With a task and day, '
+      'return priority_action immediately for confirmation. For example, '
+      '"remind me to pay internet bill on Oct 1" creates title "Pay internet bill" '
+      'with date YYYY-10-01; omit scheduled_at and reminder_at. This is a dated '
+      'priority, not a timed notification. If the user supplies "at 9 AM", include '
+      'reminder_at YYYY-10-01T09:00. A reminder time alone does not schedule a '
+      'work block: omit scheduled_at unless the user also asks to schedule the task. '
+      'Ask only for a missing task or day. If the user later adds a time to a saved '
+      'priority, update that exact title/date rather than creating a duplicate. '
+      'Do not resume health questions until this request is completed or cancelled.\n';
+
   PandaPrompts._();
 
   static const String summarySystemPrompt = '''
@@ -746,8 +762,9 @@ Write the continuity note now.''';
               '     scheduled_at?:local ISO-8601 date-time, reminder_at?:local ISO-8601 date-time}.\n'
               '     Create requires title; update/delete requires exact target_title. target_date is\n'
               '     the ORIGINAL day of an existing priority, date is the NEW day. Omit unchanged fields.\n'
-              '     "Remind me" means create a priority with reminder_at, not a calendar event.\n'
-              '     Ask what time/date to remind if unspecified; do not claim a notification is set.\n'
+              '     "Remind me" means create a priority, not a calendar event.\n'
+              '     $reminderInstructions'
+              '     Do not claim a notification is set before confirmation.\n'
               '     Do not invent recurrence or change entire recurring series: only single occurrences\n'
               '     are supported here. Ask clarification for recurring requests. The user must confirm.\n'
               '     Local current time: ${DateTime.now().toIso8601String()}.\n'

@@ -865,6 +865,12 @@ class _PandaScreenState extends State<PandaScreen>
     final session = _session;
     if (session == null) return;
 
+    final reminderRequested = RegExp(
+      r'\b(remind me|set (a |an )?reminder)\b',
+      caseSensitive: false,
+    ).hasMatch(text);
+    if (reminderRequested) _pauseQuestionPathForAction(text);
+
     final history = _turns
         .map(
           (t) => {
@@ -1083,12 +1089,10 @@ class _PandaScreenState extends State<PandaScreen>
           await _pandaSay(reply.message, typingMs: 0);
 
         case PandaIntent.calendarAction:
-          if (RegExp(
-            r'\b(remind me|set (a |an )?reminder)\b',
-            caseSensitive: false,
-          ).hasMatch(text)) {
+          _pauseQuestionPathForAction(text);
+          if (reminderRequested) {
             await _pandaSay(
-              'I can save that as a priority with a reminder. What should I remind you about, and on which day and time?',
+              'I could not prepare that reminder as a priority. Please try again.',
               typingMs: 0,
             );
             break;
@@ -1107,17 +1111,7 @@ class _PandaScreenState extends State<PandaScreen>
             );
           }
         case PandaIntent.priorityAction:
-          if (RegExp(
-                r'\b(remind me|set (a |an )?reminder)\b',
-                caseSensitive: false,
-              ).hasMatch(text) &&
-              reply.priorityAction?['reminder_at'] == null) {
-            await _pandaSay(
-              'What day and time should I remind you?',
-              typingMs: 0,
-            );
-            break;
-          }
+          _pauseQuestionPathForAction(text);
           await _handlePriorityAction(reply.priorityAction);
       }
     } catch (e) {
@@ -1128,6 +1122,23 @@ class _PandaScreenState extends State<PandaScreen>
         typingMs: 0,
       );
     }
+  }
+
+  void _pauseQuestionPathForAction(String topic) {
+    setState(() {
+      if (_state != _DialogueState.inDigression) {
+        _digressionStack.add(
+          _DigressionFrame(
+            pendingQuestionId: _currentQ?.questionId ?? '',
+            pendingQuestionPrompt: _currentQ?.prompt ?? '',
+            topic: topic,
+          ),
+        );
+      }
+      _state = _DialogueState.inDigression;
+      _categoryPillsVisible = false;
+      _doneCardVisible = false;
+    });
   }
 
   Future<void> _handlePriorityAction(Map<String, dynamic>? raw) async {
@@ -1229,7 +1240,9 @@ class _PandaScreenState extends State<PandaScreen>
                 if (existing?.sourceEventKey != null)
                   'The calendar event will not be deleted.',
                 if (action.operation != 'delete')
-                  'Notifications depend on your device notification permissions.',
+                  reminder == null && scheduled == null && reminderClock == null
+                      ? 'No timed reminder notification'
+                      : 'Notifications depend on your device notification permissions.',
               ].join('\n\n'),
             ),
           ),
