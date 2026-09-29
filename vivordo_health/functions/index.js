@@ -51,6 +51,16 @@ exports.projectDailyActivitySummary = onDocumentWritten(
     },
 );
 
+// New accounts start on compact achievement inputs; see
+// enableSummariesForNewAccount for why only history-free accounts qualify.
+exports.enableAchievementSummaries = onDocumentCreated("users/{uid}",
+    async (event) => {
+      const {enableSummariesForNewAccount} = require("./metrics_summary");
+      await enableSummariesForNewAccount(admin.firestore(), event.params.uid,
+          () => admin.firestore.FieldValue.serverTimestamp());
+    },
+);
+
 // Server-owned block records cannot be forged or removed by the other user.
 exports.blockCircleUser = onCall(async (request) => {
   const uid = requireAuth(request);

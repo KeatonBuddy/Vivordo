@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'home_screen.dart';
 import 'scan_screen.dart';
@@ -531,7 +532,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final isWorkoutPulse =
         index == 3 && FitnessWorkoutTimerState.isRunning.value;
     return InkWell(
-      onTap: () => _selectTab(index),
+      onTap: () {
+        // The standard iOS selection tick, only when the tab actually changes.
+        if (index != _selectedIndex) unawaited(HapticFeedback.selectionClick());
+        _selectTab(index);
+      },
       borderRadius: BorderRadius.circular(18),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),

@@ -412,4 +412,96 @@ void main() {
       await sub.cancel();
     },
   );
+
+  test('Home split windows give the same summary as one 90-day window, and '
+      'writes to today leave the older window quiet', () async {
+    final now = DateTime(2026, 9, 24, 18);
+    Stream<MetricWindow> window(String start, String end) => repository.watch(
+      uid: 'a',
+      startDay: start,
+      endDay: end,
+      projection: MetricsProjection.homeHistory,
+    );
+    Map<String, dynamic> heart(int bpm, DateTime at) => {
+      'heart_rate': {
+        'source': 'apple_health',
+        'entries': [
+          {'bpm': bpm, 'timestamp': Timestamp.fromDate(at)},
+        ],
+      },
+    };
+    final days = db.collection('users/a/metrics_daily');
+    await days.doc(day).set({
+      'stress': {'current': 40},
+    });
+    await days.doc('2026-09-20').set({
+      'stress': {'avg': 35, 'anchor': 33},
+    });
+    await days.doc('2026-09-18').set({
+      'stress': {'avg': 50},
+    });
+    // Only an older day has heart rate: Home falls back past the 8 days.
+    await days.doc('2026-09-10').set(heart(64, DateTime(2026, 9, 10, 9)));
+    await days.doc('2026-07-01').set({
+      'stress': {'avg': 90},
+    });
+
+    final single = <MetricWindow>[];
+    final split = <MetricWindow>[];
+    var olderEmissions = 0;
+    final subs = [
+      window(homeMetricsWindowStartKey(now), day).listen(single.add),
+      combineMetricWindows(
+        window(
+          homeMetricsWindowStartKey(now, days: kHomeRecentWindowDays),
+          day,
+        ),
+        window(
+          homeMetricsWindowStartKey(now),
+          homeMetricsWindowStartKey(now, days: kHomeRecentWindowDays + 1),
+        ).map((value) {
+          olderEmissions++;
+          return value;
+        }),
+      ).listen(split.add),
+    ];
+
+    Object? summary(MetricWindow value) {
+      final result = summarizeHomeMetrics(
+        days: [
+          for (final entry in value.days.entries)
+            MetricDayEntry(dayKey: entry.key, data: entry.value),
+        ],
+        now: now,
+      );
+      final heartRate = result.latestHeartRate;
+      return (
+        heartRate?.bpm,
+        heartRate?.timestamp,
+        heartRate?.source,
+        result.stressAnchor,
+        result.sevenDayStressAverage,
+      );
+    }
+
+    await settle();
+    expect(summary(split.last), summary(single.last));
+    expect(summary(split.last), (
+      64,
+      DateTime(2026, 9, 10, 9),
+      'apple_health',
+      40.0,
+      42.5,
+    ));
+
+    final olderBefore = olderEmissions;
+    await days.doc(day).set(heart(72, DateTime(2026, 9, 24, 17)));
+    await settle();
+    expect(olderEmissions, olderBefore);
+    expect(summary(split.last), summary(single.last));
+    expect((summary(split.last)! as dynamic).$1, 72);
+    for (final sub in subs) {
+      await sub.cancel();
+    }
+  });
 }

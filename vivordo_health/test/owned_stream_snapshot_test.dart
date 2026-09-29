@@ -4,9 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/owned_stream_snapshot.dart';
 
 void main() {
-  test(
-    'single-use priority streams reconnect after hiding or opening a route',
-    () async {
+  testWidgets(
+    'single-use priority streams keep live data across a quick hide and '
+    'reconnect after the grace',
+    (tester) async {
       var latestPriorities = ['First priority'];
       final sources = <StreamController<List<String>>>[];
       var cancellations = 0;
@@ -22,18 +23,31 @@ void main() {
 
       final owner = OwnedStreamSnapshot<List<String>>()
         ..connectFactory(createStream);
-      await Future<void>.delayed(Duration.zero);
+      await tester.pump();
       expect(owner.value.data, ['First priority']);
+
+      // Opening a modal or flipping tabs: the live stream keeps delivering,
+      // held back until shown, and no new listener is built.
+      owner.setActive(false);
+      sources.last.add(['Edited while hidden']);
+      await tester.pump();
+      expect(owner.value.data, ['First priority']);
+      owner.setActive(true);
+      expect(owner.value.data, ['Edited while hidden']);
+      expect(sources.length, 1);
+      expect(cancellations, 0);
+
+      // Hidden past the grace: released, and showing builds a fresh listener.
       for (var index = 0; index < 3; index++) {
         final cached = owner.value.data;
         owner.setActive(false);
+        await tester.pump(kHiddenStreamGrace);
         expect(cancellations, index + 1);
         latestPriorities = ['Edited while hidden $index'];
-        // Opening a modal or another tab must not build a hidden listener.
         expect(sources.length, index + 1);
         owner.setActive(true);
         expect(owner.value.data, cached);
-        await Future<void>.delayed(Duration.zero);
+        await tester.pump();
         expect(sources.length, index + 2);
         expect(owner.value.data, latestPriorities);
         expect(owner.value.hasError, false);
@@ -41,7 +55,7 @@ void main() {
       owner.dispose();
       expect(cancellations, sources.length);
       for (final source in sources) {
-        await source.close();
+        unawaited(source.close());
       }
     },
   );

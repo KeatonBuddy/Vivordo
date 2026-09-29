@@ -24,6 +24,45 @@ class MetricWindow {
   final Object? error;
 }
 
+/// One window made of a short [recent] range and the [older] days before it.
+///
+/// A listener re-sends its whole range whenever any day in it changes, and
+/// syncs write today every few minutes. Splitting a long range keeps those
+/// writes to the short window; the older one only fires when an older day is
+/// written. Emits once both have reported.
+Stream<MetricWindow> combineMetricWindows(
+  Stream<MetricWindow> recent,
+  Stream<MetricWindow> older,
+) => Stream.multi((controller) {
+  MetricWindow? latestRecent, latestOlder;
+  void emit() {
+    final a = latestRecent, b = latestOlder;
+    if (a == null || b == null) return;
+    controller.add(
+      MetricWindow(
+        days: Map.unmodifiable({...b.days, ...a.days}),
+        isFromCache: a.isFromCache || b.isFromCache,
+        hasPendingWrites: a.hasPendingWrites || b.hasPendingWrites,
+        refreshing: a.refreshing || b.refreshing,
+        error: a.error ?? b.error,
+      ),
+    );
+  }
+
+  final subscriptions = [
+    recent.listen((value) {
+      latestRecent = value;
+      emit();
+    }, onError: controller.addError),
+    older.listen((value) {
+      latestOlder = value;
+      emit();
+    }, onError: controller.addError),
+  ];
+  controller.onCancel = () =>
+      Future.wait(subscriptions.map((subscription) => subscription.cancel()));
+});
+
 /// Shares exact query/projection windows, with reference-counted subscriptions.
 /// Detailed readers remain on the legacy source until parity is proven.
 class MetricsRepository {
@@ -174,7 +213,9 @@ class MetricsRepository {
             .where(FieldPath.documentId, isGreaterThanOrEqualTo: startDay)
             .where(FieldPath.documentId, isLessThanOrEqualTo: endDay)
             .orderBy(FieldPath.documentId)
-            .snapshots(includeMetadataChanges: true);
+            // Metadata-only updates re-send the whole window over the platform
+            // channel, encoded on the iOS main thread; data changes suffice.
+            .snapshots();
         window = _SharedWindow(source, projection, useSummaries, endDay);
         _windows[key] = window;
       }

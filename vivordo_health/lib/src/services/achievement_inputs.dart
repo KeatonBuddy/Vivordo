@@ -42,6 +42,21 @@ AchievementMetricDay projectAchievementDay(AchievementFieldReader read) {
   );
 }
 
+/// Server-projected summary day (functions/metrics_summary.js), or null when
+/// the document predates the scan/mood counts.
+AchievementMetricDay? projectAchievementSummary(AchievementFieldReader read) {
+  final scans = read('scans');
+  final moods = read('moods');
+  if (scans is! int || moods is! int) return null;
+  return (
+    scans: scans,
+    moods: moods,
+    steps: read('steps.sum') as num?,
+    calories: read('active_calories.sum') as num?,
+    minutes: read('exercise_time.sum') as num?,
+  );
+}
+
 bool projectAchievementWorkout(AchievementFieldReader read) {
   final category = read('activityCategory');
   if (category == 'Cardio' || category == 'Sports') return true;
@@ -83,19 +98,17 @@ class AchievementInputs {
 }
 
 /// One lifetime-history subscription per input, shared by the monitor and UI.
-/// Keeps only small derived records. Full Firestore wire payloads are unchanged.
+/// Keeps only small derived records.
+///
+/// Metrics come from the compact `metric_summaries_daily` projection once the
+/// account's lifetime backfill is verified and enabled
+/// (functions/scripts/backfill_achievement_summaries.js); otherwise from full
+/// `metrics_daily` documents, whose every change re-sends the whole history
+/// over the platform channel.
 class AchievementInputsRepository {
   AchievementInputsRepository(FirebaseFirestore db, this.uid) {
-    final user = db.collection('users').doc(uid);
-    _subscriptions.add(
-      user
-          .collection('metrics_daily')
-          .snapshots()
-          .listen(
-            (snapshot) => _accept(snapshot, true),
-            onError: (Object error) => _fail(error, true),
-          ),
-    );
+    final user = _user = db.collection('users').doc(uid);
+    unawaited(_connectMetrics());
     _subscriptions.add(
       user
           .collection('workouts')
@@ -115,10 +128,63 @@ class AchievementInputsRepository {
   bool _metricsReady = false, _workoutsReady = false, _closed = false;
   Object? _metricsError, _workoutsError;
   AchievementInputs? _cached;
+  late final DocumentReference<Map<String, dynamic>> _user;
+  StreamSubscription<dynamic>? _metrics;
+  bool _summaries = false;
   Stream<bool> get changes => _events.stream;
+
+  Future<void> _connectMetrics() async {
+    var enabled = false;
+    try {
+      final marker = await _user
+          .collection('metrics_summary_migrations')
+          .doc('achievements')
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 3));
+      enabled =
+          marker.data()?['enabled'] == true &&
+          marker.data()?['status'] == 'complete';
+    } catch (_) {
+      /* Offline or not rolled out: full history. */
+    }
+    if (!_closed) _listenMetrics(enabled);
+  }
+
+  void _listenMetrics(bool summaries) {
+    _summaries = summaries;
+    _metrics = _user
+        .collection(summaries ? 'metric_summaries_daily' : 'metrics_daily')
+        .snapshots()
+        .listen(
+          (snapshot) => _accept(snapshot, true),
+          onError: (Object error) =>
+              summaries ? _fallBack() : _fail(error, true),
+        );
+  }
+
+  /// A summary the reader cannot trust (unprojected, or unreadable) drops the
+  /// session back to full documents rather than undercounting.
+  void _fallBack() {
+    if (_closed || !_summaries) return;
+    unawaited(_metrics?.cancel());
+    _days.clear();
+    _metricsReady = false;
+    _cached = null;
+    _listenMetrics(false);
+  }
 
   void _accept(QuerySnapshot<Map<String, dynamic>> snapshot, bool metrics) {
     if (_closed) return;
+    if (metrics &&
+        _summaries &&
+        snapshot.docChanges.any(
+          (change) =>
+              change.type != DocumentChangeType.removed &&
+              projectAchievementSummary((p) => _field(change.doc, p)) == null,
+        )) {
+      _fallBack();
+      return;
+    }
     try {
       PerformanceTrace.measure(
         'achievements.project.${metrics ? 'metrics' : 'workouts'}',
@@ -132,9 +198,11 @@ class AchievementInputsRepository {
               final removed = metrics ? _days.remove(id) : _workouts.remove(id);
               changed = removed != null || changed;
             } else if (metrics) {
-              final day = projectAchievementDay(
-                (path) => _field(change.doc, path),
-              );
+              AchievementMetricDay read(AchievementFieldReader field) =>
+                  _summaries
+                  ? projectAchievementSummary(field)!
+                  : projectAchievementDay(field);
+              final day = read((path) => _field(change.doc, path));
               if (_days[id] != day) {
                 _days[id] = day;
                 changed = true;
@@ -161,7 +229,11 @@ class AchievementInputsRepository {
         },
       );
     } catch (error) {
-      _fail(error, metrics);
+      if (metrics && _summaries) {
+        _fallBack();
+      } else {
+        _fail(error, metrics);
+      }
     }
   }
 
@@ -214,7 +286,7 @@ class AchievementInputsRepository {
     _workouts.clear();
     _cached = null;
     _events.add(false);
-    await Future.wait(_subscriptions.map((s) => s.cancel()));
+    await Future.wait([..._subscriptions, ?_metrics].map((s) => s.cancel()));
     await _events.close();
   }
 }

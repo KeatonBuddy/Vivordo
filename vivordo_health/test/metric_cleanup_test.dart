@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/metric_cleanup.dart';
 
 const _metrics = [
-  'steps',
   'heart_rate',
   'hrv',
   'active_calories',
@@ -14,7 +13,7 @@ const _metrics = [
 void main() {
   group('a read that returned nothing at all', () {
     test('never clears any metric', () {
-      for (final metric in [..._metrics, 'sleep']) {
+      for (final metric in [..._metrics, 'sleep', 'steps']) {
         expect(
           readMayClearMissingDays(
             metricKey: metric,
@@ -52,18 +51,22 @@ void main() {
       }
     });
 
-    test('still never clears sleep', () {
+    test('still never clears sleep or steps', () {
       // A night reaches the phone late, so a read can return yesterday's
-      // sleep and not last night's while the watch is catching up.
-      expect(
-        readMayClearMissingDays(metricKey: 'sleep', readCoveredAnyDay: true),
-        isFalse,
-      );
+      // sleep and not last night's while the watch is catching up. Step
+      // statistics came back empty for weeks Health still showed steps for.
+      for (final metric in ['sleep', 'steps']) {
+        expect(
+          readMayClearMissingDays(metricKey: metric, readCoveredAnyDay: true),
+          isFalse,
+        );
+      }
     });
   });
 
-  test('sleep is the only metric exempt from an otherwise-trusted read', () {
+  test('sleep and steps are exempt from an otherwise-trusted read', () {
     expect(emptyReadMayClearSavedMetric('sleep'), isFalse);
+    expect(emptyReadMayClearSavedMetric('steps'), isFalse);
     for (final metric in _metrics) {
       expect(emptyReadMayClearSavedMetric(metric), isTrue);
     }

@@ -5,7 +5,12 @@
 /// to the phone long after it ends, so a read can legitimately return
 /// yesterday's sleep and not last night's while the watch is still catching
 /// up. Treating that gap as "no sleep" wipes a night the app had recorded.
-bool emptyReadMayClearSavedMetric(String metricKey) => metricKey != 'sleep';
+///
+/// Steps are excluded too: HealthKit's step statistics returned nothing for
+/// weeks of days the Health app shows steps for (Sept 2026, iOS 27), while the
+/// same read covered recent days.
+bool emptyReadMayClearSavedMetric(String metricKey) =>
+    metricKey != 'sleep' && metricKey != 'steps';
 
 /// Whether a completed read may clear the days inside its window that it did
 /// not return data for.

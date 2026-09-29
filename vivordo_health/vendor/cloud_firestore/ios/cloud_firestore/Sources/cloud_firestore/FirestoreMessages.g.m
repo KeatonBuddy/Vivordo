@@ -1187,6 +1187,13 @@ static id GetNullableObjectAtIndex(NSArray<id> *array, NSInteger key) {
 @end
 @implementation FirebaseFirestoreHostApiCodecWriter
 - (void)writeValue:(id)value {
+  // Vivordo patch (re-apply if regenerated): plain values skip the Pigeon
+  // class checks below; FLTFirebaseFirestoreWriter handles them first.
+  if ([value isKindOfClass:[NSNumber class]] || [value isKindOfClass:[NSString class]] ||
+      [value isKindOfClass:[NSDictionary class]] || [value isKindOfClass:[NSArray class]]) {
+    [super writeValue:value];
+    return;
+  }
   if ([value isKindOfClass:[DocumentChangeTypeBox class]]) {
     DocumentChangeTypeBox *box = (DocumentChangeTypeBox *)value;
     [self writeByte:129];

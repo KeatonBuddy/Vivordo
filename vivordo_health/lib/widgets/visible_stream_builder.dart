@@ -1,8 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
-/// Disconnects screen-only streams while their tab/route is hidden.
-/// StreamBuilder retains its last data when disconnected. Do not pause the
-/// subscription: that would queue every hidden update for replay on return.
+import '../src/utils/owned_stream_snapshot.dart';
+
+/// Disconnects screen-only streams once their tab/route has been hidden for
+/// [kHiddenStreamGrace]; a quick switch back keeps the live listener instead
+/// of re-downloading its whole result. StreamBuilder retains its last data
+/// when disconnected. Do not pause the subscription: that would queue every
+/// hidden update for replay on return.
 class VisibleStreamBuilder<T> extends StatefulWidget {
   const VisibleStreamBuilder({
     super.key,
@@ -22,12 +28,39 @@ class VisibleStreamBuilder<T> extends StatefulWidget {
 
 class _VisibleStreamBuilderState<T> extends State<VisibleStreamBuilder<T>> {
   Widget? _lastChild;
+  bool? _active;
+  bool _connected = false;
+  Timer? _disconnect;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final active = TickerMode.valuesOf(context).enabled;
+    if (active == _active) return;
+    final first = _active == null;
+    _active = active;
+    _disconnect?.cancel();
+    if (active || first) {
+      // A tab preloaded while hidden never connects until first shown.
+      _connected = active;
+    } else {
+      _disconnect = Timer(kHiddenStreamGrace, () {
+        if (mounted) setState(() => _connected = false);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _disconnect?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final active = TickerMode.valuesOf(context).enabled;
+    final active = _active ?? true;
     return StreamBuilder<T>(
-      stream: active ? widget.stream : null,
+      stream: _connected ? widget.stream : null,
       initialData: widget.initialData,
       builder: (context, snapshot) {
         if (!active) return _lastChild ?? const SizedBox.shrink();

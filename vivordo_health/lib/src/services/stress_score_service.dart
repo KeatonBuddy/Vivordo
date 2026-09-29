@@ -170,15 +170,17 @@ class StressScoreService {
 
     try {
       final today = localDayKey(DateTime.now());
+      final earliest = localDayKey(
+        DateTime.now().subtract(Duration(days: lookbackDays)),
+      );
+      // Only the lookback window, not every day on record: this runs at launch.
       final snap = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .collection('metrics_daily')
+          .where(FieldPath.documentId, isGreaterThanOrEqualTo: earliest)
+          .where(FieldPath.documentId, isLessThan: today)
           .get();
-
-      final earliest = localDayKey(
-        DateTime.now().subtract(Duration(days: lookbackDays)),
-      );
 
       final pending = <String>[];
       for (final doc in snap.docs) {

@@ -11,6 +11,7 @@ import 'stress_score_service.dart';
 import '../utils/activity_score.dart';
 import '../utils/heart_health_score.dart';
 import '../utils/metric_cleanup.dart';
+import '../utils/step_totals.dart';
 import '../utils/sleep_stage_aggregation.dart';
 import '../utils/foreground_transaction.dart';
 
@@ -1007,9 +1008,13 @@ class HealthService {
       final end = i == 0 ? now : day.add(const Duration(days: 1));
       var total = (await _health.getTotalStepsInInterval(day, end))?.toDouble();
 
-      if (total == null) {
+      // The plugin reports "no statistics" as 0, not null, and on this device
+      // it returned 0 for days Apple Health shows steps for. Writing that 0
+      // overwrote saved totals, so a 0 must be confirmed by raw samples; a
+      // day with no samples is skipped rather than zeroed.
+      if (total == null || total == 0) {
         debugPrint(
-          'HealthService.syncMetric(steps): total API returned null for ${localDayKey(day)}. Trying raw step samples.',
+          'HealthService.syncMetric(steps): total API returned $total for ${localDayKey(day)}. Trying raw step samples.',
         );
         total = await _readRawStepTotal(day, end);
         if (total == null) {
@@ -1063,13 +1068,14 @@ class HealthService {
       types: [HealthDataType.STEPS],
     );
 
-    var total = 0.0;
-    for (final point in points) {
-      if (point.value is! NumericHealthValue) continue;
-      total += (point.value as NumericHealthValue).numericValue.toDouble();
-    }
-
-    return points.isEmpty ? null : total;
+    return largestSourceStepTotal([
+      for (final point in points)
+        if (point.value is NumericHealthValue)
+          (
+            source: point.sourceId,
+            steps: (point.value as NumericHealthValue).numericValue.toDouble(),
+          ),
+    ]);
   }
 
   Future<void> _deleteMetricForMissingDays(
@@ -1272,9 +1278,7 @@ class HealthService {
 
     try {
       await batch.commit();
-      for (final entry in appleHeartRatePayloads.entries) {
-        await _promoteAppleHeartRateIfBleStale(uid, entry.key, entry.value);
-      }
+      await _promoteAppleHeartRateIfBleStale(uid, appleHeartRatePayloads);
       debugPrint(
         'DEBUG: Firestore batch commit succeeded for ${def.key}. Days written: ${byDay.length}',
       );
@@ -1286,40 +1290,51 @@ class HealthService {
     }
   }
 
+  /// Makes Apple Health the displayed heart rate for each synced day unless a
+  /// WHOOP strap reported within the last five minutes.
+  ///
+  /// One transaction for every day, not one per day: each commit makes every
+  /// live metrics window re-send its documents, and a 30-day sync used to
+  /// commit up to 30 times here. Sync windows are at most 30 days, well under
+  /// the per-transaction write limit.
   Future<void> _promoteAppleHeartRateIfBleStale(
     String uid,
-    String day,
-    Map<String, dynamic> payload,
+    Map<String, Map<String, dynamic>> payloadsByDay,
   ) async {
-    if (!canRunForegroundTransaction) return;
-    final reference = _db
-        .collection('users')
-        .doc(uid)
-        .collection('metrics_daily')
-        .doc(day);
+    if (payloadsByDay.isEmpty || !canRunForegroundTransaction) return;
+    final days = payloadsByDay.keys.toList(growable: false);
+    final references = [
+      for (final day in days)
+        _db.collection('users').doc(uid).collection('metrics_daily').doc(day),
+    ];
     await _db.runTransaction((transaction) async {
       requireForegroundTransaction();
-      final snapshot = await transaction.get(reference);
-      final sources = snapshot.data()?['heart_rate_sources'] as Map?;
-      final whoopBle = sources?['whoop_ble'] as Map?;
-      final rawLastReading = whoopBle?['lastReadingAt'];
-      final lastReadingAt = rawLastReading is Timestamp
-          ? rawLastReading.toDate()
-          : null;
-      final bluetoothIsFresh =
-          lastReadingAt != null &&
-          DateTime.now().difference(lastReadingAt) <=
-              const Duration(minutes: 5);
-      if (bluetoothIsFresh) return;
-      transaction.set(reference, {
-        'heart_rate': {
-          ...payload,
-          'source': 'apple_health',
-          'syncedAt': FieldValue.serverTimestamp(),
-        },
-        'date': day,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      // Firestore transactions must finish every read before any write.
+      final snapshots = [
+        for (final reference in references) await transaction.get(reference),
+      ];
+      for (var i = 0; i < days.length; i++) {
+        final sources = snapshots[i].data()?['heart_rate_sources'] as Map?;
+        final whoopBle = sources?['whoop_ble'] as Map?;
+        final rawLastReading = whoopBle?['lastReadingAt'];
+        final lastReadingAt = rawLastReading is Timestamp
+            ? rawLastReading.toDate()
+            : null;
+        final bluetoothIsFresh =
+            lastReadingAt != null &&
+            DateTime.now().difference(lastReadingAt) <=
+                const Duration(minutes: 5);
+        if (bluetoothIsFresh) continue;
+        transaction.set(references[i], {
+          'heart_rate': {
+            ...payloadsByDay[days[i]]!,
+            'source': 'apple_health',
+            'syncedAt': FieldValue.serverTimestamp(),
+          },
+          'date': days[i],
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
     });
   }
 

@@ -10,9 +10,23 @@
 #endif
 
 #import "include/cloud_firestore/Private/FLTFirebaseFirestoreUtils.h"
+#import "include/cloud_firestore/Private/FLTFirebaseFirestoreWriter.h"
 #import "include/cloud_firestore/Private/FLTQuerySnapshotStreamHandler.h"
 #import "include/cloud_firestore/Private/FirestorePigeonParser.h"
 #import "include/cloud_firestore/Public/CustomPigeonHeaderFirestore.h"
+
+#import <os/signpost.h>
+
+// Vivordo patch: names each snapshot delivery in Instruments' Points of
+// Interest track, so main-thread encoding stalls can be tied to a listener.
+static os_log_t FLTDeliveryLog(void) {
+  static os_log_t log;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    log = os_log_create("com.vivordo.firestore", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+  });
+  return log;
+}
 
 @interface FLTQuerySnapshotStreamHandler ()
 @property(readwrite, strong) id<FIRListenerRegistration> listenerRegistration;
@@ -75,8 +89,21 @@
         InternalQuerySnapshot *pigeonSnapshot =
             [FirestorePigeonParser toPigeonQuerySnapshot:snapshot
                                  serverTimestampBehavior:self.serverTimestampBehavior];
+        // Vivordo patch: encode here, on this serial background queue, instead
+        // of inside events() on the main thread, where re-encoding whole
+        // metrics windows on every write stalled the UI.
+        FLTEncodedEventValue *encoded = FLTEncodeEventValue(pigeonSnapshot);
+        NSString *label =
+            snapshot.documents.firstObject.reference.parent.collectionID ?: @"(empty)";
+        unsigned long docs = snapshot.documents.count;
+        unsigned long changes = snapshot.documentChanges.count;
         dispatch_async(dispatch_get_main_queue(), ^{
-          events(pigeonSnapshot);
+          os_log_t log = FLTDeliveryLog();
+          os_signpost_id_t signpost = os_signpost_id_generate(log);
+          os_signpost_interval_begin(log, signpost, "Firestore query",
+                                     "%{public}@ docs=%lu changes=%lu", label, docs, changes);
+          events(encoded);
+          os_signpost_interval_end(log, signpost, "Firestore query");
         });
       });
     }

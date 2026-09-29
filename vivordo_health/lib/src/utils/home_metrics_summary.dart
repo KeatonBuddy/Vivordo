@@ -6,6 +6,11 @@ import 'performance_trace.dart';
 /// Number of calendar days of metric history Home keeps live, counting today.
 const int kHomeMetricsWindowDays = 90;
 
+/// The part of that history that syncs rewrite constantly: today plus the
+/// seven days the stress average covers. Kept as its own window so a write to
+/// today does not re-send all 90 days.
+const int kHomeRecentWindowDays = 8;
+
 /// One `metrics_daily` document reduced to what Home derives values from.
 class MetricDayEntry {
   const MetricDayEntry({required this.dayKey, required this.data});

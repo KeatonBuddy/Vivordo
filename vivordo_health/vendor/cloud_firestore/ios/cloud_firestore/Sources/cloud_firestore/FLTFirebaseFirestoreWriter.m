@@ -9,11 +9,81 @@
 #import "include/cloud_firestore/Private/FLTFirebaseFirestoreUtils.h"
 #import "include/cloud_firestore/Public/FLTFirebaseFirestorePlugin.h"
 
+// Pigeon codec used by the plugin's event channels (FirestoreMessages.g.m).
+@interface FirebaseFirestoreHostApiCodecReaderWriter : FlutterStandardReaderWriter
+@end
+
+@implementation FLTEncodedEventValue
+- (instancetype)initWithBytes:(NSData *)bytes {
+  self = [super init];
+  if (self) _bytes = bytes;
+  return self;
+}
+@end
+
+FLTEncodedEventValue *FLTEncodeEventValue(id value) {
+  static FlutterStandardReaderWriter *readerWriter;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    readerWriter = [[FirebaseFirestoreHostApiCodecReaderWriter alloc] init];
+  });
+  NSMutableData *data = [NSMutableData data];
+  FlutterStandardWriter *writer = [readerWriter writerWithData:data];
+  // encodeSuccessEnvelope writes one 0 byte before the value. Writing it here
+  // too keeps the codec's 8-byte alignment padding identical once spliced.
+  [writer writeByte:0];
+  [writer writeValue:value];
+  return [[FLTEncodedEventValue alloc]
+      initWithBytes:[data subdataWithRange:NSMakeRange(1, data.length - 1)]];
+}
+
 static const UInt8 FLTStandardFieldList = 12;
 static const UInt8 FLTStandardFieldMap = 13;
 
 @implementation FLTFirebaseFirestoreWriter : FlutterStandardWriter
 - (void)writeValue:(id)value {
+  if ([value isKindOfClass:[FLTEncodedEventValue class]]) {
+    [self writeData:((FLTEncodedEventValue *)value).bytes];
+    return;
+  }
+  // Vivordo patch: snapshot payloads are almost entirely plain values, and
+  // each one used to walk every Firestore type check first. On the iOS main
+  // thread that was ~28% of hang time, so plain types are handled up front.
+  if ([value isKindOfClass:[NSNumber class]]) {
+    double number = [(NSNumber *)value doubleValue];
+    if (isinf(number)) {
+      [self writeByte:number > 0 ? FirestoreDataTypeInfinity
+                                 : FirestoreDataTypeNegativeInfinity];
+    } else if (isnan(number)) {
+      [self writeByte:FirestoreDataTypeNaN];
+    } else {
+      [super writeValue:value];
+    }
+    return;
+  }
+  if ([value isKindOfClass:[NSString class]]) {
+    [super writeValue:value];
+    return;
+  }
+  if ([value isKindOfClass:[NSDictionary class]]) {
+    NSDictionary *map = value;
+    [self writeByte:FLTStandardFieldMap];
+    [self writeSize:(UInt32)map.count];
+    for (id key in map) {
+      [self writeValue:key];
+      [self writeValue:map[key]];
+    }
+    return;
+  }
+  if ([value isKindOfClass:[NSArray class]]) {
+    NSArray *list = value;
+    [self writeByte:FLTStandardFieldList];
+    [self writeSize:(UInt32)list.count];
+    for (id item in list) {
+      [self writeValue:item];
+    }
+    return;
+  }
   if ([value isKindOfClass:[NSDate class]]) {
     [self writeByte:FirestoreDataTypeDateTime];
     NSDate *date = value;
@@ -63,43 +133,6 @@ static const UInt8 FLTStandardFieldMap = 13;
     [self writeValue:[self FIRDocumentChange:value]];
   } else if ([value isKindOfClass:[FIRSnapshotMetadata class]]) {
     [self writeValue:[self FIRSnapshotMetadata:value]];
-  } else if ([value isKindOfClass:[NSArray class]]) {
-    NSArray *list = value;
-    [self writeByte:FLTStandardFieldList];
-    [self writeSize:(UInt32)list.count];
-    for (id item in list) {
-      [self writeValue:item];
-    }
-  } else if ([value isKindOfClass:[NSDictionary class]]) {
-    NSDictionary *map = value;
-    [self writeByte:FLTStandardFieldMap];
-    [self writeSize:(UInt32)map.count];
-    for (id key in map) {
-      [self writeValue:key];
-      [self writeValue:map[key]];
-    }
-  } else if ([value isKindOfClass:[NSNumber class]]) {
-    NSNumber *number = (NSNumber *)value;
-
-    // Infinity
-    if ([number isEqual:@(INFINITY)]) {
-      [self writeByte:FirestoreDataTypeInfinity];
-      return;
-    }
-
-    // -Infinity
-    if ([number isEqual:@(-INFINITY)]) {
-      [self writeByte:FirestoreDataTypeNegativeInfinity];
-      return;
-    }
-
-    // NaN
-    if ([[value description].lowercaseString isEqual:@"nan"]) {
-      [self writeByte:FirestoreDataTypeNaN];
-      return;
-    }
-
-    [super writeValue:value];
   } else if ([value isKindOfClass:[NSData class]]) {
     NSData *blob = value;
     [self writeByte:FirestoreDataTypeBlob];

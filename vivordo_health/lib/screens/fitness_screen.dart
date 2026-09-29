@@ -108,9 +108,26 @@ class _FitnessScreenState extends State<FitnessScreen> {
   Timer? _deferredInitializationTimer;
   final Map<String, int> _strengthGoals = Map.of(kDefaultStrengthGoals);
 
+  /// The last 30 full days, shared by the heart-scan and profile cards. The
+  /// query stream is broadcast, so both cards ride one Firestore listener
+  /// instead of each re-sending 30 documents on every metrics write. Both
+  /// cards sit in a non-lazy Column and connect in the same frame, so neither
+  /// misses the first snapshot.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _recentDays;
+
   @override
   void initState() {
     super.initState();
+    final user = FirebaseAuth.instance.currentUser;
+    _recentDays = user == null
+        ? const Stream.empty()
+        : FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .collection('metrics_daily')
+              .orderBy(FieldPath.documentId, descending: true)
+              .limit(30)
+              .snapshots();
     _startDeferredInitializationIfActive();
   }
 
@@ -257,11 +274,11 @@ class _FitnessScreenState extends State<FitnessScreen> {
                 children: [
                   const Expanded(child: _TodayStepsMetricCard()),
                   const SizedBox(width: 10),
-                  const Expanded(child: _LatestHeartScanCard()),
+                  Expanded(child: _LatestHeartScanCard(_recentDays)),
                 ],
               ),
               const SizedBox(height: 12),
-              const _PersonalProfileCard(),
+              _PersonalProfileCard(_recentDays),
               const SizedBox(height: 22),
               _SectionTitle(
                 icon: Icons.auto_awesome_rounded,
@@ -841,33 +858,17 @@ class _WorkoutStreakPillState extends State<_WorkoutStreakPill> {
       );
 }
 
-class _LatestHeartScanCard extends StatefulWidget {
-  const _LatestHeartScanCard();
+// ponytail: a scan older than the 30 shared days shows "No scan yet"; an
+// unbounded live listener re-sent every day on each write.
+class _LatestHeartScanCard extends StatelessWidget {
+  const _LatestHeartScanCard(this.recentDays);
 
-  @override
-  State<_LatestHeartScanCard> createState() => _LatestHeartScanCardState();
-}
-
-class _LatestHeartScanCardState extends State<_LatestHeartScanCard> {
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _scanStream;
-
-  @override
-  void initState() {
-    super.initState();
-    final user = FirebaseAuth.instance.currentUser;
-    _scanStream = user == null
-        ? const Stream.empty()
-        : FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .collection('metrics_daily')
-              .snapshots();
-  }
+  final Stream<QuerySnapshot<Map<String, dynamic>>> recentDays;
 
   @override
   Widget build(BuildContext context) =>
       VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _scanStream,
+        stream: recentDays,
         builder: (context, snapshot) {
           final bpm = _latestBpmFrom(snapshot.data?.docs ?? const []);
           return _MetricCard(
@@ -921,7 +922,9 @@ class _LatestHeartScanCardState extends State<_LatestHeartScanCard> {
 }
 
 class _PersonalProfileCard extends StatefulWidget {
-  const _PersonalProfileCard();
+  const _PersonalProfileCard(this.recentDays);
+
+  final Stream<QuerySnapshot<Map<String, dynamic>>> recentDays;
 
   @override
   State<_PersonalProfileCard> createState() => _PersonalProfileCardState();
@@ -929,22 +932,11 @@ class _PersonalProfileCard extends StatefulWidget {
 
 class _PersonalProfileCardState extends State<_PersonalProfileCard> {
   late final Stream<PersonalProfile> profileStream;
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> metricsStream;
 
   @override
   void initState() {
     super.initState();
     profileStream = PersonalProfileService.watch();
-    final user = FirebaseAuth.instance.currentUser;
-    metricsStream = user == null
-        ? const Stream.empty()
-        : FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .collection('metrics_daily')
-              .orderBy(FieldPath.documentId, descending: true)
-              .limit(30)
-              .snapshots();
   }
 
   double? _latestMetric(
@@ -988,7 +980,7 @@ class _PersonalProfileCardState extends State<_PersonalProfileCard> {
     initialData: const PersonalProfile(),
     builder: (context, profileSnapshot) =>
         VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: metricsStream,
+          stream: widget.recentDays,
           builder: (context, metricsSnapshot) {
             final profile = profileSnapshot.data ?? const PersonalProfile();
             final docs = metricsSnapshot.data?.docs ?? const [];

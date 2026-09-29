@@ -14,6 +14,19 @@
 #import "include/cloud_firestore/Private/FirestorePigeonParser.h"
 #import "include/cloud_firestore/Public/CustomPigeonHeaderFirestore.h"
 
+#import <os/signpost.h>
+
+// Vivordo patch: names each snapshot delivery in Instruments' Points of
+// Interest track, so main-thread encoding stalls can be tied to a listener.
+static os_log_t FLTDeliveryLog(void) {
+  static os_log_t log;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    log = os_log_create("com.vivordo.firestore", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+  });
+  return log;
+}
+
 @interface FLTDocumentSnapshotStreamHandler ()
 @property(readwrite, strong) id<FIRListenerRegistration> listenerRegistration;
 @end
@@ -55,11 +68,16 @@
       });
     } else {
       dispatch_async(dispatch_get_main_queue(), ^{
+        os_log_t log = FLTDeliveryLog();
+        os_signpost_id_t signpost = os_signpost_id_generate(log);
+        os_signpost_interval_begin(log, signpost, "Firestore document", "%{public}@",
+                                   snapshot.reference.parent.collectionID);
         // Emit the Pigeon object directly; the Pigeon-aware codec on the
         // MessageChannel serializes it end-to-end. Pigeon 26 no longer flattens
         // nested types via `toList`.
         events([FirestorePigeonParser toPigeonDocumentSnapshot:snapshot
                                        serverTimestampBehavior:self.serverTimestampBehavior]);
+        os_signpost_interval_end(log, signpost, "Firestore document");
       });
     }
   };

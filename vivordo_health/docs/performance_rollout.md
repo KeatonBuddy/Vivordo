@@ -141,10 +141,28 @@ queue a trailing run; signed-out sessions are invalidated before new writes or
 unlock announcements. Lifetime history, legacy scan/mood fallback rules, current
 activity-goal comparisons, and earned-tier retention are unchanged.
 
-This is a client-only stage. Firestore still sends full documents to these
-listeners. Compact server achievement inputs, their versioned readiness gate,
-backfill/parity audit, and deployment remain deferred. The activity-only V1
-summary must not be used for achievement counts: it lacks mood and scan counts.
+Achievement metrics can now read `metric_summaries_daily`, which carries
+additive `scans`/`moods` counts (same rules as `projectAchievementDay`; both
+sides are tested against `functions/test/achievement_count_cases.json`). The
+reader is gated per account by `metrics_summary_migrations/achievements`
+(`status: complete`, `enabled: true`) and falls back to full `metrics_daily`
+when the marker is off, unreachable, or any summary lacks the counts. Rollout:
+
+1. `firebase deploy --only functions:projectDailyActivitySummary` (first, so
+   days written during the backfill are projected by the trigger).
+2. `node scripts/backfill_achievement_summaries.js PROJECT UID --apply`
+3. `node scripts/backfill_achievement_summaries.js PROJECT UID --enable`
+   (verifies every day against its source; refuses to enable on any drift).
+
+All accounts: `node scripts/backfill_achievement_summaries.js PROJECT
+--all-users --apply --enable` runs the same steps for every account not yet
+enabled and lists any that fail (they stay on full history; re-run retries
+them). New accounts are enabled by `enableAchievementSummaries` when their
+`users/{uid}` document is created, but only if they have no `metrics_daily`
+days yet; anything older is left to the backfill.
+
+Rollback: set `enabled: false` on the marker. New scans/moods reach
+achievements after the trigger runs rather than instantly.
 
 Tests: `flutter test test/achievement_inputs_test.dart
 test/full_circle_achievement_test.dart test/mood_keeper_achievement_test.dart`.
@@ -200,3 +218,42 @@ Remaining work is gated on measurements and parity:
 
 Do not claim release readiness or a measured speedup until the same device
 scenarios are recorded after these changes and functional parity is confirmed.
+
+## Next steps (as of 2026-09-29)
+
+Trace 6 (after this round): 0 hangs in 71 s; Firestore delivery work on the
+main thread 3.1 s (was 16.4 s in trace 4). Remaining stutters (~125 ms each)
+happen only during 30-day syncs (app launch, Metrics tab refresh).
+
+### 1. Fewer writes per health sync
+
+- **Step 1: done.** `_promoteAppleHeartRateIfBleStale` promotes every synced
+  day in one transaction instead of one per day (up to 30 fewer writes per
+  30-day sync).
+- **Step 2: to do, in its own build.** `_performSyncMeasured` saves each
+  metric in its own batch (steps, calories, distance, exercise, heart rate,
+  and so on), then wellness, then stress. Every commit makes each live
+  metrics window re-send all its days, so a 30-day sync is ~10 bursts. Plan:
+  pass one shared batch through the metric writes and the missing-day
+  cleanups, and commit once per sync, split under Firestore's 500-operation
+  limit. Skip wellness writes whose score has not changed (`computedAt`
+  currently makes every write a change). Needs tests showing the saved data
+  is identical, including corrections, deletions, the steps/sleep cleanup
+  exemptions and wearable priority. Check with a trace: one burst per 30-day
+  sync instead of ~10.
+
+### 2. Home's 90-day history window: done
+
+Split into a live 8-day window (today + the 7 days the stress average
+covers) and a days 9–90 window, merged by `combineMetricWindows`. Writes to
+today re-send 8 days (~7 ms) instead of 90 (~53 ms); the older window only
+fires when a 30-day sync touches older days. The parity test is in
+`test/metrics_repository_test.dart`.
+
+### Also pending
+
+- Roll achievement summaries out to all users after TestFlight checks:
+  `firebase deploy --only functions:enableAchievementSummaries`, then
+  `node scripts/backfill_achievement_summaries.js vivordo-health --all-users --apply --enable`.
+- Store WHOOP minute readings once instead of twice (audit every
+  `heart_rate.entries` reader first).

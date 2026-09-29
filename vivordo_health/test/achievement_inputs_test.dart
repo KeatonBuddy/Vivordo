@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
@@ -82,6 +84,22 @@ void main() {
     expect(reads.every((path) => path.contains('.')), isTrue);
   });
 
+  test('scan/mood counts match the server projector cases', () {
+    // Shared with functions/test/metrics_summary.test.js so both sides agree.
+    final cases =
+        jsonDecode(
+              File(
+                'functions/test/achievement_count_cases.json',
+              ).readAsStringSync(),
+            )
+            as List;
+    for (final c in cases.cast<Map<String, dynamic>>()) {
+      final data = c['data'] as Map<String, dynamic>;
+      final day = projectAchievementDay((path) => field(data, path));
+      expect([day.scans, day.moods], [c['scans'], c['moods']], reason: '$data');
+    }
+  });
+
   test('workout categories preserve mixed and legacy classification', () {
     final cases = <(Map<String, dynamic>, bool)>[
       ({}, false),
@@ -149,6 +167,67 @@ void main() {
         expect(results.first.workoutCount, 0);
       },
     );
+
+    group('summary reader', () {
+      Future<void> seed({Map<String, dynamic>? marker, int? scans}) async {
+        await db.doc('users/a/metrics_daily/2026-09-24').set({
+          'mood': {
+            'entries': [1],
+          },
+          'steps': {'sum': 10},
+        });
+        await db.doc('users/a/metric_summaries_daily/2026-09-24').set({
+          'schemaVersion': 1,
+          'steps': {'sum': 99, 'source': 'apple_health'},
+          'active_calories': {'sum': null, 'source': null},
+          'exercise_time': {'sum': null, 'source': null},
+          'scans': ?scans,
+          'moods': 3,
+        });
+        if (marker != null) {
+          await db
+              .doc('users/a/metrics_summary_migrations/achievements')
+              .set(marker);
+        }
+      }
+
+      test('uses summaries only when the account marker is enabled', () async {
+        await seed(marker: {'status': 'complete', 'enabled': true}, scans: 2);
+        repository = AchievementInputsRepository(db, 'a');
+        final inputs = await repository.load();
+        expect(inputs.scans, 2);
+        expect(inputs.moods, 3);
+        expect(inputs.days['2026-09-24']?.steps, 99);
+      });
+
+      test('disabled or incomplete marker keeps full history', () async {
+        for (final marker in [
+          null,
+          {'status': 'complete', 'enabled': false},
+          {'status': 'running', 'enabled': true},
+        ]) {
+          db = FakeFirebaseFirestore();
+          await seed(marker: marker, scans: 2);
+          repository = AchievementInputsRepository(db, 'a');
+          final inputs = await repository.load();
+          expect(inputs.moods, 1, reason: '$marker');
+          await repository.dispose();
+        }
+        repository = AchievementInputsRepository(db, 'a');
+      });
+
+      test(
+        'a summary without counts falls back instead of undercounting',
+        () async {
+          await seed(marker: {'status': 'complete', 'enabled': true});
+          repository = AchievementInputsRepository(db, 'a');
+          await settle();
+          final inputs = await repository.load();
+          expect(inputs.moods, 1);
+          expect(inputs.days['2026-09-24']?.steps, 10);
+        },
+      );
+    });
 
     test(
       'lifetime history, edits, deletion and recreation are retained correctly',

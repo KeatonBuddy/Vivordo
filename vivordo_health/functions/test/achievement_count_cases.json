@@ -1,0 +1,11 @@
+[
+  {"data": {}, "scans": 0, "moods": 0},
+  {"data": {"mood": {}, "heart_rate_scan": {}}, "scans": 0, "moods": 0},
+  {"data": {"mood": 3, "heart_rate_scan": "x"}, "scans": 0, "moods": 0},
+  {"data": {"mood": {"avg": 0}, "heart_rate_scan": {"source": "camera_ppg"}}, "scans": 1, "moods": 1},
+  {"data": {"mood": {"label": "Good", "entries": []}, "heart_rate_scan": {"avg": 0}}, "scans": 1, "moods": 1},
+  {"data": {"mood": {"avg": "3"}, "heart_rate_scan": {"source": "apple_health"}}, "scans": 0, "moods": 0},
+  {"data": {"mood": {"avg": 2, "entries": [1, 2]}, "heart_rate_scan": {"avg": 60, "entries": [1, 2, 3]}}, "scans": 3, "moods": 2},
+  {"data": {"mood": {"entries": [{"score": 4}]}, "heart_rate_scan": {"entries": [{"bpm": 70}, {"bpm": 72}]}}, "scans": 2, "moods": 1},
+  {"data": {"heart_rate": {"source": "camera_ppg", "avg": 70, "entries": [1, 2]}}, "scans": 0, "moods": 0}
+]
