@@ -47,7 +47,7 @@ void main() {
       );
       expect(result.usualSleep, 8);
       expect(result.priorNights, 7);
-      expect(result.capacityNote, 'Near your recent capacity estimate');
+      expect(result.capacityNote, 'Near your usual');
       expect(result.stale, false);
       expect(result.isFromCache, true);
       expect(result.stressTime, DateTime(2026, 9, 22, 13));
@@ -83,10 +83,7 @@ void main() {
       for (var n = 15; n <= 21; n++) day(n, version: n == 15 ? 'old' : 'v1'),
       day(22),
     ]);
-    expect(
-      metrics.summarize(now).capacityNote,
-      'Building your capacity baseline',
-    );
+    expect(metrics.summarize(now).capacityNote, 'Still learning your usual');
   });
 
   test('missing data and day rollover never reuse yesterday as current', () {

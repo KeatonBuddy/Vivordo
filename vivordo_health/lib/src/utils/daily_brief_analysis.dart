@@ -25,14 +25,8 @@ class BriefPriority {
 }
 
 class BriefPlan {
-  const BriefPlan(
-    this.score,
-    this.observation,
-    this.missingEstimates,
-    this.flexibleMinutes,
-  );
+  const BriefPlan(this.score, this.missingEstimates, this.flexibleMinutes);
   final int score, missingEstimates, flexibleMinutes;
-  final String observation;
 }
 
 bool sameBriefDay(DateTime a, DateTime b) =>
@@ -43,10 +37,8 @@ bool sameBriefDay(DateTime a, DateTime b) =>
 BriefPlan analyzeBriefPlan(
   DateTime now,
   List<BriefCommitment> events,
-  List<BriefPriority> priorities, {
-  int startHour = 9,
-  int endHour = 17,
-}) {
+  List<BriefPriority> priorities,
+) {
   final end = DateTime(now.year, now.month, now.day + 1);
   final blocks = events
       .where((e) => e.end.isAfter(now) && e.start.isBefore(end))
@@ -130,60 +122,8 @@ BriefPlan analyzeBriefPlan(
                   35)
           .round()
           .clamp(0, 100);
-  final windowStart = DateTime(now.year, now.month, now.day, startHour);
-  final windowEnd = DateTime(now.year, now.month, now.day, endHour);
-  var cursor = now.isAfter(windowStart) ? now : windowStart;
-  DateTime? opening;
-  for (final block in blocks) {
-    if (!block.start.isBefore(windowEnd)) break;
-    if (block.start.difference(cursor).inMinutes >= 30) {
-      opening = cursor;
-      break;
-    }
-    if (block.end.isAfter(cursor)) cursor = block.end;
-  }
-  if (opening == null && windowEnd.difference(cursor).inMinutes >= 30) {
-    opening = cursor;
-  }
-  var occupiedAfternoon = 0;
-  var afternoonEnd = DateTime(now.year, now.month, now.day, 12);
-  if (now.isAfter(afternoonEnd)) afternoonEnd = now;
-  for (final block in blocks) {
-    final s = block.start.isAfter(afternoonEnd) ? block.start : afternoonEnd;
-    final e = block.end.isBefore(windowEnd) ? block.end : windowEnd;
-    if (e.isAfter(s)) occupiedAfternoon += e.difference(s).inMinutes;
-    if (e.isAfter(afternoonEnd)) afternoonEnd = e;
-  }
-  var chain = 0;
-  var longestChain = 0;
-  DateTime? chainEnd;
-  for (final block in blocks) {
-    chain = chainEnd != null && block.start.difference(chainEnd).inMinutes < 10
-        ? chain + 1
-        : 1;
-    longestChain = math.max(longestChain, chain);
-    if (chainEnd == null || block.end.isAfter(chainEnd)) chainEnd = block.end;
-  }
-  final observation = longestChain >= 3
-      ? '$longestChain consecutive or overlapping commitments ahead.'
-      : occupiedAfternoon >= 180
-      ? 'Busy afternoon ahead.'
-      : blocks.isEmpty
-      ? 'No timed commitments remain today.'
-      : '${blocks.length} timed commitments remain today.';
-  final gap = opening == null
-      ? 'No 30-minute opening found in your 9–5 planning window.'
-      : opening.isAtSameMomentAs(now)
-      ? 'Your plan has a 30-minute opening now.'
-      : 'Your next 30-minute opening starts at ${_time(opening)}.';
-  final workload = flexible > 0
-      ? ' You also have $flexible minutes of flexible priority work.'
-      : '';
-  return BriefPlan(score, '$observation $gap$workload', missing, flexible);
+  return BriefPlan(score, missing, flexible);
 }
-
-String _time(DateTime value) =>
-    '${value.hour % 12 == 0 ? 12 : value.hour % 12}:${value.minute.toString().padLeft(2, "0")} ${value.hour < 12 ? "AM" : "PM"}';
 
 double? sleepBaseline(Iterable<double> nights) {
   final values = nights.where((n) => n.isFinite && n > 0 && n <= 24).toList()
@@ -195,13 +135,26 @@ double? sleepBaseline(Iterable<double> nights) {
 
 String sleepComparison(double? today, double? baseline) {
   if (today == null || !today.isFinite || today <= 0) {
-    return 'Sleep data is unavailable.';
+    return 'Sleep data unavailable.';
   }
-  if (baseline == null) return 'Building your usual sleep range.';
+  if (baseline == null) return 'Still learning your usual sleep.';
   final difference = ((today - baseline) * 60).round();
-  if (difference.abs() < 45) {
-    return 'Your sleep was close to your recent usual.';
-  }
+  if (difference.abs() < 45) return 'Slept about your usual.';
   final minutes = math.min(difference.abs(), 1440);
-  return 'You slept ${minutes ~/ 60}h ${minutes % 60}m ${difference < 0 ? "less" : "more"} than your recent usual.';
+  final h = minutes ~/ 60, m = minutes % 60;
+  final amount = h == 0
+      ? '$m min'
+      : m == 0
+      ? '${h}h'
+      : '${h}h ${m}m';
+  return 'Slept $amount ${difference < 0 ? "less" : "more"} than usual.';
+}
+
+/// What is left today, e.g. "3 events and 2 priorities left."
+String remainingToday(int events, int priorities) {
+  if (events == 0 && priorities == 0) return 'Nothing else planned today.';
+  String count(int n, String one, String many) =>
+      '${n == 0 ? 'No' : n} ${n == 1 ? one : many}';
+  return '${count(events, 'event', 'events')} and '
+      '${count(priorities, 'priority', 'priorities')} left.';
 }

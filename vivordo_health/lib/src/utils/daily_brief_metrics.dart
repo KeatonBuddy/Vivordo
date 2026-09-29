@@ -120,12 +120,12 @@ class DailyBriefMetrics {
                   historyCapacity[historyCapacity.length ~/ 2]) /
               2;
     final capacityNote = usualCapacity == null || capacity.score == null
-        ? 'Building your capacity baseline'
+        ? 'Still learning your usual'
         : (capacity.score! - usualCapacity).abs() < 10
-        ? 'Near your recent capacity estimate'
+        ? 'Near your usual'
         : capacity.score! < usualCapacity
-        ? 'Below your recent capacity estimate'
-        : 'Above your recent capacity estimate';
+        ? 'Below your usual'
+        : 'Above your usual';
 
     _minute = minute;
     return _summary = DailyBriefMetricsSummary(

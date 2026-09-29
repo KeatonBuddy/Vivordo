@@ -103,7 +103,7 @@ class TomorrowPreview extends StatelessWidget {
                           builder: (context, constraints) {
                             final schedule = _schedule(context);
                             final tasks = _priorities(context);
-                            if (constraints.maxWidth < 360 ||
+                            if (constraints.maxWidth < 300 ||
                                 MediaQuery.textScalerOf(context).scale(14) >
                                     18) {
                               return Column(

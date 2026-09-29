@@ -88,6 +88,18 @@ Future<CalendarEventDraft?> showAddCalendarEventSheet(
   ),
 );
 
+/// The add form for hosting in another sheet; [header] replaces the title.
+/// Saving pops a [CalendarEventDraft].
+Widget addCalendarEventForm({
+  required DateTime initialStart,
+  required DateTime initialEnd,
+  Widget? header,
+}) => _AddCalendarEventSheet(
+  initialStart: initialStart,
+  initialEnd: initialEnd,
+  header: header,
+);
+
 Future<CalendarEventEditResult?> showEditCalendarEventSheet(
   BuildContext context, {
   required gcal.Event event,
@@ -135,8 +147,10 @@ class _AddCalendarEventSheet extends StatefulWidget {
     this.initialRecurrence = 'none',
     this.initialCalendarId,
     this.isEditing = false,
+    this.header,
   });
 
+  final Widget? header;
   final DateTime initialStart;
   final DateTime initialEnd;
   final String initialTitle;
@@ -433,15 +447,17 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                 children: [
                   const SizedBox(width: 42),
                   Expanded(
-                    child: Text(
-                      widget.isEditing ? 'Edit Event' : 'Add Event',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: colors.textPrimary,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+                    child:
+                        widget.header ??
+                        Text(
+                          widget.isEditing ? 'Edit Event' : 'Add Event',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                   ),
                   IconButton.filledTonal(
                     onPressed: () => Navigator.pop(context),

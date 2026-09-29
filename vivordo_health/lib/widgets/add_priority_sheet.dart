@@ -81,6 +81,11 @@ Future<PriorityDraft?> showAddPrioritySheet(BuildContext context) =>
       builder: (_) => const _AddPrioritySheet(),
     );
 
+/// The add form for hosting in another sheet. [at] prefills the date and
+/// time; [header] replaces the title. Saving pops a [PriorityDraft].
+Widget addPriorityForm({DateTime? at, Widget? header}) =>
+    _AddPrioritySheet(at: at, header: header);
+
 Future<PriorityDraft?> showPriorityEditor(
   BuildContext context,
   PriorityDraft initial, {
@@ -96,8 +101,15 @@ Future<PriorityDraft?> showPriorityEditor(
 );
 
 class _AddPrioritySheet extends StatefulWidget {
-  const _AddPrioritySheet({this.initial, this.occurrenceOnly = false});
+  const _AddPrioritySheet({
+    this.initial,
+    this.occurrenceOnly = false,
+    this.at,
+    this.header,
+  });
   final PriorityDraft? initial;
+  final DateTime? at;
+  final Widget? header;
   final bool occurrenceOnly;
 
   @override
@@ -125,8 +137,9 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     _planning = {...?initial?.planning};
     _controller = TextEditingController(text: initial?.title)
       ..addListener(_changed);
-    _date = initial?.date ?? _date;
-    _time = initial?.time;
+    final at = widget.at;
+    _date = initial?.date ?? (at == null ? _date : DateUtils.dateOnly(at));
+    _time = initial?.time ?? (at == null ? null : TimeOfDay.fromDateTime(at));
     _repeat = initial?.repeat ?? PriorityRepeat.once;
     _repeatEnd = initial?.repeatEnd;
     _completed = initial?.completed ?? false;
@@ -307,15 +320,17 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                 children: [
                   const SizedBox(width: 42),
                   Expanded(
-                    child: Text(
-                      _editing ? 'Edit Priority' : 'Add Priority',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: colors.textPrimary,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+                    child:
+                        widget.header ??
+                        Text(
+                          _editing ? 'Edit Priority' : 'Add Priority',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                   ),
                   IconButton.filledTonal(
                     onPressed: () => Navigator.pop(context),

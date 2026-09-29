@@ -62,7 +62,7 @@ class DailyBriefCard extends StatelessWidget {
                 headline,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 27,
+                  fontSize: 24,
                   height: 1.15,
                   fontWeight: FontWeight.w700,
                 ),
@@ -82,52 +82,61 @@ class DailyBriefCard extends StatelessWidget {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final capacity = _BriefScore(
-                    title: 'DAILY CAPACITY',
+                    title: 'CAPACITY',
+                    semanticTitle: 'Daily capacity',
                     score: capacityScore,
                     label: capacityLabel,
                   );
                   final schedule = _BriefScore(
-                    title: 'SCHEDULE DEMAND',
+                    title: 'DEMAND',
+                    semanticTitle: 'Schedule demand',
                     score: scheduleScore,
                     label: scheduleLabel,
                   );
-                  if (constraints.maxWidth < 270 ||
+                  if (constraints.maxWidth < 280 ||
                       MediaQuery.textScalerOf(context).scale(12) > 19) {
                     return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         capacity,
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 12),
                         schedule,
                       ],
                     );
                   }
                   return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(child: capacity),
-                      Container(
-                        width: 1,
-                        height: 140,
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                        color: Colors.white24,
-                      ),
+                      const SizedBox(width: 10),
                       Expanded(child: schedule),
                     ],
                   );
                 },
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 12),
               InkWell(
                 onTap: onDetails,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Text(
-                    footer,
-                    style: const TextStyle(
-                      color: Color(0xFFE8E0FF),
-                      fontSize: 12,
-                      height: 1.4,
-                    ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline_rounded,
+                        color: Color(0xFFE8E0FF),
+                        size: 15,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          footer,
+                          style: const TextStyle(
+                            color: Color(0xFFE8E0FF),
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -142,65 +151,75 @@ class DailyBriefCard extends StatelessWidget {
 class _BriefScore extends StatelessWidget {
   const _BriefScore({
     required this.title,
+    required this.semanticTitle,
     required this.score,
     required this.label,
   });
-  final String title, label;
+  final String title, semanticTitle, label;
   final int? score;
 
   @override
   Widget build(BuildContext context) => Semantics(
     label:
-        '$title: ${score == null ? "unavailable" : "$score out of 100"}. $label',
+        '$semanticTitle: ${score == null ? "unavailable" : "$score out of 100"}. $label',
     child: ExcludeSemantics(
-      child: Column(
+      child: Row(
         children: [
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-              letterSpacing: 1.8,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
           SizedBox(
-            width: 82,
-            height: 82,
+            width: 56,
+            height: 56,
             child: Stack(
               alignment: Alignment.center,
               children: [
                 SizedBox.expand(
                   child: CircularProgressIndicator(
                     value: score == null ? 0 : score!.clamp(0, 100) / 100,
-                    strokeWidth: 8,
+                    strokeWidth: 6,
                     strokeCap: StrokeCap.round,
                     backgroundColor: const Color(0xFF8270DB),
                     valueColor: const AlwaysStoppedAnimation(Color(0xFFD0A5FF)),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(9),
                   child: FittedBox(
                     child: Text(
-                      score == null ? '—' : '$score%',
-                      style: const TextStyle(color: Colors.white, fontSize: 22),
+                      score == null ? '—' : '$score',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              height: 1.3,
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFFE8E0FF),
+                    fontSize: 10,
+                    letterSpacing: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    height: 1.25,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

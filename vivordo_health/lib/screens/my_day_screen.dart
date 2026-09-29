@@ -15,10 +15,12 @@ import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
 import '../src/utils/daily_brief_metrics.dart';
 import '../src/utils/daily_brief_analysis.dart';
+import '../src/utils/day_agenda.dart';
 import '../src/utils/my_day_planning_insight.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
+import '../widgets/plan_slot_sheet.dart';
 import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
 import 'all_priorities_screen.dart';
@@ -46,6 +48,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   int _loadGeneration = 0;
   bool _isLoading = true;
   DateTime? _calendarLoadedAt;
+  bool _showCompleted = false;
+  bool _showEarlier = false;
   Timer? _clockTimer;
   bool _screenActive = false;
   late DateTime _priorityDay;
@@ -356,7 +360,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       initialEnd: initialStart.add(const Duration(hours: 1)),
     );
     if (draft == null || !mounted) return;
+    await _saveGoogleEvent(draft);
+  }
 
+  Future<void> _saveGoogleEvent(CalendarEventDraft draft) async {
     try {
       setState(() => _isLoading = true);
       await CalendarService.createEvent(
@@ -382,209 +389,103 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  _DayInsight _calculateDayInsight() {
-    final now = DateTime.now();
-    final workStart = DateTime(now.year, now.month, now.day, 9);
-    final workEnd = DateTime(now.year, now.month, now.day, 17);
-    final timedEvents =
-        _events
-            .where(
-              (event) =>
-                  !event.isAllDay &&
-                  event.end.isAfter(workStart) &&
-                  event.start.isBefore(workEnd),
-            )
-            .toList()
-          ..sort((a, b) => a.start.compareTo(b.start));
-
-    final gaps = <(DateTime, DateTime)>[];
-    var cursor = workStart;
-    for (final event in timedEvents) {
-      final start = event.start.isBefore(workStart) ? workStart : event.start;
-      final end = event.end.isAfter(workEnd) ? workEnd : event.end;
-      if (start.isAfter(cursor)) gaps.add((cursor, start));
-      if (end.isAfter(cursor)) cursor = end;
-    }
-    if (cursor.isBefore(workEnd)) gaps.add((cursor, workEnd));
-    gaps.sort((a, b) => b.$2.difference(b.$1).compareTo(a.$2.difference(a.$1)));
-    final longestOpening = gaps.isEmpty
-        ? Duration.zero
-        : gaps.first.$2.difference(gaps.first.$1);
-
-    if (_isLoading) {
-      return _DayInsight(
-        title: 'Analyzing today’s calendar',
-        detail: 'Looking for open windows and heavier calendar blocks.',
-        longestOpening: longestOpening,
-      );
-    }
-
-    String range(DateTime start, DateTime end) =>
-        '${DateFormat('h:mm a').format(start)}–${DateFormat('h:mm a').format(end)}';
-    String duration(Duration value) {
-      final minutes = value.inMinutes;
-      if (minutes < 60) return '$minutes minutes';
-      final hours = minutes ~/ 60;
-      final remainder = minutes % 60;
-      return remainder == 0
-          ? '$hours ${hours == 1 ? 'hour' : 'hours'}'
-          : '${hours}h ${remainder}m';
-    }
-
-    if (timedEvents.isEmpty) {
-      final allDayCount = _events.where((event) => event.isAllDay).length;
-      return _DayInsight(
-        title: 'Your workday is open',
-        detail: allDayCount == 0
-            ? 'No timed events are scheduled between 9:00 AM and 5:00 PM. You have a large window for focused work, movement, or recovery.'
-            : 'You have $allDayCount all-day ${allDayCount == 1 ? 'event' : 'events'}, but no timed events between 9:00 AM and 5:00 PM.',
-        longestOpening: longestOpening,
-      );
-    }
-
-    if (gaps.isNotEmpty) {
-      final longest = gaps.first;
-      final gapDuration = longest.$2.difference(longest.$1);
-      if (gapDuration.inMinutes >= 30) {
-        return _DayInsight(
-          title: 'Protect your longest opening',
-          detail:
-              'Your ${range(longest.$1, longest.$2)} window is the longest open block in today’s calendar (${duration(gapDuration)}). Consider using it for focused work, movement, or recovery.',
-          longestOpening: longestOpening,
-        );
-      }
-    }
-
-    final longestEvent = timedEvents.reduce(
-      (current, event) =>
-          event.end.difference(event.start) >
-              current.end.difference(current.start)
-          ? event
-          : current,
-    );
-    return _DayInsight(
-      title: 'Your calendar is tightly packed',
-      detail:
-          'You have ${timedEvents.length} timed ${timedEvents.length == 1 ? 'event' : 'events'} during the workday. “${longestEvent.title}” is the longest block (${range(longestEvent.start, longestEvent.end)}), so leave recovery time around it if possible.',
-      longestOpening: longestOpening,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
     final timedEvents = _events.where((event) => !event.isAllDay).toList();
-    final dayInsight = _calculateDayInsight();
     final watchItem = findNextBackToBackEventBlock(
-      _events
-          .where((event) => !event.isAllDay)
-          .map(
-            (event) => ScheduledEventWindow(
-              title: event.title,
-              start: event.start,
-              end: event.end,
-            ),
-          ),
+      timedEvents.map(
+        (event) => ScheduledEventWindow(
+          title: event.title,
+          start: event.start,
+          end: event.end,
+        ),
+      ),
     );
 
     return Scaffold(
-      backgroundColor: context.vivordoColors.page,
+      backgroundColor: colors.page,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () => _loadTodayEvents(forceRefresh: true),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
             children: [
-              Text(
-                'My Day',
-                style: TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w800,
-                  color: context.vivordoColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                DateFormat('EEEE, MMMM d').format(DateTime.now()),
-                style: const TextStyle(color: MyDayScreen.muted),
-              ),
-              const SizedBox(height: 18),
-              _buildDayOutlookCard(timedEvents: timedEvents),
-              const SizedBox(height: 24),
-              const _SectionLabel('NOW & NEXT'),
-              const SizedBox(height: 10),
-              _SectionCard(child: _buildNowAndNext()),
-              const SizedBox(height: 24),
-              const _SectionLabel('VIVORDO INSIGHT'),
-              const SizedBox(height: 10),
-              _SectionCard(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.auto_awesome_rounded,
-                        color: MyDayScreen.purple,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              dayInsight.title,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: context.vivordoColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              dayInsight.detail,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                height: 1.4,
-                                color: MyDayScreen.muted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (watchItem != null) ...[
-                const SizedBox(height: 24),
-                _buildWatchItem(watchItem),
-              ],
-              const SizedBox(height: 24),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Expanded(child: _SectionLabel("TODAY'S PRIORITIES")),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => AllPrioritiesScreen(
-                          onAdd: (sheetContext) =>
-                              _addManualPriority(sheetContext: sheetContext),
-                          onEdit: (sheetContext, priority) => _editPriority(
-                            priority,
-                            sheetContext: sheetContext,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'My Day',
+                          style: TextStyle(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
+                            color: colors.textPrimary,
                           ),
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('EEEE, MMMM d').format(DateTime.now()),
+                          style: TextStyle(color: colors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const JournalScreen(),
                       ),
                     ),
-                    child: const Text('View all'),
+                    tooltip: 'Journal',
+                    icon: const Icon(
+                      Icons.menu_book_rounded,
+                      color: MyDayScreen.purple,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _openCalendar,
+                    tooltip: 'Calendar',
+                    icon: const Icon(
+                      Icons.calendar_month_rounded,
+                      color: MyDayScreen.purple,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              _SectionCard(child: _buildPriorities()),
+              if (_calendarLoadError != null) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.cloud_off_rounded,
+                      size: 16,
+                      color: colors.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _calendarLoadError!,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 18),
+              _buildDayOutlookCard(timedEvents: timedEvents),
               const SizedBox(height: 24),
-              const _SectionLabel('JOURNAL'),
+              const _SectionLabel('NOW'),
               const SizedBox(height: 10),
-              _buildJournalTile(),
+              _SectionCard(child: _buildNowCard(timedEvents, watchItem)),
+              const SizedBox(height: 24),
+              _buildPriorities(),
               const SizedBox(height: 24),
               Row(
                 children: [
@@ -598,14 +499,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       color: MyDayScreen.purple,
                     ),
                   ),
-                  TextButton(
-                    onPressed: _openCalendar,
-                    child: const Text('View Calendar'),
-                  ),
                 ],
               ),
               const SizedBox(height: 4),
-              _SectionCard(child: _buildTimeline()),
+              _buildTimeline(),
               const SizedBox(height: 24),
               ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
                 valueListenable: _tomorrowPrioritySnapshot,
@@ -660,8 +557,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       final sleep = summary?.sleep;
       final usualSleep = summary?.usualSleep;
       final capacity = summary?.capacity;
-      final capacityNote =
-          summary?.capacityNote ?? 'Building your capacity baseline';
+      final capacityNote = summary?.capacityNote ?? 'Still learning your usual';
       final stale = summary?.stale ?? true;
       final stressTime = summary?.stressTime;
       final healthTime = summary?.healthTime;
@@ -700,17 +596,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               ? 'Give yourself a little more room today'
               : 'Find a steady rhythm today';
           final calendarText = ready
-              ? plan.observation
-              : 'Your plan is not fully available yet.';
-          final estimateText = plan.missingEstimates > 0
-              ? ' ${plan.missingEstimates} priorities need estimates or calendar details.'
-              : '';
+              ? remainingToday(
+                  timedEvents.where((e) => e.end.isAfter(now)).length,
+                  briefPriorities.where((p) => !p.completed).length,
+                )
+              : 'Your plan isn’t fully loaded yet.';
           String timeLabel(DateTime? t) =>
               t == null ? 'unknown' : DateFormat('MMM d, h:mm a').format(t);
           return DailyBriefCard(
             headline: headline,
-            summary:
-                '${sleepComparison(sleep, usualSleep)} $calendarText$estimateText',
+            summary: '${sleepComparison(sleep, usualSleep)} $calendarText',
             capacityScore: capacity?.score,
             capacityLabel: capacity?.score == null
                 ? 'Needs health data'
@@ -718,9 +613,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             scheduleScore: ready ? plan.score : null,
             scheduleLabel: !ready
                 ? 'Plan unavailable'
-                : 'Remaining demand${plan.missingEstimates > 0 ? ' · partial' : ''}',
-            footer:
-                '${stale || !ready || plan.missingEstimates > 0 ? 'Limited data' : 'Available data'} · View data freshness',
+                : 'Remaining today${plan.missingEstimates > 0 ? ' · partial' : ''}',
+            footer: stale || !ready || plan.missingEstimates > 0
+                ? 'Limited data'
+                : 'Available data',
             onDetails: () => showDialog<void>(
               context: context,
               builder: (context) => AlertDialog(
@@ -733,7 +629,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     '${summary?.isFromCache == true ? 'Health data is from the local cache.\n' : ''}'
                     'Sleep baseline: ${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.\n'
                     'Capacity uses sleep and stress, not raw heart rate. Comparisons require 7 days with matching inputs and stress readings at a similar time of day. These are wellness estimates, not clinical assessments.\n'
-                    'Remaining demand includes unfinished planned priorities and upcoming events. Openings use a 9 AM–5 PM planning window. Untimed work does not block a specific opening.',
+                    'Remaining demand includes unfinished planned priorities and upcoming events. Timeline openings are gaps of 30 minutes or more. Untimed work does not block a specific opening.',
                   ),
                 ),
                 actions: [
@@ -765,109 +661,52 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     },
   );
 
-  Widget _buildWatchItem(BackToBackEventBlock block) {
-    final count = block.events.length;
-    final last = block.events.last;
-    final resetEnd = block.end.add(const Duration(minutes: 10));
-
+  Widget _buildWatchStrip(BackToBackEventBlock block) {
+    final colors = context.vivordoColors;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
-        color: context.vivordoColors.cardMuted,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: MyDayScreen.purple.withValues(alpha: .28)),
-        boxShadow: [
-          BoxShadow(
-            color: context.vivordoColors.shadow,
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        color: colors.cardMuted,
+        border: Border(top: BorderSide(color: colors.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(
+              const Icon(
                 Icons.warning_amber_rounded,
                 color: MyDayScreen.purple,
-                size: 23,
+                size: 17,
               ),
-              SizedBox(width: 8),
-              Text(
-                'WATCH ITEM',
-                style: TextStyle(
-                  color: MyDayScreen.purple,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: .7,
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${block.events.length} events back to back from ${_clock(block.start)}',
+                  style: const TextStyle(
+                    color: MyDayScreen.purple,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            'These events run back to back.',
-            style: TextStyle(
-              color: context.vivordoColors.textPrimary,
-              fontSize: 19,
-              height: 1.15,
-              fontWeight: FontWeight.w900,
-            ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (final event in block.events)
+                Expanded(
+                  child: _WatchSegment(event.title, color: MyDayScreen.purple),
+                ),
+              const Expanded(child: _WatchSegment('Reset', color: _resetGreen)),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
-            'Protect a 10-minute reset after ${last.title}.',
-            style: TextStyle(
-              color: context.vivordoColors.textSecondary,
-              fontSize: 13,
-              height: 1.3,
-            ),
-          ),
-          const SizedBox(height: 16),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final timelineWidth = math.max(
-                constraints.maxWidth,
-                (count + 1) * 88.0,
-              );
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width: timelineWidth,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (var index = 0; index < count; index++)
-                        Expanded(
-                          child: _WatchTimelineSegment(
-                            title: block.events[index].title,
-                            start: block.events[index].start,
-                            end: block.events[index].end,
-                            icon: switch (index % 3) {
-                              0 => Icons.groups_rounded,
-                              1 => Icons.chat_bubble_rounded,
-                              _ => Icons.assessment_rounded,
-                            },
-                            isFirst: index == 0,
-                          ),
-                        ),
-                      Expanded(
-                        child: _WatchTimelineSegment(
-                          title: 'Reset',
-                          start: block.end,
-                          end: resetEnd,
-                          icon: Icons.eco_rounded,
-                          isReset: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
+            'Protect a 10-min reset after ${block.events.last.title}',
+            style: TextStyle(color: colors.textSecondary, fontSize: 12),
           ),
         ],
       ),
@@ -881,72 +720,110 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     if (mounted) await _loadTodayEvents();
   }
 
-  Widget _buildNowAndNext() {
-    if (_isLoading) {
+  Widget _buildNowCard(
+    List<_CalendarEvent> timedEvents,
+    BackToBackEventBlock? watchItem,
+  ) {
+    if (_isLoading && _calendarLoadedAt == null) {
       return const Padding(
         padding: EdgeInsets.all(24),
         child: Center(child: CircularProgressIndicator()),
       );
     }
+    final colors = context.vivordoColors;
     final now = DateTime.now();
-    final timedEvents = _events.where((event) => !event.isAllDay).toList();
-    final isBusy = timedEvents.any(
-      (event) => !event.start.isAfter(now) && event.end.isAfter(now),
-    );
-    final futureEvents = timedEvents
-        .where((event) => event.start.isAfter(now))
-        .toList();
-    final nextEvent = futureEvents.isEmpty ? null : futureEvents.first;
-    final freeDuration = nextEvent?.start.difference(now);
-    final showFreeUntil =
-        !isBusy && freeDuration != null && freeDuration.inMinutes >= 1;
-    final upcoming = _events
-        .where((event) => event.end.isAfter(now))
-        .take(showFreeUntil ? 2 : 3)
-        .toList();
-    if (upcoming.isEmpty && !showFreeUntil) {
-      return Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            const Icon(Icons.circle, color: Color(0xFF89CF68), size: 18),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Free now',
-                    style: TextStyle(
-                      color: context.vivordoColors.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'No more events scheduled today.',
-                    style: TextStyle(
-                      color: context.vivordoColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    final current = timedEvents
+        .where((e) => !e.start.isAfter(now) && e.end.isAfter(now))
+        .firstOrNull;
+    final next = timedEvents.where((e) => e.start.isAfter(now)).firstOrNull;
+    final (title, detail) = current != null
+        ? (
+            current.title,
+            'Now · ends ${_clock(current.end)} · ${_span(current.end.difference(now))} left',
+          )
+        : next != null
+        ? (
+            'Free until ${_clock(next.start)}',
+            '${_span(next.start.difference(now))} open',
+          )
+        : ('Free now', 'No more events today');
+    final upNext = next != null
+        ? 'Next: ${next.title} at ${_clock(next.start)}'
+        : current != null
+        ? 'Nothing after this today'
+        : null;
     return Column(
       children: [
-        if (showFreeUntil) ...[
-          _FreeUntilRow(until: nextEvent!.start, duration: freeDuration),
-          if (upcoming.isNotEmpty) const Divider(height: 1, indent: 66),
-        ],
-        for (var i = 0; i < upcoming.length; i++) ...[
-          _DayEvent(upcoming[i], onTap: () => _handleEventTap(upcoming[i])),
-          if (i < upcoming.length - 1) const Divider(height: 1, indent: 66),
-        ],
+        InkWell(
+          onTap: current == null ? null : () => _handleEventTap(current),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: current == null
+                        ? _doneGreen
+                        : const Color(0xFFFF9F0A),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        detail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (upNext != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          upNext,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (current == null) ...[
+                  const SizedBox(width: 8),
+                  _Pill(
+                    'Plan it',
+                    color: _resetGreen,
+                    onTap: () => _planSlot(now, next?.start),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        if (watchItem != null) _buildWatchStrip(watchItem),
       ],
     );
   }
@@ -955,53 +832,105 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
         valueListenable: _prioritySnapshot,
         builder: (context, snapshot, _) {
+          final colors = context.vivordoColors;
+          final priorities = snapshot.data ?? const <DailyPriority>[];
+          final open = priorities.where((p) => !p.completed).toList();
+          final done = priorities.where((p) => p.completed).toList();
+          Widget row(DailyPriority priority) => _PriorityRow(
+            key: ValueKey(priority.reference.path),
+            priority: priority,
+            onToggle: () => _togglePriority(priority),
+            onDelete: () => _deletePriority(priority),
+            onEdit: () => _editPriority(priority),
+          );
+          const divider = Divider(height: 1, indent: 54, endIndent: 16);
+
+          final Widget body;
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
-            return const SizedBox(
+            body = const SizedBox(
               height: 72,
               child: Center(child: CircularProgressIndicator()),
             );
-          }
-          if (snapshot.hasError) {
-            return const Padding(
-              padding: EdgeInsets.all(20),
+          } else if (snapshot.hasError) {
+            body = Padding(
+              padding: const EdgeInsets.all(20),
               child: Text(
                 'Could not load today’s priorities',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: MyDayScreen.muted),
+                style: TextStyle(color: colors.textSecondary),
               ),
             );
+          } else {
+            body = Column(
+              children: [
+                for (final priority in open) ...[row(priority), divider],
+                _ListAction(
+                  icon: Icons.add_rounded,
+                  label: 'Add a priority',
+                  onTap: _addManualPriority,
+                ),
+                if (done.isNotEmpty) ...[
+                  const Divider(height: 1),
+                  _ListAction(
+                    icon: _showCompleted
+                        ? Icons.expand_more_rounded
+                        : Icons.chevron_right_rounded,
+                    label: '${done.length} completed',
+                    muted: true,
+                    onTap: () =>
+                        setState(() => _showCompleted = !_showCompleted),
+                  ),
+                  if (_showCompleted)
+                    for (final priority in done) ...[divider, row(priority)],
+                ],
+              ],
+            );
           }
-          final priorities = snapshot.data ?? const <DailyPriority>[];
+
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (priorities.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(18, 20, 18, 12),
-                  child: Text(
-                    'No calendar events qualify as priorities yet.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: MyDayScreen.muted, fontSize: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _SectionLabel(
+                      priorities.isEmpty
+                          ? 'PRIORITIES'
+                          : 'PRIORITIES · ${done.length} OF ${priorities.length}',
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => AllPrioritiesScreen(
+                          onAdd: (sheetContext) =>
+                              _addManualPriority(sheetContext: sheetContext),
+                          onEdit: (sheetContext, priority) => _editPriority(
+                            priority,
+                            sheetContext: sheetContext,
+                          ),
+                        ),
+                      ),
+                    ),
+                    child: const Text('View all'),
+                  ),
+                ],
+              ),
+              if (priorities.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: LinearProgressIndicator(
+                    value: done.length / priorities.length,
+                    minHeight: 4,
+                    color: _doneGreen,
+                    backgroundColor: colors.border,
                   ),
                 ),
-              for (var index = 0; index < priorities.length; index++) ...[
-                _PriorityRow(
-                  key: ValueKey(priorities[index].reference.path),
-                  priority: priorities[index],
-                  onToggle: () => _togglePriority(priorities[index]),
-                  onDelete: () => _deletePriority(priorities[index]),
-                  onEdit: () => _editPriority(priorities[index]),
-                ),
-                if (index < priorities.length - 1)
-                  const Divider(height: 1, indent: 58, endIndent: 16),
               ],
-              if (priorities.isNotEmpty) const Divider(height: 1),
-              TextButton.icon(
-                onPressed: _addManualPriority,
-                icon: const Icon(Icons.add_rounded, size: 19),
-                label: const Text('Add priority'),
-              ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 10),
+              _SectionCard(child: body),
             ],
           );
         },
@@ -1097,7 +1026,22 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Future<void> _addManualPriority({BuildContext? sheetContext}) async {
     final draft = await showAddPrioritySheet(sheetContext ?? context);
     if (draft == null || !mounted) return;
+    await _saveManualPriority(draft);
+  }
 
+  /// Opens the Priority / Event sheet for an open slot starting at [start].
+  Future<void> _planSlot(DateTime start, [DateTime? end]) async {
+    final result = await showPlanSlotSheet(context, start: start, end: end);
+    if (!mounted) return;
+    switch (result) {
+      case PriorityDraft draft:
+        await _saveManualPriority(draft);
+      case CalendarEventDraft draft:
+        await _saveGoogleEvent(draft);
+    }
+  }
+
+  Future<void> _saveManualPriority(PriorityDraft draft) async {
     try {
       final reference = await DailyPriorityService.createManual(
         title: draft.title,
@@ -1190,211 +1134,533 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     return priority.sourceEventKey;
   }
 
-  Widget _buildJournalTile() => Material(
-    color: context.vivordoColors.card,
-    borderRadius: BorderRadius.circular(20),
+  /// Events and timed priorities in one list, with the gaps between them.
+  /// A priority linked to an event shares that event's row.
+  Widget
+  _buildTimeline() => ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+    valueListenable: _prioritySnapshot,
+    builder: (context, snapshot, _) {
+      if (_isLoading && _calendarLoadedAt == null) {
+        return const _SectionCard(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        );
+      }
+      final colors = context.vivordoColors;
+      final now = DateTime.now();
+      final eventKeys = {for (final e in _events) e.sourceEventKey};
+      final byEvent = <String, DailyPriority>{};
+      final items = <AgendaItem<_TimelineItem>>[];
+      for (final priority in snapshot.data ?? const <DailyPriority>[]) {
+        final key = _linkedKey(priority);
+        if (key != null && eventKeys.contains(key)) {
+          byEvent[key] = priority;
+          continue;
+        }
+        final start = priority.sourceStart;
+        if (key?.startsWith('unresolved:') == true ||
+            priority.isAllDay ||
+            start == null ||
+            !DateUtils.isSameDay(start, now)) {
+          continue;
+        }
+        // ponytail: no end or estimate means a 30-min block, so it still
+        // occupies the timeline instead of creating a false opening.
+        final minutes = (priority.planning['minutes'] as num?)?.toInt();
+        final end =
+            priority.sourceEnd ??
+            start.add(
+              Duration(minutes: minutes != null && minutes > 0 ? minutes : 30),
+            );
+        items.add(AgendaItem((event: null, priority: priority), start, end));
+      }
+      for (final event in _events.where((e) => !e.isAllDay)) {
+        items.add(
+          AgendaItem(
+            (event: event, priority: byEvent[event.sourceEventKey]),
+            event.start,
+            event.end,
+          ),
+        );
+      }
+      final earlier = items.where((i) => !i.end.isAfter(now)).toList()
+        ..sort((a, b) => a.start.compareTo(b.start));
+      final agenda = buildDayAgenda(now, items);
+      final allDay = _events.where((e) => e.isAllDay).toList();
+
+      Widget itemRow(AgendaItem<_TimelineItem> entry, {bool past = false}) {
+        final event = entry.item.event;
+        final priority = entry.item.priority;
+        final knownLength =
+            event != null ||
+            priority!.sourceEnd != null ||
+            priority.planning['minutes'] is num;
+        return _TimelineRow(
+          start: entry.start,
+          title: event?.title ?? priority!.title,
+          detail: [
+            if (priority != null) 'Priority',
+            if (knownLength) _span(entry.end.difference(entry.start)),
+          ].join(' · '),
+          color: priority != null ? _doneGreen : event!.color,
+          past: past,
+          completed: priority?.completed,
+          onToggle: priority == null ? null : () => _togglePriority(priority),
+          onTap: event != null
+              ? () => _handleEventTap(event)
+              : () => _editPriority(priority!),
+        );
+      }
+
+      final onlyEvents = earlier.every((i) => i.item.priority == null);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (allDay.isNotEmpty) ...[
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final event in allDay)
+                  _Pill(
+                    'All day · ${event.title}',
+                    color: MyDayScreen.purple,
+                    onTap: () => _handleEventTap(event),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+          _SectionCard(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                children: [
+                  if (earlier.isNotEmpty)
+                    _ListAction(
+                      icon: _showEarlier
+                          ? Icons.expand_more_rounded
+                          : Icons.chevron_right_rounded,
+                      label:
+                          '${earlier.length} earlier ${onlyEvents ? (earlier.length == 1 ? 'event' : 'events') : (earlier.length == 1 ? 'item' : 'items')}',
+                      muted: true,
+                      onTap: () => setState(() => _showEarlier = !_showEarlier),
+                    ),
+                  if (_showEarlier)
+                    for (final entry in earlier) itemRow(entry, past: true),
+                  _NowLine(now),
+                  for (final entry in agenda)
+                    switch (entry) {
+                      AgendaItem<_TimelineItem>() => itemRow(entry),
+                      AgendaOpening<_TimelineItem>(:final start, :final end) =>
+                        _OpeningRow(
+                          start: start,
+                          label: end == null
+                              ? 'Open · rest of day'
+                              : 'Open · ${_span(end.difference(start))}',
+                          onPlan: () => _planSlot(start, end),
+                        ),
+                      AgendaBreak<_TimelineItem>(:final minutes) => _BreakRow(
+                        minutes,
+                      ),
+                    },
+                  if (agenda.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'Nothing else on your timeline today.',
+                        style: TextStyle(color: colors.textSecondary),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+typedef _TimelineItem = ({_CalendarEvent? event, DailyPriority? priority});
+
+const _doneGreen = Color(0xFF54C75B);
+const _resetGreen = Color(0xFF169B62);
+const _nowColor = Color(0xFFE8603C);
+
+String _clock(DateTime time) => DateFormat('h:mm a').format(time);
+
+String _span(Duration duration) {
+  final minutes = math.max(duration.inMinutes, 1);
+  if (minutes < 60) return '$minutes min';
+  final hours = minutes ~/ 60;
+  final remainder = minutes % 60;
+  return remainder == 0 ? '${hours}h' : '${hours}h ${remainder}m';
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill(this.label, {required this.color, required this.onTap});
+
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: color.withValues(alpha: .12),
+    shape: const StadiumBorder(),
     clipBehavior: Clip.antiAlias,
     child: InkWell(
-      onTap: () => Navigator.of(
-        context,
-      ).push(MaterialPageRoute<void>(builder: (_) => const JournalScreen())),
-      child: Container(
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.black.withValues(alpha: .07)),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
         ),
+      ),
+    ),
+  );
+}
+
+class _WatchSegment extends StatelessWidget {
+  const _WatchSegment(this.title, {required this.color});
+
+  final String title;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(right: 3),
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .14),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+    ),
+  );
+}
+
+class _ListAction extends StatelessWidget {
+  const _ListAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.muted = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 12, 16, 12),
         child: Row(
           children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF2EDFF),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(
-                Icons.menu_book_rounded,
-                color: MyDayScreen.purple,
-                size: 28,
-              ),
+            Icon(
+              icon,
+              size: 20,
+              color: muted ? colors.textSecondary : MyDayScreen.purple,
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Today's Journal",
-                    style: TextStyle(
-                      color: context.vivordoColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Your space to write, reflect, or record your day.',
-                    style: TextStyle(color: MyDayScreen.muted, fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF2EDFF),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.edit_rounded, color: MyDayScreen.purple, size: 15),
-                  SizedBox(width: 5),
-                  Text(
-                    'Write entry',
-                    style: TextStyle(
-                      color: MyDayScreen.purple,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: colors.textSecondary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
         ),
       ),
-    ),
-  );
-
-  Widget _buildTimeline() {
-    if (_isLoading) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (_events.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(
-          child: Text(
-            'Your timeline is open today',
-            style: TextStyle(color: MyDayScreen.muted),
-          ),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        children: [
-          for (var index = 0; index < _events.length; index++)
-            _TimelineEvent(
-              event: _events[index],
-              isFirst: index == 0,
-              isLast: index == _events.length - 1,
-              onTap: () => _handleEventTap(_events[index]),
-            ),
-        ],
-      ),
     );
   }
 }
 
-class _WatchTimelineSegment extends StatelessWidget {
-  const _WatchTimelineSegment({
-    required this.title,
-    required this.start,
-    required this.end,
-    required this.icon,
-    this.isFirst = false,
-    this.isReset = false,
-  });
+class _NowLine extends StatelessWidget {
+  const _NowLine(this.now);
 
-  final String title;
-  final DateTime start;
-  final DateTime end;
-  final IconData icon;
-  final bool isFirst;
-  final bool isReset;
+  final DateTime now;
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = isReset ? const Color(0xFF169B62) : MyDayScreen.purple;
-    final fill = isReset
-        ? isDark
-              ? context.vivordoColors.cardMuted
-              : const Color(0xFFEAF8F0)
-        : MyDayScreen.purple.withValues(alpha: .07);
-    final border = isReset
-        ? const Color(0xFF9DDDBD)
-        : MyDayScreen.purple.withValues(alpha: .28);
-    final time = DateFormat('h:mm a');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+    child: Row(
       children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 6, bottom: 7),
+        SizedBox(
+          width: 62,
           child: Text(
-            time.format(start),
-            style: TextStyle(
-              color: isReset
-                  ? const Color(0xFF087A49)
-                  : context.vivordoColors.textPrimary,
+            'Now',
+            semanticsLabel: 'Now, ${_clock(now)}',
+            style: const TextStyle(
+              color: _nowColor,
               fontSize: 11,
               fontWeight: FontWeight.w800,
             ),
           ),
         ),
         Container(
-          height: 112,
-          width: double.infinity,
-          margin: EdgeInsets.only(left: isFirst ? 0 : 2),
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
-          decoration: BoxDecoration(
-            color: fill,
-            borderRadius: BorderRadius.circular(11),
-            border: Border.all(color: border),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: accent, size: 21),
-              const SizedBox(height: 7),
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 11,
-                  height: 1.1,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${time.format(start)}–${time.format(end)}',
-                maxLines: 1,
-                overflow: TextOverflow.fade,
-                softWrap: false,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+          width: 7,
+          height: 7,
+          decoration: const BoxDecoration(
+            color: _nowColor,
+            shape: BoxShape.circle,
           ),
         ),
+        Expanded(child: Container(height: 1.5, color: _nowColor)),
       ],
+    ),
+  );
+}
+
+class _TimelineRow extends StatelessWidget {
+  const _TimelineRow({
+    required this.start,
+    required this.title,
+    required this.detail,
+    required this.color,
+    required this.onTap,
+    this.past = false,
+    this.completed,
+    this.onToggle,
+  });
+
+  final DateTime start;
+  final String title;
+  final String detail;
+  final Color color;
+  final VoidCallback onTap;
+  final bool past;
+
+  /// Null when the row is a plain event with no linked priority.
+  final bool? completed;
+  final VoidCallback? onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final done = completed == true;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 62,
+              child: Text(
+                _clock(start),
+                style: TextStyle(fontSize: 11, color: colors.textSecondary),
+              ),
+            ),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: past ? .06 : .12),
+                  border: Border(left: BorderSide(color: color, width: 3)),
+                ),
+                child: Row(
+                  children: [
+                    if (completed != null) ...[
+                      Semantics(
+                        button: true,
+                        label: done ? 'Mark incomplete' : 'Mark completed',
+                        child: InkResponse(
+                          onTap: onToggle,
+                          radius: 18,
+                          child: Icon(
+                            done
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            color: done ? _doneGreen : colors.textSecondary,
+                            size: 21,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: past || done
+                                  ? colors.textSecondary
+                                  : colors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              decoration: done
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                            ),
+                          ),
+                          if (detail.isNotEmpty)
+                            Text(
+                              detail,
+                              style: TextStyle(
+                                color: colors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
+}
+
+class _OpeningRow extends StatelessWidget {
+  const _OpeningRow({
+    required this.start,
+    required this.label,
+    required this.onPlan,
+  });
+
+  final DateTime start;
+  final String label;
+  final VoidCallback onPlan;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onPlan,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 62,
+            child: Text(
+              _clock(start),
+              style: TextStyle(
+                fontSize: 11,
+                color: context.vivordoColors.textSecondary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: CustomPaint(
+              painter: const _DashedBorder(_resetGreen),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 9,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                          color: _resetGreen,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const Text(
+                      '+ plan',
+                      style: TextStyle(
+                        color: _resetGreen,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _BreakRow extends StatelessWidget {
+  const _BreakRow(this.minutes);
+
+  final int minutes;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(74, 2, 12, 2),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: colors.border)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              '$minutes min break',
+              style: TextStyle(color: colors.textSecondary, fontSize: 11),
+            ),
+          ),
+          Expanded(child: Divider(color: colors.border)),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashedBorder extends CustomPainter {
+  const _DashedBorder(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: .7)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    final path = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(9)),
+      );
+    for (final metric in path.computeMetrics()) {
+      for (var distance = 0.0; distance < metric.length; distance += 8) {
+        canvas.drawPath(metric.extractPath(distance, distance + 4), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedBorder oldDelegate) => oldDelegate.color != color;
 }
 
 class _SectionLabel extends StatelessWidget {
@@ -1403,11 +1669,11 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     text,
-    style: const TextStyle(
+    style: TextStyle(
       fontSize: 13,
       fontWeight: FontWeight.w800,
       letterSpacing: 1.3,
-      color: MyDayScreen.muted,
+      color: context.vivordoColors.textSecondary,
     ),
   );
 }
@@ -1679,215 +1945,6 @@ class _PriorityRowState extends State<_PriorityRow> {
       }
     }
   }
-}
-
-class _TimelineEvent extends StatelessWidget {
-  const _TimelineEvent({
-    required this.event,
-    required this.isFirst,
-    required this.isLast,
-    required this.onTap,
-  });
-  final _CalendarEvent event;
-  final bool isFirst;
-  final bool isLast;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 68,
-            child: Text(
-              event.timeLabel,
-              style: const TextStyle(fontSize: 11, color: MyDayScreen.muted),
-            ),
-          ),
-          SizedBox(
-            width: 10,
-            height: 50,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Positioned(
-                  top: isFirst ? 25 : 0,
-                  bottom: isLast ? 25 : 0,
-                  left: 4.5,
-                  child: Container(
-                    width: 1,
-                    color: MyDayScreen.muted.withValues(alpha: .65),
-                  ),
-                ),
-                Container(
-                  width: 9,
-                  height: 9,
-                  decoration: BoxDecoration(
-                    color: DateTime.now().isBefore(event.end)
-                        ? const Color(0xFF858594)
-                        : const Color(0xFF3978F6),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: context.vivordoColors.card,
-                      width: 1,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: event.color.withValues(alpha: .14),
-                borderRadius: BorderRadius.circular(8),
-                border: Border(left: BorderSide(color: event.color, width: 2)),
-              ),
-              child: Text(
-                '${event.title}  ·  ${event.durationLabel}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: context.vivordoColors.textPrimary,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _FreeUntilRow extends StatelessWidget {
-  const _FreeUntilRow({required this.until, required this.duration});
-
-  final DateTime until;
-  final Duration duration;
-
-  String get _durationLabel {
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    if (hours == 0) return '$minutes min open';
-    if (minutes == 0) return '${hours}h open';
-    return '${hours}h ${minutes}m open';
-  }
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.all(15),
-    child: Row(
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: const Color(0xFF65C65A).withValues(alpha: .13),
-            borderRadius: BorderRadius.circular(13),
-          ),
-          child: const Center(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Color(0xFF76D66A),
-                shape: BoxShape.circle,
-              ),
-              child: SizedBox(width: 16, height: 16),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Free until ${DateFormat('h:mm a').format(until)}',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: context.vivordoColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                _durationLabel,
-                style: const TextStyle(fontSize: 11, color: MyDayScreen.muted),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _DayEvent extends StatelessWidget {
-  const _DayEvent(this.event, {required this.onTap});
-
-  final _CalendarEvent event;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.transparent,
-    borderRadius: BorderRadius.circular(16),
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: event.color.withValues(alpha: .11),
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: Icon(event.icon, color: event.color, size: 21),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    event.title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: context.vivordoColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    event.durationLabel,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: MyDayScreen.muted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              event.timeLabel,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: MyDayScreen.muted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
 }
 
 enum _EventSummaryAction { edit, delete }
@@ -2247,18 +2304,6 @@ class _SummaryDetailRow extends StatelessWidget {
       ],
     );
   }
-}
-
-class _DayInsight {
-  const _DayInsight({
-    required this.title,
-    required this.detail,
-    required this.longestOpening,
-  });
-
-  final String title;
-  final String detail;
-  final Duration longestOpening;
 }
 
 class _CalendarEvent {

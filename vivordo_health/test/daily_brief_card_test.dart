@@ -33,8 +33,8 @@ void main() {
         ),
       );
       expect(find.text('YOUR DAILY BRIEF'), findsOneWidget);
-      expect(find.text('62%'), findsOneWidget);
-      expect(find.text('74%'), findsOneWidget);
+      expect(find.text('62'), findsOneWidget);
+      expect(find.text('74'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
@@ -56,7 +56,7 @@ void main() {
       ),
     );
     expect(find.text('—'), findsNWidgets(2));
-    expect(find.text('0%'), findsNothing);
+    expect(find.text('0'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

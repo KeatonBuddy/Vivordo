@@ -12,8 +12,18 @@ void main() {
   test('baseline requires seven valid nights and uses median', () {
     expect(sleepBaseline([0, double.nan, 8, 8]), isNull);
     expect(sleepBaseline([8, 8, 8, 8, 8, 8, 2]), 8);
-    expect(sleepComparison(6.5, 8), contains('1h 30m less'));
-    expect(sleepComparison(7.5, 8), contains('close'));
+    expect(sleepComparison(6.5, 8), 'Slept 1h 30m less than usual.');
+    expect(sleepComparison(8.75, 8), 'Slept 45 min more than usual.');
+    expect(sleepComparison(10, 8), 'Slept 2h more than usual.');
+    expect(sleepComparison(7.5, 8), 'Slept about your usual.');
+    expect(sleepComparison(8, null), 'Still learning your usual sleep.');
+    expect(sleepComparison(null, 8), 'Sleep data unavailable.');
+  });
+  test('remaining counts read naturally', () {
+    expect(remainingToday(3, 2), '3 events and 2 priorities left.');
+    expect(remainingToday(1, 1), '1 event and 1 priority left.');
+    expect(remainingToday(0, 2), 'No events and 2 priorities left.');
+    expect(remainingToday(0, 0), 'Nothing else planned today.');
   });
   test(
     'backlog excluded; planned flexible work contributes without blocking openings',
@@ -24,7 +34,6 @@ void main() {
       final plan = analyzeBriefPlan(now, [], [planned]);
       expect(plan.score, greaterThan(0));
       expect(plan.flexibleMinutes, 120);
-      expect(plan.observation, contains('opening now'));
     },
   );
   test('completion removes flexible work and uncompletion restores it', () {
@@ -73,33 +82,12 @@ void main() {
     expect(result.missingEstimates, 2);
     expect(result.score, 0);
   });
-  test('overlaps do not create false free gaps', () {
-    final plan = analyzeBriefPlan(now, [
-      event('a', 9, 12),
-      event('b', 10, 11),
-    ], []);
-    expect(plan.observation, contains('12:00 PM'));
-  });
   test('past events do not contribute to remaining demand', () {
     expect(
       analyzeBriefPlan(DateTime(2026, 9, 22, 12), [
         event('a', 9, 10),
       ], []).score,
       0,
-    );
-  });
-  test('busy afternoon and consecutive commitments are grounded', () {
-    expect(
-      analyzeBriefPlan(now, [event('a', 13, 16)], []).observation,
-      contains('Busy afternoon'),
-    );
-    expect(
-      analyzeBriefPlan(now, [
-        event('a', 9, 10),
-        event('b', 10, 11),
-        event('c', 11, 12),
-      ], []).observation,
-      contains('3 consecutive'),
     );
   });
   test('effort influences workload without altering real duration', () {
