@@ -123,6 +123,7 @@ class HomeWidgetService {
         'dashboardMetricsDay': '',
         'dashboardName': '',
         'dashboardHasStress': false,
+        'dashboardHasWellness': false,
         'dashboardCalendarConnected': false,
       });
     } on MissingPluginException {
@@ -167,6 +168,7 @@ class HomeWidgetService {
         'dashboardName': user?.displayName?.trim().split(' ').first ?? '',
         'dashboardMetricsDay': DateFormat('yyyy-MM-dd').format(DateTime.now()),
         'dashboardHasStress': stressScore != null,
+        'dashboardHasWellness': wellnessScore != null,
         'stressScore': stressScore?.round().clamp(0, 100) ?? 0,
         'wellnessScore': wellnessScore?.round().clamp(0, 100) ?? 0,
         'wellnessDelta': wellnessDelta,
@@ -273,17 +275,12 @@ class HomeWidgetService {
     events.sort((a, b) => (a['startAt'] as int).compareTo(b['startAt'] as int));
 
     final seen = <String>{};
-    final perDay = <String, int>{};
     final compactEvents = <Map<String, Object>>[];
+    // No per-day cap: the widget hides finished events, so it needs the later
+    // ones too.
     for (final event in events) {
-      final start = DateTime.fromMillisecondsSinceEpoch(
-        event['startAt'] as int,
-      );
-      final dayKey = DateFormat('yyyy-MM-dd').format(start);
       final signature = '${event['title']}|${event['startAt']}';
-      if (!seen.add(signature) || (perDay[dayKey] ?? 0) >= 3) continue;
-      perDay[dayKey] = (perDay[dayKey] ?? 0) + 1;
-      compactEvents.add(event);
+      if (seen.add(signature)) compactEvents.add(event);
     }
 
     final signature = compactEvents

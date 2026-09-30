@@ -38,9 +38,16 @@ private struct VivordoWidgetEntry: TimelineEntry {
   let caloriesGoal: Int
   let exerciseMinutes: Int
   let exerciseGoal: Int
+  // False when the app has not published today, so yesterday's numbers and
+  // "no reading" zeros are not shown as today's values.
+  let hasMetrics: Bool
+  let hasStress: Bool
+  let hasWellness: Bool
 
   static func current(date: Date = .now) -> VivordoWidgetEntry {
-    VivordoWidgetEntry(
+    let defaults = VivordoWidgetData.defaults
+    let fresh = defaults.string(forKey: "dashboardMetricsDay") == VivordoCalendarDates.dayKey(for: date)
+    return VivordoWidgetEntry(
       date: date,
       stress: VivordoWidgetData.integer("stressScore", fallback: 0),
       wellness: VivordoWidgetData.integer("wellnessScore", fallback: 0),
@@ -50,7 +57,11 @@ private struct VivordoWidgetEntry: TimelineEntry {
       calories: VivordoWidgetData.integer("activeCalories", fallback: 0),
       caloriesGoal: max(VivordoWidgetData.integer("activeCaloriesGoal", fallback: 700), 1),
       exerciseMinutes: VivordoWidgetData.integer("exerciseMinutes", fallback: 0),
-      exerciseGoal: max(VivordoWidgetData.integer("exerciseGoal", fallback: 40), 1)
+      exerciseGoal: max(VivordoWidgetData.integer("exerciseGoal", fallback: 40), 1),
+      hasMetrics: fresh,
+      hasStress: fresh && defaults.bool(forKey: "dashboardHasStress"),
+      // Builds before this flag existed never wrote it; their scores were real.
+      hasWellness: fresh && (defaults.object(forKey: "dashboardHasWellness") as? Bool ?? true)
     )
   }
 }
@@ -67,7 +78,10 @@ private struct VivordoWidgetProvider: TimelineProvider {
       calories: 420,
       caloriesGoal: 700,
       exerciseMinutes: 28,
-      exerciseGoal: 40
+      exerciseGoal: 40,
+      hasMetrics: true,
+      hasStress: true,
+      hasWellness: true
     )
   }
 
@@ -76,8 +90,13 @@ private struct VivordoWidgetProvider: TimelineProvider {
   }
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<VivordoWidgetEntry>) -> Void) {
-    let entry = VivordoWidgetEntry.current()
-    completion(Timeline(entries: [entry], policy: .after(.now.addingTimeInterval(15 * 60))))
+    // The midnight entry blanks yesterday's numbers even if no reload runs.
+    let now = Date.now
+    let midnight = VivordoCalendarDates.calendar.date(
+      byAdding: .day, value: 1, to: VivordoCalendarDates.calendar.startOfDay(for: now)
+    ) ?? now
+    completion(Timeline(entries: [.current(date: now), .current(date: midnight)],
+                        policy: .after(now.addingTimeInterval(15 * 60))))
   }
 }
 
@@ -216,7 +235,7 @@ private struct WidgetScoreView: View {
   @Environment(\.colorScheme) private var colorScheme
 
   let title: String
-  let score: Int
+  let score: Int?
   let status: String
   let detail: String
   let stressStyle: Bool
@@ -233,7 +252,7 @@ private struct WidgetScoreView: View {
           .lineLimit(1)
         ZStack {
           ScoreRing(
-            progress: Double(score) / 100,
+            progress: Double(score ?? 0) / 100,
             colors: stressStyle
               ? [VivordoWidgetPalette.purple, VivordoWidgetPalette.blue]
               : [VivordoWidgetPalette.purple, Color(red: 0.42, green: 0.32, blue: 1.0)],
@@ -241,13 +260,15 @@ private struct WidgetScoreView: View {
             gapDegrees: stressStyle ? 55 : 18
           )
           VStack(spacing: -2) {
-            Text("\(score)")
+            Text(score.map { "\($0)" } ?? "—")
               .font(.system(size: compact ? 32 : 48, weight: .bold, design: .rounded))
               .foregroundStyle(VivordoWidgetPalette.ink)
               .contentTransition(.numericText())
-            Text("/100")
-              .font(.system(size: compact ? 11 : 16, weight: .medium))
-              .foregroundStyle(VivordoWidgetPalette.secondary)
+            if score != nil {
+              Text("/100")
+                .font(.system(size: compact ? 11 : 16, weight: .medium))
+                .foregroundStyle(VivordoWidgetPalette.secondary)
+            }
           }
         }
         .frame(width: compact ? 70 : 118, height: compact ? 70 : 118)
@@ -284,6 +305,7 @@ private struct StressScoreWidgetView: View {
   let entry: VivordoWidgetEntry
 
   private var label: String {
+    guard entry.hasStress else { return "No data today" }
     switch entry.stress {
     case ..<30: return "Very low"
     case ..<60: return "Low"
@@ -293,6 +315,7 @@ private struct StressScoreWidgetView: View {
   }
 
   private var detail: String {
+    guard entry.hasStress else { return "Open Vivordo to update" }
     switch entry.stress {
     case ..<60: return "Calm range"
     case ..<80: return "Watch your stress"
@@ -301,7 +324,7 @@ private struct StressScoreWidgetView: View {
   }
 
   var body: some View {
-    WidgetScoreView(title: "STRESS SCORE", score: entry.stress, status: label, detail: detail, stressStyle: true)
+    WidgetScoreView(title: "STRESS SCORE", score: entry.hasStress ? entry.stress : nil, status: label, detail: detail, stressStyle: true)
       .widgetURL(URL(string: "com.vivordo.health://widget/home"))
   }
 }
@@ -310,6 +333,7 @@ private struct WellnessScoreWidgetView: View {
   let entry: VivordoWidgetEntry
 
   private var label: String {
+    guard entry.hasWellness else { return "No data today" }
     switch entry.wellness {
     case ..<40: return "Needs attention"
     case ..<60: return "Fair"
@@ -319,6 +343,7 @@ private struct WellnessScoreWidgetView: View {
   }
 
   private var detail: String {
+    guard entry.hasWellness else { return "Open Vivordo to update" }
     if entry.wellnessDelta == 0 { return "Updated today" }
     return entry.wellnessDelta > 0
       ? "↗ Up \(entry.wellnessDelta) today"
@@ -326,7 +351,7 @@ private struct WellnessScoreWidgetView: View {
   }
 
   var body: some View {
-    WidgetScoreView(title: "WELLNESS SCORE", score: entry.wellness, status: label, detail: detail, stressStyle: false)
+    WidgetScoreView(title: "WELLNESS SCORE", score: entry.hasWellness ? entry.wellness : nil, status: label, detail: detail, stressStyle: false)
       .widgetURL(URL(string: "com.vivordo.health://widget/wellness"))
   }
 }
@@ -336,9 +361,9 @@ private struct FitnessRingWidgetView: View {
 
   let entry: VivordoWidgetEntry
 
-  private var stepsProgress: Double { Double(entry.steps) / Double(entry.stepsGoal) }
-  private var calorieProgress: Double { Double(entry.calories) / Double(entry.caloriesGoal) }
-  private var exerciseProgress: Double { Double(entry.exerciseMinutes) / Double(entry.exerciseGoal) }
+  private var stepsProgress: Double { entry.hasMetrics ? Double(entry.steps) / Double(entry.stepsGoal) : 0 }
+  private var calorieProgress: Double { entry.hasMetrics ? Double(entry.calories) / Double(entry.caloriesGoal) : 0 }
+  private var exerciseProgress: Double { entry.hasMetrics ? Double(entry.exerciseMinutes) / Double(entry.exerciseGoal) : 0 }
   private var overall: Int {
     let cappedSteps = min(stepsProgress, 1.0)
     let cappedCalories = min(calorieProgress, 1.0)
@@ -363,7 +388,7 @@ private struct FitnessRingWidgetView: View {
             .padding(compact ? 13 : 20)
           FitnessArc(progress: exerciseProgress, color: VivordoWidgetPalette.mint, lineWidth: compact ? 8 : 11)
             .padding(compact ? 26 : 40)
-          Text("\(overall)%")
+          Text(entry.hasMetrics ? "\(overall)%" : "—")
             .font(.system(size: compact ? 23 : 32, weight: .bold, design: .rounded))
             .foregroundStyle(
               colorScheme == .dark
@@ -372,7 +397,7 @@ private struct FitnessRingWidgetView: View {
             )
         }
         .frame(width: compact ? 82 : 138, height: compact ? 82 : 138)
-        Text("\(entry.calories) cal · \(entry.exerciseMinutes) min")
+        Text(entry.hasMetrics ? "\(entry.calories) cal · \(entry.exerciseMinutes) min" : "Open Vivordo to update")
           .font(.system(size: compact ? 12 : 16, weight: .semibold))
           .foregroundStyle(VivordoWidgetPalette.secondary)
           .lineLimit(1)
@@ -478,6 +503,9 @@ struct SelectVivordoCalendarDayIntent: AppIntent {
 }
 
 private struct VivordoCalendarEntry: TimelineEntry {
+  // How long a tapped day stays selected before the widget returns to today.
+  static let selectionLifetime: TimeInterval = 10 * 60
+
   let date: Date
   let weekDates: [Date]
   let selectedDate: Date
@@ -485,7 +513,10 @@ private struct VivordoCalendarEntry: TimelineEntry {
 
   static func current(date: Date = .now) -> VivordoCalendarEntry {
     let weekDates = VivordoCalendarDates.currentWeek(now: date)
-    let selectedKey = VivordoWidgetData.defaults.string(forKey: "calendarSelectedDay")
+    let selectedAt = Date(timeIntervalSince1970: VivordoWidgetData.defaults.double(forKey: "calendarSelectedAt"))
+    let selectionActive = date.timeIntervalSince(selectedAt) < selectionLifetime &&
+      VivordoCalendarDates.calendar.isDate(selectedAt, inSameDayAs: date)
+    let selectedKey = selectionActive ? VivordoWidgetData.defaults.string(forKey: "calendarSelectedDay") : nil
     let selectedDate = weekDates.first {
       VivordoCalendarDates.dayKey(for: $0) == selectedKey
     } ?? VivordoCalendarDates.calendar.startOfDay(for: date)
@@ -498,7 +529,10 @@ private struct VivordoCalendarEntry: TimelineEntry {
   }
 
   var selectedEvents: [VivordoCalendarEvent] {
-    events.filter { VivordoCalendarDates.calendar.isDate($0.start, inSameDayAs: selectedDate) }
+    events.filter {
+      VivordoCalendarDates.calendar.isDate($0.start, inSameDayAs: selectedDate) &&
+        ($0.isAllDay || $0.end > date)
+    }
   }
 }
 
@@ -536,13 +570,18 @@ private struct VivordoCalendarProvider: TimelineProvider {
   }
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<VivordoCalendarEntry>) -> Void) {
-    let entry = VivordoCalendarEntry.current()
-    let nextRefresh = VivordoCalendarDates.calendar.date(
-      byAdding: .minute,
-      value: 15,
-      to: .now
-    ) ?? .now.addingTimeInterval(15 * 60)
-    completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
+    let now = Date.now
+    let calendar = VivordoCalendarDates.calendar
+    let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
+    let selectedAt = Date(timeIntervalSince1970: VivordoWidgetData.defaults.double(forKey: "calendarSelectedAt"))
+    // Entries where the view changes: an event ends, the tapped day expires,
+    // and midnight.
+    var dates = [now, midnight, selectedAt.addingTimeInterval(VivordoCalendarEntry.selectionLifetime)]
+    dates += VivordoCalendarEvent.current().map(\.end)
+    let entries = Set(dates.filter { $0 >= now && $0 <= midnight }).sorted().map {
+      VivordoCalendarEntry.current(date: $0)
+    }
+    completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(15 * 60))))
   }
 }
 
@@ -642,7 +681,7 @@ private struct CalendarWidgetView: View {
       if entry.selectedEvents.isEmpty {
         HStack(spacing: 7) {
           calendarIcon(symbol: "calendar", color: VivordoWidgetPalette.purple)
-          Text("No events scheduled")
+          Text(isToday ? "No more events today" : "No events scheduled")
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(VivordoWidgetPalette.ink)
             .lineLimit(1)
