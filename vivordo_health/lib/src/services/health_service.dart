@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/exercise_minutes.dart';
 import 'activity_goals_service.dart';
 import 'stress_score_service.dart';
 import '../utils/activity_score.dart';
@@ -1174,6 +1175,7 @@ class HealthService {
     final Map<String, List<double>> byDay = {};
     final Map<String, List<Map<String, dynamic>>> heartRateEntriesByDay = {};
     final Map<String, List<Map<String, dynamic>>> sleepEntriesByDay = {};
+    final Map<String, List<ExerciseSample>> exerciseSamplesByDay = {};
     for (final point in dataPoints) {
       if (point.value is! NumericHealthValue) continue;
       final day = localDayKey(point.dateFrom);
@@ -1185,6 +1187,14 @@ class HealthService {
           'timestamp': Timestamp.fromDate(point.dateFrom),
         });
       }
+      if (def.type == HealthDataType.EXERCISE_TIME) {
+        exerciseSamplesByDay.putIfAbsent(day, () => []).add((
+          source: point.sourceId,
+          from: point.dateFrom,
+          to: point.dateTo,
+          minutes: val,
+        ));
+      }
       if (def.type == HealthDataType.SLEEP_ASLEEP) {
         sleepEntriesByDay.putIfAbsent(day, () => []).add({
           'start': Timestamp.fromDate(point.dateFrom),
@@ -1195,6 +1205,10 @@ class HealthService {
     }
 
     if (byDay.isEmpty) return {};
+
+    final workoutWindows = def.type == HealthDataType.EXERCISE_TIME
+        ? await _workoutWindows(uid, dataPoints)
+        : const <WorkoutWindow>[];
 
     final batch = _db.batch();
     final daysWithData = <String>{};
@@ -1213,7 +1227,10 @@ class HealthService {
       if (def.type == HealthDataType.EXERCISE_TIME) {
         final existingExerciseTime =
             existingSnapshot.data()?['exercise_time'] as Map<String, dynamic>?;
-        final healthMinutes = (payload['sum'] as num?)?.toDouble() ?? 0;
+        final healthMinutes = healthExerciseMinutes(
+          exerciseSamplesByDay[day] ?? const [],
+          workoutWindows,
+        );
         final workoutMinutes =
             (existingExerciseTime?['workoutMinutes'] as num?)?.toDouble() ?? 0;
         payload['healthSum'] = healthMinutes;
@@ -1287,6 +1304,39 @@ class HealthService {
       debugPrint('DEBUG: Firestore batch commit FAILED for ${def.key}: $e');
       debugPrint(st.toString());
       rethrow;
+    }
+  }
+
+  /// Start and end of every in-app workout that could overlap [points], so
+  /// Health exercise minutes recorded during them are not counted twice.
+  /// A failed read keeps the old additive total rather than dropping the sync.
+  Future<List<WorkoutWindow>> _workoutWindows(
+    String uid,
+    List<HealthDataPoint> points,
+  ) async {
+    if (points.isEmpty) return const [];
+    final earliest = points
+        .map((point) => point.dateFrom)
+        .reduce((a, b) => a.isBefore(b) ? a : b);
+    try {
+      final snapshot = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('workouts')
+          .where(
+            'completedAt',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(earliest),
+          )
+          .get();
+      return [
+        for (final doc in snapshot.docs)
+          if (doc.data()['startedAt'] case final Timestamp start)
+            if (doc.data()['completedAt'] case final Timestamp end)
+              (start: start.toDate(), end: end.toDate()),
+      ];
+    } catch (error) {
+      debugPrint('HealthService: could not read workouts for overlap: $error');
+      return const [];
     }
   }
 
