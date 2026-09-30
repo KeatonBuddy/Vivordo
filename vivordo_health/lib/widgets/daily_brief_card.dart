@@ -1,4 +1,16 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
+/// Where the brief's sun sits at [time], as fractions of the landscape: it
+/// rises bottom-left at 6 AM, peaks around 1 PM and sets bottom-right at
+/// 8 PM. Null at night, when no sun is drawn.
+Offset? briefSunPosition(DateTime time) {
+  final minutes = time.hour * 60 + time.minute;
+  if (minutes < 6 * 60 || minutes > 20 * 60) return null;
+  final t = (minutes - 6 * 60) / (14 * 60);
+  return Offset(.12 + .76 * t, .62 - .40 * math.sin(math.pi * t));
+}
 
 /// A local, data-backed brief. Scores retain their existing 0–100 meaning.
 class DailyBriefCard extends StatelessWidget {
@@ -12,11 +24,16 @@ class DailyBriefCard extends StatelessWidget {
     required this.scheduleLabel,
     required this.footer,
     this.onDetails,
+    this.now,
   });
 
   final String headline, summary, capacityLabel, scheduleLabel, footer;
   final int? capacityScore, scheduleScore;
   final VoidCallback? onDetails;
+
+  /// The time the sun is drawn for; defaults to now. My Day rebuilds every
+  /// minute, so the sun moves through the day.
+  final DateTime? now;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -32,14 +49,18 @@ class DailyBriefCard extends StatelessWidget {
     ),
     child: Stack(
       children: [
-        const Positioned(
+        Positioned(
           right: 0,
           top: 0,
           width: 210,
           height: 180,
           child: IgnorePointer(
             child: ExcludeSemantics(
-              child: CustomPaint(painter: _BriefLandscape()),
+              child: CustomPaint(
+                painter: _BriefLandscape(
+                  briefSunPosition(now ?? DateTime.now()),
+                ),
+              ),
             ),
           ),
         ),
@@ -229,20 +250,27 @@ class _BriefScore extends StatelessWidget {
 }
 
 class _BriefLandscape extends CustomPainter {
-  const _BriefLandscape();
+  const _BriefLandscape(this.sunAt);
+
+  /// Fractions of the canvas; null at night.
+  final Offset? sunAt;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final sun = Offset(size.width * .72, size.height * .42);
-    canvas.drawCircle(
-      sun,
-      85,
-      Paint()
-        ..shader = const RadialGradient(
-          colors: [Color(0x55FFBCE8), Color(0x00FFBCE8)],
-        ).createShader(Rect.fromCircle(center: sun, radius: 85)),
-    );
-    canvas.drawCircle(sun, 25, Paint()..color = const Color(0x55FFD5EC));
+    final sunAt = this.sunAt;
+    if (sunAt != null) {
+      // Drawn before the hills, so it rises and sets behind them.
+      final sun = Offset(size.width * sunAt.dx, size.height * sunAt.dy);
+      canvas.drawCircle(
+        sun,
+        85,
+        Paint()
+          ..shader = const RadialGradient(
+            colors: [Color(0x55FFBCE8), Color(0x00FFBCE8)],
+          ).createShader(Rect.fromCircle(center: sun, radius: 85)),
+      );
+      canvas.drawCircle(sun, 25, Paint()..color = const Color(0x55FFD5EC));
+    }
     final back = Path()
       ..moveTo(0, size.height)
       ..quadraticBezierTo(
@@ -274,5 +302,5 @@ class _BriefLandscape extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_BriefLandscape oldDelegate) => false;
+  bool shouldRepaint(_BriefLandscape oldDelegate) => oldDelegate.sunAt != sunAt;
 }

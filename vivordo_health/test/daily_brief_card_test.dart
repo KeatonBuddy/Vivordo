@@ -59,4 +59,18 @@ void main() {
     expect(find.text('0'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  test('the sun rises, peaks and sets through the day', () {
+    Offset? at(int hour, [int minute = 0]) =>
+        briefSunPosition(DateTime(2026, 9, 30, hour, minute));
+    expect(at(5, 59), isNull);
+    expect(at(20, 1), isNull);
+    final rise = at(6)!, noon = at(13)!, set = at(20)!;
+    expect(rise.dx, lessThan(noon.dx));
+    expect(noon.dx, lessThan(set.dx));
+    // Smaller dy is higher on the card.
+    expect(noon.dy, lessThan(rise.dy));
+    expect(noon.dy, lessThan(set.dy));
+    expect(rise.dy, closeTo(set.dy, 1e-9));
+  });
 }
