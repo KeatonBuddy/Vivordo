@@ -2262,28 +2262,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await _editReachableEvent(event);
       return;
     }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete event?'),
-        content: Text(
-          'This will delete “${event.summary ?? 'Untitled event'}” from Google Calendar.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final scope = await confirmEventDelete(
+      context,
+      title: event.summary ?? 'Untitled event',
+      repeating: event.recurringEventId != null,
     );
-    if (confirmed != true || !mounted) return;
+    if (scope == null || !mounted) return;
     try {
-      await CalendarService.deleteEvent(event);
+      await CalendarService.deleteEvent(
+        event,
+        allEvents: scope == EventScope.allEvents,
+      );
       if (!mounted) return;
       _refreshHomeCalendarCards();
       _showHomeCalendarMessage('Event deleted.');

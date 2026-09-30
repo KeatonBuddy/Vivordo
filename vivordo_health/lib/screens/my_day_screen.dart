@@ -285,8 +285,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
     try {
       setState(() => _isLoading = true);
+      final allEvents = result.scope == EventScope.allEvents;
       if (result.action == CalendarEventEditAction.delete) {
-        await CalendarService.deleteEvent(event);
+        await CalendarService.deleteEvent(event, allEvents: allEvents);
       } else {
         final draft = result.draft!;
         await CalendarService.updateEvent(
@@ -297,6 +298,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           recurrence: result.recurrenceChanged ? draft.recurrence : null,
           calendarId: draft.calendarId,
           isAllDay: draft.isAllDay,
+          allEvents: allEvents,
         );
       }
       await _loadTodayEvents();
@@ -312,31 +314,19 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _deleteGoogleEvent(gcal.Event event) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete event?'),
-        content: Text(
-          'This will delete “${event.summary ?? 'Untitled event'}” from Google Calendar.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final scope = await confirmEventDelete(
+      context,
+      title: event.summary ?? 'Untitled event',
+      repeating: event.recurringEventId != null,
     );
-    if (confirmed != true || !mounted) return;
+    if (scope == null || !mounted) return;
 
     try {
       setState(() => _isLoading = true);
-      await CalendarService.deleteEvent(event);
+      await CalendarService.deleteEvent(
+        event,
+        allEvents: scope == EventScope.allEvents,
+      );
       await _loadTodayEvents();
       _showMessage('Event deleted.');
     } catch (error) {

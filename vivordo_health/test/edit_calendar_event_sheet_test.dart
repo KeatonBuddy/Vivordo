@@ -13,7 +13,8 @@ void main() {
       ..start = (gcal.EventDateTime()
         ..dateTime = DateTime(2026, 8, 26, 9).toUtc())
       ..end = (gcal.EventDateTime()
-        ..dateTime = DateTime(2026, 8, 26, 10, 30).toUtc());
+        ..dateTime = DateTime(2026, 8, 26, 10, 30).toUtc())
+      ..recurrence = ['RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE'];
 
     await tester.pumpWidget(
       MaterialApp(
@@ -35,10 +36,39 @@ void main() {
     expect(find.text('Start time'), findsOneWidget);
     expect(find.text('End time'), findsOneWidget);
     expect(find.text('All-day event'), findsOneWidget);
-    expect(find.text('Once'), findsOneWidget);
-    expect(find.text('Every day'), findsOneWidget);
-    expect(find.text('Selected days'), findsOneWidget);
+    expect(find.text('Repeat'), findsOneWidget);
+    expect(find.text('Every 2 weeks on Mon, Wed'), findsOneWidget);
     expect(find.text('Save Changes'), findsOneWidget);
     expect(find.text('Delete Event'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Custom'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Custom'));
+    await tester.pumpAndSettle();
+    for (final option in [
+      'Does not repeat',
+      'Every day',
+      'Every week',
+      'Every month',
+      'Every year',
+      'Selected days',
+      'Custom…',
+    ]) {
+      expect(find.text(option), findsOneWidget);
+    }
+    final custom = tester.widget<CheckedPopupMenuItem<Object?>>(
+      find.ancestor(
+        of: find.text('Custom…'),
+        matching: find.byWidgetPredicate((w) => w is CheckedPopupMenuItem),
+      ),
+    );
+    expect(custom.checked, isTrue);
+
+    // The menu item, not its text box, takes the tap.
+    await tester.tap(find.text('Every year'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.text('Every year'), findsOneWidget);
+    expect(find.text('Every 2 weeks on Mon, Wed'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }
