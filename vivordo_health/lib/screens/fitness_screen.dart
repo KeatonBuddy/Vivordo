@@ -3,6 +3,8 @@ import '../widgets/visible_stream_builder.dart';
 import '../widgets/contextual_insight_bar.dart';
 import '../src/services/active_workout_navigation.dart';
 import '../widgets/workout_rest_timer.dart';
+import '../widgets/ios_pull_down_menu.dart';
+import 'package:flutter/cupertino.dart' show CupertinoIcons, CupertinoSwitch;
 import '../src/services/notification_service.dart';
 import 'dart:math' as math;
 
@@ -365,7 +367,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
   Future<void> _startWorkout() async {
     if (ActiveWorkoutNavigation.focusExisting()) return;
     _activeWorkoutDraft ??= await _ActiveWorkoutDraft.restore();
-    _activeWorkoutDraft ??= _ActiveWorkoutDraft();
+    _activeWorkoutDraft ??= await _ActiveWorkoutDraft.fresh();
     await _activeWorkoutDraft!.persist();
     if (!mounted) return;
     final draft = _activeWorkoutDraft!;
@@ -1448,6 +1450,10 @@ class _BodyCardState extends State<_BodyCard> {
                                   : '${_number(bodyFat)}%',
                             ),
                           ),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            color: _muted,
+                          ),
                         ],
                       ),
                     ),
@@ -1488,7 +1494,14 @@ class _RecentWorkoutRow extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w800),
           ),
           subtitle: Text(
-            '$dateLabel · $durationLabel · ${workout.setCount} sets',
+            [
+              dateLabel,
+              durationLabel,
+              if (workout.setCount > 0) '${workout.setCount} sets',
+              if (workout.primaryCardioOrSportExercise?.distanceKm
+                  case final km? when km > 0)
+                '${km.toStringAsFixed(1)} km',
+            ].join(' · '),
           ),
           trailing: const Icon(Icons.chevron_right_rounded, color: _muted),
         ),
@@ -1882,7 +1895,7 @@ Future<bool> prepareActiveWorkoutForLaunch({
   final restored =
       _activeWorkoutDraft ??
       await _ActiveWorkoutDraft.restore() ??
-      (createIfMissing ? _ActiveWorkoutDraft() : null);
+      (createIfMissing ? await _ActiveWorkoutDraft.fresh() : null);
   if (restored == null) return false;
   _activeWorkoutDraft = restored;
   if (createIfMissing) await restored.persist();
@@ -1970,6 +1983,11 @@ class _ActiveWorkoutDraft {
 
   Future<void> persist() => ActiveWorkoutStorage.write(toJson());
 
+  /// A new workout that starts with the user's last sharing choice.
+  static Future<_ActiveWorkoutDraft> fresh() async => _ActiveWorkoutDraft(
+    shareToCircle: await ActiveWorkoutStorage.readShareDefault(),
+  );
+
   static Future<_ActiveWorkoutDraft?> restore() async {
     final json = await ActiveWorkoutStorage.read();
     if (json == null) return null;
@@ -2018,9 +2036,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   final _setCount = ValueNotifier<int>(0);
 
   void _updateSetCount() {
+    // Cardio and sports exercises keep placeholder sets that are never shown
+    // or saved, so only count sets on strength exercises.
     _setCount.value = exercises.fold<int>(
       0,
-      (total, exercise) => total + exercise.sets.length,
+      (total, exercise) =>
+          exercise.isDistanceExercise || exercise.isSportsExercise
+          ? total
+          : total + exercise.sets.length,
     );
   }
 
@@ -2032,7 +2055,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   Future<void> _toggleCircleSharing() async {
     setState(() => draft.shareToCircle = !draft.shareToCircle);
-    await draft.persist();
+    await Future.wait([
+      draft.persist(),
+      ActiveWorkoutStorage.writeShareDefault(draft.shareToCircle),
+    ]);
   }
 
   @override
@@ -2411,159 +2437,204 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     Navigator.pop(context, false);
   }
 
+  String get _title {
+    for (final exercise in exercises) {
+      final category = exercise.definition.category;
+      if (category == 'Cardio' || category == 'Sports') {
+        return exercise.name;
+      }
+    }
+    return exercises.isEmpty ? 'New workout' : 'Strength workout';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final busy = saving || savingTemplate;
     return Scaffold(
-      backgroundColor: context.vivordoColors.page,
+      backgroundColor: colors.page,
       appBar: AppBar(
-        backgroundColor: context.vivordoColors.page,
+        backgroundColor: colors.page,
         elevation: 0,
-        title: const Text(
-          'New Workout',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        title: Text(
+          _title,
+          style: const TextStyle(fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
         actions: [
-          TextButton(
-            onPressed: saving ? null : _cancelWorkout,
-            child: const Text('Cancel'),
-          ),
+          if (busy)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            IosPullDownMenu<String>(
+              tooltip: 'Workout actions',
+              onSelected: (action) => switch (action) {
+                'template' => _saveWorkoutTemplate(),
+                _ => _cancelWorkout(),
+              },
+              actions: const [
+                IosMenuAction(
+                  value: 'template',
+                  label: 'Save as template',
+                  icon: CupertinoIcons.bookmark,
+                ),
+                IosMenuAction(
+                  value: 'cancel',
+                  label: 'Cancel workout',
+                  icon: CupertinoIcons.trash,
+                  destructive: true,
+                ),
+              ],
+            ),
+          const SizedBox(width: 6),
         ],
       ),
+      bottomNavigationBar: WorkoutRestTimer(
+        onDeadlineChanged: (deadline) =>
+            NotificationService().updateRestTimerNotification(deadline),
+      ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 10, 18, 40),
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '●  Workout in progress',
-                      style: TextStyle(
-                        color: _muted,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    _WorkoutElapsedLabel(startedAt: startedAt),
-                  ],
-                ),
+          Container(
+            padding: const EdgeInsets.fromLTRB(18, 16, 16, 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: const Color(0xFFAA91FF).withValues(alpha: .6),
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton(
-                    onPressed: saving || savingTemplate
-                        ? null
-                        : _saveWorkoutTemplate,
-                    style: TextButton.styleFrom(
-                      foregroundColor: _purple,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                    ),
-                    child: savingTemplate
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text(
-                            'Save Workout',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                  ),
-                  const SizedBox(width: 4),
-                  FilledButton(
-                    onPressed: saving || savingTemplate ? null : _finishWorkout,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFEDE8FF),
-                      foregroundColor: _purple,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                    ),
-                    child: saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Finish'),
-                  ),
-                ],
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF5844ED), Color(0xFF3529AD)],
               ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          WorkoutRestTimer(
-            onDeadlineChanged: (deadline) =>
-                NotificationService().updateRestTimerNotification(deadline),
-          ),
-          const SizedBox(height: 14),
-          _Card(
+            ),
             child: Row(
               children: [
                 Expanded(
-                  child: _ActivityStat(
-                    value: '${exercises.length}',
-                    label: 'Exercises',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '●  IN PROGRESS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.3,
+                          color: Color(0xFFE8E0FF),
+                        ),
+                      ),
+                      DefaultTextStyle.merge(
+                        style: const TextStyle(color: Colors.white),
+                        child: _WorkoutElapsedLabel(startedAt: startedAt),
+                      ),
+                      ValueListenableBuilder<int>(
+                        valueListenable: _setCount,
+                        builder: (_, totalSets, _) => Text(
+                          '${exercises.length} ${exercises.length == 1 ? 'exercise' : 'exercises'}'
+                          '${totalSets == 0 ? '' : ' · $totalSets ${totalSets == 1 ? 'set' : 'sets'}'}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFFF1ECFF),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                FilledButton(
+                  onPressed: busy ? null : _finishWorkout,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF4B3BD9),
+                    disabledBackgroundColor: Colors.white.withValues(alpha: .7),
+                    minimumSize: const Size(96, 48),
+                    shape: const StadiumBorder(),
+                  ),
+                  child: saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(
+                          'Finish',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+            decoration: BoxDecoration(
+              color: colors.card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: colors.border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: _purple.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.person_2_fill,
+                    color: _purple,
+                    size: 19,
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: ValueListenableBuilder<int>(
-                    valueListenable: _setCount,
-                    builder: (_, totalSets, _) =>
-                        _ActivityStat(value: '$totalSets', label: 'Sets'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Share to Circle',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: colors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        draft.shareToCircle
+                            ? 'Your Circle can see this workout'
+                            : 'Private to you',
+                        style: const TextStyle(color: _muted, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                Semantics(
+                  label: 'Share to Circle',
+                  child: CupertinoSwitch(
+                    value: draft.shareToCircle,
+                    activeTrackColor: _purple,
+                    onChanged: busy ? null : (_) => _toggleCircleSharing(),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: saving || savingTemplate ? null : _toggleCircleSharing,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _purple,
-              side: BorderSide(
-                color: draft.shareToCircle
-                    ? _purple
-                    : _purple.withValues(alpha: .45),
-              ),
-              backgroundColor: draft.shareToCircle
-                  ? _purple.withValues(alpha: .07)
-                  : Colors.transparent,
-              minimumSize: const Size.fromHeight(50),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-            ),
-            icon: Icon(
-              draft.shareToCircle
-                  ? Icons.check_circle_rounded
-                  : Icons.groups_rounded,
-            ),
-            label: Text(
-              draft.shareToCircle ? 'Sharing to Circle' : 'Share to Circle',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                draft.shareToCircle ? Icons.groups_rounded : Icons.lock_rounded,
-                color: _muted,
-                size: 14,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                draft.shareToCircle
-                    ? 'Your Circle can see this workout'
-                    : 'Private to you',
-                style: const TextStyle(color: _muted, fontSize: 12),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
+          if (exercises.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            const _SectionHeader('EXERCISES'),
+            const SizedBox(height: 4),
+          ],
           for (final exercise in exercises) ...[
             _WorkoutExerciseCard(
               key: ObjectKey(exercise),
@@ -2585,30 +2656,33 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
             const SizedBox(height: 10),
           ],
-          OutlinedButton.icon(
-            onPressed: _addExercises,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Exercise'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(54),
-              side: const BorderSide(color: _purple),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 52,
+            child: FilledButton.icon(
+              onPressed: _addExercises,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text(
+                'Add exercise',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: _purple,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
+          const SizedBox(height: 6),
+          TextButton.icon(
             onPressed: _addSavedWorkout,
+            style: TextButton.styleFrom(foregroundColor: _purple),
             icon: const Icon(Icons.playlist_add_rounded),
-            label: const Text('Add Workout'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(54),
-              foregroundColor: _purple,
-              side: BorderSide(color: _purple.withValues(alpha: .45)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+            label: const Text(
+              'Add saved workout',
+              style: TextStyle(fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -3162,12 +3236,17 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                 ],
               ),
             ),
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'remove') onRemove();
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'remove', child: Text('Remove exercise')),
+            IosPullDownMenu<String>(
+              tooltip: 'Exercise actions',
+              icon: CupertinoIcons.ellipsis,
+              onSelected: (_) => onRemove(),
+              actions: const [
+                IosMenuAction(
+                  value: 'remove',
+                  label: 'Remove exercise',
+                  icon: CupertinoIcons.minus_circle,
+                  destructive: true,
+                ),
               ],
             ),
           ],

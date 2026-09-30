@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Persists an in-progress workout so iOS suspension or process termination
@@ -39,5 +40,29 @@ class ActiveWorkoutStorage {
   static Future<void> clear() async {
     final key = _key;
     if (key != null) await _storage.delete(key: key);
+  }
+
+  /// The user's last Share to Circle choice, used for their next workout.
+  /// Kept separately from the draft because [clear] runs when a workout ends.
+  static String? get _shareKey {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return uid == null ? null : 'workout_share_default_v1_$uid';
+  }
+
+  static Future<bool> readShareDefault() async {
+    final key = _shareKey;
+    if (key == null) return false;
+    try {
+      return await _storage.read(key: key) == 'true';
+    } catch (error) {
+      debugPrint('Could not read workout sharing default: $error');
+      return false;
+    }
+  }
+
+  static Future<void> writeShareDefault(bool share) async {
+    final key = _shareKey;
+    if (key == null) return;
+    await _storage.write(key: key, value: '$share');
   }
 }
