@@ -314,6 +314,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   @override
   Widget build(BuildContext context) {
     final detailRouteVisible = _detailRouteOpen;
+    // Read here, above the Scaffold: its body sees a zero bottom inset
+    // because the Scaffold already resizes for the keyboard.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    // The assistant would otherwise sit on top of text fields' send buttons.
+    final hideAssistant = _chatOpen || keyboardOpen;
     final activePage = IndexedStack(
       index: _selectedIndex,
       children: List.generate(
@@ -370,9 +375,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
               left: 20,
               bottom: detailRouteVisible ? 30 : 116,
               child: IgnorePointer(
-                ignoring: _chatOpen,
+                ignoring: hideAssistant,
                 child: AnimatedOpacity(
-                  opacity: _chatOpen ? 0 : 1,
+                  opacity: hideAssistant ? 0 : 1,
                   duration: const Duration(milliseconds: 140),
                   child: AnimatedBuilder(
                     animation: Listenable.merge([
@@ -382,8 +387,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                     builder: (context, _) => ContextualInsightBar(
                       insight: _insights.current,
                       suppressed:
-                          _chatOpen ||
-                          MediaQuery.viewInsetsOf(context).bottom > 0 ||
+                          hideAssistant ||
                           FitnessWorkoutTimerState.isRunning.value,
                       collapsed: _buildChatBubble(),
                       onAsk: (prompt) {
