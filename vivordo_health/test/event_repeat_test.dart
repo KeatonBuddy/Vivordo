@@ -71,4 +71,24 @@ void main() {
     ]);
     expect(CalendarService.recurrenceRules('none'), isEmpty);
   });
+
+  test('ending a rule keeps earlier occurrences and its other parts', () {
+    final occurrence = DateTime.utc(2026, 10, 15, 14);
+    expect(
+      endRuleBefore(
+        'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TH;COUNT=10',
+        occurrence,
+        allDay: false,
+      ),
+      'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TH;UNTIL=20261015T135959Z',
+    );
+    expect(
+      endRuleBefore(
+        'RRULE:FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=20271231',
+        DateTime(2026, 10, 15),
+        allDay: true,
+      ),
+      'RRULE:FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=20261014',
+    );
+  });
 }

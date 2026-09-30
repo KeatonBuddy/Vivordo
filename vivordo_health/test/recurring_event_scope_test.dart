@@ -54,6 +54,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Edit repeating event'), findsOneWidget);
     expect(find.text('This event'), findsOneWidget);
+    // Splitting a series on edit is not supported.
+    expect(find.text('This and following events'), findsNothing);
     await tester.tap(find.text('All events'));
     await tester.pumpAndSettle();
     expect(find.text('Edit Event'), findsNothing);
@@ -101,5 +103,30 @@ void main() {
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     expect(scope, EventScope.thisEvent);
+  });
+
+  testWidgets('deleting a repeating event offers every scope', (tester) async {
+    EventScope? scope;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => scope = await confirmEventDelete(
+              context,
+              title: 'Standup',
+              repeating: true,
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(find.text('This event'), findsOneWidget);
+    expect(find.text('All events'), findsOneWidget);
+    await tester.tap(find.text('This and following events'));
+    await tester.pumpAndSettle();
+    expect(scope, EventScope.thisAndFollowing);
   });
 }

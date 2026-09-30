@@ -2269,10 +2269,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     if (scope == null || !mounted) return;
     try {
-      await CalendarService.deleteEvent(
-        event,
-        allEvents: scope == EventScope.allEvents,
-      );
+      await CalendarService.deleteEvent(event, scope: scope);
       if (!mounted) return;
       _refreshHomeCalendarCards();
       _showHomeCalendarMessage('Event deleted.');

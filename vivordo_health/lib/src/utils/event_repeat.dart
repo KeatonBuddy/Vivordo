@@ -147,3 +147,27 @@ class EventRepeat {
     return '$base$days$end';
   }
 }
+
+/// [rule] cut off just before [occurrenceStart]: earlier occurrences keep
+/// their place, that one and every later one go. Other rule parts (weekdays,
+/// interval, month days) are kept; any COUNT or old UNTIL is replaced.
+String endRuleBefore(
+  String rule,
+  DateTime occurrenceStart, {
+  required bool allDay,
+}) {
+  final parts = rule.substring(rule.indexOf(':') + 1).split(';').where((part) {
+    final key = part.split('=').first.toUpperCase();
+    return part.isNotEmpty && key != 'UNTIL' && key != 'COUNT';
+  });
+  final until = allDay
+      ? DateFormat('yyyyMMdd').format(
+          DateTime(
+            occurrenceStart.year,
+            occurrenceStart.month,
+            occurrenceStart.day - 1,
+          ),
+        )
+      : '${DateFormat("yyyyMMdd'T'HHmmss").format(occurrenceStart.toUtc().subtract(const Duration(seconds: 1)))}Z';
+  return 'RRULE:${[...parts, 'UNTIL=$until'].join(';')}';
+}

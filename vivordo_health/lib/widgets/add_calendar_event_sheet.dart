@@ -57,9 +57,6 @@ class CalendarEventDraft {
 
 enum CalendarEventEditAction { save, delete }
 
-/// Which part of a repeating event a change applies to.
-enum EventScope { thisEvent, allEvents }
-
 class CalendarEventEditResult {
   const CalendarEventEditResult.save(
     this.draft, {
@@ -78,39 +75,45 @@ class CalendarEventEditResult {
   final EventScope scope;
 }
 
-/// Asks whether a change to one occurrence of a repeating event applies to it
-/// alone or to the whole series. Without [allowSingle] only the series can
-/// change, e.g. for a new repeat rule. Null means cancel.
+const _scopeLabels = {
+  EventScope.thisEvent: 'This event',
+  EventScope.thisAndFollowing: 'This and following events',
+  EventScope.allEvents: 'All events',
+};
+
+/// Asks which part of a repeating event a change to one occurrence applies
+/// to, offering [scopes]. Null means cancel.
 Future<EventScope?> askEventScope(
   BuildContext context, {
   required String title,
   required String message,
-  bool allowSingle = true,
+  required List<EventScope> scopes,
   bool destructive = false,
 }) => showDialog<EventScope>(
   context: context,
   builder: (dialogContext) => AlertDialog(
     title: Text(title),
-    content: Text(message),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(message),
+        const SizedBox(height: 12),
+        for (final scope in scopes)
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, scope),
+            style: TextButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              foregroundColor: destructive ? Colors.red : null,
+            ),
+            child: Text(_scopeLabels[scope]!),
+          ),
+      ],
+    ),
     actions: [
       TextButton(
         onPressed: () => Navigator.pop(dialogContext),
         child: const Text('Cancel'),
-      ),
-      if (allowSingle)
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext, EventScope.thisEvent),
-          style: destructive
-              ? TextButton.styleFrom(foregroundColor: Colors.red)
-              : null,
-          child: const Text('This event'),
-        ),
-      TextButton(
-        onPressed: () => Navigator.pop(dialogContext, EventScope.allEvents),
-        style: destructive
-            ? TextButton.styleFrom(foregroundColor: Colors.red)
-            : null,
-        child: const Text('All events'),
       ),
     ],
   ),
@@ -127,7 +130,8 @@ Future<EventScope?> confirmEventDelete(
     return askEventScope(
       context,
       title: 'Delete repeating event?',
-      message: 'Delete only this “$title”, or every event in the series?',
+      message: 'Which “$title” events do you want to delete?',
+      scopes: EventScope.values,
       destructive: true,
     );
   }
@@ -490,7 +494,10 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
             message: _recurrenceChanged
                 ? 'A new repeat rule applies to every event in the series.'
                 : 'Apply your changes to only this event, or to every event in the series?',
-            allowSingle: !_recurrenceChanged,
+            scopes: [
+              if (!_recurrenceChanged) EventScope.thisEvent,
+              EventScope.allEvents,
+            ],
           )
         : EventScope.thisEvent;
     if (scope == null || !mounted) return;

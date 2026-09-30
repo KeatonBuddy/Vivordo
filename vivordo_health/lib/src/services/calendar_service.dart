@@ -3,6 +3,7 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:vivordo_health/src/utils/event_repeat.dart';
 import 'package:vivordo_health/src/utils/request_coalescer.dart';
 
 class WritableCalendar {
@@ -121,14 +122,20 @@ class CalendarService {
     return gcal.CalendarApi(authorization.authClient(scopes: scopes));
   }
 
-  /// Deletes [event], or its whole series when [allEvents] and it is one
-  /// occurrence of a repeating event.
+  /// Deletes [event]. For one occurrence of a repeating event, [scope] can
+  /// widen that to the occurrences after it or to the whole series.
   static Future<void> deleteEvent(
     gcal.Event event, {
-    bool allEvents = false,
+    EventScope scope = EventScope.thisEvent,
   }) async {
+    if (scope == EventScope.thisAndFollowing &&
+        event.recurringEventId != null) {
+      return _endSeriesBefore(event);
+    }
     final calendarId = _calendarIdFor(event);
-    final eventId = allEvents ? event.recurringEventId ?? event.id : event.id;
+    final eventId = scope == EventScope.allEvents
+        ? event.recurringEventId ?? event.id
+        : event.id;
     if (calendarId == null || eventId == null) {
       throw StateError(
         'This event cannot be removed because its calendar is unknown.',
@@ -279,6 +286,52 @@ class CalendarService {
     return result;
   }
 
+  /// Ends [occurrence]'s series just before it, keeping earlier occurrences.
+  /// From the first occurrence nothing would remain, so the series goes.
+  static Future<void> _endSeriesBefore(gcal.Event occurrence) async {
+    final series = await seriesFor(occurrence);
+    final seriesStart = _startOf(series);
+    final occurrenceStart = _occurrenceStart(occurrence);
+    final calendarId = _calendarIdFor(occurrence);
+    if (series?.id == null || seriesStart == null || occurrenceStart == null) {
+      throw StateError('The repeating series for this event was not found.');
+    }
+    if (!occurrenceStart.isAfter(seriesStart)) {
+      return deleteEvent(occurrence, scope: EventScope.allEvents);
+    }
+    final allDay = series!.start?.dateTime == null;
+    final updated = gcal.Event()
+      ..recurrence = [
+        for (final line in series.recurrence ?? const <String>[])
+          line.toUpperCase().startsWith('RRULE:')
+              ? endRuleBefore(line, occurrenceStart, allDay: allDay)
+              : line,
+      ];
+    if (!allDay && series.start?.timeZone == null) {
+      // Google rejects a repeating timed event without a zone.
+      final zone = await _deviceTimeZone();
+      updated
+        ..start = (gcal.EventDateTime()
+          ..dateTime = series.start?.dateTime
+          ..timeZone = zone)
+        ..end = (gcal.EventDateTime()
+          ..dateTime = series.end?.dateTime
+          ..timeZone = zone);
+    }
+    final api = await _authorizedCalendarApi();
+    await api.events.patch(updated, calendarId!, series.id!);
+    invalidateEventCache();
+  }
+
+  static DateTime? _startOf(gcal.Event? event) =>
+      event?.start?.dateTime?.toLocal() ?? event?.start?.date?.toLocal();
+
+  /// Where [occurrence] sat in its series, even if it was moved since.
+  static DateTime? _occurrenceStart(gcal.Event occurrence) =>
+      occurrence.originalStartTime?.dateTime?.toLocal() ??
+      occurrence.originalStartTime?.date?.toLocal() ??
+      _startOf(occurrence);
+
   /// The repeating series [event] is one occurrence of, or null when it is
   /// not an occurrence. Occurrences do not carry the series' RRULE.
   static Future<gcal.Event?> seriesFor(gcal.Event event) async {
@@ -318,13 +371,8 @@ class CalendarService {
   }) async {
     if (allEvents && event.recurringEventId != null) {
       final series = await seriesFor(event);
-      final seriesStart =
-          series?.start?.dateTime?.toLocal() ?? series?.start?.date?.toLocal();
-      final occurrenceStart =
-          event.originalStartTime?.dateTime?.toLocal() ??
-          event.originalStartTime?.date?.toLocal() ??
-          event.start?.dateTime?.toLocal() ??
-          event.start?.date?.toLocal();
+      final seriesStart = _startOf(series);
+      final occurrenceStart = _occurrenceStart(event);
       if (series == null || seriesStart == null || occurrenceStart == null) {
         throw StateError('The repeating series for this event was not found.');
       }
@@ -681,3 +729,6 @@ class CalendarService {
     return events;
   }
 }
+
+/// Which part of a repeating event a change applies to.
+enum EventScope { thisEvent, thisAndFollowing, allEvents }

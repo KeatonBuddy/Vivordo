@@ -287,7 +287,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       setState(() => _isLoading = true);
       final allEvents = result.scope == EventScope.allEvents;
       if (result.action == CalendarEventEditAction.delete) {
-        await CalendarService.deleteEvent(event, allEvents: allEvents);
+        await CalendarService.deleteEvent(event, scope: result.scope);
       } else {
         final draft = result.draft!;
         await CalendarService.updateEvent(
@@ -323,10 +323,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
     try {
       setState(() => _isLoading = true);
-      await CalendarService.deleteEvent(
-        event,
-        allEvents: scope == EventScope.allEvents,
-      );
+      await CalendarService.deleteEvent(event, scope: scope);
       await _loadTodayEvents();
       _showMessage('Event deleted.');
     } catch (error) {

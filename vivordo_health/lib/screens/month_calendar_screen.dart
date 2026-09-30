@@ -183,7 +183,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
       setState(() => _loading = true);
       final allEvents = result.scope == EventScope.allEvents;
       if (result.action == CalendarEventEditAction.delete) {
-        await CalendarService.deleteEvent(event, allEvents: allEvents);
+        await CalendarService.deleteEvent(event, scope: result.scope);
       } else {
         final draft = result.draft!;
         await CalendarService.updateEvent(
@@ -219,10 +219,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
 
     try {
       setState(() => _loading = true);
-      await CalendarService.deleteEvent(
-        event,
-        allEvents: scope == EventScope.allEvents,
-      );
+      await CalendarService.deleteEvent(event, scope: scope);
       await _loadEvents();
       _showMessage('Event deleted.');
     } catch (error) {
