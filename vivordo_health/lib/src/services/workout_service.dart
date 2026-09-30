@@ -245,6 +245,35 @@ class SavedWorkout {
   }
 }
 
+/// A day's `exercise_time` with [deltaMinutes] of app-recorded time (workouts
+/// and logged activities) added to `workoutMinutes`. Health-synced minutes
+/// live in `healthSum`, so a later sync replaces them without wiping these.
+Map<String, dynamic> exerciseTimeWithAppMinutes(
+  Map<String, dynamic>? exerciseTime,
+  num deltaMinutes,
+) {
+  final current = exerciseTime ?? const <String, dynamic>{};
+  final appMinutes = (current['workoutMinutes'] as num?)?.toDouble() ?? 0;
+  final healthMinutes =
+      (current['healthSum'] as num?)?.toDouble() ??
+      (((current['sum'] as num?)?.toDouble() ?? 0) - appMinutes).clamp(
+        0,
+        double.infinity,
+      );
+  final updatedAppMinutes = (appMinutes + deltaMinutes).clamp(
+    0,
+    double.infinity,
+  );
+  return {
+    ...current,
+    'healthSum': healthMinutes,
+    'workoutMinutes': updatedAppMinutes,
+    'sum': healthMinutes + updatedAppMinutes,
+    'unit': 'min',
+    'dimension': 'activity',
+  };
+}
+
 class WorkoutService {
   const WorkoutService._();
 
@@ -499,17 +528,6 @@ class WorkoutService {
             .collection('metrics_daily')
             .doc(goalDay);
         final dailySnapshot = await transaction.get(dailyReference);
-        final exerciseTime =
-            dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>? ??
-            const <String, dynamic>{};
-        final currentWorkoutMinutes =
-            (exerciseTime['workoutMinutes'] as num?)?.toDouble() ?? 0;
-        final healthMinutes =
-            (exerciseTime['healthSum'] as num?)?.toDouble() ??
-            (((exerciseTime['sum'] as num?)?.toDouble() ?? 0) -
-                    currentWorkoutMinutes)
-                .clamp(0, double.infinity);
-        final updatedWorkoutMinutes = currentWorkoutMinutes + goalMinutes;
 
         transaction.update(workout.reference, {
           'exerciseGoalDay': goalDay,
@@ -517,14 +535,10 @@ class WorkoutService {
           'exerciseMinutesBackfilledAt': FieldValue.serverTimestamp(),
         });
         transaction.set(dailyReference, {
-          'exercise_time': {
-            ...exerciseTime,
-            'healthSum': healthMinutes,
-            'workoutMinutes': updatedWorkoutMinutes,
-            'sum': healthMinutes + updatedWorkoutMinutes,
-            'unit': 'min',
-            'dimension': 'activity',
-          },
+          'exercise_time': exerciseTimeWithAppMinutes(
+            dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>?,
+            goalMinutes,
+          ),
           'date': goalDay,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
@@ -811,27 +825,11 @@ class WorkoutService {
             .collection('metrics_daily')
             .doc(goalDay);
         final dailySnapshot = await transaction.get(dailyReference);
-        final exerciseTime =
-            dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>? ??
-            const <String, dynamic>{};
-        final currentWorkoutMinutes =
-            (exerciseTime['workoutMinutes'] as num?)?.toDouble() ?? 0;
-        final healthMinutes =
-            (exerciseTime['healthSum'] as num?)?.toDouble() ??
-            (((exerciseTime['sum'] as num?)?.toDouble() ?? 0) -
-                    currentWorkoutMinutes)
-                .clamp(0, double.infinity);
-        final updatedWorkoutMinutes = (currentWorkoutMinutes - goalMinutes)
-            .clamp(0, double.infinity);
         transaction.set(dailyReference, {
-          'exercise_time': {
-            ...exerciseTime,
-            'healthSum': healthMinutes,
-            'workoutMinutes': updatedWorkoutMinutes,
-            'sum': healthMinutes + updatedWorkoutMinutes,
-            'unit': 'min',
-            'dimension': 'activity',
-          },
+          'exercise_time': exerciseTimeWithAppMinutes(
+            dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>?,
+            -goalMinutes,
+          ),
           'date': goalDay,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
@@ -926,17 +924,6 @@ class WorkoutService {
       for (final entry in latestAttemptReferences.entries) {
         latestAttemptSnapshots[entry.key] = await transaction.get(entry.value);
       }
-      final exerciseTime =
-          dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>? ??
-          const <String, dynamic>{};
-      final currentWorkoutMinutes =
-          (exerciseTime['workoutMinutes'] as num?)?.toDouble() ?? 0;
-      final healthMinutes =
-          (exerciseTime['healthSum'] as num?)?.toDouble() ??
-          (((exerciseTime['sum'] as num?)?.toDouble() ?? 0) -
-                  currentWorkoutMinutes)
-              .clamp(0, double.infinity);
-      final updatedWorkoutMinutes = currentWorkoutMinutes + goalMinutes;
       final exerciseMaps = exercises
           .map((exercise) => _withoutPersonalBestMetadata(exercise.toMap()))
           .toList(growable: false);
@@ -1026,14 +1013,10 @@ class WorkoutService {
         });
       }
       transaction.set(dailyReference, {
-        'exercise_time': {
-          ...exerciseTime,
-          'healthSum': healthMinutes,
-          'workoutMinutes': updatedWorkoutMinutes,
-          'sum': healthMinutes + updatedWorkoutMinutes,
-          'unit': 'min',
-          'dimension': 'activity',
-        },
+        'exercise_time': exerciseTimeWithAppMinutes(
+          dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>?,
+          goalMinutes,
+        ),
         'date': goalDay,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
