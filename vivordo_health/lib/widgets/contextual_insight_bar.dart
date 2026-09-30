@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme/vivordo_theme.dart';
-import 'vivordo_robot.dart';
 
 @immutable
 class ScreenInsight {
@@ -156,25 +155,78 @@ class ContextualInsightBar extends StatefulWidget {
   State<ContextualInsightBar> createState() => _ContextualInsightBarState();
 }
 
-class _ContextualInsightBarState extends State<ContextualInsightBar> {
+class _ContextualInsightBarState extends State<ContextualInsightBar>
+    with SingleTickerProviderStateMixin {
+  /// Width of the collapsed robot button, which the pill grows out of.
+  static const _buttonSize = 64.0;
+
   bool _dismissed = false;
   Timer? _delay;
   bool _ready = false;
   bool _expanded = false;
+  // Kept while the pill closes, so its content can shrink back into the
+  // button after the insight itself has gone.
+  ScreenInsight? _shown;
+  late final AnimationController _reveal = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 340),
+  );
+  late final Animation<double> _width = CurvedAnimation(
+    parent: _reveal,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+  // Content fades in once the pill has room for it, and out first on close.
+  late final Animation<double> _content = CurvedAnimation(
+    parent: _reveal,
+    curve: const Interval(.45, 1, curve: Curves.easeOut),
+    reverseCurve: const Interval(.55, 1, curve: Curves.easeIn),
+  );
+
+  bool get _open =>
+      _ready && widget.insight != null && !widget.suppressed && !_dismissed;
+
   @override
   void initState() {
     super.initState();
     _schedule();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reveal.duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 340);
+  }
+
   void _schedule() {
     _delay?.cancel();
     _ready = false;
     _expanded = false;
+    _sync();
     if (widget.insight == null || widget.suppressed) return;
     _delay = Timer(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _ready = true);
+      if (!mounted) return;
+      setState(() => _ready = true);
+      _sync();
     });
+  }
+
+  /// Drives the morph toward the current open/closed state.
+  void _sync() {
+    if (_open) {
+      _shown = widget.insight;
+      _reveal.forward();
+    } else {
+      _expanded = false;
+      _reveal.reverse();
+    }
+  }
+
+  void _dismiss() {
+    setState(() => _dismissed = true);
+    _sync();
   }
 
   @override
@@ -186,155 +238,165 @@ class _ContextualInsightBarState extends State<ContextualInsightBar> {
     if (oldWidget.insight?.screen != widget.insight?.screen ||
         oldWidget.suppressed != widget.suppressed) {
       _schedule();
+    } else if (_open) {
+      _shown = widget.insight; // same screen, refreshed text
     }
   }
 
   @override
   void dispose() {
     _delay?.cancel();
+    _reveal.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final insight = widget.insight;
-    if (!_ready || insight == null || widget.suppressed || _dismissed) {
-      return _animate(
-        Align(
-          key: const ValueKey('button'),
-          alignment: Alignment.centerRight,
-          child: widget.collapsed,
-        ),
-      );
-    }
     final colors = context.vivordoColors;
-    return _animate(
-      RepaintBoundary(
-        key: ValueKey(insight.screen),
-        child: Material(
-          color: colors.card,
-          elevation: 8,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(26),
-            side: const BorderSide(color: VivordoTheme.brand),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: AnimatedSize(
-            duration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : const Duration(milliseconds: 180),
-            alignment: Alignment.bottomCenter,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * .45,
-              ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          const CircleAvatar(
-                            backgroundColor: VivordoTheme.brand,
-                            child: Center(
-                              child: VivordoRobot(size: 24, faceOnly: true),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: InkWell(
-                              onTap: () =>
-                                  setState(() => _expanded = !_expanded),
-                              child: Text(
-                                _expanded ? insight.title : insight.message,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: colors.textPrimary,
-                                  fontWeight: FontWeight.w600,
-                                ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fullWidth = constraints.maxWidth;
+        return Align(
+          alignment: Alignment.bottomRight,
+          child: AnimatedBuilder(
+            animation: _reveal,
+            builder: (context, _) {
+              final t = _width.value;
+              final insight = _shown;
+              final showContent = _reveal.value > 0 && insight != null;
+              return SizedBox(
+                width: _buttonSize + (fullWidth - _buttonSize) * t,
+                child: Material(
+                  // The pill is the button stretched open: same spot, same
+                  // corner radius, taking on the card colour as it widens.
+                  color: Color.lerp(VivordoTheme.brand, colors.card, t),
+                  // Collapsed, the pill carries the button's purple glow,
+                  // which its clip would otherwise cut off.
+                  elevation: 10 - 2 * t,
+                  shadowColor: Color.lerp(
+                    VivordoTheme.brand.withValues(alpha: .38),
+                    Colors.black,
+                    t,
+                  ),
+                  animationDuration: Duration.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(_buttonSize / 2),
+                    side: BorderSide(
+                      color: VivordoTheme.brand.withValues(alpha: t),
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: AnimatedSize(
+                    duration: _reveal.duration!,
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.bottomCenter,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.sizeOf(context).height * .45,
+                      ),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              height: _buttonSize,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: showContent
+                                        ? ClipRect(
+                                            // Laid out at full width and
+                                            // uncovered as the pill widens,
+                                            // so nothing reflows mid-motion.
+                                            child: OverflowBox(
+                                              alignment: Alignment.centerRight,
+                                              minWidth: fullWidth - _buttonSize,
+                                              maxWidth: fullWidth - _buttonSize,
+                                              child: FadeTransition(
+                                                opacity: _content,
+                                                child: _header(insight),
+                                              ),
+                                            ),
+                                          )
+                                        : const SizedBox.shrink(),
+                                  ),
+                                  SizedBox.square(
+                                    dimension: _buttonSize,
+                                    child: Center(child: widget.collapsed),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                          IconButton(
-                            tooltip: _expanded
-                                ? 'Collapse insight'
-                                : 'Expand insight',
-                            onPressed: () =>
-                                setState(() => _expanded = !_expanded),
-                            icon: Icon(
-                              _expanded ? Icons.expand_more : Icons.expand_less,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'Dismiss insights for this screen',
-                            onPressed: () => setState(() => _dismissed = true),
-                            icon: const Icon(Icons.close, size: 20),
-                          ),
-                        ],
+                            if (_expanded && insight != null) _details(insight),
+                          ],
+                        ),
                       ),
-                      if (_expanded) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          insight.message,
-                          style: TextStyle(color: colors.textPrimary),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Based on the data shown on this screen. Wellness guidance, not medical advice.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        FilledButton.icon(
-                          onPressed: insight.busy
-                              ? null
-                              : insight.onAction ??
-                                    () => widget.onAsk(insight.prompt),
-                          icon: const Icon(Icons.chat_bubble_outline),
-                          label: Text(insight.actionLabel ?? 'Ask Vivordo AI'),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _header(ScreenInsight insight) {
+    final colors = context.vivordoColors;
+    return Row(
+      children: [
+        const SizedBox(width: 16),
+        Expanded(
+          child: InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Text(
+              _expanded ? insight.title : insight.message,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
         ),
-      ),
+        IconButton(
+          tooltip: _expanded ? 'Collapse insight' : 'Expand insight',
+          onPressed: () => setState(() => _expanded = !_expanded),
+          icon: Icon(_expanded ? Icons.expand_more : Icons.expand_less),
+        ),
+        IconButton(
+          tooltip: 'Dismiss insights for this screen',
+          onPressed: _dismiss,
+          icon: const Icon(Icons.close, size: 20),
+        ),
+      ],
     );
   }
 
-  Widget _animate(Widget child) {
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 280);
-    return AnimatedSize(
-      duration: duration,
-      curve: Curves.easeOutCubic,
-      alignment: Alignment.bottomRight,
-      child: AnimatedSwitcher(
-        duration: duration,
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        layoutBuilder: (current, previous) => Stack(
-          alignment: Alignment.bottomRight,
-          children: [...previous, if (current != null) current],
-        ),
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: .88, end: 1).animate(animation),
-            alignment: Alignment.bottomRight,
-            child: child,
+  Widget _details(ScreenInsight insight) {
+    final colors = context.vivordoColors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(insight.message, style: TextStyle(color: colors.textPrimary)),
+          const SizedBox(height: 8),
+          Text(
+            'Based on the data shown on this screen. Wellness guidance, not medical advice.',
+            style: TextStyle(fontSize: 12, color: colors.textSecondary),
           ),
-        ),
-        child: child,
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: insight.busy
+                ? null
+                : insight.onAction ?? () => widget.onAsk(insight.prompt),
+            icon: const Icon(Icons.chat_bubble_outline),
+            label: Text(insight.actionLabel ?? 'Ask Vivordo AI'),
+          ),
+        ],
       ),
     );
   }

@@ -43,13 +43,13 @@ void main() {
     expect(find.text('Advice'), findsOneWidget);
   });
 
-  testWidgets('a quick tab switch can show the robot button twice', (
+  testWidgets('a quick tab switch morphs one robot button, never a copy', (
     tester,
   ) async {
-    // Switching again just as an insight card fades in brings the button back
-    // while its previous copy is still fading out. The button must therefore
-    // never carry a GlobalKey (main_navigation.dart once did, which crashed
-    // the tree with "Duplicate GlobalKey").
+    // Switching again just as an insight card opens reverses the morph. The
+    // pill grows out of the button, so there is only ever one robot, and it
+    // must never carry a GlobalKey (main_navigation.dart once did, which
+    // crashed the old crossfade with "Duplicate GlobalKey").
     Future<void> show(String screen) => tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -69,7 +69,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     await show('fitness');
     await tester.pump(const Duration(milliseconds: 16));
-    expect(find.text('Robot'), findsNWidgets(2));
+    expect(find.text('Robot'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();
     expect(find.text('Robot'), findsOneWidget);
