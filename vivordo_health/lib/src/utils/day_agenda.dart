@@ -26,15 +26,18 @@ const openingMinutes = 30;
 const breakMinutes = 10;
 
 /// Upcoming timed items interleaved with the gaps between them, from [now] to
-/// midnight. Gaps are measured from the latest end so far, so overlapping
-/// items never create a false opening. Items already over are left out.
+/// midnight, or to the last item when [openEnded] is false. Gaps are measured
+/// from the latest end so far, so overlapping items never create a false
+/// opening. Items already over are left out.
 List<AgendaEntry<T>> buildDayAgenda<T>(
   DateTime now,
-  Iterable<AgendaItem<T>> items,
-) {
+  Iterable<AgendaItem<T>> items, {
+  bool openEnded = true,
+}) {
   final dayEnd = DateTime(now.year, now.month, now.day + 1);
-  final upcoming = items.where((i) => i.end.isAfter(now)).toList()
-    ..sort((a, b) => a.start.compareTo(b.start));
+  final upcoming =
+      items.where((i) => i.end.isAfter(now) || !i.start.isBefore(now)).toList()
+        ..sort((a, b) => a.start.compareTo(b.start));
   final entries = <AgendaEntry<T>>[];
   var cursor = now;
   for (final item in upcoming) {
@@ -47,7 +50,7 @@ List<AgendaEntry<T>> buildDayAgenda<T>(
     entries.add(item);
     if (item.end.isAfter(cursor)) cursor = item.end;
   }
-  if (dayEnd.difference(cursor).inMinutes >= openingMinutes) {
+  if (openEnded && dayEnd.difference(cursor).inMinutes >= openingMinutes) {
     entries.add(AgendaOpening(cursor, null));
   }
   return entries;

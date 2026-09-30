@@ -55,4 +55,21 @@ void main() {
       'open 20:0-end',
     ]);
   });
+
+  test('a closed day runs from its first item to its last', () {
+    final agenda = buildDayAgenda(at(9), [
+      item('standup', at(9), at(9, 15)),
+      item('dentist', at(11, 30), at(12, 30)),
+    ], openEnded: false);
+    expect(agenda.map(describe), ['standup', 'open 9:15-11', 'dentist']);
+  });
+
+  test('zero-length items starting now or later are kept', () {
+    expect(
+      buildDayAgenda(at(9), [
+        item('reminder', at(9), at(9)),
+      ], openEnded: false).map(describe),
+      ['reminder'],
+    );
+  });
 }
