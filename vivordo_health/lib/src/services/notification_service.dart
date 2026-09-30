@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz;
@@ -59,30 +60,35 @@ class NotificationService {
       if (kIsWeb) return;
       await _localNotificationsPlugin.cancel(_restTimerNotificationId);
       if (deadline == null || !deadline.isAfter(DateTime.now())) return;
-      await _localNotificationsPlugin.zonedSchedule(
-        _restTimerNotificationId,
-        'Rest timer finished',
-        'Your rest is over. Ready for your next set?',
-        tz.TZDateTime.from(deadline, tz.local),
-        const NotificationDetails(
-          iOS: DarwinNotificationDetails(
-            presentAlert: true,
-            presentSound: true,
-            presentBanner: true,
-            presentList: true,
+      try {
+        await _localNotificationsPlugin.zonedSchedule(
+          _restTimerNotificationId,
+          'Rest timer finished',
+          'Your rest is over. Ready for your next set?',
+          tz.TZDateTime.from(deadline, tz.local),
+          const NotificationDetails(
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentSound: true,
+              presentBanner: true,
+              presentList: true,
+            ),
+            android: AndroidNotificationDetails(
+              'workout_rest',
+              'Workout rest timer',
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
           ),
-          android: AndroidNotificationDetails(
-            'workout_rest',
-            'Workout rest timer',
-            importance: Importance.high,
-            priority: Priority.high,
-          ),
-        ),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        payload: '{"screen":"active_workout","type":"rest_timer"}',
-      );
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          payload: '{"screen":"active_workout","type":"rest_timer"}',
+        );
+      } on PlatformException catch (error) {
+        // iOS refuses to schedule while notifications are denied.
+        debugPrint('Rest timer notification not scheduled: $error');
+      }
     });
     _restTimerOperations = operation.catchError((Object error) {
       debugPrint('Rest notification failed: $error');
@@ -783,18 +789,24 @@ class NotificationService {
       iOS: iOSDetails,
     );
 
-    await _localNotificationsPlugin.zonedSchedule(
-      notificationId,
-      'Time for your daily scan',
-      'Take a quick heart rate scan to keep your stress insights updated',
-      scheduledTime,
-      notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
-      payload: '{"screen": "scan", "type": "daily_scan_reminder"}',
-    );
+    try {
+      await _localNotificationsPlugin.zonedSchedule(
+        notificationId,
+        'Time for your daily scan',
+        'Take a quick heart rate scan to keep your stress insights updated',
+        scheduledTime,
+        notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+        payload: '{"screen": "scan", "type": "daily_scan_reminder"}',
+      );
+    } on PlatformException catch (error) {
+      // iOS refuses to schedule while notifications are denied.
+      debugPrint('Daily scan reminder not scheduled: $error');
+      return;
+    }
 
     print(
       'NotificationService: Daily scan reminder $notificationId scheduled for '
@@ -840,17 +852,23 @@ class NotificationService {
       ),
     );
 
-    await _localNotificationsPlugin.zonedSchedule(
-      _calendarCheckInReminderId,
-      'Time for your daily check-in',
-      'Your calendar is clear. Check in with Vivordo about your day.',
-      scheduledTime,
-      notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      payload: '{"screen": "ai_chat", "type": "calendar_check_in"}',
-    );
+    try {
+      await _localNotificationsPlugin.zonedSchedule(
+        _calendarCheckInReminderId,
+        'Time for your daily check-in',
+        'Your calendar is clear. Check in with Vivordo about your day.',
+        scheduledTime,
+        notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: '{"screen": "ai_chat", "type": "calendar_check_in"}',
+      );
+    } on PlatformException catch (error) {
+      // iOS refuses to schedule while notifications are denied.
+      debugPrint('Calendar check-in not scheduled: $error');
+      return;
+    }
 
     print(
       'NotificationService: Calendar check-in scheduled for $scheduledTime',
@@ -912,29 +930,37 @@ class NotificationService {
       if (scheduledAt(pending.first) <= time.millisecondsSinceEpoch) return;
       await _localNotificationsPlugin.cancel(pending.first.id);
     }
-    await _localNotificationsPlugin.zonedSchedule(
-      id,
-      'Priority reminder',
-      title,
-      tz.TZDateTime.from(time, tz.local),
-      const NotificationDetails(
-        iOS: DarwinNotificationDetails(presentAlert: true, presentSound: true),
-        android: AndroidNotificationDetails(
-          'priority_reminders',
-          'Priority reminders',
-          importance: Importance.high,
-          priority: Priority.high,
+    try {
+      await _localNotificationsPlugin.zonedSchedule(
+        id,
+        'Priority reminder',
+        title,
+        tz.TZDateTime.from(time, tz.local),
+        const NotificationDetails(
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentSound: true,
+          ),
+          android: AndroidNotificationDetails(
+            'priority_reminders',
+            'Priority reminders',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
         ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      payload: jsonEncode({
-        'screen': 'calendar',
-        'type': 'priority_reminder',
-        'scheduledAt': time.millisecondsSinceEpoch,
-      }),
-    );
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: jsonEncode({
+          'screen': 'calendar',
+          'type': 'priority_reminder',
+          'scheduledAt': time.millisecondsSinceEpoch,
+        }),
+      );
+    } on PlatformException catch (error) {
+      // iOS refuses to schedule while notifications are denied.
+      debugPrint('Priority reminder not scheduled: $error');
+    }
   }
 
   /// Get the current FCM token
