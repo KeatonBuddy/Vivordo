@@ -43,6 +43,38 @@ void main() {
     expect(find.text('Advice'), findsOneWidget);
   });
 
+  testWidgets('a quick tab switch can show the robot button twice', (
+    tester,
+  ) async {
+    // Switching again just as an insight card fades in brings the button back
+    // while its previous copy is still fading out. The button must therefore
+    // never carry a GlobalKey (main_navigation.dart once did, which crashed
+    // the tree with "Duplicate GlobalKey").
+    Future<void> show(String screen) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ContextualInsightBar(
+            insight: ScreenInsight(screen, 'Title', 'Advice'),
+            collapsed: const Text('Robot'),
+            onAsk: (_) {},
+          ),
+        ),
+      ),
+    );
+    await show('home');
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    await show('my_day');
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 50));
+    await show('fitness');
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(find.text('Robot'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+    await tester.pumpAndSettle();
+    expect(find.text('Robot'), findsOneWidget);
+  });
+
   test('only the selected tab and top route provide advice', () {
     final controller = ScreenInsightController();
     final root = MaterialPageRoute<void>(

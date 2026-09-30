@@ -39,7 +39,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   late final AnimationController _chatRevealController;
   late final AnimationController _fitnessPulseController;
   late final Animation<double> _chatRevealAnimation;
-  final GlobalKey _chatBubbleKey = GlobalKey();
   final GlobalKey<NavigatorState> _contentNavigatorKey =
       GlobalKey<NavigatorState>();
   late final _ContentNavigatorObserver _contentNavigatorObserver;
@@ -259,10 +258,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     );
   }
 
-  void _openChat() {
+  /// Opens Panda chat, growing it out of [from] (the robot button that was
+  /// tapped) or, when opened another way, out of the button's usual corner.
+  void _openChat({BuildContext? from}) {
     if (_chatOpen) return;
-    final bubbleContext = _chatBubbleKey.currentContext;
-    final bubbleBox = bubbleContext?.findRenderObject() as RenderBox?;
+    final bubbleBox = from?.findRenderObject() as RenderBox?;
     final origin = bubbleBox == null
         ? Offset(
             MediaQuery.sizeOf(context).width - 64,
@@ -442,19 +442,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     );
   }
 
+  // No GlobalKey here: the insight bar crossfades this button, so two copies
+  // can briefly coexist, which a GlobalKey forbids.
   Widget _buildChatBubble() => Material(
-    key: _chatBubbleKey,
     color: primaryPurple,
     elevation: 10,
     shadowColor: primaryPurple.withValues(alpha: .38),
     shape: const CircleBorder(),
     clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: _openChat,
-      child: const SizedBox(
-        width: 64,
-        height: 64,
-        child: Center(child: VivordoRobot(size: 30, faceOnly: true)),
+    child: Builder(
+      builder: (bubbleContext) => InkWell(
+        onTap: () => _openChat(from: bubbleContext),
+        child: const SizedBox(
+          width: 64,
+          height: 64,
+          child: Center(child: VivordoRobot(size: 30, faceOnly: true)),
+        ),
       ),
     ),
   );
