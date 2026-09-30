@@ -55,6 +55,22 @@ class CalendarEventDraft {
   }
 }
 
+int _minutesOf(TimeOfDay t) => t.hour * 60 + t.minute;
+
+/// The end time after the start moves from [oldStart] to [newStart], keeping
+/// the event's length. An end at or before its start means the next day, so
+/// 10 PM – 1 AM keeps its 3 hours.
+TimeOfDay keepEventLength({
+  required TimeOfDay oldStart,
+  required TimeOfDay oldEnd,
+  required TimeOfDay newStart,
+}) {
+  var length = (_minutesOf(oldEnd) - _minutesOf(oldStart)) % 1440;
+  if (length == 0) length = 60;
+  final end = (_minutesOf(newStart) + length) % 1440;
+  return TimeOfDay(hour: end ~/ 60, minute: end % 60);
+}
+
 enum CalendarEventEditAction { save, delete }
 
 class CalendarEventEditResult {
@@ -435,6 +451,11 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
     if (value == null) return;
     setState(() {
       if (start) {
+        _endTime = keepEventLength(
+          oldStart: _startTime,
+          oldEnd: _endTime,
+          newStart: value,
+        );
         _startTime = value;
       } else {
         _endTime = value;
@@ -639,7 +660,11 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                         _PickerRow(
                           icon: Icons.schedule_rounded,
                           label: 'End time',
-                          value: _endTime.format(context),
+                          // Matches CalendarEventDraft.end, which rolls an
+                          // end at or before the start into the next day.
+                          value: _minutesOf(_endTime) <= _minutesOf(_startTime)
+                              ? '${_endTime.format(context)} (next day)'
+                              : _endTime.format(context),
                           enabled: !_isAllDay,
                           onTap: () => _pickTime(start: false),
                         ),

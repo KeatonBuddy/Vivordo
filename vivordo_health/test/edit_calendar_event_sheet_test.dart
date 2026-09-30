@@ -71,4 +71,21 @@ void main() {
     expect(find.text('Every 2 weeks on Mon, Wed'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  test('moving the start keeps the event length', () {
+    TimeOfDay t(int h, [int m = 0]) => TimeOfDay(hour: h, minute: m);
+    expect(
+      keepEventLength(oldStart: t(9), oldEnd: t(10), newStart: t(11)),
+      t(12),
+    );
+    expect(
+      keepEventLength(oldStart: t(9), oldEnd: t(10, 30), newStart: t(23)),
+      t(0, 30),
+    );
+    // An overnight event keeps its length too.
+    expect(
+      keepEventLength(oldStart: t(22), oldEnd: t(1), newStart: t(21)),
+      t(0),
+    );
+  });
 }
