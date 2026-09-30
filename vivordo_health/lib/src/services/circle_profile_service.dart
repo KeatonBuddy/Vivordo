@@ -855,6 +855,21 @@ class CircleProfileService {
         });
   }
 
+  /// The badge art for an achievement post. Posts written before one-time
+  /// achievements saved their badge have none, so it is derived from the
+  /// achievement id and tier, which follow the asset naming.
+  @visibleForTesting
+  static String? achievementBadgeFor(Map<String, dynamic> data) {
+    final saved = data['achievementBadgeAsset'] as String?;
+    if (saved != null && saved.trim().isNotEmpty) return saved;
+    final id = data['achievementId'] as String?;
+    if (data['kind'] != 'achievement' || id == null || id.isEmpty) return null;
+    final tier = data['achievementTier'] as String?;
+    return tier == null
+        ? 'assets/achievements/$id.png'
+        : 'assets/achievements/${id}_$tier.png';
+  }
+
   static Stream<List<CircleActivity>> watchLatestFriendActivities() {
     final controller = StreamController<List<CircleActivity>>();
     StreamSubscription<List<CircleProfile>>? friendsSubscription;
@@ -906,8 +921,7 @@ class CircleProfileService {
                         km: (data['km'] as num?)?.toDouble(),
                         sets: (data['sets'] as num?)?.round(),
                         activityCategory: data['activityCategory'] as String?,
-                        achievementBadgeAsset:
-                            data['achievementBadgeAsset'] as String?,
+                        achievementBadgeAsset: achievementBadgeFor(data),
                         achievementTier: data['achievementTier'] as String?,
                       );
                     })
@@ -968,7 +982,7 @@ class CircleProfileService {
               km: (data['km'] as num?)?.toDouble(),
               sets: (data['sets'] as num?)?.round(),
               activityCategory: data['activityCategory'] as String?,
-              achievementBadgeAsset: data['achievementBadgeAsset'] as String?,
+              achievementBadgeAsset: achievementBadgeFor(data),
               achievementTier: data['achievementTier'] as String?,
             );
           })

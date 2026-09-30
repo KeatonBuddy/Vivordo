@@ -499,7 +499,9 @@ class AchievementService {
                 'name': achievement.name,
                 'summary': unlockedRequirement,
                 'achievementId': achievement.id,
-                'achievementBadgeAsset': achievement.earnedBadgeAsset,
+                // One-time achievements only have a goal badge.
+                'achievementBadgeAsset':
+                    achievement.earnedBadgeAsset ?? achievement.goalBadgeAsset,
                 'achievementTier': ?achievement.tier,
                 'minutes': 0,
                 'day': FieldValue.serverTimestamp(),
