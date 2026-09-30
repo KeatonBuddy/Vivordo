@@ -364,10 +364,12 @@ void main() {
       value = 2;
       final second = queue.request();
       final third = queue.request();
-      expect(identical(first, second), isTrue);
-      expect(identical(second, third), isTrue);
       release.complete();
-      expect(await first, 2);
+      // Each caller gets the first run that started after it asked; the two
+      // overlapping requests share one trailing run with the newest inputs.
+      expect(await first, 1);
+      expect(await second, 2);
+      expect(await third, 2);
       expect(calls, 2);
     },
   );
@@ -385,9 +387,34 @@ void main() {
       await settle();
       queue.markDirty();
       release.complete();
-      expect(await result, 2);
+      expect(await result, 1);
+      await settle();
+      expect(calls, 2);
     },
   );
+
+  test('a caller does not wait for follow-ups from steady updates', () async {
+    late AchievementReconciliationQueue<int> queue;
+    var calls = 0;
+    queue = AchievementReconciliationQueue<int>(() async {
+      calls++;
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      // A source changes during every run, e.g. a watch syncing heart rate.
+      if (calls < 50) queue.markDirty();
+      return calls;
+    });
+    expect(await queue.request(), 1);
+    expect(calls, lessThan(3));
+    queue.valid = false;
+  });
+
+  test('requests in the same turn share one run', () async {
+    var calls = 0;
+    final queue = AchievementReconciliationQueue<int>(() async => ++calls);
+    final results = await Future.wait([queue.request(), queue.request()]);
+    expect(results, [1, 1]);
+    expect(calls, 1);
+  });
 
   test(
     'invalidation prevents queued follow-up and rejects new requests',

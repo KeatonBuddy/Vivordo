@@ -228,6 +228,7 @@ class AchievementService {
   AchievementService._();
 
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static const _sourceTimeout = Duration(seconds: 5);
   static _AchievementSession? _session;
   static StreamSubscription<User?>? _auth;
 
@@ -283,7 +284,13 @@ class AchievementService {
       session.inputs.load(),
       userRef.collection('journal_entries').count().get(),
       userRef.collection('achievements').get(),
-      CircleProfileService.watchFriends().first,
+      // A source that never answers must not stall every achievement.
+      // Earned achievements are never revoked, so a timed-out source only
+      // delays an unlock to the next run.
+      CircleProfileService.watchFriends().first.timeout(
+        _sourceTimeout,
+        onTimeout: () => const <CircleProfile>[],
+      ),
       _hasGoogleCalendar(),
       _hasOutlookCalendar(),
       userRef.get(),
@@ -640,7 +647,10 @@ class AchievementService {
 
   static Future<bool> _hasGoogleCalendar() async {
     try {
-      return await CalendarService.hasCalendarAccess();
+      return await CalendarService.hasCalendarAccess().timeout(
+        _sourceTimeout,
+        onTimeout: () => false,
+      );
     } catch (_) {
       return false;
     }
@@ -648,7 +658,10 @@ class AchievementService {
 
   static Future<bool> _hasOutlookCalendar() async {
     try {
-      return await OutlookCalendarService.isSignedIn();
+      return await OutlookCalendarService.isSignedIn().timeout(
+        _sourceTimeout,
+        onTimeout: () => false,
+      );
     } catch (_) {
       return false;
     }

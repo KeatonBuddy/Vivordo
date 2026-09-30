@@ -292,38 +292,66 @@ class AchievementInputsRepository {
 }
 
 /// Requests during a run collapse into one trailing run; no update is lost.
+///
+/// A caller waits only for the first run that starts after it asked, never
+/// for the follow-up runs that later source updates trigger. Otherwise steady
+/// updates (a syncing watch, another device) keep the queue rerunning and a
+/// caller can wait indefinitely.
 class AchievementReconciliationQueue<T> {
   AchievementReconciliationQueue(this._run);
   final Future<T> Function() _run;
-  Future<T>? _active;
+  var _waiting = <Completer<T>>[];
+  bool _running = false;
   bool _dirty = false;
   bool valid = true;
 
   void markDirty() {
-    if (_active != null && valid) _dirty = true;
+    if (_running && valid) _dirty = true;
   }
 
   Future<T> request() {
     if (!valid) return Future.error(StateError('Achievement session ended'));
+    final waiter = Completer<T>();
+    _waiting.add(waiter);
     _dirty = true;
-    return _active ??= Future<T>.microtask(() async {
-      try {
-        late T result;
-        do {
-          _dirty = false;
-          try {
-            result = await _run();
-          } catch (_) {
-            // A fresh request received during a failed run still gets its turn.
-            if (_dirty && valid) continue;
-            rethrow;
+    if (!_running) {
+      _running = true;
+      // Requests made in the same turn share the first run.
+      scheduleMicrotask(_drain);
+    }
+    return waiter.future;
+  }
+
+  Future<void> _drain() async {
+    try {
+      while (_dirty && valid) {
+        _dirty = false;
+        final served = _waiting;
+        _waiting = [];
+        try {
+          final result = await _run();
+          for (final waiter in served) {
+            waiter.complete(result);
           }
-        } while (_dirty && valid);
-        return result;
-      } finally {
-        _active = null;
+        } catch (error, stack) {
+          if (_dirty && valid) {
+            // A newer request is already queued: its run answers these too.
+            _waiting = [...served, ..._waiting];
+            continue;
+          }
+          for (final waiter in served) {
+            waiter.completeError(error, stack);
+          }
+        }
       }
-    });
+    } finally {
+      _running = false;
+      final left = _waiting;
+      _waiting = [];
+      for (final waiter in left) {
+        waiter.completeError(StateError('Achievement session ended'));
+      }
+    }
   }
 }
 
