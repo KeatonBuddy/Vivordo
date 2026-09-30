@@ -124,6 +124,7 @@ class HomeWidgetService {
         'dashboardName': '',
         'dashboardHasStress': false,
         'dashboardHasWellness': false,
+        'dashboardMetricsUpdatedAt': 0,
         'dashboardCalendarConnected': false,
       });
     } on MissingPluginException {
@@ -186,7 +187,11 @@ class HomeWidgetService {
       if (generation != _accountGeneration) return;
       _lastSignature = signature;
 
-      await _channel.invokeMethod<void>('updateSnapshot', values);
+      // Stamped after the signature so an unchanged snapshot is still skipped.
+      await _channel.invokeMethod<void>('updateSnapshot', {
+        ...values,
+        'dashboardMetricsUpdatedAt': DateTime.now().millisecondsSinceEpoch,
+      });
     } on MissingPluginException {
       // Widgets are an iOS-only enhancement; Android and tests can ignore it.
     } on PlatformException catch (error) {
@@ -216,8 +221,16 @@ class HomeWidgetService {
         now.month,
         now.day,
       ).subtract(Duration(days: now.weekday - 1));
-      final googleFuture = CalendarService.getWeekEvents(monday);
-      final outlookFuture = OutlookCalendarService.getWeekEvents(monday);
+      // On Sunday the widgets' "tomorrow" is next Monday, so fetch one extra
+      // day. Other days keep the exact week range the calendar screens cache.
+      final end = monday.add(
+        Duration(days: now.weekday == DateTime.sunday ? 8 : 7),
+      );
+      final googleFuture = CalendarService.getEventsBetween(monday, end);
+      final outlookFuture = OutlookCalendarService.getEventsBetween(
+        monday,
+        end,
+      );
       final googleEvents = await googleFuture;
       final outlookEvents = await outlookFuture;
       if (generation != _accountGeneration) return;
