@@ -32,10 +32,11 @@ void main() {
         homeStressComparison(48, 54),
         '6 points below your 7-day average.',
       );
-      expect(
-        homeStressRangeMessage(48, 54),
-        'Your stress is below your usual range.',
-      );
+      expect(homeStressLevel(null), isNull);
+      expect(homeStressLevel(29), 'Low');
+      expect(homeStressLevel(48), 'Moderate');
+      expect(homeStressLevel(60), 'Elevated');
+      expect(homeStressLevel(80), 'High');
     });
 
     test('recommends a walk when activity is low and stress is not high', () {

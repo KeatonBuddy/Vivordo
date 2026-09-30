@@ -177,48 +177,74 @@ class HourlyHeartInsightCardState extends State<HourlyHeartInsightCard>
     super.dispose();
   }
 
+  /// A row for Home's Insights card, so it carries no card of its own.
   @override
   Widget build(BuildContext context) => RepaintBoundary(
-    child: Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.favorite_rounded,
-            color: Color(0xFFFF3B30),
-            size: 22,
+    child: HomeInsightRow(
+      icon: Icons.monitor_heart_rounded,
+      color: const Color(0xFFFF3B30),
+      title: _insight.title,
+      subtitle: _insight.subtitle,
+    ),
+  );
+}
+
+/// One row of Home's Insights card.
+class HomeInsightRow extends StatelessWidget {
+  const HomeInsightRow({
+    super.key,
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(14),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .13),
+            borderRadius: BorderRadius.circular(11),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _insight.title,
-                  style: TextStyle(
-                    color: context.vivordoColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
+          child: Icon(icon, color: color, size: 19),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: context.vivordoColors.textPrimary,
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  _insight.subtitle,
-                  style: TextStyle(
-                    color: context.vivordoColors.textSecondary,
-                    fontSize: 12,
-                  ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: context.vivordoColors.textSecondary,
+                  fontSize: 12.5,
+                  height: 1.4,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     ),
   );
 }

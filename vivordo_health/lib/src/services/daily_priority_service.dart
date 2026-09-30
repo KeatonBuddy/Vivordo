@@ -82,6 +82,20 @@ class DailyPriority {
       sourceEventKey: data['sourceEventKey'] as String?,
     );
   }
+
+  /// Where a timed priority ends on a timeline: its own end, else its
+  /// estimate. Null when it has no start time.
+  DateTime? get timelineEnd {
+    final start = sourceStart;
+    if (start == null) return null;
+    // ponytail: no end or estimate means a 30-min block, so it still
+    // occupies the timeline instead of creating a false opening.
+    final minutes = (planning['minutes'] as num?)?.toInt();
+    return sourceEnd ??
+        start.add(
+          Duration(minutes: minutes != null && minutes > 0 ? minutes : 30),
+        );
+  }
 }
 
 class DailyPriorityService {

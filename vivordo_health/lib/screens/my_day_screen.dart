@@ -366,14 +366,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Future<void> _saveGoogleEvent(CalendarEventDraft draft) async {
     try {
       setState(() => _isLoading = true);
-      await CalendarService.createEvent(
-        title: draft.title,
-        start: draft.start,
-        end: draft.end,
-        recurrence: draft.recurrence,
-        isAllDay: draft.isAllDay,
-        calendarId: draft.calendarId,
-      );
+      await saveEventDraft(draft);
       await _loadTodayEvents();
       _showMessage('Event added to Google Calendar.');
     } catch (error) {
@@ -1042,24 +1035,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _saveManualPriority(PriorityDraft draft) async {
+    final String? warning;
     try {
-      final reference = await DailyPriorityService.createManual(
-        title: draft.title,
-        planning: draft.planning,
-        date: draft.date,
-        scheduledAt: draft.scheduledAt,
-        recurrence: draft.recurrence,
-        selectedWeekdays: draft.selectedWeekdays,
-        recurrenceEnd: draft.repeatEnd,
-        reminderMinutes: draft.reminderMinutes,
-        reminderTimeMinutes: draft.reminderTimeMinutes,
-      );
-      if (draft.addToCalendar && reference != null) {
-        await _addPriorityCalendarEvent(draft, reference: reference);
-      }
+      warning = await savePriorityDraft(draft);
     } catch (error) {
       _showMessage('Could not add priority: $error');
       return;
+    }
+    if (warning != null) _showMessage(warning);
+    if (draft.addToCalendar && mounted) {
+      await _loadTodayEvents(forceRefresh: true);
     }
   }
 
@@ -1067,44 +1052,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     PriorityDraft draft, {
     required DocumentReference<Map<String, dynamic>> reference,
   }) async {
-    final start = draft.scheduledAt ?? DateUtils.dateOnly(draft.date);
-    final end = draft.scheduledAt == null
-        ? start.add(const Duration(days: 1))
-        : start.add(
-            Duration(
-              minutes: (draft.planning['minutes'] as num?)?.toInt() ?? 60,
-            ),
-          );
-    try {
-      final event = await CalendarService.createEvent(
-        title: draft.title,
-        start: start,
-        end: end,
-        recurrence: draft.calendarRecurrence,
-        isAllDay: draft.scheduledAt == null,
-        isPriority: true,
-        priorityReference: reference.path,
-      );
-      await reference.update({
-        'sourceEventKey': 'google:${event.id}',
-        'linkedCalendarId': 'primary',
-        'sourceEnd': Timestamp.fromDate(end),
-      });
-      final saved = (await reference.get()).data();
-      final templateId = saved?['templateId'] as String?;
-      if (templateId != null) {
-        await reference.parent.parent!.parent.parent!
-            .collection('priority_templates')
-            .doc(templateId)
-            .update({'sourceEventKey': 'google:${event.id}'});
-      }
-      if (mounted) await _loadTodayEvents(forceRefresh: true);
-    } catch (error) {
-      _showMessage(
-        'Priority saved, but the calendar event could not be added: $error',
-      );
-      if (mounted) await _loadTodayEvents(forceRefresh: true);
-    }
+    final warning = await addPriorityCalendarEvent(draft, reference: reference);
+    if (warning != null) _showMessage(warning);
+    if (mounted) await _loadTodayEvents(forceRefresh: true);
   }
 
   String? _linkedKey(DailyPriority priority) {
@@ -1166,15 +1116,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             !DateUtils.isSameDay(start, now)) {
           continue;
         }
-        // ponytail: no end or estimate means a 30-min block, so it still
-        // occupies the timeline instead of creating a false opening.
-        final minutes = (priority.planning['minutes'] as num?)?.toInt();
-        final end =
-            priority.sourceEnd ??
-            start.add(
-              Duration(minutes: minutes != null && minutes > 0 ? minutes : 30),
-            );
-        items.add(AgendaItem((event: null, priority: priority), start, end));
+        items.add(
+          AgendaItem(
+            (event: null, priority: priority),
+            start,
+            priority.timelineEnd!,
+          ),
+        );
       }
       for (final event in _events.where((e) => !e.isAllDay)) {
         items.add(

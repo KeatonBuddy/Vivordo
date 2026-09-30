@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 class HomeStressCard extends StatefulWidget {
   const HomeStressCard({
@@ -15,6 +17,7 @@ class HomeStressCard extends StatefulWidget {
     required this.updating,
     required this.revealScore,
     required this.onInfoTap,
+    this.showWhoopBadge = false,
   });
 
   final double? score;
@@ -26,6 +29,7 @@ class HomeStressCard extends StatefulWidget {
   final bool updating;
   final bool revealScore;
   final VoidCallback onInfoTap;
+  final bool showWhoopBadge;
 
   @override
   State<HomeStressCard> createState() => _HomeStressCardState();
@@ -34,6 +38,8 @@ class HomeStressCard extends StatefulWidget {
 class _HomeStressCardState extends State<HomeStressCard>
     with SingleTickerProviderStateMixin {
   static const _palePurple = Color(0xFFC5BCFF);
+  // Reads on both the light and dark gradients.
+  static const _label = Color(0xD9FFFFFF);
   late final AnimationController _controller;
   late Animation<double> _scoreAnimation;
   late double _targetScore;
@@ -77,7 +83,8 @@ class _HomeStressCardState extends State<HomeStressCard>
         widget.steps != oldWidget.steps ||
         widget.loading != oldWidget.loading ||
         widget.updating != oldWidget.updating ||
-        widget.revealScore != oldWidget.revealScore;
+        widget.revealScore != oldWidget.revealScore ||
+        widget.showWhoopBadge != oldWidget.showWhoopBadge;
     final nextScore = _visibleScore;
     if (nextScore != _targetScore) {
       final currentScore = _scoreAnimation.value;
@@ -153,42 +160,38 @@ class _HomeStressCardState extends State<HomeStressCard>
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _header(),
-                  const SizedBox(height: 6),
-                  RepaintBoundary(
-                    child: SizedBox(
-                      width: 155,
-                      height: 155,
-                      child: AnimatedBuilder(
-                        animation: _scoreAnimation,
-                        child: _ringCenter(displayedScore),
-                        builder: (context, child) => CustomPaint(
-                          painter: _StressRingPainter(
-                            progress: _scoreAnimation.value / 100,
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      RepaintBoundary(
+                        child: SizedBox(
+                          width: 104,
+                          height: 104,
+                          child: AnimatedBuilder(
+                            animation: _scoreAnimation,
+                            child: _ringCenter(displayedScore),
+                            builder: (context, child) => CustomPaint(
+                              painter: _StressRingPainter(
+                                progress: _scoreAnimation.value / 100,
+                              ),
+                              child: child,
+                            ),
                           ),
-                          child: child,
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 16),
+                      Expanded(child: _summary(displayedScore)),
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    homeStressRangeMessage(
-                      widget.score,
-                      widget.sevenDayAverage,
-                    ),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      height: 1.3,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _insights(action),
+                  const SizedBox(height: 14),
+                  _action(action),
+                  const SizedBox(height: 12),
+                  _footer(),
                 ],
               ),
             ),
@@ -216,16 +219,145 @@ class _HomeStressCardState extends State<HomeStressCard>
   Widget _header() => Row(
     children: [
       const Text(
-        'CURRENT STRESS',
+        'RIGHT NOW',
         style: TextStyle(
-          color: Colors.white,
+          color: _label,
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          letterSpacing: 0.7,
+          letterSpacing: 1.1,
         ),
       ),
       const Spacer(),
-      if (widget.updating)
+      Semantics(
+        button: true,
+        label: 'About your stress score',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onInfoTap,
+          child: const Padding(
+            padding: EdgeInsets.all(3),
+            child: Icon(
+              Icons.info_outline_rounded,
+              color: _palePurple,
+              size: 18,
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Widget _ringCenter(double? displayedScore) => Center(
+    child: widget.loading
+        ? const SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: Colors.white,
+            ),
+          )
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                displayedScore == null ? '--' : '${displayedScore.round()}%',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 26,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'STRESS',
+                style: TextStyle(
+                  color: _label,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+  );
+
+  Widget _summary(double? displayedScore) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        homeStressLevel(displayedScore) ?? 'No score yet',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.3,
+        ),
+      ),
+      const SizedBox(height: 3),
+      Row(
+        children: [
+          Icon(_comparisonIcon(), color: _palePurple, size: 16),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              homeStressComparison(widget.score, widget.sevenDayAverage),
+              style: const TextStyle(
+                color: Color(0xFFDCD6FF),
+                fontSize: 12.5,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+      if (widget.drivers.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [for (final driver in widget.drivers) _driverChip(driver)],
+        ),
+      ],
+    ],
+  );
+
+  Widget _action(String action) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFF171344).withValues(alpha: 0.28),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(
+          Icons.directions_walk_rounded,
+          color: Color(0xFF69E987),
+          size: 18,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            action,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13.5,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _footer() => Row(
+    children: [
+      if (widget.updating) ...[
         SizedBox(
           width: 12,
           height: 12,
@@ -236,159 +368,24 @@ class _HomeStressCardState extends State<HomeStressCard>
             ),
           ),
         ),
-      if (widget.updating) const SizedBox(width: 6),
+        const SizedBox(width: 6),
+      ],
       Text(
         _updatedLabel(),
         style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
+          color: _label,
+          fontSize: 12,
           fontWeight: FontWeight.w500,
         ),
       ),
-      const SizedBox(width: 5),
-      GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onInfoTap,
-        child: const Padding(
-          padding: EdgeInsets.all(3),
-          child: Icon(Icons.info_outline_rounded, color: _palePurple, size: 16),
+      const Spacer(),
+      // The dark badge keeps the white WHOOP mark legible on the gradient.
+      if (widget.showWhoopBadge)
+        Theme(
+          data: VivordoTheme.dark,
+          child: const WhoopSourceBadge(compact: true),
         ),
-      ),
     ],
-  );
-
-  Widget _ringCenter(double? displayedScore) => Center(
-    child: widget.loading
-        ? const SizedBox(
-            width: 28,
-            height: 28,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              color: Colors.white,
-            ),
-          )
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.monitor_heart_outlined,
-                color: Color(0xFFA99DFF),
-                size: 31,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                displayedScore == null ? '--' : '${displayedScore.round()}%',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 31,
-                  height: 1,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -1.4,
-                ),
-              ),
-              const SizedBox(height: 3),
-              const Text(
-                'STRESS',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.6,
-                ),
-              ),
-            ],
-          ),
-  );
-
-  Widget _insights(String action) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-    decoration: BoxDecoration(
-      color: const Color(0xFF171344).withValues(alpha: 0.28),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'INSIGHTS',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            Icon(_comparisonIcon(), color: _palePurple, size: 17),
-            const SizedBox(width: 7),
-            Expanded(
-              child: Text(
-                homeStressComparison(widget.score, widget.sevenDayAverage),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  height: 1.25,
-                ),
-              ),
-            ),
-          ],
-        ),
-        if (widget.drivers.isNotEmpty) ...[
-          const SizedBox(height: 7),
-          const Text(
-            'LEADING DRIVERS',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.7,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              for (var index = 0; index < widget.drivers.length; index++) ...[
-                if (index > 0) const SizedBox(width: 6),
-                Expanded(child: _driverChip(widget.drivers[index])),
-              ],
-            ],
-          ),
-        ],
-        const SizedBox(height: 7),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.07),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.directions_walk_rounded,
-                color: Color(0xFF69E987),
-                size: 18,
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  action,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    height: 1.25,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
   );
 
   String _updatedLabel() {
@@ -445,21 +442,27 @@ class _HomeStressCardState extends State<HomeStressCard>
       ),
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(10),
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 6),
-          Expanded(
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 5),
+          Flexible(
             child: Text(
               driver.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 10),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -475,7 +478,7 @@ class _StressRingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const strokeWidth = 12.0;
+    const strokeWidth = 9.0;
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (math.min(size.width, size.height) - strokeWidth) / 2;
     final rect = Rect.fromCircle(center: center, radius: radius);
@@ -485,7 +488,7 @@ class _StressRingPainter extends CustomPainter {
     const gapAngle = 0.20;
     const segmentSweep = (math.pi * 2 - segmentCount * gapAngle) / segmentCount;
     final trackPaint = Paint()
-      ..color = const Color(0xFF8175E8).withValues(alpha: 0.72)
+      ..color = Colors.white.withValues(alpha: 0.2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;

@@ -182,6 +182,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 openMoodCheckIn: widget.openMoodCheckIn,
                 onScanTap: _openScan,
                 onFitnessTap: () => _selectTab(3),
+                onMyDayTap: () => _selectTab(1),
                 revealStress: revealStress,
               ),
             ),
