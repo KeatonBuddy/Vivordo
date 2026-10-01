@@ -923,10 +923,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 12),
                 _buildCircleCard(),
                 _buildSectionTitle(
-                  "YOUR DAY'S EFFORT",
+                  "YOUR DAY",
                   trailing: [
                     _infoButton(
-                      label: 'How your day\'s Effort works',
+                      label: 'How Your Day works',
                       onTap: _showReachableWindowsInfo,
                     ),
                     TextButton(
@@ -1404,7 +1404,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'How your day\'s Effort works',
+              'How Your Day works',
               style: TextStyle(
                 color: dialogContext.vivordoColors.textPrimary,
                 fontSize: 20,
