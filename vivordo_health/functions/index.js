@@ -52,6 +52,21 @@ exports.projectDailyActivitySummary = onDocumentWritten(
     },
 );
 
+// Capacity (docs/scores.md §4): recalculated only when a day's sleep, HRV or
+// resting heart rate changes, so routine step and calorie syncs cost nothing.
+exports.computeDailyCapacity = onDocumentWritten(
+    {document: "users/{uid}/metrics_daily/{day}", retry: true},
+    async (event) => {
+      const {capacityInputsChanged, refreshCapacity} = require("./capacity");
+      if (!capacityInputsChanged(event.data?.before?.data(),
+          event.data?.after?.data())) {
+        return;
+      }
+      await refreshCapacity(admin.firestore(), event.params.uid,
+          event.params.day, () => admin.firestore.FieldValue.serverTimestamp());
+    },
+);
+
 // New accounts start on compact achievement inputs; see
 // enableSummariesForNewAccount for why only history-free accounts qualify.
 exports.enableAchievementSummaries = onDocumentCreated("users/{uid}",

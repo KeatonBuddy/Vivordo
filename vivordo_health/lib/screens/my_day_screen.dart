@@ -27,6 +27,7 @@ import 'all_priorities_screen.dart';
 import '../widgets/tomorrow_preview.dart';
 import '../widgets/daily_brief_card.dart';
 import '../src/utils/owned_stream_snapshot.dart';
+import '../src/utils/server_capacity.dart';
 import '../src/services/metrics_repository.dart';
 
 class MyDayScreen extends StatefulWidget {
@@ -54,10 +55,38 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   bool _screenActive = false;
   late DateTime _priorityDay;
   final _briefSnapshot = OwnedStreamSnapshot<DailyBriefMetricsSummary>();
+  final _capacitySnapshot = OwnedStreamSnapshot<ServerCapacity?>();
   DailyBriefMetrics? _briefMetrics;
+
+  /// Server Capacity (docs/scores.md §4) for [day], with the 28 days before
+  /// it for the "usual" comparison. These are small score documents.
+  Stream<ServerCapacity?> _capacityStreamFor(DateTime day) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
+    final format = DateFormat('yyyy-MM-dd');
+    final dayKey = format.format(day);
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('scores_daily')
+        .where(
+          FieldPath.documentId,
+          isGreaterThanOrEqualTo: format.format(
+            DateTime(day.year, day.month, day.day - 28),
+          ),
+        )
+        .where(FieldPath.documentId, isLessThanOrEqualTo: dayKey)
+        .snapshots()
+        .map(
+          (snapshot) => serverCapacityFor({
+            for (final doc in snapshot.docs) doc.id: doc.data(),
+          }, dayKey),
+        );
+  }
 
   void _connectBriefMetrics(DateTime day) {
     _briefMetrics = null;
+    _capacitySnapshot.connect(_capacityStreamFor(day));
     final stream = _metricsStreamFor(day);
     _briefSnapshot.connect(
       (stream ?? const Stream<MetricWindow>.empty()).map((snapshot) {
@@ -117,6 +146,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     super.didChangeDependencies();
     final active = TickerMode.valuesOf(context).enabled;
     _briefSnapshot.setActive(active);
+    _capacitySnapshot.setActive(active);
     _prioritySnapshot.setActive(active);
     _tomorrowPrioritySnapshot.setActive(active);
     if (_screenActive == active) return;
@@ -172,6 +202,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
     _briefSnapshot.dispose();
+    _capacitySnapshot.dispose();
     _prioritySnapshot.dispose();
     _tomorrowPrioritySnapshot.dispose();
     super.dispose();
@@ -543,100 +574,128 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       final healthTime = summary?.healthTime;
       final now = DateTime.now();
       final calendarReady = !_isLoading && _calendarLoadError == null;
-      return ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
-        valueListenable: _prioritySnapshot,
-        builder: (context, priorities, _) {
-          final briefEvents = timedEvents
-              .map(
-                (e) =>
-                    BriefCommitment(e.sourceEventKey, e.title, e.start, e.end),
-              )
-              .toList();
-          final briefPriorities = (priorities.data ?? [])
-              .map(
-                (p) => BriefPriority(
-                  id: p.id,
-                  completed: p.completed,
-                  start: p.isAllDay ? null : p.sourceStart,
-                  plannedDay: DateTime.tryParse(
-                    p.planning['plannedDay'] as String? ?? '',
+      return ValueListenableBuilder<AsyncSnapshot<ServerCapacity?>>(
+        valueListenable: _capacitySnapshot,
+        builder: (context, serverSnapshot, _) =>
+            ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+              valueListenable: _prioritySnapshot,
+              builder: (context, priorities, _) {
+                // ponytail: falls back to the old on-device Capacity until
+                // computeDailyCapacity is deployed and backfilled; remove the
+                // fallback (and calculateDailyCapacity) after the rollout.
+                final server = serverSnapshot.data;
+                final capacityScore = server?.score ?? capacity?.score;
+                final capacityLow = server != null
+                    ? server.label == 'low'
+                    : (capacity?.score ?? 100) < 40;
+                final capacityStale = server != null
+                    ? server.provisional
+                    : stale;
+                final briefEvents = timedEvents
+                    .map(
+                      (e) => BriefCommitment(
+                        e.sourceEventKey,
+                        e.title,
+                        e.start,
+                        e.end,
+                      ),
+                    )
+                    .toList();
+                final briefPriorities = (priorities.data ?? [])
+                    .map(
+                      (p) => BriefPriority(
+                        id: p.id,
+                        completed: p.completed,
+                        start: p.isAllDay ? null : p.sourceStart,
+                        plannedDay: DateTime.tryParse(
+                          p.planning['plannedDay'] as String? ?? '',
+                        ),
+                        minutes: (p.planning['minutes'] as num?)?.toInt(),
+                        effort: p.planning['effort'] as String?,
+                        eventKey: _linkedKey(p),
+                      ),
+                    )
+                    .toList();
+                final plan = analyzeBriefPlan(
+                  now,
+                  briefEvents,
+                  briefPriorities,
+                );
+                final ready =
+                    calendarReady && priorities.hasData && !priorities.hasError;
+                final headline = capacityScore == null
+                    ? 'Make space for your day'
+                    : capacityLow || (ready && plan.score >= 65)
+                    ? 'Give yourself a little more room today'
+                    : 'Find a steady rhythm today';
+                final calendarText = ready
+                    ? remainingToday(
+                        timedEvents.where((e) => e.end.isAfter(now)).length,
+                        briefPriorities.where((p) => !p.completed).length,
+                      )
+                    : 'Your plan isn’t fully loaded yet.';
+                String timeLabel(DateTime? t) => t == null
+                    ? 'unknown'
+                    : DateFormat('MMM d, h:mm a').format(t);
+                return DailyBriefCard(
+                  headline: headline,
+                  summary:
+                      '${sleepComparison(sleep, usualSleep)} $calendarText',
+                  capacityScore: capacityScore,
+                  capacityLabel: server != null
+                      ? server.note
+                      : capacity?.score == null
+                      ? 'Needs health data'
+                      : capacityNote,
+                  scheduleScore: ready ? plan.score : null,
+                  scheduleLabel: !ready
+                      ? 'Plan unavailable'
+                      : 'Remaining today${plan.missingEstimates > 0 ? ' · partial' : ''}',
+                  footer: capacityStale || !ready || plan.missingEstimates > 0
+                      ? 'Limited data'
+                      : 'Available data',
+                  onDetails: () => showDialog<void>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Daily Brief data'),
+                      content: SingleChildScrollView(
+                        child: Text(
+                          'Calendar loaded: ${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).\n'
+                          'Heart rate measured: ${timeLabel(healthTime)}.\n'
+                          'Stress calculated: ${timeLabel(stressTime)}.\n'
+                          '${summary?.isFromCache == true ? 'Health data is from the local cache.\n' : ''}'
+                          'Sleep baseline: ${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.\n'
+                          '${server != null ? 'Capacity compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. It is compared with your usual after 7 days.' : 'Capacity uses sleep and stress, not raw heart rate. Comparisons require 7 days with matching inputs and stress readings at a similar time of day.'} These are wellness estimates, not clinical assessments.\n'
+                          'Remaining demand includes unfinished planned priorities and upcoming events. Timeline openings are gaps of 30 minutes or more. Untimed work does not block a specific opening.',
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Close'),
+                        ),
+                      ],
+                    ),
                   ),
-                  minutes: (p.planning['minutes'] as num?)?.toInt(),
-                  effort: p.planning['effort'] as String?,
-                  eventKey: _linkedKey(p),
-                ),
-              )
-              .toList();
-          final plan = analyzeBriefPlan(now, briefEvents, briefPriorities);
-          final ready =
-              calendarReady && priorities.hasData && !priorities.hasError;
-          final headline = capacity?.score == null
-              ? 'Make space for your day'
-              : capacity!.score! < 40 || (ready && plan.score >= 65)
-              ? 'Give yourself a little more room today'
-              : 'Find a steady rhythm today';
-          final calendarText = ready
-              ? remainingToday(
-                  timedEvents.where((e) => e.end.isAfter(now)).length,
-                  briefPriorities.where((p) => !p.completed).length,
-                )
-              : 'Your plan isn’t fully loaded yet.';
-          String timeLabel(DateTime? t) =>
-              t == null ? 'unknown' : DateFormat('MMM d, h:mm a').format(t);
-          return DailyBriefCard(
-            headline: headline,
-            summary: '${sleepComparison(sleep, usualSleep)} $calendarText',
-            capacityScore: capacity?.score,
-            capacityLabel: capacity?.score == null
-                ? 'Needs health data'
-                : capacityNote,
-            scheduleScore: ready ? plan.score : null,
-            scheduleLabel: !ready
-                ? 'Plan unavailable'
-                : 'Remaining today${plan.missingEstimates > 0 ? ' · partial' : ''}',
-            footer: stale || !ready || plan.missingEstimates > 0
-                ? 'Limited data'
-                : 'Available data',
-            onDetails: () => showDialog<void>(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('Daily Brief data'),
-                content: SingleChildScrollView(
-                  child: Text(
-                    'Calendar loaded: ${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).\n'
-                    'Heart rate measured: ${timeLabel(healthTime)}.\n'
-                    'Stress calculated: ${timeLabel(stressTime)}.\n'
-                    '${summary?.isFromCache == true ? 'Health data is from the local cache.\n' : ''}'
-                    'Sleep baseline: ${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.\n'
-                    'Capacity uses sleep and stress, not raw heart rate. Comparisons require 7 days with matching inputs and stress readings at a similar time of day. These are wellness estimates, not clinical assessments.\n'
-                    'Remaining demand includes unfinished planned priorities and upcoming events. Timeline openings are gaps of 30 minutes or more. Untimed work does not block a specific opening.',
+                ).withScreenInsight(
+                  ScreenInsight(
+                    'my_day',
+                    'Your day',
+                    myDayPlanningInsight(
+                      now: now,
+                      events: briefEvents,
+                      priorities: briefPriorities,
+                      calendarReady: calendarReady,
+                      prioritiesReady:
+                          priorities.hasData && !priorities.hasError,
+                      allDayEvents: _events
+                          .where((e) => e.isAllDay && e.end.isAfter(now))
+                          .length,
+                    ),
                   ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Close'),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
-          ).withScreenInsight(
-            ScreenInsight(
-              'my_day',
-              'Your day',
-              myDayPlanningInsight(
-                now: now,
-                events: briefEvents,
-                priorities: briefPriorities,
-                calendarReady: calendarReady,
-                prioritiesReady: priorities.hasData && !priorities.hasError,
-                allDayEvents: _events
-                    .where((e) => e.isAllDay && e.end.isAfter(now))
-                    .length,
-              ),
-            ),
-          );
-        },
       );
     },
   );
