@@ -5,6 +5,7 @@ import 'package:vivordo_health/src/models/questionnaire_response.dart';
 import 'package:vivordo_health/src/models/metadata.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'package:vivordo_health/src/models/preferences.dart';
+import 'package:vivordo_health/src/utils/day_wrap_up.dart';
 
 
 class UserService {
@@ -135,6 +136,8 @@ class UserService {
         'preferences.locale': preferences['locale'],
         'preferences.units': preferences['units'],
         'preferences.notificationsEnabled': preferences['notificationsEnabled'],
+        // Nested map: set() treats dotted keys as literal field names.
+        'preferences': {'dayWrapUpMinutes': dayWrapUpMinutes(answers)},
       }, SetOptions(merge: true));
     } catch (e) {
         rethrow;

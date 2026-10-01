@@ -1,7 +1,9 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
+import 'package:vivordo_health/src/utils/day_wrap_up.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'email_verification_screen.dart';
 import 'welcome_beta_screen.dart';
@@ -41,7 +43,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
 
   int _currentPage = 0;
-  final int _totalQuestions = 9;
+  final int _totalQuestions = 10;
   bool _isLoading = false; // prevents double-tap triggering emailSignup twice
 
   static const accentPurple = VivordoTheme.brand;
@@ -50,7 +52,11 @@ class _SignupScreenState extends State<SignupScreen> {
   static const textGrey = Color(0xFF8E8E93);
 
   // Centralized data map for future database integration
-  final Map<String, dynamic> _userData = {'responses': <String, dynamic>{}};
+  // q10 (when the day's main work wraps up) starts at 5 PM, so it is
+  // answered without touching the picker.
+  final Map<String, dynamic> _userData = {
+    'responses': <String, dynamic>{'q10': kDefaultDayWrapUpMinutes},
+  };
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -402,6 +408,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       'Overwhelming',
                     ],
                   ),
+                  _buildWrapUpTimeQuestion(),
                   _buildThankYouSlide(),
                 ],
               ),
@@ -911,6 +918,113 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
             );
           }),
+        ],
+      ),
+    );
+  }
+
+  /// When the person's main work or classes usually end. Items after it
+  /// count as after hours in Demand and Effort (docs/scores.md). Stored as
+  /// minutes after midnight, or "varies" (which falls back to 5 PM).
+  Widget _buildWrapUpTimeQuestion() {
+    final answer = _userData['responses']['q10'];
+    final varies = answer == 'varies';
+    final minutes = answer is int ? answer : kDefaultDayWrapUpMinutes;
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: accentPurple.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Text('🌇', style: TextStyle(fontSize: 30)),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'When do you usually wrap up your main work or classes for the day?',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              height: 1.35,
+              letterSpacing: -0.3,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Plans after this count as your own time. You can change it later.',
+            style: TextStyle(fontSize: 13, color: textGrey),
+          ),
+          const SizedBox(height: 24),
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 180),
+            opacity: varies ? .35 : 1,
+            child: IgnorePointer(
+              ignoring: varies,
+              child: SizedBox(
+                height: 180,
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  minuteInterval: 15,
+                  initialDateTime: DateTime(
+                    2026,
+                    1,
+                    1,
+                    minutes ~/ 60,
+                    minutes % 60 - minutes % 15,
+                  ),
+                  onDateTimeChanged: (time) => setState(
+                    () => _userData['responses']['q10'] =
+                        time.hour * 60 + time.minute,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          GestureDetector(
+            onTap: () => setState(
+              () => _userData['responses']['q10'] = varies
+                  ? kDefaultDayWrapUpMinutes
+                  : 'varies',
+            ),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              decoration: BoxDecoration(
+                color: varies ? accentPurple : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: varies ? accentPurple : const Color(0xFFE5E5EA),
+                  width: varies ? 1.5 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'It varies',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: varies ? Colors.white : textDark,
+                      ),
+                    ),
+                  ),
+                  if (varies)
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

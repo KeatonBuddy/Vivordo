@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
@@ -21,6 +22,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/src/utils/day_wrap_up.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -649,6 +651,62 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  /// When the person's main work or classes usually end. Plans after it
+  /// count as after hours in Demand and Effort (docs/scores.md).
+  Future<void> _chooseDayWrapUp(int current) async {
+    final choice = await showCupertinoModalPopup<String>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        title: const Text(
+          'When do you usually wrap up your main work or classes?',
+        ),
+        message: const Text('Plans after this count as your own time.'),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(sheetContext, 'time'),
+            child: const Text('Choose a time'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(sheetContext, 'varies'),
+            child: const Text('It varies'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(sheetContext),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    int? minutes;
+    if (choice == 'time') {
+      final start = current - current % 15;
+      final selected = await showVivordoTimePicker(
+        context: context,
+        initialTime: TimeOfDay(hour: start ~/ 60, minute: start % 60),
+        title: 'End of day',
+        minuteInterval: 15,
+      );
+      if (selected == null || !mounted) return;
+      minutes = selected.hour * 60 + selected.minute;
+    }
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'preferences.dayWrapUpMinutes': minutes,
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update your end of day.')),
+        );
+      }
+    }
+  }
+
   String _formatReminderTime(int minutes) {
     final hour24 = minutes ~/ 60;
     final minute = minutes % 60;
@@ -910,6 +968,13 @@ class _SettingsScreenState extends State<SettingsScreen>
         final userData = UserModel.fromMap(rawData, snapshot.data!.id);
         final pendingEmail = rawData['pendingEmail'] as String?;
         final preferences = rawData['preferences'] as Map? ?? {};
+        // A stored null means the person answered "It varies".
+        final dayWrapUpVaries =
+            preferences.containsKey('dayWrapUpMinutes') &&
+            preferences['dayWrapUpMinutes'] == null;
+        final dayWrapUp =
+            (preferences['dayWrapUpMinutes'] as num?)?.toInt() ??
+            kDefaultDayWrapUpMinutes;
         final scanReminderEnabled = preferences['scanReminderEnabled'] != false;
         final checkInReminderEnabled =
             preferences['checkInReminderEnabled'] != false;
@@ -1851,6 +1916,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                         'Appearance',
                         context.watch<ThemeController>().modeLabel,
                         onTap: _showAppearancePicker,
+                      ),
+                      _buildDivider(),
+                      _buildInfoRow(
+                        Icons.wb_twilight_rounded,
+                        'End of day',
+                        dayWrapUpVaries
+                            ? 'It varies'
+                            : _formatReminderTime(dayWrapUp),
+                        onTap: () => _chooseDayWrapUp(dayWrapUp),
                       ),
                       _buildDivider(),
                       _buildToggleRow(
