@@ -77,9 +77,9 @@ not the date they were uploaded. Missing sleep associations are skipped.
 
 The new `read:recovery` permission is necessary to access those underlying
 measurements, even though Vivordo does not use WHOOP's Recovery score.
-Older sleep-only connections still sync sleep/breathing rate; after syncing,
-Profile offers **Allow heart rate, HRV & oxygen sync** to request consent.
 New connections request `offline`, `read:sleep`, and `read:recovery`.
+Older sleep-only connections still sync sleep/breathing rate; reconnecting
+WHOOP (disconnect without deleting, then connect) grants the rest.
 The existing morning/midday schedule and explicit 30-day sync are unchanged.
 
 No WHOOP cycle totals are mapped to activity rings: cycle energy includes

@@ -223,9 +223,6 @@ for (const mode of ["no permission", "permission", "recovery fails"]) {
         vitalsSaved ? 44.3 : undefined);
     assert.equal(saved.values.recovery, undefined);
     assert.equal(saved.values.strain, undefined);
-    const user = writes.find((write) => write.path === "users/test");
-    assert.equal(user.values.whoopRecoveryPermissionRequired,
-        !hasVitalsPermission);
     assert.equal(result.endpoints.sleep, "synced");
     assert.equal(result.endpoints.vitals, {
       "no permission": "permission_required",

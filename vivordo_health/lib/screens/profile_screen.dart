@@ -1582,15 +1582,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                         ),
                       ),
                       if (whoopConnected) ...[
-                        if (rawData['whoopRecoveryPermissionRequired'] == true)
-                          TextButton(
-                            onPressed: _isUpdatingWhoop
-                                ? null
-                                : () => _updateWhoopConnection(false),
-                            child: const Text(
-                              'Allow heart rate, HRV & oxygen sync',
-                            ),
-                          ),
                         _buildDivider(),
                         SizedBox(
                           width: double.infinity,

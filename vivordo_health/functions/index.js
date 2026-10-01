@@ -1833,7 +1833,6 @@ async function saveAndReconcileWhoopSleep(
       whoopConnected: true,
       lastWhoopSync: admin.firestore.FieldValue.serverTimestamp(),
       lastWhoopSleepSync: admin.firestore.FieldValue.serverTimestamp(),
-      whoopRecoveryPermissionRequired: !claim.recoveryAuthorized,
     }, {merge: true});
     return removed;
   });
@@ -1908,8 +1907,6 @@ exports.whoopOAuthCallback = onRequest(
         await saveWhoopTokens(values.uid, tokens);
         await admin.firestore().collection("users").doc(values.uid).set({
           whoopConnected: true,
-          whoopRecoveryPermissionRequired:
-              !tokens.scope.split(/\s+/).includes("read:recovery"),
           whoopConnectedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, {merge: true});
         return response.redirect(`${_WHOOP_IOS_CALLBACK}?status=success`);
