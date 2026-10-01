@@ -230,6 +230,22 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     if (value != null) setState(() => _repeatEnd = value);
   }
 
+  /// Whether [field] holds Vivordo AI's estimate rather than the user's
+  /// own value (DailyPriorityService.estimateBlanks).
+  bool _isEstimate(String field) =>
+      (_planning['estimated'] as List?)?.contains(field) == true;
+
+  /// Sets a workload value the user chose, so it's no longer an estimate.
+  void _setPlanning(String field, Object? value) {
+    _planning[field] = value;
+    final estimated = [...?(_planning['estimated'] as List?)]..remove(field);
+    if (estimated.isEmpty) {
+      _planning.remove('estimated');
+    } else {
+      _planning['estimated'] = estimated;
+    }
+  }
+
   void _submit({bool deleteRequested = false}) {
     final title = _controller.text.trim();
     if (!deleteRequested && title.isEmpty) return;
@@ -374,7 +390,8 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           label: 'Estimated duration',
                           value: _planning['minutes'] == null
                               ? 'Not set'
-                              : '${(_planning['minutes'] as num).toInt() ~/ 60} hr ${(_planning['minutes'] as num).toInt() % 60} min',
+                              : '${_isEstimate('minutes') ? '≈ ' : ''}'
+                                    '${(_planning['minutes'] as num).toInt() ~/ 60} hr ${(_planning['minutes'] as num).toInt() % 60} min',
                           onTap: () async {
                             FocusScope.of(context).unfocus();
                             final minutes = await showPriorityDurationPicker(
@@ -384,9 +401,10 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             );
                             if (minutes != null && mounted) {
                               setState(
-                                () => _planning['minutes'] = minutes == 0
-                                    ? null
-                                    : minutes,
+                                () => _setPlanning(
+                                  'minutes',
+                                  minutes == 0 ? null : minutes,
+                                ),
                               );
                             }
                           },
@@ -394,12 +412,17 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                         _Row(
                           icon: Icons.bar_chart_rounded,
                           label: 'Effort (optional)',
-                          value: switch (_planning['effort']) {
-                            'light' => 'Light',
-                            'moderate' => 'Moderate',
-                            'demanding' => 'Demanding',
-                            _ => 'Not set',
-                          },
+                          value:
+                              (_planning['effort'] != null &&
+                                      _isEstimate('effort')
+                                  ? '≈ '
+                                  : '') +
+                              switch (_planning['effort']) {
+                                'light' => 'Light',
+                                'moderate' => 'Moderate',
+                                'demanding' => 'Demanding',
+                                _ => 'Not set',
+                              },
                           onTap: () async {
                             FocusScope.of(context).unfocus();
                             final selected =
@@ -444,9 +467,10 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                                 );
                             if (selected != null && mounted) {
                               setState(
-                                () => _planning['effort'] = selected == 'clear'
-                                    ? null
-                                    : selected,
+                                () => _setPlanning(
+                                  'effort',
+                                  selected == 'clear' ? null : selected,
+                                ),
                               );
                             }
                           },

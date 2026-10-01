@@ -659,6 +659,40 @@ exports.pandaClaude = onCall({secrets: [anthropicApiKey]}, async (request) => {
 });
 
 // =============================================================================
+// classifyPlanItems — sorts unknown calendar events and estimates blank
+// priority effort and duration for Effort and Demand (plan_classifier.js).
+// The app calls it only with the user's AI consent.
+// =============================================================================
+
+exports.classifyPlanItems = onCall({secrets: [anthropicApiKey]},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Must be logged in.");
+      }
+      const {DAILY_CALL_LIMIT, validatePlanRequest, classifyPlanItems} =
+        require("./plan_classifier");
+      const validated = validatePlanRequest(request.data);
+      if (validated.error) {
+        throw new HttpsError("invalid-argument", validated.error);
+      }
+      // Its own daily budget, so it never uses up Vivordo AI chat's.
+      const db = admin.firestore();
+      const usageRef = db.collection("ai_usage")
+          .doc(`${request.auth.uid}_planning`);
+      const today = new Date().toISOString().slice(0, 10);
+      const allowed = await db.runTransaction(async (transaction) => {
+        const next = nextUsage((await transaction.get(usageRef)).data(),
+            today, DAILY_CALL_LIMIT);
+        if (next) transaction.set(usageRef, next);
+        return next !== null;
+      });
+      if (!allowed) {
+        throw new HttpsError("resource-exhausted", "Daily limit reached.");
+      }
+      return classifyPlanItems(getAnthropicClient(), validated);
+    });
+
+// =============================================================================
 // Fitbit metric sync through the Google Health API
 //
 // Tokens are stored in a top-level collection that has no client Firestore
@@ -2211,6 +2245,7 @@ async function deleteVivordoAccountData(uid) {
     db.recursiveDelete(db.collection("baas_state").doc(uid)),
     db.recursiveDelete(db.collection("baas_weights").doc(uid)),
     db.collection("ai_usage").doc(uid).delete(),
+    db.collection("ai_usage").doc(`${uid}_planning`).delete(),
   ]);
   await admin.storage().bucket().deleteFiles({
     prefix: `circle_profiles/${uid}/`,

@@ -16,13 +16,17 @@ hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
 
 - Base demand per minute from the category: routine 15, social 20,
   collaboration 40, focused work 55, high-consequence 75. Priorities use
-  the effort they were given, as Home does today (unset = focused).
+  the effort they were given, as Home does today: light 20, moderate 45,
+  demanding 75 (unset = moderate).
 - **Unknown events** (titles the local rules can't classify) are sent to
-  Claude through a server function, which answers with one of the same
-  five categories or "can't tell". It sends the title, duration and
-  attendee count only, never notes. Answers are cached per title, and AI
-  answers carry confidence 0.6. This replaces the dormant Gemini path in
-  `calendar_cognitive_load_service.dart`. Whatever is still unknown
+  Claude Opus 5.5 (low effort, structured JSON) through the
+  `classifyPlanItems` function, which answers with one of the same five
+  categories or "can't tell". It sends the title, duration and attendee
+  count only, never notes, at most 20 events per call, with its own daily
+  budget of 50 calls per account. Answers (including "can't tell") are
+  cached on the device per title, and AI answers carry confidence 0.6.
+  It needs the user's AI consent (version 2, which added this use).
+  Whatever is still unknown
   ("Busy", "Hold", private events, offline) counts as 30 and lowers the
   day's confidence. Nothing is treated as free time.
 - Pressure: +10 while events overlap (overlapping demand is not summed),
@@ -48,17 +52,18 @@ hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
   separate weekend rule. This is a separate signal from back-to-backs.
 
 **Untimed priorities** have no slot, so they get flat points by effort:
-light 2, focused 4, demanding 6.
+light 2, moderate 4, demanding 6.
 
 **Blank priority estimates** are filled in by Claude. When a priority is
 saved without an effort or a duration, the same server function that
 classifies unknown events estimates the missing ones from the title only
-(never notes). Answers are cached per title. It only fills blanks: a
-value the user entered is never changed. Estimates show as "estimated"
-and become the user's value when tapped and changed. Each value is stored
-with its source (`ai` or `user`). It runs after saving, in the
-background, and only with AI consent; without it, the defaults apply
-(focused, no duration). Later, the person's own past durations for
+(never notes). It only fills blanks: a value the user entered is never
+changed. Estimated fields are listed in `planning.estimated`, show with
+"≈" in the priority editor, and become the user's own value when
+changed there. It runs after saving, in the background, and only with AI
+consent; without it, the defaults apply (moderate, no duration).
+Recurring priorities' templates aren't estimated (each occurrence is,
+when edited). Later, the person's own past durations for
 similar titles replace Claude's guess.
 
 **Points scale:** the hourly calendar load (0–100 per hour) summed over

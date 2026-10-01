@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'day_record_service.dart';
+import 'plan_classifier.dart';
 import 'notification_service.dart';
 import '../utils/priority_reminder.dart';
 
@@ -460,7 +461,7 @@ class DailyPriorityService {
         ]),
     });
     if (recurrence == 'none') {
-      return _addManualItem(
+      final reference = await _addManualItem(
         planning: planning,
         date: date,
         title: value,
@@ -468,6 +469,8 @@ class DailyPriorityService {
         reminderMinutes: reminderMinutes,
         reminderTimeMinutes: reminderTimeMinutes,
       );
+      if (reference != null) unawaited(estimateBlanks(reference));
+      return reference;
     }
 
     final template = userDocument.collection('priority_templates').doc();
@@ -761,7 +764,61 @@ class DailyPriorityService {
     }
     await _syncReminder(destination);
     if (template != null) await refreshReminders(force: true);
+    unawaited(estimateBlanks(destination));
     return destination;
+  }
+
+  /// Fills a priority's blank effort and duration with Claude's estimate
+  /// (docs/scores.md §1), listing them in `planning.estimated` so the app
+  /// can show them as estimates. Never changes a value the user set, and
+  /// does nothing without AI consent.
+  /// ponytail: recurring priorities' templates aren't estimated; each
+  /// occurrence is when it's edited.
+  static Future<void> estimateBlanks(
+    DocumentReference<Map<String, dynamic>> reference,
+  ) async {
+    try {
+      final data = (await reference.get()).data();
+      final title = (data?['title'] as String?)?.trim() ?? '';
+      final planning = data?['planning'] as Map? ?? const {};
+      if (title.isEmpty ||
+          (planning['effort'] != null && planning['minutes'] != null)) {
+        return;
+      }
+      final estimate = (await PlanClassifier.classify(
+        priorityTitles: [title],
+      ))?.priorities[0];
+      if (estimate == null) return;
+      final changed = await FirebaseFirestore.instance.runTransaction((
+        transaction,
+      ) async {
+        final current = Map<String, dynamic>.from(
+          (await transaction.get(reference)).data()?['planning'] as Map? ?? {},
+        );
+        final estimated = {
+          ...?(current['estimated'] as List?)?.whereType<String>(),
+        };
+        var filled = false;
+        if (current['effort'] == null) {
+          current['effort'] = estimate.effort;
+          estimated.add('effort');
+          filled = true;
+        }
+        if (current['minutes'] == null && estimate.minutes != null) {
+          current['minutes'] = estimate.minutes;
+          estimated.add('minutes');
+          filled = true;
+        }
+        if (!filled) return false;
+        transaction.update(reference, {
+          'planning': {...current, 'estimated': estimated.toList()..sort()},
+        });
+        return true;
+      });
+      if (changed) unawaited(DayRecordService.sync());
+    } catch (error) {
+      debugPrint('Priority estimate failed: $error');
+    }
   }
 
   static Future<void> _syncReminder(

@@ -1977,11 +1977,14 @@ class _PandaScreenState extends State<PandaScreen>
             ),
             const SizedBox(height: 12),
             Text(
-              'Vivordo AI uses Anthropic’s Claude to answer you. To do that, '
-              'Vivordo sends your messages and the health, sleep, fitness, '
-              'workout, calendar, priority, journal and past-conversation '
-              'information relevant to your question to Anthropic for '
-              'processing. Nothing is sent until you allow it.\n\n'
+              'Vivordo AI uses Anthropic’s Claude to answer you, and to sort '
+              'your calendar events and priorities so your Effort and Demand '
+              'are accurate. To do that, Vivordo sends your messages and the '
+              'health, sleep, fitness, workout, calendar, priority, journal '
+              'and past-conversation information relevant to your question, '
+              'and the titles of the events and priorities it sorts (never '
+              'their notes), to Anthropic for processing. Nothing is sent '
+              'until you allow it.\n\n'
               'AI responses can be inaccurate and are not medical advice. You '
               'can reset this choice in Profile under Vivordo AI.',
               textAlign: TextAlign.center,
@@ -3849,6 +3852,8 @@ class _PandaScreenState extends State<PandaScreen>
             'responses and insights. Your messages and relevant health, fitness, '
             'calendar, journal, and previous-session information may be sent to '
             'Anthropic for processing. This is not on-device processing.\n\n'
+            'It also sorts your calendar events and priorities for your Effort '
+            'and Demand, using their titles only (never their notes).\n\n'
             'Avoid sharing information you do not want processed by these services. '
             'Read our Privacy Policy for details about data use, storage, and your choices.\n\n'
             'Vivordo AI provides wellness information, not medical advice. Responses can '

@@ -57,7 +57,7 @@ Map<String, Object?> buildDayRecord({
         ..sort((a, b) => a.event.start.compareTo(b.event.start));
   final eventKeys = {for (final e in counted) e.key};
   Object? effort(Object? value) =>
-      const {'light', 'focused', 'demanding'}.contains(value) ? value : null;
+      const {'light', 'moderate', 'demanding'}.contains(value) ? value : null;
   return {
     'version': 1,
     'dayStart': Timestamp.fromDate(dayStart),
@@ -161,9 +161,10 @@ class DayRecordService {
             null,
           ),
     ];
+    // Claude sorts what the local rules can't, with the user's AI consent.
     final scores = await CalendarCognitiveLoadService.scoreEvents([
       for (final (event, _) in inputs) event,
-    ]);
+    ], allowAi: true);
     final events = [
       for (var i = 0; i < inputs.length; i++)
         (event: inputs[i].$1, score: scores[i], key: inputs[i].$2),
