@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -17,7 +19,9 @@ import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/fitness_goal_notifications.dart';
 import 'package:vivordo_health/src/utils/notification_navigation.dart';
+import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
+import 'package:vivordo_health/src/services/day_record_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import '../utils/foreground_transaction.dart';
 import 'package:vivordo_health/src/utils/priority_reminder.dart';
@@ -25,7 +29,17 @@ import 'package:vivordo_health/src/utils/priority_reminder.dart';
 /// Function to handle background messages
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print('Handling background message: ${message.messageId}');
+  // The nightly silent push (functions/day_record_push.js): record today and
+  // yesterday for Effort while the app is in the background.
+  if (message.data['type'] != 'day_record_sync') return;
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
+  // A fresh background isolate restores the signed-in user asynchronously.
+  await FirebaseAuth.instance.authStateChanges().first;
+  await DayRecordService.sync(days: 2);
 }
 
 /// Notification Service - Singleton pattern for managing FCM notifications
@@ -657,6 +671,9 @@ class NotificationService {
         .set({
           'token': token,
           'platform': Platform.operatingSystem,
+          // The UTC hour of this device's local 11 PM, when the server sends
+          // the nightly silent push that records the day.
+          'nightlyPushUtcHour': nightlyPushUtcHour(DateTime.now()),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
   }

@@ -52,6 +52,17 @@ exports.projectDailyActivitySummary = onDocumentWritten(
     },
 );
 
+// Hourly: a silent push to the devices where it's 11 PM, waking the app to
+// record the day for Effort (functions/day_record_push.js).
+exports.sendDayRecordPushes = onSchedule({
+  schedule: "0 * * * *",
+  timeZone: "UTC",
+}, async () => {
+  const {sendDayRecordPushes} = require("./day_record_push");
+  const sent = await sendDayRecordPushes(admin.firestore(), admin.messaging());
+  console.log("Day record pushes sent", {sent});
+});
+
 // Capacity (docs/scores.md §4): recalculated only when a day's sleep, HRV or
 // resting heart rate changes, so routine step and calorie syncs cost nothing.
 exports.computeDailyCapacity = onDocumentWritten(

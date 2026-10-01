@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 
 import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
+import '../src/services/day_record_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
 import '../src/utils/daily_brief_metrics.dart';
@@ -263,6 +264,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         .toList();
 
     if (!mounted || generation != _loadGeneration) return;
+    // The schedule may have just changed (pull to refresh, an edit).
+    if (forceRefresh) unawaited(DayRecordService.sync(forceRefresh: true));
     setState(() {
       _calendarLoadedAt = DateTime.now();
       _events = events;

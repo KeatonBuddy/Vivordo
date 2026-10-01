@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'day_record_service.dart';
 import 'notification_service.dart';
 import '../utils/priority_reminder.dart';
 
@@ -284,7 +285,15 @@ class DailyPriorityService {
   }
 
   /// One-shot snapshot using the same day/rollover rules as My Day.
-  static Future<List<DailyPriority>> incompleteForDay(DateTime day) async {
+  static Future<List<DailyPriority>> incompleteForDay(DateTime day) =>
+      forDay(day, includeCompleted: false);
+
+  /// One-shot snapshot of the priorities My Day shows for [day]: open ones,
+  /// and with [includeCompleted] the ones ticked off that day.
+  static Future<List<DailyPriority>> forDay(
+    DateTime day, {
+    bool includeCompleted = true,
+  }) async {
     final user = _userDocument();
     if (user == null) throw StateError('Please sign in first.');
     const options = GetOptions(source: Source.server);
@@ -301,12 +310,22 @@ class DailyPriorityService {
     };
     final result = <DailyPriority>[];
     for (final source in keys) {
-      final snapshot = await user
+      final items = user
           .collection('daily_priorities')
           .doc(source)
-          .collection('items')
-          .where('completed', isEqualTo: false)
-          .get(options);
+          .collection('items');
+      final snapshot =
+          await (!includeCompleted
+                  ? items.where('completed', isEqualTo: false)
+                  : source.compareTo(key) >= 0
+                  ? items
+                  : items.where(
+                      Filter.or(
+                        Filter('completed', isEqualTo: false),
+                        Filter('completedDay', isEqualTo: key),
+                      ),
+                    ))
+              .get(options);
       result.addAll(
         snapshot.docs
             .where((doc) => visibleOnDay(doc.data(), source, key))
@@ -615,6 +634,7 @@ class DailyPriorityService {
       'completedDay': completed ? localDayKey(DateTime.now()) : null,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    unawaited(DayRecordService.sync());
     await _syncReminder(priority.reference);
   }
 

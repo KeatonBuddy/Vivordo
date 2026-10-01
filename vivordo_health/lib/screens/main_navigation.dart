@@ -16,6 +16,7 @@ import 'my_day_screen.dart';
 import '../src/services/achievement_service.dart';
 import '../src/services/analytics_service.dart';
 import '../src/services/circle_profile_service.dart';
+import '../src/services/day_record_service.dart';
 import '../src/services/health_service.dart';
 import '../theme/vivordo_theme.dart';
 
@@ -114,6 +115,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     );
     _logScreenView(_selectedIndex);
     _refreshTodayFromHealth();
+    // Yesterday too, in case the app was last opened before it ended.
+    unawaited(DayRecordService.sync(days: 2));
     _circlePreload = CircleProfileService.preload();
     _achievementMonitor = AchievementMonitor.start();
     // HealthKit does not push new values into Firestore. Keep the shared data
@@ -144,6 +147,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     if (state == AppLifecycleState.resumed) {
       _refreshTodayFromHealth();
       _achievementMonitor?.scheduleNow();
+      unawaited(DayRecordService.sync(days: 2));
     }
   }
 
