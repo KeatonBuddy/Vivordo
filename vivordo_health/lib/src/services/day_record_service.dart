@@ -28,6 +28,7 @@ typedef DayRecordPriority = ({
   Object? effort,
   int? minutes,
   bool done,
+  DateTime? doneAt,
   String? eventKey,
 });
 
@@ -90,6 +91,8 @@ Map<String, Object?> buildDayRecord({
             'effort': effort(p.effort),
             'minutes': p.minutes,
             'done': p.done,
+            if (p.done && p.doneAt != null)
+              'doneAt': Timestamp.fromDate(p.doneAt!),
           },
     ],
   };
@@ -219,6 +222,7 @@ class DayRecordService {
               effort: p.planning['effort'],
               minutes: (p.planning['minutes'] as num?)?.toInt(),
               done: p.completed,
+              doneAt: p.completedAt,
               eventKey: p.sourceEventKey,
             ),
         ],

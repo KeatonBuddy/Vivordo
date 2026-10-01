@@ -38,6 +38,26 @@ test("the busy Thursday: 28.8 scheduled + 4 untimed, plus a 45-min run", () => {
   assert.equal(effort.afterHoursMinutes, 60);
   assert.equal(effort.prioritiesDone, 1);
   assert.equal(effort.unfinishedPriorities, 1);
+  // Running totals: nothing before 9 AM, the planning hour, and the last
+  // value is the day's total. The untimed priority (no doneAt) lands at the
+  // end of the day, the run (no start time) too.
+  assert.equal(effort.byHour.length, 24);
+  assert.equal(effort.byHour[8], 0);
+  assert.equal(effort.byHour[9], 4);
+  assert.equal(effort.byHour[23], effort.total);
+});
+
+test("byHour places workouts and ticked-off priorities in their hour, within the cap", () => {
+  const effort = computeEffort({
+    record: record([], [{effort: "demanding", done: true, doneAt: at(10, 20)}]),
+    workouts: [{name: "HIIT", minutes: 60, startedAt: at(7)}, {name: "HIIT", minutes: 60, startedAt: at(18)}],
+    asOf: at(23),
+  });
+  assert.equal(effort.physical, 25, "42 points capped");
+  assert.equal(effort.byHour[6], 0);
+  assert.equal(effort.byHour[7], 12.5, "half the capped physical");
+  assert.equal(effort.byHour[10], 18.5, "+6 for the priority ticked at 10:20");
+  assert.equal(effort.byHour[23], effort.total);
 });
 
 test("only what has happened counts", () => {

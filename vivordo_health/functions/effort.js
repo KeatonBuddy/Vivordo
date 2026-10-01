@@ -175,6 +175,7 @@ function computeEffort({record, workouts = [], healthMinutes = null,
       rating: finite(e.rating) ? e.rating : null});
   });
   let untimedPoints = 0;
+  const untimedAt = []; // [time, points] for the hour-by-hour totals
   let prioritiesDone = 0;
   priorities.forEach((p, i) => {
     if (p.done !== true) return;
@@ -186,18 +187,23 @@ function computeEffort({record, workouts = [], healthMinutes = null,
       items.push({id: `p${i}`, start, end, always: true,
         rating: PRIORITY_RATING[p.effort] ?? PRIORITY_RATING.moderate});
     } else {
-      untimedPoints += UNTIMED_POINTS[p.effort] ?? UNTIMED_POINTS.moderate;
+      const points = UNTIMED_POINTS[p.effort] ?? UNTIMED_POINTS.moderate;
+      untimedPoints += points;
+      untimedAt.push([ms(p.doneAt) ?? dayEnd - 1, points]);
     }
   });
 
   const hours = hourlyLoads(items, dayStart, dayEnd, Math.min(asOf, dayEnd),
       wrapUp);
   let scheduled = 0;
+  const hourPoints = [];
   const totals = {busy: 0, after: 0, unknown: 0, transitions: 0};
   for (const h of hours) {
     // The hour's load (capped at 100), its after-hours share × 1.25.
     const afterShare = h.raw > 0 ? h.rawAfter / h.raw : 0;
-    scheduled += h.load * (1 + (AFTER_HOURS - 1) * afterShare) / 10;
+    const points = h.load * (1 + (AFTER_HOURS - 1) * afterShare) / 10;
+    scheduled += points;
+    hourPoints.push(points);
     totals.busy += h.occupied;
     totals.after += h.occupiedAfter;
     totals.unknown += h.unknown;
@@ -207,8 +213,11 @@ function computeEffort({record, workouts = [], healthMinutes = null,
 
   let physical = 0;
   let physicalSource = null;
-  const workoutPoints = workouts.reduce((sum, w) =>
-    sum + (finite(w.minutes) ? w.minutes : 0) * workoutIntensity(w), 0);
+  const hourOf = (t) => Math.min(hours.length - 1,
+      Math.max(0, Math.floor((t - dayStart) / HOUR)));
+  const workoutAt = workouts.map((w) => [ms(w.startedAt) ?? dayEnd - 1,
+    (finite(w.minutes) ? w.minutes : 0) * workoutIntensity(w)]);
+  const workoutPoints = workoutAt.reduce((sum, [, points]) => sum + points, 0);
   const exercisePoints = (finite(healthMinutes) ? healthMinutes : 0) * 0.2;
   if (workoutPoints + exercisePoints > 0) {
     physical = workoutPoints + exercisePoints;
@@ -218,6 +227,20 @@ function computeEffort({record, workouts = [], healthMinutes = null,
     physicalSource = "calories";
   }
   physical = Math.min(PHYSICAL_CAP, physical);
+
+  // Running total at the end of each hour of the day, for "usual by this
+  // time of day" on Home. Workouts count at the hour they started (scaled
+  // down with the cap), untimed priorities when ticked off; Health minutes
+  // and calories, which have no time of day, at the end. The last value is
+  // the day's total.
+  const byHour = hours.map(() => 0);
+  hourPoints.forEach((points, i) => byHour[i] += points);
+  for (const [t, points] of untimedAt) byHour[hourOf(t)] += points;
+  const scale = physicalSource === "exercise" ?
+    physical / (workoutPoints + exercisePoints) : 0;
+  for (const [t, points] of workoutAt) byHour[hourOf(t)] += points * scale;
+  byHour[byHour.length - 1] += physical - workoutPoints * scale;
+  for (let i = 1; i < byHour.length; i++) byHour[i] += byHour[i - 1];
 
   return {
     total: round1(mental + physical),
@@ -231,6 +254,7 @@ function computeEffort({record, workouts = [], healthMinutes = null,
     backToBack: totals.transitions,
     prioritiesDone,
     unfinishedPriorities: priorities.filter((p) => p.done !== true).length,
+    byHour: byHour.map(round1),
   };
 }
 
@@ -261,7 +285,7 @@ async function refreshEffort(db, uid, day, timestamp, now = new Date()) {
         .where("startedAt", ">=", Timestamp.fromMillis(dayStart))
         .where("startedAt", "<", Timestamp.fromMillis(dayEnd))
         .select("activityName", "activityCategory", "exercises",
-            "durationMinutes")
+            "durationMinutes", "startedAt")
         .get();
     const start = new Date(Date.parse(`${day}T00:00:00Z`) - 90 * DAY)
         .toISOString().slice(0, 10);
@@ -277,6 +301,7 @@ async function refreshEffort(db, uid, day, timestamp, now = new Date()) {
     effort = computeEffort({
       record,
       workouts: workoutsSnap.docs.map((d) => ({
+        startedAt: d.get("startedAt"),
         name: d.get("activityName"),
         category: d.get("activityCategory"),
         exerciseCategories: (d.get("exercises") || [])

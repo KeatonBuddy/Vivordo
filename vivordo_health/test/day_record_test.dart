@@ -33,6 +33,7 @@ void main() {
     DateTime? end,
     Object? effort,
     bool done = false,
+    DateTime? doneAt,
     String? eventKey,
   }) => (
     start: start,
@@ -40,6 +41,7 @@ void main() {
     effort: effort,
     minutes: null,
     done: done,
+    doneAt: doneAt,
     eventKey: eventKey,
   );
 
@@ -60,7 +62,7 @@ void main() {
       ],
       priorities: [
         priority(start: at(16), end: at(17), effort: 'demanding', done: true),
-        priority(effort: 'light', done: true),
+        priority(effort: 'light', done: true, doneAt: at(11, 5)),
         priority(effort: 'bogus'),
       ],
     );
@@ -79,7 +81,12 @@ void main() {
       'minutes': null,
       'done': true,
     });
-    expect(priorities[1], {'effort': 'light', 'minutes': null, 'done': true});
+    expect(priorities[1], {
+      'effort': 'light',
+      'minutes': null,
+      'done': true,
+      'doneAt': Timestamp.fromDate(at(11, 5)),
+    });
     expect((priorities[2] as Map)['effort'], isNull);
   });
 

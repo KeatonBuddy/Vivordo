@@ -141,7 +141,10 @@ summary shows **So far** as a word only: "Heavier than usual", "About
 usual" or "Lighter than usual" against your usual Effort by this time of
 day, or "Still learning your usual" until there are 14 days of Effort.
 **Still ahead** shows the planned time and how heavy it is, switching to
-**Tomorrow** after the last item. Tapping a bar and the "Open" row stay as
+**Tomorrow** after the last item. Implemented in `lib/src/utils/day_effort.dart`
+and Home's card: "usual by this time of day" is the median of the last 28
+days' `effort.byHour` at the current hour (from 14 days), and Home rates
+events with the same Claude sorting as the day records. Tapping a bar and the "Open" row stay as
 they are.
 
 Priorities on the chart:
@@ -251,7 +254,8 @@ capacity: { score, final, version, provisional,
             checkInFeel, checkInSleep, yesterdayEffort, usualEffort }
 effort:   { total, mental, physical, physicalSource, final, version,
             busyMinutes, backToBack, afterHoursMinutes,
-            prioritiesDone, unfinishedPriorities, unknownMinutes }
+            prioritiesDone, unfinishedPriorities, unknownMinutes,
+            byHour }   // running total at the end of each hour
 demand:   { expectedAtWake, version }
 ```
 

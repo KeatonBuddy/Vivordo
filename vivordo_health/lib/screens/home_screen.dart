@@ -19,6 +19,9 @@ import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/src/utils/day_agenda.dart';
+import 'package:vivordo_health/src/utils/day_effort.dart';
+import 'package:vivordo_health/src/utils/day_wrap_up.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/home_day_load.dart';
 import 'package:vivordo_health/src/utils/owned_stream_snapshot.dart';
 import 'package:vivordo_health/widgets/add_calendar_event_sheet.dart';
@@ -33,7 +36,6 @@ import 'package:vivordo_health/widgets/home_stress_card.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
-import 'package:vivordo_health/src/services/hourly_calendar_load.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'sleep_detail_screen.dart';
@@ -257,6 +259,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   DateTime? _reachableWindowScoresDate;
   Future<List<_ScheduleEvent>?>? _scheduleEventsFuture;
   DateTime? _scheduleEventsDate;
+  Future<_EffortContext>? _effortContextFuture;
+  DateTime? _effortContextDate;
+  Future<({int minutes, DateTime? first})?>? _tomorrowPlanFuture;
+  DateTime? _tomorrowPlanDate;
   ActivityGoals _activityGoals = const ActivityGoals();
   StreamSubscription<ActivityGoals>? _activityGoalsSubscription;
   _HomeWidgetSnapshot? _latestHomeWidgetSnapshot;
@@ -828,7 +834,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     }
 
-    final scores = await CalendarCognitiveLoadService.scoreEvents(inputs);
+    // Claude sorts what the local rules can't, with the user's AI consent,
+    // so the chart matches the server's Effort.
+    final scores = await CalendarCognitiveLoadService.scoreEvents(
+      inputs,
+      allowAi: true,
+    );
     return List.generate(
       timedEvents.length,
       (index) => _ScoredReachableEvent(
@@ -912,10 +923,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 12),
                 _buildCircleCard(),
                 _buildSectionTitle(
-                  "YOUR DAY'S LOAD",
+                  "YOUR DAY'S EFFORT",
                   trailing: [
                     _infoButton(
-                      label: 'How your day\'s load works',
+                      label: 'How your day\'s Effort works',
                       onTap: _showReachableWindowsInfo,
                     ),
                     TextButton(
@@ -1393,7 +1404,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'How your day\'s load works',
+              'How your day\'s Effort works',
               style: TextStyle(
                 color: dialogContext.vivordoColors.textPrimary,
                 fontSize: 20,
@@ -1405,12 +1416,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       content: SingleChildScrollView(
         child: Text(
-          'Each bar is one hour of your day, 7 AM to 10 PM. It stretches earlier or later to fit anything you have scheduled outside those hours. Taller, warmer bars are busier hours.\n\n'
-          '• Calendar events are rated by how demanding they look: size, calls and title.\n'
-          '• Timed priorities use the effort you gave them. No effort set counts as Focused.\n\n'
-          'Longer items, overlaps and back-to-back runs make an hour busier.\n\n'
+          'Each bar is one hour of your day, 7 AM to 10 PM, stretched to fit anything earlier or later. Solid bars are what the day has taken so far (Effort); outlined bars are what\'s still planned (Demand). Taller, warmer bars are busier hours.\n\n'
+          '• Calendar events are rated by how demanding they look. Ones that can\'t be rated count as moderate.\n'
+          '• Priorities count once you tick them off, in their time slot, or as a small mark at the hour you finished them.\n'
+          '• Workouts are shown in teal.\n\n'
+          'Longer items, overlaps and back-to-back runs make an hour busier, and so does anything after your end-of-day time.\n\n'
+          'So far compares today with your usual by this time of day, once there are 14 days to compare with.\n\n'
           'Below the bars is your next free stretch of 30+ minutes. Tap Plan it to fill it, or tap a bar to see its busiest event.\n\n'
-          'Ratings are estimates.',
+          'Effort and ratings are estimates.',
           style: TextStyle(
             color: dialogContext.vivordoColors.textSecondary,
             fontSize: 14,
@@ -1580,14 +1593,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   eventsSnapshot.connectionState == ConnectionState.waiting) {
                 return loading;
               }
-              return ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
-                valueListenable: _prioritySnapshot,
-                builder: (context, prioritySnapshot, _) => _dayLoadCard(
-                  now: now,
-                  scored: scoresSnapshot.data ?? const [],
-                  events: eventsSnapshot.data,
-                  priorities: prioritySnapshot.data ?? const [],
-                ),
+              return FutureBuilder<_EffortContext>(
+                future: _getEffortContextFuture(todayStart),
+                builder: (context, contextSnapshot) =>
+                    ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+                      valueListenable: _prioritySnapshot,
+                      builder: (context, prioritySnapshot, _) => _dayLoadCard(
+                        now: now,
+                        scored: scoresSnapshot.data ?? const [],
+                        events: eventsSnapshot.data,
+                        priorities: prioritySnapshot.data ?? const [],
+                        effortContext:
+                            contextSnapshot.data ?? const _EffortContext(),
+                      ),
+                    ),
               );
             },
           ),
@@ -1599,8 +1618,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required List<_ScoredReachableEvent> scored,
     required List<_ScheduleEvent>? events,
     required List<DailyPriority> priorities,
+    required _EffortContext effortContext,
   }) {
     final colors = context.vivordoColors;
+    final today = DateUtils.dateOnly(now);
     final eventKeys = {for (final event in events ?? const []) event.key};
     // Timed priorities today. A priority linked to a calendar event is
     // already counted by that event, as on My Day's timeline.
@@ -1612,64 +1633,90 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             !eventKeys.contains(priority.sourceEventKey))
           priority,
     ];
+    // Untimed priorities (and timed ones from other days) ticked off today.
+    final untimedDone = [
+      for (final priority in priorities)
+        if (priority.completed &&
+            !timed.contains(priority) &&
+            !eventKeys.contains(priority.sourceEventKey) &&
+            priority.completedAt != null &&
+            DateUtils.isSameDay(priority.completedAt, now))
+          (doneAt: priority.completedAt!, effort: priority.planning['effort']),
+    ];
     final (:from, :until) = dayLoadRange(now, [
       for (final event in events ?? const <_ScheduleEvent>[])
         (start: event.start, end: event.end),
       for (final priority in timed)
         (start: priority.sourceStart!, end: priority.timelineEnd!),
     ]);
-    // Outlook events have no load rating, so they count as busy but unrated
-    // (Focused) rather than leaving their hours looking free.
+    // Outlook events have no rating here, so they count as unknown (30), as
+    // in the server's Effort.
     final outlook = [
       for (final (i, event) in (events ?? const <_ScheduleEvent>[]).indexed)
         if (event.key == null)
-          CalendarCognitiveEvent(
-            id: 'outlook:$i',
-            title: event.title,
-            start: event.start,
-            end: event.end,
+          (
+            event: CalendarCognitiveEvent(
+              id: 'outlook:$i',
+              title: event.title,
+              start: event.start,
+              end: event.end,
+            ),
+            score: CognitiveLoadScore(
+              eventId: 'outlook:$i',
+              score: 0,
+              category: 'unknown',
+              reason: 'Outlook event',
+              usedAi: false,
+            ),
           ),
     ];
-    // Priorities go through the same calculator as events, so they are
-    // weighted by minutes and add overlap and back-to-back pressure too.
-    final priorityInputs = [
-      for (final priority in timed)
-        priorityLoadInput(
-          id: 'priority:${priority.reference.path}',
-          title: priority.title,
-          start: priority.sourceStart!,
-          end: priority.timelineEnd!,
-          effort: priority.planning['effort'],
-        ),
-    ];
-    final load = [
-      for (final hour in HourlyCalendarLoadCalculator.calculate(
-        events: [
-          ...scored.map((e) => e.input),
-          ...outlook,
-          ...priorityInputs.map((p) => p.event),
-        ],
-        scores: [
-          ...scored.map((e) => e.score),
-          ...priorityInputs.map((p) => p.score),
-        ],
-        from: from,
-        until: until,
-      ))
-        hourDisplayLoad(hour.score, hour.occupiedMinutes),
-    ];
+    final effort = buildDayEffort(
+      now: now,
+      from: from,
+      until: until,
+      wrapUp: today.add(Duration(minutes: effortContext.wrapUpMinutes)),
+      items: [
+        for (final e in scored)
+          (event: e.input, score: e.score, done: false, open: false),
+        for (final e in outlook)
+          (event: e.event, score: e.score, done: false, open: false),
+        for (final priority in timed)
+          if (priorityLoadInput(
+                id: 'priority:${priority.reference.path}',
+                title: priority.title,
+                start: priority.sourceStart!,
+                end: priority.timelineEnd!,
+                effort: priority.planning['effort'],
+              )
+              case final input)
+            (
+              event: input.event,
+              score: input.score,
+              done: priority.completed,
+              open: !priority.completed,
+            ),
+      ],
+      untimedDone: untimedDone,
+      workouts: effortContext.workouts,
+    );
     final opening = nextDayOpening(now, [
       for (final event in events ?? const <_ScheduleEvent>[])
         AgendaItem(event.title, event.start, event.end),
       for (final priority in timed)
-        AgendaItem(
-          priority.title,
-          priority.sourceStart!,
-          priority.timelineEnd!,
-        ),
+        if (!priority.completed)
+          AgendaItem(
+            priority.title,
+            priority.sourceStart!,
+            priority.timelineEnd!,
+          ),
     ]);
     final nowFraction =
         now.difference(from).inMinutes / until.difference(from).inMinutes;
+    final soFar = effortSoFarWord(
+      soFar: effort.soFar,
+      now: now,
+      pastByHour: effortContext.pastByHour,
+    );
 
     return _card(
       child: Padding(
@@ -1677,6 +1724,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _effortStat('SO FAR', soFar, null)),
+                  VerticalDivider(width: 24, color: colors.border),
+                  Expanded(
+                    child: effort.aheadMinutes > 0
+                        ? _effortStat(
+                            'STILL AHEAD',
+                            '${_durationLabel(Duration(minutes: effort.aheadMinutes))} planned',
+                            [
+                              switch (effort.aheadLevel) {
+                                DayLoadLevel.heavy => 'Mostly heavy',
+                                DayLoadLevel.focused => 'Mostly focused',
+                                _ => 'Mostly light',
+                              },
+                              if (effort.nextStart case final next?)
+                                'next ${DateFormat.j().format(next)}',
+                            ].join(' · '),
+                          )
+                        : FutureBuilder<({int minutes, DateTime? first})?>(
+                            future: _getTomorrowPlanFuture(today),
+                            builder: (context, snapshot) {
+                              final plan = snapshot.data;
+                              return _effortStat(
+                                'TOMORROW',
+                                plan == null
+                                    ? '…'
+                                    : plan.minutes == 0
+                                    ? 'Nothing planned yet'
+                                    : '${_durationLabel(Duration(minutes: plan.minutes))} planned',
+                                plan?.first == null
+                                    ? null
+                                    : 'First at ${DateFormat.jm().format(plan!.first!)}',
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             SizedBox(
               height: 60,
               child: LayoutBuilder(
@@ -1686,12 +1776,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        for (var i = 0; i < load.length; i++) ...[
+                        for (var i = 0; i < effort.hours.length; i++) ...[
                           if (i > 0) const SizedBox(width: 5),
                           Expanded(
-                            child: _loadBar(
-                              hour: from.add(Duration(hours: i)),
-                              score: load[i],
+                            child: _effortBar(
+                              hour: effort.hours[i],
                               scored: scored,
                             ),
                           ),
@@ -1720,7 +1809,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             const SizedBox(height: 8),
             Row(
               children: [
-                for (var i = 0; i < load.length; i++) ...[
+                for (var i = 0; i < effort.hours.length; i++) ...[
                   if (i > 0) const SizedBox(width: 5),
                   Expanded(
                     child: Text(
@@ -1744,10 +1833,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               spacing: 12,
               runSpacing: 4,
               children: [
-                for (final level in const [
-                  DayLoadLevel.light,
-                  DayLoadLevel.focused,
-                  DayLoadLevel.heavy,
+                for (final (label, color, outlined) in [
+                  ('Light', _loadColor(DayLoadLevel.light), false),
+                  ('Focused', _loadColor(DayLoadLevel.focused), false),
+                  ('Heavy', _loadColor(DayLoadLevel.heavy), false),
+                  ('Workout', _workoutTeal, false),
+                  ('Ahead', accentPurple, true),
                 ])
                   Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1756,17 +1847,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: _loadColor(level),
+                          color: outlined ? null : color,
+                          border: outlined
+                              ? Border.all(color: color, width: 1.5)
+                              : null,
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        switch (level) {
-                          DayLoadLevel.light => 'Light',
-                          DayLoadLevel.focused => 'Focused',
-                          _ => 'Heavy',
-                        },
+                        label,
                         style: TextStyle(
                           fontSize: 11,
                           color: colors.textSecondary,
@@ -1791,6 +1881,41 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  static const _workoutTeal = Color(0xFF5DCAA5);
+
+  Widget _effortStat(String label, String value, String? detail) {
+    final colors = context.vivordoColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            letterSpacing: .6,
+            color: colors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: colors.textPrimary,
+          ),
+        ),
+        if (detail != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            detail,
+            style: TextStyle(fontSize: 12, color: colors.textSecondary),
+          ),
+        ],
+      ],
+    );
+  }
+
   static String _shortHour(int hour) =>
       '${hour % 12 == 0 ? 12 : hour % 12}${hour < 12 ? 'a' : 'p'}';
 
@@ -1801,54 +1926,284 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     DayLoadLevel.heavy => const Color(0xFFF97316),
   };
 
-  /// One hour's bar. Tapping opens the heaviest calendar event in it.
-  Widget _loadBar({
-    required DateTime hour,
-    required double? score,
+  /// One hour's bar: workouts (teal) and what happened (solid, by level)
+  /// at the bottom, what's still planned (outlined) on top, and a dot for
+  /// each untimed priority ticked off. Tapping opens the hour's heaviest
+  /// calendar event.
+  Widget _effortBar({
+    required EffortHour hour,
     required List<_ScoredReachableEvent> scored,
   }) {
-    final level = dayLoadLevel(score);
-    final hourEnd = hour.add(const Duration(hours: 1));
+    final colors = context.vivordoColors;
+    final hourEnd = hour.start.add(const Duration(hours: 1));
     final top =
         (scored
                 .where(
                   (e) =>
                       e.input.start.isBefore(hourEnd) &&
-                      e.input.end.isAfter(hour),
+                      e.input.end.isAfter(hour.start),
                 )
                 .toList()
               ..sort((a, b) => b.score.score.compareTo(a.score.score)))
             .firstOrNull;
-    final label = switch (level) {
-      DayLoadLevel.none => 'open',
-      DayLoadLevel.light => 'light load',
-      DayLoadLevel.focused => 'focused load',
-      DayLoadLevel.heavy => 'heavy load',
-    };
+    final total = hour.workout + hour.done + hour.ahead;
+    // Scale down when the parts add up to more than a full bar.
+    final scale = total > 100 ? 100 / total : 1.0;
+    final doneLevel = dayLoadLevel(hour.done);
+    final label = [
+      if (hour.done > 0) '${doneLevel.name} so far',
+      if (hour.workout > 0) 'workout',
+      if (hour.ahead > 0) '${dayLoadLevel(hour.ahead).name} still planned',
+      if (hour.ticks > 0) '${hour.ticks} priority done',
+    ];
+    Widget part(double value, {Color? fill, Color? outline}) => Flexible(
+      flex: (value * scale * 10).round().clamp(1, 1000),
+      child: Container(
+        decoration: BoxDecoration(
+          color: fill,
+          border: outline == null
+              ? null
+              : Border.all(color: outline, width: 1.5),
+          borderRadius: BorderRadius.circular(5),
+        ),
+      ),
+    );
     return Semantics(
-      label: '${DateFormat.j().format(hour)}, $label',
+      label:
+          '${DateFormat.j().format(hour.start)}, ${label.isEmpty ? 'open' : label.join(', ')}',
       button: top != null,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: top == null ? null : () => _showReachableEventSummary(top.event),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: FractionallySizedBox(
-            heightFactor: level == DayLoadLevel.none
-                ? .08
-                : ((score ?? 0) / 100).clamp(.18, 1.0),
-            widthFactor: 1,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: _loadColor(level),
-                borderRadius: BorderRadius.circular(5),
-              ),
+        child: Column(
+          children: [
+            Expanded(
+              child: total <= 0
+                  ? Align(
+                      alignment: Alignment.bottomCenter,
+                      child: FractionallySizedBox(
+                        heightFactor: .08,
+                        widthFactor: 1,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: _loadColor(DayLoadLevel.none),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                      ),
+                    )
+                  : Align(
+                      alignment: Alignment.bottomCenter,
+                      child: FractionallySizedBox(
+                        heightFactor: (total * scale / 100).clamp(.18, 1.0),
+                        widthFactor: 1,
+                        child: Column(
+                          verticalDirection: VerticalDirection.up,
+                          children: [
+                            if (hour.workout > 0)
+                              part(hour.workout, fill: _workoutTeal),
+                            if (hour.done > 0)
+                              part(hour.done, fill: _loadColor(doneLevel)),
+                            if (hour.ahead > 0)
+                              part(
+                                hour.ahead,
+                                outline: accentPurple.withValues(alpha: .75),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
             ),
-          ),
+            if (hour.ticks > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Icon(
+                  Icons.check_circle_rounded,
+                  size: 9,
+                  color: colors.textSecondary,
+                ),
+              )
+            else
+              const SizedBox(height: 12),
+          ],
         ),
       ),
     );
+  }
+
+  Future<_EffortContext> _getEffortContextFuture(DateTime day) {
+    if (_effortContextFuture != null &&
+        DateUtils.isSameDay(_effortContextDate, day)) {
+      return _effortContextFuture!;
+    }
+    _effortContextDate = day;
+    return _effortContextFuture = _loadEffortContext(day);
+  }
+
+  /// Today's in-app workouts, the user's end-of-day time, and earlier days'
+  /// hour-by-hour Effort (scores_daily, last 28 days) for "So far".
+  Future<_EffortContext> _loadEffortContext(DateTime day) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const _EffortContext();
+    final user = FirebaseFirestore.instance.collection('users').doc(uid);
+    final dayStart = DateUtils.dateOnly(day);
+    try {
+      final [workouts, scores, profile] = await Future.wait([
+        user
+            .collection('workouts')
+            .where(
+              'startedAt',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(dayStart),
+            )
+            .where(
+              'startedAt',
+              isLessThan: Timestamp.fromDate(
+                dayStart.add(const Duration(days: 1)),
+              ),
+            )
+            .get(),
+        user
+            .collection('scores_daily')
+            .where(
+              FieldPath.documentId,
+              isGreaterThanOrEqualTo: localDayKey(
+                DateTime(day.year, day.month, day.day - 28),
+              ),
+            )
+            .where(FieldPath.documentId, isLessThan: localDayKey(day))
+            .get(),
+        user.get(),
+      ]);
+      final wrapUp =
+          ((profile as DocumentSnapshot<Map<String, dynamic>>)
+                  .data()?['preferences']
+              as Map?)?['dayWrapUpMinutes'];
+      return _EffortContext(
+        wrapUpMinutes: wrapUp is int ? wrapUp : kDefaultDayWrapUpMinutes,
+        workouts: [
+          for (final doc
+              in (workouts as QuerySnapshot<Map<String, dynamic>>).docs)
+            if (doc.data()['startedAt'] case final Timestamp start)
+              (
+                start: start.toDate(),
+                end:
+                    (doc.data()['completedAt'] as Timestamp?)?.toDate() ??
+                    start.toDate().add(
+                      Duration(
+                        seconds:
+                            (((doc.data()['durationMinutes'] as num?) ?? 0) *
+                                    60)
+                                .round(),
+                      ),
+                    ),
+                intensity: workoutIntensity(
+                  [
+                    doc.data()['activityName'],
+                    doc.data()['activityCategory'],
+                    for (final e
+                        in (doc.data()['exercises'] as List? ?? const []))
+                      if (e is Map) e['category'],
+                  ].whereType<String>().join(' '),
+                ),
+              ),
+        ],
+        pastByHour: [
+          for (final doc
+              in (scores as QuerySnapshot<Map<String, dynamic>>).docs)
+            if (doc.data()['effort'] case {
+              'version': 1,
+              'byHour': final List byHour,
+            })
+              byHour.whereType<num>().toList(),
+        ],
+      );
+    } catch (error) {
+      debugPrint('Home Effort context failed: $error');
+      return const _EffortContext();
+    }
+  }
+
+  Future<({int minutes, DateTime? first})?> _getTomorrowPlanFuture(
+    DateTime today,
+  ) {
+    if (_tomorrowPlanFuture != null &&
+        DateUtils.isSameDay(_tomorrowPlanDate, today)) {
+      return _tomorrowPlanFuture!;
+    }
+    _tomorrowPlanDate = today;
+    return _tomorrowPlanFuture = _loadTomorrowPlan(today);
+  }
+
+  /// Tomorrow's planned time (calendar events and timed priorities, overlaps
+  /// counted once) and its first start, for the evening's "Tomorrow".
+  Future<({int minutes, DateTime? first})?> _loadTomorrowPlan(
+    DateTime today,
+  ) async {
+    final start = DateTime(today.year, today.month, today.day + 1);
+    final end = DateTime(today.year, today.month, today.day + 2);
+    final intervals = <(DateTime, DateTime)>[];
+    try {
+      if (await CalendarService.isSignedIn()) {
+        for (final event in await CalendarService.getEventsBetween(
+          start,
+          end,
+        )) {
+          final s = event.start?.dateTime?.toLocal();
+          final e = event.end?.dateTime?.toLocal();
+          if (s == null ||
+              e == null ||
+              event.status == 'cancelled' ||
+              event.transparency == 'transparent' ||
+              (event.attendees?.any(
+                    (a) => a.self == true && a.responseStatus == 'declined',
+                  ) ??
+                  false)) {
+            continue;
+          }
+          intervals.add((s, e));
+        }
+      }
+      if (await OutlookCalendarService.isSignedIn()) {
+        for (final event in await OutlookCalendarService.getEventsBetween(
+          start,
+          end,
+        )) {
+          if (!event.isAllDay) {
+            intervals.add((event.start.toLocal(), event.end.toLocal()));
+          }
+        }
+      }
+      for (final priority in await DailyPriorityService.forDay(
+        start,
+        includeCompleted: false,
+        source: Source.serverAndCache,
+      )) {
+        if (!priority.isAllDay &&
+            priority.sourceStart != null &&
+            DateUtils.isSameDay(priority.sourceStart, start)) {
+          intervals.add((priority.sourceStart!, priority.timelineEnd!));
+        }
+      }
+    } catch (error) {
+      debugPrint('Home tomorrow plan failed: $error');
+      return null;
+    }
+    final clipped = [
+      for (final (s, e) in intervals)
+        if (e.isAfter(start) && s.isBefore(end))
+          (s.isBefore(start) ? start : s, e.isAfter(end) ? end : e),
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    var minutes = 0;
+    DateTime? coveredUntil;
+    for (final (s, e) in clipped) {
+      final from = coveredUntil != null && coveredUntil.isAfter(s)
+          ? coveredUntil
+          : s;
+      if (e.isAfter(from)) minutes += e.difference(from).inMinutes;
+      if (coveredUntil == null || e.isAfter(coveredUntil)) coveredUntil = e;
+    }
+    return (minutes: minutes, first: clipped.firstOrNull?.$1);
   }
 
   Widget _openingRow(({DateTime start, DateTime? end, String? next})? opening) {
@@ -2419,6 +2774,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _reachableWindowScoresDate = null;
       _scheduleEventsFuture = null;
       _scheduleEventsDate = null;
+      _effortContextFuture = null;
+      _effortContextDate = null;
+      _tomorrowPlanFuture = null;
+      _tomorrowPlanDate = null;
     });
   }
 
@@ -2776,6 +3135,19 @@ class _HomeWorkoutStreakBadgeState extends State<_HomeWorkoutStreakBadge> {
           );
         },
       );
+}
+
+/// What Home's Effort card needs besides the calendar and priorities.
+class _EffortContext {
+  const _EffortContext({
+    this.wrapUpMinutes = kDefaultDayWrapUpMinutes,
+    this.workouts = const [],
+    this.pastByHour = const [],
+  });
+
+  final int wrapUpMinutes;
+  final List<({DateTime start, DateTime end, double intensity})> workouts;
+  final List<List<num>> pastByHour;
 }
 
 class _ScheduleEvent {

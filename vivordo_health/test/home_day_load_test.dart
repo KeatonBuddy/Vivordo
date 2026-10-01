@@ -31,7 +31,7 @@ void main() {
       from: at(9),
       until: at(10),
     ).single;
-    return hourDisplayLoad(hour.score, hour.occupiedMinutes);
+    return hour.score;
   }
 
   ({CalendarCognitiveEvent event, CognitiveLoadScore score}) meeting(
@@ -84,12 +84,6 @@ void main() {
     expect(dayLoadLevel(loadAt9(items: [call])), DayLoadLevel.focused);
     expect(loadAt9(items: [call, priority]), 60);
     expect(dayLoadLevel(loadAt9(items: [call, priority])), DayLoadLevel.heavy);
-  });
-
-  test('a booked hour with no rated events shows as focused, not free', () {
-    final unrated = meeting('x', at(9), at(10), score: 0, confidence: 0);
-    expect(loadAt9(items: [unrated]), 45);
-    expect(dayLoadLevel(loadAt9()), DayLoadLevel.none);
   });
 
   test('bars cover 7 AM to 10 PM, stretched to fit the day', () {

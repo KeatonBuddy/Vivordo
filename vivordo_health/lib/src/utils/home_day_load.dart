@@ -74,11 +74,6 @@ int priorityLoad(Object? effort) => switch (effort) {
   ),
 );
 
-/// Load drawn for an hour: its score, or focused when the hour is booked
-/// but none of its events could be rated, so a full hour never looks free.
-double? hourDisplayLoad(double? score, double occupiedMinutes) =>
-    score ?? (occupiedMinutes > 0 ? 45 : null);
-
 /// The first opening left today and the title of what follows it. Null
 /// when no opening of [openingMinutes] or more is left.
 ({DateTime start, DateTime? end, String? next})? nextDayOpening(

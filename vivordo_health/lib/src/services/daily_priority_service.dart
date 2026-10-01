@@ -46,6 +46,7 @@ class DailyPriority {
     this.templateId,
     this.planning = const {},
     this.sourceEventKey,
+    this.completedAt,
   });
 
   final String id;
@@ -61,6 +62,9 @@ class DailyPriority {
   final String? templateId;
   final Map<String, dynamic> planning;
   final String? sourceEventKey;
+
+  /// When it was ticked off; null while open (or on old priorities).
+  final DateTime? completedAt;
   final DocumentReference<Map<String, dynamic>> reference;
 
   factory DailyPriority.fromDocument(
@@ -82,6 +86,7 @@ class DailyPriority {
       templateId: data['templateId'] as String?,
       planning: Map<String, dynamic>.from(data['planning'] as Map? ?? {}),
       sourceEventKey: data['sourceEventKey'] as String?,
+      completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
     );
   }
 
