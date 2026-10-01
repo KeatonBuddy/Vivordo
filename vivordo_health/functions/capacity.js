@@ -70,8 +70,8 @@ function sleepNeed(nights) {
  *   fine: only gaps between bedtimes are used).
  * @param {object[]} input.history Earlier days in the last 90, any order:
  *   {sleepHours, bedtimeMin, hrv, restingHr}.
- * @return {object|null} Capacity record, or null when there is no sleep
- *   and no measured body data (never guessed).
+ * @return {object|null} Capacity record, or null when there is no sleep,
+ *   no measured body data and no check-in (never guessed).
  */
 function computeCapacity({today, history}) {
   const need = sleepNeed(history.map((d) => d.sleepHours)
@@ -106,16 +106,19 @@ function computeCapacity({today, history}) {
     bodyParts.push(clamp(70 - 6 * (today.restingHr - restingHrNormal)));
   }
   const bodyMeasured = bodyParts.length > 0;
-  if (sleep === null && !bodyMeasured) return null;
+  const checkInParts = [today.checkInFeel, today.checkInSleep].filter(finite);
+  const checkIn = checkInParts.length ?
+    clamp(checkInParts.reduce((a, b) => a + b) / checkInParts.length) : null;
+  if (sleep === null && !bodyMeasured && checkIn === null) return null;
+  // With only a check-in, the assumed neutral body would dilute the one real
+  // signal, so it is left out until sleep or body data arrives.
   const body = bodyMeasured ?
-    bodyParts.reduce((a, b) => a + b) / bodyParts.length : NEUTRAL_BODY;
+    bodyParts.reduce((a, b) => a + b) / bodyParts.length :
+    sleep === null ? null : NEUTRAL_BODY;
 
   const recovery = finite(today.yesterdayEffort) && finite(today.usualEffort) ?
     clamp(100 - Math.max(0, today.yesterdayEffort - today.usualEffort)) :
     null;
-  const checkInParts = [today.checkInFeel, today.checkInSleep].filter(finite);
-  const checkIn = checkInParts.length ?
-    clamp(checkInParts.reduce((a, b) => a + b) / checkInParts.length) : null;
 
   const parts = {sleep, body, recovery, checkIn};
   let total = 0;
@@ -148,17 +151,21 @@ function computeCapacity({today, history}) {
 /**
  * The inputs Capacity reads from a metrics_daily document.
  * @param {object} data metrics_daily document data.
- * @return {object} {sleepHours, bedtimeMin, hrv, restingHr}.
+ * @return {object} {sleepHours, bedtimeMin, hrv, restingHr, checkInFeel,
+ *   checkInSleep}.
  */
 function capacityInputs(data) {
   const bedtime = data?.sleep?.bedtime;
   const date = typeof bedtime?.toDate === "function" ? bedtime.toDate() : null;
+  const checkIn = data?.morning_check_in;
   return {
     sleepHours: finite(data?.sleep?.avg) ? data.sleep.avg : null,
     bedtimeMin: date ? date.getUTCHours() * 60 + date.getUTCMinutes() : null,
     hrv: finite(data?.hrv?.avg) ? data.hrv.avg : null,
     restingHr: finite(data?.resting_heart_rate?.avg) ?
       data.resting_heart_rate.avg : null,
+    checkInFeel: finite(checkIn?.feel) ? checkIn.feel : null,
+    checkInSleep: finite(checkIn?.sleep) ? checkIn.sleep : null,
   };
 }
 
@@ -179,11 +186,11 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
   const start = new Date(Date.parse(`${day}T00:00:00Z`) -
     HISTORY_DAYS * DAY_MS).toISOString().slice(0, 10);
   const {FieldPath} = require("firebase-admin/firestore");
-  // Only the three fields Capacity reads, never the heart-rate arrays.
+  // Only the fields Capacity reads, never the heart-rate arrays.
   const snapshot = await user.collection("metrics_daily")
       .where(FieldPath.documentId(), ">=", start)
       .where(FieldPath.documentId(), "<=", day)
-      .select("sleep", "hrv", "resting_heart_rate")
+      .select("sleep", "hrv", "resting_heart_rate", "morning_check_in")
       .get();
   let todayData = null;
   const history = [];

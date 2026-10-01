@@ -129,9 +129,16 @@ assumed, not measured.
 sleep, HRV and resting heart rate, so including it counted last night
 twice (and, without a wearable, it adds little beyond sleep and mood).
 Stress stays its own live number. The check-in replaces it as the one
-signal sensors can't measure. It comes from the morning check-in idea
-(the Idea Backlog's `morning-checkin`), and is simply left out until that
-is built or on days it isn't answered.
+signal sensors can't measure. It is left out on days it isn't answered.
+
+**The morning check-in card** sits at the top of My Day until noon (local),
+until answered or dismissed. "How do you feel?" uses the mood labels
+(Awful 10, Down 30, Okay 50, Good 75, Great 95) and is also saved as the
+day's mood check-in. "How did you sleep?" is asked even when sleep was
+recorded, with the recorded duration shown beside it. Answers are saved to
+`metrics_daily/{day}.morning_check_in` as `{feel, sleep, dismissed}`
+(scores), which the Capacity trigger reads. Once both are answered the card
+collapses to a confirmation with Edit.
 
 - **Your sleep need** is your 90-day median sleep, kept between 7 and 9 h.
   With fewer than 14 nights it is 8 h.
@@ -139,8 +146,11 @@ is built or on days it isn't answered.
 - **Without a wearable:** sleep from Health, recovery from yesterday, the
   morning check-in, and a morning camera heart scan (resting HR) if one was
   done.
-- **Not enough data:** with no sleep and no overnight body data, Capacity
-  is shown as unavailable. It is never guessed.
+- **Not enough data:** with no sleep, no overnight body data and no
+  check-in, Capacity is shown as unavailable. It is never guessed.
+- **Check-in only** (no sleep or body data yet): Capacity is the check-in
+  (plus recovery from yesterday, once built), without the assumed neutral
+  body, and is labelled "Based on your check-in" until sleep syncs.
 - **Provisional until last night's sleep syncs.** There's no time cutoff,
   because there's no way to know when someone woke up. Capacity
   recalculates whenever last night's sleep arrives, and locks at local
@@ -169,7 +179,7 @@ owner-readable). It is not stored in `metrics_daily`, where writing back
 would re-trigger the function, nor in the summary documents, which are
 replaced whole on every projection. Capacity is implemented in
 `functions/capacity.js`: the `computeDailyCapacity` trigger recalculates
-only when a day's sleep, HRV or resting heart rate changes, reads just
+only when a day's sleep, HRV, resting heart rate or check-in changes, reads just
 those fields for 90 days, and never rewrites a day once it is over in
 every time zone (`final`). `scripts/backfill_capacity.js` fills past days.
 Field names below are the planned shape; see `capacity.js` for the exact

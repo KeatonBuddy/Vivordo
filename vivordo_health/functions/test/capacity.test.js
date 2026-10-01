@@ -50,6 +50,17 @@ test("no sleep and no measured body is unavailable, never guessed", () => {
   assert.equal(bodyOnly.provisional, true, "waiting for last night's sleep");
 });
 
+test("a check-in alone gives a provisional Capacity without the assumed body", () => {
+  const result = computeCapacity({history: history(), today: {checkInFeel: 75, checkInSleep: 25}});
+  assert.equal(result.provisional, true);
+  assert.equal(result.parts.body, null, "neutral body left out");
+  assert.equal(result.score, 50);
+  // When sleep syncs, the neutral body comes back.
+  const synced = computeCapacity({history: history(), today: {sleepHours: 7.5, checkInFeel: 75, checkInSleep: 25}});
+  assert.equal(synced.parts.body, 70);
+  assert.equal(synced.provisional, false);
+});
+
 test("ingredients that don't exist yet are left out and re-weighted", () => {
   // Effort isn't built yet: Capacity uses sleep 45 and body 35 only.
   const result = computeCapacity({history: history(), today: {sleepHours: 7.5, hrv: 60, restingHr: 55}});
@@ -75,11 +86,13 @@ test("bedtimes are compared around midnight", () => {
   assert.equal(ok.parts.sleep, 100);
 });
 
-test("only sleep, HRV and resting HR changes trigger a recalculation", () => {
+test("only sleep, HRV, resting HR and check-in changes trigger a recalculation", () => {
   const base = {sleep: {avg: 7}, hrv: {avg: 50}, steps: {sum: 100}};
   assert.equal(capacityInputsChanged(base, {...base, steps: {sum: 900}}), false);
   assert.equal(capacityInputsChanged(base, {...base, hrv: {avg: 55}}), true);
   assert.equal(capacityInputsChanged(undefined, base), true);
+  assert.equal(capacityInputsChanged(base, {...base, morning_check_in: {feel: 75}}), true);
+  assert.equal(capacityInputs({morning_check_in: {feel: 75, sleep: 50}}).checkInSleep, 50);
   const bedtime = {toDate: () => new Date("2026-09-30T05:15:00Z")};
   assert.equal(capacityInputs({sleep: {avg: 7, bedtime}}).bedtimeMin, 5 * 60 + 15);
 });

@@ -137,6 +137,7 @@ class DailyBriefMetrics {
       stressTime: stressTime,
       healthTime: healthTime,
       isFromCache: isFromCache,
+      checkIn: data?['morning_check_in'] as Map?,
       priorNights: previous
           .where((d) => ((d.data['sleep'] as Map?)?['avg'] as num? ?? 0) > 0)
           .length,
@@ -155,6 +156,7 @@ class DailyBriefMetricsSummary {
     required this.healthTime,
     required this.isFromCache,
     required this.priorNights,
+    this.checkIn,
   });
   final double? sleep;
   final double? usualSleep;
@@ -165,4 +167,7 @@ class DailyBriefMetricsSummary {
   final DateTime? healthTime;
   final bool isFromCache;
   final int priorNights;
+
+  /// Today's morning check-in: {feel, sleep} scores (0–100) and `dismissed`.
+  final Map? checkIn;
 }

@@ -45,8 +45,11 @@ ServerCapacity? serverCapacityFor(
       : earlier.length.isOdd
       ? earlier[earlier.length ~/ 2]
       : (earlier[earlier.length ~/ 2 - 1] + earlier[earlier.length ~/ 2]) / 2;
+  final parts = today['parts'];
   final note = provisional
-      ? 'Estimated · waiting for sleep'
+      ? parts is Map && parts['sleep'] == null && parts['body'] == null
+            ? 'Based on your check-in'
+            : 'Estimated · waiting for sleep'
       : usual == null
       ? 'Still learning your usual'
       : (score - usual).abs() < 10

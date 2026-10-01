@@ -67,4 +67,21 @@ void main() {
     expect(result.label, 'low');
     expect(result.score, 45);
   });
+
+  test('a check-in-only Capacity says so', () {
+    final checkInOnly = day(50, provisional: true);
+    (checkInOnly['capacity'] as Map)['parts'] = {
+      'sleep': null,
+      'body': null,
+      'checkIn': 50,
+    };
+    expect(
+      serverCapacityFor({today: checkInOnly}, today)!.note,
+      'Based on your check-in',
+    );
+    expect(
+      serverCapacityFor({today: day(70, provisional: true)}, today)!.note,
+      'Estimated · waiting for sleep',
+    );
+  });
 }
