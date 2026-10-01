@@ -7,6 +7,7 @@
 const crypto = require("node:crypto");
 const {isDeepStrictEqual} = require("node:util");
 const {validDay} = require("./metrics_summary");
+const {hrvReadings, pickHrv} = require("./hrv");
 
 const VERSION = 1;
 const WEIGHTS = {sleep: 45, body: 35, recovery: 20, checkIn: 15};
@@ -64,12 +65,13 @@ function sleepNeed(nights) {
 /**
  * Capacity for one day.
  * @param {object} input
- * @param {object} input.today {sleepHours, bedtimeMin, hrv, restingHr,
- *   yesterdayEffort, usualEffort, checkInFeel, checkInSleep}; any may be
- *   null. bedtimeMin is minutes after midnight in a fixed clock (UTC is
- *   fine: only gaps between bedtimes are used).
+ * @param {object} input.today {sleepHours, bedtimeMin, hrv, hrvKind,
+ *   restingHr, yesterdayEffort, usualEffort, checkInFeel, checkInSleep}; any
+ *   may be null. bedtimeMin is minutes after midnight in a fixed clock (UTC
+ *   is fine: only gaps between bedtimes are used).
  * @param {object[]} input.history Earlier days in the last 90, any order:
- *   {sleepHours, bedtimeMin, hrv, restingHr}.
+ *   {sleepHours, bedtimeMin, hrv, restingHr}; hrv of today's kind only
+ *   (see pickHrv in hrv.js).
  * @return {object|null} Capacity record, or null when there is no sleep,
  *   no measured body data and no check-in (never guessed).
  */
@@ -142,6 +144,7 @@ function computeCapacity({today, history}) {
     sleepNeed: need,
     bedtimeOffsetMin,
     hrv: finite(today.hrv) ? today.hrv : null,
+    hrvKind: finite(today.hrv) ? today.hrvKind ?? null : null,
     hrvNormal,
     restingHr: finite(today.restingHr) ? today.restingHr : null,
     restingHrNormal,
@@ -151,8 +154,8 @@ function computeCapacity({today, history}) {
 /**
  * The inputs Capacity reads from a metrics_daily document.
  * @param {object} data metrics_daily document data.
- * @return {object} {sleepHours, bedtimeMin, hrv, restingHr, checkInFeel,
- *   checkInSleep}.
+ * @return {object} {sleepHours, bedtimeMin, hrvReadings, restingHr,
+ *   checkInFeel, checkInSleep}.
  */
 function capacityInputs(data) {
   const bedtime = data?.sleep?.bedtime;
@@ -161,7 +164,7 @@ function capacityInputs(data) {
   return {
     sleepHours: finite(data?.sleep?.avg) ? data.sleep.avg : null,
     bedtimeMin: date ? date.getUTCHours() * 60 + date.getUTCMinutes() : null,
-    hrv: finite(data?.hrv?.avg) ? data.hrv.avg : null,
+    hrvReadings: hrvReadings(data),
     restingHr: finite(data?.resting_heart_rate?.avg) ?
       data.resting_heart_rate.avg : null,
     checkInFeel: finite(checkIn?.feel) ? checkIn.feel : null,
@@ -225,7 +228,8 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
   const snapshot = await user.collection("metrics_daily")
       .where(FieldPath.documentId(), ">=", start)
       .where(FieldPath.documentId(), "<=", day)
-      .select("sleep", "hrv", "resting_heart_rate", "morning_check_in")
+      .select("sleep", "hrv", "hrv_rmssd", "resting_heart_rate",
+          "morning_check_in")
       .get();
   let todayData = null;
   const history = [];
@@ -235,11 +239,18 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
     else history.push({day: doc.id, ...capacityInputs(doc.data())});
   }
   history.sort((a, b) => a.day.localeCompare(b.day));
-  const capacity = todayData ? computeCapacity({
-    today: {...capacityInputs(todayData),
-      ...await effortContext(user, start, day)},
-    history,
-  }) : null;
+  let capacity = null;
+  if (todayData) {
+    const today = capacityInputs(todayData);
+    const hrv = pickHrv(today.hrvReadings,
+        history.map((past) => past.hrvReadings), MIN_BASELINE);
+    history.forEach((past, index) => past.hrv = hrv.history[index]);
+    capacity = computeCapacity({
+      today: {...today, hrv: hrv.value, hrvKind: hrv.kind,
+        ...await effortContext(user, start, day)},
+      history,
+    });
+  }
 
   const target = user.collection("scores_daily").doc(day);
   const deletionId = crypto.createHash("sha256").update(uid).digest("hex");

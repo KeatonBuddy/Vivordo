@@ -5,13 +5,13 @@ void main() {
   List<HeartHealthSignals> baseline({
     int days = 14,
     double restingHeartRate = 64,
-    double hrvSdnn = 48,
+    double hrv = 48,
     double quietHeartRate = 66,
   }) => List.generate(
     days,
     (_) => HeartHealthSignals(
       restingHeartRate: restingHeartRate,
-      hrvSdnn: hrvSdnn,
+      hrv: hrv,
       quietHeartRate: quietHeartRate,
     ),
   );
@@ -20,7 +20,7 @@ void main() {
     final result = calculateHeartHealthScore(
       current: const HeartHealthSignals(
         restingHeartRate: 64,
-        hrvSdnn: 48,
+        hrv: 48,
         quietHeartRate: 66,
       ),
       history: baseline(),
@@ -36,7 +36,7 @@ void main() {
     final result = calculateHeartHealthScore(
       current: const HeartHealthSignals(
         restingHeartRate: 61,
-        hrvSdnn: 53,
+        hrv: 53,
         quietHeartRate: 63,
       ),
       history: baseline(),
@@ -49,7 +49,7 @@ void main() {
     final result = calculateHeartHealthScore(
       current: const HeartHealthSignals(
         restingHeartRate: 70,
-        hrvSdnn: 38,
+        hrv: 38,
         quietHeartRate: 72,
       ),
       history: baseline(),
@@ -60,12 +60,12 @@ void main() {
 
   test('redistributes weight when a baseline signal is unavailable', () {
     final result = calculateHeartHealthScore(
-      current: const HeartHealthSignals(restingHeartRate: 64, hrvSdnn: 48),
+      current: const HeartHealthSignals(restingHeartRate: 64, hrv: 48),
       history: baseline()
           .map(
             (day) => HeartHealthSignals(
               restingHeartRate: day.restingHeartRate,
-              hrvSdnn: day.hrvSdnn,
+              hrv: day.hrv,
             ),
           )
           .toList(),
@@ -94,14 +94,14 @@ void main() {
         ..add(
           const HeartHealthSignals(
             restingHeartRate: 140,
-            hrvSdnn: 2,
+            hrv: 2,
             quietHeartRate: 150,
           ),
         );
       final result = calculateHeartHealthScore(
         current: const HeartHealthSignals(
           restingHeartRate: 64,
-          hrvSdnn: 48,
+          hrv: 48,
           quietHeartRate: 66,
         ),
         history: history,
@@ -110,4 +110,68 @@ void main() {
       expect(result.score, 80);
     },
   );
+
+  // Same cases as functions/test/hrv.test.js, so app and server agree.
+  group('HRV kinds', () {
+    Map<String, dynamic> apple(double avg) => {
+      'hrv': {'avg': avg, 'source': 'apple_health'},
+    };
+    Map<String, dynamic> whoop(double avg) => {
+      'hrv_rmssd': {'avg': avg, 'source': 'whoop', 'method': 'rmssd'},
+    };
+
+    test('readings are keyed by kind and ignore unknown or invalid values', () {
+      expect(hrvReadings({...apple(61), ...whoop(44)}), {
+        'rmssd:whoop': 44,
+        'sdnn': 61,
+      });
+      expect(
+        hrvReadings({
+          'hrv_rmssd': {'avg': 40, 'source': 'garmin'},
+          'hrv': {'avg': 0},
+        }),
+        isEmpty,
+      );
+      expect(hrvReadings(null), isEmpty);
+    });
+
+    test('uses the wearable once it has a normal, never mixing kinds', () {
+      final history = List.generate(
+        7,
+        (_) => hrvReadings({...apple(60), ...whoop(45)}),
+      );
+      final pick = pickHrv(
+        hrvReadings({...apple(58), ...whoop(40)}),
+        history,
+        7,
+      );
+      expect(pick.kind, 'rmssd:whoop');
+      expect(pick.value, 40);
+      expect(pick.history, List.filled(7, 45));
+    });
+
+    test('keeps Apple SDNN while a new wearable builds its normal', () {
+      final history = [
+        ...List.generate(10, (_) => hrvReadings(apple(60))),
+        ...List.generate(3, (_) => hrvReadings({...apple(60), ...whoop(45)})),
+      ];
+      final pick = pickHrv(
+        hrvReadings({...apple(57), ...whoop(42)}),
+        history,
+        7,
+      );
+      expect(pick.kind, 'sdnn');
+      expect(pick.value, 57);
+    });
+
+    test('a wearable-only user without a normal yet reports its kind', () {
+      final pick = pickHrv(hrvReadings(whoop(42)), [hrvReadings(whoop(45))], 7);
+      expect(pick.kind, 'rmssd:whoop');
+      expect(pick.value, 42);
+      expect(pick.history, [45]);
+      final none = pickHrv({}, [{}], 7);
+      expect(none.kind, isNull);
+      expect(none.history, [null]);
+    });
+  });
 }

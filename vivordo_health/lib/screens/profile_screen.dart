@@ -1527,7 +1527,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   const SizedBox(height: 2),
                                   Text(
                                     whoopConnected
-                                        ? 'Connected — sleep sync enabled'
+                                        ? 'Connected — health sync enabled'
                                         : 'Connect your WHOOP account',
                                     style: TextStyle(
                                       fontSize: 12,
@@ -1582,6 +1582,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                         ),
                       ),
                       if (whoopConnected) ...[
+                        if (rawData['whoopRecoveryPermissionRequired'] == true)
+                          TextButton(
+                            onPressed: _isUpdatingWhoop
+                                ? null
+                                : () => _updateWhoopConnection(false),
+                            child: const Text(
+                              'Allow heart rate, HRV & oxygen sync',
+                            ),
+                          ),
                         _buildDivider(),
                         SizedBox(
                           width: double.infinity,

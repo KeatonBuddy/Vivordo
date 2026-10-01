@@ -6,6 +6,8 @@
 // are starting values to tune against real histories; this is a wellness
 // signal, not a diagnosis.
 
+const {HRV_KINDS, hrvReadings} = require("./hrv");
+
 const DAY_MS = 86400000;
 const RECENT_DAYS = 14;
 // The gap keeps a month of building strain out of "normal", so it is not
@@ -49,7 +51,7 @@ function dailySignals(data) {
   return {
     stress: num(data?.stress?.avg) ?? num(data?.stress?.current),
     restingHeartRate: num(data?.resting_heart_rate?.avg),
-    hrv: num(data?.hrv?.avg),
+    hrv: hrvReadings(data), // by kind; assess() compares one kind only
     sleepHours: num(data?.sleep?.avg),
     exerciseMinutes: num(data?.exercise_time?.sum),
     mood: num(data?.mood?.avg),
@@ -112,17 +114,24 @@ function assess(byDay, today) {
   const end = dayIndex(today);
   const signals = {};
   for (const [name, config] of Object.entries(SIGNALS)) {
-    const recent = [];
-    const baseline = [];
-    for (let i = end - RECENT_DAYS - GAP_DAYS - BASELINE_DAYS + 1;
-      i <= end; i++) {
-      const value = byDay.get(dayKey(i))?.[name];
-      if (value == null) continue;
-      if (i > end - RECENT_DAYS) recent.push(value);
-      else if (i <= end - RECENT_DAYS - GAP_DAYS) baseline.push(value);
+    // HRV kinds can't be compared, so use the preferred kind with enough
+    // readings in both windows.
+    for (const kind of name === "hrv" ? HRV_KINDS : [null]) {
+      const recent = [];
+      const baseline = [];
+      for (let i = end - RECENT_DAYS - GAP_DAYS - BASELINE_DAYS + 1;
+        i <= end; i++) {
+        const day = byDay.get(dayKey(i))?.[name];
+        const value = kind ? day?.[kind] : day;
+        if (value == null) continue;
+        if (i > end - RECENT_DAYS) recent.push(value);
+        else if (i <= end - RECENT_DAYS - GAP_DAYS) baseline.push(value);
+      }
+      const result = scoreSignal(config, recent, baseline);
+      if (!result) continue;
+      signals[name] = {...result, group: config.group, ...kind && {kind}};
+      break;
     }
-    const result = scoreSignal(config, recent, baseline);
-    if (result) signals[name] = {...result, group: config.group};
   }
   // A group is strained when any of its signals is: averaging would let
   // normal sleep and heart rate hide two weeks of rising stress.

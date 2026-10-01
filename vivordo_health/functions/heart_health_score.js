@@ -38,13 +38,14 @@ const personalizedScore = ({
 /**
  * Calculates personalized Heart Health while redistributing missing weights.
  *
- * @param {Object} current Current resting HR, SDNN HRV, and quiet HR.
+ * @param {Object} current Current resting HR, HRV (one kind, see
+ *     hrv.js), and quiet HR.
  * @param {Object[]} history Up to 28 earlier daily signal objects.
  * @return {Object} Score, component scores, baseline state, and confidence.
  */
 function calculateHeartHealthScore(current, history) {
   const restingHistory = history.map((day) => day.restingHeartRate);
-  const hrvHistory = history.map((day) => day.hrvSdnn);
+  const hrvHistory = history.map((day) => day.hrv);
   const quietHistory = history.map((day) => day.quietHeartRate);
   const restingHeartRateScore = personalizedScore({
     current: current.restingHeartRate,
@@ -54,7 +55,7 @@ function calculateHeartHealthScore(current, history) {
     pointsPerDeviation: 12,
   });
   const hrvScore = personalizedScore({
-    current: current.hrvSdnn,
+    current: current.hrv,
     history: hrvHistory,
     lowerIsBetter: false,
     minimumScale: 5,
@@ -83,7 +84,7 @@ function calculateHeartHealthScore(current, history) {
   ) / availableWeight;
   const availableSignals = [
     current.restingHeartRate,
-    current.hrvSdnn,
+    current.hrv,
     current.quietHeartRate,
   ].filter(valid).length;
   const baselineCounts = [

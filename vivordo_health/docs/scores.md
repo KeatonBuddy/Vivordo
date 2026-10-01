@@ -225,7 +225,9 @@ collapses to a confirmation with Edit.
 Changes from the current Capacity:
 - sleep is compared with your own need, not 8 h;
 - HRV and resting HR are compared with your own normal, instead of heart
-  rate vs a fixed 60 bpm;
+  rate vs a fixed 60 bpm. HRV uses one kind only (WHOOP or Fitbit overnight
+  RMSSD, else Apple SDNN; `functions/hrv.js`), since the kinds can't be
+  compared; `hrvKind` records which;
 - recovery from yesterday's Effort carries over;
 - morning stress is dropped (it double-counted sleep and the body);
 - an optional morning check-in adds a self-reported signal;
@@ -250,7 +252,7 @@ Capacity record.
 ```
 capacity: { score, final, version, provisional,
             sleepHours, sleepNeed, bedtimeOffsetMin,
-            hrv, hrvNormal, restingHr, restingHrNormal,
+            hrv, hrvKind, hrvNormal, restingHr, restingHrNormal,
             checkInFeel, checkInSleep, yesterdayEffort, usualEffort }
 effort:   { total, mental, physical, physicalSource, final, version,
             busyMinutes, backToBack, afterHoursMinutes,

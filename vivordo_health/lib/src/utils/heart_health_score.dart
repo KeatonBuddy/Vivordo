@@ -6,13 +6,63 @@ const int heartHealthMinimumBaselineDays = 7;
 class HeartHealthSignals {
   const HeartHealthSignals({
     this.restingHeartRate,
-    this.hrvSdnn,
+    this.hrv,
     this.quietHeartRate,
   });
 
   final double? restingHeartRate;
-  final double? hrvSdnn;
+  final double? hrv;
   final double? quietHeartRate;
+}
+
+/// HRV comes in kinds that can't be compared or converted: Apple Health's
+/// daytime SDNN and each wearable's overnight RMSSD. Scores compare HRV with
+/// the person's own normal, so each uses readings of a single kind.
+/// Mirrors functions/hrv.js. The connected wearable first, then Apple Health.
+const hrvKinds = ['rmssd:whoop', 'rmssd:fitbit', 'sdnn'];
+
+/// A day's HRV readings keyed by kind, e.g. {'rmssd:whoop': 44, 'sdnn': 61}.
+Map<String, double> hrvReadings(Map<String, dynamic>? data) {
+  double? average(Object? metric) {
+    final value = metric is Map ? metric['avg'] : null;
+    return value is num && _valid(value.toDouble()) ? value.toDouble() : null;
+  }
+
+  final rmssd = data?['hrv_rmssd'];
+  final kind = 'rmssd:${rmssd is Map ? rmssd['source'] : null}';
+  final rmssdValue = average(rmssd);
+  final sdnnValue = average(data?['hrv']);
+  return {
+    if (hrvKinds.contains(kind) && rmssdValue != null) kind: rmssdValue,
+    'sdnn': ?sdnnValue,
+  };
+}
+
+/// Today's HRV with the same-kind values of earlier days. Prefers the
+/// wearable, but keeps using a kind that already has a normal while a newly
+/// connected wearable builds its own. `history` lines up with the input days.
+({String? kind, double? value, List<double?> history}) pickHrv(
+  Map<String, double> today,
+  List<Map<String, double>> history,
+  int minimumBaseline,
+) {
+  final options = [
+    for (final kind in hrvKinds)
+      if (today[kind] != null)
+        (
+          kind: kind,
+          value: today[kind],
+          history: [for (final day in history) day[kind]],
+        ),
+  ];
+  for (final option in options) {
+    if (option.history.whereType<double>().length >= minimumBaseline) {
+      return option;
+    }
+  }
+  return options.isNotEmpty
+      ? options.first
+      : (kind: null, value: null, history: List.filled(history.length, null));
 }
 
 enum HeartHealthConfidence { low, medium, high }
@@ -53,7 +103,7 @@ HeartHealthScoreResult calculateHeartHealthScore({
   required List<HeartHealthSignals> history,
 }) {
   final restingHistory = _values(history.map((day) => day.restingHeartRate));
-  final hrvHistory = _values(history.map((day) => day.hrvSdnn));
+  final hrvHistory = _values(history.map((day) => day.hrv));
   final quietHistory = _values(history.map((day) => day.quietHeartRate));
 
   final restingScore = _personalizedScore(
@@ -64,7 +114,7 @@ HeartHealthScoreResult calculateHeartHealthScore({
     pointsPerDeviation: 12,
   );
   final hrvScore = _personalizedScore(
-    current: current.hrvSdnn,
+    current: current.hrv,
     history: hrvHistory,
     lowerIsBetter: false,
     minimumScale: 5,
@@ -91,7 +141,7 @@ HeartHealthScoreResult calculateHeartHealthScore({
 
   final availableSignals = [
     current.restingHeartRate,
-    current.hrvSdnn,
+    current.hrv,
     current.quietHeartRate,
   ].where(_valid).length;
   final scoredSignals = scores.whereType<double>().length;

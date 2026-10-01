@@ -1532,12 +1532,15 @@ class HealthService {
         : null;
   }
 
-  HeartHealthSignals _heartHealthSignals(Map<String, dynamic>? data) =>
-      HeartHealthSignals(
-        restingHeartRate: _metricAverage(data, 'resting_heart_rate'),
-        hrvSdnn: _metricAverage(data, 'hrv'),
-        quietHeartRate: _quietHeartRate(data),
-      );
+  /// [hrv] comes from [pickHrv] so a day is only compared with its own kind.
+  HeartHealthSignals _heartHealthSignals(
+    Map<String, dynamic>? data,
+    double? hrv,
+  ) => HeartHealthSignals(
+    restingHeartRate: _metricAverage(data, 'resting_heart_rate'),
+    hrv: hrv,
+    quietHeartRate: _quietHeartRate(data),
+  );
 
   Future<void> _computeAndWriteWellness({
     String? uid,
@@ -1589,12 +1592,21 @@ class HealthService {
         exerciseMinutesGoal: activityGoals.exerciseMinutes.toDouble(),
         activeCaloriesGoal: activityGoals.activeCalories.toDouble(),
       );
+      final historyData = List.generate(heartHealthBaselineWindowDays, (index) {
+        final historicalDay = day.subtract(Duration(days: index + 1));
+        return storedDays[localDayKey(historicalDay)];
+      });
+      final hrv = pickHrv(
+        hrvReadings(data),
+        historyData.map(hrvReadings).toList(),
+        heartHealthMinimumBaselineDays,
+      );
       final heartHealth = calculateHeartHealthScore(
-        current: _heartHealthSignals(data),
-        history: List.generate(heartHealthBaselineWindowDays, (index) {
-          final historicalDay = day.subtract(Duration(days: index + 1));
-          return _heartHealthSignals(storedDays[localDayKey(historicalDay)]);
-        }),
+        current: _heartHealthSignals(data, hrv.value),
+        history: [
+          for (var index = 0; index < historyData.length; index++)
+            _heartHealthSignals(historyData[index], hrv.history[index]),
+        ],
       );
 
       if (stress == null &&
@@ -1648,6 +1660,7 @@ class HealthService {
           'availableSignals': heartHealth.availableSignals,
           'scoredSignals': heartHealth.scoredSignals,
           'baselineDays': heartHealth.baselineDays,
+          'hrvKind': hrv.kind,
           'components': {
             'restingHeartRate': heartHealth.restingHeartRateScore,
             'hrv': heartHealth.hrvScore,

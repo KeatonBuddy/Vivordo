@@ -28,8 +28,15 @@ const {
 const {
   calculateHeartHealthScore,
   HEART_HEALTH_BASELINE_WINDOW_DAYS,
+  HEART_HEALTH_MINIMUM_BASELINE_DAYS,
 } = require("./heart_health_score");
 const {normalizeGoogleHealthSleep} = require("./google_health_sleep");
+const {
+  GOOGLE_DAILY_VITALS,
+  googleHealthVitals,
+  whoopVitals,
+} = require("./wearable_vitals");
+const {hrvReadings, pickHrv} = require("./hrv");
 const {whoopDeletionPlan} = require("./whoop_deletion");
 const {validatePandaRequest, nextUsage} = require("./panda_limits");
 const {
@@ -915,6 +922,7 @@ async function googleHealthDailyRollup(accessToken, dataType, start, end) {
       "dataPoints:dailyRollUp",
       {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: {
           "Authorization": `Bearer ${accessToken}`,
           "Content-Type": "application/json",
@@ -977,12 +985,15 @@ function throwGoogleHealthError(status, body) {
   );
 }
 
-async function googleHealthSleep(accessToken, start, end) {
+async function googleHealthPoints(accessToken, type, start, end) {
   const dataPoints = [];
+  const seenTokens = new Set();
   let pageToken;
+  const dateField = type === "sleep" ? "sleep.interval.civil_end_time" :
+    `${type.replace(/-/g, "_")}.date`;
   const filter =
-      `sleep.interval.civil_end_time >= "${dateKey(start)}" AND ` +
-      `sleep.interval.civil_end_time < "${dateKey(end)}"`;
+      `${dateField} >= "${dateKey(start)}" AND ` +
+      `${dateField} < "${dateKey(end)}"`;
   do {
     const query = new URLSearchParams({
       filter,
@@ -991,9 +1002,10 @@ async function googleHealthSleep(accessToken, start, end) {
     });
     if (pageToken) query.set("pageToken", pageToken);
     const response = await fetch(
-        `${_GOOGLE_HEALTH_API}/users/me/dataTypes/sleep/` +
+        `${_GOOGLE_HEALTH_API}/users/me/dataTypes/${type}/` +
         `dataPoints:reconcile?${query}`,
         {
+          signal: AbortSignal.timeout(15000),
           headers: {
             "Authorization": `Bearer ${accessToken}`,
             "Accept": "application/json",
@@ -1001,13 +1013,13 @@ async function googleHealthSleep(accessToken, start, end) {
         },
     );
     if (response.status === 403 || response.status === 404) {
-      console.warn("[Google Health] optional data unavailable: sleep");
+      console.warn(`[Google Health] optional data unavailable: ${type}`);
       return [];
     }
     if (!response.ok) {
       const body = await response.text();
       console.error(
-          "[Google Health] sleep request failed",
+          `[Google Health] ${type} request failed`,
           response.status,
           body,
       );
@@ -1016,11 +1028,14 @@ async function googleHealthSleep(accessToken, start, end) {
     const body = await response.json();
     dataPoints.push(...(body.dataPoints || []));
     pageToken = body.nextPageToken;
+    if (pageToken && seenTokens.has(pageToken)) {
+      throw new HttpsError("unavailable", "Google Health pagination stalled.");
+    }
+    if (pageToken) seenTokens.add(pageToken);
   } while (pageToken);
-  return dataPoints.filter((point) => {
-    const platform = point.dataSource?.platform;
-    return platform === "FITBIT" || platform === "FITBIT_WEB_API";
-  });
+  // ReconciledDataPoint has no dataSource field. The google-wearables query
+  // already excludes HealthKit; filtering by platform here drops every point.
+  return dataPoints;
 }
 
 function civilDate(date) {
@@ -1051,7 +1066,8 @@ function dateKey(date) {
 function metricPayload(values) {
   const payload = {};
   for (const [key, value] of Object.entries(values)) {
-    if (value !== undefined && value !== null && Number.isFinite(value)) {
+    if (Number.isFinite(value) ||
+        (["unit", "dimension"].includes(key) && typeof value === "string")) {
       payload[key] = value;
     }
   }
@@ -1059,7 +1075,8 @@ function metricPayload(values) {
 }
 
 function addMetric(days, day, key, values) {
-  if (!day || Object.keys(values).length === 0) return;
+  if (!day || !["avg", "min", "max", "sum"].some(
+      (field) => Number.isFinite(values[field]))) return;
   if (!days[day]) days[day] = {};
   days[day][key] = {
     ...values,
@@ -1100,7 +1117,9 @@ async function fetchGoogleHealthData(accessToken, start, end) {
     type,
     results[index],
   ]));
-  data.sleep = await googleHealthSleep(accessToken, start, end);
+  await Promise.all(["sleep", ...GOOGLE_DAILY_VITALS].map(async (type) => {
+    data[type] = await googleHealthPoints(accessToken, type, start, end);
+  }));
   return data;
 }
 
@@ -1142,6 +1161,11 @@ function normalizeGoogleHealthData(data) {
       }));
     }
   }
+  for (const [day, metrics] of Object.entries(googleHealthVitals(data))) {
+    for (const [key, value] of Object.entries(metrics)) {
+      addMetric(days, day, key, value);
+    }
+  }
   const sleepByDay = normalizeGoogleHealthSleep(data.sleep);
   for (const [day, sleep] of Object.entries(sleepByDay)) {
     const hours = sleep.minutes / 60;
@@ -1173,7 +1197,6 @@ function importedHeartHealthSignals(metrics = {}) {
   const valid = (value) => Number.isFinite(value) && value > 0 ? value : null;
   return {
     restingHeartRate: valid(metrics.resting_heart_rate?.avg),
-    hrvSdnn: valid(metrics.hrv?.avg),
     quietHeartRate: valid(metrics.heart_rate_scan?.avg) ??
       valid(metrics.heart_rate?.min),
   };
@@ -1201,10 +1224,16 @@ function addFitbitWellness(days, activityGoals) {
         0,
         dateIndex - HEART_HEALTH_BASELINE_WINDOW_DAYS,
     );
+    const historyDates = dates.slice(historyStart, dateIndex);
+    const hrv = pickHrv(hrvReadings(metrics),
+        historyDates.map((date) => hrvReadings(days[date])),
+        HEART_HEALTH_MINIMUM_BASELINE_DAYS);
     const heartHealth = calculateHeartHealthScore(
-        importedHeartHealthSignals(metrics),
-        dates.slice(historyStart, dateIndex)
-            .map((date) => importedHeartHealthSignals(days[date])),
+        {...importedHeartHealthSignals(metrics), hrv: hrv.value},
+        historyDates.map((date, index) => ({
+          ...importedHeartHealthSignals(days[date]),
+          hrv: hrv.history[index],
+        })),
     );
     if (Number.isFinite(sleep)) {
       weightedScore += Math.max(0, Math.min(100, sleep / 8 * 100)) * 0.30;
@@ -1229,6 +1258,7 @@ function addFitbitWellness(days, activityGoals) {
       availableSignals: heartHealth.availableSignals,
       scoredSignals: heartHealth.scoredSignals,
       baselineDays: heartHealth.baselineDays,
+      hrvKind: hrv.kind,
       components: {
         restingHeartRate: heartHealth.restingHeartRateScore,
         hrv: heartHealth.hrvScore,
@@ -1262,6 +1292,7 @@ const _WHOOP_SECRETS = [whoopClientId, whoopClientSecret];
 const _WHOOP_SCOPES = [
   "offline",
   "read:sleep",
+  "read:recovery",
 ];
 
 async function requestWhoopToken(parameters) {
@@ -1311,12 +1342,13 @@ async function saveWhoopTokens(uid, tokens) {
   );
   const values = {
     accessToken: tokens.access_token,
-    scope: tokens.scope || "",
     tokenType: tokens.token_type || "Bearer",
     expiresAt,
     refreshLease: admin.firestore.FieldValue.delete(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
+  // Refresh responses may omit scope; do not erase the original grant.
+  if (typeof tokens.scope === "string") values.scope = tokens.scope;
   if (tokens.refresh_token) values.refreshToken = tokens.refresh_token;
   await admin.firestore()
       .collection("whoop_credentials")
@@ -1599,6 +1631,8 @@ async function claimWhoopSync(uid, force, timezoneOffsetMinutes) {
       sleep,
       localDate: schedule.localDate,
       sleepSlot: schedule.sleepSlot,
+      recoveryAuthorized: (credentials.scope || "").split(/\s+/)
+          .includes("read:recovery"),
     };
   });
 }
@@ -1656,7 +1690,7 @@ function setWhoopMetric(days, day, key, values) {
   };
 }
 
-function normalizeWhoopData({sleeps}) {
+function normalizeWhoopData({sleeps, recoveries = []}) {
   const days = {};
   const sleepTotals = {};
   for (const sleep of sleeps) {
@@ -1717,6 +1751,12 @@ function normalizeWhoopData({sleeps}) {
       efficiency: whoopNumber(score.sleep_efficiency_percentage),
     });
   }
+  const vitals = whoopVitals(sleeps, recoveries);
+  for (const [day, metrics] of Object.entries(vitals)) {
+    for (const [key, value] of Object.entries(metrics)) {
+      setWhoopMetric(days, day, key, value);
+    }
+  }
   return days;
 }
 
@@ -1745,6 +1785,13 @@ async function saveAndReconcileWhoopSleep(
   const mayClear = whoopFetchMayClearSleep(presentDays);
 
   return firestore.runTransaction(async (transaction) => {
+    // Do not restore a connection (or deleted imports) if a disconnect won
+    // the race while the upstream HTTP requests were running.
+    const credentials = await transaction.get(claim.reference);
+    const user = await transaction.get(userReference);
+    if (!credentials.exists || !user.exists) {
+      throw new HttpsError("failed-precondition", "WHOOP was disconnected.");
+    }
     const existingSnapshots = reconciliationReferences.length > 0 && mayClear ?
       await transaction.getAll(...reconciliationReferences) : [];
     let removed = 0;
@@ -1761,10 +1808,17 @@ async function saveAndReconcileWhoopSleep(
       )) {
         continue;
       }
-      transaction.update(reconciliationReferences[index], {
+      const update = {
         sleep: admin.firestore.FieldValue.delete(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      };
+      for (const key of ["resting_heart_rate", "hrv_rmssd",
+        "blood_oxygen", "respiratory_rate"]) {
+        if (snapshot.data()?.[key]?.source === "whoop") {
+          update[key] = admin.firestore.FieldValue.delete();
+        }
+      }
+      transaction.update(reconciliationReferences[index], update);
       removed += 1;
     }
 
@@ -1773,12 +1827,13 @@ async function saveAndReconcileWhoopSleep(
         ...metrics,
         date: day,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, {merge: true});
+      }, {mergeFields: [...Object.keys(metrics), "date", "updatedAt"]});
     }
     transaction.set(userReference, {
       whoopConnected: true,
       lastWhoopSync: admin.firestore.FieldValue.serverTimestamp(),
       lastWhoopSleepSync: admin.firestore.FieldValue.serverTimestamp(),
+      whoopRecoveryPermissionRequired: !claim.recoveryAuthorized,
     }, {merge: true});
     return removed;
   });
@@ -1848,9 +1903,13 @@ exports.whoopOAuthCallback = onRequest(
           code,
           redirect_uri: whoopCallbackUrl(),
         });
+        // OAuth may omit scope when the grant exactly matches the request.
+        if (tokens.scope === undefined) tokens.scope = _WHOOP_SCOPES.join(" ");
         await saveWhoopTokens(values.uid, tokens);
         await admin.firestore().collection("users").doc(values.uid).set({
           whoopConnected: true,
+          whoopRecoveryPermissionRequired:
+              !tokens.scope.split(/\s+/).includes("read:recovery"),
           whoopConnectedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, {merge: true});
         return response.redirect(`${_WHOOP_IOS_CALLBACK}?status=success`);
@@ -1908,7 +1967,21 @@ exports.syncWhoop = onCall(
             start,
             end,
         );
-        const days = normalizeWhoopData({sleeps});
+        // Vitals are best-effort: sleep already succeeded with this token, so
+        // a recovery failure must not fail the sync or force a reconnect.
+        let recoveries = [];
+        let vitals = claim.recoveryAuthorized ?
+          "synced" : "permission_required";
+        if (claim.recoveryAuthorized) {
+          try {
+            recoveries = await whoopCollection(uid, "/v2/recovery", start, end);
+          } catch (error) {
+            console.warn("[WHOOP] recovery fetch failed; syncing sleep only",
+                error);
+            vitals = "failed";
+          }
+        }
+        const days = normalizeWhoopData({sleeps, recoveries});
         const sleepRemoved = await saveAndReconcileWhoopSleep(
             uid,
             days,
@@ -1920,14 +1993,14 @@ exports.syncWhoop = onCall(
         return {
           daysSynced: Object.keys(days).length,
           sleepRemoved,
-          records: {sleeps: sleeps.length},
-          endpoints: {sleep: "synced"},
+          records: {sleeps: sleeps.length, recoveries: recoveries.length},
+          endpoints: {sleep: "synced", vitals},
         };
       } catch (error) {
         await finishWhoopSync(claim, {sleep: false});
         await throwWhoopReconnectRequired(uid, error);
         if (error instanceof HttpsError) throw error;
-        console.error("[WHOOP] sleep sync failed", error);
+        console.error("[WHOOP] health sync failed", error);
         throw new HttpsError(
             "unavailable",
             "WHOOP could not be synced. Please try again.",
@@ -2124,11 +2197,6 @@ exports.syncFitbit = onCall(
       const days = normalizeGoogleHealthData(raw);
       const firestore = admin.firestore();
       const userReference = firestore.collection("users").doc(uid);
-      const activityGoalsSnapshot = await userReference.get();
-      addFitbitWellness(
-          days,
-          activityGoalsFromUserData(activityGoalsSnapshot.data()),
-      );
       const entries = Object.entries(days);
       const references = entries.map(([day]) => userReference
           .collection("metrics_daily")
@@ -2137,13 +2205,23 @@ exports.syncFitbit = onCall(
       // decision deterministic even if WHOOP and Fitbit finish syncing at
       // nearly the same time.
       const daysSynced = await firestore.runTransaction(async (transaction) => {
+        const credentials = await transaction.get(
+            firestore.collection("google_health_credentials").doc(uid));
+        if (!credentials.exists) {
+          throw new HttpsError("failed-precondition", "Fitbit disconnected.");
+        }
         const snapshots = references.length > 0 ?
           await transaction.getAll(userReference, ...references) :
           [await transaction.get(userReference)];
         const userSnapshot = snapshots[0];
+        if (!userSnapshot.exists) {
+          throw new HttpsError("failed-precondition", "Account unavailable.");
+        }
         const existingSnapshots = snapshots.slice(1);
         const whoopConnected =
             userSnapshot.data()?.whoopConnected === true;
+        const resolvedDays = {};
+        const mergedDays = {};
         let written = 0;
         for (let index = 0; index < entries.length; index += 1) {
           const [day, metrics] = entries[index];
@@ -2155,11 +2233,27 @@ exports.syncFitbit = onCall(
             resolvedMetrics[key] = value;
           }
           if (Object.keys(resolvedMetrics).length === 0) continue;
+          resolvedDays[day] = resolvedMetrics;
+          mergedDays[day] = {...existing, ...resolvedMetrics};
+        }
+        // Scores must use the selected canonical values, including WHOOP and
+        // Apple fallback data, not values discarded by source precedence.
+        addFitbitWellness(mergedDays,
+            activityGoalsFromUserData(userSnapshot.data()));
+        for (let index = 0; index < entries.length; index += 1) {
+          const day = entries[index][0];
+          const resolvedMetrics = resolvedDays[day];
+          if (!resolvedMetrics) continue;
+          resolvedMetrics.heart_health = mergedDays[day].heart_health;
+          if (mergedDays[day].wellness) {
+            resolvedMetrics.wellness = mergedDays[day].wellness;
+          }
           transaction.set(references[index], {
             ...resolvedMetrics,
             date: day,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          }, {merge: true});
+          }, {mergeFields: [...Object.keys(resolvedMetrics),
+            "date", "updatedAt"]});
           written += 1;
         }
         transaction.set(userReference, {

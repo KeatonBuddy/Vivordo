@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
+import 'package:vivordo_health/src/utils/heart_health_score.dart';
 import 'package:vivordo_health/src/utils/heart_rate_insight.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
@@ -99,6 +100,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         resting,
         heartHealthScore,
         heartHealthStatus,
+        hrvReadings(data),
       );
     }).toList();
   }
@@ -108,14 +110,17 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     return List.generate(rangeDays, (index) {
       final date = today.subtract(Duration(days: rangeDays - index - 1));
-      return byKey[keyFor(date)] ?? _HeartDay(date, const [], null, null, null);
+      return byKey[keyFor(date)] ??
+          _HeartDay(date, const [], null, null, null, const {});
     });
   }
 
   List<_HeartDay> previousDays(List<_HeartDay> all) {
+    // The first day of the current range (exclusive end): the previous
+    // period ends the day before it, with no gap.
     final end = DateUtils.dateOnly(
       DateTime.now(),
-    ).subtract(Duration(days: rangeDays));
+    ).subtract(Duration(days: rangeDays - 1));
     final start = end.subtract(Duration(days: rangeDays));
     return all
         .where((day) => !day.date.isBefore(start) && day.date.isBefore(end))
@@ -223,6 +228,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final displayedHeartHealth = rangeIndex == 0
         ? latestDay?.heartHealthScore
         : average(heartHealthScores);
+    // One HRV kind only: devices measure it differently (see hrvKinds).
+    final hrvKind = hrvKinds
+        .where((kind) => days.any((day) => day.hrv.containsKey(kind)))
+        .firstOrNull;
+    double? hrvAverage(List<_HeartDay> range) =>
+        average(range.map((day) => day.hrv[hrvKind]).whereType<double>());
+    final hrvAvg = hrvKind == null ? null : hrvAverage(days);
+    final hrvPrior = hrvKind == null ? null : hrvAverage(previous);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -290,6 +303,10 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           chart(chartDays, chartEntries, restingAvg),
           section('Heart rate zones'),
           zones(storedReadings),
+          if (hrvKind != null && hrvAvg != null) ...[
+            section('Heart rate variability'),
+            hrvCard(hrvKind, hrvAvg, hrvPrior),
+          ],
           section('Insight'),
           insight(
             buildHeartRateInsight(
@@ -1061,6 +1078,76 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     ),
   );
 
+  Widget hrvCard(String kind, double avg, double? prior) {
+    final device = switch (kind) {
+      'rmssd:whoop' => 'WHOOP',
+      'rmssd:fitbit' => 'Fitbit',
+      _ => 'Apple Watch',
+    };
+    final when = kind == 'sdnn' ? 'daytime readings' : 'overnight';
+    final change = prior == null ? null : (avg - prior).round();
+    final period = switch (rangeIndex) {
+      0 => 'yesterday',
+      1 => 'the previous week',
+      _ => 'the previous month',
+    };
+    final comparison = change == null
+        ? null
+        : change == 0
+        ? 'Same as $period'
+        : '${change.abs()} ms ${change > 0 ? 'higher' : 'lower'} than $period';
+    return card(
+      padding: const EdgeInsets.all(18),
+      child: Row(
+        children: [
+          bubble(Icons.show_chart_rounded, const Color(0xFF20B26B)),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: avg.round().toString(),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const TextSpan(
+                        text: ' ms',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$device · $when${comparison == null ? '' : ' · $comparison'}',
+                  style: TextStyle(color: context.vivordoColors.textSecondary),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Devices measure HRV differently, so Vivordo only compares '
+                  'this with your other $device readings.',
+                  style: TextStyle(
+                    color: context.vivordoColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget insight(String text) {
     return card(
       padding: const EdgeInsets.all(18),
@@ -1104,12 +1191,14 @@ class _HeartDay {
     this.resting,
     this.heartHealthScore,
     this.heartHealthStatus,
+    this.hrv,
   );
   final DateTime date;
   final List<_HeartReading> readings;
   final double? resting;
   final double? heartHealthScore;
   final String? heartHealthStatus;
+  final Map<String, double> hrv; // keyed by kind, see hrvReadings
 }
 
 class _HeartReading {

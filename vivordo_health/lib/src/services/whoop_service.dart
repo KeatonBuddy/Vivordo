@@ -61,7 +61,7 @@ class WhoopService {
     await sync(daysBack: 30, force: true);
   }
 
-  /// Syncs WHOOP sleep. Explicit refreshes force the requested history window;
+  /// Syncs WHOOP sleep and vitals. Explicit refreshes force the history window;
   /// lifecycle refreshes follow the backend's morning/midday schedule.
   Future<void> sync({int daysBack = 30, bool force = true}) {
     final uid = FirebaseAuth.instance.currentUser?.uid;

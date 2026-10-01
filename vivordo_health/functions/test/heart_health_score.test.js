@@ -8,14 +8,14 @@ const {
 
 const baseline = (days = 14) => Array.from({length: days}, () => ({
   restingHeartRate: 64,
-  hrvSdnn: 48,
+  hrv: 48,
   quietHeartRate: 66,
 }));
 
 test("centers a user's personal baseline at 80", () => {
   const result = calculateHeartHealthScore({
     restingHeartRate: 64,
-    hrvSdnn: 48,
+    hrv: 48,
     quietHeartRate: 66,
   }, baseline());
 
@@ -27,7 +27,7 @@ test("centers a user's personal baseline at 80", () => {
 test("rewards favorable personalized trends", () => {
   const result = calculateHeartHealthScore({
     restingHeartRate: 61,
-    hrvSdnn: 53,
+    hrv: 53,
     quietHeartRate: 63,
   }, baseline());
 
@@ -37,7 +37,7 @@ test("rewards favorable personalized trends", () => {
 test("reduces the score when signals move below the usual trend", () => {
   const result = calculateHeartHealthScore({
     restingHeartRate: 70,
-    hrvSdnn: 38,
+    hrv: 38,
     quietHeartRate: 72,
   }, baseline());
 
@@ -45,13 +45,13 @@ test("reduces the score when signals move below the usual trend", () => {
 });
 
 test("redistributes weight when a signal is unavailable", () => {
-  const history = baseline().map(({restingHeartRate, hrvSdnn}) => ({
+  const history = baseline().map(({restingHeartRate, hrv}) => ({
     restingHeartRate,
-    hrvSdnn,
+    hrv,
   }));
   const result = calculateHeartHealthScore({
     restingHeartRate: 64,
-    hrvSdnn: 48,
+    hrv: 48,
   }, history);
 
   assert.equal(result.score, 80);
