@@ -33,7 +33,7 @@ class HourlyCalendarLoad {
   final int backToBackTransitions;
 
   Map<String, Object?> toJson() => {
-    'version': 1,
+    'version': 2,
     'classifier_version': CalendarCognitiveLoadService.classifierVersion,
     'start': start.toUtc().toIso8601String(),
     'end': end.toUtc().toIso8601String(),
@@ -53,6 +53,9 @@ class HourlyCalendarLoad {
 }
 
 class HourlyCalendarLoadCalculator {
+  static const _shortGap = Duration(minutes: 15);
+  static const _bumpWindow = Duration(minutes: 30);
+
   /// [asOf] limits live/historical calculations to elapsed time. Omit it only
   /// for a forecast. Include earlier events to detect runs across hour boundaries.
   static List<HourlyCalendarLoad> calculate({
@@ -72,6 +75,29 @@ class HourlyCalendarLoadCalculator {
         if (event.contributesToSchedule && event.start.isBefore(cutoff))
           event.id: event,
     }.values.toList()..sort((a, b) => a.start.compareTo(b.start));
+    // A back-to-back event (starting < 15 min after another ends) costs a
+    // flat 300 pressure-minutes (+0.5 Effort points, docs/scores.md §1): +10
+    // over its first 30 minutes, packed into the event if it is shorter.
+    // Only transitions already reached count; future events aren't eligible.
+    final bumpEnd = <String, DateTime>{};
+    for (final e in eligible) {
+      final tight = eligible.any(
+        (previous) =>
+            previous.id != e.id &&
+            !previous.end.isAfter(e.start) &&
+            e.start.difference(previous.end) < _shortGap,
+      );
+      final length = e.end.difference(e.start);
+      if (tight) {
+        bumpEnd[e.id] = e.start.add(
+          length < _bumpWindow ? length : _bumpWindow,
+        );
+      }
+    }
+    double bumpRate(CalendarCognitiveEvent e) =>
+        300 *
+        Duration.microsecondsPerMinute /
+        bumpEnd[e.id]!.difference(e.start).inMicroseconds;
     final result = <HourlyCalendarLoad>[];
     for (
       var start = from;
@@ -87,6 +113,10 @@ class HourlyCalendarLoadCalculator {
       for (final e in relevant) {
         if (e.start.isAfter(start)) boundaries.add(e.start);
         if (e.end.isBefore(stop)) boundaries.add(e.end);
+        final bump = bumpEnd[e.id];
+        if (bump != null && bump.isAfter(start) && bump.isBefore(stop)) {
+          boundaries.add(bump);
+        }
       }
       final points = boundaries.toList()..sort();
       double overlapMinutes = 0, tightMinutes = 0, continuousPoints = 0;
@@ -118,27 +148,23 @@ class HourlyCalendarLoadCalculator {
           known += minutes;
           certainty += minutes * strongest.confidence;
         }
-        // Only transitions already reached contribute; future meetings cannot
-        // raise the current hour. Use previous end times, not a UI hint flag.
-        var tight = false;
+        double tightRate = 0;
         for (final e in active) {
-          final hasTightTransition = eligible.any(
-            (previous) =>
-                previous.id != e.id &&
-                !previous.end.isAfter(e.start) &&
-                e.start.difference(previous.end) < const Duration(minutes: 15),
-          );
-          tight = tight || hasTightTransition;
-          if (hasTightTransition && !e.start.isBefore(start)) {
-            transitions.add(e.id);
+          if (!bumpEnd.containsKey(e.id)) continue;
+          if (!e.start.isBefore(start)) transitions.add(e.id);
+          if (bumpEnd[e.id]!.isAfter(a)) {
+            tightRate = math.max(tightRate, bumpRate(e));
           }
         }
-        // Find the continuous occupied run leading into this segment.
+        // Find the run leading into this segment. Gaps under 15 minutes
+        // don't break it, so a chain of back-to-backs builds up like one
+        // long block.
         var runStart = active
             .map((e) => e.start)
             .reduce((a, b) => a.isBefore(b) ? a : b);
         for (final e in eligible.reversed) {
-          if (e.start.isBefore(runStart) && !e.end.isBefore(runStart)) {
+          if (e.start.isBefore(runStart) &&
+              runStart.difference(e.end) < _shortGap) {
             runStart = e.start;
           }
         }
@@ -154,11 +180,10 @@ class HourlyCalendarLoadCalculator {
         final runPressure =
             5 * (rampArea(runMinutes + minutes) - rampArea(runMinutes));
         if (active.length > 1) overlapMinutes += minutes;
-        if (tight) tightMinutes += minutes;
+        if (tightRate > 0) tightMinutes += minutes;
         continuousPoints += runPressure / 60;
         pressureIntegral +=
-            minutes * ((active.length > 1 ? 10 : 0) + (tight ? 10 : 0)) +
-            runPressure;
+            minutes * ((active.length > 1 ? 10 : 0) + tightRate) + runPressure;
       }
       final pressure = occupied == 0 ? 0.0 : pressureIntegral / occupied;
       final value = !calendarAvailable || (occupied > 0 && known == 0)

@@ -25,15 +25,21 @@ hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
   `calendar_cognitive_load_service.dart`. Whatever is still unknown
   ("Busy", "Hold", private events, offline) counts as 30 and lowers the
   day's confidence. Nothing is treated as free time.
-- Pressure, as today: +10 while events overlap, and a continuous-run ramp
-  of up to +5. Overlapping demand is not summed.
-- **Back-to-back events** (next event starts < 15 min after one ends):
-  +10 at any time of day, as the calculator does today. All events count,
-  not only meetings. No time-of-day weighting: the cost is the missing
-  buffer, after-hours time already has its own multiplier, and a fixed
-  9–5 doesn't fit shift workers or students. Later, per-event costs
-  learned from each person's stress reactions can capture time-of-day
-  effects that are real for them.
+- Pressure: +10 while events overlap (overlapping demand is not summed),
+  and a continuous-run ramp: nothing for the first 60 min, rising to +5
+  at 120 min. **Gaps under 15 min don't reset the run**, so a chain of
+  back-to-backs builds up like one long block; a gap of 15 min or more
+  does.
+- **Back-to-back events** (next event starts < 15 min after one ends): a
+  flat **+0.5 points each**, whatever the event's length: +10 on the
+  rating for its first 30 minutes, or packed into a shorter event (+20
+  for 15 min, +30 for 10 min). Today's calculator adds +10 for the whole
+  event; that changes. All events count, not only meetings. No
+  time-of-day weighting: the cost is the missing buffer, after-hours time
+  already has its own multiplier, and a fixed 9–5 doesn't fit shift
+  workers or students. Harder transitions (straight out of a
+  presentation) are left to per-event costs learned from each person's
+  stress reactions.
 - **After hours** (after the time the person usually wraps up their main
   work or classes; 5 PM if unanswered or "It varies"): the item's points
   × 1.25. The time comes from an onboarding question, "When do you
@@ -42,7 +48,18 @@ hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
   separate weekend rule. This is a separate signal from back-to-backs.
 
 **Untimed priorities** have no slot, so they get flat points by effort:
-light 2, focused 4, heavy 6.
+light 2, focused 4, demanding 6.
+
+**Blank priority estimates** are filled in by Claude. When a priority is
+saved without an effort or a duration, the same server function that
+classifies unknown events estimates the missing ones from the title only
+(never notes). Answers are cached per title. It only fills blanks: a
+value the user entered is never changed. Estimates show as "estimated"
+and become the user's value when tapped and changed. Each value is stored
+with its source (`ai` or `user`). It runs after saving, in the
+background, and only with AI consent; without it, the defaults apply
+(focused, no duration). Later, the person's own past durations for
+similar titles replace Claude's guess.
 
 **Points scale:** the hourly calendar load (0–100 per hour) summed over
 the day, ÷ 10. One fully booked hour of collaboration (40) = 4 points, and
@@ -85,14 +102,33 @@ as `unfinishedPriorities` for burnout.
 
 **Physical:** first source that has data:
 1. Heart-rate zones during workouts: minutes × zone weight (z1 1, z2 2,
-   z3 3, z4 4, z5 5) ÷ 6. A 45-min run mostly in z3 ≈ 22 points.
+   z3 3, z4 4, z5 5) ÷ 10. A 45-min run mostly in z3 ≈ 13 points.
 2. Workouts without heart rate: minutes × intensity by type (light 0.1,
    moderate 0.2, vigorous 0.35 points per minute).
 3. No workouts: active energy above your 90-day median ÷ 50 kcal
    (a heavy day on your feet still counts).
 
-Physical points are capped at 40, and only one source counts per workout,
+Physical points are capped at 25, and only one source counts per workout,
 so nothing is counted twice.
+
+**Shown on Home** as "Your Day's Effort" (replacing "Your Day's Load"),
+never as a headline number. Hourly bars before now are Effort (solid,
+workouts in their own colour) and after now are Demand (outlined). A
+summary shows **So far** as a word only: "Heavier than usual", "About
+usual" or "Lighter than usual" against your usual Effort by this time of
+day, or "Still learning your usual" until there are 14 days of Effort.
+**Still ahead** shows the planned time and how heavy it is, switching to
+**Tomorrow** after the last item. Tapping a bar and the "Open" row stay as
+they are.
+
+Priorities on the chart:
+- **Untimed priorities** have no hour, so they don't get a bar. Their
+  points count towards "So far", and a small tick marks the hour they
+  were completed.
+- **Timed priorities finished early** count as soon as they're ticked
+  off and are drawn as done in their planned slot, so the chart keeps the
+  plan's shape.
+- Unticking a priority removes its points.
 
 ## 4. Capacity: the energy you have today
 

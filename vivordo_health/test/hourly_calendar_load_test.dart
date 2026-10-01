@@ -93,7 +93,36 @@ void main() {
   });
   test('cross-hour transition and continuous run are retained', () {
     final hour = calculate([event('a', -60, 0), event('b', 0, 60)]).single;
-    expect(hour.pressure, 12.5);
+    // Back-to-back +10 for the first 30 min (300) + run ramp 60→120 (150).
+    expect(hour.pressure, 7.5);
+  });
+  test('every back-to-back costs the same, whatever its length', () {
+    double bump(int length) {
+      final hour = calculate([
+        event('a', 0, 20),
+        event('b', 20, 20 + length),
+      ]).single;
+      return hour.pressure * hour.occupiedMinutes;
+    }
+
+    expect(bump(10), closeTo(300, 1e-9));
+    expect(bump(30), closeTo(300, 1e-9));
+    expect(bump(40), closeTo(300, 1e-9));
+  });
+  test('gaps under 15 minutes keep a run going; 15 minutes resets it', () {
+    final chained = calculate([
+      event('a', 0, 55),
+      event('b', 60, 115),
+      event('c', 120, 175),
+    ], hours: 3);
+    final rested = calculate([
+      event('a', 0, 45),
+      event('b', 60, 105),
+      event('c', 120, 165),
+    ], hours: 3);
+    expect(chained[1].continuousPressurePoints, greaterThan(0));
+    expect(chained[2].continuousPressurePoints, greaterThan(2));
+    expect(rested.map((h) => h.continuousPressurePoints), [0, 0, 0]);
   });
   test(
     'invalid, declined, cancelled, free and all-day events do not occupy time',
