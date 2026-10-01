@@ -48,6 +48,7 @@ class DayEffort {
     required this.aheadMinutes,
     required this.aheadLevel,
     required this.nextStart,
+    required this.demand,
   });
 
   final List<EffortHour> hours;
@@ -62,7 +63,21 @@ class DayEffort {
 
   /// When the next planned item starts, if one hasn't started yet.
   final DateTime? nextStart;
+
+  /// Demand: Effort points still ahead today (docs/scores.md §2), on the
+  /// same scale as Effort and Capacity's comparison.
+  final double demand;
 }
+
+/// Calendar titles that are workouts: Demand forecasts their physical
+/// Effort as well as the event itself.
+final _workoutTitle = RegExp(
+  r'\b(workout|gym|run|running|jog|hiit|spin|cycling|cycle|swim|yoga|pilates|'
+  r'lift|lifting|training|crossfit|boxing|rowing|climb|climbing)\b',
+  caseSensitive: false,
+);
+
+const _untimedPoints = {'light': 2, 'demanding': 6};
 
 /// In-app workout intensity in points per minute, as the server
 /// (functions/effort.js `workoutIntensity`).
@@ -103,11 +118,13 @@ CalendarCognitiveEvent _clip(
   end: end ?? e.end,
 );
 
-/// Builds the day's Effort card. Events count as done up to [now] and as
-/// ahead after it; ticked-off priorities count as done in their slot; open
-/// priorities only ahead. Effort so far adds untimed priorities ticked off
-/// today ([untimedDone], at light 2 / moderate 4 / demanding 6) and the
-/// elapsed part of [workouts].
+/// Builds the day's Effort and Demand. Events count as done up to [now] and
+/// as ahead after it; ticked-off priorities count as done in their slot;
+/// open priorities only ahead. Effort so far adds untimed priorities ticked
+/// off today ([untimedDone], at light 2 / moderate 4 / demanding 6) and the
+/// elapsed part of [workouts]; Demand adds open untimed priorities
+/// ([untimedOpen], their efforts) and workouts planned in the calendar. For
+/// a whole day ahead (tomorrow), pass the day's start as [now].
 DayEffort buildDayEffort({
   required DateTime now,
   required DateTime from,
@@ -115,6 +132,7 @@ DayEffort buildDayEffort({
   required DateTime wrapUp,
   required List<EffortItem> items,
   List<({DateTime doneAt, Object? effort})> untimedDone = const [],
+  List<Object?> untimedOpen = const [],
   List<({DateTime start, DateTime end, double intensity})> workouts = const [],
 }) {
   List<HourlyCalendarLoad> loads(
@@ -154,6 +172,7 @@ DayEffort buildDayEffort({
 
   final hours = <EffortHour>[];
   var soFar = 0.0;
+  var demand = 0.0;
   for (var i = 0; i < done.length; i++) {
     final start = from.add(Duration(hours: i));
     final end = start.add(const Duration(hours: 1));
@@ -167,6 +186,7 @@ DayEffort buildDayEffort({
         : 0;
     final doneLoad = done[i].score ?? 0;
     soFar += doneLoad * (1 + 0.25 * afterMinutes / 60) / 10;
+    demand += (ahead[i].score ?? 0) * (1 + 0.25 * afterMinutes / 60) / 10;
     var workoutPoints = 0.0;
     for (final w in workouts) {
       final overlapStart = w.start.isAfter(start) ? w.start : start;
@@ -190,11 +210,23 @@ DayEffort buildDayEffort({
     );
   }
   for (final p in untimedDone) {
-    soFar += switch (p.effort) {
-      'light' => 2,
-      'demanding' => 6,
-      _ => 4,
-    };
+    soFar += _untimedPoints[p.effort] ?? 4;
+  }
+  for (final effort in untimedOpen) {
+    demand += _untimedPoints[effort] ?? 4;
+  }
+  // Workouts planned in the calendar: their remaining minutes' physical
+  // Effort, as the server will count them once they're logged.
+  for (final item in items) {
+    if (item.done ||
+        !item.event.end.isAfter(now) ||
+        !_workoutTitle.hasMatch(item.event.title)) {
+      continue;
+    }
+    final start = item.event.start.isBefore(now) ? now : item.event.start;
+    demand +=
+        item.event.end.difference(start).inMinutes *
+        workoutIntensity(item.event.title);
   }
 
   final aheadMinutes = ahead.fold<double>(0, (s, h) => s + h.occupiedMinutes);
@@ -211,6 +243,7 @@ DayEffort buildDayEffort({
         ? DayLoadLevel.none
         : dayLoadLevel(aheadDemand / aheadMinutes),
     nextStart: upcoming.firstOrNull,
+    demand: demand,
   );
 }
 

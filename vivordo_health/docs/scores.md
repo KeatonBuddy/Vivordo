@@ -83,8 +83,18 @@ comes from Capacity and from burnout's own baselines.
   title says otherwise: 0.2 points per minute).
 
 Demand updates live and reaches ~0 once the last item is behind you. In
-the evening the card shows tomorrow's expected Demand. A workout logged
-during the day doesn't change Demand: it already happened, so it is Effort.
+the evening (past the end-of-day time, with nothing timed left) the card
+shows tomorrow's expected Demand; open untimed priorities carry over, so
+they count there rather than holding off the evening view. A workout
+logged during the day doesn't change Demand: it already happened, so it
+is Effort.
+
+**Implemented** on the phone in `buildDayEffort`
+(`lib/src/utils/day_effort.dart`), the same calculation as Home's Effort
+bars, so "still ahead" on Home and Demand on My Day always agree. My
+Day's brief shows it in place of the old schedule score
+(`analyzeBriefPlan`, removed). It isn't stored on the server yet; store
+it when burnout or trends need it.
 
 **Morning comparison** (expected Demand at wake vs Capacity):
 - Demand ≤ Capacity − 15: "Room to spare".
@@ -134,7 +144,7 @@ phone's calculator through shared cases in
 **Recovery from yesterday** (in Capacity) starts once there are 7 days of
 Effort; until then it's left out.
 
-**Shown on Home** as "Your Day's Effort" (replacing "Your Day's Load"),
+**Shown on Home** as "Your Day" (replacing "Your Day's Load"),
 never as a headline number. Hourly bars before now are Effort (solid,
 workouts in their own colour) and after now are Demand (outlined). A
 summary shows **So far** as a word only: "Heavier than usual", "About

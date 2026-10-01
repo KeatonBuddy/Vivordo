@@ -100,4 +100,29 @@ void main() {
     expect(workoutIntensity('Morning Run'), 0.35);
     expect(workoutIntensity('Workout Legs'), 0.2);
   });
+
+  test('Demand is what is still ahead, on the Effort scale', () {
+    final effort = buildDayEffort(
+      now: at(9, 30),
+      from: at(8),
+      until: at(22),
+      wrapUp: at(17),
+      items: [
+        item('meeting', at(9), at(10), 40),
+        item('presentation', at(14), at(15), 75),
+        item('dinner', at(18), at(19), 20),
+        item('Gym', at(7), at(8), 15),
+        item('Evening run', at(19), at(19, 30), 15),
+      ],
+      untimedOpen: ['light', null],
+    );
+    // 30 min of the meeting (2) + presentation (7.5) + dinner after hours
+    // (2 × 1.25) + run event after hours (0.75 × 1.25) and its back-to-back
+    // after dinner (0.5 × 1.25) plus the chain's ramp (37.5 / 600 × 1.25)
+    // + untimed 2 + 4 + the run's physical 30 × 0.35. The gym is over.
+    expect(
+      effort.demand,
+      closeTo(2 + 7.5 + 2.5 + 0.9375 + 0.625 + 0.078125 + 6 + 10.5, 0.01),
+    );
+  });
 }

@@ -8,6 +8,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 
+import '../src/services/calendar_cognitive_load_service.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/services/day_record_service.dart';
@@ -16,6 +17,9 @@ import '../src/utils/back_to_back_events.dart';
 import '../src/utils/daily_brief_metrics.dart';
 import '../src/utils/daily_brief_analysis.dart';
 import '../src/utils/day_agenda.dart';
+import '../src/utils/day_effort.dart';
+import '../src/utils/day_wrap_up.dart';
+import '../src/utils/home_day_load.dart';
 import '../src/utils/my_day_planning_insight.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
@@ -49,6 +53,11 @@ class MyDayScreen extends StatefulWidget {
 class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   List<_CalendarEvent> _events = const [];
   List<_CalendarEvent> _tomorrowEvents = const [];
+
+  /// Ratings for today's and tomorrow's events (Claude sorts the ones the
+  /// local rules can't, with AI consent), keyed by sourceEventKey.
+  Map<String, CognitiveLoadScore> _eventScores = const {};
+  int _wrapUpMinutes = kDefaultDayWrapUpMinutes;
   String? _calendarLoadError;
   int _loadGeneration = 0;
   bool _isLoading = true;
@@ -134,7 +143,109 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _connectBriefMetrics(_priorityDay);
     _connectPriorities();
     _loadTodayEvents();
+    unawaited(_loadWrapUp());
   }
+
+  Future<void> _loadWrapUp() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final preferences =
+          (await FirebaseFirestore.instance.collection('users').doc(uid).get())
+                  .data()?['preferences']
+              as Map?;
+      final minutes = preferences?['dayWrapUpMinutes'];
+      if (minutes is int && mounted) setState(() => _wrapUpMinutes = minutes);
+    } catch (_) {
+      // Keeps the 5 PM default.
+    }
+  }
+
+  CalendarCognitiveEvent _cognitiveInput(_CalendarEvent e) =>
+      CalendarCognitiveEvent(
+        id: e.sourceEventKey,
+        title: e.title,
+        description: e.googleEvent?.description ?? '',
+        start: e.start,
+        end: e.end,
+        attendeeCount: e.attendeeCount,
+        isOrganizer: e.googleEvent?.organizer?.self == true,
+        showsAsFree: e.googleEvent?.transparency == 'transparent',
+        isDeclined:
+            e.googleEvent?.attendees?.any(
+              (a) => a.self == true && a.responseStatus == 'declined',
+            ) ??
+            false,
+      );
+
+  Future<void> _rateEvents(List<_CalendarEvent> events) async {
+    final inputs = [
+      for (final e in events)
+        if (!e.isAllDay) _cognitiveInput(e),
+    ];
+    final scores = await CalendarCognitiveLoadService.scoreEvents(
+      inputs,
+      allowAi: true,
+    );
+    if (!mounted) return;
+    setState(
+      () => _eventScores = {
+        for (var i = 0; i < inputs.length; i++) inputs[i].id: scores[i],
+      },
+    );
+  }
+
+  /// Rated items for Demand: [events] and the timed priorities on [day]
+  /// that aren't linked to one of them.
+  List<EffortItem> _effortItems(
+    DateTime day,
+    List<_CalendarEvent> events,
+    List<DailyPriority> priorities,
+  ) {
+    final keys = {for (final e in events) e.sourceEventKey};
+    return [
+      for (final e in events)
+        if (!e.isAllDay)
+          if (_cognitiveInput(e) case final input)
+            (
+              event: input,
+              score:
+                  _eventScores[e.sourceEventKey] ??
+                  CalendarCognitiveLoadService.scoreLocally(input),
+              done: false,
+              open: false,
+            ),
+      for (final p in priorities)
+        if (!p.isAllDay &&
+            p.sourceStart != null &&
+            DateUtils.isSameDay(p.sourceStart, day) &&
+            !keys.contains(_linkedKey(p)))
+          if (priorityLoadInput(
+                id: 'priority:${p.reference.path}',
+                title: p.title,
+                start: p.sourceStart!,
+                end: p.timelineEnd!,
+                effort: p.planning['effort'],
+              )
+              case final input)
+            (
+              event: input.event,
+              score: input.score,
+              done: p.completed,
+              open: !p.completed,
+            ),
+    ];
+  }
+
+  /// Efforts of the open priorities on [day] that have no time slot there.
+  List<Object?> _untimedOpen(DateTime day, List<DailyPriority> priorities) => [
+    for (final p in priorities)
+      if (!p.completed &&
+          (p.isAllDay ||
+              p.sourceStart == null ||
+              !DateUtils.isSameDay(p.sourceStart, day)))
+        p.planning['effort'],
+  ];
 
   void _connectPriorities() {
     final today = _priorityDay;
@@ -270,6 +381,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       _calendarLoadedAt = DateTime.now();
       _events = events;
       _tomorrowEvents = tomorrowEvents;
+      unawaited(_rateEvents([...events, ...tomorrowEvents]));
       _calendarLoadError = null;
       _isLoading = false;
     });
@@ -652,9 +764,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 // fallback (and calculateDailyCapacity) after the rollout.
                 final server = serverSnapshot.data;
                 final capacityScore = server?.score ?? capacity?.score;
-                final capacityLow = server != null
-                    ? server.label == 'low'
-                    : (capacity?.score ?? 100) < 40;
                 final capacityStale = server != null
                     ? server.provisional
                     : stale;
@@ -683,18 +792,53 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       ),
                     )
                     .toList();
-                final plan = analyzeBriefPlan(
-                  now,
-                  briefEvents,
-                  briefPriorities,
-                );
                 final ready =
                     calendarReady && priorities.hasData && !priorities.hasError;
-                final headline = capacityScore == null
+                // Demand: Effort still ahead today (docs/scores.md §2). In
+                // the evening, once nothing is left, tomorrow's expected
+                // Demand instead.
+                final today = DateUtils.dateOnly(now);
+                final tomorrow = today.add(const Duration(days: 1));
+                final todayPriorities = priorities.data ?? const [];
+                final todayDemand = buildDayEffort(
+                  now: now,
+                  from: today,
+                  until: tomorrow,
+                  wrapUp: today.add(Duration(minutes: _wrapUpMinutes)),
+                  items: _effortItems(today, timedEvents, todayPriorities),
+                  untimedOpen: _untimedOpen(today, todayPriorities),
+                );
+                // Evening: past the end-of-day time with nothing timed left.
+                // Open untimed priorities carry over, so they count towards
+                // tomorrow rather than holding off the evening view.
+                final evening =
+                    todayDemand.aheadMinutes == 0 &&
+                    !now.isBefore(today.add(Duration(minutes: _wrapUpMinutes)));
+                final tomorrowPriorities =
+                    _tomorrowPrioritySnapshot.value.data ?? const [];
+                final demand = evening
+                    ? buildDayEffort(
+                        now: tomorrow,
+                        from: tomorrow,
+                        until: tomorrow.add(const Duration(days: 1)),
+                        wrapUp: tomorrow.add(Duration(minutes: _wrapUpMinutes)),
+                        items: _effortItems(tomorrow, [
+                          for (final e in _tomorrowEvents)
+                            if (!e.isAllDay) e,
+                        ], tomorrowPriorities),
+                        untimedOpen: _untimedOpen(tomorrow, tomorrowPriorities),
+                      ).demand
+                    : todayDemand.demand;
+                // Demand against Capacity, ±15 (docs/scores.md §2).
+                final headline = evening
+                    ? 'Today’s plan is done'
+                    : capacityScore == null || !ready
                     ? 'Make space for your day'
-                    : capacityLow || (ready && plan.score >= 65)
-                    ? 'Give yourself a little more room today'
-                    : 'Find a steady rhythm today';
+                    : demand <= capacityScore - 15
+                    ? 'Room to spare today'
+                    : demand > capacityScore + 15
+                    ? 'More than you’ve got: protect a break'
+                    : 'A full day ahead';
                 final calendarText = ready
                     ? remainingToday(
                         timedEvents.where((e) => e.end.isAfter(now)).length,
@@ -714,11 +858,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       : capacity?.score == null
                       ? 'Needs health data'
                       : capacityNote,
-                  scheduleScore: ready ? plan.score : null,
+                  scheduleScore: ready ? demand.round().clamp(0, 100) : null,
                   scheduleLabel: !ready
                       ? 'Plan unavailable'
-                      : 'Remaining today${plan.missingEstimates > 0 ? ' · partial' : ''}',
-                  footer: capacityStale || !ready || plan.missingEstimates > 0
+                      : evening
+                      ? 'Expected tomorrow'
+                      : 'Remaining today',
+                  footer: capacityStale || !ready
                       ? 'Limited data'
                       : 'Available data',
                   onDetails: () => showDialog<void>(
@@ -733,7 +879,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           '${summary?.isFromCache == true ? 'Health data is from the local cache.\n' : ''}'
                           'Sleep baseline: ${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.\n'
                           '${server != null ? 'Capacity compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. It is compared with your usual after 7 days.' : 'Capacity uses sleep and stress, not raw heart rate. Comparisons require 7 days with matching inputs and stress readings at a similar time of day.'} These are wellness estimates, not clinical assessments.\n'
-                          'Remaining demand includes unfinished planned priorities and upcoming events. Timeline openings are gaps of 30 minutes or more. Untimed work does not block a specific opening.',
+                          'Demand is the Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work does not block a specific opening.',
                         ),
                       ),
                       actions: [
