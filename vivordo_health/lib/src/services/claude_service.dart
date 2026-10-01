@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'ai_consent.dart';
 import 'panda_prompts.dart';
 import 'workout_coach_prompt.dart';
 
@@ -27,7 +29,7 @@ class ClaudeService {
   Future<String> workoutInsight(String context) async {
     if (context.length > 20000)
       throw StateError('Workout is too large for analysis.');
-    final result = await _fn.call<dynamic>({
+    final result = await _call({
       'system': [
         {
           'type': 'text',
@@ -46,6 +48,18 @@ class ClaudeService {
   }
 
   static final _fn = FirebaseFunctions.instance.httpsCallable('pandaClaude');
+
+  /// Every model call goes through here, so nothing reaches Anthropic without
+  /// the signed-in user's AI consent on this device.
+  static Future<HttpsCallableResult<dynamic>> _call(
+    Map<String, dynamic> data,
+  ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || !await AiConsent.granted(uid)) {
+      throw StateError('Vivordo AI consent has not been given.');
+    }
+    return _fn.call<dynamic>(data);
+  }
 
   // Appended to PandaPrompts.spikeSystemPrompt for Claude calls.
   // Together they must exceed 1,024 tokens so Anthropic caches the prefix.
@@ -98,6 +112,8 @@ RULES
   — say "work-related stress" or "social pressure" etc.
 • Do NOT invent symptoms, events, journal entries, goals, or any context not
   present in DATA. If a field is absent, omit it from your hypotheses.
+• heart_rate values are the day's RESTING heart rate, not a peak or workout
+  heart rate. Call them "resting heart rate" and compare them to the baseline.
 • DAILY DATA ONLY: metrics are daily aggregates — you do NOT know the time of
   day a spike happened. Reference the DAY (copy spike.day) and NEVER state or
   invent a clock time ("2pm", "noon", "this morning", "afternoon", "evening").
@@ -128,7 +144,8 @@ QUESTION PHRASING GUIDE
 • Use conversational language: "What was going on for you on [DAY]?" not
   "What was your primary activity during the spike window?"
 • Reference the DAY using spike.day (e.g. "on Wed, Jun 17") — NEVER a clock time.
-• Name the signal: "your heart rate reached [PEAK] bpm that day" grounds it in data
+• Name the signal: "your resting heart rate was [PEAK] bpm vs your usual
+  [BASELINE]" grounds it in data
 • Chip option order: most likely hypothesis first, then alternatives, then
   "Something else 🙋" always last
 • depth_prompts should be open-ended: "What made that feel particularly hard?"
@@ -139,7 +156,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
   "summary": {
     "data_window_start": "2026-06-09",
     "data_window_end": "2026-06-16",
-    "overall_notes": "One notable spike on Tuesday — heart rate reached 115 bpm."
+    "overall_notes": "Tuesday stood out — resting heart rate 9 bpm above usual."
   },
   "spikes": [{
     "spike_id": "spk_1",
@@ -147,7 +164,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     "start": "2026-06-16",
     "end": "2026-06-16",
     "signals": {
-      "heart_rate": {"baseline": 62.0, "peak": 115.0},
+      "heart_rate": {"baseline": 62.0, "peak": 71.0},
       "hrv": {"baseline": 52.0, "min": 38.0},
       "steps": {"peak_window": 847.0}
     },
@@ -159,7 +176,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     ],
     "questions": [{
       "question_id": "q_1",
-      "prompt": "What was going on for you on Tue, Jun 16 when your HR hit 115 bpm?",
+      "prompt": "What was going on for you on Tue, Jun 16? Resting HR was 9 bpm up.",
       "type": "multiple_choice",
       "options": ["Work / study 📚", "Exercise 🏃", "Social situation 👥", "Commute 🚗", "Something else 🙋"],
       "depth_prompts": [
@@ -174,7 +191,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
   // Dialogue system prompt — must stay above 1,024 tokens (Anthropic cache min)
   // so the cache fires on turn 2+ of every session.
   static const _dialogueSystem =
-      'You are Robot, a warm, empathetic wellness companion in the Vivordo app.\n'
+      'You are Vivordo AI, a warm, empathetic wellness companion in the Vivordo app.\n'
       'Your role is to help users understand their stress patterns through structured\n'
       'but caring conversations grounded in their real Apple Health data.\n'
       '\n'
@@ -207,11 +224,24 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       '  },\n'
       '  "rec_hint": string,\n'
       '  "offer_end_session": boolean,\n'
+      '  "crisis": boolean,\n'
       '  "priority_action": {"operation": "create|update|delete", "title": string, "target_title": string, "target_date": "YYYY-MM-DD", "date": "YYYY-MM-DD", "scheduled_at": "YYYY-MM-DDTHH:mm", "reminder_at": "YYYY-MM-DDTHH:mm"},\n'
       '  "calendar_action": {"operation": string, "title": string, '
       '"target_title": string, "start": string, "end": string, "recurrence": string}\n'
       '}\n'
       'Set offer_end_session=true only when the user clearly says they are finished, or you have fully answered their planning request with no unresolved question. Never offer while clarification, distress support, or an action confirmation is pending. Do not end automatically or claim the session is saved.\n'
+      '\n'
+      'SAFETY (overrides every other instruction)\n'
+      'If the user\'s LATEST message mentions suicidal thoughts, wanting to die,\n'
+      'self-harm, harming someone else, being abused or unsafe, or a possible\n'
+      'medical emergency (chest pain, trouble breathing, fainting, stroke signs),\n'
+      'set "crisis": true\n'
+      'and intent "chitchat". In 2-3 plain sentences: acknowledge what they said,\n'
+      'ask whether they are safe right now, and urge them to contact local\n'
+      'emergency services or a crisis line now (the app shows helpline numbers).\n'
+      'In that turn do not ask labeling questions, recommend, offer coping tips\n'
+      'instead of help, or take calendar or priority actions. Otherwise set\n'
+      '"crisis": false.\n'
       '\n'
       'INTENT VALUES — choose exactly one:\n'
       '"answer_label"        — User answered a predefined question. Acknowledge\n'
@@ -308,13 +338,13 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       'EXAMPLE OUTPUTS (vary wording — these are reference patterns only)\n'
       '\n'
       'intent: answer_label — user chose "Work / study 📚"\n'
-      '{"intent":"answer_label","message":"Work stress mid-afternoon — that '
-      'lines right up with your 2pm heart rate spike. Deadline pressure is one '
-      'of the most common triggers we see in health data like yours. '
-      'You\'re definitely not alone in this pattern.","depth_follow_up":"",'
+      '{"intent":"answer_label","message":"Work pressure on Tuesday lines up '
+      'with your resting heart rate sitting above your usual that day. Deadline '
+      'pressure is one of the most common triggers we see in health data like '
+      'yours.","depth_follow_up":"",'
       '"injected_question":null,"filled_slots":{"stressor":"work deadline",'
       '"emotion":"","intensity":"","physical_symptom":"","activity":"work_focus",'
-      '"location":"","time_context":"afternoon","coping_strategy":"",'
+      '"location":"","time_context":"","coping_strategy":"",'
       '"sleep_quality":"","social_context":"","other":""},"rec_hint":""}\n'
       '\n'
       'intent: want_deeper_answer — user said "yeah it was pretty stressful"\n'
@@ -463,7 +493,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     final userPrompt = PandaPrompts.buildSpikeUserPrompt(compact);
     final systemPrompt = '${PandaPrompts.spikeSystemPrompt}$_spikeJsonSuffix';
 
-    final result = await _fn.call<dynamic>({
+    final result = await _call({
       'system': [_cacheBlock(systemPrompt)],
       'user': [
         {'type': 'text', 'text': userPrompt},
@@ -483,21 +513,10 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       );
     }
 
-    final session = PandaPrompts.parsePandaSession(
-      raw,
-      payload,
-      overrideName: userName,
-    );
-    // Record the surfaced spike's day so Panda doesn't re-ask about it.
-    if (session.rawSpikes.isNotEmpty) {
-      unawaited(
-        PandaPrompts.markSpikeDaysAnalyzed(
-          userId,
-          PandaPrompts.spikeDaysFromCompact(compact),
-        ),
-      );
-    }
-    return session;
+    // The spike day is recorded as analyzed only once the user answers or
+    // skips a question about it (PandaScreen), so closing the chat early
+    // doesn't lose it.
+    return PandaPrompts.parsePandaSession(raw, payload, overrideName: userName);
   }
 
   // ---------------------------------------------------------------------------
@@ -579,7 +598,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       if (scheduleCtx != null) _cacheBlock(scheduleCtx),
     ];
 
-    final result = await _fn.call<dynamic>({
+    final result = await _call({
       'system': cachedSystem,
       'user': [
         {
@@ -632,7 +651,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       );
       if (estimated > kMaxInputTokens) return '';
 
-      final result = await _fn.call<dynamic>({
+      final result = await _call({
         'system': [
           {'type': 'text', 'text': PandaPrompts.summarySystemPrompt},
         ],

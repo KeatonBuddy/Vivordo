@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -16,10 +17,12 @@ import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/services/panda_priority_action.dart';
 import '../src/services/workout_service.dart';
+import '../src/services/ai_consent.dart';
 import '../src/services/workout_ai_advice.dart';
 import '../src/utils/workout_opening.dart';
 import '../widgets/vivordo_robot.dart';
 import '../widgets/contextual_insight_bar.dart';
+import '../widgets/crisis_support_card.dart';
 import '../src/utils/panda_priority_context.dart';
 import '../widgets/privacy_support_links.dart';
 
@@ -226,6 +229,27 @@ class _PandaScreenState extends State<PandaScreen>
   bool _offerEndSession = false;
   bool _ended = false;
 
+  // No AI consent on this device yet: the chat tab shows the consent view and
+  // nothing is sent to the model (ClaudeService enforces this as well).
+  bool _needsConsent = false;
+
+  // Whether this session's spike day has been recorded as answered.
+  bool _spikeDaysMarked = false;
+
+  /// Records the session's spike day once the user answers or skips a question
+  /// about it, so the same spike isn't asked again — but an unanswered one is.
+  void _markSpikeDaysAnswered() {
+    final spikes = _session?.rawSpikes ?? const [];
+    if (_spikeDaysMarked || spikes.isEmpty || _currentUserId.isEmpty) return;
+    _spikeDaysMarked = true;
+    unawaited(
+      PandaPrompts.markSpikeDaysAnalyzed(
+        _currentUserId,
+        PandaPrompts.spikeDays(spikes),
+      ),
+    );
+  }
+
   Future<void> _endSession() async {
     if (_startingNewSession || _pandaTyping || _loading) return;
     setState(() => _startingNewSession = true);
@@ -283,12 +307,11 @@ class _PandaScreenState extends State<PandaScreen>
     setState(() => _workoutAdviceBusy = true);
     String advice;
     try {
-      final allowed = await ensureWorkoutAiConsent(context, uid);
+      // Without consent the chat shows the consent view; Allow restarts this.
+      if (!await AiConsent.granted(uid)) return;
       if (!mounted || !opening.active || _screenInsight != source || _ended)
         return;
-      advice = allowed
-          ? await loadWorkoutAiAdvice(uid, source.context!)
-          : 'Workout analysis was not started. You can ask for advice when you’re ready to allow sharing this workout with Claude.';
+      advice = await loadWorkoutAiAdvice(uid, source.context!);
     } catch (_) {
       advice =
           'I couldn’t analyze this workout right now. You can ask me to try again or ask a specific question about it.';
@@ -454,6 +477,17 @@ class _PandaScreenState extends State<PandaScreen>
     final startedAt = DateTime.now();
     _sessionStart = startedAt;
 
+    if (_currentUserId.isNotEmpty && !await AiConsent.granted(_currentUserId)) {
+      if (mounted && _sessionStart == startedAt) {
+        setState(() {
+          _needsConsent = true;
+          _loading = false;
+        });
+      }
+      return;
+    }
+    if (!mounted || _sessionStart != startedAt) return;
+
     setState(() {
       _loading = true;
       _ended = false;
@@ -478,6 +512,7 @@ class _PandaScreenState extends State<PandaScreen>
       _sessionSlots.clear();
       _shownRecIds.clear();
       _savedChatStressors.clear();
+      _spikeDaysMarked = false;
       _sessionInsightNotes.clear();
       _analyzingSpikes = false;
       _scheduleContext = null;
@@ -578,7 +613,10 @@ class _PandaScreenState extends State<PandaScreen>
       setState(() {
         _analyzingSpikes = false;
         _loading = false;
-        _error = 'Panda couldn’t load right now. Please try again.';
+        _error = _aiErrorText(
+          e,
+          'Vivordo AI couldn’t load right now. Please try again.',
+        );
       });
       debugPrint('[PandaScreen] Session load failed: $e');
       _saveLocalHistory(startedAt, success: false, error: e.toString());
@@ -786,7 +824,7 @@ class _PandaScreenState extends State<PandaScreen>
       if (!mounted) return;
       setState(() => _pandaTyping = false);
       await _pandaSay(
-        "I ran into a hiccup — try tapping that again.",
+        _aiErrorText(e, "I ran into a hiccup — try tapping that again."),
         typingMs: 0,
       );
     }
@@ -822,6 +860,7 @@ class _PandaScreenState extends State<PandaScreen>
       // NOTE: category pills are NOT shown here — they appear only after
       // all spike questions are complete (handled in _advanceOrComplete).
     });
+    _markSpikeDaysAnswered();
     _scrollBottom();
     await _advanceOrComplete();
   }
@@ -838,29 +877,22 @@ class _PandaScreenState extends State<PandaScreen>
         _ended ||
         _workoutAdviceBusy)
       return;
-    if (_screenInsight?.screen == 'workout_summary') {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) return;
-      setState(() => _workoutAdviceBusy = true);
-      var allowed = false;
-      try {
-        allowed = await ensureWorkoutAiConsent(context, uid);
-      } catch (_) {
-        allowed = false;
-      } finally {
-        if (mounted) setState(() => _workoutAdviceBusy = false);
-      }
-      if (!mounted ||
-          !allowed ||
-          _ended ||
-          FirebaseAuth.instance.currentUser?.uid != uid)
-        return;
+    // Consent can be reset from Profile while this chat stays mounted.
+    if (!await AiConsent.granted(_currentUserId)) {
+      if (mounted) setState(() => _needsConsent = true);
+      return;
     }
+    if (!mounted) return;
     setState(() => _offerEndSession = false);
     _inputCtrl.clear();
 
     setState(() => _turns.add(_Turn.user(text)));
     _scrollBottom();
+
+    // Crisis resources appear at once, without waiting on (or trusting) the
+    // model reply.
+    final crisisShown = mentionsCrisis(text);
+    if (crisisShown) _showCrisisSupport();
 
     final session = _session;
     if (session == null) return;
@@ -935,6 +967,14 @@ class _PandaScreenState extends State<PandaScreen>
 
       if (!mounted) return;
 
+      // A crisis turn gets a supportive reply and resources — no slot capture,
+      // saved stressor insight, actions, or next labeling question.
+      if (reply.crisis) {
+        await _pandaSay(reply.message, typingMs: 0);
+        if (!crisisShown) _showCrisisSupport();
+        return;
+      }
+
       if (reply.filledSlots != null) {
         // Slot handling is independent of whether the user is ready to finish.
         setState(
@@ -962,11 +1002,13 @@ class _PandaScreenState extends State<PandaScreen>
             ),
       );
       // 'You shared' becomes an editable Q→A entry in the History card.
-      _maybeSaveChatInsight(
-        reply: reply,
-        userMessage: text,
-        questionLabel: 'You shared',
-      );
+      if (!crisisShown) {
+        _maybeSaveChatInsight(
+          reply: reply,
+          userMessage: text,
+          questionLabel: 'You shared',
+        );
+      }
 
       // _pandaTyping stays true here — _pandaSay handles the false transition
       // once the response is rendered. Clearing it early causes chips to flash.
@@ -991,6 +1033,7 @@ class _PandaScreenState extends State<PandaScreen>
               _state = _DialogueState.onPath;
               // Category pills are NOT shown here — only after all Qs complete.
             });
+            _markSpikeDaysAnswered();
           }
           await _pandaSay(reply.message, typingMs: 0);
           await _advanceOrComplete();
@@ -1077,6 +1120,7 @@ class _PandaScreenState extends State<PandaScreen>
               _qIdx++;
               _depthTurns = 0;
             });
+            _markSpikeDaysAnswered();
           }
           await _pandaSay(reply.message, typingMs: 0);
           await _advanceOrComplete();
@@ -1118,10 +1162,44 @@ class _PandaScreenState extends State<PandaScreen>
       if (!mounted) return;
       setState(() => _pandaTyping = false);
       await _pandaSay(
-        "I hit a small issue. Try sending that again.",
+        _aiErrorText(e, "I hit a small issue. Try sending that again."),
         typingMs: 0,
       );
     }
+  }
+
+  /// The server's daily AI budget is a hard stop, so say so instead of
+  /// inviting a retry that will fail the same way.
+  String _aiErrorText(Object error, String fallback) =>
+      error is FirebaseFunctionsException && error.code == 'resource-exhausted'
+      ? 'You’ve reached today’s Vivordo AI limit. It resets tomorrow.'
+      : fallback;
+
+  void _showCrisisSupport() {
+    setState(() {
+      // No more check-in questions this session (and no "side chat" status):
+      // the conversation stays with the person, not the labeling path.
+      _questionQueue.clear();
+      _qIdx = 0;
+      _state = _DialogueState.free;
+      _digressionStack.clear();
+      _categoryPillsVisible = false;
+      _doneCardVisible = false;
+      _offerEndSession = false;
+      // One card per crisis moment: a follow-up message soon after shouldn't
+      // stack another copy under every reply.
+      if (_turns.reversed.take(4).any((t) => t.kind == _TurnKind.crisis)) {
+        return;
+      }
+      // The text only tells the model, via history, that resources were shown.
+      _turns.add(
+        _Turn.assistant(
+          'Shared crisis support resources.',
+          kind: _TurnKind.crisis,
+        ),
+      );
+    });
+    _scrollBottom();
   }
 
   void _pauseQuestionPathForAction(String topic) {
@@ -1866,7 +1944,69 @@ class _PandaScreenState extends State<PandaScreen>
     );
   }
 
+  Future<void> _allowAi() async {
+    final uid = _currentUserId;
+    if (uid.isEmpty) return;
+    await AiConsent.grant(uid);
+    if (!mounted || FirebaseAuth.instance.currentUser?.uid != uid) return;
+    setState(() => _needsConsent = false);
+    await _loadSession();
+    final source = _screenInsight;
+    if (mounted && source != null && _workoutOpening != null) {
+      await _loadWorkoutOpening(source);
+    }
+  }
+
+  Widget _consentView() {
+    final colors = context.vivordoColors;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _avatar(size: 72),
+            const SizedBox(height: 16),
+            Text(
+              'Allow Vivordo AI?',
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Vivordo AI uses Anthropic’s Claude to answer you. To do that, '
+              'Vivordo sends your messages and the health, sleep, fitness, '
+              'workout, calendar, priority, journal and past-conversation '
+              'information relevant to your question to Anthropic for '
+              'processing. Nothing is sent until you allow it.\n\n'
+              'AI responses can be inaccurate and are not medical advice. You '
+              'can reset this choice in Profile under Vivordo AI.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 15,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton(onPressed: _allowAi, child: const Text('Allow')),
+            TextButton(onPressed: widget.onClose, child: const Text('Not now')),
+            TextButton(
+              onPressed: () =>
+                  openVivordoLink(context, Uri.parse(vivordoPrivacyUrl)),
+              child: const Text('Privacy Policy'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildChatTab() {
+    if (_needsConsent) return _consentView();
     if (_ended) {
       return Center(
         child: Column(
@@ -2102,6 +2242,7 @@ class _PandaScreenState extends State<PandaScreen>
           final turnIdx = i - pillsFirst;
           if (turnIdx < _turns.length) {
             final t = _turns[turnIdx];
+            if (t.kind == _TurnKind.crisis) return const CrisisSupportCard();
             if (_screenInsight != null &&
                 t.role == _Role.assistant &&
                 (t.opening?.id == _workoutOpening?.id && t.opening != null ||
@@ -2356,7 +2497,7 @@ class _PandaScreenState extends State<PandaScreen>
         bg = colors.card;
         border = (categoryColor ?? _purple).withOpacity(0.15);
         badge = null;
-      case _TurnKind.normal:
+      case _TurnKind.normal || _TurnKind.crisis:
         bg = colors.card;
         border = Colors.transparent;
         badge = null;
@@ -2781,9 +2922,9 @@ class _PandaScreenState extends State<PandaScreen>
     if (_sessionComplete) {
       hint = 'Ask Vivordo anything';
     } else if (disabled) {
-      hint = 'Panda is thinking…';
+      hint = 'Vivordo AI is thinking…';
     } else if (_state == _DialogueState.inDigression) {
-      hint = 'Keep going — Panda is all ears…';
+      hint = 'Keep going, I’m listening…';
     } else if (_state == _DialogueState.inDepth) {
       hint = 'Tell me more, or type "done" to move on…';
     } else {
@@ -3409,7 +3550,7 @@ class _PandaScreenState extends State<PandaScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              '⚡ Correcting your answer helps Panda learn your stress patterns more accurately.',
+              '⚡ Correcting your answer helps Vivordo AI learn your stress patterns more accurately.',
               style: TextStyle(fontSize: 11, height: 1.4),
             ),
           ],
@@ -3704,13 +3845,13 @@ class _PandaScreenState extends State<PandaScreen>
         ),
         content: const SingleChildScrollView(
           child: Text(
-            'Panda uses Anthropic’s Claude through Vivordo’s servers to generate '
+            'Vivordo AI uses Anthropic’s Claude through Vivordo’s servers to generate '
             'responses and insights. Your messages and relevant health, fitness, '
             'calendar, journal, and previous-session information may be sent to '
             'Anthropic for processing. This is not on-device processing.\n\n'
             'Avoid sharing information you do not want processed by these services. '
             'Read our Privacy Policy for details about data use, storage, and your choices.\n\n'
-            'Panda provides wellness information, not medical advice. Responses can '
+            'Vivordo AI provides wellness information, not medical advice. Responses can '
             'be inaccurate. Consult a qualified healthcare professional before '
             'making medical decisions.',
             style: TextStyle(fontSize: 15, height: 1.4),
@@ -4005,6 +4146,7 @@ enum _TurnKind {
   recommend,
   categoryMenu,
   calendarAction,
+  crisis,
 }
 
 enum _CalendarActionStatus { pending, running, done, cancelled, failed }

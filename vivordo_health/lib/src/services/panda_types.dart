@@ -114,10 +114,15 @@ class PandaTurnReply {
     this.calendarAction,
     this.priorityAction,
     this.offerEndSession = false,
+    this.crisis = false,
   });
 
   final PandaIntent intent;
   final bool offerEndSession;
+
+  /// The model judged this turn a possible crisis or emergency; the app shows
+  /// crisis resources and pauses everything else.
+  final bool crisis;
 
   /// What Panda says (always present, never empty).
   final String message;

@@ -218,29 +218,14 @@ RULES:
 
     final samplesChronological = sortedDates.reversed
         .where((dateStr) => !excludedSpikeDays.contains(dateStr))
-        .map((dateStr) {
-          final d = dailyData[dateStr]!;
-          final hrMax =
-              (d['heart_rate']?['max'] as num?)?.toDouble() ??
-              (d['heart_rate']?['avg'] as num?)?.toDouble() ??
-              baselineHr;
-          final hrv = (d['hrv']?['avg'] as num?)?.toDouble() ?? baselineHrv;
-          final steps = (d['steps']?['sum'] as num?)?.toDouble() ?? 0.0;
-          final stress = (d['stress']?['avg'] as num?)?.toInt();
-          return <String, dynamic>{
-            't': '${dateStr}T12:00:00',
-            'hr': hrMax.round(),
-            'hrv': hrv.round(),
-            'steps': steps.round(),
-            'activity': steps > 8000
-                ? 'active'
-                : steps > 3000
-                ? 'light'
-                : 'sedentary',
-            'stress': ?stress,
-            'tag': '',
-          };
-        })
+        .map(
+          (dateStr) => dailySample(
+            dateStr,
+            dailyData[dateStr]!,
+            baselineHr: baselineHr,
+            baselineHrv: baselineHrv,
+          ),
+        )
         .toList();
 
     final windowStart = DateTime.parse('${sortedDates.last}T00:00:00');
@@ -315,6 +300,41 @@ RULES:
           'sleep_quality': sleepQuality,
         },
       'user_meta': {'userId': userId, 'hrv': baselineHrv},
+    };
+  }
+
+  /// One day's spike-detection sample from its metrics_daily doc.
+  ///
+  /// `hr` is the day's RESTING heart rate (average heart rate when resting is
+  /// missing), the same measure the baseline is built from. The day's MAX
+  /// heart rate is deliberately ignored: any walk or workout pushes it far
+  /// above resting, which made almost every active day look like a spike.
+  @visibleForTesting
+  static Map<String, dynamic> dailySample(
+    String dateStr,
+    Map<String, dynamic> d, {
+    required double baselineHr,
+    required double baselineHrv,
+  }) {
+    final hr =
+        (d['resting_heart_rate']?['avg'] as num?)?.toDouble() ??
+        (d['heart_rate']?['avg'] as num?)?.toDouble() ??
+        baselineHr;
+    final hrv = (d['hrv']?['avg'] as num?)?.toDouble() ?? baselineHrv;
+    final steps = (d['steps']?['sum'] as num?)?.toDouble() ?? 0.0;
+    final stress = (d['stress']?['avg'] as num?)?.toInt();
+    return <String, dynamic>{
+      't': '${dateStr}T12:00:00',
+      'hr': hr.round(),
+      'hrv': hrv.round(),
+      'steps': steps.round(),
+      'activity': steps > 8000
+          ? 'active'
+          : steps > 3000
+          ? 'light'
+          : 'sedentary',
+      'stress': ?stress,
+      'tag': '',
     };
   }
 
@@ -443,17 +463,16 @@ RULES:
   }
 
   // =========================================================================
-  // Spike de-duplication  (public static — reused by ClaudeService)
+  // Spike de-duplication  (public static — used by PandaScreen)
   //
-  // Spikes are identified by their DAY (metrics are daily aggregates). Once a
-  // day's spike is surfaced for analysis it is recorded on the user doc so it
-  // is never re-detected.
+  // Spikes are identified by their DAY (metrics are daily aggregates). Once the
+  // user answers or skips a question about a day's spike, it is recorded on the
+  // user doc so it is never re-detected.
   // =========================================================================
 
-  /// The set of spike days (YYYY-MM-DD) present in a compact payload.
-  static List<String> spikeDaysFromCompact(Map<String, dynamic> compact) {
-    final cands = compact['spike_candidates'] as List? ?? const [];
-    return cands
+  /// The set of spike days (YYYY-MM-DD) in a list of spike maps.
+  static List<String> spikeDays(Iterable<Object?> spikes) {
+    return spikes
         .map((s) => (s as Map)['start']?.toString() ?? '')
         .where((s) => s.isNotEmpty)
         .map((s) => s.contains('T') ? s.split('T').first : s)
@@ -588,7 +607,7 @@ RULES:
   /// [compact] must already contain user_context and _variability_seed.
   static String buildSpikeUserPrompt(Map<String, dynamic> compact) {
     return '''
-Use ONLY the heart rate spikes detected in DATA. Do NOT invent symptoms, events, journal entries, goals, or any context not present in DATA.
+Use ONLY the spike candidates detected in DATA. Do NOT invent symptoms, events, journal entries, goals, or any context not present in DATA.
 
 If DATA.user_context is non-empty, mention it briefly in summary.overall_notes.
 
@@ -619,7 +638,7 @@ DATA: ${jsonEncode(compact)}
     final convoText = capped
         .map(
           (t) =>
-              "${t['role'] == 'user' ? 'User' : 'Panda'}: ${t['text'] ?? ''}",
+              "${t['role'] == 'user' ? 'User' : 'Assistant'}: ${t['text'] ?? ''}",
         )
         .join('\n');
 
@@ -683,7 +702,9 @@ Write the continuity note now.''';
         : conversationHistory;
 
     final historyText = cappedHistory
-        .map((t) => "${t['role'] == 'user' ? 'User' : 'Panda'}: ${t['text']}")
+        .map(
+          (t) => "${t['role'] == 'user' ? 'User' : 'Assistant'}: ${t['text']}",
+        )
         .join('\n');
 
     final StringBuffer pathCtx = StringBuffer();
@@ -736,7 +757,7 @@ Write the continuity note now.''';
         : '';
 
     final personaLine = embedPersona
-        ? 'You are Panda 🐼, a warm, empathetic wellness companion in Vivordo.\n\n'
+        ? 'You are Vivordo AI, a warm, empathetic wellness companion in the Vivordo app.\n\n'
         : '';
 
     final tasksSection = embedTaskInstructions
@@ -1180,6 +1201,7 @@ Write the continuity note now.''';
         intent: intent,
         message: message,
         offerEndSession: obj['offer_end_session'] == true,
+        crisis: obj['crisis'] == true,
         depthFollowUp: depthFollowUp,
         injectedQuestion: injected,
         filledSlots: slots,
@@ -1316,7 +1338,7 @@ Write the continuity note now.''';
   }) {
     return PandaSessionData(
       openerMessage:
-          'Hey $userName! 🌿 Ive pulled up your health data for today. '
+          'Hey $userName! I’ve pulled up your health data for today. '
           'What would you like to explore — your stress patterns, how to plan your day, '
           'or something else on your mind?',
       questions: [
@@ -1351,11 +1373,17 @@ Write the continuity note now.''';
   ) {
     final hr = (s['signals']?['heart_rate']?['peak'] ?? 0).toDouble();
     final hrvMin = (s['signals']?['hrv']?['min'] ?? baselineHrv).toDouble();
-    final steps = (s['signals']?['steps']?['peak_window'] ?? 0).toDouble();
+    // Steps are not a stress signal: ranking by them pushed workout days to
+    // the top, so they no longer count toward severity.
     return (hr - baselineHr).clamp(0, 100) +
-        (baselineHrv - hrvMin).clamp(0, 100) +
-        (steps / 200.0).clamp(0, 30);
+        (baselineHrv - hrvMin).clamp(0, 100);
   }
+
+  // ponytail: fixed daily thresholds against a 7-day mean; switch to
+  // per-user standard deviations if these over- or under-fire.
+  static const _restingHrRiseBpm = 7;
+  static const _hrvDropMs = 18;
+  static const _highStress = 65;
 
   static List<Map<String, dynamic>> _detectSpikes(
     List<Map> samples,
@@ -1365,8 +1393,10 @@ Write the continuity note now.''';
     bool isSpike(Map s) {
       final hr = (s['hr'] ?? baselineHr).toDouble();
       final hrv = (s['hrv'] ?? baselineHrv).toDouble();
-      final stress = (s['stress_score'] ?? 0).toDouble();
-      return hr >= baselineHr + 25 || hrv <= baselineHrv - 18 || stress >= 65;
+      final stress = (s['stress'] ?? 0).toDouble();
+      return hr >= baselineHr + _restingHrRiseBpm ||
+          hrv <= baselineHrv - _hrvDropMs ||
+          stress >= _highStress;
     }
 
     final List<Map<String, dynamic>> spikes = [];

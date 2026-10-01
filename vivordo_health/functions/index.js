@@ -31,6 +31,7 @@ const {
 } = require("./heart_health_score");
 const {normalizeGoogleHealthSleep} = require("./google_health_sleep");
 const {whoopDeletionPlan} = require("./whoop_deletion");
+const {validatePandaRequest, nextUsage} = require("./panda_limits");
 const {
   challengeDeletionPlan,
   hasRecentAuthentication,
@@ -580,34 +581,34 @@ exports.pandaClaude = onCall({secrets: [anthropicApiKey]}, async (request) => {
     throw new HttpsError("unauthenticated", "Must be logged in.");
   }
 
-  const {system, user, maxTokens} = request.data;
-  if (!system || !user) {
-    throw new HttpsError("invalid-argument", "system and user are required.");
+  // Text blocks only, bounded input and output (see panda_limits.js).
+  const validated = validatePandaRequest(request.data);
+  if (validated.error) {
+    throw new HttpsError("invalid-argument", validated.error);
   }
 
-  // maxTokens: 300 for chat turns, 1800 for spike analysis (set by client).
-  // Fall back to 300 (chat default) if omitted.
-  const outputCap =
-      (typeof maxTokens === "number" && maxTokens > 0) ? maxTokens : 300;
-
-  const systemBlocks = Array.isArray(system) ?
-    system :
-    [
-      {
-        type: "text",
-        text: String(system),
-        cache_control: {type: "ephemeral"},
-      },
-    ];
-  const userBlocks = Array.isArray(user) ?
-    user :
-    [{type: "text", text: String(user)}];
+  // Per-account daily call budget. ai_usage has no client rule, so only the
+  // Admin SDK can read or reset it.
+  const db = admin.firestore();
+  const usageRef = db.collection("ai_usage").doc(request.auth.uid);
+  const today = new Date().toISOString().slice(0, 10);
+  const allowed = await db.runTransaction(async (transaction) => {
+    const next = nextUsage((await transaction.get(usageRef)).data(), today);
+    if (next) transaction.set(usageRef, next);
+    return next !== null;
+  });
+  if (!allowed) {
+    throw new HttpsError(
+        "resource-exhausted",
+        "Daily AI limit reached. Try again tomorrow.",
+    );
+  }
 
   const msg = await getAnthropicClient().messages.create({
     model: "claude-sonnet-4-5",
-    max_tokens: outputCap,
-    system: systemBlocks,
-    messages: [{role: "user", content: userBlocks}],
+    max_tokens: validated.maxTokens,
+    system: validated.system,
+    messages: [{role: "user", content: validated.user}],
   });
 
   const text = (msg.content || []).reduce((acc, block) => {
@@ -2183,6 +2184,7 @@ async function deleteVivordoAccountData(uid) {
     db.recursiveDelete(db.collection("challenge_medal_awards").doc(uid)),
     db.recursiveDelete(db.collection("baas_state").doc(uid)),
     db.recursiveDelete(db.collection("baas_weights").doc(uid)),
+    db.collection("ai_usage").doc(uid).delete(),
   ]);
   await admin.storage().bucket().deleteFiles({
     prefix: `circle_profiles/${uid}/`,

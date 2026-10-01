@@ -29,8 +29,8 @@ import 'package:vivordo_health/src/services/panda_prompts.dart';
 const _testUserId = 'gbupweX0Wbe5hr5S86nHohhHYFd2';
 
 Map<String, dynamic> _buildSpikePayload() {
-  // Baseline: avg HR across 6 normal days ≈ 62 bpm → spike threshold = 87 bpm.
-  // Day 7 (today): max HR = 115 bpm → exceeds threshold → spike detected.
+  // Baseline resting HR ≈ 62 bpm → spike threshold = 69 bpm.
+  // Day 7 (today): resting HR = 74 bpm → exceeds threshold → spike detected.
   final today = DateTime.now();
   final samples = <Map<String, dynamic>>[];
 
@@ -41,7 +41,7 @@ Map<String, dynamic> _buildSpikePayload() {
     final isSpike = i == 0; // only the most recent day has a spike
     samples.add({
       't': '${dateStr}T12:00:00',
-      'hr': isSpike ? 115 : 68, // spike: 115 bpm; normal: 68 bpm
+      'hr': isSpike ? 74 : 63, // daily resting HR: spike 74, normal 63
       'hrv': 52,
       'steps': isSpike ? 2200 : 5400,
       'activity': isSpike ? 'work_focus' : 'light',
@@ -129,32 +129,91 @@ const _mockSpikeJson = '''
 
 void main() {
   group('Spike detection — buildCompactPayload', () {
-    test('detects spike when peak HR exceeds baseline + 25', () {
+    test('detects spike when resting HR exceeds baseline + 7', () {
       final payload = _buildSpikePayload();
       final compact = PandaPrompts.buildCompactPayload(payload, topK: 3);
 
       final spikes = compact['spike_candidates'] as List;
       expect(spikes, isNotEmpty,
-          reason: 'Peak HR of 115 bpm against 62 bpm baseline should produce a spike');
+          reason: 'Resting HR of 74 bpm against a 62 bpm baseline should produce a spike');
 
       final spike = spikes.first as Map<String, dynamic>;
       final peakHr = spike['signals']['heart_rate']['peak'] as num;
-      expect(peakHr, greaterThanOrEqualTo(87),
-          reason: 'Spike peak HR must be >= baseline (62) + 25');
+      expect(peakHr, greaterThanOrEqualTo(69),
+          reason: 'Spike resting HR must be >= baseline (62) + 7');
     });
 
     test('no spikes when all HR readings are within normal range', () {
       final payload = _buildSpikePayload();
       // Overwrite samples with all-normal readings
       final normalSamples = (payload['samples_5min'] as List<Map<String, dynamic>>)
-          .map((s) => {...s, 'hr': 70})
+          .map((s) => {...s, 'hr': 66})
           .toList();
       payload['samples_5min'] = normalSamples;
 
       final compact = PandaPrompts.buildCompactPayload(payload, topK: 3);
       final spikes = compact['spike_candidates'] as List;
       expect(spikes, isEmpty,
-          reason: 'HR at 70 bpm against 62 bpm baseline is below the 25-bpm threshold');
+          reason: 'Resting HR at 66 bpm against 62 bpm baseline is below the 7-bpm threshold');
+    });
+
+    test('a high stress score alone flags the day', () {
+      final payload = _buildSpikePayload();
+      final samples = payload['samples_5min'] as List<Map<String, dynamic>>;
+      payload['samples_5min'] = [
+        for (final (i, s) in samples.indexed)
+          {...s, 'hr': 63, if (i == 3) 'stress': 72},
+      ];
+      final spikes =
+          PandaPrompts.buildCompactPayload(payload, topK: 3)['spike_candidates']
+              as List;
+      expect(spikes, hasLength(1));
+    });
+
+    test('a workout day is not a spike: max HR and steps are ignored', () {
+      final sample = PandaPrompts.dailySample(
+        '2026-09-30',
+        {
+          'heart_rate': {'avg': 88, 'max': 171},
+          'resting_heart_rate': {'avg': 61},
+          'hrv': {'avg': 50},
+          'steps': {'sum': 18000},
+        },
+        baselineHr: 62,
+        baselineHrv: 52,
+      );
+      expect(sample['hr'], 61);
+      final payload = _buildSpikePayload();
+      payload['samples_5min'] = [sample];
+      expect(
+        PandaPrompts.buildCompactPayload(payload, topK: 3)['spike_candidates'],
+        isEmpty,
+      );
+    });
+
+    test('daily sample falls back to average HR and reads stress', () {
+      final sample = PandaPrompts.dailySample(
+        '2026-09-30',
+        {
+          'heart_rate': {'avg': 70, 'max': 150},
+          'stress': {'avg': 66.4},
+        },
+        baselineHr: 62,
+        baselineHrv: 52,
+      );
+      expect(sample['hr'], 70);
+      expect(sample['stress'], 66);
+    });
+
+    test('spike days are date-only and de-duplicated', () {
+      expect(
+        PandaPrompts.spikeDays([
+          {'start': '2026-09-29'},
+          {'start': '2026-09-29T12:00:00'},
+          {'start': ''},
+        ]),
+        ['2026-09-29'],
+      );
     });
 
     test('compact payload contains no journal or goals keys', () {

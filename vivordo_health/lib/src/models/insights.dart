@@ -270,7 +270,7 @@ class Insights {
     if (slots.emotion?.isNotEmpty == true) titleParts.add(slots.emotion!);
     final title = titleParts.isNotEmpty
         ? titleParts.map(_capitalise).join(' · ')
-        : 'Panda Check-In';
+        : 'Check-in';
 
     // Derive a brief body summary
     final bodyParts = <String>[];

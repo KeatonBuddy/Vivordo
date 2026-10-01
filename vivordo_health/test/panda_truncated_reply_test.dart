@@ -2,6 +2,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/services/panda_prompts.dart';
 
 void main() {
+  test('crisis flag is read from the reply and defaults to false', () {
+    expect(
+      PandaPrompts.parseTurnReply(
+        '{"intent":"chitchat","message":"Are you safe right now?","crisis":true}',
+      ).crisis,
+      isTrue,
+    );
+    expect(
+      PandaPrompts.parseTurnReply(
+        '{"intent":"chitchat","message":"Hi"}',
+      ).crisis,
+      isFalse,
+    );
+  });
+
   test('truncated reply keeps the message text instead of "Got it"', () {
     final reply = PandaPrompts.parseTurnReply(
       '{"intent":"chitchat","message":"Start with the Q3 report.\\nThen take a short \\"reset\\" break after Client prep, around 9',
