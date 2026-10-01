@@ -26,6 +26,10 @@ categories. Its cache namespace and signatures include classifier version 3.
 
 ## Hourly calculator v2
 
+(The JSON sent with stress scoring still says `version: 1`: the stress
+backend rejects any other value, and it doesn't use these windows in
+scores yet. Bump it together with the backend.)
+
 `HourlyCalendarLoadCalculator.calculate` accepts classified events and a time
 range. Pass an hour-aligned `from`; windows advance by one elapsed hour.
 Pass `asOf` for live/historical use. Omit it only for schedule forecasts.

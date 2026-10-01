@@ -33,7 +33,10 @@ class HourlyCalendarLoad {
   final int backToBackTransitions;
 
   Map<String, Object?> toJson() => {
-    'version': 2,
+    // The stress backend rejects any other version (422). v2's back-to-back
+    // and chain changes don't need a bump: the backend only accepts these
+    // windows and doesn't score them yet (docs/calendar_load.md).
+    'version': 1,
     'classifier_version': CalendarCognitiveLoadService.classifierVersion,
     'start': start.toUtc().toIso8601String(),
     'end': end.toUtc().toIso8601String(),

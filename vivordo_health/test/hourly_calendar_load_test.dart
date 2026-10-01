@@ -163,5 +163,7 @@ void main() {
       json['classifier_version'],
       CalendarCognitiveLoadService.classifierVersion,
     );
+    // The stress backend returns 422 for any other version.
+    expect(json['version'], 1);
   });
 }
