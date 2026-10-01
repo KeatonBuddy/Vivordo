@@ -63,18 +63,87 @@ exports.sendDayRecordPushes = onSchedule({
   console.log("Day record pushes sent", {sent});
 });
 
-// Capacity (docs/scores.md §4): recalculated only when a day's sleep, HRV or
-// resting heart rate changes, so routine step and calorie syncs cost nothing.
+// Capacity (docs/scores.md §4): recalculated only when a day's sleep, HRV,
+// resting heart rate or check-in changes, and Effort (§3) only when its
+// exercise minutes or active calories change, so other syncs cost nothing.
+// One trigger for both, so each metrics write runs one function.
 exports.computeDailyCapacity = onDocumentWritten(
     {document: "users/{uid}/metrics_daily/{day}", retry: true},
     async (event) => {
+      const before = event.data?.before?.data();
+      const after = event.data?.after?.data();
       const {capacityInputsChanged, refreshCapacity} = require("./capacity");
-      if (!capacityInputsChanged(event.data?.before?.data(),
-          event.data?.after?.data())) {
+      const {effortInputsChanged, refreshEffort} = require("./effort");
+      const timestamp = () => admin.firestore.FieldValue.serverTimestamp();
+      const {uid, day} = event.params;
+      if (capacityInputsChanged(before, after)) {
+        await refreshCapacity(admin.firestore(), uid, day, timestamp);
+      }
+      if (effortInputsChanged(before, after)) {
+        await refreshEffort(admin.firestore(), uid, day, timestamp);
+      }
+    },
+);
+
+// Effort (docs/scores.md §3): recalculated when the phone writes a day's
+// record of events and priorities (lib/src/services/day_record_service.dart).
+exports.computeDailyEffort = onDocumentWritten(
+    {document: "users/{uid}/effort_inputs/{day}", retry: true},
+    async (event) => {
+      const {refreshEffort} = require("./effort");
+      await refreshEffort(admin.firestore(), event.params.uid,
+          event.params.day, () => admin.firestore.FieldValue.serverTimestamp());
+    },
+);
+
+// Hourly: recalculates each day's Effort about an hour after that day ends
+// (in its own time zone), so the final Effort counts the whole day even if
+// the phone's record wasn't rewritten after the last event.
+exports.finishDailyEffort = onSchedule({
+  schedule: "15 * * * *",
+  timeZone: "UTC",
+}, async () => {
+  const {Timestamp} = require("firebase-admin/firestore");
+  const {refreshEffort} = require("./effort");
+  const db = admin.firestore();
+  const now = Date.now();
+  const ended = await db.collectionGroup("effort_inputs")
+      .where("dayEnd", ">=", Timestamp.fromMillis(now - 2 * 3600000))
+      .where("dayEnd", "<", Timestamp.fromMillis(now - 3600000))
+      .select()
+      .get();
+  // ponytail: one day at a time; run in parallel chunks if this hour's
+  // count grows into the thousands.
+  for (const doc of ended.docs) {
+    await refreshEffort(db, doc.ref.parent.parent.id, doc.id,
+        () => admin.firestore.FieldValue.serverTimestamp());
+  }
+  console.log("Effort finished for days", {count: ended.size});
+});
+
+// Effort again when an in-app workout is saved, changed or deleted: the day
+// is the one whose record covers the workout's start.
+exports.computeEffortFromWorkout = onDocumentWritten(
+    {document: "users/{uid}/workouts/{workoutId}", retry: true},
+    async (event) => {
+      const startedAt = event.data?.after?.data()?.startedAt ??
+        event.data?.before?.data()?.startedAt;
+      if (typeof startedAt?.toMillis !== "function") return;
+      const db = admin.firestore();
+      const records = await db
+          .collection(`users/${event.params.uid}/effort_inputs`)
+          .where("dayStart", "<=", startedAt)
+          .orderBy("dayStart", "desc")
+          .limit(1)
+          .select("dayEnd")
+          .get();
+      const record = records.docs[0];
+      if (!record || record.get("dayEnd")?.toMillis() <= startedAt.toMillis()) {
         return;
       }
-      await refreshCapacity(admin.firestore(), event.params.uid,
-          event.params.day, () => admin.firestore.FieldValue.serverTimestamp());
+      const {refreshEffort} = require("./effort");
+      await refreshEffort(db, event.params.uid, record.id,
+          () => admin.firestore.FieldValue.serverTimestamp());
     },
 );
 

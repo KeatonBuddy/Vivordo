@@ -108,16 +108,31 @@ after it ends, then locks it.
 Priorities whose slot passed unfinished add no Effort. They are counted
 as `unfinishedPriorities` for burnout.
 
-**Physical:** first source that has data:
-1. Heart-rate zones during workouts: minutes × zone weight (z1 1, z2 2,
-   z3 3, z4 4, z5 5) ÷ 10. A 45-min run mostly in z3 ≈ 13 points.
-2. Workouts without heart rate: minutes × intensity by type (light 0.1,
-   moderate 0.2, vigorous 0.35 points per minute).
-3. No workouts: active energy above your 90-day median ÷ 50 kcal
-   (a heavy day on your feet still counts).
+**Physical:** first source that has data (v1; heart-rate zones aren't
+stored, so they're a later upgrade):
+1. Exercise: in-app workouts' minutes × intensity by type (light 0.1 for
+   walks, yoga and stretching; vigorous 0.35 for runs, HIIT, cycling,
+   rowing, swimming and boxing; moderate 0.2 for strength, sports and
+   everything else), plus Health exercise minutes outside in-app
+   workouts (`exercise_time.healthSum`) × 0.2. A 45-min run ≈ 16 points.
+2. No exercise: active calories above your 90-day median (from 7 days of
+   history) ÷ 50 kcal (a heavy day on your feet still counts).
 
-Physical points are capped at 25, and only one source counts per workout,
-so nothing is counted twice.
+Physical points are capped at 25. In-app workouts and Health minutes
+don't overlap (the app already subtracts one from the other), so nothing
+is counted twice.
+
+**Implemented** in `functions/effort.js` (`computeDailyEffort` on day
+records, `computeEffortFromWorkout` on workouts, and the existing
+`computeDailyCapacity` trigger when exercise minutes or active calories
+change). `finishDailyEffort` recalculates every day about an hour after it
+ends, so the final Effort counts the whole day even if the phone's
+record wasn't rewritten after the last event. Its hourly loads match the
+phone's calculator through shared cases in
+`test/fixtures/calendar_load_cases.json`.
+
+**Recovery from yesterday** (in Capacity) starts once there are 7 days of
+Effort; until then it's left out.
 
 **Shown on Home** as "Your Day's Effort" (replacing "Your Day's Load"),
 never as a headline number. Hourly bars before now are Effort (solid,
@@ -234,8 +249,8 @@ capacity: { score, final, version, provisional,
             sleepHours, sleepNeed, bedtimeOffsetMin,
             hrv, hrvNormal, restingHr, restingHrNormal,
             checkInFeel, checkInSleep, yesterdayEffort, usualEffort }
-effort:   { total, mental, physical, final, version,
-            eventMinutes, backToBack, afterHoursMin,
+effort:   { total, mental, physical, physicalSource, final, version,
+            busyMinutes, backToBack, afterHoursMinutes,
             prioritiesDone, unfinishedPriorities, unknownMinutes }
 demand:   { expectedAtWake, version }
 ```

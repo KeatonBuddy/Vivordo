@@ -170,6 +170,41 @@ function capacityInputs(data) {
 }
 
 /**
+ * Yesterday's Effort and the usual Effort (90-day median of the same
+ * formula version) for Recovery from yesterday. Both null until there are
+ * 7 days of Effort, so the ingredient is left out until then.
+ * @param {object} user User document reference.
+ * @param {string} start First day key of the window.
+ * @param {string} day The Capacity day.
+ * @return {Promise<object>} {yesterdayEffort, usualEffort}.
+ */
+async function effortContext(user, start, day) {
+  const {FieldPath} = require("firebase-admin/firestore");
+  const {VERSION: EFFORT_VERSION} = require("./effort");
+  const snapshot = await user.collection("scores_daily")
+      .where(FieldPath.documentId(), ">=", start)
+      .where(FieldPath.documentId(), "<", day)
+      .select("effort")
+      .get();
+  const totals = new Map();
+  for (const doc of snapshot.docs) {
+    const effort = doc.get("effort");
+    if (effort?.version === EFFORT_VERSION && finite(effort.total)) {
+      totals.set(doc.id, effort.total);
+    }
+  }
+  const yesterday = new Date(Date.parse(`${day}T00:00:00Z`) - DAY_MS)
+      .toISOString().slice(0, 10);
+  if (totals.size < 7 || !totals.has(yesterday)) {
+    return {yesterdayEffort: null, usualEffort: null};
+  }
+  return {
+    yesterdayEffort: totals.get(yesterday),
+    usualEffort: median([...totals.values()]),
+  };
+}
+
+/**
  * Recalculates and saves a day's Capacity in users/{uid}/scores_daily/{day}.
  * A day is final once it is over in every time zone; final days are never
  * rewritten.
@@ -200,8 +235,11 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
     else history.push({day: doc.id, ...capacityInputs(doc.data())});
   }
   history.sort((a, b) => a.day.localeCompare(b.day));
-  const capacity = todayData ?
-    computeCapacity({today: capacityInputs(todayData), history}) : null;
+  const capacity = todayData ? computeCapacity({
+    today: {...capacityInputs(todayData),
+      ...await effortContext(user, start, day)},
+    history,
+  }) : null;
 
   const target = user.collection("scores_daily").doc(day);
   const deletionId = crypto.createHash("sha256").update(uid).digest("hex");

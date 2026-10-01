@@ -1,0 +1,178 @@
+{
+ "//": "Hourly calendar load cases shared by the phone (lib/src/services/hourly_calendar_load.dart) and the server (functions/effort.js). Times are minutes from an hour-aligned start; events are [start, end, rating].",
+ "cases": [
+  {
+   "name": "a day with back-to-backs and a chain",
+   "hours": 24,
+   "asOf": 1440,
+   "events": [
+    [
+     540,
+     600,
+     40
+    ],
+    [
+     600,
+     720,
+     55
+    ],
+    [
+     840,
+     900,
+     75
+    ],
+    [
+     900,
+     930,
+     40
+    ],
+    [
+     1080,
+     1140,
+     20
+    ]
+   ],
+   "expected": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    40,
+    62.5,
+    60,
+    0,
+    0,
+    75,
+    25.6,
+    0,
+    0,
+    20,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "name": "a short back-to-back gets the whole bump",
+   "hours": 1,
+   "asOf": 60,
+   "events": [
+    [
+     0,
+     20,
+     40
+    ],
+    [
+     20,
+     30,
+     75
+    ]
+   ],
+   "expected": [
+    30.8
+   ]
+  },
+  {
+   "name": "overlapping events use the highest rating plus 10",
+   "hours": 2,
+   "asOf": 120,
+   "events": [
+    [
+     0,
+     60,
+     75
+    ],
+    [
+     30,
+     90,
+     55
+    ]
+   ],
+   "expected": [
+    80,
+    28.1
+   ]
+  },
+  {
+   "name": "gaps under 15 minutes keep a run going",
+   "hours": 3,
+   "asOf": 180,
+   "events": [
+    [
+     0,
+     55,
+     40
+    ],
+    [
+     60,
+     115,
+     40
+    ],
+    [
+     120,
+     175,
+     40
+    ]
+   ],
+   "expected": [
+    36.7,
+    43.8,
+    46.3
+   ]
+  },
+  {
+   "name": "a 15-minute gap resets the run",
+   "hours": 3,
+   "asOf": 180,
+   "events": [
+    [
+     0,
+     45,
+     40
+    ],
+    [
+     60,
+     105,
+     40
+    ],
+    [
+     120,
+     165,
+     40
+    ]
+   ],
+   "expected": [
+    30,
+    30,
+    30
+   ]
+  },
+  {
+   "name": "only elapsed minutes count",
+   "hours": 1,
+   "asOf": 15,
+   "events": [
+    [
+     0,
+     30,
+     75
+    ],
+    [
+     30,
+     60,
+     40
+    ]
+   ],
+   "expected": [
+    18.8
+   ]
+  }
+ ]
+}

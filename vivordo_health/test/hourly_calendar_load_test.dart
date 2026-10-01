@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'package:vivordo_health/src/services/hourly_calendar_load.dart';
@@ -165,5 +168,52 @@ void main() {
     );
     // The stress backend returns 422 for any other version.
     expect(json['version'], 1);
+  });
+
+  test('matches the server\'s Effort calculator (shared fixture)', () {
+    // functions/test/effort.test.js checks the same cases.
+    final fixture =
+        jsonDecode(
+              File('test/fixtures/calendar_load_cases.json').readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final origin = DateTime.utc(2026, 1, 1);
+    for (final c in (fixture['cases'] as List).cast<Map<String, dynamic>>()) {
+      final events = <CalendarCognitiveEvent>[];
+      final scores = <CognitiveLoadScore>[];
+      for (final (i, e) in (c['events'] as List).indexed) {
+        final [start, end, rating] = (e as List).cast<num>();
+        events.add(
+          CalendarCognitiveEvent(
+            id: 'e$i',
+            title: 'Event',
+            start: origin.add(Duration(minutes: start.toInt())),
+            end: origin.add(Duration(minutes: end.toInt())),
+          ),
+        );
+        scores.add(
+          CognitiveLoadScore(
+            eventId: 'e$i',
+            score: rating.toInt(),
+            category: 'collaboration',
+            reason: 'fixture',
+            usedAi: false,
+            confidence: 0.85,
+          ),
+        );
+      }
+      final hours = HourlyCalendarLoadCalculator.calculate(
+        events: events,
+        scores: scores,
+        from: origin,
+        until: origin.add(Duration(hours: c['hours'] as int)),
+        asOf: origin.add(Duration(minutes: c['asOf'] as int)),
+      );
+      expect(
+        [for (final h in hours) ((h.score ?? 0) * 10).round() / 10],
+        [for (final v in c['expected'] as List) (v as num).toDouble()],
+        reason: c['name'] as String,
+      );
+    }
   });
 }
