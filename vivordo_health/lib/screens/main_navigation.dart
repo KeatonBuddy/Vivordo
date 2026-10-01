@@ -116,7 +116,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _logScreenView(_selectedIndex);
     _refreshTodayFromHealth();
     // Yesterday too, in case the app was last opened before it ended.
-    unawaited(DayRecordService.sync(days: 2));
+    unawaited(DayRecordService.syncOnOpen());
     _circlePreload = CircleProfileService.preload();
     _achievementMonitor = AchievementMonitor.start();
     // HealthKit does not push new values into Firestore. Keep the shared data
@@ -147,7 +147,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     if (state == AppLifecycleState.resumed) {
       _refreshTodayFromHealth();
       _achievementMonitor?.scheduleNow();
-      unawaited(DayRecordService.sync(days: 2));
+      unawaited(DayRecordService.syncOnOpen());
     }
   }
 

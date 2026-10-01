@@ -294,10 +294,11 @@ class DailyPriorityService {
   static Future<List<DailyPriority>> forDay(
     DateTime day, {
     bool includeCompleted = true,
+    Source source = Source.server,
   }) async {
     final user = _userDocument();
     if (user == null) throw StateError('Please sign in first.');
-    const options = GetOptions(source: Source.server);
+    final options = GetOptions(source: source);
     final data = (await user.get(options)).data();
     final key = localDayKey(day);
     final sources =
@@ -637,7 +638,7 @@ class DailyPriorityService {
       'completedDay': completed ? localDayKey(DateTime.now()) : null,
       'updatedAt': FieldValue.serverTimestamp(),
     });
-    unawaited(DayRecordService.sync());
+    DayRecordService.syncSoon();
     await _syncReminder(priority.reference);
   }
 
@@ -815,7 +816,7 @@ class DailyPriorityService {
         });
         return true;
       });
-      if (changed) unawaited(DayRecordService.sync());
+      if (changed) DayRecordService.syncSoon();
     } catch (error) {
       debugPrint('Priority estimate failed: $error');
     }

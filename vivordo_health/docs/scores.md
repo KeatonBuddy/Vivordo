@@ -93,8 +93,11 @@ during the day doesn't change Demand: it already happened, so it is Effort.
 
 ## 3. Effort: what the day took
 
-`Effort = mental points + physical points` (grows through the day; final
-at local midnight). Both parts are stored.
+`Effort = mental points + physical points` (grows through the day). Both
+parts are stored. Because the phone's day record can arrive late (the
+nightly push may be dropped, and the next open may be the next
+afternoon), the server keeps recalculating a day's Effort for 2 days
+after it ends, then locks it.
 
 **Mental:** points of what happened:
 - the elapsed minutes of events (events you declined or that were

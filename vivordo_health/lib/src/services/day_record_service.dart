@@ -99,28 +99,77 @@ Map<String, Object?> buildDayRecord({
 int nightlyPushUtcHour(DateTime now) =>
     DateTime(now.year, now.month, now.day, 23).toUtc().hour;
 
-/// Writes the day records the server calculates Effort from. Called when
-/// the app opens or resumes (today and yesterday, so a day is recorded even
-/// if the app was last opened before it ended) and when a priority is
-/// ticked off.
+/// The calendar events fetched for day records, kept so priority changes
+/// don't refetch the calendar.
+typedef _Calendar = ({
+  String uid,
+  DateTime from,
+  DateTime until,
+  DateTime fetchedAt,
+  bool available,
+  List<DayRecordEvent> events,
+});
+
+/// Writes the day records the server calculates Effort from: when the app
+/// opens or comes back (today and yesterday, so a day is recorded even if
+/// the app was last opened before it ended), when a priority changes, when
+/// My Day's schedule is refreshed, and from the nightly silent push.
 class DayRecordService {
   DayRecordService._();
 
+  static const _openInterval = Duration(minutes: 15);
   static final _written = <String, Map<String, Object?>>{};
   static const _equality = DeepCollectionEquality();
+  static _Calendar? _calendar;
+  static Timer? _soon;
+
+  /// App opened or came back: syncs today and yesterday, at most every 15
+  /// minutes within a day. A calendar change made elsewhere is picked up on the next
+  /// open after that, or by the nightly push.
+  static Future<void> syncOnOpen() async {
+    final last = _calendar;
+    final now = DateTime.now();
+    // A new day always syncs, so yesterday's last changes aren't held back.
+    if (last != null &&
+        last.uid == FirebaseAuth.instance.currentUser?.uid &&
+        localDayKey(last.fetchedAt) == localDayKey(now) &&
+        now.difference(last.fetchedAt) < _openInterval) {
+      return;
+    }
+    await sync(days: 2);
+  }
+
+  /// A priority changed: syncs today 2 seconds later, so quick ticks become
+  /// one write, reusing the last calendar fetch.
+  static void syncSoon() {
+    _soon?.cancel();
+    _soon = Timer(
+      const Duration(seconds: 2),
+      () => unawaited(sync(reuseCalendar: true)),
+    );
+  }
 
   /// Records the [days] days ending today. [forceRefresh] bypasses the
-  /// calendar cache, after the schedule was just edited.
-  static Future<void> sync({int days = 1, bool forceRefresh = false}) async {
+  /// calendar cache, after the schedule was just edited; [reuseCalendar]
+  /// uses the last fetch when it covers those days.
+  static Future<void> sync({
+    int days = 1,
+    bool forceRefresh = false,
+    bool reuseCalendar = false,
+  }) async {
     try {
-      await _sync(days, forceRefresh);
+      await _sync(days, forceRefresh, reuseCalendar);
     } catch (error) {
       // Best effort: the next open or tick tries again.
       debugPrint('Day record sync failed: $error');
     }
   }
 
-  static Future<void> _sync(int days, bool forceRefresh) async {
+  static Future<void> _sync(
+    int days,
+    bool forceRefresh,
+    bool reuseCalendar,
+  ) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final now = DateTime.now();
@@ -128,47 +177,17 @@ class DayRecordService {
     final first = DateTime(today.year, today.month, today.day - days + 1);
     final end = DateTime(today.year, today.month, today.day + 1);
 
-    final google = await CalendarService.isSignedIn()
-        .timeout(const Duration(seconds: 5), onTimeout: () => false)
-        .catchError((_) => false);
-    final outlook = await OutlookCalendarService.isSignedIn()
-        .timeout(const Duration(seconds: 5), onTimeout: () => false)
-        .catchError((_) => false);
-    // A failed fetch throws, so a day is never recorded as falsely empty.
-    final inputs = <(CalendarCognitiveEvent, String?)>[
-      if (google)
-        for (final event in await CalendarService.getEventsBetween(
-          first,
-          end,
-          forceRefresh: forceRefresh,
-        ).timeout(const Duration(seconds: 8)))
-          if (_fromGoogle(event) case final input?)
-            (input, 'google:${event.id}'),
-      if (outlook)
-        for (final event in await OutlookCalendarService.getEventsBetween(
-          first,
-          end,
-          forceRefresh: forceRefresh,
-        ).timeout(const Duration(seconds: 8)))
-          (
-            CalendarCognitiveEvent(
-              id: 'outlook:${event.id}',
-              title: event.subject,
-              start: event.start.toLocal(),
-              end: event.end.toLocal(),
-              isAllDay: event.isAllDay,
-            ),
-            null,
-          ),
-    ];
-    // Claude sorts what the local rules can't, with the user's AI consent.
-    final scores = await CalendarCognitiveLoadService.scoreEvents([
-      for (final (event, _) in inputs) event,
-    ], allowAi: true);
-    final events = [
-      for (var i = 0; i < inputs.length; i++)
-        (event: inputs[i].$1, score: scores[i], key: inputs[i].$2),
-    ];
+    // Always yesterday and today, so one fetch serves every kind of sync.
+    final from = DateTime(today.year, today.month, today.day - 1);
+    final cached = _calendar;
+    final calendar =
+        reuseCalendar &&
+            cached != null &&
+            cached.uid == user.uid &&
+            !cached.from.isAfter(from) &&
+            !cached.until.isBefore(end)
+        ? cached
+        : _calendar = await _fetchCalendar(user.uid, from, end, forceRefresh);
 
     final userDocument = FirebaseFirestore.instance
         .collection('users')
@@ -182,12 +201,16 @@ class DayRecordService {
       day.isBefore(end);
       day = DateTime(day.year, day.month, day.day + 1)
     ) {
-      final priorities = await DailyPriorityService.forDay(day);
+      // Server normally; the phone's copy when offline.
+      final priorities = await DailyPriorityService.forDay(
+        day,
+        source: Source.serverAndCache,
+      );
       final record = buildDayRecord(
         day: day,
         wrapUpMinutes: wrapUp is int ? wrapUp : kDefaultDayWrapUpMinutes,
-        calendarAvailable: google || outlook,
-        events: events,
+        calendarAvailable: calendar.available,
+        events: calendar.events,
         priorities: [
           for (final p in priorities)
             (
@@ -207,6 +230,64 @@ class DayRecordService {
       await target.set({...record, 'updatedAt': FieldValue.serverTimestamp()});
       _written[target.path] = record;
     }
+  }
+
+  /// Fetches and rates the connected calendars' events from [from] to
+  /// [until]. A failed fetch throws, so a day is never recorded as falsely
+  /// empty.
+  static Future<_Calendar> _fetchCalendar(
+    String uid,
+    DateTime from,
+    DateTime until,
+    bool forceRefresh,
+  ) async {
+    final google = await CalendarService.isSignedIn()
+        .timeout(const Duration(seconds: 5), onTimeout: () => false)
+        .catchError((_) => false);
+    final outlook = await OutlookCalendarService.isSignedIn()
+        .timeout(const Duration(seconds: 5), onTimeout: () => false)
+        .catchError((_) => false);
+    final inputs = <(CalendarCognitiveEvent, String?)>[
+      if (google)
+        for (final event in await CalendarService.getEventsBetween(
+          from,
+          until,
+          forceRefresh: forceRefresh,
+        ).timeout(const Duration(seconds: 8)))
+          if (_fromGoogle(event) case final input?)
+            (input, 'google:${event.id}'),
+      if (outlook)
+        for (final event in await OutlookCalendarService.getEventsBetween(
+          from,
+          until,
+          forceRefresh: forceRefresh,
+        ).timeout(const Duration(seconds: 8)))
+          (
+            CalendarCognitiveEvent(
+              id: 'outlook:${event.id}',
+              title: event.subject,
+              start: event.start.toLocal(),
+              end: event.end.toLocal(),
+              isAllDay: event.isAllDay,
+            ),
+            null,
+          ),
+    ];
+    // Claude sorts what the local rules can't, with the user's AI consent.
+    final scores = await CalendarCognitiveLoadService.scoreEvents([
+      for (final (event, _) in inputs) event,
+    ], allowAi: true);
+    return (
+      uid: uid,
+      from: from,
+      until: until,
+      fetchedAt: DateTime.now(),
+      available: google || outlook,
+      events: [
+        for (var i = 0; i < inputs.length; i++)
+          (event: inputs[i].$1, score: scores[i], key: inputs[i].$2),
+      ],
+    );
   }
 
   static CalendarCognitiveEvent? _fromGoogle(gcal.Event event) {
