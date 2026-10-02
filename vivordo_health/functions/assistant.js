@@ -21,11 +21,14 @@ const METRICS = [
   "weight", "blood_oxygen", "respiratory_rate",
 ];
 
-const INTENTS = [
+// Intents the model picks. calendar_action / priority_action are set by the
+// server from proposals, for app builds that predate reply.actions.
+const MODEL_INTENTS = [
   "answer_label", "want_deeper_answer", "digress", "digression_complete",
-  "new_stressor", "recommend", "chitchat", "skip", "calendar_action",
-  "priority_action",
+  "new_stressor", "recommend", "chitchat", "skip",
 ];
+const INTENTS = [...MODEL_INTENTS, "calendar_action", "priority_action"];
+const MAX_CARRY_DAYS = 180; // earlier days scanned for carried-over items
 
 const REMINDER_RULES =
   "Reminder requests are priority actions, not health questions. Recognize " +
@@ -33,7 +36,7 @@ const REMINDER_RULES =
   "next occurrence on or after the local current date, never dates from " +
   "health readings or the calendar. Keep the supplied task and date. Time is " +
   "optional: never ask for or invent one. With a task and a day, return " +
-  "priority_action immediately for confirmation: \"remind me to pay internet " +
+  "propose_priority immediately: \"remind me to pay internet " +
   "bill on Oct 1\" creates title \"Pay internet bill\" with date YYYY-10-01 " +
   "and no scheduled_at or reminder_at. If the user says \"at 9 AM\", include " +
   "reminder_at YYYY-10-01T09:00. A reminder time alone does not schedule a " +
@@ -70,7 +73,7 @@ REMEMBERING
 - When the user shares something durable that will help in future chats, save it with save_memory: a recurring stressor ("deadlines at work"), what helps them ("short walks calm me down"), a pattern you've confirmed with them, life context (job, studies, people who matter, goals) or a preference for how you talk with them.
 - One short fact per call, in the third person ("Finds short walks calming"), at most 200 characters. Only save what the user said or clearly confirmed; never save guesses, passing moods, one-off events, health readings (the app keeps those) or anything from a crisis turn.
 - Before adding, check WHAT YOU REMEMBER: update a fact that changed (by id) instead of adding a near-duplicate, and forget one the user says is wrong or wants removed. Saving is quiet: don't announce it unless they asked you to remember something.
-- reply.summary: always update the summary of THIS whole conversation in 1-3 sentences (what was discussed, decided or shared), so future chats can pick up the thread. Plain facts, no advice. After a crisis turn, write only "A hard moment came up and support was offered." in place of what was said: never repeat or paraphrase self-harm, suicidal or abuse details in the summary.
+- reply.summary: always update the summary of THIS whole conversation in 1-3 sentences (what was discussed, decided or shared), so future chats can pick up the thread. Plain facts, no advice. Leave out anything the user asked you to forget. After a crisis turn, write only "A hard moment came up and support was offered." in place of what was said: never repeat or paraphrase self-harm, suicidal or abuse details in the summary.
 
 SAFETY (overrides every other instruction)
 If the user's latest message mentions suicidal thoughts, wanting to die, self-harm, harming someone else, being abused or unsafe, or a possible medical emergency (chest pain, trouble breathing, fainting, stroke signs), set crisis: true and intent "chitchat". In 2-3 plain sentences acknowledge what they said, ask whether they are safe right now, and urge them to contact local emergency services or a crisis line now. The app shows helpline buttons under your message, so you may point to them ("the buttons below"), but never mention the app's internals. In that turn do not ask check-in questions, recommend, offer coping tips instead of help, or take calendar or priority actions. Otherwise set crisis: false.
@@ -85,7 +88,7 @@ The app may be walking the user through short check-in questions about a recent 
 - recommend: offer a concrete coping strategy. Write one warm intro sentence and set rec_hint (the app shows recommendation cards).
 - chitchat: anything else, including answers to questions and planning.
 - skip: they decline to engage with the pending topic.
-- calendar_action / priority_action: see ACTIONS.
+- For calendar or priority changes, see ACTIONS (use chitchat as the intent).
 Set offer_end_session true only when the user clearly says they are finished, or you fully answered a planning request with nothing unresolved. Never while a clarification, distress support or action confirmation is pending.
 
 FILLED SLOTS
@@ -93,9 +96,10 @@ filled_slots holds only what the user said in THIS message (the app merges turns
 
 REC_HINT keywords (comma-separated): breathing, grounding, movement, sleep, social, reframe, boundary, schedule, nutrition, nature, journaling, music.
 
-ACTIONS (the app always asks the user to confirm; never claim a change is done)
-- Calendar: intent calendar_action with calendar_action {operation create|update|delete, title (new title), target_title (existing event), start, end (local ISO-8601 date-times), recurrence}. Resolve relative dates from the local current date and SCHEDULE. Never guess a missing title, date or time; ask instead (intent chitchat).
-- Priorities, tasks and reminders: intent priority_action, never calendar_action. "Remind me" and "set a reminder" create a priority. priority_action {operation create|update|delete, title, target_title, target_date (ORIGINAL day of an existing priority), date (NEW day), scheduled_at, reminder_at (local YYYY-MM-DDTHH:mm, no offset)}. Omit unchanged or unused fields. Create needs a title; update and delete need the exact target_title. Undated priorities may omit date. Only single occurrences: ask before touching a recurring series. Reminders must fall on the priority's day, at or before its scheduled time. Finish a reminder or priority request before returning to check-in questions.
+ACTIONS (the app asks the user to confirm each one; never claim a change is done)
+- Priorities, tasks and reminders: look them up with get_priorities (any date range; the result gives each one's id), then call propose_priority. "Remind me" and "set a reminder" create a priority, never a calendar event. create needs a title; update and delete need the target_id from get_priorities (fetch first; never guess). date is the NEW day; scheduled_at and reminder_at are local YYYY-MM-DDTHH:mm with no offset; omit fields that don't change. Undated priorities may omit date. Only single occurrences: ask before touching a recurring series. Reminders must fall on the priority's day, at or before its scheduled time, and in the future.
+- Calendar: propose_calendar_change {operation create|update|delete, title (new title), target_title (the existing event's exact title from SCHEDULE), start, end (local YYYY-MM-DDTHH:mm), recurrence}. Resolve relative dates from the local current date and SCHEDULE. Never guess a missing title, date or time; ask instead.
+- If a proposal comes back "Not proposed", fix it or ask the user; don't tell them it's done. You may propose several changes in one turn. Finish a reminder or priority request before returning to check-in questions.
 - ${REMINDER_RULES}`;
 
 const WORKOUT_COACH_PROMPT = `This conversation was opened from a saved workout summary (WORKOUT in CONTEXT). Act as a supportive, practical fitness coach: ground observations in its recorded sets, reps, weights, duration and previous-performance comparisons, and clearly separate recorded facts from suggestions. For progression or next-session advice, ask about goals, experience, perceived effort or discomfort when needed. Don't assume every workout needs more weight or volume. Don't infer technique, fatigue, recovery, injury or medical causes from numbers alone, and never encourage training through pain. weightLbs is pounds and distanceKm is kilometres. If the user changes topic, follow them.`;
@@ -141,6 +145,58 @@ const TOOLS = [
     },
   },
   {
+    name: "get_priorities",
+    description:
+      "The user's Vivordo priorities (tasks and reminders) for a date range " +
+      "(at most 92 days), as My Day shows them: open ones carried over " +
+      "from earlier days included. Each line starts with the id that " +
+      "propose_priority needs.",
+    input_schema: {
+      type: "object",
+      properties: {start_date: DATE, end_date: DATE},
+      required: ["start_date", "end_date"],
+    },
+  },
+  {
+    name: "propose_priority",
+    description:
+      "Propose creating, changing or deleting one priority. The server " +
+      "checks it and the app asks the user to confirm.",
+    input_schema: {
+      type: "object",
+      properties: {
+        operation: {type: "string", enum: ["create", "update", "delete"]},
+        target_id: {type: "string", description: "id from get_priorities"},
+        title: {type: "string", description: "New title"},
+        date: {...DATE, description: "New day, YYYY-MM-DD"},
+        scheduled_at: {type: "string", description: "YYYY-MM-DDTHH:mm"},
+        reminder_at: {type: "string", description: "YYYY-MM-DDTHH:mm"},
+      },
+      required: ["operation"],
+    },
+  },
+  {
+    name: "propose_calendar_change",
+    description:
+      "Propose creating, changing or deleting one calendar event. The " +
+      "server checks it and the app asks the user to confirm.",
+    input_schema: {
+      type: "object",
+      properties: {
+        operation: {type: "string", enum: ["create", "update", "delete"]},
+        title: {type: "string", description: "New title"},
+        target_title: {
+          type: "string",
+          description: "The existing event's exact title from SCHEDULE",
+        },
+        start: {type: "string", description: "YYYY-MM-DDTHH:mm"},
+        end: {type: "string", description: "YYYY-MM-DDTHH:mm"},
+        recurrence: {type: "string"},
+      },
+      required: ["operation"],
+    },
+  },
+  {
     name: "save_memory",
     description:
       "Remember, correct or forget one durable fact about the user for " +
@@ -181,7 +237,7 @@ const TOOLS = [
           type: "string",
           description: "This whole conversation so far in 1-3 sentences.",
         },
-        intent: {type: "string", enum: INTENTS},
+        intent: {type: "string", enum: MODEL_INTENTS},
         crisis: {type: "boolean"},
         offer_end_session: {type: "boolean"},
         depth_follow_up: {type: "string"},
@@ -198,29 +254,6 @@ const TOOLS = [
           additionalProperties: {type: "string"},
         },
         rec_hint: {type: "string"},
-        calendar_action: {
-          type: "object",
-          properties: {
-            operation: {type: "string", enum: ["create", "update", "delete"]},
-            title: {type: "string"},
-            target_title: {type: "string"},
-            start: {type: "string"},
-            end: {type: "string"},
-            recurrence: {type: "string"},
-          },
-        },
-        priority_action: {
-          type: "object",
-          properties: {
-            operation: {type: "string", enum: ["create", "update", "delete"]},
-            title: {type: "string"},
-            target_title: {type: "string"},
-            target_date: {type: "string"},
-            date: {type: "string"},
-            scheduled_at: {type: "string"},
-            reminder_at: {type: "string"},
-          },
-        },
       },
       required: ["message", "intent", "crisis", "summary"],
     },
@@ -561,6 +594,8 @@ async function runTool(db, uid, block, request) {
       await getMetrics(db, uid, block.input) :
       block.name === "get_scores" ?
       await getScores(db, uid, block.input) :
+      block.name === "get_priorities" ?
+      await getPriorities(db, uid, block.input, request.utcOffsetMinutes) :
       block.name === "get_workouts" ?
       await getWorkouts(db, uid, block.input, request.utcOffsetMinutes) :
       null;
@@ -574,6 +609,281 @@ async function runTool(db, uid, block, request) {
     return {type: "tool_result", tool_use_id: block.id, is_error: true,
       content: "That data could not be loaded right now."};
   }
+}
+
+/**
+ * Whether My Day shows a priority stored on [stored] when viewing [day]
+ * (DailyPriorityService.visibleOnDay): open untimed manual ones carry over.
+ *
+ * @param {Object} p priority data
+ * @param {string} stored day the priority is stored under
+ * @param {string} day day being viewed
+ * @return {boolean}
+ */
+function visibleOnDay(p, stored, day) {
+  if (p.dismissed !== true && p.planning?.plannedDay === day) return true;
+  if (p.dismissed === true || stored > day) return false;
+  if (stored === day) return true;
+  return p.source === "manual" && p.sourceStart == null &&
+    (p.completed !== true || p.completedDay === day);
+}
+
+/**
+ * A Firestore timestamp as the user's local "YYYY-MM-DD HH:mm".
+ *
+ * @param {*} value Timestamp
+ * @param {number} offsetMinutes user's UTC offset
+ * @return {string|null}
+ */
+function localTime(value, offsetMinutes) {
+  const date = value?.toDate?.();
+  if (!date) return null;
+  return new Date(date.getTime() + offsetMinutes * 60000).toISOString()
+      .slice(0, 16).replace("T", " ");
+}
+
+/**
+ * One priority as a line for the model.
+ *
+ * @param {string} stored day it is stored under
+ * @param {string} id document id
+ * @param {Object} p priority data
+ * @param {string} rangeStart first day asked about
+ * @param {number} offset user's UTC offset
+ * @return {string}
+ */
+function priorityLine(stored, id, p, rangeStart, offset) {
+  const title = String(p.title ?? "Untitled").trim().slice(0, 200);
+  const notes = [p.completed === true ?
+    `done${p.completedDay ? ` ${p.completedDay}` : ""}` : "open"];
+  const start = localTime(p.sourceStart, offset);
+  notes.push(p.isAllDay === true ? `${stored} all day` :
+    start ? `scheduled ${start}` : `${stored}, no time`);
+  if (p.completed !== true && stored < rangeStart && !start) {
+    notes.push(`carried over from ${stored}`);
+  }
+  if (p.planning?.plannedDay) {
+    notes.push(`planned for ${p.planning.plannedDay}`);
+  }
+  if (p.planning?.effort) notes.push(`effort ${p.planning.effort}`);
+  if (typeof p.planning?.minutes === "number") {
+    notes.push(`~${p.planning.minutes} min` +
+      (p.planning.estimated ? " (estimated)" : ""));
+  }
+  if (typeof p.reminderTimeMinutes === "number") {
+    const m = p.reminderTimeMinutes;
+    notes.push(`reminder ${String(Math.floor(m / 60)).padStart(2, "0")}:` +
+      String(m % 60).padStart(2, "0"));
+  }
+  if (p.templateId) notes.push("repeats");
+  if (p.sourceEventKey || p.source === "calendar") notes.push("from calendar");
+  return `id=${stored}/${id} | ${title} | ${notes.join(", ")}`;
+}
+
+/**
+ * get_priorities: what My Day shows for each day in a range, deduplicated.
+ *
+ * @param {Object} db Firestore
+ * @param {string} uid user id
+ * @param {Object} input tool input
+ * @param {number} offset user's UTC offset
+ * @return {Promise<string>}
+ */
+async function getPriorities(db, uid, input, offset) {
+  const days = dayRange(input?.start_date, input?.end_date);
+  if (!days) {
+    return "Invalid range: dates must be YYYY-MM-DD, start <= end, at most " +
+      `${MAX_METRIC_DAYS} days.`;
+  }
+  const first = days[0];
+  const last = days.at(-1);
+  const user = db.collection("users").doc(uid);
+  const data = (await user.get()).data() ?? {};
+  const validDay = (d) => typeof d === "string" && DAY_RE.test(d);
+  const planned = Object.entries(data.priorityPlanSources ?? {})
+      .filter(([day]) => day >= first && day <= last)
+      .flatMap(([, sources]) => Array.isArray(sources) ? sources : [])
+      .filter(validDay);
+  // ponytail: carry-overs only from the last 180 priority days, and only
+  // open ones (a carried-over item ticked off in range isn't listed).
+  const earlier = (Array.isArray(data.priorityReminderDays) ?
+    data.priorityReminderDays : [])
+      .filter((d) => validDay(d) && d < first).sort().slice(-MAX_CARRY_DAYS);
+  const keys = [...new Set([...days, ...planned, ...earlier])];
+  const items = (key) => user.collection("daily_priorities").doc(key)
+      .collection("items");
+  const snapshots = await Promise.all(keys.map((key) => key < first ?
+    items(key).where("completed", "==", false).get() : items(key).get()));
+  const lines = [];
+  snapshots.forEach((snapshot, i) => {
+    for (const doc of snapshot.docs) {
+      const p = doc.data();
+      if (days.some((day) => visibleOnDay(p, keys[i], day))) {
+        lines.push(priorityLine(keys[i], doc.id, p, first, offset));
+      }
+    }
+  });
+  return lines.length ? lines.sort().join("\n") :
+    `No priorities between ${first} and ${last}.`;
+}
+
+const TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+/**
+ * Whether a YYYY-MM-DD string is a real calendar date.
+ *
+ * @param {string} value
+ * @return {boolean}
+ */
+function realDay(value) {
+  if (!DAY_RE.test(value ?? "")) return false;
+  const parsed = Date.parse(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed) &&
+    new Date(parsed).toISOString().slice(0, 10) === value;
+}
+
+/**
+ * Whether a local YYYY-MM-DDTHH:mm string is a real date and time.
+ *
+ * @param {string} value
+ * @return {boolean}
+ */
+function realTime(value) {
+  return TIME_RE.test(value ?? "") && realDay(value.slice(0, 10)) &&
+    Number(value.slice(11, 13)) < 24 && Number(value.slice(14, 16)) < 60;
+}
+
+/**
+ * Checks a propose_priority call against the user's data and the same rules
+ * the app applies (PandaPriorityAction, _handlePriorityAction), so mistakes
+ * come back to the model in the same turn.
+ *
+ * @param {Object} db Firestore
+ * @param {string} uid user id
+ * @param {Object} input tool input
+ * @param {Object} request validated request
+ * @return {Promise<Object>} {action (absent when rejected), result}
+ */
+async function planPriority(db, uid, input, request) {
+  const no = (why) => ({result: `Not proposed: ${why}`});
+  const op = input?.operation;
+  if (!["create", "update", "delete"].includes(op)) {
+    return no("operation must be create, update or delete.");
+  }
+  const title = typeof input.title === "string" ? input.title.trim() : null;
+  if (title !== null && (!title || title.length > 300)) {
+    return no("title must be 1-300 characters.");
+  }
+  if (input.date != null && !realDay(input.date)) {
+    return no("date must be a real YYYY-MM-DD day.");
+  }
+  for (const key of ["scheduled_at", "reminder_at"]) {
+    if (input[key] != null && !realTime(input[key])) {
+      return no(`${key} must be a local YYYY-MM-DDTHH:mm time.`);
+    }
+  }
+  const {date, scheduled_at: scheduled, reminder_at: reminder} = input;
+  const day = date ?? scheduled?.slice(0, 10) ?? reminder?.slice(0, 10);
+  if ([scheduled, reminder].some((t) => t && t.slice(0, 10) !== day)) {
+    return no("the priority and its times must be on the same day.");
+  }
+  if (scheduled && reminder && reminder > scheduled) {
+    return no("the reminder must be at or before the scheduled time.");
+  }
+  if (reminder && reminder <= request.now.slice(0, 16)) {
+    return no("the reminder time has already passed.");
+  }
+  const fields = {
+    ...(title && {title}), ...(date && {date}),
+    ...(scheduled && {scheduled_at: scheduled}),
+    ...(reminder && {reminder_at: reminder}),
+  };
+  if (op === "create") {
+    if (!title) return no("a new priority needs a title.");
+    return {action: {type: "priority", operation: op, ...fields},
+      result: `Proposed: add "${title}"${day ? ` on ${day}` : ""}. ` +
+        "The app will ask the user to confirm."};
+  }
+  const match = /^(\d{4}-\d{2}-\d{2})\/([A-Za-z0-9_-]{1,100})$/
+      .exec(input.target_id ?? "");
+  if (!match) return no("target_id is required: call get_priorities first.");
+  const [, storedDay, id] = match;
+  const items = db.collection("users").doc(uid).collection("daily_priorities")
+      .doc(storedDay).collection("items");
+  const doc = await items.doc(id).get();
+  const p = doc.data();
+  if (!doc.exists || p?.dismissed === true) {
+    return no("no priority with that id; call get_priorities again.");
+  }
+  if (op === "update" && p.sourceEventKey) {
+    return no("it's linked to a calendar event; the user can edit it in " +
+      "My Day so the event stays in sync.");
+  }
+  if (op === "update" && !Object.keys(fields).length) {
+    return no("nothing to change.");
+  }
+  // The app finds the priority by its exact title on its stored day.
+  const sameTitle = (await items.where("title", "==", p.title).get()).docs
+      .filter((d) => d.data().dismissed !== true);
+  if (sameTitle.length > 1) {
+    return no(`two priorities on ${storedDay} are called "${p.title}"; ` +
+      "ask the user to rename one in My Day first.");
+  }
+  return {
+    action: {type: "priority", operation: op, target_title: p.title,
+      target_date: storedDay, ...fields},
+    result: `Proposed: ${op} "${p.title}" (${storedDay}). The app will ask ` +
+      "the user to confirm.",
+  };
+}
+
+/**
+ * Checks a propose_calendar_change call. The calendar lives on the phone, so
+ * an existing event is checked against the SCHEDULE the app sent.
+ *
+ * @param {Object} input tool input
+ * @param {Object} request validated request
+ * @return {Object} {action (absent when rejected), result}
+ */
+function planCalendar(input, request) {
+  const no = (why) => ({result: `Not proposed: ${why}`});
+  const op = input?.operation;
+  if (!["create", "update", "delete"].includes(op)) {
+    return no("operation must be create, update or delete.");
+  }
+  const text = (v) => typeof v === "string" && v.trim() ?
+    v.trim().slice(0, 300) : null;
+  const title = text(input.title);
+  const target = text(input.target_title);
+  const recurrence = text(input.recurrence);
+  for (const key of ["start", "end"]) {
+    if (input[key] != null && !realTime(input[key])) {
+      return no(`${key} must be a local YYYY-MM-DDTHH:mm time.`);
+    }
+  }
+  const {start, end} = input;
+  if (start && end && end <= start) return no("end must be after start.");
+  const fields = {...(title && {title}), ...(start && {start}),
+    ...(end && {end}), ...(recurrence && {recurrence})};
+  if (op === "create") {
+    if (!title || !start || !end) {
+      return no("a new event needs a title, start and end.");
+    }
+    return {action: {type: "calendar", operation: op, ...fields},
+      result: `Proposed: add "${title}" at ${start}. The app will ask the ` +
+        "user to confirm."};
+  }
+  const schedule = request.context.schedule;
+  if (!schedule) return no("the user's calendar isn't connected.");
+  if (!target || !schedule.toLowerCase().includes(target.toLowerCase())) {
+    return no("no event with that title in SCHEDULE; use its exact title.");
+  }
+  if (op === "update" && !Object.keys(fields).length) {
+    return no("nothing to change.");
+  }
+  return {action: {type: "calendar", operation: op, target_title: target,
+    ...fields}, result: `Proposed: ${op} "${target}". The app will ask ` +
+      "the user to confirm."};
 }
 
 /**
@@ -597,7 +907,8 @@ async function loadMemory(db, uid, conversationId, offsetMinutes) {
   const facts = factsSnap.docs
       .map((doc) => ({id: doc.id, ...doc.data()}))
       .filter((f) => typeof f.text === "string" && f.text.trim())
-      .map((f) => ({id: f.id, kind: f.kind ?? "context", text: f.text}));
+      .map((f) => ({id: f.id, kind: f.kind ?? "context", text: f.text,
+        conversationId: f.conversationId ?? null}));
   let current = null;
   const conversations = [];
   for (const doc of chatsSnap.docs) {
@@ -649,7 +960,11 @@ function planMemoryChange(input, state) {
         "REMEMBER."};
     }
     if (action === "forget") {
-      return {op: {action, id: input.id}, result: "Forgotten."};
+      // The summary of the chat it came from is forgotten too (saveMemory),
+      // or the fact would come back through RECENT CONVERSATIONS.
+      const from = state.facts.find((f) => f.id === input.id)?.conversationId;
+      return {op: {action, id: input.id, ...(from && {conversationId: from})},
+        result: "Forgotten."};
     }
     if (!text || text.length > MAX_FACT_CHARS) {
       return {result: TEXT_LIMIT};
@@ -691,6 +1006,10 @@ async function saveMemory(db, uid, request, ops, reply, now, previous) {
       }, {merge: true});
     } else {
       batch.delete(user.collection("memory").doc(op.id));
+      // The current chat's summary is rewritten below without it instead.
+      if (op.conversationId && op.conversationId !== request.conversationId) {
+        batch.delete(user.collection("conversations").doc(op.conversationId));
+      }
     }
   }
   // A crisis turn keeps the earlier summary and adds a fixed note, so what was
@@ -743,7 +1062,45 @@ async function runAssistant({client, db, uid, request, now}) {
   const messages = buildMessages(request, memory);
   const usage = [];
   const memoryState = {facts: memory.facts, pending: []};
+  const actions = [];
+  // save_memory and the propose_* tools change nothing yet: they are checked
+  // now and applied after the reply (memory) or confirmed in the app.
+  const deferred = {
+    save_memory: async (input) => {
+      const {op, result} = planMemoryChange(input, memoryState);
+      if (op) memoryState.pending.push(op);
+      return result;
+    },
+    propose_priority: async (input) => {
+      const {action, result} = await planPriority(db, uid, input, request);
+      if (action) actions.push(action);
+      return result;
+    },
+    propose_calendar_change: async (input) => {
+      const {action, result} = planCalendar(input, request);
+      if (action) actions.push(action);
+      return result;
+    },
+  };
+  const runDeferred = async (block) => {
+    try {
+      return await deferred[block.name](block.input);
+    } catch (error) {
+      console.error(`[assistant] ${block.name} failed`, error);
+      return "Not proposed: that couldn't be checked right now.";
+    }
+  };
   const finish = async (reply) => {
+    // A crisis turn takes no actions, whatever the model proposed.
+    const proposed = reply.crisis ? [] : actions;
+    if (proposed.length) {
+      reply.actions = proposed;
+      // Older app builds read one action from these fields.
+      const first = proposed[0];
+      const {type, ...legacy} = first;
+      reply.intent = `${type}_action`;
+      reply[`${type}_action`] = legacy;
+    }
     try {
       await saveMemory(db, uid, request, memoryState.pending, reply, now,
           memory.current);
@@ -776,11 +1133,9 @@ async function runAssistant({client, db, uid, request, now}) {
     const toolUses = response.content.filter((b) => b.type === "tool_use");
     const reply = toolUses.find((b) => b.name === "reply");
     if (reply) {
-      // Memory saved in the same response as the reply still counts.
+      // Memory and proposals made in the same response as the reply count.
       for (const block of toolUses) {
-        if (block.name !== "save_memory") continue;
-        const {op} = planMemoryChange(block.input, memoryState);
-        if (op) memoryState.pending.push(op);
+        if (deferred[block.name]) await runDeferred(block);
       }
       return finish(cleanReply(reply.input));
     }
@@ -792,12 +1147,17 @@ async function runAssistant({client, db, uid, request, now}) {
     }
 
     messages.push({role: "assistant", content: response.content});
-    const results = await Promise.all(toolUses.map((block) => {
-      if (block.name !== "save_memory") return runTool(db, uid, block, request);
-      const {op, result} = planMemoryChange(block.input, memoryState);
-      if (op) memoryState.pending.push(op);
-      return {type: "tool_result", tool_use_id: block.id, content: result};
-    }));
+    // Data lookups run in parallel; proposals and memory changes run in the
+    // model's order, so the app shows the actions in the order proposed.
+    const lookups = toolUses.map((block) => deferred[block.name] ? null :
+      runTool(db, uid, block, request));
+    const results = [];
+    for (const [i, block] of toolUses.entries()) {
+      results.push(deferred[block.name] ?
+        {type: "tool_result", tool_use_id: block.id,
+          content: await runDeferred(block)} :
+        await lookups[i]);
+    }
     if (call === MAX_ROUNDS - 2) {
       results.push({type: "text",
         text: "Enough data gathered: answer now with the reply tool."});
@@ -820,6 +1180,10 @@ module.exports = {
   getWorkouts,
   loadMemory,
   planMemoryChange,
+  getPriorities,
+  planPriority,
+  planCalendar,
+  visibleOnDay,
   saveMemory,
   SYSTEM_PROMPT,
   TOOLS,

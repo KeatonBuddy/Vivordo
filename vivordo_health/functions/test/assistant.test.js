@@ -4,18 +4,30 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   runAssistant, validateAssistantRequest, buildMessages, metricValue, dayRange,
-  scoreLine, getScores, planMemoryChange, SYSTEM_PROMPT, TOOLS,
+  scoreLine, getScores, planMemoryChange, getPriorities, planPriority,
+  planCalendar, visibleOnDay, SYSTEM_PROMPT, TOOLS,
 } = require("../assistant");
 
 const base = {message: "How did I sleep?", today: "2026-10-01", now: "2026-10-01T09:30:00", utcOffsetMinutes: -360};
 
 // Minimal Firestore stand-in: users/{uid}/metrics_daily/{day} and workouts.
-function fakeDb({days = {}, scores = {}, workouts = [], memory = [], conversations = []} = {}) {
+function fakeDb({days = {}, scores = {}, workouts = [], memory = [], conversations = [], docs = {}} = {}) {
   const writes = [];
   let nextId = 0;
   const lists = {workouts, memory, conversations};
-  const docRef = (path) => ({path, id: path.split("/").pop(), collection: (name) => collectionRef(`${path}/${name}`)});
+  const snap = (path) => ({id: path.split("/").pop(), exists: path in docs, data: () => docs[path]});
+  const docRef = (path) => ({path, id: path.split("/").pop(), collection: (name) => collectionRef(`${path}/${name}`),
+    get: async () => snap(path)});
+  const query = (path, filters) => ({
+    where: (field, op, value) => query(path, [...filters, (d) => d[field] === value]),
+    get: async () => {
+      const found = Object.keys(docs).filter((p) => p.startsWith(`${path}/`) && !p.slice(path.length + 1).includes("/"))
+          .filter((p) => filters.every((f) => f(docs[p]))).map(snap);
+      return {empty: found.length === 0, docs: found};
+    },
+  });
   const collectionRef = (path) => ({
+    ...query(path, []),
     doc: (id) => docRef(`${path}/${id ?? `new${nextId++}`}`),
     orderBy: () => ({limit: (n) => ({get: async () => {
       const list = lists[path.split("/").pop()] ?? [];
@@ -288,4 +300,145 @@ test("conversation ids are validated", () => {
   assert.equal(validateAssistantRequest({...base, conversationId: "2026-10-01T20:15:03.123456"}).conversationId, "2026-10-01T20:15:03.123456");
   assert.equal(validateAssistantRequest({...base, conversationId: "a/b"}).conversationId, null);
   assert.equal(validateAssistantRequest({...base, conversationId: "x".repeat(65)}).conversationId, null);
+});
+
+const items = (day) => `users/u/daily_priorities/${day}/items`;
+
+test("visibleOnDay matches My Day: open untimed manual priorities carry over", () => {
+  const manual = {source: "manual", completed: false};
+  assert.equal(visibleOnDay(manual, "2026-09-24", "2026-10-01"), true);
+  assert.equal(visibleOnDay({...manual, completed: true, completedDay: "2026-09-30"}, "2026-09-24", "2026-10-01"), false);
+  assert.equal(visibleOnDay({...manual, completed: true, completedDay: "2026-10-01"}, "2026-09-24", "2026-10-01"), true);
+  assert.equal(visibleOnDay({...manual, sourceStart: {}}, "2026-09-24", "2026-10-01"), false, "timed ones stay on their day");
+  assert.equal(visibleOnDay({source: "calendar"}, "2026-09-24", "2026-10-01"), false);
+  assert.equal(visibleOnDay(manual, "2026-10-03", "2026-10-01"), false, "future ones aren't shown early");
+  assert.equal(visibleOnDay({...manual, planning: {plannedDay: "2026-10-01"}}, "2026-10-03", "2026-10-01"), true);
+  assert.equal(visibleOnDay({...manual, dismissed: true}, "2026-10-01", "2026-10-01"), false);
+});
+
+test("get_priorities lists the range plus open carry-overs, with ids", async () => {
+  const db = fakeDb({docs: {
+    "users/u": {priorityReminderDays: ["2026-09-24", "2026-10-03", "2026-08-01"]},
+    [`${items("2026-09-24")}/deck`]: {title: "Finalize pitch deck", source: "manual", completed: false, planning: {minutes: 30, effort: "moderate", estimated: true}},
+    [`${items("2026-08-01")}/old`]: {title: "Old done thing", source: "manual", completed: true, completedDay: "2026-08-02"},
+    [`${items("2026-10-03")}/dentist`]: {title: "Call the dentist", source: "manual", completed: false, reminderTimeMinutes: 540},
+    [`${items("2026-10-02")}/standup`]: {title: "Standup", source: "calendar", sourceEventKey: "k", isAllDay: false,
+      sourceStart: at("2026-10-02T15:00:00Z"), completed: false},
+    [`${items("2026-10-02")}/gone`]: {title: "Dismissed", source: "manual", dismissed: true},
+  }});
+  const result = await getPriorities(db, "u", {start_date: "2026-10-01", end_date: "2026-10-03"}, -360);
+  assert.equal(result, [
+    "id=2026-09-24/deck | Finalize pitch deck | open, 2026-09-24, no time, carried over from 2026-09-24, effort moderate, ~30 min (estimated)",
+    "id=2026-10-02/standup | Standup | open, scheduled 2026-10-02 09:00, from calendar",
+    "id=2026-10-03/dentist | Call the dentist | open, 2026-10-03, no time, reminder 09:00",
+  ].join("\n"));
+  assert.match(await getPriorities(db, "u", {start_date: "2026-01-01", end_date: "2026-01-02"}, 0), /^No priorities/);
+});
+
+const req = (extra = {}) => validateAssistantRequest({...base, now: "2026-10-01T21:00:00", ...extra});
+
+test("propose_priority: creates are checked like the app's PandaPriorityAction", async () => {
+  const db = fakeDb();
+  assert.deepEqual(await planPriority(db, "u", {operation: "create", title: "Call the dentist", date: "2026-10-03"}, req()),
+      {action: {type: "priority", operation: "create", title: "Call the dentist", date: "2026-10-03"},
+        result: "Proposed: add \"Call the dentist\" on 2026-10-03. The app will ask the user to confirm."});
+  const reject = async (input, pattern) =>
+    assert.match((await planPriority(db, "u", {operation: "create", title: "x", ...input}, req())).result, pattern);
+  await reject({title: ""}, /title must be/);
+  await reject({date: "2026-02-30"}, /real YYYY-MM-DD/);
+  await reject({scheduled_at: "2026-10-03 09:00"}, /scheduled_at must be/);
+  await reject({date: "2026-10-03", reminder_at: "2026-10-04T09:00"}, /same day/);
+  await reject({scheduled_at: "2026-10-03T09:00", reminder_at: "2026-10-03T10:00"}, /at or before/);
+  await reject({reminder_at: "2026-10-01T20:00"}, /already passed/);
+  assert.match((await planPriority(db, "u", {operation: "create"}, req())).result, /needs a title/);
+  assert.match((await planPriority(db, "u", {operation: "rename"}, req())).result, /must be create/);
+});
+
+test("propose_priority: updates and deletes resolve the exact stored priority", async () => {
+  const db = fakeDb({docs: {
+    [`${items("2026-09-24")}/deck`]: {title: "Finalize pitch deck", source: "manual"},
+    [`${items("2026-10-02")}/standup`]: {title: "Standup", source: "calendar", sourceEventKey: "k"},
+    [`${items("2026-10-03")}/a`]: {title: "Gym", source: "manual"},
+    [`${items("2026-10-03")}/b`]: {title: "Gym", source: "manual"},
+  }});
+  assert.deepEqual((await planPriority(db, "u", {operation: "update", target_id: "2026-09-24/deck", date: "2026-10-02"}, req())).action,
+      {type: "priority", operation: "update", target_title: "Finalize pitch deck", target_date: "2026-09-24", date: "2026-10-02"});
+  assert.deepEqual((await planPriority(db, "u", {operation: "delete", target_id: "2026-09-24/deck"}, req())).action,
+      {type: "priority", operation: "delete", target_title: "Finalize pitch deck", target_date: "2026-09-24"});
+  const reject = async (input, pattern) => assert.match((await planPriority(db, "u", input, req())).result, pattern);
+  await reject({operation: "delete"}, /call get_priorities first/);
+  await reject({operation: "delete", target_id: "2026-09-24/nope"}, /no priority with that id/);
+  await reject({operation: "delete", target_id: "../x/deck"}, /call get_priorities first/);
+  await reject({operation: "update", target_id: "2026-09-24/deck"}, /nothing to change/);
+  await reject({operation: "update", target_id: "2026-10-02/standup", title: "x"}, /linked to a calendar event/);
+  await reject({operation: "delete", target_id: "2026-10-03/a"}, /two priorities on 2026-10-03 are called "Gym"/);
+});
+
+test("propose_calendar_change checks creates and finds existing events in SCHEDULE", () => {
+  const schedule = "Fri 2026-10-02: 09:00–10:00 Investor sync; 14:00–15:00 Gym";
+  const r = req({context: {schedule}});
+  assert.deepEqual(planCalendar({operation: "create", title: "Run", start: "2026-10-02T18:00", end: "2026-10-02T18:45"}, r).action,
+      {type: "calendar", operation: "create", title: "Run", start: "2026-10-02T18:00", end: "2026-10-02T18:45"});
+  assert.match(planCalendar({operation: "create", title: "Run", start: "2026-10-02T18:00"}, r).result, /needs a title, start and end/);
+  assert.match(planCalendar({operation: "create", title: "Run", start: "2026-10-02T18:00", end: "2026-10-02T17:00"}, r).result, /end must be after/);
+  assert.deepEqual(planCalendar({operation: "update", target_title: "investor sync", start: "2026-10-02T11:00", end: "2026-10-02T12:00"}, r).action,
+      {type: "calendar", operation: "update", target_title: "investor sync", start: "2026-10-02T11:00", end: "2026-10-02T12:00"});
+  assert.match(planCalendar({operation: "delete", target_title: "Dentist"}, r).result, /no event with that title/);
+  assert.match(planCalendar({operation: "delete", target_title: "Gym"}, req()).result, /calendar isn't connected/);
+  assert.match(planCalendar({operation: "update", target_title: "Gym"}, r).result, /nothing to change/);
+});
+
+test("several proposals reach the app as actions, plus legacy fields; none on a crisis turn", async () => {
+  const db = fakeDb({docs: {[`${items("2026-09-24")}/deck`]: {title: "Finalize pitch deck", source: "manual"}}});
+  const schedule = "Fri 2026-10-02: 14:00–15:00 Gym";
+  const client = fakeClient([
+    {stop_reason: "tool_use", usage: {}, content: [
+      toolUse("p", "propose_priority", {operation: "update", target_id: "2026-09-24/deck", date: "2026-10-02"}),
+      toolUse("c", "propose_calendar_change", {operation: "update", target_title: "Gym", start: "2026-10-03T10:00", end: "2026-10-03T11:00"}),
+      toolUse("bad", "propose_priority", {operation: "delete", target_id: "2026-09-24/nope"}),
+    ]},
+    {stop_reason: "tool_use", usage: {}, content: [toolUse("r", "reply", {message: "Here's the plan.", intent: "chitchat", crisis: false, summary: "Moved things."})]},
+  ]);
+  const {reply} = await runAssistant({client, db, uid: "u", now, request: req({context: {schedule}})});
+  assert.deepEqual(reply.actions, [
+    {type: "priority", operation: "update", target_title: "Finalize pitch deck", target_date: "2026-09-24", date: "2026-10-02"},
+    {type: "calendar", operation: "update", target_title: "Gym", start: "2026-10-03T10:00", end: "2026-10-03T11:00"},
+  ]);
+  assert.equal(reply.intent, "priority_action");
+  assert.deepEqual(reply.priority_action, {operation: "update", target_title: "Finalize pitch deck", target_date: "2026-09-24", date: "2026-10-02"});
+  const results = client.requests[1].messages.at(-1).content.map((c) => c.content);
+  assert.match(results[0], /^Proposed: update "Finalize pitch deck"/);
+  assert.match(results[2], /^Not proposed: no priority with that id/);
+
+  const crisis = await runAssistant({client: fakeClient([{stop_reason: "tool_use", usage: {}, content: [
+    toolUse("p", "propose_priority", {operation: "create", title: "Something"}),
+    toolUse("r", "reply", {message: "Are you safe right now?", intent: "chitchat", crisis: true, summary: "x"}),
+  ]}]), db: fakeDb(), uid: "u", now, request: req()});
+  assert.equal(crisis.reply.actions, undefined);
+  assert.equal(crisis.reply.intent, "chitchat");
+});
+
+test("forgetting a fact also forgets the summary of the chat it came from", async () => {
+  const db = fakeDb({
+    memory: [
+      {id: "investor", data: {kind: "stressor", text: "Investor meetings are a recurring stressor", conversationId: "old-chat"}},
+      {id: "here", data: {kind: "helps", text: "Runs help", conversationId: "this-chat"}},
+      {id: "legacy", data: {kind: "context", text: "Has a dog"}},
+    ],
+    conversations: [{id: "old-chat", data: {summary: "Investor meetings stress them.", updatedAt: at("2026-10-01T20:00:00Z")}}],
+  });
+  await runAssistant({client: fakeClient([{stop_reason: "tool_use", usage: {}, content: [
+    toolUse("a", "save_memory", {action: "forget", id: "investor"}),
+    toolUse("b", "save_memory", {action: "forget", id: "here"}),
+    toolUse("c", "save_memory", {action: "forget", id: "legacy"}),
+    toolUse("r", "reply", {message: "Done.", intent: "chitchat", crisis: false, summary: "Cleared some notes."}),
+  ]}]), db, uid: "u", now, request: req({conversationId: "this-chat"})});
+  assert.deepEqual(db.writes.map((w) => `${w.op} ${w.path}`), [
+    "delete users/u/memory/investor",
+    "delete users/u/conversations/old-chat",
+    "delete users/u/memory/here",
+    "delete users/u/memory/legacy",
+    "merge users/u/conversations/this-chat",
+  ]);
+  assert.match(SYSTEM_PROMPT, /Leave out anything the user asked you to forget/);
 });

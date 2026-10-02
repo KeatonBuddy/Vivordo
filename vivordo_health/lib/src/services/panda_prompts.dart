@@ -336,7 +336,8 @@ RULES:
     );
   }
 
-  /// Fetches the Google Calendar schedule digest for the next 7 days.
+  /// Fetches the Google Calendar schedule digest: the past 3 days and the
+  /// next week.
   ///
   /// Runs OFF the session-init critical path — the calendar needs auth, an
   /// enumeration of every calendar, and a fetch per calendar, which can take
@@ -346,10 +347,11 @@ RULES:
   static Future<String?> fetchScheduleContext() async {
     try {
       final now = DateTime.now();
-      final dayStart = DateTime(now.year, now.month, now.day);
+      // The past 3 days too, so "what did I have on Monday?" works.
+      final dayStart = DateTime(now.year, now.month, now.day - 3);
       final events = await CalendarService.getEventsBetween(
         dayStart,
-        dayStart.add(const Duration(days: 8)),
+        dayStart.add(const Duration(days: _scheduleDays + 1)),
       ).timeout(const Duration(seconds: 12), onTimeout: () => <gcal.Event>[]);
       final digest = _buildScheduleDigest(events, dayStart);
       return digest.isEmpty ? null : digest;
@@ -495,8 +497,10 @@ RULES:
     return t == -1 ? iso : iso.substring(0, t);
   }
 
-  /// Builds a per-day schedule digest for the next 7 days (from [dayStart],
-  /// inclusive) in local time, e.g.:
+  static const _scheduleDays = 10; // 3 days back + today + 6 ahead
+
+  /// Builds a per-day schedule digest for [_scheduleDays] days from
+  /// [dayStart] (inclusive) in local time, e.g.:
   ///   Mon 2026-06-22: 09:00–10:00 Standup; 14:00–15:30 Project review
   ///   Tue 2026-06-23: (no events)
   /// Each day is listed so free days are explicit. Returns '' when there are
@@ -505,7 +509,7 @@ RULES:
     List<gcal.Event> events,
     DateTime dayStart,
   ) {
-    final windowEnd = dayStart.add(const Duration(days: 7));
+    final windowEnd = dayStart.add(const Duration(days: _scheduleDays));
 
     // Group timed events by local calendar day.
     final byDay = <String, List<String>>{};
@@ -536,7 +540,7 @@ RULES:
     if (!hasAny) return '';
 
     final lines = <String>[];
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < _scheduleDays; i++) {
       final day = dayStart.add(Duration(days: i));
       final key = localDayKey(day);
       final label = '${_weekdayAbbr[day.weekday - 1]} $key';
@@ -946,50 +950,20 @@ Write the continuity note now.''';
                 : null)
           : null;
 
-      PandaCalendarAction? calendarAction;
-      if (intent == PandaIntent.calendarAction &&
-          obj['calendar_action'] is Map) {
-        final rawAction = Map<String, dynamic>.from(
-          obj['calendar_action'] as Map,
-        );
-        final operation = switch (rawAction['operation']
-            ?.toString()
-            .toLowerCase()) {
-          'create' => PandaCalendarOperation.create,
-          'update' => PandaCalendarOperation.update,
-          'delete' => PandaCalendarOperation.delete,
-          _ => null,
-        };
-        DateTime? parseDate(String key) {
-          final value = rawAction[key]?.toString().trim();
-          return value == null || value.isEmpty
-              ? null
-              : DateTime.tryParse(value);
-        }
-
-        final title = rawAction['title']?.toString().trim();
-        final targetTitle = rawAction['target_title']?.toString().trim();
-        final start = parseDate('start');
-        final end = parseDate('end');
-        final valid =
-            operation != null &&
-            ((operation == PandaCalendarOperation.create &&
-                    title?.isNotEmpty == true &&
-                    start != null &&
-                    end != null) ||
-                (operation != PandaCalendarOperation.create &&
-                    targetTitle?.isNotEmpty == true));
-        if (valid) {
-          calendarAction = PandaCalendarAction(
-            operation: operation,
-            title: title,
-            targetTitle: targetTitle,
-            start: start,
-            end: end,
-            recurrence: rawAction['recurrence']?.toString().trim() ?? 'none',
-          );
-        }
-      }
+      final calendarAction =
+          intent == PandaIntent.calendarAction && obj['calendar_action'] is Map
+          ? calendarActionFrom(obj['calendar_action'] as Map)
+          : null;
+      final actions = [
+        for (final raw in (obj['actions'] as List? ?? const []))
+          if (raw is Map && raw['type'] == 'calendar')
+            (calendar: calendarActionFrom(raw), priority: null)
+          else if (raw is Map && raw['type'] == 'priority')
+            (
+              calendar: null,
+              priority: Map<String, dynamic>.from(raw)..remove('type'),
+            ),
+      ].where((a) => a.calendar != null || a.priority != null).toList();
 
       return PandaTurnReply(
         intent: intent,
@@ -1006,6 +980,7 @@ Write the continuity note now.''';
                 obj['priority_action'] is Map
             ? Map<String, dynamic>.from(obj['priority_action'] as Map)
             : null,
+        actions: actions,
       );
     } catch (_) {
       // Never present a partial action as a completed operation. Only salvage
@@ -1021,6 +996,42 @@ Write the continuity note now.''';
             : 'The response was interrupted. No changes were made—please try again.',
       );
     }
+  }
+
+  /// A calendar change from its JSON, or null when it's incomplete.
+  static PandaCalendarAction? calendarActionFrom(Map raw) {
+    final operation = switch (raw['operation']?.toString().toLowerCase()) {
+      'create' => PandaCalendarOperation.create,
+      'update' => PandaCalendarOperation.update,
+      'delete' => PandaCalendarOperation.delete,
+      _ => null,
+    };
+    DateTime? parseDate(String key) {
+      final value = raw[key]?.toString().trim();
+      return value == null || value.isEmpty ? null : DateTime.tryParse(value);
+    }
+
+    final title = raw['title']?.toString().trim();
+    final targetTitle = raw['target_title']?.toString().trim();
+    final start = parseDate('start');
+    final end = parseDate('end');
+    final valid =
+        operation != null &&
+        ((operation == PandaCalendarOperation.create &&
+                title?.isNotEmpty == true &&
+                start != null &&
+                end != null) ||
+            (operation != PandaCalendarOperation.create &&
+                targetTitle?.isNotEmpty == true));
+    if (!valid) return null;
+    return PandaCalendarAction(
+      operation: operation,
+      title: title,
+      targetTitle: targetTitle,
+      start: start,
+      end: end,
+      recurrence: raw['recurrence']?.toString().trim() ?? 'none',
+    );
   }
 
   /// Best-effort recovery of the "message" string from truncated JSON.

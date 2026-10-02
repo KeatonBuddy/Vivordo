@@ -967,6 +967,27 @@ class _PandaScreenState extends State<PandaScreen>
         );
       }
 
+      // Checked proposals from the assistant: the message, then each change
+      // to confirm, in the order proposed.
+      if (reply.actions.isNotEmpty) {
+        _pauseQuestionPathForAction(text);
+        await _pandaSay(reply.message, typingMs: 0);
+        for (final action in reply.actions) {
+          if (!mounted) return;
+          if (action.calendar case final calendar?) {
+            await _pandaSay(
+              'Confirm this calendar change:',
+              typingMs: 0,
+              kind: _TurnKind.calendarAction,
+              calendarAction: calendar,
+            );
+          } else {
+            await _handlePriorityAction(action.priority);
+          }
+        }
+        return;
+      }
+
       // _pandaTyping stays true here — _pandaSay handles the false transition
       // once the response is rendered. Clearing it early causes chips to flash.
       switch (reply.intent) {

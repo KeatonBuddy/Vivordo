@@ -113,6 +113,7 @@ class PandaTurnReply {
     this.recHint,
     this.calendarAction,
     this.priorityAction,
+    this.actions = const [],
     this.offerEndSession = false,
     this.crisis = false,
   });
@@ -142,4 +143,10 @@ class PandaTurnReply {
   /// Present only when [intent] is [PandaIntent.calendarAction].
   final PandaCalendarAction? calendarAction;
   final Map<String, dynamic>? priorityAction;
+
+  /// Every change the assistant proposed this turn, checked by the server,
+  /// in order. Each is a calendar change or a raw priority action. When
+  /// non-empty it replaces [calendarAction] / [priorityAction].
+  final List<({PandaCalendarAction? calendar, Map<String, dynamic>? priority})>
+  actions;
 }

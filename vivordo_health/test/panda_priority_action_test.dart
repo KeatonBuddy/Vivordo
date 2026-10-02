@@ -5,6 +5,60 @@ import 'package:vivordo_health/src/services/panda_prompts.dart';
 import 'package:vivordo_health/src/utils/priority_reminder.dart';
 
 void main() {
+  test('server-checked actions parse in order and pass the app checks', () {
+    final reply = PandaPrompts.parseTurnReply(
+      jsonEncode({
+        'intent': 'priority_action',
+        'message': 'Here is the plan.',
+        'priority_action': {'operation': 'delete', 'target_title': 'x'},
+        'actions': [
+          {
+            'type': 'priority',
+            'operation': 'update',
+            'target_title': 'Finalize pitch deck',
+            'target_date': '2026-09-24',
+            'date': '2026-10-02',
+          },
+          {
+            'type': 'calendar',
+            'operation': 'update',
+            'target_title': 'Gym',
+            'start': '2026-10-03T10:00',
+            'end': '2026-10-03T11:00',
+          },
+          {'type': 'calendar', 'operation': 'create'},
+          {'type': 'unknown'},
+        ],
+      }),
+    );
+    expect(reply.actions, hasLength(2));
+    final priority = PandaPriorityAction(reply.actions[0].priority!);
+    expect(priority.operation, 'update');
+    expect(priority.targetDate, DateTime(2026, 9, 24));
+    expect(priority.date, DateTime(2026, 10, 2));
+    final calendar = reply.actions[1].calendar!;
+    expect(calendar.operation, PandaCalendarOperation.update);
+    expect(calendar.targetTitle, 'Gym');
+    expect(calendar.start, DateTime(2026, 10, 3, 10));
+  });
+
+  test('replies without actions keep the single legacy action', () {
+    final reply = PandaPrompts.parseTurnReply(
+      jsonEncode({
+        'intent': 'calendar_action',
+        'message': 'Confirm?',
+        'calendar_action': {
+          'operation': 'create',
+          'title': 'Run',
+          'start': '2026-10-02T18:00',
+          'end': '2026-10-02T18:45',
+        },
+      }),
+    );
+    expect(reply.actions, isEmpty);
+    expect(reply.calendarAction?.title, 'Run');
+  });
+
   test('October bill reminder accepts a date with an optional time', () {
     for (final time in [null, '2026-10-01T09:00']) {
       final reply = PandaPrompts.parseTurnReply(
