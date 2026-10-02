@@ -131,13 +131,15 @@ class AuthService {
       }
 
       if (userCredential.additionalUserInfo?.isNewUser ?? false) {
+        // New accounts are asked for Calendar in onboarding, with context.
         await UserService.createUser(user);
+      } else {
+        // Google identity authentication does not automatically grant access
+        // to Google Calendar. Request it before navigating to the home screen
+        // so the first calendar load does not race the authentication event
+        // stream.
+        await CalendarService.authorizeCalendarAccess();
       }
-
-      // Google identity authentication does not automatically grant access to
-      // Google Calendar. Request it before navigating to the home screen so
-      // the first calendar load does not race the authentication event stream.
-      await CalendarService.authorizeCalendarAccess();
       return true;
     } on GoogleSignInException catch (e) {
       // Don't show an error toast for a plain cancel — that's not a failure.

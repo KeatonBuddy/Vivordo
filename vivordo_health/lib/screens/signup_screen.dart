@@ -1,14 +1,14 @@
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:vivordo_health/src/services/user_service.dart';
-import 'package:vivordo_health/src/utils/day_wrap_up.dart';
-import 'package:vivordo_health/widgets/birth_year_picker.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
-import 'email_verification_screen.dart';
-import 'welcome_beta_screen.dart';
 
+import 'onboarding_flow_screen.dart' show onboardingLight;
+
+/// Creating an account: email first, then Apple or Google. Everything after
+/// sign-in (email verification, then onboarding) is AuthGate's, so this
+/// screen only returns to it.
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
 
@@ -39,1169 +39,343 @@ final List<_PasswordRequirement> _passwordRequirements = [
   ),
 ];
 
+const _purple = VivordoTheme.brand;
+const _ink = Color(0xFF1C1C1E);
+const _grey = Color(0xFF8E8E93);
+const _line = Color(0xFFE5E5EA);
+
 class _SignupScreenState extends State<SignupScreen> {
-  final PageController _pageController = PageController();
   final _formKey = GlobalKey<FormState>();
-
-  int _currentPage = 0;
-  final int _totalQuestions = 11;
-  bool _isLoading = false; // prevents double-tap triggering emailSignup twice
-
-  static const accentPurple = VivordoTheme.brand;
-  static const bgColor = Color(0xFFF2F2F7);
-  static const textDark = Color(0xFF1C1C1E);
-  static const textGrey = Color(0xFF8E8E93);
-
-  // Centralized data map for future database integration
-  // q10 (when the day's main work wraps up) starts at 5 PM, so it is
-  // answered without touching the picker.
-  final Map<String, dynamic> _userData = {
-    'responses': <String, dynamic>{'q10': kDefaultDayWrapUpMinutes},
-  };
-
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passController = TextEditingController();
-  final TextEditingController _confirmPassController = TextEditingController();
-
-  // For show/hide password
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
   bool _showPassword = false;
-  bool _showConfirmPassword = false;
-
-  // Single consolidated spot for every password-related alert (weak
-  // password, mismatch, Firebase's weak-password error) — replaces the old
-  // mix of a bottom SnackBar and inline form-field errorText so the user
-  // only ever has to look in one place, right below the password boxes.
   String? _passwordError;
+  // Guards against a double tap creating the account twice (the second call
+  // would fail with email-already-in-use).
+  bool _emailLoading = false;
+  bool _appleLoading = false;
+  bool _googleLoading = false;
+
+  bool get _busy => _emailLoading || _appleLoading || _googleLoading;
+  bool get _showApple => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   @override
   void initState() {
     super.initState();
-    // Rebuilds the live requirements checklist and the field's checkmark
-    // as the user types, without touching the rest of the form state.
-    _passController.addListener(_onPasswordChanged);
-    _confirmPassController.addListener(_onConfirmPasswordChanged);
+    _password.addListener(() => setState(() => _passwordError = null));
   }
-
-  void _onPasswordChanged() => setState(() => _passwordError = null);
-
-  void _onConfirmPasswordChanged() => setState(() => _passwordError = null);
-
-  bool get _passwordMeetsRequirements =>
-      _passwordRequirements.every((r) => r.isMet(_passController.text));
 
   @override
   void dispose() {
-    _passController.removeListener(_onPasswordChanged);
-    _confirmPassController.removeListener(_onConfirmPasswordChanged);
-    _nameController.dispose();
-    _emailController.dispose();
-    _passController.dispose();
-    _confirmPassController.dispose();
-    _pageController.dispose();
+    _name.dispose();
+    _email.dispose();
+    _password.dispose();
     super.dispose();
   }
 
-  bool _isCurrentQuestionAnswered() {
-    if (_currentPage == 0) return true; // Handled by Form validation
-    if (_currentPage > _totalQuestions) return true; // Thank you slide
+  /// Back to AuthGate, which shows email verification or onboarding next.
+  void _toAuthGate() =>
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
 
-    String key = "q$_currentPage";
-    // q11 (year of birth and sex) needs both.
-    if (key == 'q11') {
-      final about = _userData['responses'][key];
-      return about is Map && about['birthYear'] != null && about['sex'] != null;
+  Future<void> _createWithEmail() async {
+    if (_busy) return;
+    if (!_passwordRequirements.every((r) => r.isMet(_password.text))) {
+      setState(
+        () => _passwordError = 'Password does not meet all requirements',
+      );
+      return;
     }
-    return _userData['responses'].containsKey(key) &&
-        _userData['responses'][key] != null;
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _emailLoading = true);
+    final success = await AuthService.emailSignup(
+      emailAddress: _email.text.trim(),
+      password: _password.text,
+      displayName: _name.text.trim(),
+      context: context,
+      onPasswordError: (message) => setState(() => _passwordError = message),
+    );
+    if (!mounted) return;
+    setState(() => _emailLoading = false);
+    if (success) _toAuthGate();
   }
 
-  Future<void> _nextPage() async {
-    //TODO: Consider case where user signs up but exists before questionare is completed
-    if (_currentPage == 0) {
-      setState(() => _passwordError = null);
-
-      // All password validation (empty, weak, mismatch) is checked here
-      // rather than through the Form validator, so every failure reason
-      // surfaces through the single _passwordError label instead of some
-      // showing as inline field errors and others as toasts.
-      if (_passController.text.isEmpty || !_passwordMeetsRequirements) {
-        setState(
-          () => _passwordError = 'Password does not meet all requirements',
-        );
-        return;
-      }
-      if (_confirmPassController.text.isEmpty) {
-        setState(() => _passwordError = 'Please confirm your password');
-        return;
-      }
-      if (_passController.text != _confirmPassController.text) {
-        setState(() => _passwordError = 'Passwords do not match');
-        return;
-      }
-
-      if (_formKey.currentState!.validate()) {
-        // Guard against double-tap: if already loading, do nothing.
-        // Without this, tapping the button twice calls createUserWithEmailAndPassword
-        // twice with the same email — the second call returns email-already-in-use
-        // even though the email is brand new.
-        if (_isLoading) return;
-        setState(() => _isLoading = true);
-        final success = await AuthService.emailSignup(
-          emailAddress: _emailController.text,
-          password: _passController.text,
-          displayName: _nameController.text,
-          context: context,
-          onPasswordError: (message) =>
-              setState(() => _passwordError = message),
-        );
-        if (mounted) setState(() => _isLoading = false);
-        if (success && mounted) {
-          // Don't advance to the questionnaire until the address is proven
-          // real. EmailVerificationScreen pops itself (via onVerified) once
-          // FirebaseAuth.currentUser.emailVerified comes back true, instead
-          // of its default behavior of jumping straight to AuthGate/home.
-          final verified = await Navigator.of(context).push<bool>(
-            MaterialPageRoute(
-              builder: (verifyContext) => EmailVerificationScreen(
-                onVerified: () => Navigator.of(verifyContext).pop(true),
-              ),
-            ),
-          );
-          if (verified == true && mounted) {
-            _pageController.nextPage(
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeInOutCubicEmphasized,
-            );
-          }
-          return;
-        }
-      }
-    } else {
-      if (_currentPage == _totalQuestions) {
-        _submitQuestionnaire().then((_) {
-          if (mounted) {
-            _pageController.nextPage(
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeInOutCubicEmphasized,
-            );
-          }
-        });
-      } else {
-        _pageController.nextPage(
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOutCubicEmphasized, // Smoother animation
-        );
-      }
-    }
-  }
-
-  Future<void> _submitQuestionnaire() async {
-    setState(() => _isLoading = true);
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        await UserService.submitQuestionnaire(user: user, userdata: _userData);
-      }
-    } catch (e) {
-      debugPrint("Error submitting questionnaire: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Failed to submit assessment: $e"),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+  Future<void> _social(
+    Future<bool> Function({required BuildContext context}) signIn,
+    void Function(bool) loading,
+  ) async {
+    if (_busy) return;
+    setState(() => loading(true));
+    final success = await signIn(context: context);
+    if (!mounted) return;
+    setState(() => loading(false));
+    if (success) _toAuthGate();
   }
 
   @override
-  Widget build(BuildContext context) {
-    double progress = _currentPage == 0
-        ? 0.5
-        : (_currentPage > _totalQuestions
-              ? 1.0
-              : _currentPage / _totalQuestions);
-
-    return Scaffold(
-      backgroundColor: bgColor,
+  Widget build(BuildContext context) => onboardingLight(
+    Scaffold(
+      backgroundColor: const Color(0xFFF2F2F7),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: _ink,
+      ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // ── Top bar ──────────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: _currentPage > 0
-                        ? () => _pageController.previousPage(
-                            duration: const Duration(milliseconds: 350),
-                            curve: Curves.easeInOut,
-                          )
-                        : () => Navigator.pop(context),
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE5E5EA)),
-                      ),
-                      child: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 15,
-                        
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _currentPage == 0
-                              ? 'Create Account'
-                              : 'Stress Assessment',
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                            
-                          ),
-                        ),
-                        Text(
-                          _currentPage == 0
-                              ? 'Set up your profile'
-                              : _currentPage > _totalQuestions
-                              ? 'All done!'
-                              : 'Question $_currentPage of $_totalQuestions',
-                          style: const TextStyle(fontSize: 12, color: textGrey),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Step badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: accentPurple.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _currentPage == 0
-                          ? 'Step 1'
-                          : '${(progress * 100).toInt()}%',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: accentPurple,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            // ── Progress bar ─────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  backgroundColor: const Color(0xFFE5E5EA),
-                  valueColor: const AlwaysStoppedAnimation<Color>(accentPurple),
-                  minHeight: 4,
+        top: false,
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            children: [
+              const Text(
+                'ACCOUNT',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .9,
+                  color: _purple,
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: (page) => setState(() => _currentPage = page),
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  _buildAccountSetup(), // Page 0
-                  // ── 9 corporate-professional stress questions ─────────────
-                  _buildMultipleChoiceQuestion(
-                    q: 'q1',
-                    emoji: '🏢',
-                    title: 'How do you typically work day-to-day?',
-                    options: [
-                      'Full-time office',
-                      'Fully remote',
-                      'Hybrid',
-                      'Frequent travel',
-                      'Varies a lot',
+              const SizedBox(height: 6),
+              const Text(
+                'Create your account',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  color: _ink,
+                ),
+              ),
+              const SizedBox(height: 22),
+              _field(
+                controller: _name,
+                hint: 'First name',
+                icon: Icons.person_outline_rounded,
+                capitalization: TextCapitalization.words,
+                validator: (v) =>
+                    (v ?? '').trim().isEmpty ? 'Enter your first name' : null,
+              ),
+              _field(
+                controller: _email,
+                hint: 'you@email.com',
+                icon: Icons.mail_outline_rounded,
+                keyboard: TextInputType.emailAddress,
+                validator: (v) => RegExp(r'^\S+@\S+\.\S+$').hasMatch(v ?? '')
+                    ? null
+                    : 'Enter a valid email',
+              ),
+              _field(
+                controller: _password,
+                hint: 'Password',
+                icon: Icons.lock_outline_rounded,
+                obscure: !_showPassword,
+                suffix: IconButton(
+                  tooltip: _showPassword ? 'Hide password' : 'Show password',
+                  icon: Icon(
+                    _showPassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    color: _grey,
+                  ),
+                  onPressed: () =>
+                      setState(() => _showPassword = !_showPassword),
+                ),
+              ),
+              if (_password.text.isNotEmpty || _passwordError != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: [
+                      for (final r in _passwordRequirements)
+                        _Requirement(r.label, r.isMet(_password.text)),
                     ],
                   ),
-                  _buildSliderQuestion(
-                    q: 'q2',
-                    emoji: '🧠',
-                    title:
-                        'How mentally drained do you feel at the end of a typical workday?',
-                    lowLabel: 'Barely drained',
-                    highLabel: 'Completely exhausted',
-                  ),
-                  _buildMultipleChoiceQuestion(
-                    q: 'q3',
-                    emoji: '⏰',
-                    title: 'How many hours do you typically work per day?',
-                    options: ['Under 7h', '7–9h', '9–11h', '11h+', 'It varies'],
-                  ),
-                  _buildSliderQuestion(
-                    q: 'q4',
-                    emoji: '📵',
-                    title: 'How well can you disconnect from work after hours?',
-                    lowLabel: 'Always checking in',
-                    highLabel: 'Fully switched off',
-                  ),
-                  _buildMultipleChoiceQuestion(
-                    q: 'q5',
-                    emoji: '🍽️',
-                    title: 'How often do you skip meals to focus on work?',
-                    options: [
-                      'Never',
-                      'Rarely',
-                      'Sometimes',
-                      'Often',
-                      'Almost every day',
-                    ],
-                  ),
-                  _buildSliderQuestion(
-                    q: 'q6',
-                    emoji: '📬',
-                    title:
-                        'How pressured do you feel to respond to messages outside work hours?',
-                    lowLabel: 'Not at all',
-                    highLabel: 'Constant pressure',
-                  ),
-                  _buildMultipleChoiceQuestion(
-                    q: 'q7',
-                    emoji: '😴',
-                    title:
-                        'On a typical work night, how much sleep do you get?',
-                    options: ['Under 5h', '5–6h', '6–7h', '7–8h', '8h+'],
-                  ),
-                  _buildSliderQuestion(
-                    q: 'q8',
-                    emoji: '💓',
-                    title:
-                        'How often do deadlines or meetings cause you anxiety?',
-                    lowLabel: 'Very rarely',
-                    highLabel: 'Nearly every day',
-                  ),
-                  _buildMultipleChoiceQuestion(
-                    q: 'q9',
-                    emoji: '📋',
-                    title: 'How would you describe your current workload?',
-                    options: [
-                      'Very manageable',
-                      'Manageable',
-                      'Heavy',
-                      'Very heavy',
-                      'Overwhelming',
-                    ],
-                  ),
-                  _buildWrapUpTimeQuestion(),
-                  _buildAboutYouQuestion(),
-                  _buildThankYouSlide(),
-                ],
-              ),
-            ),
-
-            // ── Action button ───────────────────────────────────────────────
-            if (_currentPage <= _totalQuestions)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: ElevatedButton(
-                    onPressed: (_isCurrentQuestionAnswered() && !_isLoading)
-                        ? _nextPage
-                        : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: accentPurple,
-                      disabledBackgroundColor: const Color(0xFFD1CEFF),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Text(
-                            _currentPage == 0 ? 'Create Account' : 'Next →',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                  ),
                 ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Widgets ──────────────────────────────────────────────────────
-
-  Widget _buildAccountSetup() {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Your details',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                letterSpacing: -0.3,
-              ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Takes less than a minute',
-              style: TextStyle(fontSize: 13, color: textGrey),
-            ),
-            const SizedBox(height: 24),
-            _buildField(
-              'Full Name',
-              _nameController,
-              Icons.person_outline_rounded,
-              'First Last',
-            ),
-            _buildField(
-              'Email',
-              _emailController,
-              Icons.mail_outline_rounded,
-              'you@company.com',
-              keyboardType: TextInputType.emailAddress,
-            ),
-            _buildField(
-              'Password',
-              _passController,
-              Icons.lock_outline_rounded,
-              'Min 6 characters',
-              isPass: true,
-            ),
-            _buildPasswordRequirementsChecklist(),
-            _buildField(
-              'Confirm Password',
-              _confirmPassController,
-              Icons.lock_outline_rounded,
-              'Repeat password',
-              isPass: true,
-              isConfirm: true,
-            ),
-            _buildPasswordErrorLabel(),
-            const SizedBox(height: 4),
-            // Security notice
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: accentPurple.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: accentPurple.withOpacity(0.18)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.shield_outlined, size: 16, color: accentPurple),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Your data is encrypted and never shared with third parties.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: textGrey,
-                        height: 1.4,
-                      ),
+              if (_passwordError != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                  child: Text(
+                    _passwordError!,
+                    style: const TextStyle(
+                      color: Color(0xFFFF3B30),
+                      fontSize: 13,
                     ),
                   ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPasswordRequirementsChecklist() {
-    final pass = _passController.text;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14, top: 2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: _passwordRequirements.map((req) {
-          final met = req.isMet(pass);
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-              children: [
-                Icon(
-                  met ? Icons.check_circle_rounded : Icons.circle_outlined,
-                  size: 14,
-                  color: met ? const Color(0xFF34C759) : textGrey,
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  req.label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: met ? const Color(0xFF34C759) : textGrey,
-                    fontWeight: met ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  // Single label for every password-related alert — replaces the old
-  // bottom SnackBar ("Passwords do not match", Firebase's weak-password
-  // message) so all of them render in one consistent spot, right under
-  // the password/confirm boxes, instead of scattered between a toast and
-  // inline field errors.
-  Widget _buildPasswordErrorLabel() {
-    if (_passwordError == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14, top: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            size: 15,
-            color: Color(0xFFFF3B30),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              _passwordError!,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Color(0xFFFF3B30),
-                fontWeight: FontWeight.w600,
+              const SizedBox(height: 8),
+              _button(
+                label: 'Create account',
+                loading: _emailLoading,
+                color: _purple,
+                onPressed: _createWithEmail,
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildField(
-    String label,
-    TextEditingController ctrl,
-    IconData icon,
-    String hint, {
-    bool isPass = false,
-    bool isConfirm = false,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    final isVisible = isConfirm ? _showConfirmPassword : _showPassword;
-    final showValidCheckmark =
-        isPass &&
-        !isConfirm &&
-        ctrl.text.isNotEmpty &&
-        _passwordMeetsRequirements;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: textGrey,
-              letterSpacing: 0.3,
-            ),
-          ),
-          const SizedBox(height: 6),
-          TextFormField(
-            controller: ctrl,
-            obscureText: isPass && !isVisible,
-            keyboardType: keyboardType,
-            style: const TextStyle(fontSize: 15, ),
-            decoration: InputDecoration(
-              prefixIcon: Icon(icon, color: const Color(0xFFC7C7CC), size: 18),
-              hintText: hint,
-              hintStyle: const TextStyle(
-                color: Color(0xFFC7C7CC),
-                fontSize: 14,
-              ),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFFE5E5EA)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFFE5E5EA)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: accentPurple, width: 1.5),
-              ),
-              errorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFFFF3B30)),
-              ),
-              suffixIcon: isPass
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (showValidCheckmark)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 2),
-                            child: Icon(
-                              Icons.check_circle_rounded,
-                              color: Color(0xFF34C759),
-                              size: 18,
-                            ),
-                          ),
-                        IconButton(
-                          icon: Icon(
-                            isVisible
-                                ? Icons.visibility_off_outlined
-                                : Icons.visibility_outlined,
-                            color: const Color(0xFFC7C7CC),
-                            size: 18,
-                          ),
-                          onPressed: () => setState(() {
-                            if (isConfirm) {
-                              _showConfirmPassword = !_showConfirmPassword;
-                            } else {
-                              _showPassword = !_showPassword;
-                            }
-                          }),
-                        ),
-                      ],
-                    )
-                  : null,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
-              ),
-            ),
-            validator: (v) {
-              // Password/confirm-password errors are surfaced through the
-              // single _passwordError label below instead of this field's
-              // own inline errorText — keeps every password alert in one place.
-              if (isPass) return null;
-              if (v == null || v.isEmpty) return 'Required';
-              if (label == 'Email' &&
-                  !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
-                return 'Invalid email';
-              }
-              return null;
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSliderQuestion({
-    required String q,
-    required String emoji,
-    required String title,
-    required String lowLabel,
-    required String highLabel,
-  }) {
-    final double? val = _userData['responses'][q];
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // emoji badge
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: accentPurple.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Text(emoji, style: const TextStyle(fontSize: 30)),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              height: 1.35,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Slide to answer',
-            style: TextStyle(fontSize: 13, color: textGrey),
-          ),
-          const SizedBox(height: 40),
-          // Current value bubble
-          Center(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: val == null ? const Color(0xFFE5E5EA) : accentPurple,
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  val == null ? '?' : val.toInt().toString(),
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: val == null ? textGrey : Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: accentPurple,
-              inactiveTrackColor: const Color(0xFFE5E5EA),
-              thumbColor: accentPurple,
-              overlayColor: accentPurple.withOpacity(0.12),
-              trackHeight: 6,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
-            ),
-            child: Slider(
-              value: val ?? 5.0,
-              min: 1,
-              max: 10,
-              divisions: 9,
-              onChanged: (v) => setState(() => _userData['responses'][q] = v),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  lowLabel,
-                  style: const TextStyle(fontSize: 11, color: textGrey),
-                ),
-                Text(
-                  highLabel,
-                  style: const TextStyle(fontSize: 11, color: textGrey),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMultipleChoiceQuestion({
-    required String q,
-    required String emoji,
-    required String title,
-    required List<String> options,
-  }) {
-    final selected = _userData['responses'][q];
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: accentPurple.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Text(emoji, style: const TextStyle(fontSize: 30)),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              height: 1.35,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Choose one',
-            style: TextStyle(fontSize: 13, color: textGrey),
-          ),
-          const SizedBox(height: 24),
-          ...options.map((opt) {
-            final isSelected = selected == opt;
-            return GestureDetector(
-              onTap: () async {
-                // Capture the page we're on before the delay — if the user
-                // taps a different option (or the page has already moved
-                // on) before this fires, skip advancing so we don't queue
-                // up multiple page transitions from rapid taps.
-                final tappedOnPage = _currentPage;
-                setState(() => _userData['responses'][q] = opt);
-                await Future.delayed(const Duration(milliseconds: 300));
-                if (mounted && _currentPage == tappedOnPage) {
-                  _nextPage();
-                }
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: isSelected ? accentPurple : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isSelected ? accentPurple : const Color(0xFFE5E5EA),
-                    width: isSelected ? 1.5 : 1,
-                  ),
-                ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        opt,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: isSelected ? Colors.white : textDark,
-                        ),
-                      ),
+                    Expanded(child: Divider(color: Color(0xFFD1D1D6))),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('or', style: TextStyle(color: _grey)),
                     ),
-                    if (isSelected)
-                      const Icon(
-                        Icons.check_circle_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
+                    Expanded(child: Divider(color: Color(0xFFD1D1D6))),
                   ],
                 ),
               ),
-            );
-          }),
-        ],
+              if (_showApple) ...[
+                _button(
+                  label: 'Continue with Apple',
+                  loading: _appleLoading,
+                  color: Colors.black,
+                  leading: const Icon(Icons.apple, size: 25),
+                  onPressed: () => _social(
+                    AuthService.signInWithApple,
+                    (v) => _appleLoading = v,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              _button(
+                label: 'Continue with Google',
+                loading: _googleLoading,
+                color: const Color(0xFF4285F4),
+                leading: Container(
+                  width: 30,
+                  height: 30,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SvgPicture.asset(
+                    'assets/google_g_logo.svg',
+                    width: 20,
+                    height: 20,
+                  ),
+                ),
+                onPressed: () => _social(
+                  AuthService.signInWithGoogle,
+                  (v) => _googleLoading = v,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-    );
-  }
+    ),
+  );
 
-  /// Year of birth and sex (q11), for comparing cardio fitness with people
-  /// of the same age and sex (the VO₂ max estimate in Physical Health).
-  /// Saved to the profile, where Body can edit them.
-  Widget _buildAboutYouQuestion() {
-    final answer = Map<String, dynamic>.from(
-      _userData['responses']['q11'] as Map? ?? const {},
-    );
-    void update(String key, Object value) =>
-        setState(() => _userData['responses']['q11'] = {...answer, key: value});
+  Widget _field({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    TextInputType? keyboard,
+    TextCapitalization capitalization = TextCapitalization.none,
+    bool obscure = false,
+    Widget? suffix,
+    String? Function(String?)? validator,
+  }) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: TextFormField(
+      controller: controller,
+      keyboardType: keyboard,
+      textCapitalization: capitalization,
+      obscureText: obscure,
+      autocorrect: false,
+      validator: validator,
+      style: const TextStyle(color: _ink),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: Color(0xFFC7C7CC)),
+        prefixIcon: Icon(icon, color: const Color(0xFFC7C7CC), size: 20),
+        suffixIcon: suffix,
+        filled: true,
+        fillColor: Colors.white,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _line),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _purple, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFFF3B30)),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
+        ),
+      ),
+    ),
+  );
 
-    final current = answer;
-    final birthYear = current['birthYear'] as int?;
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: accentPurple.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: const Text('🙂', style: TextStyle(fontSize: 30)),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'A bit about you',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              height: 1.35,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Used to compare your cardio fitness with people like you. '
-            'You can change it later in your profile (Fitness → Body).',
-            style: TextStyle(fontSize: 13, color: textGrey),
-          ),
-          const SizedBox(height: 24),
-          GestureDetector(
-            onTap: () async {
-              final year = await showBirthYearPicker(
-                context,
-                initial: birthYear,
-              );
-              if (year != null) update('birthYear', year);
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-              decoration: BoxDecoration(
+  Widget _button({
+    required String label,
+    required bool loading,
+    required Color color,
+    required VoidCallback onPressed,
+    Widget? leading,
+  }) => SizedBox(
+    width: double.infinity,
+    height: 54,
+    child: FilledButton(
+      onPressed: _busy ? null : onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: color,
+        disabledBackgroundColor: color.withValues(alpha: .62),
+        foregroundColor: Colors.white,
+        disabledForegroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      child: loading
+          ? const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE5E5EA)),
+                strokeWidth: 2.5,
               ),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Year of birth',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  Text(
-                    birthYear == null ? 'Choose' : '$birthYear',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: birthYear == null ? accentPurple : Colors.black,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Sex',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 10),
-          for (final entry in profileSexLabels.entries) ...[
-            GestureDetector(
-              onTap: () => update('sex', entry.key),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: current['sex'] == entry.key
-                      ? accentPurple
-                      : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: current['sex'] == entry.key
-                        ? accentPurple
-                        : const Color(0xFFE5E5EA),
-                  ),
-                ),
-                child: Text(
-                  entry.value,
-                  style: TextStyle(
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (leading != null) ...[leading, const SizedBox(width: 10)],
+                Text(
+                  label,
+                  style: const TextStyle(
                     fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: current['sex'] == entry.key
-                        ? Colors.white
-                        : Colors.black,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              ),
+              ],
             ),
-            const SizedBox(height: 10),
-          ],
-        ],
-      ),
-    );
-  }
+    ),
+  );
+}
 
-  /// When the person's main work or classes usually end. Items after it
-  /// count as after hours in Demand and Effort (docs/scores.md). Stored as
-  /// minutes after midnight, or "varies" (which falls back to 5 PM).
-  Widget _buildWrapUpTimeQuestion() {
-    final answer = _userData['responses']['q10'];
-    final varies = answer == 'varies';
-    final minutes = answer is int ? answer : kDefaultDayWrapUpMinutes;
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: accentPurple.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: const Text('🌇', style: TextStyle(fontSize: 30)),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'When do you usually wrap up your main work or classes for the day?',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              height: 1.35,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Plans after this count as your own time. You can change it later.',
-            style: TextStyle(fontSize: 13, color: textGrey),
-          ),
-          const SizedBox(height: 24),
-          AnimatedOpacity(
-            duration: const Duration(milliseconds: 180),
-            opacity: varies ? .35 : 1,
-            child: IgnorePointer(
-              ignoring: varies,
-              child: SizedBox(
-                height: 180,
-                child: CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.time,
-                  minuteInterval: 15,
-                  initialDateTime: DateTime(
-                    2026,
-                    1,
-                    1,
-                    minutes ~/ 60,
-                    minutes % 60 - minutes % 15,
-                  ),
-                  onDateTimeChanged: (time) => setState(
-                    () => _userData['responses']['q10'] =
-                        time.hour * 60 + time.minute,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          GestureDetector(
-            onTap: () => setState(
-              () => _userData['responses']['q10'] = varies
-                  ? kDefaultDayWrapUpMinutes
-                  : 'varies',
-            ),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-              decoration: BoxDecoration(
-                color: varies ? accentPurple : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: varies ? accentPurple : const Color(0xFFE5E5EA),
-                  width: varies ? 1.5 : 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'It varies',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                        color: varies ? Colors.white : textDark,
-                      ),
-                    ),
-                  ),
-                  if (varies)
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+class _Requirement extends StatelessWidget {
+  const _Requirement(this.label, this.met);
 
-  Widget _buildThankYouSlide() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+  final String label;
+  final bool met;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = met ? const Color(0xFF34C759) : _grey;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(
-          Icons.check_circle_outline,
-          size: 80,
-          color: Color(0xFF7C69EF),
+        Icon(
+          met ? Icons.check_circle_rounded : Icons.circle_outlined,
+          size: 14,
+          color: color,
         ),
-        const SizedBox(height: 20),
-        const Text(
-          "Thank You!",
-          style: TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2D3142),
-          ),
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          "Your profile is all set up.\nLet's get started on your health journey.",
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 16, color: Colors.grey, height: 1.5),
-        ),
-        const SizedBox(height: 40),
-        ElevatedButton(
-          onPressed: () {
-            Navigator.of(
-              context,
-            ).pushNamedAndRemoveUntil('/', (route) => false);
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF7C69EF),
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          child: const Text("Go to Dashboard", style: TextStyle(fontSize: 16)),
-        ),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 12, color: color)),
       ],
     );
   }

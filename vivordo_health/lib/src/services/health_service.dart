@@ -619,6 +619,10 @@ class HealthService {
   );
 
   Future<void> _performSyncMeasured({required int daysBack}) async {
+    // Someone who hasn't connected Health yet (onboarding asks) isn't shown
+    // the permission sheet by a background sync.
+    final consent = await getConsent();
+    if (!consent.containsValue(true)) return;
     final authorized = await ensureHealthAuthorization();
     if (!authorized) {
       debugPrint(
@@ -629,7 +633,6 @@ class HealthService {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) await _refreshWearableConnections(uid);
-    final consent = await getConsent();
     for (final m in kHealthMetrics) {
       if (consent[m.key] == true) {
         try {

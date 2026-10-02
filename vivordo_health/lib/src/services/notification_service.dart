@@ -416,6 +416,19 @@ class NotificationService {
     (_) => ',',
   );
 
+  /// Asks iOS for notification permission (onboarding's last step; iOS only
+  /// ever shows the prompt once). Returns whether notifications can show.
+  Future<bool> requestPermission() async {
+    if (kIsWeb || !Platform.isIOS) return true;
+    final settings = await _firebaseMessaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    return settings.authorizationStatus == AuthorizationStatus.authorized ||
+        settings.authorizationStatus == AuthorizationStatus.provisional;
+  }
+
   /// Initialize the notification service
   /// Should be called once in main() after Firebase.initializeApp()
   Future<void> initialize() async {
@@ -437,38 +450,13 @@ class NotificationService {
         'NotificationService: Local timezone set to ${deviceTimeZone.identifier}',
       );
 
-      // Request IOS permissions
-      if (Platform.isIOS) {
-        NotificationSettings settings = await _firebaseMessaging
-            .requestPermission(
-              alert: true,
-              badge: true,
-              sound: true,
-              provisional: false,
-            );
-
-        print(
-          'NotificationService: Permission status: ${settings.authorizationStatus}',
-        );
-
-        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-          print('NotificationService: User granted permission');
-        } else if (settings.authorizationStatus ==
-            AuthorizationStatus.provisional) {
-          print('NotificationService: User granted provisional permission');
-        } else {
-          print(
-            'NotificationService: User declined or has not accepted permission',
-          );
-        }
-      }
-
-      // Initialize Local Notifications Plugin
+      // The iOS permission prompt waits for onboarding's last step
+      // (requestPermission), so it's asked with context, not at launch.
       const DarwinInitializationSettings initializationSettingsIOS =
           DarwinInitializationSettings(
-            requestSoundPermission: true,
-            requestBadgePermission: true,
-            requestAlertPermission: true,
+            requestSoundPermission: false,
+            requestBadgePermission: false,
+            requestAlertPermission: false,
           );
 
       const InitializationSettings initializationSettings =

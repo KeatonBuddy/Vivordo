@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../utils/day_key.dart';
+import 'health_service.dart';
 
 /// Copies Apple Watch VO₂ max (cardio fitness) into
 /// `metrics_daily/{day}.vo2_max` for Physical Health. The health plugin
@@ -48,6 +49,8 @@ class Vo2MaxService {
     if (!first && _lastSync != null && now.difference(_lastSync!) < _interval) {
       return;
     }
+    // No Cardio Fitness sheet until Health is connected (onboarding).
+    if (!(await HealthService().getConsent()).containsValue(true)) return;
     _lastSync = now;
     _lastUid = user.uid;
     try {

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
@@ -23,7 +24,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/achievement_unlocked_dialog.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
-import 'screens/onboarding_screen.dart';
+import 'screens/onboarding_flow_screen.dart';
 import 'screens/email_verification_screen.dart';
 import 'screens/force_update_screen.dart';
 import 'screens/circle_screen.dart';
@@ -526,44 +527,34 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
 
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final preferences = data?['preferences'] as Map<String, dynamic>?;
-        final onboardingSeen = preferences?['onboardingSeen'] == true;
-        final onboardingCompleted = data?['onboardingCompleted'] == true;
 
-        // The signup questionnaire records `onboardingCompleted`, while the
-        // lightweight introductory carousel records `onboardingSeen`. Either
-        // means the user has already completed an onboarding path.
-        if (onboardingSeen || onboardingCompleted) {
-          final seenRelease = preferences?['whatsNewSeenRelease'] as String?;
-          final dismissedLocally = _locallyDismissedWhatsNewUid == user.uid;
-          if (!dismissedLocally && seenRelease != _whatsNewReleaseId) {
-            return WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid));
-          }
-          return const MainNavigationScreen();
+        // Everyone, new or existing, signing in by email, Apple or Google,
+        // completes the current onboarding once.
+        if (needsOnboarding(data)) {
+          return OnboardingFlowScreen(
+            userDoc: data,
+            onFinished: () async {
+              // Onboarding covers what's new, so skip this release's recap.
+              await _persistWhatsNewSeen(user.uid);
+              if (!mounted) return;
+              // Onboarding forces a dark status bar; hand back the app's.
+              SystemChrome.setSystemUIOverlayStyle(
+                Theme.of(this.context).brightness == Brightness.dark
+                    ? SystemUiOverlayStyle.light
+                    : SystemUiOverlayStyle.dark,
+              );
+              // Re-reads the user document, which now passes the check.
+              setState(() => _userDocUid = null);
+            },
+          );
         }
 
-        return OnboardingScreen(
-          onFinished: () async {
-            await FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .set({
-                  'preferences.onboardingSeen': true,
-                  'onboardingCompleted': true,
-                  'onboardingCompletedAt': FieldValue.serverTimestamp(),
-                  'updatedAt': FieldValue.serverTimestamp(),
-                }, SetOptions(merge: true));
-
-            // New users have just seen onboarding for this release, so do not
-            // immediately follow it with an update recap on their next launch.
-            await _persistWhatsNewSeen(user.uid);
-
-            if (!context.mounted) return;
-
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
-            );
-          },
-        );
+        final seenRelease = preferences?['whatsNewSeenRelease'] as String?;
+        final dismissedLocally = _locallyDismissedWhatsNewUid == user.uid;
+        if (!dismissedLocally && seenRelease != _whatsNewReleaseId) {
+          return WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid));
+        }
+        return const MainNavigationScreen();
       },
     );
   }
