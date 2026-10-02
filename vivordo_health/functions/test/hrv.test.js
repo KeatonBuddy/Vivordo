@@ -39,14 +39,18 @@ test("a wearable-only user without a normal yet still reports its kind", () => {
 });
 
 test("burnout compares HRV within one kind", () => {
-  // Apple SDNN ~60 for 12 weeks; WHOOP RMSSD (~40, a lower number by
-  // nature) only for the last 2 weeks. Mixing kinds would read a big drop.
+  // Burnout reads HRV from each day's Capacity, which carries one kind.
+  // Apple SDNN ~60 for 10 weeks, then a WHOOP is connected and Capacity
+  // switches to its RMSSD (~40, a lower number by nature) for the last 2
+  // weeks. Mixing kinds would read a big drop.
   const end = dayIndex("2026-09-30");
+  const capacity = (hrv, hrvKind) => ({capacity: {score: 80, provisional: false, hrv, hrvKind}});
   const byDay = new Map();
   for (let ago = 83; ago >= 0; ago--) {
-    byDay.set(dayKey(end - ago), dailySignals({...apple(60 + (ago % 3)), ...(ago < 14 ? whoop(40) : {})}));
+    byDay.set(dayKey(end - ago), dailySignals(ago < 14 ?
+      capacity(40, "rmssd:whoop") : capacity(60 + (ago % 3), "sdnn")));
   }
   const {signals} = assess(byDay, "2026-09-30");
-  assert.equal(signals.hrv.kind, "sdnn");
-  assert.equal(signals.hrv.elevated, false);
+  assert.equal(signals.hrv, undefined, "neither kind has both a normal and a recent run");
+  assert.equal(signals.capacity.elevated, false);
 });

@@ -112,7 +112,9 @@ exports.finishDailyEffort = onSchedule({
 }, async () => {
   const {Timestamp} = require("firebase-admin/firestore");
   const {refreshEffort} = require("./effort");
+  const {refreshBurnout} = require("./burnout");
   const db = admin.firestore();
+  const timestamp = () => admin.firestore.FieldValue.serverTimestamp();
   const now = Date.now();
   const ended = await db.collectionGroup("effort_inputs")
       .where("dayEnd", ">=", Timestamp.fromMillis(now - 2 * 3600000))
@@ -121,11 +123,22 @@ exports.finishDailyEffort = onSchedule({
       .get();
   // ponytail: one day at a time; run in parallel chunks if this hour's
   // count grows into the thousands.
+  const burnout = {};
   for (const doc of ended.docs) {
-    await refreshEffort(db, doc.ref.parent.parent.id, doc.id,
-        () => admin.firestore.FieldValue.serverTimestamp());
+    const uid = doc.ref.parent.parent.id;
+    await refreshEffort(db, uid, doc.id, timestamp);
+    // The burnout check for the day that just ended, on its final Effort
+    // (docs/scores.md §6). One account failing doesn't stop the rest.
+    try {
+      const outcome = await refreshBurnout(db, admin.messaging(), uid,
+          doc.id, timestamp);
+      burnout[outcome] = (burnout[outcome] ?? 0) + 1;
+    } catch (error) {
+      console.error("Burnout check failed", {uid, day: doc.id, error});
+    }
   }
-  console.log("Effort finished for days", {count: ended.size});
+  console.log("Effort and burnout finished for days",
+      {count: ended.size, burnout});
 });
 
 // Effort again when an in-app workout is saved, changed or deleted: the day

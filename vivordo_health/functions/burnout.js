@@ -1,12 +1,13 @@
 "use strict";
 
-// Burnout early warning: compares the last 14 days of each signal with the
-// person's own normal (8 weeks, ending 2 weeks before the recent window) and
-// needs two groups of signals to agree before raising a warning. Thresholds
-// are starting values to tune against real histories; this is a wellness
-// signal, not a diagnosis.
+// Burnout early warning: compares the last 14 days of Capacity, Effort and
+// Mood with the person's own normal (8 weeks, ending 2 weeks before the
+// recent window). One area drifting is Watch; two agreeing is a Warning.
+// Thresholds are starting values to tune against real histories; this is a
+// wellness signal, not a diagnosis.
 
-const {HRV_KINDS, hrvReadings} = require("./hrv");
+const {HRV_KINDS} = require("./hrv");
+const {VERSION: EFFORT_VERSION} = require("./effort");
 
 const DAY_MS = 86400000;
 const RECENT_DAYS = 14;
@@ -27,34 +28,53 @@ const NOTIFY_COOLDOWN_DAYS = 7;
 
 // direction: +1 when a rise is worse, -1 when a fall is worse.
 // minChange: smallest shift that counts; relative: as a share of the normal.
+// The three headline signals decide the level (docs/scores.md §6); the
+// drivers only explain it.
 const SIGNALS = {
-  stress: {group: "recovery", direction: 1, minChange: 3, label: "Stress"},
-  restingHeartRate: {group: "recovery", direction: 1, minChange: 2,
-    label: "Resting heart rate", unit: " bpm"},
-  hrv: {group: "recovery", direction: -1, minChange: 0.05, relative: true,
-    label: "HRV", unit: " ms"},
-  sleepHours: {group: "recovery", direction: -1, minChange: 1 / 3,
+  capacity: {group: "capacity", headline: true, direction: -1, minChange: 5,
+    label: "Capacity"},
+  effort: {group: "effort", headline: true, direction: 1, minChange: 5,
+    label: "Effort"},
+  mood: {group: "mood", headline: true, direction: -1, minChange: 5,
+    label: "Mood"},
+  sleepHours: {group: "capacity", direction: -1, minChange: 1 / 3,
     label: "Sleep"},
-  exerciseMinutes: {group: "recovery", direction: -1, minChange: 10,
-    label: "Exercise", unit: " min"},
-  mood: {group: "mood", direction: -1, minChange: 5, label: "Mood"},
+  restingHeartRate: {group: "capacity", direction: 1, minChange: 2,
+    label: "Resting heart rate", unit: " bpm"},
+  hrv: {group: "capacity", direction: -1, minChange: 0.05, relative: true,
+    label: "HRV", unit: " ms"},
+  backToBack: {group: "effort", direction: 1, minChange: 1,
+    label: "Back-to-backs", unit: " a day"},
+  afterHoursMinutes: {group: "effort", direction: 1, minChange: 20,
+    label: "After-hours time", unit: " min a day"},
 };
 
 /**
- * One day's signals from a metrics_daily document; absent values are null.
- * @param {object} data metrics_daily document data.
+ * One day's signals; absent values are null.
+ * @param {object|undefined} scores scores_daily document data.
+ * @param {object|undefined} metrics metrics_daily document data.
  * @return {object} Signal values keyed like SIGNALS.
  */
-function dailySignals(data) {
+function dailySignals(scores, metrics) {
   const num = (value) =>
     typeof value === "number" && Number.isFinite(value) ? value : null;
+  // A Capacity still waiting for sleep is a weaker estimate: left out.
+  const capacity = scores?.capacity?.provisional === false ?
+    scores.capacity : null;
+  const effort = scores?.effort?.version === EFFORT_VERSION ?
+    scores.effort : null;
   return {
-    stress: num(data?.stress?.avg) ?? num(data?.stress?.current),
-    restingHeartRate: num(data?.resting_heart_rate?.avg),
-    hrv: hrvReadings(data), // by kind; assess() compares one kind only
-    sleepHours: num(data?.sleep?.avg),
-    exerciseMinutes: num(data?.exercise_time?.sum),
-    mood: num(data?.mood?.avg),
+    capacity: num(capacity?.score),
+    effort: num(effort?.total),
+    mood: num(metrics?.mood?.avg),
+    sleepHours: num(capacity?.sleepHours),
+    restingHeartRate: capacity?.restingHrIgnored ? null :
+      num(capacity?.restingHr),
+    // By kind; assess() compares one kind only.
+    hrv: num(capacity?.hrv) !== null && capacity.hrvKind ?
+      {[capacity.hrvKind]: capacity.hrv} : null,
+    backToBack: num(effort?.backToBack),
+    afterHoursMinutes: num(effort?.afterHoursMinutes),
   };
 }
 
@@ -133,31 +153,22 @@ function assess(byDay, today) {
       break;
     }
   }
-  // A group is strained when any of its signals is: averaging would let
-  // normal sleep and heart rate hide two weeks of rising stress.
+  // Each area's headline decides whether it's strained; drivers explain.
   const groups = {};
   for (const [name, signal] of Object.entries(signals)) {
-    if (!groups[signal.group]) {
-      groups[signal.group] = {signals: [], elevated: 0, high: false};
-    }
-    const group = groups[signal.group];
-    group.signals.push(name);
-    if (signal.elevated) group.elevated++;
-    if (signal.high) group.high = true;
-  }
-  for (const group of Object.values(groups)) {
-    group.strained = group.elevated > 0;
+    if (!SIGNALS[name].headline) continue;
+    groups[signal.group] = {strained: signal.elevated, high: signal.high};
   }
   const list = Object.values(groups);
   const strained = list.filter((group) => group.strained);
   return {
     signals, groups,
-    enoughData: list.length >= 2,
+    enoughData: list.length >= 1,
     strainedGroups: strained.length,
-    // A high signal in one group backed by strain in another.
+    // A big drift in one area backed by strain in another.
     acute: list.some((group) => group.high &&
       strained.some((other) => other !== group)),
-    watch: strained.length >= 2 || list.some((group) => group.elevated >= 2),
+    watch: strained.length >= 1,
   };
 }
 
@@ -186,6 +197,49 @@ function reasons(signals) {
 }
 
 /**
+ * What the app shows: each area's drift and the drivers behind it.
+ * @param {object} signals Scored signals from assess().
+ * @return {object} {areas: {capacity, effort, mood}, drivers: [...]}.
+ */
+function details(signals) {
+  const pick = (signal) => signal && {
+    usual: Math.round(signal.usual * 10) / 10,
+    recent: Math.round(signal.recent * 10) / 10,
+    worseDays: signal.worseDays, days: signal.days,
+    elevated: signal.elevated, high: signal.high,
+    score: Math.round(signal.score * 10) / 10,
+  };
+  const areas = {};
+  for (const name of ["capacity", "effort", "mood"]) {
+    areas[name] = pick(signals[name]) ?? null;
+  }
+  const drivers = Object.entries(signals)
+      .filter(([name, signal]) => !SIGNALS[name].headline && signal.elevated)
+      .sort(([, a], [, b]) => b.score - a.score)
+      .map(([name, signal]) => ({name, ...pick(signal)}));
+  return {areas, drivers};
+}
+
+/**
+ * Days so far towards the ~6 weeks a first check needs: the days since the
+ * earliest Capacity, Effort or Mood in the 12-week window.
+ * @param {Map<string, object>} byDay Day key -> dailySignals result.
+ * @param {string} today Day key being evaluated.
+ * @return {number} Days of history.
+ */
+function learningDays(byDay, today) {
+  const end = dayIndex(today);
+  const window = RECENT_DAYS + GAP_DAYS + BASELINE_DAYS;
+  for (let i = end - window + 1; i <= end; i++) {
+    const day = byDay.get(dayKey(i));
+    if (day && ["capacity", "effort", "mood"].some((k) => day[k] != null)) {
+      return end - i + 1;
+    }
+  }
+  return 0;
+}
+
+/**
  * One nightly evaluation, carrying state from the previous night.
  * @param {Map<string, object>} byDay Day key -> dailySignals result.
  * @param {string} today Day key being evaluated.
@@ -198,7 +252,10 @@ function evaluateNight(byDay, today, previous) {
   const night = assess(byDay, today);
   if (!night.enoughData) {
     return {level: "learning", reasons: [], notify: false,
-      state: {...state, strainedDays: 0, calmDays: 0, level: "learning"}};
+      learningDays: learningDays(byDay, today), since: null,
+      ...details(night.signals),
+      state: {...state, strainedDays: 0, calmDays: 0, level: "learning",
+        since: null}};
   }
   state.strainedDays = night.strainedGroups >= 2 ? state.strainedDays + 1 : 0;
   state.calmDays = night.strainedGroups === 0 ? state.calmDays + 1 : 0;
@@ -217,33 +274,148 @@ function evaluateNight(byDay, today, previous) {
     dayIndex(today) - dayIndex(state.lastNotified);
   const notify = level === "warning" && state.level !== "warning" &&
     sinceNotified >= NOTIFY_COOLDOWN_DAYS;
+  // When the current level started, for "Signs of a slide for 10 days".
+  const since = level === state.level ? state.since ?? today : today;
   return {
-    level, reasons: reasons(night.signals), notify,
-    state: {...state, level, lastNotified: notify ? today : state.lastNotified},
+    level, reasons: reasons(night.signals), notify, since,
+    learningDays: null, ...details(night.signals),
+    state: {...state, level, since,
+      lastNotified: notify ? today : state.lastNotified},
   };
 }
 
 /**
- * Replays nightly evaluations over a day range (tests and backfills).
- * @param {Array<{day: string, data: object}>} days metrics_daily documents.
+ * Replays nightly evaluations over a day range (tests).
+ * @param {Array<{day: string, scores: object, metrics: object}>} days
+ *   scores_daily and metrics_daily data per day.
  * @param {string} from First day to evaluate.
  * @param {string} to Last day to evaluate.
  * @return {object[]} One {day, level, reasons, notify} per night.
  */
 function evaluateRange(days, from, to) {
-  const byDay = new Map(days.map(({day, data}) => [day, dailySignals(data)]));
+  const byDay = new Map(days.map(({day, scores, metrics}) =>
+    [day, dailySignals(scores, metrics)]));
   const results = [];
   let state = null;
   for (let i = dayIndex(from); i <= dayIndex(to); i++) {
     const night = evaluateNight(byDay, dayKey(i), state);
     state = night.state;
     results.push({day: dayKey(i), level: night.level,
-      reasons: night.reasons, notify: night.notify});
+      reasons: night.reasons, notify: night.notify, since: night.since,
+      areas: night.areas, drivers: night.drivers,
+      learningDays: night.learningDays});
   }
   return results;
 }
 
+const VERSION = 1;
+
+/**
+ * Evaluates a day that has just ended and saves the result in
+ * users/{uid}/scores_daily/{day}.burnout, carrying the previous night's
+ * state. Runs once per day: a day already evaluated is left alone, so a
+ * retry never sends a second notification.
+ * @param {object} db Admin Firestore instance.
+ * @param {object} messaging Admin Messaging instance.
+ * @param {string} uid Account ID.
+ * @param {string} day Day key that just ended.
+ * @param {Function} timestamp Server timestamp factory.
+ * @return {Promise<string>} Outcome.
+ */
+async function refreshBurnout(db, messaging, uid, day, timestamp) {
+  const crypto = require("node:crypto");
+  const {FieldPath} = require("firebase-admin/firestore");
+  const user = db.doc(`users/${uid}`);
+  const window = RECENT_DAYS + GAP_DAYS + BASELINE_DAYS;
+  const start = dayKey(dayIndex(day) - window);
+  const range = (name, ...fields) => user.collection(name)
+      .where(FieldPath.documentId(), ">=", start)
+      .where(FieldPath.documentId(), "<=", day)
+      .select(...fields).get();
+  const [scores, metrics] = await Promise.all([
+    range("scores_daily", "capacity", "effort", "burnout"),
+    range("metrics_daily", "mood"),
+  ]);
+  const scoresByDay = new Map(scores.docs.map((d) => [d.id, d.data()]));
+  const byDay = new Map();
+  for (let i = dayIndex(start); i <= dayIndex(day); i++) {
+    const key = dayKey(i);
+    const mood = metrics.docs.find((d) => d.id === key)?.data();
+    byDay.set(key, dailySignals(scoresByDay.get(key), mood));
+  }
+  const previous = scoresByDay.get(dayKey(dayIndex(day) - 1))?.burnout?.state;
+  const night = evaluateNight(byDay, day, previous ?? null);
+
+  const target = user.collection("scores_daily").doc(day);
+  const deletionId = crypto.createHash("sha256").update(uid).digest("hex");
+  const deletion = db.doc(`account_deletion_jobs/${deletionId}`);
+  const outcome = await db.runTransaction(async (tx) => {
+    const [owner, tombstone, existing] = await Promise.all([
+      tx.get(user), tx.get(deletion), tx.get(target),
+    ]);
+    if (!owner.exists || tombstone.exists) return "unavailable";
+    if (existing.data()?.burnout) return "done";
+    tx.set(target, {burnout: {
+      version: VERSION, level: night.level, since: night.since,
+      areas: night.areas, drivers: night.drivers,
+      learningDays: night.learningDays, notified: night.notify,
+      state: night.state, computedAt: timestamp(),
+    }}, {merge: true});
+    return night.notify ? "notify" : "written";
+  });
+  if (outcome === "notify") await notifyWarning(user, messaging, night.areas);
+  return outcome;
+}
+
+/**
+ * "Lower energy and heavier days than usual. ..." from the strained areas.
+ * @param {object} areas The night's areas.
+ * @return {string} Notification body.
+ */
+function warningBody(areas) {
+  const words = [
+    areas?.capacity?.elevated && "lower energy",
+    areas?.effort?.elevated && "heavier days",
+    areas?.mood?.elevated && "lower mood",
+  ].filter(Boolean);
+  const list = words.length > 1 ?
+    `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : words[0] ??
+    "a change";
+  return `${list[0].toUpperCase()}${list.slice(1)} than usual. ` +
+    "Take a look at what's changed.";
+}
+
+/**
+ * The one push sent when a Warning starts.
+ * @param {object} user User document reference.
+ * @param {object} messaging Admin Messaging instance.
+ * @param {object} areas The night's areas, to say which ones drifted.
+ */
+async function notifyWarning(user, messaging, areas) {
+  const [profile, tokens] = await Promise.all([
+    user.get(), user.collection("notification_tokens").get(),
+  ]);
+  if (profile.data()?.preferences?.notificationsEnabled === false) return;
+  const valid = tokens.docs.filter((d) =>
+    typeof d.get("token") === "string" && d.get("token"));
+  if (!valid.length) return;
+  const response = await messaging.sendEachForMulticast({
+    tokens: valid.map((d) => d.get("token")),
+    notification: {
+      title: "Your last two weeks look like a slide",
+      body: warningBody(areas),
+    },
+    data: {screen: "calendar", type: "burnout_warning"}, // opens My Day
+    apns: {payload: {aps: {sound: "default"}}},
+  });
+  await Promise.all(response.responses.map((result, i) =>
+    !result.success && ["messaging/registration-token-not-registered",
+      "messaging/invalid-registration-token"].includes(result.error?.code) ?
+      valid[i].ref.delete() : null));
+}
+
 module.exports = {
+  VERSION, refreshBurnout, details, learningDays, warningBody,
   SIGNALS, dailySignals, scoreSignal, assess, evaluateNight, evaluateRange,
   dayKey, dayIndex,
 };

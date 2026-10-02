@@ -286,17 +286,37 @@ demand:   { expectedAtWake, version }
 - Live Demand is calculated in the app with the same formulas, kept in
   sync with the server by shared test cases.
 
-## 6. Burnout uses
+## 6. Burnout
 
-Groups:
-- **Capacity:** the daily score, plus raw sleep, HRV and resting HR for
-  the reasons.
-- **Effort:** the daily total, plus back-to-backs, after-hours time and
-  unfinished priorities.
-- **Mood.**
+**Implemented** in `functions/burnout.js`; runs each night from
+`finishDailyEffort`, about an hour after a day ends in the person's time
+zone, right after that day's final Effort.
 
-The check in `functions/burnout.js` is unchanged: only its signal list
-changes.
+- **Three areas**, each compared with the person's own normal (the 8 weeks
+  ending 2 weeks before the last 2): **Capacity** (lower is worse; a
+  Capacity still waiting for sleep is left out), **Effort** (heavier is
+  worse) and **Mood** (lower is worse).
+- **Drivers** explain it but don't decide it: sleep, resting HR (unless
+  ignored as a bad reading), HRV (one kind only), back-to-backs and
+  after-hours minutes.
+- An area is **strained** when its last 2 weeks are off by at least the
+  minimum meaningful change (Capacity/Effort/Mood: 5 points) on at least
+  65% of days, scored against the normal's spread.
+- **Levels:** learning (no area has enough data: 7 recent days and 14 in
+  the normal, so ~6 weeks), steady, **watch** (one area strained; no
+  notification), **warning** (two areas strained for 7 nights, or one area
+  far off plus another strained). A warning holds until 7 calm nights.
+- **One push** when a warning starts (not within 7 days of the last), naming
+  the areas: "Lower energy and heavier days than usual." Respects
+  `preferences.notificationsEnabled`; tapping opens My Day.
+- Saved in `scores_daily/{day}.burnout` (`level`, `since`, `areas`,
+  `drivers`, `learningDays`, `state`). Each day is evaluated once.
+- **App:** a card under My Day's brief (`lib/widgets/burnout_card.dart`,
+  words from `lib/src/utils/burnout_view.dart`) with a detail sheet; during
+  a warning the brief's headline softens.
+- No backfills: history starts when each person is on this build.
+- Known limits: a day without a day record (app not opened that day or the
+  next) isn't evaluated; strain lasting ~10+ weeks becomes the new normal.
 
 ## Open questions
 

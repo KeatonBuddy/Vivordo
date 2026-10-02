@@ -37,6 +37,8 @@ import '../src/services/metrics_repository.dart';
 import '../src/services/metrics_service.dart';
 import '../src/utils/day_key.dart';
 import '../widgets/morning_check_in_card.dart';
+import '../widgets/burnout_card.dart';
+import '../src/utils/burnout_view.dart';
 
 class MyDayScreen extends StatefulWidget {
   const MyDayScreen({super.key});
@@ -69,6 +71,36 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   late DateTime _priorityDay;
   final _briefSnapshot = OwnedStreamSnapshot<DailyBriefMetricsSummary>();
   final _capacitySnapshot = OwnedStreamSnapshot<ServerCapacity?>();
+  final _burnoutSnapshot = OwnedStreamSnapshot<BurnoutView?>();
+
+  /// The latest nightly burnout check: it's saved on the day that just
+  /// ended, so look back a few days.
+  Stream<BurnoutView?> _burnoutStreamFor(DateTime day) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('scores_daily')
+        .where(
+          FieldPath.documentId,
+          isGreaterThanOrEqualTo: localDayKey(
+            DateTime(day.year, day.month, day.day - 3),
+          ),
+        )
+        .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(day))
+        .snapshots()
+        .map((snapshot) {
+          for (final doc in snapshot.docs.reversed) {
+            final burnout = doc.data()['burnout'];
+            if (burnout is Map<String, dynamic>) {
+              return BurnoutView.fromMap(burnout, doc.id);
+            }
+          }
+          return null;
+        });
+  }
+
   DailyBriefMetrics? _briefMetrics;
 
   /// Server Capacity (docs/scores.md §4) for [day], with the 28 days before
@@ -100,6 +132,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   void _connectBriefMetrics(DateTime day) {
     _briefMetrics = null;
     _capacitySnapshot.connect(_capacityStreamFor(day));
+    _burnoutSnapshot.connect(_burnoutStreamFor(day));
     final stream = _metricsStreamFor(day);
     _briefSnapshot.connect(
       (stream ?? const Stream<MetricWindow>.empty()).map((snapshot) {
@@ -262,6 +295,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final active = TickerMode.valuesOf(context).enabled;
     _briefSnapshot.setActive(active);
     _capacitySnapshot.setActive(active);
+    _burnoutSnapshot.setActive(active);
     _prioritySnapshot.setActive(active);
     _tomorrowPrioritySnapshot.setActive(active);
     if (_screenActive == active) return;
@@ -318,6 +352,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _clockTimer?.cancel();
     _briefSnapshot.dispose();
     _capacitySnapshot.dispose();
+    _burnoutSnapshot.dispose();
     _prioritySnapshot.dispose();
     _tomorrowPrioritySnapshot.dispose();
     super.dispose();
@@ -610,6 +645,15 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               const SizedBox(height: 18),
               _buildMorningCheckIn(),
               _buildDayOutlookCard(timedEvents: timedEvents),
+              ValueListenableBuilder<AsyncSnapshot<BurnoutView?>>(
+                valueListenable: _burnoutSnapshot,
+                builder: (context, snapshot, _) => snapshot.data == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: BurnoutCard(view: snapshot.data!),
+                      ),
+              ),
               const SizedBox(height: 24),
               const _SectionLabel('NOW'),
               const SizedBox(height: 10),
@@ -832,6 +876,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 // Demand against Capacity, ±15 (docs/scores.md §2).
                 final headline = evening
                     ? 'Today’s plan is done'
+                    : _burnoutSnapshot.value.data?.level == 'warning'
+                    ? 'Give yourself a little more room today'
                     : capacityScore == null || !ready
                     ? 'Make space for your day'
                     : demand <= capacityScore - 15
