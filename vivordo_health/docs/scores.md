@@ -373,6 +373,41 @@ Metrics (same card, same position) and its detail screen
   (`birthYear`, `sex`).
 - No backfills: history starts when each person is on this build.
 
+## 8. Energy forecast
+
+**Phase 1 implemented** (the model only, not yet shown in the app) in
+`lib/src/utils/energy_forecast.dart`. It's calculated on the phone, like
+Demand, because clash detection will need the device calendar. It's a
+forecast from sleep and body clock, not a measurement, and shows as windows
+and words, never a score.
+
+- **Model:** a two-process model plus sleep inertia, every 15 min from wake
+  to your usual bedtime: body clock (a 24 h wave peaking 11 h after your
+  sleep midpoint, plus a 12 h wave peaking 5.5 h after it) − sleep pressure
+  (rising while awake, time constant 18.2 h, starting higher after a short
+  night or with sleep debt) − grogginess (fading over ~70 min). The constants
+  are product choices fitted to the textbook day of an 11 PM–7 AM sleeper;
+  tune them later against "How's your energy?" answers.
+- **Inputs:** the last 14 nights (sleep start and end), last night, and
+  Capacity's sleep need (8 h if missing).
+  - **Chronotype:** the median sleep midpoint, preferring weekend nights
+    when there are at least 2. Defaults to 3:30 AM until there are 5 nights.
+  - **Sleep debt:** the shortfall against your need over the last 7 nights,
+    capped at 10 h.
+- **Windows:**
+  - groggy: until grogginess fades;
+  - peak: the high point in the first half of the waking day;
+  - dip: the lowest turning point after the peak, at least 0.08 below it;
+  - second wind: a later turning point at least 0.04 above the dip;
+  - wind-down: the hour before bed-by.
+- **Bed-by:** tomorrow's first event − 60 min − your sleep need, no later
+  than your usual bedtime.
+- **Missing last night:** your usual pattern is used and the forecast is
+  marked `estimated`.
+- **Night shifts:** everything is anchored to your actual sleep, not clock
+  time. Known limit: a mix of day and night sleeps gives a meaningless
+  median midpoint.
+
 ## Open questions
 
 None. Decided (2026-10-01):
