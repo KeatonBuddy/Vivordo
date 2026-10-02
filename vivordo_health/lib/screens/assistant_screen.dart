@@ -23,6 +23,7 @@ import '../widgets/contextual_insight_bar.dart';
 import '../widgets/crisis_support_card.dart';
 import '../widgets/privacy_support_links.dart';
 import '../widgets/vivordo_robot.dart';
+import 'assistant_memory_screen.dart';
 
 const _brand = VivordoTheme.brand;
 
@@ -560,6 +561,19 @@ class _AssistantScreenState extends State<AssistantScreen> {
                 color: colors.textSecondary,
               ),
               onPressed: widget.onExpand,
+            ),
+          if (!_asSheet)
+            IconButton(
+              tooltip: 'What Vivordo AI remembers',
+              icon: Icon(
+                Icons.bookmark_border_rounded,
+                color: colors.textSecondary,
+              ),
+              onPressed: () => Navigator.of(context, rootNavigator: true).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const AssistantMemoryScreen(),
+                ),
+              ),
             ),
           IconButton(
             tooltip: 'Data & privacy',
