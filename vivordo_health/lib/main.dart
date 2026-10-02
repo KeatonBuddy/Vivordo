@@ -243,7 +243,7 @@ class _MyAppState extends State<MyApp> {
     if (_openingWidget || FirebaseAuth.instance.currentUser == null) return;
     if (!const {
       'home',
-      'wellness',
+      'capacity',
       'fitness',
       'calendar',
       'myday',
@@ -276,7 +276,8 @@ class _MyAppState extends State<MyApp> {
         );
         return;
       }
-      if (destination == 'myday') {
+      // The Capacity widget opens My Day, where Capacity lives.
+      if (destination == 'myday' || destination == 'capacity') {
         navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
         return;
       }
@@ -296,10 +297,6 @@ class _MyAppState extends State<MyApp> {
       }
 
       navigator.pushNamedAndRemoveUntil('/home', (_) => false);
-      if (destination == 'wellness') {
-        await WidgetsBinding.instance.endOfFrame;
-        if (mounted) unawaited(navigator.pushNamed('/wellness'));
-      }
     } finally {
       _openingWidget = false;
     }

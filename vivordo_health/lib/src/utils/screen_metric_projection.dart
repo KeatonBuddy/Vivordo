@@ -137,7 +137,6 @@ Map<String, dynamic> projectScreenFields(
       'active_calories': ['sum'],
       'exercise_time': ['sum'],
       'mood': ['avg', 'label'],
-      'wellness': ['avg'],
     },
     MetricsProjection.homeHistory => const {
       'stress': ['anchor', 'current', 'avg'],

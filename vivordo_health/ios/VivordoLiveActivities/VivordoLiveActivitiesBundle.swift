@@ -6,7 +6,7 @@ import WidgetKit
 struct VivordoLiveActivitiesBundle: WidgetBundle {
   var body: some Widget {
     StressScoreWidget()
-    WellnessScoreWidget()
+    CapacityWidget()
     FitnessRingWidget()
     CalendarWidget()
     TodayAgendaWidget()
@@ -30,8 +30,12 @@ private enum VivordoWidgetData {
 private struct VivordoWidgetEntry: TimelineEntry {
   let date: Date
   let stress: Int
-  let wellness: Int
-  let wellnessDelta: Int
+  let capacity: Int
+  let capacityDelta: Int
+  // "high", "moderate" or "low" (functions/capacity.js), and a note while
+  // Capacity is waiting for sleep.
+  let capacityLabel: String
+  let capacityNote: String
   let steps: Int
   let stepsGoal: Int
   let calories: Int
@@ -42,7 +46,7 @@ private struct VivordoWidgetEntry: TimelineEntry {
   // "no reading" zeros are not shown as today's values.
   let hasMetrics: Bool
   let hasStress: Bool
-  let hasWellness: Bool
+  let hasCapacity: Bool
   let updatedAt: Date?
 
   static func current(date: Date = .now) -> VivordoWidgetEntry {
@@ -51,8 +55,10 @@ private struct VivordoWidgetEntry: TimelineEntry {
     return VivordoWidgetEntry(
       date: date,
       stress: VivordoWidgetData.integer("stressScore", fallback: 0),
-      wellness: VivordoWidgetData.integer("wellnessScore", fallback: 0),
-      wellnessDelta: VivordoWidgetData.integer("wellnessDelta", fallback: 0),
+      capacity: VivordoWidgetData.integer("capacityScore", fallback: 0),
+      capacityDelta: VivordoWidgetData.integer("capacityDelta", fallback: 0),
+      capacityLabel: defaults.string(forKey: "capacityLabel") ?? "",
+      capacityNote: defaults.string(forKey: "capacityNote") ?? "",
       steps: VivordoWidgetData.integer("steps", fallback: 0),
       stepsGoal: max(VivordoWidgetData.integer("stepsGoal", fallback: 10_000), 1),
       calories: VivordoWidgetData.integer("activeCalories", fallback: 0),
@@ -61,8 +67,10 @@ private struct VivordoWidgetEntry: TimelineEntry {
       exerciseGoal: max(VivordoWidgetData.integer("exerciseGoal", fallback: 40), 1),
       hasMetrics: fresh,
       hasStress: fresh && defaults.bool(forKey: "dashboardHasStress"),
-      // Builds before this flag existed never wrote it; their scores were real.
-      hasWellness: fresh && (defaults.object(forKey: "dashboardHasWellness") as? Bool ?? true),
+      // Capacity arrives on its own (the app listens to the server's score),
+      // so it carries its own day.
+      hasCapacity: defaults.string(forKey: "capacityDay") == VivordoCalendarDates.dayKey(for: date)
+        && defaults.bool(forKey: "dashboardHasCapacity"),
       updatedAt: defaults.double(forKey: "dashboardMetricsUpdatedAt") > 0
         ? Date(timeIntervalSince1970: defaults.double(forKey: "dashboardMetricsUpdatedAt") / 1_000)
         : nil
@@ -75,8 +83,10 @@ private struct VivordoWidgetProvider: TimelineProvider {
     VivordoWidgetEntry(
       date: .now,
       stress: 34,
-      wellness: 82,
-      wellnessDelta: 6,
+      capacity: 81,
+      capacityDelta: 6,
+      capacityLabel: "high",
+      capacityNote: "",
       steps: 7_200,
       stepsGoal: 10_000,
       calories: 420,
@@ -85,7 +95,7 @@ private struct VivordoWidgetProvider: TimelineProvider {
       exerciseGoal: 40,
       hasMetrics: true,
       hasStress: true,
-      hasWellness: true,
+      hasCapacity: true,
       updatedAt: .now
     )
   }
@@ -232,13 +242,12 @@ private extension VivordoWidgetEntry {
     }
   }
 
-  var wellnessState: (label: String, color: Color)? {
-    guard hasWellness else { return nil }
-    switch wellness {
-    case ..<40: return ("Needs attention", VivordoWidgetPalette.coral)
-    case ..<60: return ("Fair", VivordoWidgetPalette.amber)
-    case ..<80: return ("Good", VivordoWidgetPalette.mint)
-    default: return ("Excellent", VivordoWidgetPalette.mint)
+  var capacityState: (label: String, color: Color)? {
+    guard hasCapacity else { return nil }
+    switch capacityLabel {
+    case "high": return ("High", VivordoWidgetPalette.mint)
+    case "low": return ("Low", VivordoWidgetPalette.coral)
+    default: return ("Moderate", VivordoWidgetPalette.amber)
     }
   }
 
@@ -344,25 +353,26 @@ private struct StressGaugeView: View {
   }
 }
 
-private struct WellnessScoreWidgetView: View {
+private struct CapacityWidgetView: View {
   let entry: VivordoWidgetEntry
 
   private var footnote: String {
-    guard entry.hasWellness else { return "Open Vivordo to update" }
-    if entry.wellnessDelta == 0 { return entry.updatedText }
-    return entry.wellnessDelta > 0
-      ? "↑ \(entry.wellnessDelta) from yesterday"
-      : "↓ \(abs(entry.wellnessDelta)) from yesterday"
+    guard entry.hasCapacity else { return "Open Vivordo to update" }
+    if !entry.capacityNote.isEmpty { return entry.capacityNote }
+    if entry.capacityDelta == 0 { return entry.updatedText }
+    return entry.capacityDelta > 0
+      ? "↑ \(entry.capacityDelta) from yesterday"
+      : "↓ \(abs(entry.capacityDelta)) from yesterday"
   }
 
   var body: some View {
     ScoreSmallView(
-      title: "Wellness",
-      score: entry.hasWellness ? entry.wellness : nil,
-      state: entry.wellnessState,
+      title: "Capacity",
+      score: entry.hasCapacity ? entry.capacity : nil,
+      state: entry.capacityState,
       footnote: footnote
     )
-    .widgetURL(URL(string: "com.vivordo.health://widget/wellness"))
+    .widgetURL(URL(string: "com.vivordo.health://widget/capacity"))
   }
 }
 
@@ -801,16 +811,18 @@ private struct StressScoreWidget: Widget {
   }
 }
 
-private struct WellnessScoreWidget: Widget {
+private struct CapacityWidget: Widget {
+  // Kept from the Wellness widget it replaces, so widgets people already
+  // placed switch to Capacity instead of disappearing.
   let kind = "VivordoWellnessScore"
 
   var body: some WidgetConfiguration {
     StaticConfiguration(kind: kind, provider: VivordoWidgetProvider()) { entry in
-      WellnessScoreWidgetView(entry: entry)
+      CapacityWidgetView(entry: entry)
         .containerBackground(for: .widget) { VivordoWidgetBackground() }
     }
-    .configurationDisplayName("Wellness Score")
-    .description("Keep your daily Vivordo wellness score close by.")
+    .configurationDisplayName("Capacity")
+    .description("See how much energy you have today at a glance.")
     .supportedFamilies([.systemSmall])
     .contentMarginsDisabled()
   }

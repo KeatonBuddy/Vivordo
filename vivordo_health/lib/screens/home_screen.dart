@@ -204,7 +204,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeWidgetSnapshot {
   const _HomeWidgetSnapshot({
     required this.stressScore,
-    required this.wellnessScore,
     required this.steps,
     required this.activeCalories,
     required this.exerciseMinutes,
@@ -212,7 +211,6 @@ class _HomeWidgetSnapshot {
   });
 
   final double? stressScore;
-  final double? wellnessScore;
   final int steps;
   final int activeCalories;
   final int exerciseMinutes;
@@ -220,7 +218,6 @@ class _HomeWidgetSnapshot {
 
   String get signature => <Object?>[
     stressScore?.round(),
-    wellnessScore?.round(),
     steps,
     activeCalories,
     exerciseMinutes,
@@ -308,7 +305,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _queueHomeWidgetPublish(
           _HomeWidgetSnapshot(
             stressScore: snapshot.stressScore,
-            wellnessScore: snapshot.wellnessScore,
             steps: snapshot.steps,
             activeCalories: snapshot.activeCalories,
             exerciseMinutes: snapshot.exerciseMinutes,
@@ -506,7 +502,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _homeWidgetPublishInProgressSignature = snapshot.signature;
         await HomeWidgetService.publish(
           stressScore: snapshot.stressScore,
-          wellnessScore: snapshot.wellnessScore,
           steps: snapshot.steps,
           activeCalories: snapshot.activeCalories,
           exerciseMinutes: snapshot.exerciseMinutes,
@@ -605,7 +600,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final activeCaloriesMap = data?['active_calories'] as Map?;
         final exerciseTimeMap = data?['exercise_time'] as Map?;
         final moodMap = data?['mood'] as Map?;
-        final wellnessMap = data?['wellness'] as Map?;
 
         // Stress: prefer the LIVE accumulating BaaS value, then the day's
         // mean, then the HRV-derived fallback.
@@ -671,7 +665,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               _queueHomeWidgetPublish(
                 _HomeWidgetSnapshot(
                   stressScore: displayedStressScore,
-                  wellnessScore: (wellnessMap?['avg'] as num?)?.toDouble(),
                   steps: steps ?? 0,
                   activeCalories: activeCalories,
                   exerciseMinutes: exerciseMinutes,

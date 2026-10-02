@@ -72,7 +72,10 @@ import WidgetKit
             defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
 
             let stressKeys: Set<String> = ["stressScore"]
-            let wellnessKeys: Set<String> = ["wellnessScore", "wellnessDelta"]
+            let capacityKeys: Set<String> = [
+              "capacityScore", "capacityDelta", "capacityLabel", "capacityNote",
+              "capacityDay", "dashboardHasCapacity",
+            ]
             let fitnessKeys: Set<String> = [
               "steps", "stepsGoal", "activeCalories", "activeCaloriesGoal",
               "exerciseMinutes", "exerciseGoal",
@@ -82,7 +85,7 @@ import WidgetKit
             if !changedKeys.isDisjoint(with: stressKeys) {
               WidgetCenter.shared.reloadTimelines(ofKind: "VivordoStressScore")
             }
-            if !changedKeys.isDisjoint(with: wellnessKeys) {
+            if !changedKeys.isDisjoint(with: capacityKeys) {
               WidgetCenter.shared.reloadTimelines(ofKind: "VivordoWellnessScore")
             }
             if !changedKeys.isDisjoint(with: fitnessKeys) {
@@ -135,7 +138,7 @@ import WidgetKit
       return nil
     }
     let destination = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
-    return ["home", "wellness", "fitness", "calendar", "myday", "mood", "workout"].contains(destination) ? destination : nil
+    return ["home", "capacity", "fitness", "calendar", "myday", "mood", "workout"].contains(destination) ? destination : nil
   }
 
   private func handleWorkoutActivity(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

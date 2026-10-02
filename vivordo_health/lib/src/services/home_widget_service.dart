@@ -25,6 +25,50 @@ class HomeWidgetService {
   static DateTime? _lastCalendarRefresh;
   static StreamSubscription<List<DailyPriority>>? _prioritySubscription;
   static String? _priorityScope;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _capacitySubscription;
+  static String? _capacityScope;
+
+  /// Keeps the Capacity widget current: Capacity is calculated on the
+  /// server (scores_daily) and changes when sleep syncs, a check-in is
+  /// answered or yesterday's Effort settles, not only when Home refreshes.
+  static void _watchCapacity() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final now = DateTime.now();
+    final today = DateFormat('yyyy-MM-dd').format(now);
+    final yesterday = DateFormat(
+      'yyyy-MM-dd',
+    ).format(DateTime(now.year, now.month, now.day - 1));
+    final scope = '${user.uid}|$today';
+    if (_capacityScope == scope) return;
+    _capacityScope = scope;
+    unawaited(_capacitySubscription?.cancel());
+    _capacitySubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('scores_daily')
+        .where(FieldPath.documentId, whereIn: [yesterday, today])
+        .snapshots()
+        .listen(
+          (snapshot) async {
+            if (_capacityScope != scope) return;
+            Map<String, dynamic>? day(String key) =>
+                snapshot.docs.where((d) => d.id == key).firstOrNull?.data();
+            try {
+              await _channel.invokeMethod<void>('updateSnapshot', {
+                ...capacityWidgetValues(day(today), day(yesterday)),
+                'capacityDay': today,
+              });
+            } catch (error) {
+              debugPrint('Capacity widget update failed: $error');
+            }
+          },
+          onError: (Object error) =>
+              debugPrint('Widget Capacity unavailable: $error'),
+        );
+  }
+
   static int _accountGeneration = 0;
 
   static void _watchWidgetPriorities() {
@@ -100,6 +144,9 @@ class HomeWidgetService {
     _priorityScope = null;
     await _prioritySubscription?.cancel();
     _prioritySubscription = null;
+    _capacityScope = null;
+    await _capacitySubscription?.cancel();
+    _capacitySubscription = null;
     _lastSignature = null;
     _lastCalendarSignature = null;
     _lastCalendarRefresh = null;
@@ -107,8 +154,7 @@ class HomeWidgetService {
     try {
       await _channel.invokeMethod<void>('updateSnapshot', {
         'stressScore': 0,
-        'wellnessScore': 0,
-        'wellnessDelta': 0,
+        ...capacityWidgetValues(null, null),
         'steps': 0,
         'stepsGoal': 0,
         'activeCalories': 0,
@@ -123,7 +169,6 @@ class HomeWidgetService {
         'dashboardMetricsDay': '',
         'dashboardName': '',
         'dashboardHasStress': false,
-        'dashboardHasWellness': false,
         'dashboardMetricsUpdatedAt': 0,
         'dashboardCalendarConnected': false,
       });
@@ -136,7 +181,6 @@ class HomeWidgetService {
 
   static Future<void> publish({
     required double? stressScore,
-    required double? wellnessScore,
     required int steps,
     required int activeCalories,
     required int exerciseMinutes,
@@ -144,35 +188,19 @@ class HomeWidgetService {
   }) async {
     if (!Platform.isIOS) return;
     _watchWidgetPriorities();
+    _watchCapacity();
     unawaited(refreshCalendarSnapshot());
     if (_publishing) return;
     _publishing = true;
     final generation = _accountGeneration;
 
     try {
-      var wellnessDelta = 0;
       final user = FirebaseAuth.instance.currentUser;
-      if (user != null && wellnessScore != null) {
-        final yesterday = DateTime.now().subtract(const Duration(days: 1));
-        final snapshot = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection('metrics_daily')
-            .doc(DateFormat('yyyy-MM-dd').format(yesterday))
-            .get();
-        final prior = ((snapshot.data()?['wellness'] as Map?)?['avg'] as num?)
-            ?.toDouble();
-        if (prior != null) wellnessDelta = (wellnessScore - prior).round();
-      }
-
       final values = <String, Object>{
         'dashboardName': user?.displayName?.trim().split(' ').first ?? '',
         'dashboardMetricsDay': DateFormat('yyyy-MM-dd').format(DateTime.now()),
         'dashboardHasStress': stressScore != null,
-        'dashboardHasWellness': wellnessScore != null,
         'stressScore': stressScore?.round().clamp(0, 100) ?? 0,
-        'wellnessScore': wellnessScore?.round().clamp(0, 100) ?? 0,
-        'wellnessDelta': wellnessDelta,
         'steps': steps,
         'stepsGoal': goals.steps,
         'activeCalories': activeCalories,
@@ -357,4 +385,45 @@ class HomeWidgetService {
     }
     return 'calendar';
   }
+}
+
+/// What the Capacity widget shows, from today's and yesterday's
+/// `scores_daily` documents: the score and its label, the change from
+/// yesterday (same formula version, and only once today's isn't waiting
+/// for sleep), and a note while it's provisional.
+Map<String, Object> capacityWidgetValues(
+  Map<String, dynamic>? today,
+  Map<String, dynamic>? yesterday,
+) {
+  final capacity = today?['capacity'];
+  if (capacity is! Map || capacity['score'] is! num) {
+    return {
+      'dashboardHasCapacity': false,
+      'capacityScore': 0,
+      'capacityDelta': 0,
+      'capacityLabel': '',
+      'capacityNote': '',
+    };
+  }
+  final score = (capacity['score'] as num).round();
+  final provisional = capacity['provisional'] == true;
+  final prior = yesterday?['capacity'];
+  final parts = capacity['parts'];
+  return {
+    'dashboardHasCapacity': true,
+    'capacityScore': score.clamp(0, 100),
+    'capacityDelta':
+        !provisional &&
+            prior is Map &&
+            prior['score'] is num &&
+            prior['version'] == capacity['version']
+        ? score - (prior['score'] as num).round()
+        : 0,
+    'capacityLabel': capacity['label'] is String ? capacity['label'] : '',
+    'capacityNote': !provisional
+        ? ''
+        : parts is Map && parts['sleep'] == null && parts['body'] == null
+        ? 'Based on your check-in'
+        : 'Waiting for sleep',
+  };
 }
