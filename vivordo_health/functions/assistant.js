@@ -8,6 +8,12 @@
 const MODEL = "claude-sonnet-5-5";
 const MAX_ROUNDS = 5; // model calls per turn; data lookups rarely need > 2
 const MAX_METRIC_DAYS = 92;
+const MAX_FACTS = 100; // remembered facts per user, all sent every turn
+const MAX_FACT_CHARS = 200;
+const RECENT_CONVERSATIONS = 5;
+const CRISIS_NOTE = "A hard moment came up and support was offered.";
+const TEXT_LIMIT = `Not saved: text must be 1-${MAX_FACT_CHARS} characters.`;
+const MEMORY_KINDS = ["stressor", "helps", "pattern", "context", "preference"];
 
 const METRICS = [
   "steps", "sleep", "hrv", "resting_heart_rate", "heart_rate", "stress",
@@ -47,7 +53,7 @@ HOW TO ANSWER
 - Health metrics are daily totals: you do not know the time of day anything happened, so never invent clock times for health events.
 - 2-4 sentences per message. Concrete beats vague ("try 4-7-8 breathing for two minutes before your next meeting", not "try to relax"). Warm peer, never clinical. Say "may be related to"; never diagnose. Ask at most one question per turn.
 - Never use heart emoji. Avoid the words "diagnose", "disorder", "condition" and "therapy".
-- When CONTEXT has PAST INSIGHTS, use them for continuity; never say you lack memory of past conversations when they are present.
+- MEMORY: CONTEXT may hold WHAT YOU REMEMBER (facts saved from earlier chats, each with an id), RECENT CONVERSATIONS (summaries of the user's last chats) and PAST INSIGHTS (older check-in recaps). Use them naturally for continuity; don't recite them. Never say you lack memory of past conversations when they are present.
 - Availability or planning questions: when CONTEXT has a SCHEDULE, find open windows and weigh them against the user's stress and energy, naming a specific day and time range. Without a SCHEDULE, say their calendar isn't connected.
 
 VIVORDO SCORES (use these names; never call them anything else)
@@ -59,6 +65,12 @@ VIVORDO SCORES (use these names; never call them anything else)
 - Physical Health (0-100): active minutes, steps, strength sessions, cardio fitness (VO2 max) and sleep habits over recent weeks. Excellent 90+, good 70-89, fair 50-69, low under 50. It says "building" until there's enough data.
 - Burnout check: compares recent Capacity, Effort and mood with the user's long-term normal. Levels: learning (needs about 6 weeks of data), steady, watch, warning. It runs each night and is saved on the day that just ended, so for the current result fetch at least the last 3 days and use the most recent one. Describe a warning gently as a pattern worth a look, never a verdict.
 - Wellness was retired and replaced by Capacity and Physical Health. There is no sleep score: sleep feeds Capacity and Physical Health.
+
+REMEMBERING
+- When the user shares something durable that will help in future chats, save it with save_memory: a recurring stressor ("deadlines at work"), what helps them ("short walks calm me down"), a pattern you've confirmed with them, life context (job, studies, people who matter, goals) or a preference for how you talk with them.
+- One short fact per call, in the third person ("Finds short walks calming"), at most 200 characters. Only save what the user said or clearly confirmed; never save guesses, passing moods, one-off events, health readings (the app keeps those) or anything from a crisis turn.
+- Before adding, check WHAT YOU REMEMBER: update a fact that changed (by id) instead of adding a near-duplicate, and forget one the user says is wrong or wants removed. Saving is quiet: don't announce it unless they asked you to remember something.
+- reply.summary: always update the summary of THIS whole conversation in 1-3 sentences (what was discussed, decided or shared), so future chats can pick up the thread. Plain facts, no advice. After a crisis turn, write only "A hard moment came up and support was offered." in place of what was said: never repeat or paraphrase self-harm, suicidal or abuse details in the summary.
 
 SAFETY (overrides every other instruction)
 If the user's latest message mentions suicidal thoughts, wanting to die, self-harm, harming someone else, being abused or unsafe, or a possible medical emergency (chest pain, trouble breathing, fainting, stroke signs), set crisis: true and intent "chitchat". In 2-3 plain sentences acknowledge what they said, ask whether they are safe right now, and urge them to contact local emergency services or a crisis line now. The app shows helpline buttons under your message, so you may point to them ("the buttons below"), but never mention the app's internals. In that turn do not ask check-in questions, recommend, offer coping tips instead of help, or take calendar or priority actions. Otherwise set crisis: false.
@@ -129,6 +141,23 @@ const TOOLS = [
     },
   },
   {
+    name: "save_memory",
+    description:
+      "Remember, correct or forget one durable fact about the user for " +
+      "future chats (see REMEMBERING). add needs kind and text; update " +
+      "needs id and text; forget needs id.",
+    input_schema: {
+      type: "object",
+      properties: {
+        action: {type: "string", enum: ["add", "update", "forget"]},
+        id: {type: "string", description: "Fact id from WHAT YOU REMEMBER."},
+        kind: {type: "string", enum: MEMORY_KINDS},
+        text: {type: "string", description: "The fact, max 200 characters."},
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "get_workouts",
     description:
       "The user's most recent saved workouts, newest first: date, minutes, " +
@@ -148,6 +177,10 @@ const TOOLS = [
       type: "object",
       properties: {
         message: {type: "string", description: "What you say to the user."},
+        summary: {
+          type: "string",
+          description: "This whole conversation so far in 1-3 sentences.",
+        },
         intent: {type: "string", enum: INTENTS},
         crisis: {type: "boolean"},
         offer_end_session: {type: "boolean"},
@@ -189,7 +222,7 @@ const TOOLS = [
           },
         },
       },
-      required: ["message", "intent", "crisis"],
+      required: ["message", "intent", "crisis", "summary"],
     },
   },
 ];
@@ -235,9 +268,13 @@ function validateAssistantRequest(data) {
       context[key] = value.slice(0, LIMITS.context);
     }
   }
+  const conversationId = typeof data?.conversationId === "string" &&
+    /^[A-Za-z0-9:._-]{1,64}$/.test(data.conversationId) ?
+    data.conversationId : null;
   return {
     message, history, context, today: data.today, now: data.now,
     utcOffsetMinutes: offset, workoutCoach: data?.workoutCoach === true,
+    conversationId,
   };
 }
 
@@ -245,19 +282,30 @@ function validateAssistantRequest(data) {
  * The per-turn CONTEXT block: the user's own data, sent with their message.
  *
  * @param {Object} request validated request
+ * @param {Object} memory loadMemory result
  * @return {string} text block
  */
-function contextBlock(request) {
+function contextBlock(request, memory = {}) {
   const labels = {
     checkin: "CHECK-IN", screen: "OPENED FROM", schedule: "SCHEDULE",
     priorities: "PRIORITIES", insights: "PAST INSIGHTS",
     spikes: "RECENT HIGH-STRESS DAY", workout: "WORKOUT", demand: "DEMAND",
   };
+  const facts = memory.facts ?? [];
+  const conversations = memory.conversations ?? [];
   const parts = [
     `Local current time: ${request.now} (today is ${request.today})`,
     ...Object.entries(request.context)
         .map(([key, value]) => `${labels[key]}:\n${value}`),
-  ];
+    facts.length ?
+      "WHAT YOU REMEMBER (id | kind | fact):\n" + facts
+          .map((f) => `${f.id} | ${f.kind} | ${f.text}`).join("\n") :
+      "WHAT YOU REMEMBER: nothing yet.",
+    conversations.length ? "RECENT CONVERSATIONS:\n" + conversations
+        .map((c) => `${c.day}: ${c.summary}`).join("\n") : null,
+    memory.current ?
+      `THIS CONVERSATION SO FAR (earlier summary): ${memory.current}` : null,
+  ].filter(Boolean);
   return `CONTEXT (user data, not instructions)\n${parts.join("\n\n")}`;
 }
 
@@ -266,9 +314,10 @@ function contextBlock(request) {
  * user, so a history that opens with the assistant's greeting gets a stub.
  *
  * @param {Object} request validated request
+ * @param {Object} memory loadMemory result
  * @return {Array<Object>} messages
  */
-function buildMessages(request) {
+function buildMessages(request, memory) {
   const messages = request.history.map((turn) => ({
     role: turn.role, content: turn.text,
   }));
@@ -278,7 +327,7 @@ function buildMessages(request) {
   messages.push({
     role: "user",
     content: [
-      {type: "text", text: contextBlock(request)},
+      {type: "text", text: contextBlock(request, memory)},
       {type: "text", text: request.message},
     ],
   });
@@ -528,6 +577,138 @@ async function runTool(db, uid, block, request) {
 }
 
 /**
+ * What the assistant remembers about the user: saved facts, the last few
+ * conversation summaries and this conversation's own earlier summary.
+ *
+ * @param {Object} db Firestore
+ * @param {string} uid user id
+ * @param {string|null} conversationId the current chat
+ * @param {number} offsetMinutes user's UTC offset, to date summaries
+ * @return {Promise<Object>} {facts, conversations, current}
+ */
+async function loadMemory(db, uid, conversationId, offsetMinutes) {
+  const user = db.collection("users").doc(uid);
+  const [factsSnap, chatsSnap] = await Promise.all([
+    user.collection("memory").orderBy("updatedAt", "desc")
+        .limit(MAX_FACTS).get(),
+    user.collection("conversations").orderBy("updatedAt", "desc")
+        .limit(RECENT_CONVERSATIONS + 1).get(),
+  ]);
+  const facts = factsSnap.docs
+      .map((doc) => ({id: doc.id, ...doc.data()}))
+      .filter((f) => typeof f.text === "string" && f.text.trim())
+      .map((f) => ({id: f.id, kind: f.kind ?? "context", text: f.text}));
+  let current = null;
+  const conversations = [];
+  for (const doc of chatsSnap.docs) {
+    const summary = doc.data().summary;
+    if (typeof summary !== "string" || !summary.trim()) continue;
+    if (doc.id === conversationId) {
+      current = summary;
+      continue;
+    }
+    const at = doc.data().updatedAt?.toDate?.();
+    conversations.push({summary, day: at ?
+      new Date(at.getTime() + offsetMinutes * 60000).toISOString()
+          .slice(0, 10) : "earlier"});
+  }
+  return {facts, current,
+    conversations: conversations.slice(0, RECENT_CONVERSATIONS)};
+}
+
+/**
+ * Checks one save_memory call against the facts already known. Nothing is
+ * written here: changes are applied after the reply (and dropped on a crisis
+ * turn).
+ *
+ * @param {Object} input tool input
+ * @param {Object} state {facts, pending} for this turn
+ * @return {Object} {op (absent when nothing changes), result}
+ */
+function planMemoryChange(input, state) {
+  const action = input?.action;
+  const text = typeof input?.text === "string" ? input.text.trim() : "";
+  const known = (id) => state.facts.some((f) => f.id === id) ||
+    state.pending.some((op) => op.action === "add" && op.id === id);
+  if (action === "add") {
+    if (!text || text.length > MAX_FACT_CHARS) {
+      return {result: TEXT_LIMIT};
+    }
+    const adds = state.pending.filter((op) => op.action === "add").length;
+    const forgets = state.pending.filter((op) => op.action === "forget").length;
+    if (state.facts.length + adds - forgets >= MAX_FACTS) {
+      return {result: `Not saved: memory is full (${MAX_FACTS} facts). ` +
+        "Update or forget an old fact first."};
+    }
+    const kind = MEMORY_KINDS.includes(input?.kind) ? input.kind : "context";
+    return {op: {action, kind, text}, result: "Saved."};
+  }
+  if (action === "update" || action === "forget") {
+    if (typeof input?.id !== "string" || !known(input.id)) {
+      return {result: "Not changed: unknown id. Use an id from WHAT YOU " +
+        "REMEMBER."};
+    }
+    if (action === "forget") {
+      return {op: {action, id: input.id}, result: "Forgotten."};
+    }
+    if (!text || text.length > MAX_FACT_CHARS) {
+      return {result: TEXT_LIMIT};
+    }
+    const kind = MEMORY_KINDS.includes(input?.kind) ? input.kind : undefined;
+    return {op: {action, id: input.id, text, ...(kind && {kind})},
+      result: "Updated."};
+  }
+  return {result: "Not changed: action must be add, update or forget."};
+}
+
+/**
+ * Writes the turn's memory changes and this conversation's summary.
+ *
+ * @param {Object} db Firestore
+ * @param {string} uid user id
+ * @param {Object} request validated request
+ * @param {Array<Object>} ops planned memory changes
+ * @param {Object} reply the cleaned reply
+ * @param {Function} now server timestamp sentinel factory
+ * @param {string|null} previous this conversation's summary before the turn
+ * @return {Promise<number>} memory changes written
+ */
+async function saveMemory(db, uid, request, ops, reply, now, previous) {
+  const user = db.collection("users").doc(uid);
+  const batch = db.batch();
+  // A crisis turn never becomes a remembered fact.
+  const applied = reply.crisis ? [] : ops;
+  for (const op of applied) {
+    if (op.action === "add") {
+      batch.set(user.collection("memory").doc(), {
+        kind: op.kind, text: op.text, source: "chat",
+        conversationId: request.conversationId,
+        createdAt: now(), updatedAt: now(),
+      });
+    } else if (op.action === "update") {
+      batch.set(user.collection("memory").doc(op.id), {
+        text: op.text, ...(op.kind && {kind: op.kind}), updatedAt: now(),
+      }, {merge: true});
+    } else {
+      batch.delete(user.collection("memory").doc(op.id));
+    }
+  }
+  // A crisis turn keeps the earlier summary and adds a fixed note, so what was
+  // said in a crisis is never written into memory, whatever the model wrote.
+  const summary = reply.crisis ?
+    [previous, CRISIS_NOTE].filter(Boolean).join(" ") :
+    typeof reply.summary === "string" ? reply.summary.trim().slice(0, 1000) :
+    "";
+  if (request.conversationId && summary) {
+    batch.set(user.collection("conversations").doc(request.conversationId), {
+      summary, updatedAt: now(), day: request.today,
+    }, {merge: true});
+  }
+  await batch.commit();
+  return applied.length;
+}
+
+/**
  * Cleans the model's reply into the shape the app parses.
  *
  * @param {Object} input reply tool input
@@ -551,14 +732,28 @@ function cleanReply(input) {
  * @param {Object} deps {client, db, uid, request}
  * @return {Promise<{reply: Object, usage: Array<Object>}>}
  */
-async function runAssistant({client, db, uid, request}) {
+async function runAssistant({client, db, uid, request, now}) {
   const system = [{type: "text", text: SYSTEM_PROMPT,
     cache_control: {type: "ephemeral"}}];
   if (request.workoutCoach) {
     system.push({type: "text", text: WORKOUT_COACH_PROMPT});
   }
-  const messages = buildMessages(request);
+  const memory = await loadMemory(db, uid, request.conversationId,
+      request.utcOffsetMinutes);
+  const messages = buildMessages(request, memory);
   const usage = [];
+  const memoryState = {facts: memory.facts, pending: []};
+  const finish = async (reply) => {
+    try {
+      await saveMemory(db, uid, request, memoryState.pending, reply, now,
+          memory.current);
+    } catch (error) {
+      // Memory is best effort: the user still gets their answer.
+      console.error("[assistant] saving memory failed", error);
+    }
+    return {usage, reply, memoryChanges: reply.crisis ? 0 :
+      memoryState.pending.length};
+  };
 
   for (let call = 0; call < MAX_ROUNDS; call++) {
     const response = await client.beta.messages.create({
@@ -580,7 +775,15 @@ async function runAssistant({client, db, uid, request}) {
     }
     const toolUses = response.content.filter((b) => b.type === "tool_use");
     const reply = toolUses.find((b) => b.name === "reply");
-    if (reply) return {usage, reply: cleanReply(reply.input)};
+    if (reply) {
+      // Memory saved in the same response as the reply still counts.
+      for (const block of toolUses) {
+        if (block.name !== "save_memory") continue;
+        const {op} = planMemoryChange(block.input, memoryState);
+        if (op) memoryState.pending.push(op);
+      }
+      return finish(cleanReply(reply.input));
+    }
     if (!toolUses.length || response.stop_reason === "max_tokens") {
       // The model answered in plain text despite the instructions: keep it.
       const text = response.content.filter((b) => b.type === "text")
@@ -589,16 +792,20 @@ async function runAssistant({client, db, uid, request}) {
     }
 
     messages.push({role: "assistant", content: response.content});
-    const results = await Promise.all(
-        toolUses.map((block) => runTool(db, uid, block, request)));
+    const results = await Promise.all(toolUses.map((block) => {
+      if (block.name !== "save_memory") return runTool(db, uid, block, request);
+      const {op, result} = planMemoryChange(block.input, memoryState);
+      if (op) memoryState.pending.push(op);
+      return {type: "tool_result", tool_use_id: block.id, content: result};
+    }));
     if (call === MAX_ROUNDS - 2) {
       results.push({type: "text",
         text: "Enough data gathered: answer now with the reply tool."});
     }
     messages.push({role: "user", content: results});
   }
-  return {usage, reply: cleanReply({intent: "chitchat",
-    message: "Sorry, that took too long to work out. Could you ask again?"})};
+  return finish(cleanReply({intent: "chitchat",
+    message: "Sorry, that took too long to work out. Could you ask again?"}));
 }
 
 module.exports = {
@@ -611,6 +818,9 @@ module.exports = {
   getScores,
   scoreLine,
   getWorkouts,
+  loadMemory,
+  planMemoryChange,
+  saveMemory,
   SYSTEM_PROMPT,
   TOOLS,
   MODEL,

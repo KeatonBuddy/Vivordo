@@ -759,6 +759,7 @@ class _PandaScreenState extends State<PandaScreen>
             conversationHistory: history,
             context: context,
             workoutCoach: _screenInsight?.screen == 'workout_summary',
+            conversationId: _chatSessionId,
           )
           .timeout(const Duration(seconds: 90));
 
@@ -917,6 +918,7 @@ class _PandaScreenState extends State<PandaScreen>
             conversationHistory: history,
             context: context,
             workoutCoach: _screenInsight?.screen == 'workout_summary',
+            conversationId: _chatSessionId,
           )
           .timeout(const Duration(seconds: 90));
 

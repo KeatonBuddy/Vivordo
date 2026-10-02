@@ -771,19 +771,23 @@ exports.assistant = onCall(
         throw new HttpsError("invalid-argument", validated.error);
       }
       await consumeAiQuota(uid);
-      const {reply, usage} = await runAssistant({
+      const {reply, usage, memoryChanges} = await runAssistant({
         client: getAnthropicClient(),
         db: admin.firestore(),
         uid,
         request: validated,
+        now: () => admin.firestore.FieldValue.serverTimestamp(),
       });
       console.log("[assistant] usage", JSON.stringify(usage.map((u) => ({
         input: u?.input_tokens ?? 0,
         output: u?.output_tokens ?? 0,
         cache_create: u?.cache_creation_input_tokens ?? 0,
         cache_read: u?.cache_read_input_tokens ?? 0,
-      }))));
-      return reply;
+      }))), `memory changes: ${memoryChanges}`);
+      // The conversation summary is stored server-side; the app doesn't use it.
+      const forApp = {...reply};
+      delete forApp.summary;
+      return forApp;
     },
 );
 

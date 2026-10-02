@@ -344,6 +344,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     required List<Map<String, String>> conversationHistory,
     Map<String, String> context = const {},
     bool workoutCoach = false,
+    String? conversationId,
   }) async {
     // The screen adds the message to the transcript before calling; the
     // function appends it itself, so don't send it twice.
@@ -365,6 +366,7 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
       'now': now.toIso8601String(),
       'utcOffsetMinutes': now.timeZoneOffset.inMinutes,
       'workoutCoach': workoutCoach,
+      'conversationId': ?conversationId,
     });
     return PandaPrompts.parseTurnReply(jsonEncode(result.data));
   }

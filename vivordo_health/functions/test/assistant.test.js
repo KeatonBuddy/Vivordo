@@ -4,27 +4,41 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   runAssistant, validateAssistantRequest, buildMessages, metricValue, dayRange,
-  scoreLine, getScores, SYSTEM_PROMPT, TOOLS,
+  scoreLine, getScores, planMemoryChange, SYSTEM_PROMPT, TOOLS,
 } = require("../assistant");
 
 const base = {message: "How did I sleep?", today: "2026-10-01", now: "2026-10-01T09:30:00", utcOffsetMinutes: -360};
 
 // Minimal Firestore stand-in: users/{uid}/metrics_daily/{day} and workouts.
-function fakeDb({days = {}, scores = {}, workouts = []} = {}) {
-  const docRef = (path) => ({path, collection: (name) => collectionRef(`${path}/${name}`)});
+function fakeDb({days = {}, scores = {}, workouts = [], memory = [], conversations = []} = {}) {
+  const writes = [];
+  let nextId = 0;
+  const lists = {workouts, memory, conversations};
+  const docRef = (path) => ({path, id: path.split("/").pop(), collection: (name) => collectionRef(`${path}/${name}`)});
   const collectionRef = (path) => ({
-    doc: (id) => docRef(`${path}/${id}`),
-    orderBy: () => ({limit: (n) => ({get: async () => ({
-      empty: workouts.length === 0,
-      docs: workouts.slice(0, n).map((w) => ({data: () => w})),
-    })})}),
+    doc: (id) => docRef(`${path}/${id ?? `new${nextId++}`}`),
+    orderBy: () => ({limit: (n) => ({get: async () => {
+      const list = lists[path.split("/").pop()] ?? [];
+      return {empty: list.length === 0, docs: list.slice(0, n).map((item) => ({
+        id: item.id, data: () => item.data ?? item,
+      }))};
+    }})}),
   });
   return {
+    writes,
     collection: (name) => collectionRef(name),
     getAll: async (...refs) => refs.map((ref) => {
       const [collection, day] = ref.path.split("/").slice(-2);
       return {data: () => (collection === "scores_daily" ? scores : days)[day]};
     }),
+    batch: () => {
+      const pending = [];
+      return {
+        set: (ref, data, options) => pending.push({op: options?.merge ? "merge" : "set", path: ref.path, data}),
+        delete: (ref) => pending.push({op: "delete", path: ref.path}),
+        commit: async () => writes.push(...pending),
+      };
+    },
   };
 }
 
@@ -155,6 +169,7 @@ test("the prompt carries the safety and reminder rules", () => {
   assert.match(SYSTEM_PROMPT, /set crisis: true/);
   assert.match(SYSTEM_PROMPT, /"remind me to pay internet bill on Oct 1"/);
   assert.match(SYSTEM_PROMPT, /You are Vivordo AI/);
+  assert.match(SYSTEM_PROMPT, /never repeat or paraphrase self-harm, suicidal or abuse details in the summary/);
 });
 
 test("score lines read the stored Capacity, Effort, Physical Health and burnout records", () => {
@@ -194,4 +209,83 @@ test("the score lineup is current: Heart in metrics, Wellness retired, Demand fr
   assert.match(TOOLS.find((t) => t.name === "get_scores").description, /last 3 days/);
   const request = validateAssistantRequest({...base, context: {demand: "42 points ahead today"}});
   assert.match(buildMessages(request).at(-1).content[0].text, /DEMAND:\n42 points ahead today/);
+});
+
+const now = () => "TS";
+const at = (iso) => ({toDate: () => new Date(iso)});
+
+test("memory changes are checked before anything is written", () => {
+  const state = {facts: [{id: "f1", kind: "helps", text: "Finds walks calming"}], pending: []};
+  assert.deepEqual(planMemoryChange({action: "add", kind: "stressor", text: " Deadlines at work "}, state),
+      {op: {action: "add", kind: "stressor", text: "Deadlines at work"}, result: "Saved."});
+  assert.equal(planMemoryChange({action: "add", kind: "made_up", text: "x"}, state).op.kind, "context");
+  assert.match(planMemoryChange({action: "add", text: "x".repeat(201)}, state).result, /^Not saved/);
+  assert.match(planMemoryChange({action: "update", id: "nope", text: "x"}, state).result, /unknown id/);
+  assert.deepEqual(planMemoryChange({action: "update", id: "f1", text: "Finds long walks calming"}, state).op,
+      {action: "update", id: "f1", text: "Finds long walks calming"});
+  assert.deepEqual(planMemoryChange({action: "forget", id: "f1"}, state).op, {action: "forget", id: "f1"});
+  assert.match(planMemoryChange({action: "rename"}, state).result, /must be add, update or forget/);
+  const full = {facts: Array.from({length: 100}, (_, i) => ({id: `f${i}`, kind: "context", text: "x"})), pending: []};
+  assert.match(planMemoryChange({action: "add", text: "one more"}, full).result, /memory is full/);
+  full.pending.push({action: "forget", id: "f0"});
+  assert.ok(planMemoryChange({action: "add", text: "one more"}, full).op, "forgetting makes room");
+});
+
+test("the model sees what it remembers and recent chats, then saves a fact and the summary", async () => {
+  const db = fakeDb({
+    memory: [{id: "f1", data: {kind: "helps", text: "Finds short walks calming", updatedAt: at("2026-09-30T12:00:00Z")}}],
+    conversations: [
+      {id: "chat-now", data: {summary: "Talked about the pitch deck.", updatedAt: at("2026-10-01T20:00:00Z")}},
+      {id: "chat-old", data: {summary: "Planned a lighter Friday.", updatedAt: at("2026-09-29T15:00:00Z")}},
+    ],
+  });
+  const client = fakeClient([
+    {stop_reason: "tool_use", usage: {}, content: [toolUse("m1", "save_memory", {action: "add", kind: "stressor", text: "Deadlines at work"})]},
+    {stop_reason: "tool_use", usage: {}, content: [toolUse("r", "reply", {message: "That sounds heavy.", intent: "chitchat", crisis: false, summary: "Shared that work deadlines are stressful."})]},
+  ]);
+  const result = await runAssistant({client, db, uid: "u1", now, request: validateAssistantRequest({...base, conversationId: "chat-now"})});
+  assert.equal(result.memoryChanges, 1);
+
+  const context = client.requests[0].messages.at(-1).content[0].text;
+  assert.match(context, /WHAT YOU REMEMBER \(id \| kind \| fact\):\nf1 \| helps \| Finds short walks calming/);
+  assert.match(context, /RECENT CONVERSATIONS:\n2026-09-29: Planned a lighter Friday\./);
+  const recent = context.split("\n\n").find((part) => part.startsWith("RECENT CONVERSATIONS"));
+  assert.doesNotMatch(recent, /pitch deck/, "the current chat isn't a 'recent' one");
+  assert.match(context, /THIS CONVERSATION SO FAR \(earlier summary\): Talked about the pitch deck\./);
+  assert.equal(client.requests[1].messages.at(-1).content[0].content, "Saved.");
+
+  assert.deepEqual(db.writes, [
+    {op: "set", path: "users/u1/memory/new0", data: {kind: "stressor", text: "Deadlines at work", source: "chat", conversationId: "chat-now", createdAt: "TS", updatedAt: "TS"}},
+    {op: "merge", path: "users/u1/conversations/chat-now", data: {summary: "Shared that work deadlines are stressful.", updatedAt: "TS", day: "2026-10-01"}},
+  ]);
+});
+
+test("a crisis turn saves no facts, and memory saved alongside the reply counts", async () => {
+  const crisisDb = fakeDb();
+  await runAssistant({client: fakeClient([{stop_reason: "tool_use", usage: {}, content: [
+    toolUse("m", "save_memory", {action: "add", kind: "context", text: "Feels everyone is better off without them"}),
+    toolUse("r", "reply", {message: "Are you safe right now?", intent: "chitchat", crisis: true, summary: "A hard moment; support was offered."}),
+  ]}]), db: crisisDb, uid: "u", now, request: validateAssistantRequest({...base, conversationId: "c1"})});
+  assert.deepEqual(crisisDb.writes.map((w) => w.path), ["users/u/conversations/c1"]);
+  assert.equal(crisisDb.writes[0].data.summary, "A hard moment came up and support was offered.",
+      "the model's own summary of a crisis turn is never stored");
+
+  const ongoing = fakeDb({conversations: [{id: "c2", data: {summary: "Planned a calmer week.", updatedAt: at("2026-10-01T20:00:00Z")}}]});
+  await runAssistant({client: fakeClient([{stop_reason: "tool_use", usage: {}, content: [
+    toolUse("r", "reply", {message: "Are you safe right now?", intent: "chitchat", crisis: true, summary: "User shared thoughts of self-harm."}),
+  ]}]), db: ongoing, uid: "u", now, request: validateAssistantRequest({...base, conversationId: "c2"})});
+  assert.equal(ongoing.writes[0].data.summary, "Planned a calmer week. A hard moment came up and support was offered.");
+
+  const sameTurnDb = fakeDb({memory: [{id: "old", data: {kind: "helps", text: "Likes running"}}]});
+  await runAssistant({client: fakeClient([{stop_reason: "tool_use", usage: {}, content: [
+    toolUse("m", "save_memory", {action: "forget", id: "old"}),
+    toolUse("r", "reply", {message: "Done, I've forgotten that.", intent: "chitchat", crisis: false, summary: "Asked to forget running."}),
+  ]}]), db: sameTurnDb, uid: "u", now, request: validateAssistantRequest(base)});
+  assert.deepEqual(sameTurnDb.writes, [{op: "delete", path: "users/u/memory/old"}], "no conversationId: no summary write");
+});
+
+test("conversation ids are validated", () => {
+  assert.equal(validateAssistantRequest({...base, conversationId: "2026-10-01T20:15:03.123456"}).conversationId, "2026-10-01T20:15:03.123456");
+  assert.equal(validateAssistantRequest({...base, conversationId: "a/b"}).conversationId, null);
+  assert.equal(validateAssistantRequest({...base, conversationId: "x".repeat(65)}).conversationId, null);
 });
