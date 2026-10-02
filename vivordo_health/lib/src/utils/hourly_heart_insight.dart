@@ -15,6 +15,17 @@ class HourlyHeartInsight {
   final String subtitle;
 }
 
+// Apple Watch records heart rate in the background about every 5 minutes and
+// syncs to the phone in batches, so an hour holds ~10–12 readings and the
+// newest is often 10–20 minutes old. These minimums accept that cadence and
+// still catch real gaps (watch off or not worn).
+const _minHourReadings = 6;
+const _minHourQuarters = 3;
+const _maxStaleMinutes = 20;
+// A rise needs two high readings in a row; at the watch's ~5-minute spacing
+// (sometimes 7) consecutive readings are that far apart.
+const _maxRiseGapMinutes = 7;
+
 /// Descriptive wellness heuristics, not medical thresholds or diagnosis.
 /// Historical minutes are weighted equally per day to avoid dense workout
 /// recordings dominating a personal comparison. No daily averages are samples.
@@ -42,9 +53,9 @@ HourlyHeartInsight summarizeHeartHour({
   final quarters = hour
       .map((r) => r.timestamp.difference(cutoff).inMinutes ~/ 15)
       .toSet();
-  if (hour.length < 12 ||
-      quarters.length < 4 ||
-      now.difference(hour.last.timestamp).inMinutes > 10) {
+  if (hour.length < _minHourReadings ||
+      quarters.length < _minHourQuarters ||
+      now.difference(hour.last.timestamp).inMinutes > _maxStaleMinutes) {
     return const HourlyHeartInsight(
       'Limited readings',
       'There aren’t enough recent readings to reliably summarize the past hour.',
@@ -96,7 +107,7 @@ HourlyHeartInsight summarizeHeartHour({
     final a = hour[i - 1], b = hour[i];
     if (a.bpm > spikeThreshold &&
         b.bpm > spikeThreshold &&
-        b.timestamp.difference(a.timestamp).inMinutes <= 3 &&
+        b.timestamp.difference(a.timestamp).inMinutes <= _maxRiseGapMinutes &&
         (spikes.isEmpty ||
             a.timestamp.difference(spikes.last.timestamp).inMinutes > 10))
       spikes.add(a);
@@ -106,7 +117,7 @@ HourlyHeartInsight summarizeHeartHour({
   final quiet = hour
       .where((r) => !exercising(r.timestamp) && !asleep(r.timestamp))
       .toList();
-  if (quiet.length < 12) {
+  if (quiet.length < _minHourReadings) {
     return HourlyHeartInsight(
       'Activity over the past hour',
       workoutSpikes.isNotEmpty

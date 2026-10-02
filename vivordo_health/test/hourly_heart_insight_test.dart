@@ -34,6 +34,38 @@ void main() {
   test('sparse and duplicate readings are insufficient', () {
     expect(run(List.filled(60, reading(now, 70))).title, 'Limited readings');
   });
+  test('an Apple Watch cadence (every 5 minutes, synced late) is enough', () {
+    final watch = [
+      for (var m = 15; m <= 60; m += 5)
+        reading(now.subtract(Duration(minutes: m)), 70),
+    ];
+    expect(run([...baseline, ...watch]).title, 'Steady over the past hour');
+    // An hour with the watch off for most of it is still too little.
+    expect(run([...baseline, ...watch.take(3)]).title, 'Limited readings');
+  });
+  test('a rise is caught at the watch cadence, a lone high reading is not', () {
+    List<HeartRateHistoryReading> watch(Set<int> high) => [
+      for (var m = 5; m <= 60; m += 5)
+        reading(
+          now.subtract(Duration(minutes: m)),
+          high.contains(m) ? 110 : 70,
+        ),
+    ];
+    expect(
+      run([
+        ...baseline,
+        ...watch({20, 25}),
+      ]).subtitle,
+      contains('rise was recorded'),
+    );
+    expect(
+      run([
+        ...baseline,
+        ...watch({20}),
+      ]).subtitle,
+      isNot(contains('rise was recorded')),
+    );
+  });
   test('requires seven historical days', () {
     expect(run(hour()).subtitle, contains('still learning'));
   });
