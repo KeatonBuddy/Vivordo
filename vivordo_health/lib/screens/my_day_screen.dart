@@ -894,6 +894,15 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 String timeLabel(DateTime? t) => t == null
                     ? 'unknown'
                     : DateFormat('MMM d, h:mm a').format(t);
+                if (ready) {
+                  latestDemand = (
+                    demand: demand,
+                    tomorrow: evening,
+                    headline: headline,
+                    capacity: capacityScore,
+                    at: now,
+                  );
+                }
                 return DailyBriefCard(
                   headline: headline,
                   summary:

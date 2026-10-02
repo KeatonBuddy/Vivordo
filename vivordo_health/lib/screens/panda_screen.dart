@@ -22,6 +22,7 @@ import '../src/services/workout_ai_advice.dart';
 import '../src/utils/workout_opening.dart';
 import '../widgets/vivordo_robot.dart';
 import '../widgets/contextual_insight_bar.dart';
+import '../src/utils/day_effort.dart';
 import '../widgets/crisis_support_card.dart';
 import '../src/utils/panda_priority_context.dart';
 import '../widgets/privacy_support_links.dart';
@@ -1395,7 +1396,23 @@ class _PandaScreenState extends State<PandaScreen>
           : jsonEncode(PandaPrompts.trimSpikeContext(spikes)),
       if (_screenInsight?.screen == 'workout_summary')
         'workout': _screenInsight!.context ?? '',
+      'demand': _demandContext(),
     };
+  }
+
+  /// Today's Demand as My Day last showed it; empty until My Day has loaded
+  /// today (the assistant then judges the day from the schedule instead).
+  String _demandContext() {
+    final latest = latestDemand;
+    if (latest == null || !DateUtils.isSameDay(latest.at, DateTime.now())) {
+      return '';
+    }
+    final capacity = latest.capacity;
+    return '${latest.demand.round()} points '
+        '${latest.tomorrow ? 'expected for tomorrow' : 'still ahead today'}'
+        '${capacity == null ? '' : ' against Capacity ${capacity.round()}'}, '
+        'as of ${DateFormat('h:mm a').format(latest.at)}. '
+        'My Day says: "${latest.headline}".';
   }
 
   /// Today's open priorities, cached briefly so every turn doesn't re-query.

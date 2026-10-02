@@ -39,6 +39,11 @@ class EffortHour {
   final int ticks;
 }
 
+/// The Demand My Day last showed, for Vivordo AI's context: only the phone can
+/// calculate Demand, because it needs the device calendar.
+({double demand, bool tomorrow, String headline, num? capacity, DateTime at})?
+latestDemand;
+
 /// The day's Effort card: bars from [from] to [until], Effort so far and
 /// what's still ahead.
 class DayEffort {

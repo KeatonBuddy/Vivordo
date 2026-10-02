@@ -4,13 +4,13 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   runAssistant, validateAssistantRequest, buildMessages, metricValue, dayRange,
-  SYSTEM_PROMPT, TOOLS,
+  scoreLine, getScores, SYSTEM_PROMPT, TOOLS,
 } = require("../assistant");
 
 const base = {message: "How did I sleep?", today: "2026-10-01", now: "2026-10-01T09:30:00", utcOffsetMinutes: -360};
 
 // Minimal Firestore stand-in: users/{uid}/metrics_daily/{day} and workouts.
-function fakeDb({days = {}, workouts = []} = {}) {
+function fakeDb({days = {}, scores = {}, workouts = []} = {}) {
   const docRef = (path) => ({path, collection: (name) => collectionRef(`${path}/${name}`)});
   const collectionRef = (path) => ({
     doc: (id) => docRef(`${path}/${id}`),
@@ -21,7 +21,10 @@ function fakeDb({days = {}, workouts = []} = {}) {
   });
   return {
     collection: (name) => collectionRef(name),
-    getAll: async (...refs) => refs.map((ref) => ({data: () => days[ref.path.split("/").pop()]})),
+    getAll: async (...refs) => refs.map((ref) => {
+      const [collection, day] = ref.path.split("/").slice(-2);
+      return {data: () => (collection === "scores_daily" ? scores : days)[day]};
+    }),
   };
 }
 
@@ -152,4 +155,43 @@ test("the prompt carries the safety and reminder rules", () => {
   assert.match(SYSTEM_PROMPT, /set crisis: true/);
   assert.match(SYSTEM_PROMPT, /"remind me to pay internet bill on Oct 1"/);
   assert.match(SYSTEM_PROMPT, /You are Vivordo AI/);
+});
+
+test("score lines read the stored Capacity, Effort, Physical Health and burnout records", () => {
+  assert.equal(scoreLine({
+    capacity: {score: 81, label: "high", provisional: false, sleepHours: 7.1, sleepNeed: 7.5, hrv: 44.6, restingHr: 58},
+    effort: {total: 26.6, mental: 20, physical: 6.6, busyMinutes: 240, afterHoursMinutes: 30, backToBack: 3, prioritiesDone: 2, unfinishedPriorities: 1},
+    physical: {score: 72, label: "good", daysOfData: 30},
+    burnout: {level: "watch", areas: {capacity: {elevated: true}, effort: {elevated: false}, mood: {elevated: true}}},
+  }), "capacity=81 (high, sleep 7.1h vs need 7.5h, HRV 44.6, resting HR 58) | effort=26.6 (mental 20, physical 6.6, busy 240 min, after hours 30 min, 3 back-to-back, 2 priorities done, 1 unfinished) | physical_health=72 (good) | burnout_check=watch (strained: capacity, mood)");
+  assert.equal(scoreLine({capacity: {score: 55, label: "moderate", provisional: true, sleepHours: null}}), "capacity=55 (moderate, provisional)");
+  assert.equal(scoreLine({physical: {score: null, label: "building", daysOfData: 5}, burnout: {level: "learning", learningDays: 12}}), "physical_health=building (5 days of data) | burnout_check=learning (12 days of history)");
+  assert.equal(scoreLine({capacity: null, effort: null}), null);
+  assert.equal(scoreLine(undefined), null);
+});
+
+test("get_scores reads scores_daily, not metrics_daily", async () => {
+  const db = fakeDb({
+    days: {"2026-09-30": {steps: {sum: 900}}},
+    scores: {"2026-09-30": {effort: {total: 12, mental: 12, physical: 0, busyMinutes: 60}}, "2026-10-01": {capacity: {score: 81, label: "high"}}},
+  });
+  assert.equal(await getScores(db, "u", {start_date: "2026-09-29", end_date: "2026-10-01"}),
+      "2026-09-30: effort=12 (mental 12, physical 0, busy 60 min)\n2026-10-01: capacity=81 (high)");
+  assert.match(await getScores(db, "u", {start_date: "2026-01-01", end_date: "2026-01-02"}), /^No scores/);
+  assert.match(await getScores(db, "u", {start_date: "2026-01-02", end_date: "2026-01-01"}), /^Invalid range/);
+});
+
+test("the score lineup is current: Heart in metrics, Wellness retired, Demand from context", () => {
+  const metrics = TOOLS.find((t) => t.name === "get_metrics").input_schema.properties.metrics.items.enum;
+  assert.ok(metrics.includes("heart_health"));
+  assert.ok(!metrics.includes("wellness"));
+  assert.ok(TOOLS.some((t) => t.name === "get_scores"));
+  for (const name of ["Capacity", "Demand", "Effort", "Stress", "Heart", "Physical Health", "Burnout check"]) {
+    assert.match(SYSTEM_PROMPT, new RegExp(`- ${name}[ :]`), name);
+  }
+  assert.match(SYSTEM_PROMPT, /Wellness was retired/);
+  assert.match(SYSTEM_PROMPT, /saved on the day that just ended, so for the current result fetch at least the last 3 days/);
+  assert.match(TOOLS.find((t) => t.name === "get_scores").description, /last 3 days/);
+  const request = validateAssistantRequest({...base, context: {demand: "42 points ahead today"}});
+  assert.match(buildMessages(request).at(-1).content[0].text, /DEMAND:\n42 points ahead today/);
 });
