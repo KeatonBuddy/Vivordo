@@ -1758,7 +1758,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 _ => 'Mostly light',
                               },
                               if (effort.nextStart case final next?)
-                                'next ${DateFormat.j().format(next)}',
+                                'next ${DateFormat.jm().format(next).replaceAll(':00', '')}',
                             ].join(' · '),
                           )
                         : FutureBuilder<({int minutes, DateTime? first})?>(
