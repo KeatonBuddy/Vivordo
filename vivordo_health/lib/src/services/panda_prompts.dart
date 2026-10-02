@@ -11,20 +11,6 @@ import 'panda_types.dart';
 
 export 'panda_types.dart';
 
-/// Hard-reject any call whose estimated input exceeds this many tokens.
-/// Protects against runaway prompt costs and latency spikes.
-/// 1 token ~ 4 characters (conservative English estimate).
-const int kMaxInputTokens = 2500;
-
-/// Output cap for a single dialogue turn (processTurn).
-const int kMaxOutputTokensChat = 800;
-
-/// Output cap for session spike analysis (analyzePandaSession).
-const int kMaxOutputTokensSpike = 1800;
-
-/// Output cap for the end-of-session insight summary (summarizeSession).
-const int kMaxOutputTokensSummary = 180;
-
 // =============================================================================
 // ARCHITECTURE OVERVIEW
 // =============================================================================
@@ -62,43 +48,6 @@ const int kMaxOutputTokensSummary = 180;
 /// to talk to the model.
 class PandaPrompts {
   PandaPrompts._();
-
-  static const String summarySystemPrompt = '''
-You are condensing a completed Vivordo wellness check-in into a compact archive
-for a future session. Do not preserve the conversation verbatim.
-
-Capture, when present: the main stressor and what triggered it; the user's emotion
-and intensity; relevant context (time of day, activity, location, social, sleep);
-what coping was tried or actually helped; and concrete events, plans, dates, people,
-or changes the user may want remembered. Include one durable pattern when evident.
-
-Do NOT restate the questions or answers verbatim, give advice, greet, or use
-emojis. Never invent a detail. If very little was shared, say so briefly.
-
-Return exactly this plain-text shape:
-SUMMARY: <one compact paragraph, 2-3 sentences, max 55 words>
-IMPORTANT:
-- <important detail or event, max 16 words>
-
-Include 0-4 IMPORTANT bullets. Omit bullets when no reliable detail exists.''';
-
-  static const String spikeSystemPrompt = '''
-You are Vivordo Stress Labeling Assistant.
-
-GOAL: Given pre-detected spike candidates + events, generate varied labeling
-questions to collect ML labels. Also generate depth probes for each question
-so the user can explore each topic as deeply as they wish.
-
-RULES:
-- Do NOT diagnose or give medical advice. Use "may be related to" language.
-- Max 3 questions per spike. Prefer multiple-choice + open option.
-- VARY the phrasing each call — never reuse the same wording.
-- Generate 2–3 depth_prompts per question (open-ended follow-ups if user wants more).
-- Keep question prompts ≤ 90 chars. overall_notes ≤ 140 chars.
-- DAILY DATA ONLY: metrics are daily aggregates. You do NOT know the time of day
-  a spike happened. Reference the DAY (use spike.day, e.g. "on Wed, Jun 17") and
-  NEVER state or invent a clock time ("2pm", "noon", "this morning", "afternoon").
-''';
 
   static Future<Map<String, dynamic>?> fetchRealUserPayload(
     String userId,
@@ -410,11 +359,6 @@ RULES:
     String? overrideName,
   }) => bootstrapSession(payload, overrideName: overrideName, hasSpikes: false);
 
-  /// Rough token estimate: 1 token ≈ 4 chars for English text.
-  /// Intentionally conservative (over-counts) — the safe direction for budget checks.
-  /// Used by both PandaPrompts and ClaudeService before every API call.
-  static int estimateTokens(String text) => (text.length / 4).ceil();
-
   // =========================================================================
   // Spike de-duplication  (public static — used by PandaScreen)
   //
@@ -557,61 +501,6 @@ RULES:
   // =========================================================================
   // Prompt builders  (public static — reused by ClaudeService)
   // =========================================================================
-
-  /// Builds the user-role prompt for spike analysis.
-  /// [compact] must already contain user_context and _variability_seed.
-  static String buildSpikeUserPrompt(Map<String, dynamic> compact) {
-    return '''
-Use ONLY the spike candidates detected in DATA. Do NOT invent symptoms, events, journal entries, goals, or any context not present in DATA.
-
-If DATA.user_context is non-empty, mention it briefly in summary.overall_notes.
-
-For each question, generate 2–3 depth_prompts (open-ended follow-ups that
-encourage the user to elaborate further if they want to go deeper).
-
-Vary the question phrasing — do not reuse wording from previous calls.
-(Hint: _variability_seed = ${compact["_variability_seed"]})
-
-Include every schema key (use "", 0, [] for unknowns).
-
-DATA: ${jsonEncode(compact)}
-''';
-  }
-
-  /// Builds the user-role prompt for the end-of-session insight summary.
-  /// Caps the conversation to the last 8 turns to bound token cost; slots and
-  /// labeled answers are included compactly so the model can synthesise context
-  /// rather than merely echo answers.
-  static String buildSummaryPrompt({
-    required List<Map<String, String>> conversation,
-    required Map<String, String> slots,
-    required Map<String, String> labeledAnswers,
-  }) {
-    final capped = conversation.length > 8
-        ? conversation.sublist(conversation.length - 8)
-        : conversation;
-    final convoText = capped
-        .map(
-          (t) =>
-              "${t['role'] == 'user' ? 'User' : 'Assistant'}: ${t['text'] ?? ''}",
-        )
-        .join('\n');
-
-    final slotsText = slots.isNotEmpty ? jsonEncode(slots) : 'none';
-    final answersText = labeledAnswers.isNotEmpty
-        ? jsonEncode(labeledAnswers)
-        : 'none';
-
-    return '''
-EXTRACTED SLOTS: $slotsText
-
-LABELED ANSWERS: $answersText
-
-CONVERSATION:
-$convoText
-
-Write the continuity note now.''';
-  }
 
   // =========================================================================
   // Data processing  (public static — reused by ClaudeService)
@@ -779,7 +668,7 @@ Write the continuity note now.''';
         // (The old check looked for "other", which "Something else 🙋" does not
         // contain — so it appended a duplicate every time.)
         if (opts.isNotEmpty && !optKeys.any(_isEscapeHatch)) {
-          opts.add('Something else 🙋');
+          opts.add('Something else');
         }
 
         final depths = <String>[];
@@ -921,7 +810,7 @@ Write the continuity note now.''';
             }
           }
           if (opts.isNotEmpty && !optKeys.any(_isEscapeHatch)) {
-            opts.add('Something else 🙋');
+            opts.add('Something else');
           }
           if (qid.isNotEmpty && qp.isNotEmpty && opts.isNotEmpty) {
             injected = PandaQuestion(
@@ -1151,11 +1040,11 @@ Write the continuity note now.''';
           questionId: 'q_fallback',
           prompt: 'What was happening on $timePhrase?',
           options: const [
-            'Work or study 📚',
-            'Exercise 🏃',
-            'Social situation 👥',
-            'Commute 🚗',
-            'Something else 🙋',
+            'Work or study',
+            'Exercise',
+            'Social situation',
+            'Commute',
+            'Something else',
           ],
           depthPrompts: const [
             'Can you tell me more about what was stressful about that?',

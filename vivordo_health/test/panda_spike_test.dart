@@ -227,28 +227,6 @@ void main() {
     });
   });
 
-  group('Spike prompt — buildSpikeUserPrompt', () {
-    test('prompt does not reference journal or goals', () {
-      final payload = _buildSpikePayload();
-      final compact = PandaPrompts.buildCompactPayload(payload, topK: 1);
-      compact['user_context'] = '';
-      compact['_variability_seed'] = 12345;
-
-      final prompt = PandaPrompts.buildSpikeUserPrompt(compact);
-
-      // "journal" may appear in the "Do NOT invent journal entries" guardrail —
-      // what must NOT appear is a positive instruction to USE journal data.
-      expect(prompt.contains('DATA.journal'), isFalse,
-          reason: 'Prompt must not tell the LLM to read from a DATA.journal key');
-      expect(prompt.contains('use.*journal'), isFalse,
-          reason: 'Prompt must not instruct the LLM to use journal content');
-      expect(prompt.contains('DATA.goals'), isFalse,
-          reason: 'Prompt must not tell the LLM to read from a DATA.goals key');
-      expect(prompt.contains('Do NOT invent'), isTrue,
-          reason: 'Prompt must explicitly forbid the LLM from inventing context');
-    });
-  });
-
   group('Spike session parsing — parsePandaSession', () {
     test('parses questions from valid LLM JSON', () {
       final payload = _buildSpikePayload();
@@ -293,94 +271,6 @@ void main() {
       expect(session.questions, isNotEmpty,
           reason: 'Fallback session must include a question so the path does not dead-end');
     });
-  });
-
-  // ---------------------------------------------------------------------------
-  // AC: Token guard — summarizeSession skips the model call when the raw
-  // conversation exceeds kMaxInputTokens and falls back to the deterministic
-  // summary. (Chat turns go through the server-side assistant function.)
-  // ---------------------------------------------------------------------------
-
-  group('Token guard', () {
-    // ~210 chars per turn — representative of a real Panda exchange
-    // (user explains situation, assistant asks follow-up, ~50–60 words each).
-    const _realisticTurn =
-        "I've been feeling really overwhelmed with everything happening at work. "
-        "The deadlines keep piling up and I'm struggling with the anxiety it causes. "
-        "My heart rate spikes whenever I think about the meeting tomorrow morning.";
-
-    test('estimateTokens: 50-turn history exceeds kMaxInputTokens (2500)', () {
-      final history = List.generate(50, (i) => {
-        'role': i.isEven ? 'user' : 'assistant',
-        'text': _realisticTurn,
-      });
-      final rawHistoryText =
-          history.map((t) => '${t['role']}: ${t['text']}').join('\n');
-
-      // Include typical Claude dialogue system blocks in the estimate,
-      // mirroring what ClaudeService.processTurn passes to estimateTokens.
-      const systemContext =
-          'Return ONLY a valid JSON object — no markdown, no backticks, no prose.\n'
-          'Required keys: intent, message, depth_follow_up, injected_question, '
-          'filled_slots, rec_hint.\n'
-          'APPLE HEALTH CONTEXT\n{"spikes":[]}\n'
-          'STRESS SCORE / AVAILABILITY\n{}';
-
-      final estimated =
-          PandaPrompts.estimateTokens(systemContext + rawHistoryText);
-
-      expect(estimated, greaterThan(kMaxInputTokens),
-          reason: '50 turns of realistic content + system context must exceed '
-              'the $kMaxInputTokens-token budget so the guard fires');
-    });
-
-    test('estimateTokens: normal 10-turn history stays under kMaxInputTokens', () {
-      final history = List.generate(10, (i) => {
-        'role': i.isEven ? 'user' : 'assistant',
-        'text': _realisticTurn,
-      });
-      final rawHistoryText =
-          history.map((t) => '${t['role']}: ${t['text']}').join('\n');
-      const systemContext =
-          'Return ONLY a valid JSON object — no markdown, no backticks, no prose.\n'
-          'Required keys: intent, message, depth_follow_up, injected_question, '
-          'filled_slots, rec_hint.\n'
-          'APPLE HEALTH CONTEXT\n{"spikes":[]}\n'
-          'STRESS SCORE / AVAILABILITY\n{}';
-
-      final estimated =
-          PandaPrompts.estimateTokens(systemContext + rawHistoryText);
-
-      expect(estimated, lessThanOrEqualTo(kMaxInputTokens),
-          reason: '10 turns must stay under the $kMaxInputTokens-token budget');
-    });
-
-    test('kMaxOutputTokensChat is 800 and kMaxOutputTokensSpike is 1800', () {
-      expect(kMaxOutputTokensChat, equals(800));
-      expect(kMaxOutputTokensSpike, equals(1800));
-    });
-
-    test('estimateTokens: 1 token per 4 chars (conservative)', () {
-      // 400 chars → 100 tokens
-      expect(PandaPrompts.estimateTokens('a' * 400), equals(100));
-      // 401 chars → ceil → 101 tokens
-      expect(PandaPrompts.estimateTokens('a' * 401), equals(101));
-    });
-
-    // Guard contract (not automated here — requires Firebase init):
-    //
-    // PandaPrompts.processTurn: guards on RAW conversationHistory — the
-    //   system prompt is inline (~125 tokens), so 50 raw turns comfortably
-    //   exceeds 2500 tokens. Test above confirms this.
-    //
-    // ClaudeService.processTurn: guards on CAPPED history (last 6 items) —
-    //   _dialogueSystem is ~1,800 tokens, so guarding on raw turns would fire
-    //   after only 6 turns.  The 6-item cap is the primary defence; the guard
-    //   catches unexpectedly large health context or message payloads.
-    //
-    // Both services return:
-    //   PandaTurnReply(intent: PandaIntent.chitchat, message: "We've covered ...")
-    // and PandaScreen shows that message in-chat rather than an error dialog.
   });
 
   group('Insight persistence contract', () {

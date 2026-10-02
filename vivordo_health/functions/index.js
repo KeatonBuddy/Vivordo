@@ -41,6 +41,7 @@ const {hrvReadings, pickHrv} = require("./hrv");
 const {whoopDeletionPlan} = require("./whoop_deletion");
 const {validatePandaRequest, nextUsage} = require("./panda_limits");
 const {runAssistant, validateAssistantRequest} = require("./assistant");
+const {buildTask, runTask} = require("./ai_tasks");
 const {
   challengeDeletionPlan,
   hasRecentAuthentication,
@@ -791,6 +792,27 @@ exports.assistant = onCall(
     },
 );
 
+// =============================================================================
+// aiTask — one-shot AI tasks (check-in questions, chat summaries, workout
+// analysis). The prompts live server-side (ai_tasks.js); the app sends data.
+// =============================================================================
+
+exports.aiTask = onCall({secrets: [anthropicApiKey]}, async (request) => {
+  const uid = requireAuth(request);
+  const call = buildTask(request.data);
+  if (call.error) throw new HttpsError("invalid-argument", call.error);
+  await consumeAiQuota(uid);
+  const {text, usage} = await runTask(getAnthropicClient(), call);
+  console.log("[aiTask]", request.data.task, JSON.stringify({
+    model: call.model,
+    input: usage?.input_tokens ?? 0,
+    output: usage?.output_tokens ?? 0,
+  }));
+  return {text};
+});
+
+// ponytail: kept only for app builds older than the aiTask/assistant move;
+// delete once Remote Config minimum_supported_version is past them.
 exports.pandaClaude = onCall({secrets: [anthropicApiKey]}, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Must be logged in.");
