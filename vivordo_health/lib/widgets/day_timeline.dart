@@ -107,6 +107,8 @@ class TimelineRow extends StatelessWidget {
     this.past = false,
     this.completed,
     this.onToggle,
+    this.energyColor,
+    this.energyNote,
   });
 
   final DateTime start;
@@ -115,6 +117,13 @@ class TimelineRow extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
   final bool past;
+
+  /// The energy forecast's colour at this time (docs/scores.md §8), drawn
+  /// as a thin strip beside the row. Null leaves no strip.
+  final Color? energyColor;
+
+  /// A clash with the energy forecast, e.g. "Lands in your afternoon dip".
+  final String? energyNote;
 
   /// Null when the row is a plain event with no linked priority.
   final bool? completed;
@@ -137,6 +146,16 @@ class TimelineRow extends StatelessWidget {
                 style: TextStyle(fontSize: 11, color: colors.textSecondary),
               ),
             ),
+            if (energyColor != null)
+              Container(
+                width: 4,
+                height: 36,
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(
+                  color: energyColor!.withValues(alpha: .7),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             Expanded(
               child: Container(
                 padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
@@ -191,6 +210,30 @@ class TimelineRow extends StatelessWidget {
                               style: TextStyle(
                                 color: colors.textSecondary,
                                 fontSize: 11,
+                              ),
+                            ),
+                          if (energyNote != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.battery_2_bar_rounded,
+                                    size: 13,
+                                    color: Color(0xFFEF9F27),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Flexible(
+                                    child: Text(
+                                      energyNote!,
+                                      style: const TextStyle(
+                                        color: Color(0xFFEF9F27),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                         ],

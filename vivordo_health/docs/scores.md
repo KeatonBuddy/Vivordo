@@ -429,6 +429,36 @@ still ahead (Your Day's events and timed priorities) against the forecast.
   cancelled, all-day and free-time events don't block slots, and the item
   never blocks its own new slot.
 
+**Phase 3 implemented** (what you see):
+- **Data:** the screen projections now read `sleep.bedtime` and
+  `sleep.wakeTime` (Home's history window, My Day's brief window), so no
+  extra Firestore reads are needed (`lib/src/utils/sleep_nights.dart`).
+  Sleep need comes from today's server Capacity (`capacity.sleepNeed`). The
+  forecast only shows once a night is recorded.
+- **Home, Your Day:**
+  - the curve drawn over the bars, scaled to the day's own range so its
+    shape shows;
+  - the peak and dip shaded;
+  - Peak / Dip / Second wind chips, which open the sheet;
+  - the first clash as a sentence.
+- **My Day timeline:**
+  - a thin energy strip beside each upcoming row;
+  - good fits get "in your peak ✓";
+  - clashes get an amber note with the suggested time ("Lands in your
+    afternoon dip. Try 6 PM, in your second wind"), never for repeating
+    events.
+  - Moves aren't applied yet; they'll share the confirm sheet with "Act on
+    More than you've got".
+- **"Your energy today" sheet** (`lib/widgets/energy_forecast_view.dart`):
+  the curve, the chips, and plain-language reasons (sleep against need,
+  grogginess, body clock, sleep debt, best focus time).
+- **Evening card on My Day,** after your end-of-day time:
+  - wind-down time;
+  - bed-by (from tomorrow's first timed event);
+  - sleep debt;
+  - tomorrow's windows if you're in bed by then.
+- **Rounding:** windows and bedtime round to the nearest quarter-hour.
+
 ## Open questions
 
 None. Decided (2026-10-01):

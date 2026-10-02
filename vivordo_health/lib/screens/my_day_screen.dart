@@ -39,6 +39,9 @@ import '../src/utils/day_key.dart';
 import '../widgets/morning_check_in_card.dart';
 import '../widgets/burnout_card.dart';
 import '../src/utils/burnout_view.dart';
+import '../src/utils/energy_fit.dart';
+import '../src/utils/energy_forecast.dart';
+import '../widgets/energy_forecast_view.dart';
 
 class MyDayScreen extends StatefulWidget {
   const MyDayScreen({super.key});
@@ -654,6 +657,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                         child: BurnoutCard(view: snapshot.data!),
                       ),
               ),
+              _buildEnergyEvening(),
               const SizedBox(height: 24),
               const _SectionLabel('NOW'),
               const SizedBox(height: 10),
@@ -781,6 +785,55 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       _showMessage('Could not save your check-in.');
     }
   }
+
+  /// Today's energy forecast (docs/scores.md §8), once any night is
+  /// recorded. Tomorrow's first timed event sets tonight's bed-by.
+  EnergyForecast? _energyForecast(DateTime today) {
+    final nights = _briefSnapshot.value.data?.sleepNights ?? const [];
+    if (nights.isEmpty) return null;
+    final firsts = [
+      for (final e in _tomorrowEvents)
+        if (!e.isAllDay) e,
+    ]..sort((a, b) => a.start.compareTo(b.start));
+    return forecastEnergy(
+      day: today,
+      nights: nights,
+      sleepNeedHours: _capacitySnapshot.value.data?.sleepNeedHours,
+      tomorrowFirstEvent: firsts.firstOrNull?.start,
+    );
+  }
+
+  /// After the end-of-day time: wind-down, bed-by and tomorrow's forecast.
+  Widget _buildEnergyEvening() => ListenableBuilder(
+    listenable: Listenable.merge([_briefSnapshot, _capacitySnapshot]),
+    builder: (context, _) {
+      final now = DateTime.now();
+      final today = DateUtils.dateOnly(now);
+      if (now.isBefore(today.add(Duration(minutes: _wrapUpMinutes)))) {
+        return const SizedBox.shrink();
+      }
+      final tonight = _energyForecast(today);
+      if (tonight == null) return const SizedBox.shrink();
+      final first = ([
+        for (final e in _tomorrowEvents)
+          if (!e.isAllDay) e,
+      ]..sort((a, b) => a.start.compareTo(b.start))).firstOrNull;
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: EnergyEveningCard(
+          tonight: tonight,
+          tomorrow: tomorrowEnergyForecast(
+            tonight: tonight,
+            today: today,
+            nights: _briefSnapshot.value.data?.sleepNights ?? const [],
+          ),
+          firstEventTitle: first?.title,
+          firstEventStart: first?.start,
+          onTap: () => showEnergyForecastSheet(context, tonight),
+        ),
+      );
+    },
+  );
 
   Widget _buildDayOutlookCard({
     required List<_CalendarEvent> timedEvents,
@@ -1402,10 +1455,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   /// Events and timed priorities in one list, with the gaps between them.
   /// A priority linked to an event shares that event's row.
-  Widget
-  _buildTimeline() => ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
-    valueListenable: _prioritySnapshot,
-    builder: (context, snapshot, _) {
+  Widget _buildTimeline() => ListenableBuilder(
+    listenable: Listenable.merge([
+      _prioritySnapshot,
+      _briefSnapshot,
+      _capacitySnapshot,
+    ]),
+    builder: (context, _) {
+      final snapshot = _prioritySnapshot.value;
       if (_isLoading && _calendarLoadedAt == null) {
         return const _SectionCard(
           child: Padding(
@@ -1453,6 +1510,21 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         ..sort((a, b) => a.start.compareTo(b.start));
       final agenda = buildDayAgenda(now, items);
       final allDay = _events.where((e) => e.isAllDay).toList();
+      final today = DateUtils.dateOnly(now);
+      final energy = _energyForecast(today);
+      final fits = {
+        if (energy != null)
+          for (final fit in fitDayToEnergy(
+            forecast: energy,
+            items: _effortItems(
+              today,
+              _events,
+              snapshot.data ?? const <DailyPriority>[],
+            ),
+            now: now,
+          ))
+            fit.id: fit,
+      };
 
       Widget itemRow(AgendaItem<_TimelineItem> entry, {bool past = false}) {
         final event = entry.item.event;
@@ -1461,13 +1533,29 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             event != null ||
             priority!.sourceEnd != null ||
             priority.planning['minutes'] is num;
+        final fit = past
+            ? null
+            : fits[event?.sourceEventKey ??
+                  'priority:${priority!.reference.path}'];
+        final phase = past ? null : energy?.phaseAt(entry.start);
+        final suggested = fit?.suggestedStart;
         return TimelineRow(
           start: entry.start,
           title: event?.title ?? priority!.title,
           detail: [
             if (priority != null) 'Priority',
             if (knownLength) formatSpan(entry.end.difference(entry.start)),
+            if (fit?.kind == EnergyFitKind.goodFit)
+              'in ${energyPhasePhrase(fit!.phase)} ✓',
           ].join(' · '),
+          energyColor: phase == null ? null : energyPhaseColor(phase),
+          energyNote: fit?.kind == EnergyFitKind.clash
+              ? [
+                  'Lands in ${energyPhasePhrase(fit!.phase)}',
+                  if (suggested != null && event?.isRecurring != true)
+                    energyMoveHint(suggested, energy!),
+                ].join('. ')
+              : null,
           color: priority != null ? timelineDoneGreen : event!.color,
           past: past,
           completed: priority?.completed,

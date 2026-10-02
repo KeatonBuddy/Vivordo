@@ -3,8 +3,10 @@ import 'package:intl/intl.dart';
 
 import 'daily_brief_analysis.dart';
 import 'daily_outlook_score.dart';
+import 'energy_forecast.dart';
 import 'home_metrics_summary.dart';
 import 'screen_metric_projection.dart';
+import 'sleep_nights.dart';
 import 'performance_trace.dart';
 
 /// A decoded snapshot retained between clock ticks. Firestore documents are
@@ -141,6 +143,7 @@ class DailyBriefMetrics {
       priorNights: previous
           .where((d) => ((d.data['sleep'] as Map?)?['avg'] as num? ?? 0) > 0)
           .length,
+      sleepNights: sleepNights(documents.map((d) => d.data)),
     );
   }
 }
@@ -157,6 +160,7 @@ class DailyBriefMetricsSummary {
     required this.isFromCache,
     required this.priorNights,
     this.checkIn,
+    this.sleepNights = const [],
   });
   final double? sleep;
   final double? usualSleep;
@@ -170,4 +174,7 @@ class DailyBriefMetricsSummary {
 
   /// Today's morning check-in: {feel, sleep} scores (0–100) and `dismissed`.
   final Map? checkIn;
+
+  /// Recorded nights in the window, for the energy forecast.
+  final List<SleepPeriod> sleepNights;
 }

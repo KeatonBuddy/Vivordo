@@ -171,7 +171,7 @@ EnergyForecast forecastEnergy({
   final slept = lastNight == null
       ? need
       : _hours(lastNight.end.difference(lastNight.start));
-  final usualBedtime = anchor.add(_fromHours(24 - usualHours / 2));
+  final usualBedtime = _toQuarter(anchor.add(_fromHours(24 - usualHours / 2)));
 
   final debt = math.min(
     _maxDebtHours,
@@ -245,7 +245,7 @@ List<EnergyWindow> _windows(
   final groggyEnd = wake.add(
     _fromHours(_inertiaFadeHours * math.log(_inertiaStart / _inertiaGone)),
   );
-  windows.add(EnergyWindow(EnergyPhase.groggy, wake, groggyEnd));
+  windows.add(EnergyWindow(EnergyPhase.groggy, wake, _toQuarter(groggyEnd)));
 
   final windDownStart = bedBy.subtract(_windDown);
   int indexOf(DateTime t) => math.max(
@@ -359,9 +359,17 @@ EnergyWindow _window(
   (int, int) range,
 ) => EnergyWindow(
   phase,
-  curve[range.$1].$1,
-  curve[range.$2].$1.add(const Duration(minutes: _stepMinutes)),
+  _toQuarter(curve[range.$1].$1),
+  _toQuarter(curve[range.$2].$1.add(const Duration(minutes: _stepMinutes))),
 );
+
+/// The nearest quarter-hour on the clock, so windows read "9–11:15", not
+/// "8:56–11:11", whatever minute you woke.
+DateTime _toQuarter(DateTime t) {
+  final midnight = DateTime(t.year, t.month, t.day);
+  final minutes = t.difference(midnight).inMinutes;
+  return midnight.add(Duration(minutes: (minutes / 15).round() * 15));
+}
 
 const _oneDay = Duration(days: 1);
 

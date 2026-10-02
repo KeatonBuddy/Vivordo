@@ -29,8 +29,11 @@ import 'package:vivordo_health/widgets/add_priority_sheet.dart';
 import 'package:vivordo_health/widgets/plan_slot_sheet.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
+import 'package:vivordo_health/src/utils/energy_fit.dart';
+import 'package:vivordo_health/src/utils/energy_forecast.dart';
 import 'package:vivordo_health/src/utils/home_metrics_summary.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
+import 'package:vivordo_health/widgets/energy_forecast_view.dart';
 import 'package:vivordo_health/widgets/hourly_heart_insight_card.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
@@ -699,6 +702,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     scanSnap.connectionState == ConnectionState.waiting &&
                     !scanSnap.hasData,
                 moodScore: savedMoodScore,
+                sleepNights: metricsSummary.sleepNights,
               ),
             );
           },
@@ -863,6 +867,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required LatestHeartRateReading? latestHeartRate,
     required bool hrLoading,
     required double? moodScore,
+    List<SleepPeriod> sleepNights = const [],
   }) {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
@@ -938,7 +943,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                   ],
                 ),
-                _buildDayLoad(),
+                _buildDayLoad(sleepNights),
                 _buildSectionTitle('INSIGHTS'),
                 _buildInsights(
                   sleepHours: sleepHours,
@@ -1545,7 +1550,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildDayLoad() {
+  Widget _buildDayLoad(List<SleepPeriod> sleepNights) {
     final now = DateTime.now();
     final todayStart = DateUtils.dateOnly(now);
     final loading = _card(
@@ -1593,6 +1598,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       valueListenable: _prioritySnapshot,
                       builder: (context, prioritySnapshot, _) => _dayLoadCard(
                         now: now,
+                        sleepNights: sleepNights,
                         scored: scoresSnapshot.data ?? const [],
                         events: eventsSnapshot.data,
                         priorities: prioritySnapshot.data ?? const [],
@@ -1608,6 +1614,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _dayLoadCard({
     required DateTime now,
+    required List<SleepPeriod> sleepNights,
     required List<_ScoredReachableEvent> scored,
     required List<_ScheduleEvent>? events,
     required List<DailyPriority> priorities,
@@ -1663,35 +1670,51 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
     ];
+    final items = <EffortItem>[
+      for (final e in scored)
+        (event: e.input, score: e.score, done: false, open: false),
+      for (final e in outlook)
+        (event: e.event, score: e.score, done: false, open: false),
+      for (final priority in timed)
+        if (priorityLoadInput(
+              id: 'priority:${priority.reference.path}',
+              title: priority.title,
+              start: priority.sourceStart!,
+              end: priority.timelineEnd!,
+              effort: priority.planning['effort'],
+            )
+            case final input)
+          (
+            event: input.event,
+            score: input.score,
+            done: priority.completed,
+            open: !priority.completed,
+          ),
+    ];
     final effort = buildDayEffort(
       now: now,
       from: from,
       until: until,
       wrapUp: today.add(Duration(minutes: effortContext.wrapUpMinutes)),
-      items: [
-        for (final e in scored)
-          (event: e.input, score: e.score, done: false, open: false),
-        for (final e in outlook)
-          (event: e.event, score: e.score, done: false, open: false),
-        for (final priority in timed)
-          if (priorityLoadInput(
-                id: 'priority:${priority.reference.path}',
-                title: priority.title,
-                start: priority.sourceStart!,
-                end: priority.timelineEnd!,
-                effort: priority.planning['effort'],
-              )
-              case final input)
-            (
-              event: input.event,
-              score: input.score,
-              done: priority.completed,
-              open: !priority.completed,
-            ),
-      ],
+      items: items,
       untimedDone: untimedDone,
       workouts: effortContext.workouts,
     );
+    // The energy forecast (docs/scores.md §8), once any night is recorded.
+    final energy = sleepNights.isEmpty
+        ? null
+        : forecastEnergy(
+            day: today,
+            nights: sleepNights,
+            sleepNeedHours: effortContext.sleepNeedHours,
+          );
+    final clash = energy == null
+        ? null
+        : fitDayToEnergy(
+            forecast: energy,
+            items: items,
+            now: now,
+          ).where((f) => f.kind == EnergyFitKind.clash).firstOrNull;
     final opening = nextDayOpening(now, [
       for (final event in events ?? const <_ScheduleEvent>[])
         AgendaItem(event.title, event.start, event.end),
@@ -1780,6 +1803,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ],
                       ],
                     ),
+                    if (energy != null)
+                      Positioned.fill(
+                        child: EnergyCurve(
+                          forecast: energy,
+                          from: from,
+                          until: until,
+                        ),
+                      ),
                     if (nowFraction >= 0 && nowFraction <= 1)
                       Positioned(
                         left: constraints.maxWidth * nowFraction - 1,
@@ -1859,6 +1890,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
               ],
             ),
+            if (energy != null) ...[
+              const SizedBox(height: 12),
+              EnergyChips(
+                forecast: energy,
+                onTap: () => showEnergyForecastSheet(context, energy),
+              ),
+              if (clash != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  energyClashText(
+                    title: clash.item.event.title,
+                    start: clash.item.event.start,
+                    phase: clash.phase,
+                  ),
+                  style: TextStyle(fontSize: 12, color: colors.textSecondary),
+                ),
+              ],
+            ],
             if (events == null) ...[
               const SizedBox(height: 10),
               Text(
@@ -2042,7 +2091,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final user = FirebaseFirestore.instance.collection('users').doc(uid);
     final dayStart = DateUtils.dateOnly(day);
     try {
-      final [workouts, scores, profile] = await Future.wait([
+      final [workouts, scores, profile, todayScores] = await Future.wait([
         user
             .collection('workouts')
             .where(
@@ -2067,12 +2116,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             .where(FieldPath.documentId, isLessThan: localDayKey(day))
             .get(),
         user.get(),
+        user.collection('scores_daily').doc(localDayKey(day)).get(),
       ]);
       final wrapUp =
           ((profile as DocumentSnapshot<Map<String, dynamic>>)
                   .data()?['preferences']
               as Map?)?['dayWrapUpMinutes'];
       return _EffortContext(
+        sleepNeedHours:
+            (((todayScores as DocumentSnapshot<Map<String, dynamic>>)
+                            .data()?['capacity']
+                        as Map?)?['sleepNeed']
+                    as num?)
+                ?.toDouble(),
         wrapUpMinutes: wrapUp is int ? wrapUp : kDefaultDayWrapUpMinutes,
         workouts: [
           for (final doc
@@ -3136,9 +3192,13 @@ class _EffortContext {
     this.wrapUpMinutes = kDefaultDayWrapUpMinutes,
     this.workouts = const [],
     this.pastByHour = const [],
+    this.sleepNeedHours,
   });
 
   final int wrapUpMinutes;
+
+  /// Today's sleep need from the server's Capacity, for the energy forecast.
+  final double? sleepNeedHours;
   final List<({DateTime start, DateTime end, double intensity})> workouts;
   final List<List<num>> pastByHour;
 }

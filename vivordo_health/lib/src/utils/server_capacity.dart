@@ -6,6 +6,7 @@ class ServerCapacity {
     required this.label,
     required this.provisional,
     required this.note,
+    this.sleepNeedHours,
   });
 
   final int score;
@@ -19,6 +20,9 @@ class ServerCapacity {
 
   /// How today compares with the person's usual Capacity.
   final String note;
+
+  /// The person's sleep need in hours (90-day median, 7–9 h).
+  final double? sleepNeedHours;
 }
 
 /// Today's server Capacity from a window of `scores_daily` documents (day
@@ -62,5 +66,6 @@ ServerCapacity? serverCapacityFor(
     label: today['label'] is String ? today['label'] as String : 'moderate',
     provisional: provisional,
     note: note,
+    sleepNeedHours: (today['sleepNeed'] as num?)?.toDouble(),
   );
 }

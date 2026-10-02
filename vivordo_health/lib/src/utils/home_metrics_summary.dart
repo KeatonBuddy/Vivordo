@@ -1,6 +1,8 @@
+import 'energy_forecast.dart';
 import 'heart_rate_history.dart';
 import 'latest_heart_rate.dart';
 import 'screen_metric_projection.dart';
+import 'sleep_nights.dart';
 import 'performance_trace.dart';
 
 /// Number of calendar days of metric history Home keeps live, counting today.
@@ -26,6 +28,7 @@ class HomeMetricsSummary {
     this.latestHeartRate,
     this.stressAnchor,
     this.sevenDayStressAverage,
+    this.sleepNights = const [],
   });
 
   /// Newest heart-rate reading in the window, or null when the window holds
@@ -39,6 +42,9 @@ class HomeMetricsSummary {
   /// Mean stress across the seven days before today, or null when none of
   /// those days carry a stress value.
   final double? sevenDayStressAverage;
+
+  /// Recorded nights in the window, for the energy forecast.
+  final List<SleepPeriod> sleepNights;
 }
 
 /// How long until the next local day begins, plus a second of slack so a
@@ -87,6 +93,7 @@ HomeMetricsSummary summarizeHomeMetrics({
     latestHeartRate: _latestHeartRate(newestFirst, now),
     stressAnchor: _latestStressAnchor(newestFirst),
     sevenDayStressAverage: _sevenDayStressAverage(newestFirst, now),
+    sleepNights: sleepNights(newestFirst.take(15).map((d) => d.data)),
   );
 }
 
