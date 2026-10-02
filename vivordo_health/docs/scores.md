@@ -204,7 +204,8 @@ twice (and, without a wearable, it adds little beyond sleep and mood).
 Stress stays its own live number. The check-in replaces it as the one
 signal sensors can't measure. It is left out on days it isn't answered.
 
-**The morning check-in card** sits at the top of My Day until noon (local),
+**The morning check-in card** sits at the top of My Day from 5 AM to noon (local; not
+before 5 AM, when most people haven't slept yet),
 until answered or dismissed. "How do you feel?" uses the mood labels
 (Awful 10, Down 30, Okay 50, Good 75, Great 95) and is also saved as the
 day's mood check-in. "How did you sleep?" is asked even when sleep was

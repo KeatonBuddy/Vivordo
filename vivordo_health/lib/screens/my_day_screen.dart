@@ -722,7 +722,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// The optional morning check-in (docs/scores.md §4), shown until noon.
+  /// The optional morning check-in (docs/scores.md §4), shown 5 AM to noon.
   /// "How do you feel?" also counts as today's mood check-in.
   Widget _buildMorningCheckIn() =>
       ValueListenableBuilder<AsyncSnapshot<DailyBriefMetricsSummary>>(
@@ -731,7 +731,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           final summary = snapshot.data;
           final checkIn = summary?.checkIn;
           if (summary == null ||
-              DateTime.now().hour >= 12 ||
+              !morningCheckInOpen(DateTime.now()) ||
               checkIn?['dismissed'] == true) {
             return const SizedBox.shrink();
           }

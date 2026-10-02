@@ -13,6 +13,11 @@ const sleepCheckInScores = {
 
 /// "How do you feel?" uses the mood check-in labels, so the answer is also
 /// today's mood (scored by MetricsService.moodScoreForLabel).
+/// The morning check-in is asked from 5 AM to noon. Before 5 AM most people
+/// are still up from the night before and haven't slept yet, and an answer
+/// would be saved to a day that hasn't really started.
+bool morningCheckInOpen(DateTime now) => now.hour >= 5 && now.hour < 12;
+
 const feelCheckInLabels = ['Awful', 'Down', 'Okay', 'Good', 'Great'];
 
 const _feelIcons = [
