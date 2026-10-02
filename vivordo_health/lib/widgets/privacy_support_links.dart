@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// Published policies, so updates do not require an app release.
 const vivordoPrivacyUrl = 'https://vivordo.com/privacy';
 const vivordoTermsUrl = 'https://vivordo.com/terms';
 const vivordoSupportEmail = 'contact.vivordo@gmail.com';
@@ -28,41 +29,5 @@ Future<void> openVivordoLink(BuildContext context, Uri uri) async {
         ),
       ],
     ),
-  );
-}
-
-/// Uses the published policies, so updates do not require an app release.
-class PrivacySupportLinks extends StatelessWidget {
-  const PrivacySupportLinks({super.key});
-
-  @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      ListTile(
-        leading: const Icon(Icons.privacy_tip_outlined),
-        title: const Text('Privacy Policy'),
-        trailing: const Icon(Icons.open_in_new),
-        onTap: () => openVivordoLink(context, Uri.parse(vivordoPrivacyUrl)),
-      ),
-      const Divider(height: 1),
-      ListTile(
-        leading: const Icon(Icons.description_outlined),
-        title: const Text('Terms & Conditions'),
-        trailing: const Icon(Icons.open_in_new),
-        onTap: () => openVivordoLink(context, Uri.parse(vivordoTermsUrl)),
-      ),
-      const Divider(height: 1),
-      ListTile(
-        leading: const Icon(Icons.support_agent),
-        title: const Text('Contact Support'),
-        subtitle: const Text(vivordoSupportEmail),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => openVivordoLink(
-          context,
-          Uri(scheme: 'mailto', path: vivordoSupportEmail),
-        ),
-      ),
-    ],
   );
 }

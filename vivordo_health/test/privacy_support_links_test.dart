@@ -7,16 +7,23 @@ void main() {
   final original = UrlLauncherPlatform.instance;
   setUp(() => UrlLauncherPlatform.instance = _UnavailableLauncher());
   tearDown(() => UrlLauncherPlatform.instance = original);
-  testWidgets('settings exposes policies and a usable support fallback', (
-    tester,
-  ) async {
+  testWidgets('support link falls back to a copyable address', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: PrivacySupportLinks())),
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => openVivordoLink(
+                context,
+                Uri(scheme: 'mailto', path: vivordoSupportEmail),
+              ),
+              child: const Text('Contact support'),
+            ),
+          ),
+        ),
+      ),
     );
-    expect(find.text('Privacy Policy'), findsOneWidget);
-    expect(find.text('Terms & Conditions'), findsOneWidget);
-    expect(find.text('Contact Support'), findsOneWidget);
-    await tester.tap(find.text('Contact Support'));
+    await tester.tap(find.text('Contact support'));
     await tester.pumpAndSettle();
     expect(find.text('Could not open link'), findsOneWidget);
     expect(

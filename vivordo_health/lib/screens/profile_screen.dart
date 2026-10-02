@@ -34,14 +34,9 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
-  bool _autoSyncData = true;
-
   bool _isEmailVerificationSignOut = false;
   bool _isAccountDeletionSignOut = false;
 
-  // Loading states for HealthKit actions
-  bool _isConnectingAll = false; // "Connect Apple Health" button
-  String? _togglingMetric; // key of metric currently being toggled
   bool _isGoogleCalendarConnected = false;
   bool _isUpdatingGoogleCalendar = false;
   bool _isOutlookCalendarConnected = false;
@@ -55,7 +50,6 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   // Bug report
   final TextEditingController _bugReportController = TextEditingController();
-  bool _isSubmittingBugReport = false;
   bool _isDeletingAccount = false;
 
   StreamSubscription<User?>? _authSubscription;
@@ -131,37 +125,25 @@ class _SettingsScreenState extends State<SettingsScreen>
     super.dispose();
   }
 
-  Future<void> _submitBugReport() async {
+  /// Sends the bug report. Returns whether it was sent.
+  Future<bool> _submitBugReport() async {
     final message = _bugReportController.text.trim();
-    if (message.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please describe the bug before sending.'),
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isSubmittingBugReport = true);
+    if (message.isEmpty) return false;
     try {
       await UserService.submitBugReport(message);
-      if (mounted) {
-        _bugReportController.clear();
-        FocusScope.of(context).unfocus();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Thanks! Your bug report has been sent.'),
-          ),
-        );
-      }
+      if (!mounted) return true;
+      _bugReportController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thanks! Your bug report has been sent.')),
+      );
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Could not send report: $e')));
       }
-    } finally {
-      if (mounted) setState(() => _isSubmittingBugReport = false);
+      return false;
     }
   }
 
@@ -547,6 +529,54 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  Future<void> _syncFitbit() async {
+    if (_isUpdatingFitbit) return;
+    setState(() => _isUpdatingFitbit = true);
+    try {
+      await FitbitService.instance.sync(daysBack: 30);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Fitbit data is up to date.')),
+        );
+      }
+    } on FitbitAccountNotLinkedException catch (error) {
+      if (mounted) await _showGoogleHealthSetupDialog(error.setupUrl);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Fitbit could not be synced. Please try again shortly.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdatingFitbit = false);
+    }
+  }
+
+  Future<void> _resetAiConsent() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await AiConsent.revoke(uid);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('AI consent reset. You will be asked again next time.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not reset consent. Please try again.'),
+        ),
+      );
+    }
+  }
+
   Future<void> _showGoogleHealthSetupDialog(Uri setupUrl) async {
     await showDialog<void>(
       context: context,
@@ -912,6 +942,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  static const _green = Color(0xFF10B981);
+  static const _orange = Color(0xFFF97316);
+  static const _red = Color(0xFFFF3B30);
+
   @override
   Widget build(BuildContext context) {
     // Build is driven entirely by _userDocStream which was cached in initState.
@@ -926,7 +960,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(
-              child: CircularProgressIndicator(color: Color(0xFF7C69EF)),
+              child: CircularProgressIndicator(color: VivordoTheme.brand),
             ),
           );
         }
@@ -958,7 +992,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           if (authUser != null) UserService.createUser(authUser);
           return const Scaffold(
             body: Center(
-              child: CircularProgressIndicator(color: Color(0xFF7C69EF)),
+              child: CircularProgressIndicator(color: VivordoTheme.brand),
             ),
           );
         }
@@ -1003,1260 +1037,342 @@ class _SettingsScreenState extends State<SettingsScreen>
               ];
         scanReminderTimes.sort();
 
-        // Read consent from the same doc — avoids opening extra listeners.
-        final consentRaw = rawData['healthKitConsent'] as Map? ?? {};
-        final consent = consentRaw.map(
-          (k, v) => MapEntry(k.toString(), v == true),
-        );
-        final anyConsented = consent.values.any((v) => v);
-        final selectedMetricCount = kHealthMetrics
-            .where((metric) => consent[metric.key] == true)
-            .length;
+        final selectedMetricCount = _selectedHealthMetrics(rawData);
         final fitbitConnected = rawData['fitbitConnected'] == true;
         final whoopConnected = rawData['whoopConnected'] == true;
+        final dark = Theme.of(context).brightness == Brightness.dark;
 
         return Scaffold(
           backgroundColor: context.vivordoColors.page,
           body: SafeArea(
-            child: SingleChildScrollView(
+            child: ListView(
               physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Top bar ────────────────────────────────────────────────
-                  const SizedBox(height: 48),
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: context.vivordoColors.card,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: context.vivordoColors.border,
-                            ),
-                          ),
-                          child: Icon(
-                            Icons.arrow_back_ios_new_rounded,
-                            size: 16,
-                            color: context.vivordoColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'App Settings',
-                              style: TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              userData.email ?? '',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Color(0xFF8E8E93),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Avatar
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: VivordoTheme.brand.withOpacity(0.12),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: VivordoTheme.brand.withOpacity(0.25),
-                            width: 2,
-                          ),
-                        ),
-                        child:
-                            userData.photoUrl != null &&
-                                userData.photoUrl!.startsWith('http')
-                            ? ClipOval(
-                                child: Image.network(
-                                  userData.photoUrl!,
-                                  fit: BoxFit.cover,
-                                  cacheWidth: 156,
-                                  cacheHeight: 156,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.person_outline_rounded,
-                                size: 26,
-                                color: VivordoTheme.brand,
-                              ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+              children: [
+                const _SettingsHeader('Settings'),
+                _profileCard(userData),
+                if (pendingEmail != null) ...[
+                  const SizedBox(height: 10),
+                  _pendingEmailBanner(pendingEmail),
+                ],
 
-                  // ── Pending Email Banner ───────────────────────────────────
-                  if (pendingEmail != null) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF8E1),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.amber.shade300),
+                const _SectionLabel('Connections'),
+                _SettingsCard(
+                  children: [
+                    _SettingsRow(
+                      leading: const _IconBadge(Icons.favorite_rounded, _red),
+                      title: 'Apple Health',
+                      status: (
+                        selectedMetricCount > 0,
+                        selectedMetricCount > 0
+                            ? '$selectedMetricCount of ${kHealthMetrics.length} metrics'
+                            : 'Off',
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.mail_outline,
-                            color: Colors.amber,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Verify your new email: $pendingEmail\nCheck your inbox and tap the link.',
-                              style: const TextStyle(fontSize: 13, height: 1.4),
-                            ),
-                          ),
-                        ],
+                      trailing: const _Chevron(),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const _AppleHealthSettingsPage(),
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    _connectionRow(
+                      leading: _IconBadge.custom(
+                        color: dark ? Colors.white : Colors.black,
+                        child: SvgPicture.asset(
+                          dark
+                              ? 'assets/whoop_puck_white.svg'
+                              : 'assets/whoop_puck_black.svg',
+                          width: 24,
+                          height: 24,
+                          excludeFromSemantics: true,
+                        ),
+                      ),
+                      name: 'WHOOP',
+                      connected: whoopConnected,
+                      busy: _isUpdatingWhoop,
+                      onConnect: () => _updateWhoopConnection(false),
+                      onSync: _syncWhoop,
+                      onDisconnect: () => _updateWhoopConnection(true),
+                    ),
+                    _connectionRow(
+                      leading: const _IconBadge(
+                        Icons.watch_rounded,
+                        Color(0xFF00B0B9),
+                      ),
+                      name: 'Fitbit',
+                      connected: fitbitConnected,
+                      busy: _isUpdatingFitbit,
+                      onConnect: () => _updateFitbitConnection(false),
+                      onSync: _syncFitbit,
+                      onDisconnect: () => _updateFitbitConnection(true),
+                    ),
+                    _connectionRow(
+                      leading: const _IconBadge(
+                        Icons.calendar_month_rounded,
+                        Color(0xFF4285F4),
+                      ),
+                      name: 'Google Calendar',
+                      connected: _isGoogleCalendarConnected,
+                      busy: _isUpdatingGoogleCalendar,
+                      onConnect: _updateGoogleCalendarConnection,
+                      onDisconnect: _updateGoogleCalendarConnection,
+                    ),
+                    if (OutlookCalendarService.enabled)
+                      _connectionRow(
+                        leading: const _IconBadge(
+                          Icons.calendar_month_rounded,
+                          Color(0xFF0078D4),
+                        ),
+                        name: 'Outlook Calendar',
+                        connected: _isOutlookCalendarConnected,
+                        busy: _isUpdatingOutlookCalendar,
+                        onConnect: _updateOutlookCalendarConnection,
+                        onDisconnect: _updateOutlookCalendarConnection,
+                      ),
                   ],
+                ),
 
-                  // ── Account Information ────────────────────────────────────
-                  _buildSectionLabel('Account'),
-                  _buildCard(
-                    children: [
-                      _buildInfoRow(
-                        Icons.person_outline_rounded,
-                        'Name',
-                        userData.displayName ?? 'Set your name',
-                        onTap: () => _showEditDialog(
-                          context,
-                          'Name',
-                          userData.displayName ?? '',
-                        ),
-                      ),
-                      _buildDivider(),
-                      _buildInfoRow(
-                        Icons.mail_outline_rounded,
-                        'Email',
-                        userData.email ?? 'Set your email',
-                        onTap: () => _showEditDialog(
-                          context,
-                          'Email',
-                          userData.email ?? '',
-                        ),
-                      ),
-                      _buildDivider(),
-                      _buildInfoRow(
-                        Icons.lock_outline_rounded,
-                        'Password',
-                        '••••••••',
-                        onTap: () => _showEditDialog(context, 'Password', ''),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // ── Apple Health ───────────────────────────────────────────
-                  _buildSectionLabel('Apple Health'),
-                  _buildCard(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: anyConsented
-                                    ? const Color(0xFFFFE4EC)
-                                    : const Color(0xFFF2F2F7),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Icon(
-                                Icons.favorite_rounded,
-                                size: 18,
-                                color: anyConsented
-                                    ? Colors.pinkAccent
-                                    : const Color(0xFF8E8E93),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Health data sync',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    anyConsented
-                                        ? '$selectedMetricCount of ${kHealthMetrics.length} metrics selected'
-                                        : 'No metrics selected',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: anyConsented
-                                          ? const Color(0xFF34C759)
-                                          : const Color(0xFF8E8E93),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: anyConsented
-                                    ? const Color(0xFFE9FAF0)
-                                    : const Color(0xFFF2F2F7),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                anyConsented ? 'On' : 'Off',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: anyConsented
-                                      ? const Color(0xFF34C759)
-                                      : const Color(0xFF8E8E93),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (!anyConsented) ...[
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _isConnectingAll
-                                ? null
-                                : () async {
-                                    setState(() => _isConnectingAll = true);
-                                    try {
-                                      final granted = await HealthService()
-                                          .enableAll();
-                                      if (mounted && !granted) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Apple Health permissions were not granted.',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Could not connect: $e',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    } finally {
-                                      if (mounted)
-                                        setState(
-                                          () => _isConnectingAll = false,
-                                        );
-                                    }
-                                  },
-                            icon: _isConnectingAll
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.health_and_safety_outlined,
-                                    size: 18,
-                                  ),
-                            label: Text(
-                              _isConnectingAll
-                                  ? 'Requesting access…'
-                                  : 'Select all health metrics',
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: VivordoTheme.brand,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              textStyle: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
+                const _SectionLabel('Notifications'),
+                _SettingsCard(
+                  children: [
+                    Column(
+                      children: [
+                        _SettingsRow(
+                          leading: const _IconBadge(
+                            Icons.monitor_heart_outlined,
+                            VivordoTheme.brand,
+                          ),
+                          title: 'Scan reminders',
+                          subtitle:
+                              '${scanReminderTimes.length} '
+                              '${scanReminderTimes.length == 1 ? 'reminder' : 'reminders'} '
+                              'each day',
+                          trailing: _SettingsSwitch(
+                            value: scanReminderEnabled,
+                            onChanged: (value) => _updateReminderPreference(
+                              field: 'scanReminderEnabled',
+                              enabled: value,
                             ),
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Apple controls access. Vivordo only reads the metrics you approve.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF8E8E93),
-                          ),
-                        ),
+                        if (scanReminderEnabled)
+                          _reminderChips(scanReminderTimes),
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: 24),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.chat_bubble_outline_rounded,
+                        _green,
+                      ),
+                      title: 'Daily check-in',
+                      subtitle: 'After your final calendar event',
+                      trailing: _SettingsSwitch(
+                        value: checkInReminderEnabled,
+                        onChanged: (value) => _updateReminderPreference(
+                          field: 'checkInReminderEnabled',
+                          enabled: value,
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(Icons.group_outlined, _orange),
+                      title: 'Circle',
+                      subtitle: 'Likes and comments on your activity',
+                      trailing: _SettingsSwitch(
+                        value: circleNotificationsEnabled,
+                        onChanged: (value) => _updateReminderPreference(
+                          field: 'circleNotificationsEnabled',
+                          enabled: value,
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.fitness_center_rounded,
+                        Color(0xFFFB923C),
+                      ),
+                      title: 'Fitness',
+                      subtitle: 'Goal and fitness ring updates',
+                      trailing: _SettingsSwitch(
+                        value: fitnessNotificationsEnabled,
+                        onChanged: (value) => _updateReminderPreference(
+                          field: 'fitnessNotificationsEnabled',
+                          enabled: value,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
 
-                  // ── Fitbit ────────────────────────────────────────────────
-                  _buildSectionLabel('Connected Wearables'),
-                  _buildCard(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFF00B0B9,
-                                ).withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(
-                                Icons.watch_rounded,
-                                size: 18,
-                                color: Color(0xFF00B0B9),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Fitbit',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    fitbitConnected
-                                        ? 'Connected — health data sync enabled'
-                                        : 'Connect your Fitbit account',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: fitbitConnected
-                                          ? const Color(0xFF34C759)
-                                          : const Color(0xFF8E8E93),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: _isUpdatingFitbit
-                                  ? null
-                                  : () => _updateFitbitConnection(
-                                      fitbitConnected,
-                                    ),
-                              icon: _isUpdatingFitbit
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Color(0xFF00B0B9),
-                                      ),
-                                    )
-                                  : Icon(
-                                      fitbitConnected
-                                          ? Icons.link_off_rounded
-                                          : Icons.link_rounded,
-                                      size: 16,
-                                    ),
-                              label: Text(
-                                _isUpdatingFitbit
-                                    ? (fitbitConnected
-                                          ? 'Disconnecting…'
-                                          : 'Connecting…')
-                                    : (fitbitConnected
-                                          ? 'Disconnect'
-                                          : 'Connect'),
-                              ),
-                              style: TextButton.styleFrom(
-                                foregroundColor: fitbitConnected
-                                    ? const Color(0xFFFF3B30)
-                                    : const Color(0xFF00B0B9),
-                                textStyle: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                const _SectionLabel('Preferences'),
+                _SettingsCard(
+                  children: [
+                    const _SettingsRow(
+                      leading: _IconBadge(
+                        Icons.brightness_6_rounded,
+                        VivordoTheme.brand,
                       ),
-                      if (fitbitConnected) ...[
-                        _buildDivider(),
-                        SizedBox(
-                          width: double.infinity,
-                          child: TextButton.icon(
-                            onPressed: _isUpdatingFitbit
-                                ? null
-                                : () async {
-                                    setState(() => _isUpdatingFitbit = true);
-                                    try {
-                                      await FitbitService.instance.sync(
-                                        daysBack: 30,
-                                      );
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Fitbit data is up to date.',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    } on FitbitAccountNotLinkedException catch (
-                                      error
-                                    ) {
-                                      if (mounted) {
-                                        await _showGoogleHealthSetupDialog(
-                                          error.setupUrl,
-                                        );
-                                      }
-                                    } catch (_) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Fitbit could not be synced. '
-                                              'Please try again shortly.',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    } finally {
-                                      if (mounted) {
-                                        setState(
-                                          () => _isUpdatingFitbit = false,
-                                        );
-                                      }
-                                    }
-                                  },
-                            icon: const Icon(Icons.sync_rounded, size: 17),
-                            label: const Text('Sync last 30 days'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF00B0B9),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _buildCard(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 40,
-                              height: 40,
-                              child: Center(
-                                child: SvgPicture.asset(
-                                  Theme.of(context).brightness ==
-                                          Brightness.dark
-                                      ? 'assets/whoop_puck_white.svg'
-                                      : 'assets/whoop_puck_black.svg',
-                                  width: 30,
-                                  height: 30,
-                                  semanticsLabel: 'WHOOP',
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'WHOOP',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    whoopConnected
-                                        ? 'Connected — health sync enabled'
-                                        : 'Connect your WHOOP account',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: whoopConnected
-                                          ? const Color(0xFF34C759)
-                                          : const Color(0xFF8E8E93),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: _isUpdatingWhoop
-                                  ? null
-                                  : () =>
-                                        _updateWhoopConnection(whoopConnected),
-                              icon: _isUpdatingWhoop
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Color(0xFF00A884),
-                                      ),
-                                    )
-                                  : Icon(
-                                      whoopConnected
-                                          ? Icons.link_off_rounded
-                                          : Icons.link_rounded,
-                                      size: 16,
-                                    ),
-                              label: Text(
-                                _isUpdatingWhoop
-                                    ? (whoopConnected
-                                          ? 'Disconnecting…'
-                                          : 'Connecting…')
-                                    : (whoopConnected
-                                          ? 'Disconnect'
-                                          : 'Connect'),
-                              ),
-                              style: TextButton.styleFrom(
-                                foregroundColor: whoopConnected
-                                    ? const Color(0xFFFF3B30)
-                                    : const Color(0xFF00A884),
-                                textStyle: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (whoopConnected) ...[
-                        _buildDivider(),
-                        SizedBox(
-                          width: double.infinity,
-                          child: TextButton.icon(
-                            onPressed: _isUpdatingWhoop ? null : _syncWhoop,
-                            icon: const Icon(Icons.sync_rounded, size: 17),
-                            label: const Text('Sync last 30 days'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF00A884),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // ── Connected Calendars ───────────────────────────────────
-                  _buildSectionLabel('Connected Calendars'),
-                  _buildCard(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFF7B6EF6,
-                                ).withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(
-                                Icons.calendar_month_rounded,
-                                size: 18,
-                                color: VivordoTheme.brand,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Google Calendar',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    _isGoogleCalendarConnected
-                                        ? 'Connected — calendar access enabled'
-                                        : 'Not connected',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: _isGoogleCalendarConnected
-                                          ? const Color(0xFF34C759)
-                                          : const Color(0xFF8E8E93),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: _isUpdatingGoogleCalendar
-                                  ? null
-                                  : _updateGoogleCalendarConnection,
-                              icon: _isUpdatingGoogleCalendar
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: VivordoTheme.brand,
-                                      ),
-                                    )
-                                  : Icon(
-                                      _isGoogleCalendarConnected
-                                          ? Icons.logout_rounded
-                                          : Icons.login_rounded,
-                                      size: 16,
-                                    ),
-                              label: Text(
-                                _isUpdatingGoogleCalendar
-                                    ? (_isGoogleCalendarConnected
-                                          ? 'Logging out…'
-                                          : 'Signing in…')
-                                    : (_isGoogleCalendarConnected
-                                          ? 'Log Out'
-                                          : 'Sign In'),
-                              ),
-                              style: TextButton.styleFrom(
-                                foregroundColor: _isGoogleCalendarConnected
-                                    ? const Color(0xFFFF3B30)
-                                    : VivordoTheme.brand,
-                                textStyle: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (OutlookCalendarService.enabled) ...[
-                        _buildDivider(),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFF0078D4,
-                                  ).withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(
-                                  Icons.calendar_month_rounded,
-                                  size: 18,
-                                  color: Color(0xFF0078D4),
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Outlook Calendar',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      _isOutlookCalendarConnected
-                                          ? 'Connected - calendar access enabled'
-                                          : 'Not connected',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: _isOutlookCalendarConnected
-                                            ? const Color(0xFF34C759)
-                                            : const Color(0xFF8E8E93),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              TextButton.icon(
-                                onPressed: _isUpdatingOutlookCalendar
-                                    ? null
-                                    : _updateOutlookCalendarConnection,
-                                icon: _isUpdatingOutlookCalendar
-                                    ? const SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Color(0xFF0078D4),
-                                        ),
-                                      )
-                                    : Icon(
-                                        _isOutlookCalendarConnected
-                                            ? Icons.logout_rounded
-                                            : Icons.login_rounded,
-                                        size: 16,
-                                      ),
-                                label: Text(
-                                  _isUpdatingOutlookCalendar
-                                      ? (_isOutlookCalendarConnected
-                                            ? 'Logging out...'
-                                            : 'Signing in...')
-                                      : (_isOutlookCalendarConnected
-                                            ? 'Log Out'
-                                            : 'Sign In'),
-                                ),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: _isOutlookCalendarConnected
-                                      ? const Color(0xFFFF3B30)
-                                      : const Color(0xFF0078D4),
-                                  textStyle: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // ── Health Data Sync ───────────────────────────────────────
-                  _buildSectionLabel('Health Data Sync'),
-                  _buildCard(
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          'Choose which Apple Health metrics Vivordo syncs. Turning a metric off removes its saved data from Vivordo but does not change Apple Health permissions.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.4,
-                            color: Color(0xFF636366),
-                          ),
-                        ),
-                      ),
-                      ...kHealthMetrics.map((metric) {
-                        final enabled = consent[metric.key] == true;
-                        final isToggling = _togglingMetric == metric.key;
-                        return Column(
-                          children: [
-                            SwitchListTile(
-                              contentPadding: EdgeInsets.zero,
-                              value: enabled,
-                              thumbColor: WidgetStateProperty.resolveWith(
-                                (states) =>
-                                    states.contains(WidgetState.selected)
-                                    ? Colors.white
-                                    : const Color(0xFFFFFFFF),
-                              ),
-                              trackColor: WidgetStateProperty.resolveWith(
-                                (states) =>
-                                    states.contains(WidgetState.selected)
-                                    ? VivordoTheme.brand
-                                    : const Color(0xFFD1D1D6),
-                              ),
-                              trackOutlineColor: const WidgetStatePropertyAll(
-                                Colors.transparent,
-                              ),
-                              onChanged: (val) async {
-                                if (isToggling) return;
-                                setState(() => _togglingMetric = metric.key);
-                                try {
-                                  if (val) {
-                                    final granted = await HealthService()
-                                        .enableMetric(metric.key);
-                                    if (!granted && mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            '${metric.label} was not enabled. Review Vivordo permissions in Apple Health.',
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  } else {
-                                    await HealthService().disableMetric(
-                                      metric.key,
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Error: $e')),
-                                    );
-                                  }
-                                } finally {
-                                  if (mounted)
-                                    setState(() => _togglingMetric = null);
-                                }
-                              },
-                              title: Text(
-                                metric.label,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  color: isToggling
-                                      ? const Color(0xFF8E8E93)
-                                      : const Color(0xFF1C1C1E),
-                                ),
-                              ),
-                              subtitle: Text(
-                                isToggling
-                                    ? (enabled
-                                          ? 'Removing saved Vivordo data…'
-                                          : 'Requesting Apple Health access…')
-                                    : metric.description,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isToggling
-                                      ? VivordoTheme.brand
-                                      : const Color(0xFF8E8E93),
-                                ),
-                              ),
-                              secondary: isToggling
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: VivordoTheme.brand,
-                                      ),
-                                    )
-                                  : Icon(
-                                      _metricIcon(metric.key),
-                                      color: enabled
-                                          ? VivordoTheme.brand
-                                          : const Color(0xFF8E8E93),
-                                      size: 20,
-                                    ),
-                            ),
-                            if (metric != kHealthMetrics.last)
-                              const Divider(
-                                height: 1,
-                                indent: 44,
-                                endIndent: 0,
-                              ),
-                          ],
-                        );
-                      }),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // ── App Settings ───────────────────────────────────────────
-                  _buildSectionLabel('App Settings'),
-                  _buildCard(
-                    children: [
-                      _buildInfoRow(
-                        Icons.brightness_auto_outlined,
-                        'Appearance',
-                        context.watch<ThemeController>().modeLabel,
-                        onTap: _showAppearancePicker,
-                      ),
-                      _buildDivider(),
-                      _buildInfoRow(
+                      title: 'Appearance',
+                      trailing: _AppearanceToggle(),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
                         Icons.wb_twilight_rounded,
-                        'End of day',
+                        VivordoTheme.brand,
+                      ),
+                      title: 'End of day',
+                      subtitle: 'Plans after this count as your own time',
+                      trailing: _ValueChevron(
                         dayWrapUpVaries
                             ? 'It varies'
                             : _formatReminderTime(dayWrapUp),
-                        onTap: () => _chooseDayWrapUp(dayWrapUp),
                       ),
-                      _buildDivider(),
-                      _buildToggleRow(
-                        Icons.monitor_heart_outlined,
-                        'Scan Reminders',
-                        '${scanReminderTimes.length} reminder${scanReminderTimes.length == 1 ? '' : 's'} each day',
-                        scanReminderEnabled,
-                        (val) => _updateReminderPreference(
-                          field: 'scanReminderEnabled',
-                          enabled: val,
-                        ),
-                      ),
-                      if (scanReminderEnabled) ...[
-                        for (
-                          var index = 0;
-                          index < scanReminderTimes.length;
-                          index++
-                        ) ...[
-                          _buildDivider(),
-                          _buildReminderTimeRow(
-                            index: index,
-                            minutes: scanReminderTimes[index],
-                            canRemove: scanReminderTimes.length > 1,
-                            onEdit: () => _chooseScanReminderTime(
-                              reminderTimes: scanReminderTimes,
-                              index: index,
-                            ),
-                            onRemove: () => _removeScanReminderTime(
-                              scanReminderTimes,
-                              index,
-                            ),
-                          ),
-                        ],
-                        if (scanReminderTimes.length < 10) ...[
-                          _buildDivider(),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
-                              onPressed: () => _chooseScanReminderTime(
-                                reminderTimes: scanReminderTimes,
-                              ),
-                              icon: const Icon(Icons.add_alarm_rounded),
-                              label: const Text('Add reminder'),
-                            ),
-                          ),
-                        ],
-                      ],
-                      _buildDivider(),
-                      _buildToggleRow(
-                        Icons.chat_bubble_outline_rounded,
-                        'Daily Check-in Reminder',
-                        'After your final calendar event',
-                        checkInReminderEnabled,
-                        (val) => _updateReminderPreference(
-                          field: 'checkInReminderEnabled',
-                          enabled: val,
-                        ),
-                      ),
-                      _buildDivider(),
-                      _buildToggleRow(
-                        Icons.group_outlined,
-                        'Circle Notifications',
-                        'Likes and comments on your activity',
-                        circleNotificationsEnabled,
-                        (val) => _updateReminderPreference(
-                          field: 'circleNotificationsEnabled',
-                          enabled: val,
-                        ),
-                      ),
-                      _buildDivider(),
-                      _buildToggleRow(
-                        Icons.fitness_center_rounded,
-                        'Fitness Notifications',
-                        'Goal and fitness ring updates',
-                        fitnessNotificationsEnabled,
-                        (val) => _updateReminderPreference(
-                          field: 'fitnessNotificationsEnabled',
-                          enabled: val,
-                        ),
-                      ),
-                      _buildDivider(),
-                      _buildToggleRow(
-                        Icons.sync_rounded,
-                        'Auto Sync Health Data',
-                        'Syncs every 3 minutes in background',
-                        _autoSyncData,
-                        (val) => setState(() => _autoSyncData = val),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  _buildSectionLabel('Circle Settings'),
-                  _buildCard(
-                    children: [
-                      ListTile(
-                        leading: const Icon(
-                          Icons.block,
-                          color: Color(0xFF7B6EF6),
-                        ),
-                        title: const Text('Blocked Users'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const BlockedUsersScreen(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // ── Report a Bug ───────────────────────────────────────────
-                  _buildSectionLabel('Privacy & Support'),
-                  _buildCard(children: const [PrivacySupportLinks()]),
-                  _buildSectionLabel('Vivordo AI'),
-                  _buildCard(children: [
-                    ListTile(
-                      leading: const Icon(Icons.privacy_tip_outlined),
-                      title: const Text('Reset AI consent'),
-                      subtitle: const Text('Ask for permission again before Vivordo AI sends anything to Anthropic from this device. Existing insights are kept.'),
-                      onTap: () async {
-                        final uid = FirebaseAuth.instance.currentUser?.uid;
-                        if (uid == null) return;
-                        try {
-                          await AiConsent.revoke(uid);
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AI consent reset. You will be asked again next time.')));
-                        } catch (_) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not reset consent. Please try again.')));
-                        }
-                      },
+                      onTap: () => _chooseDayWrapUp(dayWrapUp),
                     ),
-                  ]),
-                  const SizedBox(height: 24),
+                  ],
+                ),
 
-                  _buildSectionLabel('Report a Bug'),
-                  _buildCard(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(7),
-                                  decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFF7B6EF6,
-                                    ).withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.bug_report_outlined,
-                                    size: 16,
-                                    color: VivordoTheme.brand,
-                                  ),
-                                ),
-                                const SizedBox(width: 14),
-                                const Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Found a problem?',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Tell us what went wrong and we’ll look into it',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF8E8E93),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                            TextField(
-                              controller: _bugReportController,
-                              minLines: 3,
-                              maxLines: 6,
-                              textCapitalization: TextCapitalization.sentences,
-                              style: const TextStyle(fontSize: 14),
-                              decoration: InputDecoration(
-                                hintText: 'Describe the bug…',
-                                hintStyle: const TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xFF8E8E93),
-                                ),
-                                filled: true,
-                                fillColor: const Color(0xFFF2F2F7),
-                                contentPadding: const EdgeInsets.all(14),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: BorderSide.none,
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: BorderSide.none,
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: const BorderSide(
-                                    color: VivordoTheme.brand,
-                                    width: 1.5,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: _isSubmittingBugReport
-                                    ? null
-                                    : _submitBugReport,
-                                icon: _isSubmittingBugReport
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Icon(Icons.send_rounded, size: 18),
-                                label: Text(
-                                  _isSubmittingBugReport
-                                      ? 'Sending…'
-                                      : 'Send Report',
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: VivordoTheme.brand,
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 14,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  textStyle: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                const _SectionLabel('Privacy'),
+                _SettingsCard(
+                  children: [
+                    _SettingsRow(
+                      leading: const _IconBadge.muted(Icons.block_rounded),
+                      title: 'Blocked users',
+                      trailing: const _Chevron(),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const BlockedUsersScreen(),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  // ── Log Out ────────────────────────────────────────────────
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge.muted(
+                        Icons.auto_awesome_rounded,
+                      ),
+                      title: 'Vivordo AI consent',
+                      subtitle:
+                          'Ask again before Vivordo AI sends anything to '
+                          'Anthropic from this device. Existing insights are '
+                          'kept.',
+                      trailing: _PillButton(
+                        'Reset',
+                        tonal: true,
+                        onPressed: _resetAiConsent,
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge.muted(
+                        Icons.privacy_tip_outlined,
+                      ),
+                      title: 'Privacy Policy',
+                      trailing: const _ExternalLink(),
+                      onTap: () => openVivordoLink(
+                        context,
+                        Uri.parse(vivordoPrivacyUrl),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge.muted(
+                        Icons.description_outlined,
+                      ),
+                      title: 'Terms & Conditions',
+                      trailing: const _ExternalLink(),
+                      onTap: () =>
+                          openVivordoLink(context, Uri.parse(vivordoTermsUrl)),
+                    ),
+                  ],
+                ),
+
+                const _SectionLabel('Support'),
+                _SettingsCard(
+                  children: [
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.bug_report_outlined,
+                        _red,
+                      ),
+                      title: 'Report a bug',
+                      subtitle: 'Tell us what went wrong',
+                      trailing: const _Chevron(),
+                      onTap: _showBugReportSheet,
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.support_agent_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Contact support',
+                      subtitle: vivordoSupportEmail,
+                      trailing: const _ExternalLink(),
+                      onTap: () => openVivordoLink(
+                        context,
+                        Uri(scheme: 'mailto', path: vivordoSupportEmail),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 26),
+                _SettingsCard(
+                  children: [
+                    InkWell(
+                      onTap: () async {
                         // Log while still authenticated — Firestore rules
                         // reject writes once signOut() clears the session.
                         await AnalyticsService().logLogout();
                         await FirebaseAuth.instance.signOut();
                       },
-                      icon: const Icon(
-                        Icons.logout_rounded,
-                        size: 18,
-                        color: Color(0xFFFF3B30),
-                      ),
-                      label: const Text('Log Out'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFE5E5),
-                        foregroundColor: const Color(0xFFFF3B30),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                          child: Text(
+                            'Log out',
+                            style: TextStyle(
+                              color: VivordoTheme.brand,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: OutlinedButton.icon(
-                      onPressed: _isDeletingAccount ? null : _deleteAccount,
-                      icon: _isDeletingAccount
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Color(0xFFFF3B30),
-                              ),
-                            )
-                          : const Icon(Icons.delete_forever_rounded, size: 18),
-                      label: Text(
-                        _isDeletingAccount
-                            ? 'Deleting Account…'
-                            : 'Delete Account',
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFFF3B30),
-                        side: const BorderSide(color: Color(0xFFFF3B30)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Center(
+                  child: TextButton(
+                    onPressed: _isDeletingAccount ? null : _deleteAccount,
+                    style: TextButton.styleFrom(
+                      foregroundColor: _red,
+                      textStyle: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_isDeletingAccount) ...[
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: _red,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Text(
+                          _isDeletingAccount
+                              ? 'Deleting account…'
+                              : 'Delete account',
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 120),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         );
@@ -2264,238 +1380,65 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  // ── Helper Widgets ─────────────────────────────────────────────────────────
-
-  Widget _buildSectionLabel(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: context.vivordoColors.textSecondary,
-          letterSpacing: 0.8,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCard({required List<Widget> children}) {
-    return Material(
-      color: context.vivordoColors.card,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: context.vivordoColors.border),
-        ),
-        child: Column(children: children),
-      ),
-    );
-  }
-
-  Widget _buildDivider() =>
-      Divider(height: 1, color: context.vivordoColors.border);
-
-  Future<void> _showAppearancePicker() async {
-    final controller = context.read<ThemeController>();
-    final selected = await showModalBottomSheet<ThemeMode>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Appearance',
-                style: Theme.of(
-                  sheetContext,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Choose how Vivordo looks on this device.',
-                style: Theme.of(sheetContext).textTheme.bodyMedium?.copyWith(
-                  color: sheetContext.vivordoColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              for (final option in const [
-                (
-                  ThemeMode.system,
-                  Icons.brightness_auto_outlined,
-                  'System Default',
-                ),
-                (ThemeMode.light, Icons.light_mode_outlined, 'Light'),
-                (ThemeMode.dark, Icons.dark_mode_outlined, 'Dark'),
-              ])
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(option.$2, color: VivordoTheme.brand),
-                  title: Text(option.$3),
-                  subtitle: option.$1 == ThemeMode.system
-                      ? const Text('Match your iPhone appearance')
-                      : null,
-                  trailing: controller.mode == option.$1
-                      ? const Icon(
-                          Icons.check_circle_rounded,
-                          color: VivordoTheme.brand,
-                        )
-                      : null,
-                  onTap: () => Navigator.pop(sheetContext, option.$1),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (selected != null) await controller.setMode(selected);
-  }
-
-  Widget _buildInfoRow(
-    IconData icon,
-    String label,
-    String value, {
-    VoidCallback? onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 13),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: VivordoTheme.brand),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF8E8E93),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+  Widget _profileCard(UserModel user) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final name = user.displayName?.trim() ?? '';
+    final photoUrl = user.photoUrl;
+    final fallback = name.isEmpty
+        ? const Icon(
+            Icons.person_outline_rounded,
+            color: Colors.white,
+            size: 26,
+          )
+        : Text(
+            name[0].toUpperCase(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
             ),
-            if (onTap != null)
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: Color(0xFFC7C7CC),
-              ),
-          ],
+          );
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        // The Home stress card's gradient, so the two heroes match.
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: dark
+              ? const [Color(0xFF4327EC), Color(0xFF282078), Color(0xFF181445)]
+              : const [Color(0xFF8D78F4), Color(0xFF7664DC), Color(0xFF6054BE)],
+          stops: const [0, 0.58, 1],
         ),
       ),
-    );
-  }
-
-  Widget _buildReminderTimeRow({
-    required int index,
-    required int minutes,
-    required bool canRemove,
-    required VoidCallback onEdit,
-    required VoidCallback onRemove,
-  }) {
-    return Row(
-      children: [
-        Expanded(
-          child: InkWell(
-            onTap: onEdit,
-            borderRadius: BorderRadius.circular(10),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.alarm_rounded,
-                    size: 18,
-                    color: VivordoTheme.brand,
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Reminder ${index + 1}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF8E8E93),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _formatReminderTime(minutes),
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    size: 20,
-                    color: Color(0xFFC7C7CC),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        IconButton(
-          onPressed: canRemove ? onRemove : null,
-          tooltip: canRemove
-              ? 'Remove reminder'
-              : 'At least one reminder is required',
-          icon: const Icon(Icons.delete_outline_rounded),
-          color: const Color(0xFFFF3B30),
-          disabledColor: const Color(0xFFC7C7CC),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildToggleRow(
-    IconData icon,
-    String title,
-    String subtitle,
-    bool value,
-    ValueChanged<bool> onChanged,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(7),
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: VivordoTheme.brand.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+              color: Colors.white.withValues(alpha: .18),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: .35),
+                width: 2,
+              ),
             ),
-            child: Icon(icon, size: 16, color: VivordoTheme.brand),
+            child: photoUrl != null && photoUrl.startsWith('http')
+                ? ClipOval(
+                    child: Image.network(
+                      photoUrl,
+                      width: 52,
+                      height: 52,
+                      fit: BoxFit.cover,
+                      cacheWidth: 156,
+                      cacheHeight: 156,
+                      errorBuilder: (_, _, _) => fallback,
+                    ),
+                  )
+                : fallback,
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -2503,69 +1446,1027 @@ class _SettingsScreenState extends State<SettingsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: context.vivordoColors.textPrimary,
+                  name.isEmpty ? 'Set your name' : name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
-                  subtitle,
+                  user.email ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 12,
-                    color: context.vivordoColors.textSecondary,
+                    color: Colors.white.withValues(alpha: .82),
+                    fontSize: 13,
                   ),
                 ),
               ],
             ),
           ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeColor: VivordoTheme.brand,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          const SizedBox(width: 10),
+          OutlinedButton(
+            onPressed: () => _showAccountSheet(user),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: Colors.white.withValues(alpha: .16),
+              side: BorderSide(color: Colors.white.withValues(alpha: .24)),
+              minimumSize: const Size(0, 36),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            child: const Text('Edit'),
           ),
         ],
       ),
     );
   }
 
-  IconData _metricIcon(String key) {
-    switch (key) {
-      // Activity
-      case 'steps':
-        return Icons.directions_walk_rounded;
-      case 'active_calories':
-        return Icons.local_fire_department_rounded;
-      case 'exercise_time':
-        return Icons.fitness_center_rounded;
-      // Heart
-      case 'heart_rate':
-        return Icons.favorite_rounded;
-      case 'resting_heart_rate':
-        return Icons.favorite_border_rounded;
-      case 'hrv':
-        return Icons.show_chart_rounded;
-      // Breathing / Vitals
-      case 'blood_oxygen':
-        return Icons.air_rounded;
-      case 'respiratory_rate':
-        return Icons.wind_power_rounded;
-      // Sleep
-      case 'sleep':
-        return Icons.bedtime_rounded;
-      // Body
-      case 'weight':
-        return Icons.monitor_weight_rounded;
-      case 'body_fat':
-        return Icons.percent_rounded;
-      // Fitness
-      case 'vo2max':
-        return Icons.speed_rounded;
-      default:
-        return Icons.monitor_heart_outlined;
+  Widget _pendingEmailBanner(String pendingEmail) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    decoration: BoxDecoration(
+      color: _orange.withValues(alpha: .12),
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.mail_outline_rounded, color: _orange, size: 18),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'Verify your new email: $pendingEmail\n'
+            'Check your inbox and tap the link.',
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.4,
+              fontWeight: FontWeight.w500,
+              color: context.vivordoColors.textPrimary,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  /// Name, email and password, each opening its existing edit dialog.
+  Future<void> _showAccountSheet(UserModel user) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    backgroundColor: context.vivordoColors.page,
+    builder: (sheetContext) {
+      void edit(String field, String current) {
+        Navigator.pop(sheetContext);
+        _showEditDialog(context, field, current);
+      }
+
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Account',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: sheetContext.vivordoColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 14),
+              _SettingsCard(
+                children: [
+                  _SettingsRow(
+                    leading: const _IconBadge(
+                      Icons.person_outline_rounded,
+                      VivordoTheme.brand,
+                    ),
+                    title: 'Name',
+                    subtitle: user.displayName ?? 'Set your name',
+                    trailing: const _Chevron(),
+                    onTap: () => edit('Name', user.displayName ?? ''),
+                  ),
+                  _SettingsRow(
+                    leading: const _IconBadge(
+                      Icons.mail_outline_rounded,
+                      VivordoTheme.brand,
+                    ),
+                    title: 'Email',
+                    subtitle: user.email ?? 'Set your email',
+                    trailing: const _Chevron(),
+                    onTap: () => edit('Email', user.email ?? ''),
+                  ),
+                  _SettingsRow(
+                    leading: const _IconBadge(
+                      Icons.lock_outline_rounded,
+                      VivordoTheme.brand,
+                    ),
+                    title: 'Password',
+                    subtitle: '••••••••',
+                    trailing: const _Chevron(),
+                    onTap: () => edit('Password', ''),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+
+  /// A wearable or calendar row. Connected rows open their actions; others
+  /// connect in place.
+  Widget _connectionRow({
+    required Widget leading,
+    required String name,
+    required bool connected,
+    required bool busy,
+    required VoidCallback onConnect,
+    required VoidCallback onDisconnect,
+    VoidCallback? onSync,
+  }) => _SettingsRow(
+    leading: leading,
+    title: name,
+    status: (
+      connected,
+      busy
+          ? (connected ? 'Updating…' : 'Connecting…')
+          : connected
+          ? 'Connected'
+          : 'Not connected',
+    ),
+    trailing: busy
+        ? const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: VivordoTheme.brand,
+            ),
+          )
+        : connected
+        ? const _Chevron()
+        : _PillButton('Connect', onPressed: onConnect),
+    onTap: busy
+        ? null
+        : connected
+        ? () => _showConnectionActions(
+            name: name,
+            onSync: onSync,
+            onDisconnect: onDisconnect,
+          )
+        : onConnect,
+  );
+
+  Future<void> _showConnectionActions({
+    required String name,
+    required VoidCallback onDisconnect,
+    VoidCallback? onSync,
+  }) async {
+    final action = await showCupertinoModalPopup<String>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        title: Text(name),
+        message: const Text('Connected'),
+        actions: [
+          if (onSync != null)
+            CupertinoActionSheetAction(
+              onPressed: () => Navigator.pop(sheetContext, 'sync'),
+              child: const Text('Sync last 30 days'),
+            ),
+          CupertinoActionSheetAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(sheetContext, 'disconnect'),
+            child: const Text('Disconnect'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(sheetContext),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'sync':
+        onSync?.call();
+      case 'disconnect':
+        onDisconnect();
     }
+  }
+
+  Widget _reminderChips(List<int> reminderTimes) => Padding(
+    padding: const EdgeInsets.fromLTRB(60, 0, 14, 14),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (var index = 0; index < reminderTimes.length; index++)
+            _TimeChip(
+              _formatReminderTime(reminderTimes[index]),
+              semanticsLabel:
+                  'Scan reminder at ${_formatReminderTime(reminderTimes[index])}',
+              onTap: () => _showReminderTimeActions(reminderTimes, index),
+            ),
+          if (reminderTimes.length < 10)
+            _TimeChip(
+              '+ Add',
+              accent: true,
+              semanticsLabel: 'Add a scan reminder',
+              onTap: () =>
+                  _chooseScanReminderTime(reminderTimes: reminderTimes),
+            ),
+        ],
+      ),
+    ),
+  );
+
+  /// Change or remove one reminder. At least one reminder must stay.
+  Future<void> _showReminderTimeActions(
+    List<int> reminderTimes,
+    int index,
+  ) async {
+    if (reminderTimes.length <= 1) {
+      return _chooseScanReminderTime(
+        reminderTimes: reminderTimes,
+        index: index,
+      );
+    }
+    final action = await showCupertinoModalPopup<String>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        title: Text(
+          'Scan reminder at ${_formatReminderTime(reminderTimes[index])}',
+        ),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(sheetContext, 'change'),
+            child: const Text('Change time'),
+          ),
+          CupertinoActionSheetAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(sheetContext, 'remove'),
+            child: const Text('Remove reminder'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(sheetContext),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'change':
+        await _chooseScanReminderTime(
+          reminderTimes: reminderTimes,
+          index: index,
+        );
+      case 'remove':
+        await _removeScanReminderTime(reminderTimes, index);
+    }
+  }
+
+  Future<void> _showBugReportSheet() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    backgroundColor: context.vivordoColors.page,
+    builder: (sheetContext) {
+      var sending = false;
+      return StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final colors = sheetContext.vivordoColors;
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              0,
+              20,
+              20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Report a bug',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: colors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Tell us what went wrong and we’ll look into it.',
+                    style: TextStyle(fontSize: 13, color: colors.textSecondary),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _bugReportController,
+                    autofocus: true,
+                    minLines: 4,
+                    maxLines: 8,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      hintText: 'Describe the bug…',
+                      contentPadding: EdgeInsets.all(14),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _bugReportController,
+                    builder: (context, value, _) => FilledButton(
+                      onPressed: sending || value.text.trim().isEmpty
+                          ? null
+                          : () async {
+                              setSheetState(() => sending = true);
+                              final sent = await _submitBugReport();
+                              if (sent && sheetContext.mounted) {
+                                Navigator.pop(sheetContext);
+                              } else if (sheetContext.mounted) {
+                                setSheetState(() => sending = false);
+                              }
+                            },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: VivordoTheme.brand,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(50),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      child: Text(sending ? 'Sending…' : 'Send report'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+/// Apple Health metrics the person has allowed, from their user document.
+Map<String, bool> _healthConsent(Map<String, dynamic> userData) =>
+    (userData['healthKitConsent'] as Map? ?? {}).map(
+      (key, value) => MapEntry(key.toString(), value == true),
+    );
+
+int _selectedHealthMetrics(Map<String, dynamic> userData) {
+  final consent = _healthConsent(userData);
+  return kHealthMetrics.where((metric) => consent[metric.key] == true).length;
+}
+
+/// Which Apple Health metrics Vivordo syncs, one switch each.
+class _AppleHealthSettingsPage extends StatefulWidget {
+  const _AppleHealthSettingsPage();
+
+  @override
+  State<_AppleHealthSettingsPage> createState() =>
+      _AppleHealthSettingsPageState();
+}
+
+class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _userDocStream;
+  bool _isConnectingAll = false;
+  String? _togglingMetric;
+
+  @override
+  void initState() {
+    super.initState();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    _userDocStream = uid == null
+        ? const Stream.empty()
+        : FirebaseFirestore.instance.collection('users').doc(uid).snapshots();
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _enableAll() async {
+    setState(() => _isConnectingAll = true);
+    try {
+      final granted = await HealthService().enableAll();
+      if (!granted) _showMessage('Apple Health permissions were not granted.');
+    } catch (e) {
+      _showMessage('Could not connect: $e');
+    } finally {
+      if (mounted) setState(() => _isConnectingAll = false);
+    }
+  }
+
+  Future<void> _toggleMetric(HealthMetricDef metric, bool enable) async {
+    if (_togglingMetric != null) return;
+    setState(() => _togglingMetric = metric.key);
+    try {
+      if (enable) {
+        final granted = await HealthService().enableMetric(metric.key);
+        if (!granted) {
+          _showMessage(
+            '${metric.label} was not enabled. Review Vivordo permissions in '
+            'Apple Health.',
+          );
+        }
+      } else {
+        await HealthService().disableMetric(metric.key);
+      }
+    } catch (e) {
+      _showMessage('Error: $e');
+    } finally {
+      if (mounted) setState(() => _togglingMetric = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _userDocStream,
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data() ?? const <String, dynamic>{};
+        final consent = _healthConsent(data);
+        final selected = _selectedHealthMetrics(data);
+        final allOn = selected == kHealthMetrics.length;
+        return Scaffold(
+          backgroundColor: colors.page,
+          body: SafeArea(
+            child: ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 60),
+              children: [
+                const _SettingsHeader('Apple Health'),
+                _SettingsCard(
+                  children: [
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.favorite_rounded,
+                        _SettingsScreenState._red,
+                      ),
+                      title: 'Health data sync',
+                      status: (
+                        selected > 0,
+                        selected > 0
+                            ? '$selected of ${kHealthMetrics.length} metrics'
+                            : 'No metrics selected',
+                      ),
+                    ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+                  child: Text(
+                    'Apple controls access. Vivordo only reads the metrics you '
+                    'approve. Turning a metric off removes its saved data from '
+                    'Vivordo but does not change Apple Health permissions.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ),
+                _SectionLabel(
+                  'Metrics',
+                  trailing: allOn
+                      ? null
+                      : _isConnectingAll
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: VivordoTheme.brand,
+                          ),
+                        )
+                      : TextButton(
+                          onPressed: _enableAll,
+                          style: TextButton.styleFrom(
+                            foregroundColor: VivordoTheme.brand,
+                            minimumSize: const Size(0, 32),
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            textStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          child: const Text('Turn all on'),
+                        ),
+                ),
+                _SettingsCard(
+                  children: [
+                    for (final metric in kHealthMetrics)
+                      _metricRow(metric, enabled: consent[metric.key] == true),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _metricRow(HealthMetricDef metric, {required bool enabled}) {
+    final toggling = _togglingMetric == metric.key;
+    return _SettingsRow(
+      leading: _IconBadge(
+        _metricIcon(metric.key),
+        enabled ? VivordoTheme.brand : context.vivordoColors.textSecondary,
+      ),
+      title: metric.label,
+      subtitle: toggling
+          ? (enabled
+                ? 'Removing saved Vivordo data…'
+                : 'Requesting Apple Health access…')
+          : metric.description,
+      trailing: toggling
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: VivordoTheme.brand,
+              ),
+            )
+          : _SettingsSwitch(
+              value: enabled,
+              onChanged: _togglingMetric == null
+                  ? (value) => _toggleMetric(metric, value)
+                  : null,
+            ),
+    );
+  }
+}
+
+IconData _metricIcon(String key) => switch (key) {
+  'steps' => Icons.directions_walk_rounded,
+  'active_calories' => Icons.local_fire_department_rounded,
+  'exercise_time' => Icons.fitness_center_rounded,
+  'distance' => Icons.straighten_rounded,
+  'heart_rate' => Icons.favorite_rounded,
+  'resting_heart_rate' => Icons.favorite_border_rounded,
+  'hrv' => Icons.show_chart_rounded,
+  'blood_oxygen' => Icons.air_rounded,
+  'respiratory_rate' => Icons.wind_power_rounded,
+  'sleep' => Icons.bedtime_rounded,
+  'weight' => Icons.monitor_weight_rounded,
+  'body_fat' => Icons.percent_rounded,
+  'vo2max' => Icons.speed_rounded,
+  _ => Icons.monitor_heart_outlined,
+};
+
+// ── Shared settings pieces ──────────────────────────────────────────────────
+
+class _SettingsHeader extends StatelessWidget {
+  const _SettingsHeader(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 18),
+      child: Row(
+        children: [
+          Material(
+            color: colors.card,
+            shape: CircleBorder(side: BorderSide(color: colors.border)),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => Navigator.maybePop(context),
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  size: 16,
+                  color: colors.textPrimary,
+                  semanticLabel: 'Back',
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+                color: colors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text, {this.trailing});
+
+  final String text;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 24, 0, 8),
+    child: SizedBox(
+      height: 32,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              text.toUpperCase(),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.3,
+                color: context.vivordoColors.textSecondary,
+              ),
+            ),
+          ),
+          ?trailing,
+        ],
+      ),
+    ),
+  );
+}
+
+/// Rows on one card with dividers between them, in My Day's card style.
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: context.vivordoColors.card,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(20),
+      side: BorderSide(color: Colors.black.withValues(alpha: .07)),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      children: [
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0)
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: context.vivordoColors.border,
+            ),
+          children[i],
+        ],
+      ],
+    ),
+  );
+}
+
+class _SettingsRow extends StatelessWidget {
+  const _SettingsRow({
+    required this.leading,
+    required this.title,
+    this.subtitle,
+    this.status,
+    this.trailing,
+    this.onTap,
+  });
+
+  final Widget leading;
+  final String title;
+  final String? subtitle;
+
+  /// A connected (green) or idle (grey) dot with its label.
+  final (bool, String)? status;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final status = this.status;
+    return InkWell(
+      onTap: onTap,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 60),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              leading,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                    if (subtitle case final subtitle?) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.35,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (status != null) ...[
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: status.$1
+                                  ? _SettingsScreenState._green
+                                  : colors.border,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              status.$2,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: colors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (trailing case final trailing?) ...[
+                const SizedBox(width: 10),
+                trailing,
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IconBadge extends StatelessWidget {
+  const _IconBadge(IconData this.icon, Color this.color) : child = null;
+
+  const _IconBadge.muted(IconData this.icon) : color = null, child = null;
+
+  const _IconBadge.custom({required Color this.color, required this.child})
+    : icon = null;
+
+  final IconData? icon;
+  final Color? color;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final tint = color ?? colors.textSecondary;
+    return Container(
+      width: 34,
+      height: 34,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color == null ? colors.cardMuted : tint.withValues(alpha: .13),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: child ?? Icon(icon, size: 18, color: tint),
+    );
+  }
+}
+
+class _SettingsSwitch extends StatelessWidget {
+  const _SettingsSwitch({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) => Switch.adaptive(
+    value: value,
+    onChanged: onChanged,
+    activeTrackColor: VivordoTheme.brand,
+  );
+}
+
+class _PillButton extends StatelessWidget {
+  const _PillButton(this.label, {required this.onPressed, this.tonal = false});
+
+  final String label;
+  final VoidCallback onPressed;
+  final bool tonal;
+
+  @override
+  Widget build(BuildContext context) => FilledButton(
+    onPressed: onPressed,
+    style: FilledButton.styleFrom(
+      backgroundColor: tonal
+          ? VivordoTheme.brand.withValues(alpha: .12)
+          : VivordoTheme.brand,
+      foregroundColor: tonal ? VivordoTheme.brand : Colors.white,
+      minimumSize: const Size(0, 34),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+    ),
+    child: Text(label),
+  );
+}
+
+class _Chevron extends StatelessWidget {
+  const _Chevron();
+
+  @override
+  Widget build(BuildContext context) => Icon(
+    Icons.chevron_right_rounded,
+    color: context.vivordoColors.textSecondary,
+  );
+}
+
+class _ExternalLink extends StatelessWidget {
+  const _ExternalLink();
+
+  @override
+  Widget build(BuildContext context) => Icon(
+    Icons.open_in_new_rounded,
+    size: 18,
+    color: context.vivordoColors.textSecondary,
+  );
+}
+
+class _ValueChevron extends StatelessWidget {
+  const _ValueChevron(this.value);
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        value,
+        style: TextStyle(
+          fontSize: 14,
+          color: context.vivordoColors.textSecondary,
+        ),
+      ),
+      const _Chevron(),
+    ],
+  );
+}
+
+class _TimeChip extends StatelessWidget {
+  const _TimeChip(
+    this.label, {
+    required this.onTap,
+    required this.semanticsLabel,
+    this.accent = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final String semanticsLabel;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      excludeSemantics: true,
+      child: Material(
+        color: accent
+            ? VivordoTheme.brand.withValues(alpha: .12)
+            : colors.cardMuted,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: accent ? VivordoTheme.brand : colors.textPrimary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// System, Light or Dark, saved to the person's profile.
+class _AppearanceToggle extends StatelessWidget {
+  const _AppearanceToggle();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<ThemeController>();
+    final colors = context.vivordoColors;
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: colors.input,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (mode, label) in const [
+            (ThemeMode.system, 'System'),
+            (ThemeMode.light, 'Light'),
+            (ThemeMode.dark, 'Dark'),
+          ])
+            Semantics(
+              button: true,
+              selected: controller.mode == mode,
+              label: '$label appearance',
+              excludeSemantics: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => controller.setMode(mode),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: controller.mode == mode
+                        ? VivordoTheme.brand
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: controller.mode == mode
+                          ? Colors.white
+                          : colors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
