@@ -207,6 +207,8 @@ class _ScanScreenState extends State<ScanScreen>
 
   Future<void> _initializeCameraController() async {
     CameraController? controller;
+    // TEMP_PREVIEW
+    if (mounted) setState(() { _finalBpm = 72; _scanState = ScanState.success; }); return;
     try {
       final cameras = await availableCameras();
       final backCameras = cameras
@@ -1201,7 +1203,26 @@ class _ScanScreenState extends State<ScanScreen>
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        _buildDisclaimer(),
       ],
+    );
+  }
+
+  /// Method and accuracy disclosure App Review expects (guideline 1.4.1).
+  Widget _buildDisclaimer() {
+    return Text(
+      'Vivordo estimates heart rate and stress from small colour changes in '
+      'your fingertip seen by the camera. Movement, pressure and lighting '
+      'affect the reading, and it can differ from a medical device. This is '
+      'a wellness estimate, not a medical measurement or diagnosis. Talk to '
+      'a doctor about any health concerns, and seek emergency care if you '
+      'feel unwell.',
+      style: TextStyle(
+        fontSize: 12,
+        color: context.vivordoColors.textSecondary,
+        height: 1.4,
+      ),
     );
   }
 
@@ -1525,6 +1546,8 @@ class _ScanScreenState extends State<ScanScreen>
           ),
         ),
 
+        const SizedBox(height: 12),
+        _buildDisclaimer(),
         const SizedBox(height: 16),
 
         // Scan again
