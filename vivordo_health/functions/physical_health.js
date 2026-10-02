@@ -210,6 +210,21 @@ function physicalInputsChanged(before, after) {
   return !isDeepStrictEqual(pick(before), pick(after));
 }
 
+/**
+ * Whether a user document write changed the profile fields Physical Health
+ * reads (the VO₂ max estimate and its norms).
+ * @param {object|undefined} before Previous user document data.
+ * @param {object|undefined} after New user document data.
+ * @return {boolean} True when it should be recalculated.
+ */
+function profileInputsChanged(before, after) {
+  const pick = (d) => {
+    const p = d?.preferences?.personalProfile;
+    return [p?.heightCm, p?.weightKg, p?.birthYear, p?.sex];
+  };
+  return !isDeepStrictEqual(pick(before), pick(after));
+}
+
 const dayKey = (index) => new Date(index * DAY_MS).toISOString().slice(0, 10);
 const dayIndex = (day) => Math.round(Date.parse(`${day}T00:00:00Z`) / DAY_MS);
 
@@ -319,5 +334,5 @@ async function refreshPhysicalHealth(db, uid, day, timestamp) {
 
 module.exports = {
   VERSION, WEIGHTS, computePhysicalHealth, estimateVo2Max, vo2Median,
-  physicalInputsChanged, refreshPhysicalHealth,
+  physicalInputsChanged, profileInputsChanged, refreshPhysicalHealth,
 };

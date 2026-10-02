@@ -2,7 +2,7 @@
 /* eslint-disable max-len, require-jsdoc */
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {computePhysicalHealth, estimateVo2Max, vo2Median, physicalInputsChanged} = require("../physical_health");
+const {computePhysicalHealth, estimateVo2Max, vo2Median, physicalInputsChanged, profileInputsChanged} = require("../physical_health");
 
 // 28 days: ~30 min of exercise and 7,000 steps a day, 7.5 h of sleep with a
 // bedtime around 23:00.
@@ -82,4 +82,13 @@ test("it needs at least 3 of the 5 ingredients", () => {
   assert.equal(result.score, null);
   assert.equal(result.parts.sleep, 100);
   assert.equal(result.parts.activeMinutes, null);
+});
+
+test("only profile fields it reads trigger a recalculation", () => {
+  const user = (profile, extra = {}) => ({preferences: {personalProfile: profile, ...extra}});
+  const base = {heightCm: 178, weightKg: 78, birthYear: 1996, sex: "male", updatedAt: 1};
+  assert.equal(profileInputsChanged(user(base), user({...base, updatedAt: 2}, {units: "metric"})), false);
+  assert.equal(profileInputsChanged(user(base), user({...base, weightKg: 80})), true);
+  assert.equal(profileInputsChanged(user(base), user({...base, sex: "female"})), true);
+  assert.equal(profileInputsChanged(undefined, user(base)), true);
 });

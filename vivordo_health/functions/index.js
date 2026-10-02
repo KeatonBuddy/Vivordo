@@ -3,6 +3,7 @@ const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {
   onDocumentCreated,
+  onDocumentUpdated,
   onDocumentWritten,
 } = require("firebase-functions/v2/firestore");
 const {defineSecret} = require("firebase-functions/params");
@@ -180,6 +181,29 @@ exports.computeEffortFromWorkout = onDocumentWritten(
       }
       const {refreshEffort} = require("./effort");
       await refreshEffort(db, event.params.uid, record.id,
+          () => admin.firestore.FieldValue.serverTimestamp());
+    },
+);
+
+// Physical Health again when height, weight, age or sex change on the
+// profile, for the newest day with synced data (the user's own today, so no
+// time zone is needed). Other user document writes return straight away.
+exports.computePhysicalFromProfile = onDocumentUpdated(
+    {document: "users/{uid}", retry: true},
+    async (event) => {
+      const {profileInputsChanged, refreshPhysicalHealth} =
+        require("./physical_health");
+      if (!profileInputsChanged(event.data?.before?.data(),
+          event.data?.after?.data())) return;
+      const {uid} = event.params;
+      const db = admin.firestore();
+      const newest = await db.collection(`users/${uid}/metrics_daily`)
+          .orderBy(admin.firestore.FieldPath.documentId(), "desc")
+          .limit(1)
+          .select()
+          .get();
+      if (newest.empty) return;
+      await refreshPhysicalHealth(db, uid, newest.docs[0].id,
           () => admin.firestore.FieldValue.serverTimestamp());
     },
 );

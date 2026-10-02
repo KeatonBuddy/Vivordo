@@ -365,6 +365,8 @@ Metrics (same card, same position) and its detail screen
   - `computeDailyCapacity` recalculates it when steps, exercise, sleep,
     check-in sleep, VO₂ max or weight change.
   - `computeEffortFromWorkout` recalculates it for the workout's day.
+  - `computePhysicalFromProfile` recalculates it when height, weight, age
+    or sex change on the profile, for the newest day with synced data.
 - **Age and sex** come from onboarding (question 11) and the profile button
   on Fitness → Body. They are stored in `preferences.personalProfile`
   (`birthYear`, `sex`).
