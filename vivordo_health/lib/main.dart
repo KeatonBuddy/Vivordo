@@ -28,7 +28,7 @@ import 'screens/email_verification_screen.dart';
 import 'screens/force_update_screen.dart';
 import 'screens/circle_screen.dart';
 import 'screens/fitness_screen.dart';
-import 'screens/wellness_detail_screen.dart';
+import 'screens/physical_health_screen.dart';
 import 'screens/month_calendar_screen.dart';
 import 'screens/whats_new_screen.dart';
 
@@ -344,7 +344,7 @@ class _MyAppState extends State<MyApp> {
         '/calendar': (context) => const MainNavigationScreen(initialIndex: 1),
         '/full-calendar': (context) => const MonthCalendarScreen(),
         '/fitness': (context) => const MainNavigationScreen(initialIndex: 3),
-        '/wellness': (context) => const WellnessDetailScreen(),
+        '/wellness': (context) => const PhysicalHealthScreen(),
         '/scan': (context) => const MainNavigationScreen(initialIndex: 2),
         '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 5),
         '/circle': (context) => const CircleScreen(),

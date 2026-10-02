@@ -15,7 +15,8 @@ import 'exercise_detail_screen.dart';
 import 'mood_detail_screen.dart';
 import 'sleep_detail_screen.dart';
 import 'steps_detail_screen.dart';
-import 'wellness_detail_screen.dart';
+import 'physical_health_screen.dart';
+import '../src/utils/physical_health_view.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,6 +40,8 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  // 5 weeks, so the card can compare with 4 weeks ago.
+  final _physicalHealthStream = physicalHealthStream(35);
   static const Color accentPurple = VivordoTheme.brand;
   static const Color greenColor = Color(0xFF34C759);
   static const Color textGrey = Color(0xFF8E8E93);
@@ -620,14 +623,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final steps = _vals(_docsFor(snap, 'steps'), 'steps', 'sum');
     final stress = _vals(_docsFor(snap, 'stress'), 'stress', 'avg');
-    final wellness = _vals(_docsFor(snap, 'wellness'), 'wellness', 'avg');
     final stepLabels = _dayLabels(snap, 'steps');
-    final latestWellness = wellness.isEmpty ? null : wellness.last;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildWellnessHero(wellness),
+        VisibleStreamBuilder<PhysicalHealthView?>(
+          stream: _physicalHealthStream,
+          builder: (context, snapshot) =>
+              _buildPhysicalHealthHero(snapshot.data),
+        ),
         const SizedBox(height: 24),
         const Text(
           'Key metrics',
@@ -664,7 +669,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _buildInsightsCard(
           steps: steps,
           stress: stress,
-          wellness: latestWellness,
           labels: stepLabels,
         ),
         if (snap == null || snap.docs.isEmpty) ...[
@@ -676,33 +680,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildWellnessHero(List<double> values) {
-    final score = values.isEmpty ? null : values.last.clamp(0, 100);
-    final previous = values.length < 2 ? null : values[values.length - 2];
-    final change = score == null || previous == null || previous == 0
-        ? null
-        : ((score - previous) / previous * 100).round();
-    final status = score == null
-        ? 'Not enough data'
-        : score >= 75
-        ? 'Doing well'
+  /// Physical Health (docs/scores.md §7) in the spot Wellness had: the
+  /// last 4 weeks of activity, strength, cardio fitness and sleep habits.
+  Widget _buildPhysicalHealthHero(PhysicalHealthView? view) {
+    final score = view?.score?.toDouble();
+    final status = view?.status ?? 'Not enough data';
+    final color = physicalHealthColor(context, score);
+    final explanation = view == null
+        ? 'Sync your health data to see your Physical Health.'
+        : score == null
+        ? 'Appears after 2 weeks of activity and sleep data.'
+        : score >= 70
+        ? 'You\'re meeting most of your activity, fitness and sleep targets.'
         : score >= 50
-        ? 'Fair'
-        : 'Needs attention';
-    final color = score == null
-        ? context.vivordoColors.textSecondary
-        : score >= 75
-        ? greenColor
-        : score >= 50
-        ? const Color(0xFFFF9500)
-        : const Color(0xFFE91F3D);
-    final explanation = score == null
-        ? 'Sync your health data to calculate your wellness score.'
-        : score >= 75
-        ? 'Your recent health signals indicate strong overall wellness.'
-        : score >= 50
-        ? 'Your wellness is fair. Small improvements can raise your score.'
-        : 'Your recent health signals suggest that recovery needs attention.';
+        ? 'A few targets are short. Tap to see the easiest wins.'
+        : 'Most targets are short. Tap to see where to start.';
 
     return Material(
       color: context.vivordoColors.card,
@@ -714,7 +706,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: InkWell(
         onTap: () => Navigator.of(
           context,
-        ).push(MaterialPageRoute(builder: (_) => const WellnessDetailScreen())),
+        ).push(MaterialPageRoute(builder: (_) => const PhysicalHealthScreen())),
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Row(
@@ -724,7 +716,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'WELLNESS SCORE',
+                      'PHYSICAL HEALTH',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
@@ -765,15 +757,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ],
                     ),
-                    if (change != null) ...[
+                    if (view != null && view.score != null) ...[
                       const SizedBox(height: 8),
                       Text(
-                        '${change >= 0 ? '↑' : '↓'} ${change.abs()}%',
+                        view.note,
                         style: TextStyle(
-                          color: change >= 0
+                          color: view.note.startsWith('↓')
+                              ? const Color(0xFFE91F3D)
+                              : view.note.startsWith('↑')
                               ? greenColor
-                              : const Color(0xFFE91F3D),
-                          fontSize: 17,
+                              : context.vivordoColors.textSecondary,
+                          fontSize: 15,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -810,7 +804,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         shape: BoxShape.circle,
                         color: color.withValues(alpha: .1),
                       ),
-                      child: Icon(Icons.spa_rounded, color: color),
+                      child: Icon(Icons.directions_run_rounded, color: color),
                     ),
                   ],
                 ),
@@ -1048,7 +1042,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildInsightsCard({
     required List<double> steps,
     required List<double> stress,
-    required double? wellness,
     required List<String> labels,
   }) {
     String activityInsight;
@@ -1068,8 +1061,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         stress.last > stress[stress.length - 2] &&
         stress[stress.length - 2] > stress[stress.length - 3]) {
       recoveryInsight = 'Stress has increased for 3 days';
-    } else if (wellness != null && wellness < 50) {
-      recoveryInsight = 'Your wellness signals need attention';
     } else {
       recoveryInsight = 'Your recent stress trend is stable';
     }

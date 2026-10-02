@@ -1616,30 +1616,8 @@ class HealthService {
         continue;
       }
 
-      double wellness = 0;
-      int weight = 0;
-
-      if (stress != null) {
-        wellness += (100 - stress) * 0.35;
-        weight += 35;
-      }
-      if (sleep != null) {
-        final sleepScore = ((sleep / 8.0) * 100).clamp(0.0, 100.0);
-        wellness += sleepScore * 0.30;
-        weight += 30;
-      }
-      if (activity != null) {
-        wellness += activity.score * 0.20;
-        weight += 20;
-      }
-      if (heartHealth.score != null) {
-        wellness += heartHealth.score! * 0.15;
-        weight += 15;
-      }
-
-      final finalWellness = weight > 0
-          ? (wellness / weight * 100).clamp(0.0, 100.0)
-          : null;
+      // Wellness is retired: Physical Health replaces it on Metrics and is
+      // calculated on the server (functions/physical_health.js).
 
       final ref = _db
           .collection('users')
@@ -1671,14 +1649,6 @@ class HealthService {
         'date': period,
         'updatedAt': FieldValue.serverTimestamp(),
       };
-      if (finalWellness != null) {
-        payload['wellness'] = {
-          'avg': finalWellness,
-          'unit': 'score',
-          'source': 'computed',
-          'computedAt': FieldValue.serverTimestamp(),
-        };
-      }
       batch.set(ref, payload, SetOptions(merge: true));
     }
 

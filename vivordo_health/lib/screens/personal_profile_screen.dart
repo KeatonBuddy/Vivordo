@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../src/services/personal_profile_service.dart';
 import '../src/utils/smooth_chart_path.dart';
+import '../widgets/birth_year_picker.dart';
 
 const _purple = Color(0xFF6250E8);
 const _muted = Color(0xFF85859B);
@@ -96,6 +97,13 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
         'Personal Profile',
         style: TextStyle(fontWeight: FontWeight.w800),
       ),
+      actions: [
+        IconButton(
+          tooltip: 'Your profile',
+          icon: const Icon(Icons.account_circle_outlined),
+          onPressed: () => _openProfile(context),
+        ),
+      ],
     ),
     body: StreamBuilder<PersonalProfile>(
       stream: PersonalProfileService.watch(),
@@ -296,6 +304,47 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
       if (value(point) case final metric?) _ChartPoint(point.date, metric),
   ];
 
+  /// Height, weight, age and sex: what Physical Health compares against.
+  Future<void> _openProfile(BuildContext context) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: context.vivordoColors.page,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (_) => SafeArea(
+      child: Padding(
+        // Bottom room keeps the note clear of the assistant bubble.
+        padding: const EdgeInsets.fromLTRB(18, 22, 18, 84),
+        child: StreamBuilder<PersonalProfile>(
+          stream: PersonalProfileService.watch(),
+          builder: (sheetContext, snapshot) {
+            final profile = snapshot.data ?? const PersonalProfile();
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your profile',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 14),
+                _AboutYou(
+                  profile: profile,
+                  onEditBody: () => _openMeasurementEditor(
+                    sheetContext,
+                    profile: profile,
+                    title: 'Update Measurement',
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    ),
+  );
+
   Future<void> _openMeasurementEditor(
     BuildContext context, {
     required PersonalProfile profile,
@@ -486,6 +535,109 @@ class _HeroMetric extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// Height, weight, age and sex: the inputs to Physical Health's fitness
+/// norms and VO₂ max estimate. Age and sex are also asked in onboarding.
+class _AboutYou extends StatelessWidget {
+  const _AboutYou({required this.profile, required this.onEditBody});
+
+  final PersonalProfile profile;
+  final VoidCallback onEditBody;
+
+  Future<void> _save(
+    BuildContext context, {
+    int? birthYear,
+    String? sex,
+  }) async {
+    try {
+      await PersonalProfileService.saveAbout(birthYear: birthYear, sex: sex);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save. Try again.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final weight = profile.weightKg;
+    Widget row(String label, String? value, VoidCallback onTap) => InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            Text(
+              value ?? 'Add',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: value == null ? _purple : null,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+          ],
+        ),
+      ),
+    );
+    final divider = Divider(height: 24, color: colors.border);
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          row(
+            'Height',
+            profile.heightCm == null ? null : _imperialHeight(profile.heightCm),
+            onEditBody,
+          ),
+          divider,
+          row(
+            'Weight',
+            weight == null
+                ? null
+                : '${_kilogramsToPounds(weight).toStringAsFixed(1)} lbs',
+            onEditBody,
+          ),
+          divider,
+          row('Age', profile.age?.toString(), () async {
+            final year = await showBirthYearPicker(
+              context,
+              initial: profile.birthYear,
+            );
+            if (year != null && context.mounted) {
+              await _save(context, birthYear: year);
+            }
+          }),
+          divider,
+          const Text('Sex', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 10),
+          _Choice<String?>(
+            values: profileSexes,
+            selected: profile.sex,
+            label: (value) => profileSexLabels[value] ?? '',
+            onChanged: (value) => _save(context, sex: value),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Physical Health uses these to compare your fitness with '
+            'people like you.',
+            style: TextStyle(fontSize: 12, color: colors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SectionLabel extends StatelessWidget {

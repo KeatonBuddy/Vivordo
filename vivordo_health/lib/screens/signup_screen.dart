@@ -4,6 +4,7 @@ import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
 import 'package:vivordo_health/src/utils/day_wrap_up.dart';
+import 'package:vivordo_health/widgets/birth_year_picker.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'email_verification_screen.dart';
 import 'welcome_beta_screen.dart';
@@ -43,7 +44,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
 
   int _currentPage = 0;
-  final int _totalQuestions = 10;
+  final int _totalQuestions = 11;
   bool _isLoading = false; // prevents double-tap triggering emailSignup twice
 
   static const accentPurple = VivordoTheme.brand;
@@ -106,6 +107,11 @@ class _SignupScreenState extends State<SignupScreen> {
     if (_currentPage > _totalQuestions) return true; // Thank you slide
 
     String key = "q$_currentPage";
+    // q11 (year of birth and sex) needs both.
+    if (key == 'q11') {
+      final about = _userData['responses'][key];
+      return about is Map && about['birthYear'] != null && about['sex'] != null;
+    }
     return _userData['responses'].containsKey(key) &&
         _userData['responses'][key] != null;
   }
@@ -409,6 +415,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     ],
                   ),
                   _buildWrapUpTimeQuestion(),
+                  _buildAboutYouQuestion(),
                   _buildThankYouSlide(),
                 ],
               ),
@@ -918,6 +925,130 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
             );
           }),
+        ],
+      ),
+    );
+  }
+
+  /// Year of birth and sex (q11), for comparing cardio fitness with people
+  /// of the same age and sex (the VO₂ max estimate in Physical Health).
+  /// Saved to the profile, where Body can edit them.
+  Widget _buildAboutYouQuestion() {
+    final answer = Map<String, dynamic>.from(
+      _userData['responses']['q11'] as Map? ?? const {},
+    );
+    void update(String key, Object value) =>
+        setState(() => _userData['responses']['q11'] = {...answer, key: value});
+
+    final current = answer;
+    final birthYear = current['birthYear'] as int?;
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: accentPurple.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Text('🙂', style: TextStyle(fontSize: 30)),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'A bit about you',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              height: 1.35,
+              letterSpacing: -0.3,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Used to compare your cardio fitness with people like you. '
+            'You can change it later in your profile (Fitness → Body).',
+            style: TextStyle(fontSize: 13, color: textGrey),
+          ),
+          const SizedBox(height: 24),
+          GestureDetector(
+            onTap: () async {
+              final year = await showBirthYearPicker(
+                context,
+                initial: birthYear,
+              );
+              if (year != null) update('birthYear', year);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE5E5EA)),
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Year of birth',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  Text(
+                    birthYear == null ? 'Choose' : '$birthYear',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: birthYear == null ? accentPurple : Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Sex',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+          for (final entry in profileSexLabels.entries) ...[
+            GestureDetector(
+              onTap: () => update('sex', entry.key),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: current['sex'] == entry.key
+                      ? accentPurple
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: current['sex'] == entry.key
+                        ? accentPurple
+                        : const Color(0xFFE5E5EA),
+                  ),
+                ),
+                child: Text(
+                  entry.value,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: current['sex'] == entry.key
+                        ? Colors.white
+                        : Colors.black,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
         ],
       ),
     );

@@ -5,8 +5,9 @@ against real histories. These are wellness estimates, not medical scores.
 
 Lineup: **Capacity** (the energy you have today), **Demand** (what's still
 ahead), **Effort** (what the day took), **Stress** (live, unchanged) and
-**Heart** (long-term, unchanged). Wellness is retired. Sleep has no separate
-score: it is Capacity's main ingredient.
+**Heart** (long-term, unchanged), plus **Physical Health** (long-term, §7),
+which replaces Wellness. Sleep has no separate daily score: it is
+Capacity's main ingredient.
 
 ## 1. Item points (shared by Demand and Effort)
 
@@ -317,6 +318,57 @@ zone, right after that day's final Effort.
 - No backfills: history starts when each person is on this build.
 - Known limits: a day without a day record (app not opened that day or the
   next) isn't evaluated; strain lasting ~10+ weeks becomes the new normal.
+
+## 7. Physical Health
+
+**Implemented** in `functions/physical_health.js`. It replaces Wellness on
+Metrics (same card, same position) and its detail screen
+(`lib/screens/physical_health_screen.dart`, words from
+`lib/src/utils/physical_health_view.dart`).
+
+- **What it measures:** long-term physical habits and fitness over the last
+  28 days. It has nothing to do with My Day.
+- **Ingredients** (each 0–100 towards a target):
+
+  | Ingredient | Weight | Target |
+  |---|---|---|
+  | Active minutes | 30% | 150 min a week (WHO) |
+  | Daily movement | 15% | 8,000 steps a day |
+  | Strength | 20% | 2 sessions a week, from in-app workouts |
+  | Cardio fitness | 20% | VO₂ max vs the median for age and sex |
+  | Sleep habits | 15% | 7–9 h, plus a regular bedtime |
+
+- **Counting rules:**
+  - Strength counts only for people who logged any in-app workout in the
+    last 90 days, so non-loggers aren't marked down.
+  - Sleep habits = 70% duration and 30% on-time share; on-time needs 5
+    bedtimes.
+  - Without tracked sleep, sleep falls back to the morning check-in's
+    "How did you sleep?" (needs 7 answers).
+- **VO₂ max**, in this order:
+  1. The latest measured value in 90 days, from Apple Watch (HealthKit,
+     read in the app through a native channel) or Fitbit (Google Health
+     `daily-vo2-max`, unless flagged estimated).
+  2. Otherwise an estimate: the Jackson non-exercise formula (age, sex,
+     BMI, activity), averaged with Uth (resting HR) when known. Missing
+     exercise data counts as inactive.
+  - WHOOP's API has no VO₂ max, so WHOOP users get the estimate.
+  - Needs age (and height/weight for the estimate). Sex "prefer not to
+    say" averages the male and female norms.
+  - Score = 60 at the median, ±40 per 20% above or below.
+- **Labels:** excellent ≥90, good ≥70, fair ≥50, low <50.
+- **Building:** it stays building until there are 14 days with data and
+  at least 3 of the 5 ingredients. It never guesses.
+- **Where it's saved:** `scores_daily/{day}.physical` (`score`, `label`,
+  `parts`, `details`, `daysOfData`).
+- **When it updates:**
+  - `computeDailyCapacity` recalculates it when steps, exercise, sleep,
+    check-in sleep, VO₂ max or weight change.
+  - `computeEffortFromWorkout` recalculates it for the workout's day.
+- **Age and sex** come from onboarding (question 11) and the profile button
+  on Fitness → Body. They are stored in `preferences.personalProfile`
+  (`birthYear`, `sex`).
+- No backfills: history starts when each person is on this build.
 
 ## Open questions
 

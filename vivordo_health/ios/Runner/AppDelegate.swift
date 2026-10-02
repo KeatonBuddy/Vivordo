@@ -1,5 +1,6 @@
 import ActivityKit
 import Flutter
+import HealthKit
 import UIKit
 import WidgetKit
 
@@ -8,6 +9,8 @@ import WidgetKit
   private let workoutActivities = WorkoutLiveActivityManager()
   private var workoutActivityChannel: FlutterMethodChannel?
   private var homeWidgetChannel: FlutterMethodChannel?
+  private var vo2MaxChannel: FlutterMethodChannel?
+  private let vo2MaxReader = Vo2MaxReader()
   private var pendingWorkoutLaunch = false
   private var pendingWidgetDestination: String?
 
@@ -42,6 +45,25 @@ import WidgetKit
       workoutActivityChannel = channel
       channel.setMethodCallHandler { [weak self] call, result in
         self?.handleWorkoutActivity(call, result: result)
+      }
+
+      // VO₂ max (cardio fitness) from Apple Watch. The health plugin can't
+      // read it, so it's read here (Physical Health, docs/scores.md).
+      let vo2Channel = FlutterMethodChannel(
+        name: "com.vivordo.health/vo2_max",
+        binaryMessenger: engineBridge.applicationRegistrar.messenger()
+      )
+      vo2MaxChannel = vo2Channel
+      vo2Channel.setMethodCallHandler { [weak self] call, result in
+        guard call.method == "read",
+              let days = (call.arguments as? [String: Any])?["days"] as? Int
+        else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        self?.vo2MaxReader.read(days: days) { samples in
+          DispatchQueue.main.async { result(samples) }
+        }
       }
 
       let widgetChannel = FlutterMethodChannel(
@@ -212,6 +234,40 @@ class SceneDelegate: FlutterSceneDelegate {
     let app = UIApplication.shared.delegate as? AppDelegate
     let remaining = Set(URLContexts.filter { app?.handleVivordoURL($0.url) != true })
     if !remaining.isEmpty { super.scene(scene, openURLContexts: remaining) }
+  }
+}
+
+/// Reads Apple Watch VO₂ max samples. Asks for read access the first time
+/// (HealthKit shows its sheet once); returns [] when unavailable or denied,
+/// since HealthKit never reveals whether read access was refused.
+private final class Vo2MaxReader {
+  private let store = HKHealthStore()
+  private let type = HKQuantityType(.vo2Max)
+  private let unit = HKUnit(from: "ml/kg*min")
+
+  func read(days: Int, completion: @escaping ([[String: Any]]) -> Void) {
+    guard HKHealthStore.isHealthDataAvailable() else { return completion([]) }
+    store.requestAuthorization(toShare: [], read: [type]) { [weak self] _, _ in
+      guard let self else { return completion([]) }
+      let start = Calendar.current.date(byAdding: .day, value: -days, to: Date())
+      let predicate = HKQuery.predicateForSamples(
+        withStart: start, end: Date(), options: .strictStartDate
+      )
+      let query = HKSampleQuery(
+        sampleType: self.type,
+        predicate: predicate,
+        limit: HKObjectQueryNoLimit,
+        sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)]
+      ) { _, samples, _ in
+        completion((samples as? [HKQuantitySample] ?? []).map {
+          [
+            "date": $0.endDate.timeIntervalSince1970 * 1000,
+            "value": $0.quantity.doubleValue(for: self.unit),
+          ]
+        })
+      }
+      self.store.execute(query)
+    }
   }
 }
 

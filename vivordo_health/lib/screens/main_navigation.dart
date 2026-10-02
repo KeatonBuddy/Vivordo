@@ -17,6 +17,7 @@ import '../src/services/achievement_service.dart';
 import '../src/services/analytics_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/day_record_service.dart';
+import '../src/services/vo2_max_service.dart';
 import '../src/services/health_service.dart';
 import '../theme/vivordo_theme.dart';
 
@@ -140,6 +141,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     HealthService().syncToday().catchError((Object error) {
       debugPrint('MainNavigation: Apple Health refresh failed: $error');
     });
+    // Apple Watch VO₂ max for Physical Health (throttled inside).
+    unawaited(Vo2MaxService.sync());
   }
 
   @override

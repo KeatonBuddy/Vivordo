@@ -71,8 +71,10 @@ exports.sendDayRecordPushes = onSchedule({
 });
 
 // Capacity (docs/scores.md §4): recalculated only when a day's sleep, HRV,
-// resting heart rate or check-in changes, and Effort (§3) only when its
-// exercise minutes or active calories change, so other syncs cost nothing.
+// resting heart rate or check-in changes, Effort (§3) only when its
+// exercise minutes or active calories change, and Physical Health (§7) only
+// when its activity, sleep, VO₂ max or weight change, so other syncs cost
+// nothing.
 // One trigger for both, so each metrics write runs one function.
 exports.computeDailyCapacity = onDocumentWritten(
     {document: "users/{uid}/metrics_daily/{day}", retry: true},
@@ -88,6 +90,12 @@ exports.computeDailyCapacity = onDocumentWritten(
       }
       if (effortInputsChanged(before, after)) {
         await refreshEffort(admin.firestore(), uid, day, timestamp);
+      }
+      // Physical Health (docs/scores.md §7): the 28 days ending on this day.
+      const {physicalInputsChanged, refreshPhysicalHealth} =
+        require("./physical_health");
+      if (physicalInputsChanged(before, after)) {
+        await refreshPhysicalHealth(admin.firestore(), uid, day, timestamp);
       }
     },
 );
@@ -146,6 +154,14 @@ exports.finishDailyEffort = onSchedule({
 exports.computeEffortFromWorkout = onDocumentWritten(
     {document: "users/{uid}/workouts/{workoutId}", retry: true},
     async (event) => {
+      const workout = event.data?.after?.data() ?? event.data?.before?.data();
+      // Physical Health counts strength sessions by the workout's local day.
+      const {refreshPhysicalHealth} = require("./physical_health");
+      if (typeof workout?.exerciseGoalDay === "string") {
+        await refreshPhysicalHealth(admin.firestore(), event.params.uid,
+            workout.exerciseGoalDay,
+            () => admin.firestore.FieldValue.serverTimestamp());
+      }
       const startedAt = event.data?.after?.data()?.startedAt ??
         event.data?.before?.data()?.startedAt;
       if (typeof startedAt?.toMillis !== "function") return;

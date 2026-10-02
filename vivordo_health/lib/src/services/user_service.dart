@@ -137,7 +137,15 @@ class UserService {
         'preferences.units': preferences['units'],
         'preferences.notificationsEnabled': preferences['notificationsEnabled'],
         // Nested map: set() treats dotted keys as literal field names.
-        'preferences': {'dayWrapUpMinutes': dayWrapUpMinutes(answers)},
+        'preferences': {
+          'dayWrapUpMinutes': dayWrapUpMinutes(answers),
+          // q11: year of birth and sex, for fitness norms; Body edits them.
+          if (answers['q11'] case {
+            'birthYear': final int birthYear,
+            'sex': final String sex,
+          })
+            'personalProfile': {'birthYear': birthYear, 'sex': sex},
+        },
       }, SetOptions(merge: true));
     } catch (e) {
         rethrow;

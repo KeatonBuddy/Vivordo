@@ -31,6 +31,15 @@ test("Google vitals preserve units and separate RMSSD from SDNN", () => {
   assert.equal(days["2026-10-01"].hrv, undefined);
 });
 
+test("Fitbit's daily VO2 max is imported with its estimated flag", () => {
+  const days = googleHealthVitals({"daily-vo2-max": [{dailyVo2Max: {
+    date, vo2MaxMillilitersPerKilogramPerMinute: 44.6,
+    cardioFitnessLevel: "GOOD", estimated: false,
+  }}]});
+  assert.deepEqual(days["2026-10-01"].vo2_max,
+      {avg: 44.6, unit: "ml/kg/min", estimated: false});
+});
+
 test("missing or invalid vitals never become zero", () => {
   for (const value of [undefined, null, "", " ", false, {}, -1, 0, NaN,
     Infinity, "invalid"]) {

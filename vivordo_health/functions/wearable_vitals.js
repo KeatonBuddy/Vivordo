@@ -8,6 +8,7 @@ const GOOGLE_DAILY_VITALS = [
   "daily-heart-rate-variability",
   "daily-oxygen-saturation",
   "daily-respiratory-rate",
+  "daily-vo2-max",
 ];
 
 const number = (value) => {
@@ -62,6 +63,13 @@ function googleHealthVitals(data) {
     addVital(days, civilDay(value?.date), "blood_oxygen",
         value?.averagePercentage, "%");
   }
+  for (const point of data["daily-vo2-max"] || []) {
+    const value = point.dailyVo2Max;
+    // Fitbit's cardio fitness score; "estimated" when its confidence is low.
+    addVital(days, civilDay(value?.date), "vo2_max",
+        value?.vo2MaxMillilitersPerKilogramPerMinute, "ml/kg/min",
+        {estimated: value?.estimated === true});
+  }
   for (const point of data["daily-respiratory-rate"] || []) {
     const value = point.dailyRespiratoryRate;
     addVital(days, civilDay(value?.date), "respiratory_rate",
@@ -74,6 +82,7 @@ function googleHealthVitals(data) {
     ["daily-heart-rate-variability", "hrv_rmssd"],
     ["daily-oxygen-saturation", "blood_oxygen"],
     ["daily-respiratory-rate", "respiratory_rate"],
+    ["daily-vo2-max", "vo2_max"],
   ]) {
     const points = data[type] || [];
     if (points.length > 0 && !Object.values(days).some((day) => day[key])) {
