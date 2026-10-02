@@ -784,7 +784,8 @@ exports.assistant = onCall(
         output: u?.output_tokens ?? 0,
         cache_create: u?.cache_creation_input_tokens ?? 0,
         cache_read: u?.cache_read_input_tokens ?? 0,
-      }))), `memory changes: ${memoryChanges}`);
+      }))), `memory changes: ${memoryChanges}`,
+      `blocks: ${reply.blocks?.map((b) => b.type).join(",")}`);
       // The conversation summary is stored server-side; the app doesn't use it.
       const forApp = {...reply};
       delete forApp.summary;

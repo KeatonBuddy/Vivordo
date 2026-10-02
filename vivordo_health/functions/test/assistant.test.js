@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const {
   runAssistant, validateAssistantRequest, buildMessages, metricValue, dayRange,
   scoreLine, getScores, planMemoryChange, getPriorities, planPriority,
-  planCalendar, visibleOnDay, SYSTEM_PROMPT, TOOLS,
+  planCalendar, visibleOnDay, chartBlock, sourceBlocks, SYSTEM_PROMPT, TOOLS,
 } = require("../assistant");
 
 const base = {message: "How did I sleep?", today: "2026-10-01", now: "2026-10-01T09:30:00", utcOffsetMinutes: -360};
@@ -118,7 +118,9 @@ test("fetches metrics, then replies; the tool result reaches the model", async (
   ]);
   const db = fakeDb({days: {"2026-09-30": {sleep: {avg: 7.2}, steps: {sum: 900}}}});
   const {reply} = await runAssistant({client, db, uid: "u1", request: validateAssistantRequest(base)});
-  assert.deepEqual(reply, {message: "You slept 7.2h last night.", intent: "chitchat", crisis: false});
+  assert.deepEqual(reply, {message: "You slept 7.2h last night.", intent: "chitchat", crisis: false, suggestions: [],
+    blocks: [{type: "text", text: "You slept 7.2h last night."},
+      {type: "source", label: "Sleep", screen: "sleep", start: "2026-09-30", end: "2026-10-01"}]});
 
   const second = client.requests[1];
   const assistantTurn = second.messages.at(-2);
@@ -144,7 +146,8 @@ test("request shape: cached system prompt, all tools, fallback opt-in, low effor
 
 test("plain text, refusal, and runaway loops still produce a reply", async () => {
   const text = await runAssistant({client: fakeClient([{stop_reason: "end_turn", usage: {}, content: [{type: "text", text: "Hello there."}]}]), db: fakeDb(), uid: "u", request: validateAssistantRequest(base)});
-  assert.deepEqual(text.reply, {intent: "chitchat", message: "Hello there.", crisis: false});
+  assert.deepEqual(text.reply, {intent: "chitchat", message: "Hello there.", crisis: false, suggestions: [],
+    blocks: [{type: "text", text: "Hello there."}]});
 
   const refused = await runAssistant({client: fakeClient([{stop_reason: "refusal", usage: {}, content: []}]), db: fakeDb(), uid: "u", request: validateAssistantRequest(base)});
   assert.equal(refused.reply.intent, "chitchat");
@@ -160,7 +163,8 @@ test("plain text, refusal, and runaway loops still produce a reply", async () =>
 test("reply is cleaned: unknown intent becomes chitchat, crisis is boolean", async () => {
   const client = fakeClient([{stop_reason: "tool_use", usage: {}, content: [toolUse("r", "reply", {message: " Are you safe? ", intent: "made_up", crisis: "yes"})]}]);
   const {reply} = await runAssistant({client, db: fakeDb(), uid: "u", request: validateAssistantRequest(base)});
-  assert.deepEqual(reply, {message: "Are you safe?", intent: "chitchat", crisis: false});
+  assert.deepEqual(reply, {message: "Are you safe?", intent: "chitchat", crisis: false, suggestions: [],
+    blocks: [{type: "text", text: "Are you safe?"}]});
 });
 
 test("workouts are dated in the user's timezone", async () => {
@@ -205,7 +209,7 @@ test("get_scores reads scores_daily, not metrics_daily", async () => {
   assert.equal(await getScores(db, "u", {start_date: "2026-09-29", end_date: "2026-10-01"}),
       "2026-09-30: effort=12 (mental 12, physical 0, busy 60 min)\n2026-10-01: capacity=81 (high)");
   assert.match(await getScores(db, "u", {start_date: "2026-01-01", end_date: "2026-01-02"}), /^No scores/);
-  assert.match(await getScores(db, "u", {start_date: "2026-01-02", end_date: "2026-01-01"}), /^Invalid range/);
+  await assert.rejects(getScores(db, "u", {start_date: "2026-01-02", end_date: "2026-01-01"}), /^Error: Invalid range/);
 });
 
 test("the score lineup is current: Heart in metrics, Wellness retired, Demand from context", () => {
@@ -441,4 +445,62 @@ test("forgetting a fact also forgets the summary of the chat it came from", asyn
     "merge users/u/conversations/this-chat",
   ]);
   assert.match(SYSTEM_PROMPT, /Leave out anything the user asked you to forget/);
+});
+
+test("charts use the real stored values, never the model's", async () => {
+  const db = fakeDb({
+    days: {"2026-09-28": {sleep: {avg: 6.3}}, "2026-09-29": {sleep: {avg: 7.04}}, "2026-09-30": {steps: {sum: 900}}, "2026-10-01": {sleep: {avg: 8}}},
+    scores: {"2026-09-30": {capacity: {score: 73}}, "2026-10-01": {capacity: {score: 81}, effort: {total: 26.6}}},
+  });
+  assert.deepEqual(await chartBlock(db, "u", {metric: "sleep", start_date: "2026-09-28", end_date: "2026-10-01"}), {
+    type: "metric", metric: "sleep", label: "Sleep", unit: "h", screen: "sleep",
+    points: [{day: "2026-09-28", value: 6.3}, {day: "2026-09-29", value: 7}, {day: "2026-10-01", value: 8}], average: 7.1,
+  });
+  assert.deepEqual((await chartBlock(db, "u", {metric: "capacity", start_date: "2026-09-30", end_date: "2026-10-01"})).points,
+      [{day: "2026-09-30", value: 73}, {day: "2026-10-01", value: 81}]);
+  assert.equal(await chartBlock(db, "u", {metric: "effort", start_date: "2026-09-30", end_date: "2026-10-01"}), null, "one point isn't a chart");
+  assert.equal(await chartBlock(db, "u", {metric: "wellness", start_date: "2026-09-30", end_date: "2026-10-01"}), null);
+  assert.equal(await chartBlock(db, "u", {metric: "sleep", start_date: "2026-10-01", end_date: "2026-09-01"}), null);
+});
+
+test("source chips group lookups by screen", () => {
+  assert.deepEqual(sourceBlocks([
+    {name: "get_metrics", input: {start_date: "2026-09-18", end_date: "2026-10-01", metrics: ["sleep", "hrv", "resting_heart_rate"]}},
+    {name: "get_scores", input: {start_date: "2026-09-29", end_date: "2026-10-01"}},
+    {name: "get_workouts", input: {limit: 3}},
+    {name: "get_priorities", input: {start_date: "2026-10-03", end_date: "2026-10-03"}},
+  ]), [
+    {type: "source", label: "Sleep", screen: "sleep", start: "2026-09-18", end: "2026-10-01"},
+    {type: "source", label: "HRV, Resting heart rate", screen: "heart", start: "2026-09-18", end: "2026-10-01"},
+    {type: "source", label: "Capacity, Effort", screen: "my_day", start: "2026-09-29", end: "2026-10-01"},
+    {type: "source", label: "Physical Health", screen: "physical_health", start: "2026-09-29", end: "2026-10-01"},
+  ], "at most 4 chips");
+  assert.deepEqual(sourceBlocks([{name: "get_metrics", input: {start_date: "2026-10-01", end_date: "2026-10-01"}}]),
+      [{type: "source", label: "Health data", screen: "metrics", start: "2026-10-01", end: "2026-10-01"}]);
+  assert.deepEqual(sourceBlocks([]), []);
+});
+
+test("a full turn returns text, chart, actions and sources as blocks, plus suggestions", async () => {
+  const db = fakeDb({days: {"2026-09-30": {sleep: {avg: 6}}, "2026-10-01": {sleep: {avg: 7.5}}}});
+  const client = fakeClient([
+    {stop_reason: "tool_use", usage: {}, content: [
+      toolUse("m", "get_metrics", {start_date: "2026-09-30", end_date: "2026-10-01", metrics: ["sleep"]}),
+      toolUse("bad", "get_metrics", {start_date: "nope", end_date: "2026-10-01"}),
+    ]},
+    {stop_reason: "tool_use", usage: {}, content: [
+      toolUse("p", "propose_priority", {operation: "create", title: "Bed by 11", date: "2026-10-02"}),
+      toolUse("r", "reply", {message: "Short night, then better.", intent: "chitchat", crisis: false, summary: "Sleep.",
+        chart: {metric: "sleep", start_date: "2026-09-30", end_date: "2026-10-01"},
+        suggestions: ["Plan my evening", " ", "What helped last time?", "Why?", "One too many"]}),
+    ]},
+  ]);
+  const {reply} = await runAssistant({client, db, uid: "u", now, request: req()});
+  assert.deepEqual(reply.blocks.map((b) => b.type), ["text", "metric", "action", "source"]);
+  assert.deepEqual(reply.blocks[1].points, [{day: "2026-09-30", value: 6}, {day: "2026-10-01", value: 7.5}]);
+  assert.deepEqual(reply.blocks[2].action, {type: "priority", operation: "create", title: "Bed by 11", date: "2026-10-02"});
+  assert.equal(reply.blocks.filter((b) => b.type === "source").length, 1, "the failed lookup gets no chip");
+  assert.deepEqual(reply.suggestions, ["Plan my evening", "What helped last time?", "Why?"]);
+  assert.equal(reply.chart, undefined, "the raw chart request isn't sent on");
+  assert.match(SYSTEM_PROMPT, /HOW REPLIES LOOK/);
+  assert.match(SYSTEM_PROMPT, /You never learn whether the user confirmed or cancelled a proposal/);
 });

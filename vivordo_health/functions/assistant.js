@@ -14,6 +14,29 @@ const RECENT_CONVERSATIONS = 5;
 const CRISIS_NOTE = "A hard moment came up and support was offered.";
 const TEXT_LIMIT = `Not saved: text must be 1-${MAX_FACT_CHARS} characters.`;
 const MEMORY_KINDS = ["stressor", "helps", "pattern", "context", "preference"];
+const SCORE_SERIES = ["capacity", "effort", "physical_health"];
+// The app screen each kind of data lives on, for source chips and charts.
+const SCREENS = {
+  sleep: "sleep", hrv: "heart", resting_heart_rate: "heart",
+  heart_rate: "heart", heart_health: "heart", stress: "stress", mood: "mood",
+  steps: "fitness", exercise_time: "fitness", active_calories: "fitness",
+  distance: "fitness", weight: "body", blood_oxygen: "heart",
+  respiratory_rate: "heart", capacity: "my_day", effort: "my_day",
+  physical_health: "physical_health",
+};
+const LABELS = {
+  sleep: "Sleep", hrv: "HRV", resting_heart_rate: "Resting heart rate",
+  heart_rate: "Heart rate", heart_health: "Heart", stress: "Stress",
+  mood: "Mood", steps: "Steps", exercise_time: "Exercise",
+  active_calories: "Active calories", distance: "Distance", weight: "Weight",
+  blood_oxygen: "Blood oxygen", respiratory_rate: "Breathing rate",
+  capacity: "Capacity", effort: "Effort", physical_health: "Physical Health",
+};
+const UNITS = {
+  sleep: "h", hrv: "ms", resting_heart_rate: "bpm", heart_rate: "bpm",
+  steps: "steps", exercise_time: "min", active_calories: "kcal",
+  distance: "km", blood_oxygen: "%", respiratory_rate: "br/min",
+};
 
 const METRICS = [
   "steps", "sleep", "hrv", "resting_heart_rate", "heart_rate", "stress",
@@ -69,6 +92,11 @@ VIVORDO SCORES (use these names; never call them anything else)
 - Burnout check: compares recent Capacity, Effort and mood with the user's long-term normal. Levels: learning (needs about 6 weeks of data), steady, watch, warning. It runs each night and is saved on the day that just ended, so for the current result fetch at least the last 3 days and use the most recent one. Describe a warning gently as a pattern worth a look, never a verdict.
 - Wellness was retired and replaced by Capacity and Physical Health. There is no sleep score: sleep feeds Capacity and Physical Health.
 
+HOW REPLIES LOOK
+- The app shows your message, then cards for any proposed changes, then chips naming the data you looked up (tapping one opens that screen). So keep the message short and don't list every number you fetched.
+- reply.chart: when a trend helps the answer (sleep over two weeks, Capacity this week), name the ONE metric and date range worth seeing; the app draws it from the real data. Only for data you looked up this turn; omit it otherwise.
+- reply.suggestions: 2-3 short follow-ups the user might want next, written as they would ask them (e.g. "Plan my evening", "What helped last time?"), each under 40 characters. Omit them on a crisis turn.
+
 REMEMBERING
 - When the user shares something durable that will help in future chats, save it with save_memory: a recurring stressor ("deadlines at work"), what helps them ("short walks calm me down"), a pattern you've confirmed with them, life context (job, studies, people who matter, goals) or a preference for how you talk with them.
 - One short fact per call, in the third person ("Finds short walks calming"), at most 200 characters. Only save what the user said or clearly confirmed; never save guesses, passing moods, one-off events, health readings (the app keeps those) or anything from a crisis turn.
@@ -99,6 +127,7 @@ REC_HINT keywords (comma-separated): breathing, grounding, movement, sleep, soci
 ACTIONS (the app asks the user to confirm each one; never claim a change is done)
 - Priorities, tasks and reminders: look them up with get_priorities (any date range; the result gives each one's id), then call propose_priority. "Remind me" and "set a reminder" create a priority, never a calendar event. create needs a title; update and delete need the target_id from get_priorities (fetch first; never guess). date is the NEW day; scheduled_at and reminder_at are local YYYY-MM-DDTHH:mm with no offset; omit fields that don't change. Undated priorities may omit date. Only single occurrences: ask before touching a recurring series. Reminders must fall on the priority's day, at or before its scheduled time, and in the future.
 - Calendar: propose_calendar_change {operation create|update|delete, title (new title), target_title (the existing event's exact title from SCHEDULE), start, end (local YYYY-MM-DDTHH:mm), recurrence}. Resolve relative dates from the local current date and SCHEDULE. Never guess a missing title, date or time; ask instead.
+- You never learn whether the user confirmed or cancelled a proposal, so a change mentioned in RECENT CONVERSATIONS or earlier in the chat may not have happened. Before saying something is planned or done, check SCHEDULE or get_priorities.
 - If a proposal comes back "Not proposed", fix it or ask the user; don't tell them it's done. You may propose several changes in one turn. Finish a reminder or priority request before returning to check-in questions.
 - ${REMINDER_RULES}`;
 
@@ -233,6 +262,15 @@ const TOOLS = [
       type: "object",
       properties: {
         message: {type: "string", description: "What you say to the user."},
+        chart: {
+          type: "object",
+          properties: {
+            metric: {type: "string", enum: [...METRICS, ...SCORE_SERIES]},
+            start_date: DATE,
+            end_date: DATE,
+          },
+        },
+        suggestions: {type: "array", items: {type: "string"}},
         summary: {
           type: "string",
           description: "This whole conversation so far in 1-3 sentences.",
@@ -426,8 +464,7 @@ function metricValue(metric, raw) {
 async function getMetrics(db, uid, input) {
   const days = dayRange(input?.start_date, input?.end_date);
   if (!days) {
-    return "Invalid range: dates must be YYYY-MM-DD, start <= end, at most " +
-      `${MAX_METRIC_DAYS} days.`;
+    throw new ToolInputError();
   }
   const wanted = Array.isArray(input?.metrics) && input.metrics.length ?
     METRICS.filter((m) => input.metrics.includes(m)) : METRICS;
@@ -524,8 +561,7 @@ function scoreLine(data) {
 async function getScores(db, uid, input) {
   const days = dayRange(input?.start_date, input?.end_date);
   if (!days) {
-    return "Invalid range: dates must be YYYY-MM-DD, start <= end, at most " +
-      `${MAX_METRIC_DAYS} days.`;
+    throw new ToolInputError();
   }
   const user = db.collection("users").doc(uid);
   const snapshots = await db.getAll(
@@ -605,9 +641,24 @@ async function runTool(db, uid, block, request) {
     }
     return {type: "tool_result", tool_use_id: block.id, content};
   } catch (error) {
+    if (error instanceof ToolInputError) {
+      return {type: "tool_result", tool_use_id: block.id, is_error: true,
+        content: error.message};
+    }
     console.error(`[assistant] ${block.name} failed`, error);
     return {type: "tool_result", tool_use_id: block.id, is_error: true,
       content: "That data could not be loaded right now."};
+  }
+}
+
+/** A tool call the model got wrong: it hears why and can retry. */
+class ToolInputError extends Error {
+  /**
+   * @param {string} message what to fix
+   */
+  constructor(message = "Invalid range: dates must be YYYY-MM-DD, " +
+      `start <= end, at most ${MAX_METRIC_DAYS} days.`) {
+    super(message);
   }
 }
 
@@ -692,8 +743,7 @@ function priorityLine(stored, id, p, rangeStart, offset) {
 async function getPriorities(db, uid, input, offset) {
   const days = dayRange(input?.start_date, input?.end_date);
   if (!days) {
-    return "Invalid range: dates must be YYYY-MM-DD, start <= end, at most " +
-      `${MAX_METRIC_DAYS} days.`;
+    throw new ToolInputError();
   }
   const first = days[0];
   const last = days.at(-1);
@@ -1046,6 +1096,115 @@ function cleanReply(input) {
 }
 
 /**
+ * One chart series read from Firestore: the model only names the metric and
+ * range, so the numbers shown are always the user's real data.
+ *
+ * @param {Object} db Firestore
+ * @param {string} uid user id
+ * @param {Object} chart {metric, start_date, end_date}
+ * @return {Promise<Object|null>} metric block, or null with < 2 points
+ */
+async function chartBlock(db, uid, chart) {
+  const metric = chart?.metric;
+  const days = dayRange(chart?.start_date, chart?.end_date);
+  if (!days || ![...METRICS, ...SCORE_SERIES].includes(metric)) return null;
+  const score = SCORE_SERIES.includes(metric);
+  const user = db.collection("users").doc(uid);
+  const snapshots = await db.getAll(...days.map((day) =>
+    user.collection(score ? "scores_daily" : "metrics_daily").doc(day)));
+  const points = [];
+  snapshots.forEach((snapshot, i) => {
+    const data = snapshot.data();
+    const value = metric === "capacity" ? data?.capacity?.score :
+      metric === "effort" ? data?.effort?.total :
+      metric === "physical_health" ? data?.physical?.score :
+      metric === "sleep" ? data?.sleep?.avg :
+      Number(metricValue(metric, data?.[metric]));
+    if (typeof value === "number" && Number.isFinite(value)) {
+      points.push({day: days[i], value: Math.round(value * 10) / 10});
+    }
+  });
+  if (points.length < 2) return null;
+  const average = points.reduce((sum, p) => sum + p.value, 0) / points.length;
+  return {
+    type: "metric", metric, label: LABELS[metric], unit: UNITS[metric] ?? null,
+    screen: SCREENS[metric], points,
+    average: Math.round(average * 10) / 10,
+  };
+}
+
+/**
+ * Source chips for the data the model looked up this turn, one per screen.
+ *
+ * @param {Array<Object>} lookups {name, input} of successful data tool calls
+ * @return {Array<Object>} source blocks
+ */
+function sourceBlocks(lookups) {
+  const range = (input) => DAY_RE.test(input?.start_date ?? "") &&
+    DAY_RE.test(input?.end_date ?? "") ?
+    {start: input.start_date, end: input.end_date} : {};
+  const byScreen = new Map();
+  for (const {name, input} of lookups) {
+    if (name === "get_workouts") {
+      byScreen.set("workouts", {type: "source", label: "Workouts",
+        screen: "fitness"});
+      continue;
+    }
+    if (name === "get_priorities") {
+      byScreen.set("priorities", {type: "source", label: "Priorities",
+        screen: "my_day", ...range(input)});
+      continue;
+    }
+    const names = name === "get_scores" ? SCORE_SERIES :
+      Array.isArray(input?.metrics) && input.metrics.length ?
+        input.metrics.filter((m) => METRICS.includes(m)) : [];
+    if (name === "get_metrics" && !names.length) {
+      byScreen.set("metrics", {type: "source", label: "Health data",
+        screen: "metrics", ...range(input)});
+    }
+    for (const metric of names) {
+      const screen = SCREENS[metric];
+      const existing = byScreen.get(screen);
+      if (!existing) {
+        byScreen.set(screen, {type: "source", label: LABELS[metric], screen,
+          ...range(input)});
+      } else if (!existing.label.split(", ").includes(LABELS[metric])) {
+        existing.label += `, ${LABELS[metric]}`;
+      }
+    }
+  }
+  return [...byScreen.values()].slice(0, 4);
+}
+
+/**
+ * The reply as typed blocks for the app: text, then a chart, proposed
+ * changes and the data it came from.
+ *
+ * @param {Object} db Firestore
+ * @param {string} uid user id
+ * @param {Object} reply cleaned reply (with actions)
+ * @param {Array<Object>} lookups successful data tool calls
+ * @return {Promise<Array<Object>>}
+ */
+async function replyBlocks(db, uid, reply, lookups) {
+  const blocks = [{type: "text", text: reply.message}];
+  if (reply.crisis) return blocks;
+  if (reply.chart) {
+    try {
+      const chart = await chartBlock(db, uid, reply.chart);
+      if (chart) blocks.push(chart);
+    } catch (error) {
+      console.error("[assistant] chart failed", error);
+    }
+  }
+  for (const action of reply.actions ?? []) {
+    blocks.push({type: "action", action});
+  }
+  blocks.push(...sourceBlocks(lookups));
+  return blocks;
+}
+
+/**
  * One chat turn: model calls with data tools until it replies.
  *
  * @param {Object} deps {client, db, uid, request}
@@ -1063,6 +1222,7 @@ async function runAssistant({client, db, uid, request, now}) {
   const usage = [];
   const memoryState = {facts: memory.facts, pending: []};
   const actions = [];
+  const lookups = []; // data tool calls that returned data, for source chips
   // save_memory and the propose_* tools change nothing yet: they are checked
   // now and applied after the reply (memory) or confirmed in the app.
   const deferred = {
@@ -1101,6 +1261,12 @@ async function runAssistant({client, db, uid, request, now}) {
       reply.intent = `${type}_action`;
       reply[`${type}_action`] = legacy;
     }
+    reply.suggestions = reply.crisis ? [] :
+      (Array.isArray(reply.suggestions) ? reply.suggestions : [])
+          .filter((t) => typeof t === "string" && t.trim())
+          .map((t) => t.trim().slice(0, 60)).slice(0, 3);
+    reply.blocks = await replyBlocks(db, uid, reply, lookups);
+    delete reply.chart;
     try {
       await saveMemory(db, uid, request, memoryState.pending, reply, now,
           memory.current);
@@ -1125,10 +1291,13 @@ async function runAssistant({client, db, uid, request, now}) {
     });
     usage.push(response.usage);
 
+    // Fallback replies are text only: nothing is saved or proposed.
+    const plain = (reply) => ({usage, reply: {...reply, suggestions: [],
+      blocks: [{type: "text", text: reply.message}]}});
     if (response.stop_reason === "refusal") {
-      return {usage, reply: cleanReply({intent: "chitchat", crisis: false,
+      return plain(cleanReply({intent: "chitchat", crisis: false,
         message: "I can't help with that one, but I'm happy to talk about " +
-          "your health, plans or how you're feeling."})};
+          "your health, plans or how you're feeling."}));
     }
     const toolUses = response.content.filter((b) => b.type === "tool_use");
     const reply = toolUses.find((b) => b.name === "reply");
@@ -1143,20 +1312,26 @@ async function runAssistant({client, db, uid, request, now}) {
       // The model answered in plain text despite the instructions: keep it.
       const text = response.content.filter((b) => b.type === "text")
           .map((b) => b.text).join("\n").trim();
-      return {usage, reply: cleanReply({intent: "chitchat", message: text})};
+      return plain(cleanReply({intent: "chitchat", message: text}));
     }
 
     messages.push({role: "assistant", content: response.content});
     // Data lookups run in parallel; proposals and memory changes run in the
     // model's order, so the app shows the actions in the order proposed.
-    const lookups = toolUses.map((block) => deferred[block.name] ? null :
+    const running = toolUses.map((block) => deferred[block.name] ? null :
       runTool(db, uid, block, request));
     const results = [];
     for (const [i, block] of toolUses.entries()) {
-      results.push(deferred[block.name] ?
-        {type: "tool_result", tool_use_id: block.id,
-          content: await runDeferred(block)} :
-        await lookups[i]);
+      if (deferred[block.name]) {
+        results.push({type: "tool_result", tool_use_id: block.id,
+          content: await runDeferred(block)});
+        continue;
+      }
+      const result = await running[i];
+      if (!result.is_error) {
+        lookups.push({name: block.name, input: block.input});
+      }
+      results.push(result);
     }
     if (call === MAX_ROUNDS - 2) {
       results.push({type: "text",
@@ -1180,6 +1355,9 @@ module.exports = {
   getWorkouts,
   loadMemory,
   planMemoryChange,
+  chartBlock,
+  sourceBlocks,
+  replyBlocks,
   getPriorities,
   planPriority,
   planCalendar,
