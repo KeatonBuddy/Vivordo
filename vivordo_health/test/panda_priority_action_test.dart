@@ -42,25 +42,6 @@ void main() {
     }
   });
 
-  test(
-    'reminder instructions make time optional and preserve supplied dates',
-    () {
-      final prompt = PandaPrompts.buildDialoguePrompt(
-        userMessage: 'remind me to pay internet bill on Oct 1',
-        conversationHistory: const [],
-        spikeContext: const [],
-        isOnPredefinedPath: false,
-        isInDigression: true,
-        digressionTurnCount: 0,
-      );
-      expect(prompt, contains(PandaPrompts.reminderInstructions));
-      expect(prompt, contains('never ask for a time or invent one'));
-      expect(prompt, contains('omit scheduled_at and reminder_at'));
-      expect(prompt, contains('reminder_at YYYY-10-01T09:00'));
-      expect(prompt, contains('Oct 1 = October 1'));
-    },
-  );
-
   test('priority intent is parsed independently of calendar actions', () {
     final reply = PandaPrompts.parseTurnReply(
       jsonEncode({

@@ -296,13 +296,9 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // AC: Token guard — 50-turn history is rejected before API is called
-  //
-  // The guard in both ClaudeService and PandaPrompts checks RAW inputs
-  // (before buildDialoguePrompt caps to 10 turns) so a 50-turn history is
-  // always caught.  If estimatedTokens > kMaxInputTokens, the method returns
-  // a fallback PandaTurnReply immediately — the Cloud Function / Gemini model
-  // is NEVER called.
+  // AC: Token guard — summarizeSession skips the model call when the raw
+  // conversation exceeds kMaxInputTokens and falls back to the deterministic
+  // summary. (Chat turns go through the server-side assistant function.)
   // ---------------------------------------------------------------------------
 
   group('Token guard', () {
@@ -406,36 +402,6 @@ void main() {
       expect(session.questions.isNotEmpty, isTrue,
           reason: 'With a spike detected, parsePandaSession must produce questions; '
               'PandaScreen then calls _persistCompletedSession once all are answered');
-    });
-  });
-
-  group('On-demand dashboard context', () {
-    test('dialogue prompt includes only the supplied metric context', () {
-      final prompt = PandaPrompts.buildDialoguePrompt(
-        userMessage: 'How were my steps?',
-        conversationHistory: const [],
-        spikeContext: const [],
-        isOnPredefinedPath: false,
-        isInDigression: false,
-        digressionTurnCount: 0,
-        dashboardContext: 'steps:2026-07-16=7241,2026-07-15=6810',
-      );
-
-      expect(prompt, contains('DASHBOARD METRICS'));
-      expect(prompt, contains('2026-07-16=7241'));
-    });
-
-    test('dialogue prompt has no dashboard block for ordinary chat', () {
-      final prompt = PandaPrompts.buildDialoguePrompt(
-        userMessage: 'I had a difficult meeting.',
-        conversationHistory: const [],
-        spikeContext: const [],
-        isOnPredefinedPath: false,
-        isInDigression: false,
-        digressionTurnCount: 0,
-      );
-
-      expect(prompt, isNot(contains('DASHBOARD METRICS')));
     });
   });
 }

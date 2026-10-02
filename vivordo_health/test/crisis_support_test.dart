@@ -13,6 +13,7 @@ void main() {
       'I cut myself last night',
       'I keep thinking about hurting myself',
       'cutting myself again',
+      'everyone would be better off without me',
       'thinking of ending my life',
       'I took an overdose',
     ]) {

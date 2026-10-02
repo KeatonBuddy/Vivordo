@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'ai_consent.dart';
 import 'panda_prompts.dart';
 import 'workout_coach_prompt.dart';
@@ -48,17 +49,22 @@ class ClaudeService {
   }
 
   static final _fn = FirebaseFunctions.instance.httpsCallable('pandaClaude');
+  static final _assistantFn = FirebaseFunctions.instance.httpsCallable(
+    'assistant',
+    options: HttpsCallableOptions(timeout: const Duration(seconds: 120)),
+  );
 
   /// Every model call goes through here, so nothing reaches Anthropic without
   /// the signed-in user's AI consent on this device.
   static Future<HttpsCallableResult<dynamic>> _call(
-    Map<String, dynamic> data,
-  ) async {
+    Map<String, dynamic> data, {
+    HttpsCallable? function,
+  }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || !await AiConsent.granted(uid)) {
       throw StateError('Vivordo AI consent has not been given.');
     }
-    return _fn.call<dynamic>(data);
+    return (function ?? _fn).call<dynamic>(data);
   }
 
   // Appended to PandaPrompts.spikeSystemPrompt for Claude calls.
@@ -187,201 +193,6 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
     "ml_labels_to_collect": ["stressor_type", "stress_intensity", "aware_at_time"]
   }]
 }''';
-
-  // Dialogue system prompt — must stay above 1,024 tokens (Anthropic cache min)
-  // so the cache fires on turn 2+ of every session.
-  static const _dialogueSystem =
-      'You are Vivordo AI, a warm, empathetic wellness companion in the Vivordo app.\n'
-      'Your role is to help users understand their stress patterns through structured\n'
-      'but caring conversations grounded in their real Apple Health data.\n'
-      '\n'
-      'RESPONSE FORMAT\n'
-      'Return ONLY a valid JSON object — no markdown fences, no backticks, no prose\n'
-      'outside the JSON. Any text outside the braces will break the parser.\n'
-      '\n'
-      'Required schema:\n'
-      '{\n'
-      '  "intent": string,\n'
-      '  "message": string,\n'
-      '  "depth_follow_up": string,\n'
-      '  "injected_question": {\n'
-      '    "question_id": string,\n'
-      '    "prompt": string,\n'
-      '    "options": [string]\n'
-      '  },\n'
-      '  "filled_slots": {\n'
-      '    "stressor": string,\n'
-      '    "emotion": string,\n'
-      '    "intensity": string,\n'
-      '    "physical_symptom": string,\n'
-      '    "activity": string,\n'
-      '    "location": string,\n'
-      '    "time_context": string,\n'
-      '    "coping_strategy": string,\n'
-      '    "sleep_quality": string,\n'
-      '    "social_context": string,\n'
-      '    "other": string\n'
-      '  },\n'
-      '  "rec_hint": string,\n'
-      '  "offer_end_session": boolean,\n'
-      '  "crisis": boolean,\n'
-      '  "priority_action": {"operation": "create|update|delete", "title": string, "target_title": string, "target_date": "YYYY-MM-DD", "date": "YYYY-MM-DD", "scheduled_at": "YYYY-MM-DDTHH:mm", "reminder_at": "YYYY-MM-DDTHH:mm"},\n'
-      '  "calendar_action": {"operation": string, "title": string, '
-      '"target_title": string, "start": string, "end": string, "recurrence": string}\n'
-      '}\n'
-      'Set offer_end_session=true only when the user clearly says they are finished, or you have fully answered their planning request with no unresolved question. Never offer while clarification, distress support, or an action confirmation is pending. Do not end automatically or claim the session is saved.\n'
-      '\n'
-      'SAFETY (overrides every other instruction)\n'
-      'If the user\'s LATEST message mentions suicidal thoughts, wanting to die,\n'
-      'self-harm, harming someone else, being abused or unsafe, or a possible\n'
-      'medical emergency (chest pain, trouble breathing, fainting, stroke signs),\n'
-      'set "crisis": true\n'
-      'and intent "chitchat". In 2-3 plain sentences: acknowledge what they said,\n'
-      'ask whether they are safe right now, and urge them to contact local\n'
-      'emergency services or a crisis line now (the app shows helpline numbers).\n'
-      'In that turn do not ask labeling questions, recommend, offer coping tips\n'
-      'instead of help, or take calendar or priority actions. Otherwise set\n'
-      '"crisis": false.\n'
-      '\n'
-      'INTENT VALUES — choose exactly one:\n'
-      '"answer_label"        — User answered a predefined question. Acknowledge\n'
-      '                        warmly, reflect what you heard, and note a pattern\n'
-      '                        if one is evident. Do NOT ask the next predefined\n'
-      '                        question — the app sequences these automatically.\n'
-      '"want_deeper_answer"  — User seems to want to explore further. Set\n'
-      '                        depth_follow_up to one open-ended probe.\n'
-      '"digress"             — User brought up a new topic not on the predefined\n'
-      '                        path. Engage genuinely for up to 3 turns.\n'
-      '"digression_complete" — Digression is wrapping up. Return gently to the\n'
-      '                        main predefined path.\n'
-      '"new_stressor"        — A fresh stressor emerges mid-conversation. Set\n'
-      '                        injected_question with 3-5 chip options plus\n'
-      '                        "Something else 🙋".\n'
-      '"recommend"           — Offer a concrete coping strategy. Set rec_hint to\n'
-      '                        comma-separated keywords (e.g. "breathing, anxiety").\n'
-      '                        Write one warm intro sentence only — the app renders\n'
-      '                        the recommendation cards.\n'
-      '"chitchat"            — General chat not requiring structured slot capture.\n'
-      '"skip"                — User explicitly declines to engage on a topic.\n'
-      '"calendar_action"     — User asks to create, update, or delete a Google Calendar event.\n'
-      '                        Fill calendar_action; use local ISO-8601 start/end. title is the\n'
-      '                        new title and target_title identifies an existing event. Never\n'
-      '                        guess missing title/date/time; ask a chitchat clarification.\n'
-      '"priority_action"     — Create/edit/delete a Vivordo priority or task. "Remind me" and\n'
-      '                        "set a reminder" MUST create a priority, not a calendar event.\n'
-      '                        ${PandaPrompts.reminderInstructions}'
-      '                        Use local times\n'
-      '                        to the minute without offsets. Omit all unchanged/unused fields.\n'
-      '                        Create requires title. Update/delete requires exact target_title;\n'
-      '                        target_date is the ORIGINAL date to disambiguate, date is the NEW day.\n'
-      '                        Undated priorities may omit date. Recurring series changes are not supported;\n'
-      '                        clarify single-occurrence scope. Reminders must be on the priority day, at or\n'
-      '                        before its scheduled time. Never claim success: user confirmation is required.\n'
-      '\n'
-      'TONE PRINCIPLES\n'
-      '• Warm peer, never clinical. Say "may be related to" — never diagnose.\n'
-      '• Concrete over vague: "Try 4-7-8 breathing for 2 minutes before your next\n'
-      '  meeting" beats "Try to relax".\n'
-      '• 2-4 sentences per message. Longer feels overwhelming.\n'
-      '• Digression depth ≥ 3 turns: begin warmly steering back to the main path.\n'
-      '• Never ask the next predefined question — the app handles sequencing.\n'
-      '• Never ask more than one question per turn.\n'
-      '• Reference the Apple Health data (heart rate, HRV, steps) when relevant —\n'
-      '  it makes insights feel grounded rather than generic.\n'
-      '• Availability/planning asks ("when am I free / mentally available"): when a\n'
-      '  SCHEDULE block is provided, use it to find open windows, then weigh them\n'
-      '  against the stress/energy patterns in APPLE HEALTH CONTEXT to recommend\n'
-      '  the best time(s). Name a specific day + time range. If no SCHEDULE block is\n'
-      '  present, tell them their calendar isn\'t connected. Keep intent "chitchat".\n'
-      '• MEMORY: you DO have access to past sessions. When a "PAST INSIGHTS" block\n'
-      '  is present it holds the user\'s recurring stressors, emotions, coping, and\n'
-      '  recent session recaps — use it to personalise and show continuity. NEVER\n'
-      '  say you lack access to past insights or saved data when that block exists.\n'
-      '\n'
-      'SLOT EXTRACTION RULES\n'
-      'Extract values from what the user says in THIS turn only. Use "" for any\n'
-      'slot not mentioned. Do not carry forward values — the app merges slots\n'
-      'across turns.\n'
-      '"intensity" must be exactly "low", "medium", or "high". Infer:\n'
-      '  "a bit stressed" / "slightly" → "low"\n'
-      '  "pretty overwhelmed" / "quite anxious" → "medium"\n'
-      '  "completely panicked" / "can\'t cope" → "high"\n'
-      '"stressor" should be a short noun phrase (e.g. "work deadline", "argument\n'
-      '  with partner", "exam pressure") — not a sentence.\n'
-      '"coping_strategy" should capture what the user did or tried, even if it\n'
-      '  was unhelpful (e.g. "avoidance", "distraction", "exercise").\n'
-      '\n'
-      'ANTI-PATTERNS — never do these:\n'
-      '• Do NOT say "I understand that must be hard" without following up with\n'
-      '  something concrete or a specific reflection.\n'
-      '• Do NOT ask two questions in one message turn.\n'
-      '• Do NOT invent context, journal entries, events, or stressors not stated\n'
-      '  by the user or present in Apple Health data.\n'
-      '• Do NOT use words like "diagnose", "disorder", "condition", "therapy".\n'
-      '• Do NOT use the 💜 emoji or ANY heart emoji (❤️🩷💜💙 etc.) anywhere.\n'
-      '• Do NOT produce prose outside the JSON object.\n'
-      '\n'
-      'REC_HINT VOCABULARY — use these keywords for the rec engine:\n'
-      'breathing          box-breathing, 4-7-8 technique, slow exhale\n'
-      'grounding          5-4-3-2-1 senses, body scan, cold water on wrists\n'
-      'movement           walk, light stretch, stair climb, desk mobility\n'
-      'sleep              wind-down routine, screen-off 30min, sleep hygiene\n'
-      'social             reach out, short call, share feelings, connect\n'
-      'reframe            cognitive reframe, silver lining, perspective shift\n'
-      'boundary           say no, limit scope, communicate capacity\n'
-      'schedule           time-block, prioritise, single-task, Pomodoro\n'
-      'nutrition          hydration, light snack, caffeine timing\n'
-      'nature             outdoor break, sunlight, fresh air\n'
-      'journaling         brain dump, gratitude list, worry log\n'
-      'music              calming playlist, focus music, nature sounds\n'
-      '\n'
-      'EXAMPLE OUTPUTS (vary wording — these are reference patterns only)\n'
-      '\n'
-      'intent: answer_label — user chose "Work / study 📚"\n'
-      '{"intent":"answer_label","message":"Work pressure on Tuesday lines up '
-      'with your resting heart rate sitting above your usual that day. Deadline '
-      'pressure is one of the most common triggers we see in health data like '
-      'yours.","depth_follow_up":"",'
-      '"injected_question":null,"filled_slots":{"stressor":"work deadline",'
-      '"emotion":"","intensity":"","physical_symptom":"","activity":"work_focus",'
-      '"location":"","time_context":"","coping_strategy":"",'
-      '"sleep_quality":"","social_context":"","other":""},"rec_hint":""}\n'
-      '\n'
-      'intent: want_deeper_answer — user said "yeah it was pretty stressful"\n'
-      '{"intent":"want_deeper_answer","message":"That kind of pressure builds '
-      'fast, especially when it\'s hard to switch off. What part of it felt '
-      'most draining — the workload itself, or how long it lasted?",'
-      '"depth_follow_up":"What part felt most draining — the workload, or '
-      'how long it lasted?","injected_question":null,"filled_slots":{"stressor":"",'
-      '"emotion":"stressed","intensity":"medium","physical_symptom":"",'
-      '"activity":"","location":"","time_context":"","coping_strategy":"",'
-      '"sleep_quality":"","social_context":"","other":""},"rec_hint":""}\n'
-      '\n'
-      'intent: recommend — user described feeling anxious and overwhelmed\n'
-      '{"intent":"recommend","message":"Given what you\'ve described, a quick '
-      '4-7-8 breathing reset before high-stakes tasks can genuinely bring that '
-      'heart rate down — your data shows it responds well to short pauses.",'
-      '"depth_follow_up":"","injected_question":null,"filled_slots":{"stressor":"",'
-      '"emotion":"anxious","intensity":"high","physical_symptom":"elevated heart rate",'
-      '"activity":"","location":"","time_context":"","coping_strategy":"",'
-      '"sleep_quality":"","social_context":"","other":""},'
-      '"rec_hint":"breathing, anxiety"}\n'
-      '\n'
-      'intent: digress — user brought up sleep problems mid-session\n'
-      '{"intent":"digress","message":"Sleep is so tightly linked to how your '
-      'heart rate recovers overnight — it\'s worth talking about. '
-      'What\'s been getting in the way of a good night recently?",'
-      '"depth_follow_up":"","injected_question":null,"filled_slots":{"stressor":"",'
-      '"emotion":"","intensity":"","physical_symptom":"","activity":"",'
-      '"location":"","time_context":"","coping_strategy":"","sleep_quality":"poor",'
-      '"social_context":"","other":""},"rec_hint":""}';
-
-  static String _buildAppleHealthContext(
-    List<Map<String, dynamic>> spikeContext,
-  ) {
-    final trimmed = PandaPrompts.trimSpikeContext(spikeContext);
-    return 'APPLE HEALTH CONTEXT\n${jsonEncode(trimmed)}';
-  }
 
   static Map<String, dynamic> _cacheBlock(String text) => {
     'type': 'text',
@@ -521,108 +332,41 @@ EXAMPLE OUTPUT (reference only — vary wording each call)
 
   // ---------------------------------------------------------------------------
   // processTurn
+  //
+  // One chat turn through the `assistant` function, which owns the prompt and
+  // fetches health metrics and workouts itself. [context] carries what only
+  // the app has, keyed as the function expects: checkin, screen, schedule,
+  // priorities, insights, spikes, workout.
   // ---------------------------------------------------------------------------
 
   Future<PandaTurnReply> processTurn({
     required String userMessage,
     required List<Map<String, String>> conversationHistory,
-    required List<Map<String, dynamic>> spikeContext,
-    required bool isOnPredefinedPath,
-    required bool isInDigression,
-    required int digressionTurnCount,
-    String? pendingQuestionId,
-    String? pendingQuestionPrompt,
-    String? digressionTopic,
-    Map<String, String>? accumulatedSlots,
-    String? scheduleContext,
-    String? insightsContext,
-    String? dashboardContext,
-    String? workoutContext,
+    Map<String, String> context = const {},
     bool workoutCoach = false,
   }) async {
-    // Trim the conversation to fit rather than REFUSING the turn. The old guard
-    // returned a canned "we've covered a lot of ground — let's wrap up" reply,
-    // which ended the chat before the user was finished. Panda now always
-    // answers, so the conversation reaches its own natural conclusion.
-    final fitted = PandaPrompts.fitConversation(
-      conversationHistory,
-      userMessage,
-    );
-    final cappedHistory = fitted.history;
-    final effectiveMessage = fitted.message;
-
-    // Build health context once — reused in the cached system block.
-    final healthCtx = _buildAppleHealthContext(spikeContext);
-    // Schedule digest is stable for the session → goes in a cached system block.
-    final scheduleCtx = (scheduleContext != null && scheduleContext.isNotEmpty)
-        ? 'SCHEDULE (next 7 days, local time):\n$scheduleContext'
-        : null;
-
-    // embedSpikeContext/embedPersona/embedTaskInstructions: false — all three
-    // are already in the cached system blocks (_dialogueSystem + healthCtx),
-    // so omitting them from the user prompt saves ~110–130 uncached tokens/turn.
-    final userPrompt = PandaPrompts.buildDialoguePrompt(
-      userMessage: effectiveMessage,
-      conversationHistory: cappedHistory,
-      spikeContext: spikeContext,
-      isOnPredefinedPath: isOnPredefinedPath,
-      isInDigression: isInDigression,
-      digressionTurnCount: digressionTurnCount,
-      pendingQuestionId: pendingQuestionId,
-      pendingQuestionPrompt: pendingQuestionPrompt,
-      digressionTopic: digressionTopic,
-      accumulatedSlots: accumulatedSlots,
-      // Insights can change mid-session (a just-saved finding), so they are NOT
-      // cached — embed them in the uncached user prompt so they're always fresh.
-      insightsContext: insightsContext,
-      dashboardContext: dashboardContext,
-      workoutContext: workoutContext,
-      embedSpikeContext: false,
-      embedPersona: false,
-      embedTaskInstructions: false,
-      embedScheduleContext: false,
-      embedInsightsContext: true,
-    );
-
-    // Stable cached blocks per session:
-    //  1. dialogueSystem  — JSON schema + persona instructions (never changes)
-    //  2. healthCtx       — spike data (stable for the session lifetime)
-    //  3. scheduleCtx     — calendar digest (stable for the session lifetime)
-    // accumulatedSlots are NOT cached because they change every turn and would
-    // invalidate the cache.  They are already included in userPrompt via
-    // buildDialoguePrompt ("SLOTS SO FAR: ...").
-    final cachedSystem = [
-      _cacheBlock(_dialogueSystem),
-      if (workoutCoach) {'type': 'text', 'text': workoutCoachPrompt},
-      _cacheBlock(healthCtx),
-      if (scheduleCtx != null) _cacheBlock(scheduleCtx),
-    ];
-
-    final result = await _call({
-      'system': cachedSystem,
-      'user': [
-        {
-          'type': 'text',
-          'text':
-              'Local current time: ${DateTime.now().toIso8601String()}\n$userPrompt',
-        },
-      ],
-      'maxTokens': kMaxOutputTokensChat,
-    });
-
-    final raw = (result.data as Map?)?['text']?.toString() ?? '';
-    final usage = (result.data as Map?)?['usage'] as Map?;
-    if (kDebugMode) {
-      debugPrint('[Claude][dialogue] response length: ${raw.length} chars');
-      debugPrint(
-        '[Claude][dialogue] usage — input: ${usage?['input_tokens'] ?? 0}, '
-        'output: ${usage?['output_tokens'] ?? 0}, '
-        'cache_create: ${usage?['cache_creation_input_tokens'] ?? 0}, '
-        'cache_read: ${usage?['cache_read_input_tokens'] ?? 0}',
-      );
+    // The screen adds the message to the transcript before calling; the
+    // function appends it itself, so don't send it twice.
+    final history = [...conversationHistory];
+    if (history.isNotEmpty &&
+        history.last['role'] == 'user' &&
+        history.last['text'] == userMessage) {
+      history.removeLast();
     }
-
-    return PandaPrompts.parseTurnReply(raw);
+    final now = DateTime.now();
+    final result = await _call(function: _assistantFn, {
+      'message': userMessage,
+      'history': history.where((t) => (t['text'] ?? '').isNotEmpty).toList(),
+      'context': {
+        for (final entry in context.entries)
+          if (entry.value.trim().isNotEmpty) entry.key: entry.value,
+      },
+      'today': localDayKey(now),
+      'now': now.toIso8601String(),
+      'utcOffsetMinutes': now.timeZoneOffset.inMinutes,
+      'workoutCoach': workoutCoach,
+    });
+    return PandaPrompts.parseTurnReply(jsonEncode(result.data));
   }
 
   // ---------------------------------------------------------------------------

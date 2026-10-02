@@ -39,6 +39,7 @@ const {
 const {hrvReadings, pickHrv} = require("./hrv");
 const {whoopDeletionPlan} = require("./whoop_deletion");
 const {validatePandaRequest, nextUsage} = require("./panda_limits");
+const {runAssistant, validateAssistantRequest} = require("./assistant");
 const {
   challengeDeletionPlan,
   hasRecentAuthentication,
@@ -707,21 +708,16 @@ exports.achievementUnlockNotification = onDocumentWritten(
 // Security: API key stays server-side (VIV-309).
 // =============================================================================
 
-exports.pandaClaude = onCall({secrets: [anthropicApiKey]}, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Must be logged in.");
-  }
-
-  // Text blocks only, bounded input and output (see panda_limits.js).
-  const validated = validatePandaRequest(request.data);
-  if (validated.error) {
-    throw new HttpsError("invalid-argument", validated.error);
-  }
-
-  // Per-account daily call budget. ai_usage has no client rule, so only the
-  // Admin SDK can read or reset it.
+/**
+ * Spends one call of the account's daily AI budget, shared by pandaClaude and
+ * assistant. ai_usage has no client rule, so only the Admin SDK can read or
+ * reset it.
+ *
+ * @param {string} uid The caller.
+ */
+async function consumeAiQuota(uid) {
   const db = admin.firestore();
-  const usageRef = db.collection("ai_usage").doc(request.auth.uid);
+  const usageRef = db.collection("ai_usage").doc(uid);
   const today = new Date().toISOString().slice(0, 10);
   const allowed = await db.runTransaction(async (transaction) => {
     const next = nextUsage((await transaction.get(usageRef)).data(), today);
@@ -734,6 +730,51 @@ exports.pandaClaude = onCall({secrets: [anthropicApiKey]}, async (request) => {
         "Daily AI limit reached. Try again tomorrow.",
     );
   }
+}
+
+// =============================================================================
+// assistant — one Vivordo AI chat turn. The prompt and the tool loop live
+// server-side (assistant.js); the app sends the conversation plus context only
+// it has (device calendar, priorities, screen, check-in state).
+// =============================================================================
+
+exports.assistant = onCall(
+    {secrets: [anthropicApiKey], timeoutSeconds: 120},
+    async (request) => {
+      const uid = requireAuth(request);
+      const validated = validateAssistantRequest(request.data);
+      if (validated.error) {
+        throw new HttpsError("invalid-argument", validated.error);
+      }
+      await consumeAiQuota(uid);
+      const {reply, usage} = await runAssistant({
+        client: getAnthropicClient(),
+        db: admin.firestore(),
+        uid,
+        request: validated,
+      });
+      console.log("[assistant] usage", JSON.stringify(usage.map((u) => ({
+        input: u?.input_tokens ?? 0,
+        output: u?.output_tokens ?? 0,
+        cache_create: u?.cache_creation_input_tokens ?? 0,
+        cache_read: u?.cache_read_input_tokens ?? 0,
+      }))));
+      return reply;
+    },
+);
+
+exports.pandaClaude = onCall({secrets: [anthropicApiKey]}, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  // Text blocks only, bounded input and output (see panda_limits.js).
+  const validated = validatePandaRequest(request.data);
+  if (validated.error) {
+    throw new HttpsError("invalid-argument", validated.error);
+  }
+
+  await consumeAiQuota(request.auth.uid);
 
   const msg = await getAnthropicClient().messages.create({
     model: "claude-sonnet-4-5",

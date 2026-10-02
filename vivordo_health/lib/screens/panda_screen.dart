@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -16,7 +17,6 @@ import '../src/services/panda_recommendations.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/services/panda_priority_action.dart';
-import '../src/services/workout_service.dart';
 import '../src/services/ai_consent.dart';
 import '../src/services/workout_ai_advice.dart';
 import '../src/utils/workout_opening.dart';
@@ -197,8 +197,6 @@ class _PandaScreenState extends State<PandaScreen>
   /// opens (it's too slow for the init critical path). Fed into dialogue turns
   /// once it arrives; null until then / when Calendar isn't connected.
   String? _scheduleContext;
-  String? _cachedWorkoutContext;
-  DateTime? _workoutContextCachedAt;
 
   // ── Category pill state ────────────────────────────────────────────────────
   // Pills appear only after ALL spike questions are answered.
@@ -752,27 +750,16 @@ class _PandaScreenState extends State<PandaScreen>
     _scrollBottom();
 
     try {
-      final workoutContext = await _workoutContextFor(prompt);
+      // Category prompts are free conversation, not check-in answers.
+      final context = await _turnContext(checkIn: false);
       final reply = await _svc
           .processTurn(
             userMessage: prompt,
             conversationHistory: history,
-            spikeContext: session.rawSpikes,
-            // Category prompts are free conversation — not spike labeling
-            isOnPredefinedPath: false,
-            isInDigression: false,
-            digressionTurnCount: 0,
-            pendingQuestionId: null,
-            pendingQuestionPrompt: null,
-            digressionTopic: null,
-            accumulatedSlots: Map<String, String>.from(_sessionSlots),
-            scheduleContext: _scheduleContext,
-            insightsContext: _currentInsightsContext(),
-            dashboardContext: _dashboardContextFor(prompt, session),
-            workoutContext: workoutContext,
+            context: context,
             workoutCoach: _screenInsight?.screen == 'workout_summary',
           )
-          .timeout(const Duration(seconds: 35));
+          .timeout(const Duration(seconds: 90));
 
       if (!mounted) return;
 
@@ -917,53 +904,20 @@ class _PandaScreenState extends State<PandaScreen>
 
     try {
       final currentQ = _currentQ;
-      final workoutContext = await _workoutContextFor(text);
-      String? priorityContext;
-      if (_screenInsight?.screen == 'my_day') {
-        final now = DateTime.now();
-        try {
-          final priorities = await DailyPriorityService.incompleteForDay(
-            now,
-          ).timeout(const Duration(seconds: 8));
-          priorityContext = buildPandaPriorityContext(priorities, now);
-        } catch (_) {
-          priorityContext =
-              'Vivordo priorities could not be loaded. Do not assume there are none or invent tasks. Ask the user for details if needed.';
-        }
-        if (!mounted ||
-            FirebaseAuth.instance.currentUser?.uid != _currentUserId) {
-          return;
-        }
+      final context = await _turnContext();
+      if (!mounted ||
+          FirebaseAuth.instance.currentUser?.uid != _currentUserId) {
+        return;
       }
 
       final reply = await _svc
           .processTurn(
             userMessage: text,
             conversationHistory: history,
-            spikeContext: session.rawSpikes,
-            isOnPredefinedPath:
-                _state == _DialogueState.onPath ||
-                _state == _DialogueState.inDepth,
-            isInDigression: _state == _DialogueState.inDigression,
-            digressionTurnCount: _digressionStack.isNotEmpty
-                ? _digressionStack.last.turnCount
-                : 0,
-            pendingQuestionId: currentQ?.questionId,
-            pendingQuestionPrompt: currentQ?.prompt,
-            digressionTopic: _digressionStack.isNotEmpty
-                ? _digressionStack.last.topic
-                : null,
-            accumulatedSlots: Map<String, String>.from(_sessionSlots),
-            dashboardContext: _dashboardContextFor(text, session),
-            scheduleContext: _scheduleContext,
-            insightsContext: [
-              if (_currentInsightsContext() case final String context) context,
-              if (priorityContext != null) priorityContext,
-            ].join('\n\n'),
-            workoutContext: workoutContext,
+            context: context,
             workoutCoach: _screenInsight?.screen == 'workout_summary',
           )
-          .timeout(const Duration(seconds: 35));
+          .timeout(const Duration(seconds: 90));
 
       if (!mounted) return;
 
@@ -1390,6 +1344,7 @@ class _PandaScreenState extends State<PandaScreen>
         );
         if (saved == null) throw StateError('Could not save the priority.');
       }
+      _cachedPriorities = null;
       if (mounted)
         await _pandaSay(
           action.operation == 'delete'
@@ -1410,187 +1365,58 @@ class _PandaScreenState extends State<PandaScreen>
     }
   }
 
-  /// Selects dashboard metrics locally, so ordinary chat turns add zero health
-  /// tokens and health questions include only the relevant daily aggregates.
-  String? _dashboardContextFor(String message, PandaSessionData session) {
-    if (session.dashboardMetrics.isEmpty) return null;
-    final text = message.toLowerCase();
-    final requested = <String>{};
+  String? _cachedPriorities;
+  DateTime? _prioritiesLoadedAt;
 
-    bool mentions(Iterable<String> terms) => terms.any(
-      (term) => RegExp(
-        '(^|[^a-z0-9])${RegExp.escape(term)}([^a-z0-9]|\$)',
-      ).hasMatch(text),
-    );
-
-    if (mentions(['step', 'steps', 'walk', 'walking'])) requested.add('steps');
-    if (mentions(['sleep', 'slept', 'rest', 'tired', 'fatigue'])) {
-      requested.add('sleep');
-    }
-    if (mentions(['hrv', 'variability', 'recovery'])) requested.add('hrv');
-    if (mentions(['heart rate', 'pulse', 'bpm'])) {
-      requested.addAll(['heart_rate', 'resting_heart_rate']);
-    }
-    if (mentions(['stress', 'stressed'])) requested.add('stress');
-    if (mentions(['wellness', 'wellbeing', 'well-being'])) {
-      requested.add('wellness');
-    }
-    if (mentions(['exercise', 'workout', 'activity', 'active'])) {
-      requested.addAll([
-        'steps',
-        'exercise_time',
-        'active_calories',
-        'distance',
-      ]);
-    }
-    if (mentions(['weight', 'weigh'])) requested.add('weight');
-    if (mentions(['oxygen', 'spo2'])) requested.add('blood_oxygen');
-    if (mentions(['respiratory', 'breathing rate'])) {
-      requested.add('respiratory_rate');
-    }
-
-    final overview = mentions([
-      'health',
-      'dashboard',
-      'metric',
-      'metrics',
-      'overview',
-    ]);
-    if (overview && requested.isEmpty) {
-      requested.addAll([
-        'steps',
-        'sleep',
-        'resting_heart_rate',
-        'hrv',
-        'stress',
-        'wellness',
-      ]);
-    }
-    if (requested.isEmpty) return null;
-
-    final dates = session.dashboardMetrics.keys.toList()
-      ..sort((a, b) => b.compareTo(a));
-    final lines = <String>[];
-    for (final metric in requested) {
-      final values = <String>[];
-      for (final date in dates) {
-        final raw = session.dashboardMetrics[date]?[metric];
-        final value = _dashboardMetricValue(metric, raw);
-        if (value != null) values.add('$date=$value');
-      }
-      if (values.isNotEmpty) {
-        final label = metric == 'sleep'
-            ? 'sleep(hours|stage_minutes=awake/core/deep/rem)'
-            : metric;
-        lines.add('$label:${values.join(',')}');
-      }
-    }
-    return lines.isEmpty ? null : lines.join('\n');
+  /// What only the app knows, sent with each chat turn. Health metrics and
+  /// workouts are fetched by the assistant function itself.
+  Future<Map<String, String>> _turnContext({bool checkIn = true}) async {
+    final question = checkIn ? _currentQ : null;
+    final digression = _digressionStack.isNotEmpty
+        ? _digressionStack.last
+        : null;
+    final checkin = _state == _DialogueState.inDigression && digression != null
+        ? 'Check-in paused for a side topic ("${digression.topic}", '
+              '${digression.turnCount} turn(s) in).'
+        : question != null
+        ? 'Pending check-in question (${question.questionId}): '
+              '"${question.prompt}"'
+        : 'No check-in question pending.';
+    final spikes = _session?.rawSpikes ?? const [];
+    return {
+      'checkin': _sessionSlots.isEmpty
+          ? checkin
+          : '$checkin\nShared so far: ${jsonEncode(_sessionSlots)}',
+      'insights': _currentInsightsContext() ?? '',
+      'schedule': _scheduleContext ?? '',
+      'priorities': await _prioritiesContext(),
+      'spikes': spikes.isEmpty
+          ? ''
+          : jsonEncode(PandaPrompts.trimSpikeContext(spikes)),
+      if (_screenInsight?.screen == 'workout_summary')
+        'workout': _screenInsight!.context ?? '',
+    };
   }
 
-  Future<String?> _workoutContextFor(String message) async {
-    if (_screenInsight?.screen == 'workout_summary')
-      return _screenInsight!.context;
-    final asksAboutWorkouts = RegExp(
-      r'\b(workout|workouts|exercise|exercises|gym|lift|lifting|lifted|trained|training|sets|reps?|bench|squat|deadlift|row|pulldown|pull-up|chin-up|curl|press|lunge|cardio|run|running|walk|walking|stairmaster)\b',
-      caseSensitive: false,
-    ).hasMatch(message);
-
+  /// Today's open priorities, cached briefly so every turn doesn't re-query.
+  Future<String> _prioritiesContext() async {
     final now = DateTime.now();
-    final hasFreshContext =
-        _cachedWorkoutContext != null &&
-        _workoutContextCachedAt != null &&
-        now.difference(_workoutContextCachedAt!) < const Duration(minutes: 2);
-    if (!asksAboutWorkouts && !hasFreshContext) return null;
-    if (hasFreshContext) {
-      return _cachedWorkoutContext;
+    final loadedAt = _prioritiesLoadedAt;
+    if (_cachedPriorities != null &&
+        loadedAt != null &&
+        now.difference(loadedAt) < const Duration(minutes: 2)) {
+      return _cachedPriorities!;
     }
-
-    late final List<SavedWorkout> workouts;
     try {
-      workouts = await WorkoutService.loadRecent(limit: 12);
-    } catch (error) {
-      debugPrint('Panda workout context load failed: $error');
-      return 'Workout history is temporarily unavailable.';
+      final priorities = await DailyPriorityService.incompleteForDay(
+        now,
+      ).timeout(const Duration(seconds: 8));
+      _prioritiesLoadedAt = now;
+      return _cachedPriorities = buildPandaPriorityContext(priorities, now);
+    } catch (_) {
+      return 'Vivordo priorities could not be loaded. Do not assume there are '
+          'none or invent tasks. Ask the user for details if needed.';
     }
-    if (workouts.isEmpty) {
-      _cachedWorkoutContext = 'No saved workouts found.';
-      _workoutContextCachedAt = now;
-      return _cachedWorkoutContext;
-    }
-
-    String number(double value) =>
-        value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
-
-    final lines = <String>[
-      'Most recent ${workouts.length} saved workout${workouts.length == 1 ? '' : 's'} (newest first):',
-    ];
-    for (final workout in workouts) {
-      final minutes = (workout.durationSeconds / 60).round();
-      final exerciseParts = workout.exercises.take(8).map((exercise) {
-        final distance = exercise.distanceKm;
-        if (distance != null) return '${exercise.name}=${number(distance)}km';
-        final sets = exercise.sets
-            .take(6)
-            .map((set) => '${number(set.weightLbs)}lb×${set.reps}')
-            .join('/');
-        return sets.isEmpty ? exercise.name : '${exercise.name}=$sets';
-      }).toList();
-      if (workout.exercises.length > 8) exerciseParts.add('…');
-      lines.add(
-        '${DateFormat('yyyy-MM-dd').format(workout.completedAt.toLocal())}|${minutes}m|${exerciseParts.join(';')}',
-      );
-    }
-    _cachedWorkoutContext = lines.join('\n');
-    _workoutContextCachedAt = now;
-    return _cachedWorkoutContext;
-  }
-
-  String? _dashboardMetricValue(String metric, dynamic raw) {
-    if (metric == 'sleep' && raw is Map) {
-      final hours = raw['avg'] as num?;
-      final stages = raw['stages'];
-      if (hours == null && stages is! Map) return null;
-
-      final hoursText = hours == null
-          ? '-'
-          : hours.toDouble() == hours.roundToDouble()
-          ? hours.round().toString()
-          : hours.toStringAsFixed(1);
-      if (stages is! Map || stages.isEmpty) return '${hoursText}h';
-
-      String minutes(String key) {
-        final value = stages[key];
-        return value is num ? value.round().toString() : '-';
-      }
-
-      // Compact positional encoding keeps the seven-day sleep context small.
-      // The label above supplies the order once instead of repeating four
-      // stage names for every date.
-      final stageText = const [
-        'awake',
-        'core',
-        'deep',
-        'rem',
-      ].map(minutes).join('/');
-      return '${hoursText}h|$stageText';
-    }
-
-    num? value;
-    if (raw is num) {
-      value = raw;
-    } else if (raw is Map) {
-      final preferred = metric == 'steps' ? 'sum' : 'avg';
-      value =
-          raw[preferred] as num? ??
-          raw['avg'] as num? ??
-          raw['sum'] as num? ??
-          raw['max'] as num?;
-    }
-    if (value == null) return null;
-    return value is int || value == value.roundToDouble()
-        ? value.round().toString()
-        : value.toStringAsFixed(1);
   }
 
   // ===========================================================================

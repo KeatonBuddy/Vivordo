@@ -8,7 +8,7 @@ import 'privacy_support_links.dart';
 // caught by the model's `crisis` flag.
 final _crisisPattern = RegExp(
   r"\b(suicid\w*|kill(ing)? my ?self|end(ing)? my life|end it all|"
-  r"take my (own )?life|want(ed)? to die|wanna die|better off dead|"
+  r"take my (own )?life|want(ed)? to die|wanna die|better off (dead|without me)|"
   r"(don['’]?t|do not) want to (live|be alive|be here anymore)|no reason to live|"
   r"self[- ]?harm\w*|(hurt(ing)?|cut(ting)?) my ?self|overdos\w*)\b",
   caseSensitive: false,
