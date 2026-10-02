@@ -11,6 +11,9 @@ const MAX_METRIC_DAYS = 92;
 const MAX_FACTS = 100; // remembered facts per user, all sent every turn
 const MAX_FACT_CHARS = 200;
 const RECENT_CONVERSATIONS = 5;
+// A new conversation (its own summary) starts after this long without a
+// message; the thread on screen stays continuous across them.
+const CONVERSATION_GAP_MS = 6 * 60 * 60 * 1000;
 const CRISIS_NOTE = "A hard moment came up and support was offered.";
 const TEXT_LIMIT = `Not saved: text must be 1-${MAX_FACT_CHARS} characters.`;
 const MEMORY_KINDS = ["stressor", "helps", "pattern", "context", "preference"];
@@ -113,7 +116,7 @@ The app may be walking the user through short check-in questions about a recent 
 - digress: a new topic off the check-in. Engage genuinely; after about 3 turns start steering back.
 - digression_complete: the side topic is wrapping up; return gently to the check-in.
 - new_stressor: a fresh stressor came up. Set injected_question with 3-5 short options plus "Something else".
-- recommend: offer a concrete coping strategy. Write one warm intro sentence and set rec_hint (the app shows recommendation cards).
+- recommend: offer a concrete coping strategy, with the specifics in your message.
 - chitchat: anything else, including answers to questions and planning.
 - skip: they decline to engage with the pending topic.
 - For calendar or priority changes, see ACTIONS (use chitchat as the intent).
@@ -122,12 +125,10 @@ Set offer_end_session true only when the user clearly says they are finished, or
 FILLED SLOTS
 filled_slots holds only what the user said in THIS message (the app merges turns): stressor (short noun phrase, e.g. "work deadline"), emotion, intensity (exactly low, medium or high), physical_symptom, activity, location, time_context, coping_strategy (what they did or tried, even if unhelpful), sleep_quality, social_context, other. Omit slots that weren't mentioned.
 
-REC_HINT keywords (comma-separated): breathing, grounding, movement, sleep, social, reframe, boundary, schedule, nutrition, nature, journaling, music.
-
 ACTIONS (the app asks the user to confirm each one; never claim a change is done)
 - Priorities, tasks and reminders: look them up with get_priorities (any date range; the result gives each one's id), then call propose_priority. "Remind me" and "set a reminder" create a priority, never a calendar event. create needs a title; update and delete need the target_id from get_priorities (fetch first; never guess). date is the NEW day; scheduled_at and reminder_at are local YYYY-MM-DDTHH:mm with no offset; omit fields that don't change. Undated priorities may omit date. Only single occurrences: ask before touching a recurring series. Reminders must fall on the priority's day, at or before its scheduled time, and in the future.
 - Calendar: propose_calendar_change {operation create|update|delete, title (new title), target_title (the existing event's exact title from SCHEDULE), start, end (local YYYY-MM-DDTHH:mm), recurrence}. Resolve relative dates from the local current date and SCHEDULE. Never guess a missing title, date or time; ask instead.
-- You never learn whether the user confirmed or cancelled a proposal, so a change mentioned in RECENT CONVERSATIONS or earlier in the chat may not have happened. Before saying something is planned or done, check SCHEDULE or get_priorities.
+- Each proposal appears as a card under your message with its own buttons; don't explain how to use it. Your earlier replies in this chat end with [Proposed changes: ...] saying whether each was done, cancelled or not confirmed. A change mentioned in RECENT CONVERSATIONS may not have happened, so before saying something is planned or done, check SCHEDULE or get_priorities.
 - If a proposal comes back "Not proposed", fix it or ask the user; don't tell them it's done. You may propose several changes in one turn. Finish a reminder or priority request before returning to check-in questions.
 - ${REMINDER_RULES}`;
 
@@ -291,7 +292,6 @@ const TOOLS = [
           type: "object",
           additionalProperties: {type: "string"},
         },
-        rec_hint: {type: "string"},
       },
       required: ["message", "intent", "crisis", "summary"],
     },
@@ -346,6 +346,8 @@ function validateAssistantRequest(data) {
     message, history, context, today: data.today, now: data.now,
     utcOffsetMinutes: offset, workoutCoach: data?.workoutCoach === true,
     conversationId,
+    // New app builds send no history: the server keeps the thread.
+    serverHistory: !Array.isArray(data?.history),
   };
 }
 
@@ -937,6 +939,85 @@ function planCalendar(input, request) {
 }
 
 /**
+ * The saved thread: which conversation this message belongs to and, for app
+ * builds that don't send history, that conversation's earlier messages.
+ *
+ * @param {Object} db Firestore
+ * @param {string} uid user id
+ * @param {Object} request validated request
+ * @param {number} nowMs current time in ms
+ * @return {Promise<{conversationId: string, history: Array<Object>}>}
+ */
+async function loadThread(db, uid, request, nowMs) {
+  const snapshot = await db.collection("users").doc(uid)
+      .collection("messages").orderBy("t", "desc")
+      .limit(LIMITS.turns + 1).get();
+  const recent = snapshot.docs.map((doc) => doc.data());
+  const latest = recent[0];
+  const conversationId = request.conversationId ??
+    (latest?.conversationId && nowMs - Number(latest.t) < CONVERSATION_GAP_MS ?
+      latest.conversationId : `c${nowMs}`);
+  const history = recent
+      .filter((m) => m.conversationId === conversationId &&
+        (m.role === "user" || m.role === "assistant") &&
+        typeof m.text === "string" && m.text.trim())
+      .slice(0, LIMITS.turns).reverse()
+      .map((m) => ({role: m.role,
+        text: `${m.text.slice(0, LIMITS.turn)}${outcomes(m)}`}));
+  return {conversationId, history};
+}
+
+/**
+ * What became of the changes an earlier reply proposed (the app records it
+ * on the message), so the model doesn't assume a cancelled change happened.
+ *
+ * @param {Object} message saved assistant message
+ * @return {string} "" or a bracketed note to append to its text
+ */
+function outcomes(message) {
+  const actions = (Array.isArray(message.blocks) ? message.blocks : [])
+      .filter((b) => b?.type === "action" && b.action)
+      .map((b) => b.action);
+  if (message.role !== "assistant" || !actions.length) return "";
+  const words = {done: "done", cancelled: "cancelled by the user",
+    failed: "failed"};
+  const notes = actions.map((action, i) => {
+    const what = `${action.operation} ${action.type} ` +
+      `"${action.target_title ?? action.title ?? ""}"`;
+    return `${what}: ${words[message.actionStatus?.[i]] ?? "not confirmed"}`;
+  });
+  return `\n[Proposed changes: ${notes.join("; ")}]`;
+}
+
+/**
+ * Saves the user's message and the reply to the thread the app shows.
+ *
+ * @param {Object} db Firestore
+ * @param {string} uid user id
+ * @param {Object} request validated request
+ * @param {Object} reply the reply sent to the app
+ * @param {Function} now server timestamp sentinel factory
+ * @param {number} startedAt when the turn started, in ms
+ * @param {Function} clock current time in ms
+ * @return {Promise<void>}
+ */
+async function saveMessages(db, uid, request, reply, now, startedAt, clock) {
+  const messages = db.collection("users").doc(uid).collection("messages");
+  const batch = db.batch();
+  batch.set(messages.doc(), {
+    role: "user", text: request.message,
+    conversationId: request.conversationId, t: startedAt, createdAt: now(),
+  });
+  batch.set(messages.doc(), {
+    role: "assistant", text: reply.message, blocks: reply.blocks ?? [],
+    suggestions: reply.suggestions ?? [], crisis: reply.crisis === true,
+    conversationId: request.conversationId,
+    t: Math.max(clock(), startedAt + 1), createdAt: now(),
+  });
+  await batch.commit();
+}
+
+/**
  * What the assistant remembers about the user: saved facts, the last few
  * conversation summaries and this conversation's own earlier summary.
  *
@@ -1210,7 +1291,12 @@ async function replyBlocks(db, uid, reply, lookups) {
  * @param {Object} deps {client, db, uid, request}
  * @return {Promise<{reply: Object, usage: Array<Object>}>}
  */
-async function runAssistant({client, db, uid, request, now}) {
+async function runAssistant({client, db, uid, request: input, now,
+  clock = Date.now}) {
+  const startedAt = clock();
+  const thread = await loadThread(db, uid, input, startedAt);
+  const request = {...input, conversationId: thread.conversationId,
+    history: input.serverHistory ? thread.history : input.history};
   const system = [{type: "text", text: SYSTEM_PROMPT,
     cache_control: {type: "ephemeral"}}];
   if (request.workoutCoach) {
@@ -1250,6 +1336,15 @@ async function runAssistant({client, db, uid, request, now}) {
       return "Not proposed: that couldn't be checked right now.";
     }
   };
+  // The thread is best effort too: a failed write never loses the answer.
+  const keep = async (reply) => {
+    reply.conversationId = request.conversationId;
+    try {
+      await saveMessages(db, uid, request, reply, now, startedAt, clock);
+    } catch (error) {
+      console.error("[assistant] saving the thread failed", error);
+    }
+  };
   const finish = async (reply) => {
     // A crisis turn takes no actions, whatever the model proposed.
     const proposed = reply.crisis ? [] : actions;
@@ -1274,6 +1369,7 @@ async function runAssistant({client, db, uid, request, now}) {
       // Memory is best effort: the user still gets their answer.
       console.error("[assistant] saving memory failed", error);
     }
+    await keep(reply);
     return {usage, reply, memoryChanges: reply.crisis ? 0 :
       memoryState.pending.length};
   };
@@ -1291,9 +1387,14 @@ async function runAssistant({client, db, uid, request, now}) {
     });
     usage.push(response.usage);
 
-    // Fallback replies are text only: nothing is saved or proposed.
-    const plain = (reply) => ({usage, reply: {...reply, suggestions: [],
-      blocks: [{type: "text", text: reply.message}]}});
+    // Fallback replies are text only: no memory or proposals, but they
+    // still go in the thread.
+    const plain = async (cleaned) => {
+      const reply = {...cleaned, suggestions: [],
+        blocks: [{type: "text", text: cleaned.message}]};
+      await keep(reply);
+      return {usage, reply};
+    };
     if (response.stop_reason === "refusal") {
       return plain(cleanReply({intent: "chitchat", crisis: false,
         message: "I can't help with that one, but I'm happy to talk about " +
@@ -1354,6 +1455,8 @@ module.exports = {
   scoreLine,
   getWorkouts,
   loadMemory,
+  loadThread,
+  saveMessages,
   planMemoryChange,
   chartBlock,
   sourceBlocks,

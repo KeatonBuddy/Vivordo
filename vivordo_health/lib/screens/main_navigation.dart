@@ -10,7 +10,12 @@ import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'home_screen.dart';
 import 'scan_screen.dart';
 import 'dashboard_screen.dart';
-import 'panda_screen.dart';
+import 'assistant_screen.dart';
+import 'heart_rate_detail_screen.dart';
+import 'mood_detail_screen.dart';
+import 'physical_health_screen.dart';
+import 'sleep_detail_screen.dart';
+import 'stress_detail_screen.dart';
 import 'fitness_screen.dart';
 import 'my_day_screen.dart';
 import '../src/services/achievement_service.dart';
@@ -58,7 +63,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   late final List<ValueNotifier<bool>> _tabActivity;
   late final ValueNotifier<bool> _homeStressReveal;
   late final List<Widget> _tabPages;
-  late final PandaScreen _persistentChatScreen;
+  late final AssistantScreen _persistentChatScreen;
   final Color primaryPurple = VivordoTheme.brand;
   LiquidGlassSettings? _cachedGlassSettings;
   bool? _cachedGlassSettingsIsDark;
@@ -92,9 +97,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _handleContentNavigationChanged,
     );
     _tabPages = List.generate(5, _buildCachedTabPage);
-    _persistentChatScreen = PandaScreen(
+    _persistentChatScreen = AssistantScreen(
       onClose: _closeChat,
       contextPrompt: _contextPrompt,
+      onOpenScreen: _openFromAssistant,
     );
     _pandaHasBeenOpened = widget.initialIndex == 5;
     _chatRevealController = AnimationController(
@@ -284,6 +290,32 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     });
     _logScreenView(5);
     _chatRevealController.forward(from: 0);
+  }
+
+  /// A source chip or chart in Vivordo AI: close the chat and show where
+  /// that data lives.
+  Future<void> _openFromAssistant(String screen) async {
+    await _closeChat();
+    if (!mounted) return;
+    final detail = switch (screen) {
+      'sleep' => const SleepDetailScreen(),
+      'heart' => const HeartRateDetailScreen(),
+      'stress' => const StressDetailScreen(),
+      'mood' => const MoodDetailScreen(),
+      'physical_health' => const PhysicalHealthScreen(),
+      _ => null,
+    };
+    if (detail != null) {
+      _contentNavigatorKey.currentState?.push(
+        MaterialPageRoute<void>(builder: (_) => detail),
+      );
+      return;
+    }
+    _selectTab(switch (screen) {
+      'my_day' => 1,
+      'fitness' || 'body' => 3,
+      _ => 4,
+    });
   }
 
   Future<void> _closeChat() async {

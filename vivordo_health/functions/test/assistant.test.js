@@ -4,17 +4,17 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   runAssistant, validateAssistantRequest, buildMessages, metricValue, dayRange,
-  scoreLine, getScores, planMemoryChange, getPriorities, planPriority,
+  scoreLine, getScores, planMemoryChange, loadThread, getPriorities, planPriority,
   planCalendar, visibleOnDay, chartBlock, sourceBlocks, SYSTEM_PROMPT, TOOLS,
 } = require("../assistant");
 
 const base = {message: "How did I sleep?", today: "2026-10-01", now: "2026-10-01T09:30:00", utcOffsetMinutes: -360};
 
 // Minimal Firestore stand-in: users/{uid}/metrics_daily/{day} and workouts.
-function fakeDb({days = {}, scores = {}, workouts = [], memory = [], conversations = [], docs = {}} = {}) {
+function fakeDb({days = {}, scores = {}, workouts = [], memory = [], conversations = [], messages = [], docs = {}} = {}) {
   const writes = [];
   let nextId = 0;
-  const lists = {workouts, memory, conversations};
+  const lists = {workouts, memory, conversations, messages};
   const snap = (path) => ({id: path.split("/").pop(), exists: path in docs, data: () => docs[path]});
   const docRef = (path) => ({path, id: path.split("/").pop(), collection: (name) => collectionRef(`${path}/${name}`),
     get: async () => snap(path)});
@@ -53,6 +53,11 @@ function fakeDb({days = {}, scores = {}, workouts = [], memory = [], conversatio
     },
   };
 }
+
+// Memory and summary writes, without the two thread messages every turn adds.
+const memoryWrites = (db) => db.writes.filter((w) => !w.path.includes("/messages/"));
+// A reply without the conversation id the server assigns.
+const withoutThread = ({conversationId: _id, ...rest}) => rest;
 
 // Scripted model: returns the queued responses in order and records requests.
 function fakeClient(responses) {
@@ -118,7 +123,7 @@ test("fetches metrics, then replies; the tool result reaches the model", async (
   ]);
   const db = fakeDb({days: {"2026-09-30": {sleep: {avg: 7.2}, steps: {sum: 900}}}});
   const {reply} = await runAssistant({client, db, uid: "u1", request: validateAssistantRequest(base)});
-  assert.deepEqual(reply, {message: "You slept 7.2h last night.", intent: "chitchat", crisis: false, suggestions: [],
+  assert.deepEqual(withoutThread(reply), {message: "You slept 7.2h last night.", intent: "chitchat", crisis: false, suggestions: [],
     blocks: [{type: "text", text: "You slept 7.2h last night."},
       {type: "source", label: "Sleep", screen: "sleep", start: "2026-09-30", end: "2026-10-01"}]});
 
@@ -146,7 +151,7 @@ test("request shape: cached system prompt, all tools, fallback opt-in, low effor
 
 test("plain text, refusal, and runaway loops still produce a reply", async () => {
   const text = await runAssistant({client: fakeClient([{stop_reason: "end_turn", usage: {}, content: [{type: "text", text: "Hello there."}]}]), db: fakeDb(), uid: "u", request: validateAssistantRequest(base)});
-  assert.deepEqual(text.reply, {intent: "chitchat", message: "Hello there.", crisis: false, suggestions: [],
+  assert.deepEqual(withoutThread(text.reply), {intent: "chitchat", message: "Hello there.", crisis: false, suggestions: [],
     blocks: [{type: "text", text: "Hello there."}]});
 
   const refused = await runAssistant({client: fakeClient([{stop_reason: "refusal", usage: {}, content: []}]), db: fakeDb(), uid: "u", request: validateAssistantRequest(base)});
@@ -163,7 +168,7 @@ test("plain text, refusal, and runaway loops still produce a reply", async () =>
 test("reply is cleaned: unknown intent becomes chitchat, crisis is boolean", async () => {
   const client = fakeClient([{stop_reason: "tool_use", usage: {}, content: [toolUse("r", "reply", {message: " Are you safe? ", intent: "made_up", crisis: "yes"})]}]);
   const {reply} = await runAssistant({client, db: fakeDb(), uid: "u", request: validateAssistantRequest(base)});
-  assert.deepEqual(reply, {message: "Are you safe?", intent: "chitchat", crisis: false, suggestions: [],
+  assert.deepEqual(withoutThread(reply), {message: "Are you safe?", intent: "chitchat", crisis: false, suggestions: [],
     blocks: [{type: "text", text: "Are you safe?"}]});
 });
 
@@ -270,7 +275,7 @@ test("the model sees what it remembers and recent chats, then saves a fact and t
   assert.match(context, /THIS CONVERSATION SO FAR \(earlier summary\): Talked about the pitch deck\./);
   assert.equal(client.requests[1].messages.at(-1).content[0].content, "Saved.");
 
-  assert.deepEqual(db.writes, [
+  assert.deepEqual(memoryWrites(db), [
     {op: "set", path: "users/u1/memory/new0", data: {kind: "stressor", text: "Deadlines at work", source: "chat", conversationId: "chat-now", createdAt: "TS", updatedAt: "TS"}},
     {op: "merge", path: "users/u1/conversations/chat-now", data: {summary: "Shared that work deadlines are stressful.", updatedAt: "TS", day: "2026-10-01"}},
   ]);
@@ -282,22 +287,23 @@ test("a crisis turn saves no facts, and memory saved alongside the reply counts"
     toolUse("m", "save_memory", {action: "add", kind: "context", text: "Feels everyone is better off without them"}),
     toolUse("r", "reply", {message: "Are you safe right now?", intent: "chitchat", crisis: true, summary: "A hard moment; support was offered."}),
   ]}]), db: crisisDb, uid: "u", now, request: validateAssistantRequest({...base, conversationId: "c1"})});
-  assert.deepEqual(crisisDb.writes.map((w) => w.path), ["users/u/conversations/c1"]);
-  assert.equal(crisisDb.writes[0].data.summary, "A hard moment came up and support was offered.",
+  assert.deepEqual(memoryWrites(crisisDb).map((w) => w.path), ["users/u/conversations/c1"]);
+  assert.equal(memoryWrites(crisisDb)[0].data.summary, "A hard moment came up and support was offered.",
       "the model's own summary of a crisis turn is never stored");
 
   const ongoing = fakeDb({conversations: [{id: "c2", data: {summary: "Planned a calmer week.", updatedAt: at("2026-10-01T20:00:00Z")}}]});
   await runAssistant({client: fakeClient([{stop_reason: "tool_use", usage: {}, content: [
     toolUse("r", "reply", {message: "Are you safe right now?", intent: "chitchat", crisis: true, summary: "User shared thoughts of self-harm."}),
   ]}]), db: ongoing, uid: "u", now, request: validateAssistantRequest({...base, conversationId: "c2"})});
-  assert.equal(ongoing.writes[0].data.summary, "Planned a calmer week. A hard moment came up and support was offered.");
+  assert.equal(memoryWrites(ongoing)[0].data.summary, "Planned a calmer week. A hard moment came up and support was offered.");
 
   const sameTurnDb = fakeDb({memory: [{id: "old", data: {kind: "helps", text: "Likes running"}}]});
   await runAssistant({client: fakeClient([{stop_reason: "tool_use", usage: {}, content: [
     toolUse("m", "save_memory", {action: "forget", id: "old"}),
     toolUse("r", "reply", {message: "Done, I've forgotten that.", intent: "chitchat", crisis: false, summary: "Asked to forget running."}),
   ]}]), db: sameTurnDb, uid: "u", now, request: validateAssistantRequest(base)});
-  assert.deepEqual(sameTurnDb.writes, [{op: "delete", path: "users/u/memory/old"}], "no conversationId: no summary write");
+  assert.deepEqual(memoryWrites(sameTurnDb).map((w) => `${w.op} ${w.path.replace(/c\d+$/, "c…")}`),
+      ["delete users/u/memory/old", "merge users/u/conversations/c…"], "a conversation always exists now");
 });
 
 test("conversation ids are validated", () => {
@@ -437,7 +443,7 @@ test("forgetting a fact also forgets the summary of the chat it came from", asyn
     toolUse("c", "save_memory", {action: "forget", id: "legacy"}),
     toolUse("r", "reply", {message: "Done.", intent: "chitchat", crisis: false, summary: "Cleared some notes."}),
   ]}]), db, uid: "u", now, request: req({conversationId: "this-chat"})});
-  assert.deepEqual(db.writes.map((w) => `${w.op} ${w.path}`), [
+  assert.deepEqual(memoryWrites(db).map((w) => `${w.op} ${w.path}`), [
     "delete users/u/memory/investor",
     "delete users/u/conversations/old-chat",
     "delete users/u/memory/here",
@@ -502,5 +508,58 @@ test("a full turn returns text, chart, actions and sources as blocks, plus sugge
   assert.deepEqual(reply.suggestions, ["Plan my evening", "What helped last time?", "Why?"]);
   assert.equal(reply.chart, undefined, "the raw chart request isn't sent on");
   assert.match(SYSTEM_PROMPT, /HOW REPLIES LOOK/);
-  assert.match(SYSTEM_PROMPT, /You never learn whether the user confirmed or cancelled a proposal/);
+  assert.match(SYSTEM_PROMPT, /\[Proposed changes: \.\.\.\] saying whether each was done/);
+});
+
+test("the thread: continues within 6 hours, starts a new conversation after", async () => {
+  const hour = 3600000;
+  const messages = [
+    {id: "m3", data: {role: "assistant", text: "Sure.", conversationId: "c-old", t: 10 * hour}},
+    {id: "m2", data: {role: "user", text: "Plan my day", conversationId: "c-old", t: 10 * hour - 5000}},
+    {id: "m1", data: {role: "user", text: "Older chat", conversationId: "c-older", t: 1 * hour}},
+  ];
+  const db = fakeDb({messages});
+  assert.deepEqual(await loadThread(db, "u", req(), 12 * hour), {conversationId: "c-old",
+    history: [{role: "user", text: "Plan my day"}, {role: "assistant", text: "Sure."}]});
+  assert.deepEqual(await loadThread(db, "u", req(), 17 * hour), {conversationId: `c${17 * hour}`, history: []});
+  assert.deepEqual(await loadThread(fakeDb(), "u", req(), 5), {conversationId: "c5", history: []});
+  assert.equal((await loadThread(db, "u", req({conversationId: "legacy"}), 12 * hour)).conversationId, "legacy");
+});
+
+test("each turn saves the message and the reply to the thread, in order", async () => {
+  const hour = 3600000;
+  const db = fakeDb({messages: [{id: "m1", data: {role: "user", text: "Earlier", conversationId: "c-1", t: hour}}]});
+  const times = [2 * hour, 2 * hour];
+  const client = fakeClient([{stop_reason: "tool_use", usage: {}, content: [
+    toolUse("r", "reply", {message: "Hi again.", intent: "chitchat", crisis: false, summary: "Said hi.", suggestions: ["Plan my day"]}),
+  ]}]);
+  const {reply} = await runAssistant({client, db, uid: "u", now, clock: () => times.shift(), request: req()});
+  assert.equal(reply.conversationId, "c-1");
+  assert.deepEqual(client.requests[0].messages[0], {role: "user", content: "Earlier"}, "server-loaded history");
+  const thread = db.writes.filter((w) => w.path.includes("/messages/")).map((w) => w.data);
+  assert.deepEqual(thread, [
+    {role: "user", text: "How did I sleep?", conversationId: "c-1", t: 2 * hour, createdAt: "TS"},
+    {role: "assistant", text: "Hi again.", blocks: [{type: "text", text: "Hi again."}], suggestions: ["Plan my day"],
+      crisis: false, conversationId: "c-1", t: 2 * hour + 1, createdAt: "TS"},
+  ]);
+
+  const legacy = fakeDb({messages: [{id: "m1", data: {role: "user", text: "Server copy", conversationId: "c-1", t: hour}}]});
+  const legacyClient = fakeClient([{stop_reason: "tool_use", usage: {}, content: [
+    toolUse("r", "reply", {message: "Ok.", intent: "chitchat", crisis: false, summary: "x"})]}]);
+  await runAssistant({client: legacyClient, db: legacy, uid: "u", now, clock: () => 2 * hour,
+    request: req({history: [{role: "user", text: "App copy"}]})});
+  assert.deepEqual(legacyClient.requests[0].messages[0], {role: "user", content: "App copy"}, "older builds still send history");
+});
+
+test("the thread tells the model what became of earlier proposals", async () => {
+  const db = fakeDb({messages: [
+    {id: "a", data: {role: "assistant", text: "Here's the plan.", conversationId: "c", t: 2, actionStatus: {0: "done"},
+      blocks: [{type: "text", text: "Here's the plan."},
+        {type: "action", action: {type: "priority", operation: "create", title: "Stretch"}},
+        {type: "action", action: {type: "calendar", operation: "create", title: "Run"}}]}},
+    {id: "u", data: {role: "user", text: "Plan Saturday", conversationId: "c", t: 1}},
+  ]});
+  const {history} = await loadThread(db, "u", req(), 3);
+  assert.equal(history[1].text, "Here's the plan.\n[Proposed changes: create priority \"Stretch\": done; create calendar \"Run\": not confirmed]");
+  assert.equal(history[0].text, "Plan Saturday");
 });

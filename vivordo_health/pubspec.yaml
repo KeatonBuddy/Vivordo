@@ -105,7 +105,6 @@ flutter:
     - assets/whoop_puck_black.svg
     - assets/whoop_puck_white.svg
     - assets/achievements/
-    - assets/recommendations.json
     - assets/vivordo_robot.svg
 
 

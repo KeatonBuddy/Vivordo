@@ -173,31 +173,22 @@ class ClaudeService {
   // ---------------------------------------------------------------------------
   // processTurn
   //
-  // One chat turn through the `assistant` function, which owns the prompt and
-  // fetches health metrics and workouts itself. [context] carries what only
-  // the app has, keyed as the function expects: checkin, screen, schedule,
-  // priorities, insights, spikes, workout.
+  // One chat turn through the `assistant` function, which owns the prompt,
+  // keeps the thread and fetches health data itself. [context] carries what
+  // only the app has, keyed as the function expects: checkin, screen,
+  // schedule, priorities, insights, spikes, workout, demand.
   // ---------------------------------------------------------------------------
 
   Future<PandaTurnReply> processTurn({
     required String userMessage,
-    required List<Map<String, String>> conversationHistory,
     Map<String, String> context = const {},
     bool workoutCoach = false,
-    String? conversationId,
   }) async {
-    // The screen adds the message to the transcript before calling; the
-    // function appends it itself, so don't send it twice.
-    final history = [...conversationHistory];
-    if (history.isNotEmpty &&
-        history.last['role'] == 'user' &&
-        history.last['text'] == userMessage) {
-      history.removeLast();
-    }
+    // The server keeps the thread (users/{uid}/messages): it loads the
+    // conversation's earlier messages and saves this one with the reply.
     final now = DateTime.now();
     final result = await _call(_assistantFn, {
       'message': userMessage,
-      'history': history.where((t) => (t['text'] ?? '').isNotEmpty).toList(),
       'context': {
         for (final entry in context.entries)
           if (entry.value.trim().isNotEmpty) entry.key: entry.value,
@@ -206,33 +197,7 @@ class ClaudeService {
       'now': now.toIso8601String(),
       'utcOffsetMinutes': now.timeZoneOffset.inMinutes,
       'workoutCoach': workoutCoach,
-      'conversationId': ?conversationId,
     });
     return PandaPrompts.parseTurnReply(jsonEncode(result.data));
-  }
-
-  // ---------------------------------------------------------------------------
-  // summarizeSession
-  //
-  // The brief continuity note for a finished chat (or a stressor it
-  // surfaced), written server-side. Returns '' on any failure so the caller
-  // falls back to the deterministic summary.
-  // ---------------------------------------------------------------------------
-
-  Future<String> summarizeSession({
-    required List<Map<String, String>> conversation,
-    required Map<String, String> slots,
-    required Map<String, String> labeledAnswers,
-  }) async {
-    try {
-      return await _task('session_summary', {
-        'conversation': conversation,
-        'slots': slots,
-        'labeledAnswers': labeledAnswers,
-      });
-    } catch (e) {
-      if (kDebugMode) debugPrint('[Claude][summary] failed: $e');
-      return '';
-    }
   }
 }
