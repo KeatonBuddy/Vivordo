@@ -140,6 +140,14 @@ DayEffort buildDayEffort({
   List<Object?> untimedOpen = const [],
   List<({DateTime start, DateTime end, double intensity})> workouts = const [],
 }) {
+  // Only the day being built: Home passes a whole week of calendar events,
+  // and a later day's 3 PM must not become today's "next 3 PM" or add to
+  // today's Demand.
+  items = [
+    for (final item in items)
+      if (item.event.end.isAfter(from) && item.event.start.isBefore(until))
+        item,
+  ];
   List<HourlyCalendarLoad> loads(
     Iterable<(CalendarCognitiveEvent, CognitiveLoadScore)> rated,
   ) {

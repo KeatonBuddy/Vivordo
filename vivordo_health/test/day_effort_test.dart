@@ -42,6 +42,25 @@ void main() {
     workouts: workouts,
   );
 
+  test('items on other days are ignored (Home loads a week of events)', () {
+    // Tomorrow's 3 PM meeting and gym session must not become today's
+    // "next 3 PM" or add to today's Demand.
+    final tomorrow = at(15).add(const Duration(days: 1));
+    final effort = build(at(16, 30), [
+      item('today', at(10), at(11), 40),
+      item('meeting', tomorrow, tomorrow.add(const Duration(hours: 1)), 40),
+      item(
+        'gym',
+        tomorrow.add(const Duration(hours: 2)),
+        tomorrow.add(const Duration(hours: 3)),
+        40,
+      ),
+    ]);
+    expect(effort.nextStart, isNull);
+    expect(effort.aheadMinutes, 0);
+    expect(effort.demand, 0);
+  });
+
   test('an event in progress is done up to now and ahead after it', () {
     final effort = build(at(9, 30), [item('meeting', at(9), at(10), 40)]);
     final nine = effort.hours[1];
