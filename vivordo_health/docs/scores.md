@@ -220,6 +220,11 @@ collapses to a confirmation with Edit.
   done.
 - **Not enough data:** with no sleep, no overnight body data and no
   check-in, Capacity is shown as unavailable. It is never guessed.
+- **One reading never decides it:** a resting HR more than 12 bpm from your
+  normal is treated as a bad reading and left out (`restingHrIgnored`), and
+  with no sleep and no check-in, the body part needs both HRV and resting
+  HR. Otherwise the day is unavailable. (A lone resting HR of 67 against a
+  normal of 49 used to score 0.)
 - **Check-in only** (no sleep or body data yet): Capacity is the check-in
   (plus recovery from yesterday, once built), without the assumed neutral
   body, and is labelled "Based on your check-in" until sleep syncs.

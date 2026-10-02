@@ -14,6 +14,9 @@ const WEIGHTS = {sleep: 45, body: 35, recovery: 20, checkIn: 15};
 const NEUTRAL_BODY = 70; // a normal night
 const HISTORY_DAYS = 90;
 const MIN_BASELINE = 7; // HRV / resting HR readings needed for a normal
+// A resting HR this far from the person's normal is treated as a bad reading
+// (a partial day, a daytime value) and left out.
+const RESTING_HR_LIMIT = 12;
 const DAY_MS = 86400000;
 
 const median = (values) => {
@@ -100,17 +103,25 @@ function computeCapacity({today, history}) {
   };
   const hrvNormal = normal("hrv");
   const restingHrNormal = normal("restingHr");
-  const bodyParts = [];
+  let bodyParts = [];
   if (finite(today.hrv) && hrvNormal) {
     bodyParts.push(clamp(70 + 100 * (today.hrv / hrvNormal - 1)));
   }
-  if (finite(today.restingHr) && restingHrNormal) {
+  const restingHrIgnored = finite(today.restingHr) &&
+    restingHrNormal !== null &&
+    Math.abs(today.restingHr - restingHrNormal) > RESTING_HR_LIMIT;
+  if (finite(today.restingHr) && restingHrNormal && !restingHrIgnored) {
     bodyParts.push(clamp(70 - 6 * (today.restingHr - restingHrNormal)));
   }
-  const bodyMeasured = bodyParts.length > 0;
   const checkInParts = [today.checkInFeel, today.checkInSleep].filter(finite);
   const checkIn = checkInParts.length ?
     clamp(checkInParts.reduce((a, b) => a + b) / checkInParts.length) : null;
+  // Without sleep or a check-in, one body reading would decide the whole
+  // score, so it takes both HRV and resting HR (never guessed from one).
+  if (sleep === null && checkIn === null && bodyParts.length < 2) {
+    bodyParts = [];
+  }
+  const bodyMeasured = bodyParts.length > 0;
   if (sleep === null && !bodyMeasured && checkIn === null) return null;
   // With only a check-in, the assumed neutral body would dilute the one real
   // signal, so it is left out until sleep or body data arrives.
@@ -148,6 +159,7 @@ function computeCapacity({today, history}) {
     hrvNormal,
     restingHr: finite(today.restingHr) ? today.restingHr : null,
     restingHrNormal,
+    restingHrIgnored,
   };
 }
 

@@ -48,6 +48,9 @@ test("no sleep and no measured body is unavailable, never guessed", () => {
   assert.equal(computeCapacity({history: history(), today: {}}), null);
   const bodyOnly = computeCapacity({history: history(), today: {hrv: 60, restingHr: 55}});
   assert.equal(bodyOnly.provisional, true, "waiting for last night's sleep");
+  // One body reading alone never decides the score.
+  assert.equal(computeCapacity({history: history(), today: {restingHr: 55}}), null);
+  assert.equal(computeCapacity({history: history(), today: {hrv: 60}}), null);
 });
 
 test("a check-in alone gives a provisional Capacity without the assumed body", () => {
@@ -95,4 +98,19 @@ test("only sleep, HRV, resting HR and check-in changes trigger a recalculation",
   assert.equal(capacityInputs({morning_check_in: {feel: 75, sleep: 50}}).checkInSleep, 50);
   const bedtime = {toDate: () => new Date("2026-09-30T05:15:00Z")};
   assert.equal(capacityInputs({sleep: {avg: 7, bedtime}}).bedtimeMin, 5 * 60 + 15);
+});
+
+test("an implausible resting HR is left out, never a 0 from one bad reading", () => {
+  // Sept 29 on a real account: no sleep, resting HR 67 against a normal of
+  // 49 (neighbouring days 47–53). It used to score 0 and lock.
+  const normal49 = history({restingHr: 49});
+  assert.equal(computeCapacity({history: normal49, today: {restingHr: 67, hrv: 60}}), null,
+      "bad resting HR dropped, HRV alone isn't enough");
+  const withSleep = computeCapacity({history: normal49, today: {sleepHours: 7.5, restingHr: 67}});
+  assert.equal(withSleep.restingHrIgnored, true);
+  assert.equal(withSleep.parts.body, 70, "neutral, as with no body data");
+  // Within 12 bpm still counts.
+  const elevated = computeCapacity({history: normal49, today: {sleepHours: 7.5, restingHr: 56}});
+  assert.equal(elevated.restingHrIgnored, false);
+  assert.equal(elevated.parts.body, 28);
 });
