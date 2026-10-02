@@ -1306,49 +1306,6 @@ class _BodyCardState extends State<_BodyCard> {
     return null;
   }
 
-  // ponytail: a scan older than the 30 shared days shows "--"; an unbounded
-  // live listener re-sent every day on each write.
-  static int? _latestBpm(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
-    for (final doc in sortedDocs) {
-      final data = doc.data();
-      final savedScan = data['heart_rate_scan'] as Map?;
-      if (savedScan != null) {
-        final rawEntries = savedScan['entries'];
-        if (rawEntries is List && rawEntries.isNotEmpty) {
-          Map? latestEntry;
-          DateTime? latestTime;
-          for (final entry in rawEntries) {
-            if (entry is! Map || entry['bpm'] is! num) continue;
-            final timestamp = entry['timestamp'];
-            final entryTime = timestamp is Timestamp
-                ? timestamp.toDate()
-                : null;
-            if (latestEntry == null ||
-                (entryTime != null &&
-                    (latestTime == null || entryTime.isAfter(latestTime)))) {
-              latestEntry = entry;
-              latestTime = entryTime;
-            }
-          }
-          final bpm = latestEntry?['bpm'];
-          if (bpm is num) return bpm.round();
-        }
-
-        final legacyBpm = savedScan['avg'];
-        if (legacyBpm is num) return legacyBpm.round();
-      }
-
-      final heartRate = data['heart_rate'] as Map?;
-      if (heartRate?['source'] == 'camera_ppg' && heartRate?['avg'] is num) {
-        return (heartRate!['avg'] as num).round();
-      }
-    }
-    return null;
-  }
-
   static String _number(double? value) {
     if (value == null) return '--';
     return value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
@@ -1378,12 +1335,8 @@ class _BodyCardState extends State<_BodyCard> {
             final bmi = height != null && height > 0 && weight != null
                 ? weight / math.pow(height / 100, 2)
                 : null;
-            final bpm = _latestBpm(docs);
             final hasValues =
-                bpm != null ||
-                height != null ||
-                weight != null ||
-                bodyFat != null;
+                height != null || weight != null || bodyFat != null;
             final updatedAt = !hasValues
                 ? null
                 : profile.updatedAt ??
@@ -1419,13 +1372,6 @@ class _BodyCardState extends State<_BodyCard> {
                       ),
                       child: Row(
                         children: [
-                          Expanded(
-                            child: _ProfileMetric(
-                              label: 'HEART',
-                              value: bpm == null ? '--' : '$bpm bpm',
-                            ),
-                          ),
-                          const _ProfileDivider(),
                           Expanded(
                             child: _ProfileMetric(
                               label: 'WEIGHT',
