@@ -408,6 +408,27 @@ and words, never a score.
   time. Known limit: a mix of day and night sleeps gives a meaningless
   median midpoint.
 
+**Phase 2 implemented** (logic only, not yet shown) in
+`lib/src/utils/energy_fit.dart`: `fitDayToEnergy` judges the day's items
+still ahead (Your Day's events and timed priorities) against the forecast.
+
+- **Hard work:** focused-work and high-consequence events, and priorities
+  rated demanding.
+- **Light work:** routine events and light priorities.
+- **Judged at** 30 minutes in (or the middle, if shorter), so a meeting that
+  starts just before the dip still counts as in it.
+- **Clash:** hard work in the groggy, dip or wind-down window. At most 2 a
+  day, hardest first.
+- **Good fit:** hard work in the peak or second wind, or light work in the
+  dip.
+- **Movable:** timed priorities, and events with no other guests. Events
+  with other people get the note only.
+- **Suggested slot** (movable clashes only): the free start nearest the
+  item's current time in the peak, else the second wind. It must be on the
+  same day, at least 15 min from now, and end before wind-down. Declined,
+  cancelled, all-day and free-time events don't block slots, and the item
+  never blocks its own new slot.
+
 ## Open questions
 
 None. Decided (2026-10-01):
