@@ -10,7 +10,7 @@ This Policy applies to Vivordo users in the United States, Canada, and other jur
 
 Vivordo is not a health-care provider or insurer, and the service is not intended to provide medical advice, diagnosis, or treatment. Laws such as HIPAA or provincial health-information laws may not apply to Vivordo in every circumstance. Regardless, we treat health and fitness information as sensitive personal information.
 
-For privacy questions or requests, contact **contact@vivordo.com**.
+For privacy questions or requests, contact **contact.vivordo@gmail.com**.
 
 ## Information We Collect
 
@@ -193,7 +193,7 @@ Depending on your location, you may have the right to:
 - opt out of marketing communications; and
 - appeal or complain to an applicable privacy regulator.
 
-To submit a privacy request, use an available in-app control or email **contact@vivordo.com**. We may need to verify your identity before completing a request. We will respond within the period required by applicable law.
+To submit a privacy request, use an available in-app control or email **contact.vivordo@gmail.com**. We may need to verify your identity before completing a request. We will respond within the period required by applicable law.
 
 California residents may have rights under the CCPA/CPRA, including rights to know, correct, and delete covered personal information and to opt out of sale or sharing. Vivordo does not sell personal information and does not share sensitive personal information for cross-context behavioral advertising.
 
@@ -216,4 +216,4 @@ We may update this Policy as Vivordo, connected services, and legal requirements
 For privacy questions, requests, or complaints, contact:
 
 **Vivordo**  
-**Email: contact@vivordo.com**
+**Email: contact.vivordo@gmail.com**
