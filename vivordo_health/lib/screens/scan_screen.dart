@@ -207,8 +207,6 @@ class _ScanScreenState extends State<ScanScreen>
 
   Future<void> _initializeCameraController() async {
     CameraController? controller;
-    // TEMP_PREVIEW
-    if (mounted) setState(() { _finalBpm = 72; _scanState = ScanState.success; }); return;
     try {
       final cameras = await availableCameras();
       final backCameras = cameras
