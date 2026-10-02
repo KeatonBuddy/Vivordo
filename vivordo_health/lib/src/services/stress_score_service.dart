@@ -40,14 +40,15 @@ import 'calendar_baas_context.dart';
 /// NOTE ON DATA QUALITY
 /// ────────────────────
 /// The BaaS preprocessor computes hour-matched rolling z-scores over 14 days
-/// of INTRADAY samples. Until the app ships raw per-minute HealthKit readings,
-/// this service reconstructs synthetic intraday samples from daily aggregates
-/// stored in metrics_daily. This yields confidence="low/medium" from the BaaS
-/// because baselines can only be estimated, not computed from per-hour windows.
+/// of INTRADAY samples. The payload is hybrid (see [kRawSampleDays]): the last
+/// 3 days carry real HealthKit samples with their timestamps
+/// (HealthService.getRawSamplesForBaas), and older days are reconstructed as
+/// one point per metric per day from metrics_daily, only to seed the
+/// baselines.
 ///
-/// To improve: add a getRawSamplesForBaas() method on HealthService that reads
-/// raw HealthKit data points directly and passes them here instead of the
-/// synthetic samples built from Firestore aggregates.
+/// Known limits: hour-of-day baselines come from those daily points, and
+/// metrics whose canonical source is WHOOP or Fitbit drop the Apple samples
+/// and fall back to the daily point, since those sources are stored daily.
 class StressScoreService {
   static const kApiUrl = 'https://vivordo-baas.onrender.com/baas/score';
 
