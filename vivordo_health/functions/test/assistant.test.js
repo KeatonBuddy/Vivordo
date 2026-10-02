@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const {
   runAssistant, validateAssistantRequest, buildMessages, metricValue, dayRange,
   scoreLine, getScores, planMemoryChange, loadThread, getPriorities, planPriority,
-  planCalendar, visibleOnDay, chartBlock, sourceBlocks, SYSTEM_PROMPT, TOOLS,
+  planCalendar, visibleOnDay, chartBlock, sourceBlocks, SYSTEM_PROMPT, TOOLS, saveMessages,
 } = require("../assistant");
 
 const base = {message: "How did I sleep?", today: "2026-10-01", now: "2026-10-01T09:30:00", utcOffsetMinutes: -360};
@@ -509,6 +509,7 @@ test("a full turn returns text, chart, actions and sources as blocks, plus sugge
   assert.equal(reply.chart, undefined, "the raw chart request isn't sent on");
   assert.match(SYSTEM_PROMPT, /HOW REPLIES LOOK/);
   assert.match(SYSTEM_PROMPT, /\[Proposed changes: \.\.\.\] saying whether each was done/);
+  assert.match(SYSTEM_PROMPT, /\[Asked from the "X" insight\]/);
 });
 
 test("the thread: continues within 6 hours, starts a new conversation after", async () => {
@@ -562,4 +563,25 @@ test("the thread tells the model what became of earlier proposals", async () => 
   const {history} = await loadThread(db, "u", req(), 3);
   assert.equal(history[1].text, "Here's the plan.\n[Proposed changes: create priority \"Stretch\": done; create calendar \"Run\": not confirmed]");
   assert.equal(history[0].text, "Plan Saturday");
+});
+
+test("a message sent from an insight card says so, to the model and in the thread", async () => {
+  const request = validateAssistantRequest({message: "What does this mean?", today: "2026-10-01", now: "x", askedFrom: " Daily sleep "});
+  assert.equal(request.askedFrom, "Daily sleep");
+  assert.equal(validateAssistantRequest({message: "hi", today: "2026-10-01", now: "x", askedFrom: 5}).askedFrom, null);
+  const db = fakeDb({messages: [
+    {id: "u", data: {role: "user", text: "What does this mean?", askedFrom: "Daily sleep", conversationId: "c", t: 1}},
+  ]});
+  const {history} = await loadThread(db, "u", req(), 2);
+  assert.equal(history[0].text, "[Asked from the \"Daily sleep\" insight] What does this mean?");
+  await saveMessages(db, "u", {...request, conversationId: "c"}, {message: "ok"}, () => "ts", 5, () => 6);
+  const saved = db.writes.filter((w) => w.path.includes("/messages/")).map((w) => w.data);
+  assert.equal(saved[0].askedFrom, "Daily sleep");
+  assert.equal(saved[1].askedFrom, undefined);
+});
+
+test("the current message carries its insight note to the model", () => {
+  const request = validateAssistantRequest({...base, message: "What can I do about it?", askedFrom: "Daily sleep"});
+  const last = buildMessages(request, {facts: [], summaries: []}).at(-1);
+  assert.equal(last.content.at(-1).text, "[Asked from the \"Daily sleep\" insight] What can I do about it?");
 });

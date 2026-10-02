@@ -181,6 +181,7 @@ class ClaudeService {
 
   Future<PandaTurnReply> processTurn({
     required String userMessage,
+    String? askedFrom,
     Map<String, String> context = const {},
     bool workoutCoach = false,
   }) async {
@@ -189,6 +190,7 @@ class ClaudeService {
     final now = DateTime.now();
     final result = await _call(_assistantFn, {
       'message': userMessage,
+      'askedFrom': ?askedFrom,
       'context': {
         for (final entry in context.entries)
           if (entry.value.trim().isNotEmpty) entry.key: entry.value,

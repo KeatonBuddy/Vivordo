@@ -51,6 +51,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   late final _ContentNavigatorObserver _contentNavigatorObserver;
   final _insights = ScreenInsightController();
   final _contextPrompt = ValueNotifier<ScreenInsight?>(null);
+  // Asked from a screen's insight bar, the chat rises as a sheet over that
+  // screen; the robot button (or expanding the sheet) shows the full thread.
+  final _chatSheet = ValueNotifier<bool>(false);
   Offset _chatRevealOrigin = Offset.zero;
   bool _chatOpen = false;
   bool _detailRouteOpen = false;
@@ -101,6 +104,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       onClose: _closeChat,
       contextPrompt: _contextPrompt,
       onOpenScreen: _openFromAssistant,
+      sheet: _chatSheet,
+      onExpand: () => setState(() => _chatSheet.value = false),
     );
     _pandaHasBeenOpened = widget.initialIndex == 5;
     _chatRevealController = AnimationController(
@@ -176,6 +181,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _homeStressReveal.dispose();
     _insights.dispose();
     _contextPrompt.dispose();
+    _chatSheet.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -273,7 +279,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   /// Opens Panda chat, growing it out of [from] (the robot button that was
   /// tapped) or, when opened another way, out of the button's usual corner.
-  void _openChat({BuildContext? from}) {
+  void _openChat({BuildContext? from, bool sheet = false}) {
     if (_chatOpen) return;
     final bubbleBox = from?.findRenderObject() as RenderBox?;
     final origin = bubbleBox == null
@@ -285,6 +291,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _tabActivity[_selectedIndex].value = false;
     setState(() {
       _chatRevealOrigin = origin;
+      _chatSheet.value = sheet;
       _pandaHasBeenOpened = true;
       _chatOpen = true;
     });
@@ -431,31 +438,58 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                       collapsed: _buildChatBubble(),
                       onAsk: (prompt) {
                         _contextPrompt.value = _insights.current;
-                        _openChat();
+                        _openChat(sheet: true);
                       },
                     ),
                   ),
                 ),
               ),
             ),
-            if (_pandaHasBeenOpened)
+            if (_pandaHasBeenOpened && _chatOpen && _chatSheet.value)
               Positioned.fill(
+                child: GestureDetector(
+                  onTap: _closeChat,
+                  child: FadeTransition(
+                    opacity: _chatRevealAnimation,
+                    child: const ColoredBox(color: Colors.black38),
+                  ),
+                ),
+              ),
+            if (_pandaHasBeenOpened)
+              AnimatedPositioned(
                 key: const ValueKey('persistent-ai-chat-layer'),
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeOutCubic,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                top: _chatSheet.value
+                    ? MediaQuery.sizeOf(context).height * .24
+                    : 0,
                 child: TickerMode(
                   enabled: _chatOpen,
                   child: IgnorePointer(
                     ignoring: !_chatOpen,
                     child: AnimatedBuilder(
                       animation: _chatRevealAnimation,
-                      // Reuse one mounted chat instance so closing the circular
-                      // reveal never resets the current conversation.
+                      // Reuse one mounted chat instance so closing never
+                      // resets the current conversation. Sheet or full, the
+                      // widgets above it stay the same, or its state is lost.
                       child: _persistentChatScreen,
-                      builder: (context, child) => ClipPath(
-                        clipper: _CircularRevealClipper(
-                          origin: _chatRevealOrigin,
-                          progress: _chatRevealAnimation.value,
+                      builder: (context, child) => FractionalTranslation(
+                        translation: Offset(
+                          0,
+                          _chatSheet.value ? 1 - _chatRevealAnimation.value : 0,
                         ),
-                        child: child,
+                        child: ClipPath(
+                          clipper: _chatSheet.value
+                              ? const _SheetClipper()
+                              : _CircularRevealClipper(
+                                  origin: _chatRevealOrigin,
+                                  progress: _chatRevealAnimation.value,
+                                ),
+                          child: child,
+                        ),
                       ),
                     ),
                   ),
@@ -696,6 +730,23 @@ class _ContentNavigatorObserver extends NavigatorObserver {
     }
     onChanged();
   }
+}
+
+class _SheetClipper extends CustomClipper<Path> {
+  const _SheetClipper();
+
+  @override
+  Path getClip(Size size) => Path()
+    ..addRRect(
+      RRect.fromRectAndCorners(
+        Offset.zero & size,
+        topLeft: const Radius.circular(28),
+        topRight: const Radius.circular(28),
+      ),
+    );
+
+  @override
+  bool shouldReclip(_SheetClipper oldClipper) => false;
 }
 
 class _CircularRevealClipper extends CustomClipper<Path> {

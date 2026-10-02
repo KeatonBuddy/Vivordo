@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -51,6 +52,8 @@ class AssistantScreen extends StatefulWidget {
     this.onClose,
     this.contextPrompt,
     this.onOpenScreen,
+    this.sheet,
+    this.onExpand,
   });
 
   final VoidCallback? onClose;
@@ -59,6 +62,11 @@ class AssistantScreen extends StatefulWidget {
   /// Opens one of the app's screens (a source chip's `screen`).
   final void Function(String screen)? onOpenScreen;
 
+  /// True while shown as a sheet over the screen it was asked from: only
+  /// this exchange shows, with a handle to expand to the full thread.
+  final ValueListenable<bool>? sheet;
+  final VoidCallback? onExpand;
+
   @override
   State<AssistantScreen> createState() => _AssistantScreenState();
 }
@@ -66,6 +74,7 @@ class AssistantScreen extends StatefulWidget {
 class _AssistantScreenState extends State<AssistantScreen> {
   final _svc = ClaudeService();
   final _input = TextEditingController();
+  final _scroll = ScrollController();
   String _uid = '';
   String _name = 'there';
 
@@ -86,6 +95,10 @@ class _AssistantScreenState extends State<AssistantScreen> {
   DateTime? _prioritiesAt;
   ScreenInsight? _screen;
   WorkoutOpening? _workoutOpening;
+  // Messages already in the thread when the chat was opened from a screen;
+  // the sheet hides them.
+  Set<String> _idsBeforeOpening = const {};
+  bool _openedBeforeLoad = false;
 
   // The check-in card about a recent high-stress day.
   List<PandaQuestion> _questions = const [];
@@ -105,6 +118,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
         user?.email?.split('@').first ??
         'there';
     widget.contextPrompt?.addListener(_receiveContext);
+    widget.sheet?.addListener(_rebuild);
     _receiveContext();
     unawaited(_start());
   }
@@ -112,10 +126,18 @@ class _AssistantScreenState extends State<AssistantScreen> {
   @override
   void dispose() {
     widget.contextPrompt?.removeListener(_receiveContext);
+    widget.sheet?.removeListener(_rebuild);
     _workoutOpening?.invalidate();
     _sub?.cancel();
     _input.dispose();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  bool get _asSheet => widget.sheet?.value ?? false;
+
+  void _rebuild() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _start() async {
@@ -135,6 +157,10 @@ class _AssistantScreenState extends State<AssistantScreen> {
           if (!mounted) return;
           setState(() {
             _messages = snapshot.docs.reversed.toList();
+            if (_openedBeforeLoad) {
+              _openedBeforeLoad = false;
+              _idsBeforeOpening = {for (final m in _messages) m.id};
+            }
             _ready = true;
             final pending = _pendingText;
             if (pending != null &&
@@ -174,6 +200,8 @@ class _AssistantScreenState extends State<AssistantScreen> {
         : null;
     setState(() {
       _screen = insight;
+      _idsBeforeOpening = {for (final m in _messages) m.id};
+      _openedBeforeLoad = !_ready;
       _local.removeWhere((item) => item.kind == 'opening');
       _local.add(_LocalItem('opening'));
     });
@@ -309,8 +337,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
       ? 'You’ve reached today’s Vivordo AI limit. It resets tomorrow.'
       : 'That didn’t send. Check your connection and try again.';
 
-  Future<void> _send([String? preset]) async {
+  /// [askedFrom] is the insight card the message was sent from; in the
+  /// sheet every message is about that insight.
+  Future<void> _send([String? preset, String? askedFrom]) async {
     final text = (preset ?? _input.text).trim();
+    askedFrom ??= _asSheet ? _screen?.title : null;
     if (text.isEmpty || _sending || _uid.isEmpty) return;
     if (!await AiConsent.granted(_uid)) {
       if (mounted) setState(() => _needsConsent = true);
@@ -324,10 +355,21 @@ class _AssistantScreenState extends State<AssistantScreen> {
       _idsBeforeSend = {for (final m in _messages) m.id};
       _local.removeWhere((item) => item.kind == 'unsent');
     });
+    // The list is reversed: offset 0 is the newest message.
+    if (_scroll.hasClients) {
+      unawaited(
+        _scroll.animateTo(
+          0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        ),
+      );
+    }
     try {
       await _svc
           .processTurn(
             userMessage: text,
+            askedFrom: askedFrom,
             context: await _turnContext(),
             workoutCoach: _screen?.screen == 'workout_summary',
           )
@@ -440,12 +482,16 @@ class _AssistantScreenState extends State<AssistantScreen> {
   // ── Building the thread ───────────────────────────────────────────────────
 
   List<_Row> _rows() {
-    final rows = <_Row>[
+    // As a sheet, the thread starts at the card it was opened with.
+    final opening = _local.where((item) => item.kind == 'opening').firstOrNull;
+    final sheet = _asSheet && opening != null;
+    return <_Row>[
       for (final m in _messages)
-        (t: (m.data()?['t'] as num?)?.toInt() ?? 0, doc: m, local: null),
-      for (final item in _local) (t: item.t, doc: null, local: item),
+        if (!sheet || !_idsBeforeOpening.contains(m.id))
+          (t: (m.data()?['t'] as num?)?.toInt() ?? 0, doc: m, local: null),
+      for (final item in _local)
+        if (!sheet || item.t >= opening.t) (t: item.t, doc: null, local: item),
     ]..sort((a, b) => a.t.compareTo(b.t));
-    return rows;
   }
 
   @override
@@ -454,8 +500,10 @@ class _AssistantScreenState extends State<AssistantScreen> {
     return Scaffold(
       backgroundColor: colors.page,
       body: SafeArea(
+        top: !_asSheet,
         child: Column(
           children: [
+            if (_asSheet) _handle(),
             _header(),
             Expanded(child: _needsConsent ? _consentView() : _thread()),
             if (!_needsConsent) _inputBar(),
@@ -492,18 +540,77 @@ class _AssistantScreenState extends State<AssistantScreen> {
                   ),
                 ),
                 Text(
-                  _sending ? 'Thinking…' : 'Personal health companion',
+                  _sending
+                      ? 'Thinking…'
+                      : _asSheet && _screen != null
+                      ? 'Looking at: ${_screen!.title}'
+                      : 'Personal health companion',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: colors.textSecondary, fontSize: 12),
                 ),
               ],
             ),
           ),
+          if (_asSheet && widget.onExpand != null)
+            IconButton(
+              tooltip: 'Open full conversation',
+              icon: Icon(
+                Icons.open_in_full_rounded,
+                color: colors.textSecondary,
+              ),
+              onPressed: widget.onExpand,
+            ),
           IconButton(
             tooltip: 'Data & privacy',
             icon: Icon(Icons.shield_outlined, color: colors.textSecondary),
             onPressed: _showPrivacy,
           ),
         ],
+      ),
+    );
+  }
+
+  /// Above a message sent from an insight card.
+  Widget _askedFrom(String title) => Align(
+    alignment: Alignment.centerRight,
+    child: Text(
+      'Asked from $title',
+      style: TextStyle(
+        color: context.vivordoColors.textSecondary,
+        fontSize: 12,
+      ),
+    ),
+  );
+
+  /// Tap or swipe up for the full thread, swipe down to close.
+  Widget _handle() {
+    final colors = context.vivordoColors;
+    return Semantics(
+      button: true,
+      label: 'Open full conversation',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onExpand,
+        onVerticalDragEnd: (details) {
+          final velocity = details.primaryVelocity ?? 0;
+          if (velocity < -200) widget.onExpand?.call();
+          if (velocity > 200) widget.onClose?.call();
+        },
+        child: SizedBox(
+          height: 22,
+          width: double.infinity,
+          child: Center(
+            child: Container(
+              width: 40,
+              height: 5,
+              decoration: BoxDecoration(
+                color: colors.textSecondary.withValues(alpha: .4),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -529,6 +636,8 @@ class _AssistantScreenState extends State<AssistantScreen> {
       if (data['role'] == 'user') {
         if (crisisCard) children.add(const CrisisSupportCard());
         final text = data['text'] as String? ?? '';
+        final askedFrom = data['askedFrom'];
+        if (askedFrom is String) children.add(_askedFrom(askedFrom));
         children.add(AssistantBubble(text: text, mine: true));
         crisisCard = mentionsCrisis(text);
         continue;
@@ -552,6 +661,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     if (children.isEmpty) children.add(_welcome());
 
     return ListView.separated(
+      controller: _scroll,
       reverse: true,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       itemCount: children.length,
@@ -726,7 +836,9 @@ class _AssistantScreenState extends State<AssistantScreen> {
         const SizedBox(height: 12),
         SuggestionChips(
           suggestions: chips,
-          onTap: _sending || (opening?.busy ?? false) ? null : _send,
+          onTap: _sending || (opening?.busy ?? false)
+              ? null
+              : (question) => _send(question, screen.title),
         ),
       ],
     );
