@@ -21,7 +21,7 @@ const SCORE_SERIES = ["capacity", "effort", "physical_health"];
 // The app screen each kind of data lives on, for source chips and charts.
 const SCREENS = {
   sleep: "sleep", hrv: "heart", resting_heart_rate: "heart",
-  heart_rate: "heart", heart_health: "heart", stress: "stress", mood: "mood",
+  heart_rate: "heart", stress: "stress", mood: "mood",
   steps: "fitness", exercise_time: "fitness", active_calories: "fitness",
   distance: "fitness", weight: "body", blood_oxygen: "heart",
   respiratory_rate: "heart", capacity: "my_day", effort: "my_day",
@@ -29,7 +29,7 @@ const SCREENS = {
 };
 const LABELS = {
   sleep: "Sleep", hrv: "HRV", resting_heart_rate: "Resting heart rate",
-  heart_rate: "Heart rate", heart_health: "Heart", stress: "Stress",
+  heart_rate: "Heart rate", stress: "Stress",
   mood: "Mood", steps: "Steps", exercise_time: "Exercise",
   active_calories: "Active calories", distance: "Distance", weight: "Weight",
   blood_oxygen: "Blood oxygen", respiratory_rate: "Breathing rate",
@@ -43,7 +43,7 @@ const UNITS = {
 
 const METRICS = [
   "steps", "sleep", "hrv", "resting_heart_rate", "heart_rate", "stress",
-  "mood", "heart_health", "exercise_time", "active_calories", "distance",
+  "mood", "exercise_time", "active_calories", "distance",
   "weight", "blood_oxygen", "respiratory_rate",
 ];
 
@@ -92,7 +92,6 @@ VIVORDO SCORES (use these names; never call them anything else)
 - Energy forecast (not a score): today's predicted energy windows from sleep and body clock (groggy start, peak, afternoon dip, second wind, wind-down, bed-by), sleep debt, and any hard work still ahead that lands in a low window (a clash, with a suggested time when it can move); in the evening, tomorrow's windows too. Only the app can calculate it, so it arrives as ENERGY in CONTEXT when available. It's a forecast, not a measurement. For "when should I…" questions, suggest times in the peak or second wind and keep demanding work out of the dip and wind-down; to move something, propose the change for the user to confirm. Without ENERGY, don't invent windows; say the forecast is on Home and My Day.
 - Effort (points, daily): what the day actually took: events that happened, priorities done, back-to-back and after-hours time (mental), plus workouts and activity (physical). It grows through the day and is final at midnight. There is no fixed "good" Effort; compare it with the user's recent days.
 - Stress (0-100): the live stress level from heart data (get_metrics stress).
-- Heart (0-100): long-term heart health against the user's own baseline (get_metrics heart_health).
 - Physical Health (0-100): active minutes, steps, strength sessions, cardio fitness (VO2 max) and sleep habits over recent weeks. Excellent 90+, good 70-89, fair 50-69, low under 50. It says "building" until there's enough data.
 - Burnout check: compares recent Capacity, Effort and mood with the user's long-term normal. Levels: learning (needs about 6 weeks of data), steady, watch, warning. It runs each night and is saved on the day that just ended, so for the current result fetch at least the last 3 days and use the most recent one. Describe a warning gently as a pattern worth a look, never a verdict.
 - Wellness was retired and replaced by Capacity and Physical Health. There is no sleep score: sleep feeds Capacity and Physical Health.
@@ -146,8 +145,8 @@ const TOOLS = [
     description:
       "Daily health totals from the user's synced devices for a date range " +
       "(at most 92 days). Use before stating any health number. sleep is " +
-      "hours with stage minutes awake/core/deep/rem; stress, mood and " +
-      "heart_health are 0-100 scores; hrv is ms; heart rates are bpm.",
+      "hours with stage minutes awake/core/deep/rem; stress and mood are " +
+      "0-100 scores; hrv is ms; heart rates are bpm.",
     input_schema: {
       type: "object",
       properties: {

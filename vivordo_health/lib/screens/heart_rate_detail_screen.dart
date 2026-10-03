@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
-import 'package:vivordo_health/src/utils/heart_health_score.dart';
+import 'package:vivordo_health/src/utils/hrv.dart';
 import 'package:vivordo_health/src/utils/heart_rate_insight.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
@@ -91,17 +91,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           .toList();
       final resting = ((data['resting_heart_rate'] as Map?)?['avg'] as num?)
           ?.toDouble();
-      final heartHealth = data['heart_health'] as Map?;
-      final heartHealthScore = (heartHealth?['avg'] as num?)?.toDouble();
-      final heartHealthStatus = heartHealth?['status'] as String?;
-      return _HeartDay(
-        date,
-        readings,
-        resting,
-        heartHealthScore,
-        heartHealthStatus,
-        hrvReadings(data),
-      );
+      return _HeartDay(date, readings, resting, hrvReadings(data));
     }).toList();
   }
 
@@ -110,8 +100,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     return List.generate(rangeDays, (index) {
       final date = today.subtract(Duration(days: rangeDays - index - 1));
-      return byKey[keyFor(date)] ??
-          _HeartDay(date, const [], null, null, null, const {});
+      return byKey[keyFor(date)] ?? _HeartDay(date, const [], null, const {});
     });
   }
 
@@ -220,14 +209,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final high = storedReadings.isEmpty
         ? null
         : storedReadings.reduce(math.max).round();
-    final latestDay = days.isEmpty ? null : days.last;
-    final heartHealthScores = days
-        .map((day) => day.heartHealthScore)
-        .whereType<double>()
-        .toList();
-    final displayedHeartHealth = rangeIndex == 0
-        ? latestDay?.heartHealthScore
-        : average(heartHealthScores);
     // One HRV kind only: devices measure it differently (see hrvKinds).
     final hrvKind = hrvKinds
         .where((kind) => days.any((day) => day.hrv.containsKey(kind)))
@@ -287,19 +268,10 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
             ),
             const SizedBox(height: 18),
           ],
-          summary(
-            avg,
-            low,
-            high,
-            heartHealthScore: displayedHeartHealth,
-            heartHealthStatus: rangeIndex == 0
-                ? latestDay?.heartHealthStatus
-                : heartHealthScores.isEmpty
-                ? 'unavailable'
-                : 'ready',
-            heartHealthScoreCount: heartHealthScores.length,
+          summary(avg, low, high),
+          section(
+            rangeIndex == 0 ? '$rangeName trend' : 'Resting heart rate trend',
           ),
-          section('$rangeName trend'),
           chart(chartDays, chartEntries, restingAvg),
           section('Heart rate zones'),
           zones(storedReadings),
@@ -312,7 +284,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
             buildHeartRateInsight(
               isDay: rangeIndex == 0,
               readings: insightReadings,
-              heartHealthScore: displayedHeartHealth,
               restingAverage: restingAvg,
               restingChange: change,
             ),
@@ -692,152 +663,18 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     );
   }
 
-  Widget summary(
-    double? avg,
-    int? low,
-    int? high, {
-    double? heartHealthScore,
-    String? heartHealthStatus,
-    required int heartHealthScoreCount,
-  }) {
-    final avgText = avg?.round().toString() ?? '--';
-    final isDay = rangeIndex == 0;
-    final heartHealthText = heartHealthScore?.round().toString() ?? '--';
-    final heartHealthDescription = isDay
-        ? switch (heartHealthStatus) {
-            'building_baseline' => 'Building your personal baseline',
-            'unavailable' => 'Not enough data to calculate',
-            _ when heartHealthScore != null =>
-              'Personalized cardiovascular score',
-            _ => 'No Heart Health score available',
-          }
-        : heartHealthScore == null
-        ? 'No Heart Health scores available for this period'
-        : 'Average across $heartHealthScoreCount '
-              '${heartHealthScoreCount == 1 ? 'day' : 'days'} with available scores';
-    final heartHealthColor = heartHealthScore == null
-        ? context.vivordoColors.textSecondary
-        : heartHealthScore >= 75
-        ? const Color(0xFF20B26B)
-        : heartHealthScore >= 50
-        ? const Color(0xFFFF9500)
-        : red;
-    return card(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            isDay
-                                ? 'HEART HEALTH SCORE'
-                                : 'AVERAGE HEART HEALTH',
-                            style: TextStyle(
-                              color: context.vivordoColors.textSecondary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'How Heart Health works',
-                          onPressed: _showHeartHealthInfo,
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.all(4),
-                          constraints: const BoxConstraints(
-                            minWidth: 32,
-                            minHeight: 32,
-                          ),
-                          icon: const Icon(
-                            Icons.info_outline_rounded,
-                            color: purple,
-                            size: 20,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      heartHealthDescription,
-                      style: TextStyle(
-                        color: context.vivordoColors.textSecondary,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-              SizedBox(
-                width: 112,
-                height: 112,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox.expand(
-                      child: CircularProgressIndicator(
-                        value: ((heartHealthScore ?? 0) / 100)
-                            .clamp(0.0, 1.0)
-                            .toDouble(),
-                        strokeWidth: 11,
-                        strokeCap: StrokeCap.round,
-                        color: heartHealthColor,
-                        backgroundColor: context.vivordoColors.cardMuted,
-                      ),
-                    ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.favorite_border_rounded,
-                          color: red,
-                          size: 23,
-                        ),
-                        Text(
-                          heartHealthText,
-                          style: const TextStyle(
-                            fontSize: 29,
-                            height: 1,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        Text(
-                          '/100',
-                          style: TextStyle(
-                            color: context.vivordoColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              stat('Low', low?.toString() ?? '--', unit: 'bpm'),
-              divider(),
-              stat('Average', avgText, unit: 'bpm'),
-              divider(),
-              stat('High', high?.toString() ?? '--', unit: 'bpm'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  Widget summary(double? avg, int? low, int? high) => card(
+    padding: const EdgeInsets.all(20),
+    child: Row(
+      children: [
+        stat('Low', low?.toString() ?? '--', unit: 'bpm'),
+        divider(),
+        stat('Average', avg?.round().toString() ?? '--', unit: 'bpm'),
+        divider(),
+        stat('High', high?.toString() ?? '--', unit: 'bpm'),
+      ],
+    ),
+  );
 
   Widget stat(String label, String value, {String? unit}) => Expanded(
     child: Column(
@@ -878,65 +715,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   Widget divider() =>
       Container(width: 1, height: 44, color: context.vivordoColors.border);
 
-  Future<void> _showHeartHealthInfo() => showDialog<void>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      backgroundColor: dialogContext.vivordoColors.card,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-      titlePadding: const EdgeInsets.fromLTRB(24, 22, 16, 0),
-      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: red.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.favorite_border_rounded,
-              color: red,
-              size: 23,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'How Heart Health works',
-              style: TextStyle(
-                color: dialogContext.vivordoColors.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
-      content: SingleChildScrollView(
-        child: Text(
-          'Vivordo creates your Heart Health score from available signals such as resting heart rate, heart rate variability (HRV), and your heart rate during quiet periods. It compares today’s readings with your own recent baseline and combines the available signals into a score from 0 to 100.\n\nAt least seven previous days are needed to begin scoring. Higher scores mean today’s heart signals are trending favorably compared with your usual pattern. Heart Health is a wellness estimate and is not a medical diagnosis.',
-          style: TextStyle(
-            color: dialogContext.vivordoColors.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-      ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          style: FilledButton.styleFrom(
-            backgroundColor: purple,
-            foregroundColor: Colors.white,
-          ),
-          child: const Text('Got it'),
-        ),
-      ],
-    ),
-  );
-
   Widget chart(
     List<_HeartDay> days,
     List<_HeartReading> entries,
@@ -945,13 +723,13 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final isDay = rangeIndex == 0;
     final scoredDays = isDay
         ? const <_HeartDay>[]
-        : days.where((day) => day.heartHealthScore != null).toList();
+        : days.where((day) => day.resting != null).toList();
     final buckets = isDay
         ? _bucketDayReadings(entries)
         : const <_HeartBucket>[];
     final values = isDay
         ? buckets.map((bucket) => bucket.average).toList()
-        : scoredDays.map((day) => day.heartHealthScore!).toList();
+        : scoredDays.map((day) => day.resting!).toList();
     final dates = isDay
         ? buckets.map((bucket) => bucket.timestamp).toList()
         : scoredDays.map((day) => day.date).toList();
@@ -982,7 +760,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           highs: highs,
           resting: isDay ? resting : null,
           showTime: isDay,
-          showHeartHealthScore: !isDay,
         ),
       ),
     );
@@ -1185,19 +962,10 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
 }
 
 class _HeartDay {
-  const _HeartDay(
-    this.date,
-    this.readings,
-    this.resting,
-    this.heartHealthScore,
-    this.heartHealthStatus,
-    this.hrv,
-  );
+  const _HeartDay(this.date, this.readings, this.resting, this.hrv);
   final DateTime date;
   final List<_HeartReading> readings;
   final double? resting;
-  final double? heartHealthScore;
-  final String? heartHealthStatus;
   final Map<String, double> hrv; // keyed by kind, see hrvReadings
 }
 
@@ -1225,7 +993,6 @@ class _HeartChart extends StatefulWidget {
     required this.highs,
     required this.resting,
     required this.showTime,
-    required this.showHeartHealthScore,
   });
   final List<double> values;
   final List<String> labels;
@@ -1234,7 +1001,6 @@ class _HeartChart extends StatefulWidget {
   final List<double> highs;
   final double? resting;
   final bool showTime;
-  final bool showHeartHealthScore;
 
   @override
   State<_HeartChart> createState() => _HeartChartState();
@@ -1261,8 +1027,7 @@ class _HeartChartState extends State<_HeartChart> {
   void didUpdateWidget(covariant _HeartChart oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!listEquals(widget.values, oldWidget.values) ||
-        !listEquals(widget.dates, oldWidget.dates) ||
-        widget.showHeartHealthScore != oldWidget.showHeartHealthScore) {
+        !listEquals(widget.dates, oldWidget.dates)) {
       selected = null;
     }
   }
@@ -1285,7 +1050,6 @@ class _HeartChartState extends State<_HeartChart> {
           highs: widget.highs,
           resting: widget.resting,
           showTime: widget.showTime,
-          showHeartHealthScore: widget.showHeartHealthScore,
           selected: selected,
           dark: Theme.of(context).brightness == Brightness.dark,
         ),
@@ -1303,7 +1067,6 @@ class _HeartChartPainter extends CustomPainter {
     required this.highs,
     required this.resting,
     required this.showTime,
-    required this.showHeartHealthScore,
     required this.selected,
     required this.dark,
   });
@@ -1314,7 +1077,6 @@ class _HeartChartPainter extends CustomPainter {
   final List<double> highs;
   final double? resting;
   final bool showTime;
-  final bool showHeartHealthScore;
   final int? selected;
   final bool dark;
 
@@ -1327,17 +1089,12 @@ class _HeartChartPainter extends CustomPainter {
     final width = size.width - left - right;
     final rightEdge = left + width;
     var minimum = 0.0;
-    var maximum = showHeartHealthScore
-        ? 100.0
-        : math.max(
-            120.0,
-            values.isEmpty ? 0.0 : values.reduce(math.max) * 1.15,
-          );
+    var maximum = 120.0;
     final hasRanges =
         lows.length == values.length &&
         highs.length == values.length &&
         values.isNotEmpty;
-    if (showTime && values.isNotEmpty) {
+    if (values.isNotEmpty) {
       final rawMinimum = hasRanges
           ? lows.reduce(math.min)
           : values.reduce(math.min);
@@ -1359,7 +1116,7 @@ class _HeartChartPainter extends CustomPainter {
     final grid = Paint()
       ..color = (dark ? Colors.white : Colors.black).withValues(alpha: .08)
       ..strokeWidth = 1;
-    final gridDivisions = showTime ? 2 : 4;
+    final gridDivisions = showTime ? 2 : 3;
     for (var i = 0; i <= gridDivisions; i++) {
       final y = height * i / gridDivisions;
       canvas.drawLine(Offset(left, y), Offset(rightEdge, y), grid);
@@ -1393,6 +1150,12 @@ class _HeartChartPainter extends CustomPainter {
 
     if (showTime) {
       _drawDayLine(canvas, points);
+    } else if (points.length == 1) {
+      canvas.drawCircle(
+        points.first,
+        5,
+        Paint()..color = const Color(0xFFFF3B4E),
+      );
     } else {
       final path = smoothChartPath(points);
       final fill = Path.from(path)
@@ -1467,7 +1230,7 @@ class _HeartChartPainter extends CustomPainter {
           ? '${values[index].round()} bpm\n'
                 '${DateFormat('h:mm a').format(dates[index])}'
           : '${DateFormat('MMM d').format(dates[index])}\n'
-                '${values[index].round()} / 100';
+                '${values[index].round()} bpm';
       final painter = TextPainter(
         text: TextSpan(
           text: label,
@@ -1628,6 +1391,5 @@ class _HeartChartPainter extends CustomPainter {
       selected != oldDelegate.selected ||
       resting != oldDelegate.resting ||
       showTime != oldDelegate.showTime ||
-      showHeartHealthScore != oldDelegate.showHeartHealthScore ||
       dark != oldDelegate.dark;
 }

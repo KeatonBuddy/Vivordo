@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import '../utils/performance_trace.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,10 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/exercise_minutes.dart';
-import 'activity_goals_service.dart';
 import 'stress_score_service.dart';
-import '../utils/activity_score.dart';
-import '../utils/heart_health_score.dart';
 import '../utils/metric_cleanup.dart';
 import '../utils/step_totals.dart';
 import '../utils/sleep_stage_aggregation.dart';
@@ -672,16 +668,6 @@ class HealthService {
       }
     }
 
-    // Compute and write wellness score for each day in the window
-    try {
-      await _computeAndWriteWellness(
-        uid: FirebaseAuth.instance.currentUser?.uid,
-        daysBack: daysBack,
-      );
-    } catch (e) {
-      debugPrint('HealthService.syncToFirestore — wellness compute failed: $e');
-    }
-
     if (uid != null) {
       try {
         await _db.collection('users').doc(uid).set({
@@ -735,15 +721,6 @@ class HealthService {
       return null;
     }
   }
-
-  /// Rebuilds the computed wellness score from data already stored in
-  /// Firestore. A camera scan contributes to the personalized Heart Health
-  /// trend when enough prior scan days exist.
-  Future<void> recomputeWellness({int daysBack = 1}) =>
-      _computeAndWriteWellness(
-        uid: FirebaseAuth.instance.currentUser?.uid,
-        daysBack: daysBack,
-      );
 
   // ─── Raw intraday samples for the BaaS ─────────────────────────────────────
 
@@ -1518,164 +1495,5 @@ class HealthService {
       default:
         return {'avg': avg(), 'unit': '', 'dimension': 'other'};
     }
-  }
-
-  double? _metricAverage(Map<String, dynamic>? data, String key) {
-    final value = ((data?[key] as Map?)?['avg'] as num?)?.toDouble();
-    return value != null && value.isFinite && value > 0 ? value : null;
-  }
-
-  double? _quietHeartRate(Map<String, dynamic>? data) {
-    final scan = _metricAverage(data, 'heart_rate_scan');
-    if (scan != null) return scan;
-
-    final heartRate = data?['heart_rate'] as Map?;
-    if (heartRate?['source'] == 'camera_ppg') return null;
-    final values = <double>[];
-    final entries = heartRate?['entries'];
-    if (entries is List) {
-      for (final entry in entries) {
-        if (entry is! Map || entry['bpm'] is! num) continue;
-        final bpm = (entry['bpm'] as num).toDouble();
-        if (bpm.isFinite && bpm >= 30 && bpm <= 220) values.add(bpm);
-      }
-    }
-    if (values.length >= 5) {
-      values.sort();
-      final quietCount = math.max(1, (values.length * .20).ceil());
-      final quietValues = values.take(quietCount);
-      return quietValues.reduce((a, b) => a + b) / quietCount;
-    }
-
-    final minimum = (heartRate?['min'] as num?)?.toDouble();
-    return minimum != null &&
-            minimum.isFinite &&
-            minimum >= 30 &&
-            minimum <= 220
-        ? minimum
-        : null;
-  }
-
-  /// [hrv] comes from [pickHrv] so a day is only compared with its own kind.
-  HeartHealthSignals _heartHealthSignals(
-    Map<String, dynamic>? data,
-    double? hrv,
-  ) => HeartHealthSignals(
-    restingHeartRate: _metricAverage(data, 'resting_heart_rate'),
-    hrv: hrv,
-    quietHeartRate: _quietHeartRate(data),
-  );
-
-  Future<void> _computeAndWriteWellness({
-    String? uid,
-    int daysBack = 30,
-  }) async {
-    if (uid == null) return;
-    final now = DateTime.now();
-    final batch = _db.batch();
-    final userSnapshot = await _db.collection('users').doc(uid).get();
-    final activityGoals = ActivityGoals.fromUserData(userSnapshot.data());
-    final firstBaselineDay = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).subtract(Duration(days: daysBack + heartHealthBaselineWindowDays));
-    final metricsSnapshot = await _db
-        .collection('users')
-        .doc(uid)
-        .collection('metrics_daily')
-        .where(
-          FieldPath.documentId,
-          isGreaterThanOrEqualTo: localDayKey(firstBaselineDay),
-        )
-        .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(now))
-        .orderBy(FieldPath.documentId)
-        .get();
-    final storedDays = {
-      for (final document in metricsSnapshot.docs) document.id: document.data(),
-    };
-
-    for (int i = 0; i < daysBack; i++) {
-      final day = now.subtract(Duration(days: i));
-      final period = localDayKey(day);
-      final data = storedDays[period];
-      if (data == null) continue;
-
-      final stress = (data['stress']?['avg'] as num?)?.toDouble();
-      final sleep = (data['sleep']?['avg'] as num?)?.toDouble();
-      final steps = (data['steps']?['sum'] as num?)?.toDouble();
-      final exerciseMinutes = (data['exercise_time']?['sum'] as num?)
-          ?.toDouble();
-      final activeCalories = (data['active_calories']?['sum'] as num?)
-          ?.toDouble();
-      final activity = calculateActivityScore(
-        steps: steps,
-        exerciseMinutes: exerciseMinutes,
-        activeCalories: activeCalories,
-        stepsGoal: activityGoals.steps.toDouble(),
-        exerciseMinutesGoal: activityGoals.exerciseMinutes.toDouble(),
-        activeCaloriesGoal: activityGoals.activeCalories.toDouble(),
-      );
-      final historyData = List.generate(heartHealthBaselineWindowDays, (index) {
-        final historicalDay = day.subtract(Duration(days: index + 1));
-        return storedDays[localDayKey(historicalDay)];
-      });
-      final hrv = pickHrv(
-        hrvReadings(data),
-        historyData.map(hrvReadings).toList(),
-        heartHealthMinimumBaselineDays,
-      );
-      final heartHealth = calculateHeartHealthScore(
-        current: _heartHealthSignals(data, hrv.value),
-        history: [
-          for (var index = 0; index < historyData.length; index++)
-            _heartHealthSignals(historyData[index], hrv.history[index]),
-        ],
-      );
-
-      if (stress == null &&
-          sleep == null &&
-          activity == null &&
-          heartHealth.availableSignals == 0) {
-        continue;
-      }
-
-      // Wellness is retired: Physical Health replaces it on Metrics and is
-      // calculated on the server (functions/physical_health.js).
-
-      final ref = _db
-          .collection('users')
-          .doc(uid)
-          .collection('metrics_daily')
-          .doc(period);
-      final payload = <String, dynamic>{
-        'heart_health': {
-          'avg': heartHealth.score,
-          'unit': 'score',
-          'source': 'computed_personal_baseline',
-          'status': heartHealth.isBuildingBaseline
-              ? 'building_baseline'
-              : heartHealth.score == null
-              ? 'unavailable'
-              : 'ready',
-          'confidence': heartHealth.confidence.name,
-          'availableSignals': heartHealth.availableSignals,
-          'scoredSignals': heartHealth.scoredSignals,
-          'baselineDays': heartHealth.baselineDays,
-          'hrvKind': hrv.kind,
-          'components': {
-            'restingHeartRate': heartHealth.restingHeartRateScore,
-            'hrv': heartHealth.hrvScore,
-            'quietHeartRate': heartHealth.quietHeartRateScore,
-          },
-          'computedAt': FieldValue.serverTimestamp(),
-        },
-        'date': period,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-      batch.set(ref, payload, SetOptions(merge: true));
-    }
-
-    await batch.commit();
   }
 }

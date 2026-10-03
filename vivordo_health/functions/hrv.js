@@ -4,7 +4,7 @@
 // daytime SDNN and each wearable's overnight RMSSD (WHOOP and Fitbit also
 // measure in different windows of the night). Scores compare HRV with the
 // person's own normal, so each one only uses readings of a single kind.
-// Mirrored in lib/src/utils/heart_health_score.dart.
+// hrvReadings is mirrored in lib/src/utils/hrv.dart.
 
 // The connected wearable first, then Apple Health.
 const HRV_KINDS = ["rmssd:whoop", "rmssd:fitbit", "sdnn"];

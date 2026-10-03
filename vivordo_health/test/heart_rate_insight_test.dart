@@ -12,11 +12,10 @@ void main() {
       ),
   ];
 
-  String dayInsight(List<double> values, {double? heartHealthScore = 80}) {
+  String dayInsight(List<double> values) {
     return buildHeartRateInsight(
       isDay: true,
       readings: series(values),
-      heartHealthScore: heartHealthScore,
       restingAverage: null,
       restingChange: null,
     );
@@ -28,16 +27,6 @@ void main() {
 
   test('limited data asks for more readings', () {
     expect(dayInsight([70, 72, 74]), contains('More readings are needed'));
-  });
-
-  test('low Heart Health score prioritizes rest', () {
-    final insight = dayInsight([65, 67, 69, 68, 66, 67], heartHealthScore: 32);
-    expect(insight, contains('Keep activity light and prioritize rest'));
-  });
-
-  test('below-target Heart Health score recommends recovery breaks', () {
-    final insight = dayInsight([65, 67, 69, 68, 66, 67], heartHealthScore: 62);
-    expect(insight, contains('Take recovery breaks'));
   });
 
   test('upward daily trend recommends a recovery break', () {
@@ -65,17 +54,15 @@ void main() {
     expect(insight, contains('gentle activity'));
   });
 
-  test('relaxed readings with a strong score reinforce normal activity', () {
+  test('mostly relaxed readings recommend a steady balance', () {
     final insight = dayInsight([64, 66, 68, 70, 72, 74]);
-    expect(insight, contains('looks balanced'));
-    expect(insight, contains('normal activity'));
+    expect(insight, contains('steady balance'));
   });
 
   test('week and month retain resting heart-rate comparisons', () {
     final insight = buildHeartRateInsight(
       isDay: false,
       readings: series([70, 80]),
-      heartHealthScore: 75,
       restingAverage: 61,
       restingChange: -3,
     );

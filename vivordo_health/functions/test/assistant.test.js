@@ -217,12 +217,12 @@ test("get_scores reads scores_daily, not metrics_daily", async () => {
   await assert.rejects(getScores(db, "u", {start_date: "2026-01-02", end_date: "2026-01-01"}), /^Error: Invalid range/);
 });
 
-test("the score lineup is current: Heart in metrics, Wellness retired, Demand from context", () => {
+test("the score lineup is current: Heart and Wellness retired, Demand from context", () => {
   const metrics = TOOLS.find((t) => t.name === "get_metrics").input_schema.properties.metrics.items.enum;
-  assert.ok(metrics.includes("heart_health"));
+  assert.ok(!metrics.includes("heart_health"));
   assert.ok(!metrics.includes("wellness"));
   assert.ok(TOOLS.some((t) => t.name === "get_scores"));
-  for (const name of ["Capacity", "Demand", "Effort", "Stress", "Heart", "Physical Health", "Burnout check"]) {
+  for (const name of ["Capacity", "Demand", "Effort", "Stress", "Physical Health", "Burnout check"]) {
     assert.match(SYSTEM_PROMPT, new RegExp(`- ${name}[ :]`), name);
   }
   assert.match(SYSTEM_PROMPT, /Wellness was retired/);

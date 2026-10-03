@@ -8,7 +8,6 @@ class HeartRateInsightReading {
 String buildHeartRateInsight({
   required bool isDay,
   required List<HeartRateInsightReading> readings,
-  required double? heartHealthScore,
   required double? restingAverage,
   required int? restingChange,
 }) {
@@ -41,12 +40,6 @@ String buildHeartRateInsight({
     (reading) => reading.bpm >= 60 && reading.bpm < 80,
   );
 
-  if (heartHealthScore != null && heartHealthScore < 40) {
-    return 'Your Heart Health score is low today. Keep activity light and prioritize rest.';
-  }
-  if (heartHealthScore != null && heartHealthScore < 70) {
-    return 'Your Heart Health score is below target today. Take recovery breaks and avoid pushing too hard.';
-  }
   if (recentChange >= 10) {
     return 'Your recent heart rate is trending up. Slow down and take a short recovery break.';
   }
@@ -63,15 +56,10 @@ String buildHeartRateInsight({
     return 'Most readings stayed low today. If you feel well, gentle activity can help you stay moving.';
   }
   if (relaxedShare >= 0.60) {
-    return heartHealthScore != null && heartHealthScore >= 80
-        ? 'Your heart pattern looks balanced today. Keep up your normal activity and recovery routine.'
-        : 'Most readings were relaxed today. Keep a steady balance of movement and recovery.';
+    return 'Most readings were relaxed today. Keep a steady balance of movement and recovery.';
   }
   if (_range(current) >= 35) {
     return 'Your readings varied throughout the day. Balance active periods with short recovery breaks.';
-  }
-  if (heartHealthScore != null && heartHealthScore >= 80) {
-    return 'Your Heart Health score is strong today. Keep up your normal activity and recovery routine.';
   }
   return 'Your heart-rate trend looks mixed but steady. Keep activity comfortable and allow time to recover.';
 }
