@@ -476,6 +476,21 @@ still ahead (Your Day's events and timed priorities) against the forecast.
   - tomorrow's windows if you're in bed by then.
 - **Rounding:** windows and bedtime round to the nearest quarter-hour.
 
+**Phase 4 implemented** (the wind-down reminder,
+`lib/src/services/wind_down_reminder.dart`):
+- **Opt-in:** the evening card offers "Remind me at <wind-down>" once.
+  "No thanks" hides the offer for good and says where to turn it on later.
+  Also switchable in Settings → Notifications and the Sleep screen's menu.
+  Stored as `preferences.windDownReminder` (missing = not asked yet).
+- **Scheduling:** while on, the next 7 nights are scheduled as local
+  notifications at each night's wind-down start (bed-by − 60 min), skipping
+  any already past. They're rescheduled whenever Home or My Day loads the
+  calendar, and tonight's uses tomorrow's first timed event. Later nights
+  use the usual bedtime until a reschedule. Nothing is scheduled without
+  tracked sleep or a usual schedule, or while notifications are denied.
+- **Text:** "Time to wind down. Bed by 11:15 PM for 8 h before 7:15 AM.
+  Tomorrow's peak is 9:15–11:30 AM." Tapping opens My Day.
+
 ## Open questions
 
 None. Decided (2026-10-01):

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import '../widgets/contextual_insight_bar.dart';
 import '../src/utils/daily_brief_analysis.dart' show sleepBaseline;
@@ -11,6 +12,7 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
+import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/sleep_nights.dart';
@@ -72,6 +74,51 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   int _rangeIndex = 0;
   DateTime? _lastRefreshAt;
   bool _refreshingSleep = false;
+
+  /// `preferences.windDownReminder`, for the menu's switch.
+  bool _windDownReminder = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadWindDownReminder());
+  }
+
+  Future<void> _loadWindDownReminder() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final user = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      final on = (user.data()?['preferences'] as Map?)?['windDownReminder'];
+      if (mounted) setState(() => _windDownReminder = on == true);
+    } catch (_) {
+      // Shows as off.
+    }
+  }
+
+  Future<void> _toggleWindDownReminder() async {
+    final on = !_windDownReminder;
+    setState(() => _windDownReminder = on);
+    try {
+      await WindDownReminders.setEnabled(on);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              on
+                  ? 'Wind-down reminder on. It follows your forecast each night.'
+                  : 'Wind-down reminder off.',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _windDownReminder = !on);
+    }
+  }
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,
@@ -218,6 +265,28 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                     Icon(Icons.bedtime_outlined, size: 20),
                     SizedBox(width: 12),
                     Text('Usual sleep schedule'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                onTap: _toggleWindDownReminder,
+                child: Row(
+                  children: [
+                    Icon(
+                      _windDownReminder
+                          ? Icons.notifications_active_outlined
+                          : Icons.notifications_none_rounded,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(child: Text('Wind-down reminder')),
+                    IgnorePointer(
+                      child: Switch.adaptive(
+                        activeTrackColor: VivordoTheme.brand,
+                        value: _windDownReminder,
+                        onChanged: (_) {},
+                      ),
+                    ),
                   ],
                 ),
               ),

@@ -54,6 +54,10 @@ class NotificationService {
   static const int _exerciseGoalNotificationId = 1203;
   static const int _fitnessRingNotificationId = 1204;
 
+  /// Tonight's and the next six nights' wind-down reminders.
+  static const int _windDownReminderBaseId = 1401;
+  static const int _maxWindDownReminders = 7;
+
   factory NotificationService() {
     return _instance;
   }
@@ -817,6 +821,55 @@ class NotificationService {
       'NotificationService: Daily scan reminder $notificationId scheduled for '
       '$scheduledTime',
     );
+  }
+
+  /// Replaces the scheduled wind-down reminders with [reminders] (the first
+  /// [_maxWindDownReminders]); any already past are skipped.
+  Future<void> scheduleWindDownReminders(
+    List<({DateTime at, String body})> reminders,
+  ) async {
+    if (kIsWeb) return;
+    await cancelWindDownReminders();
+    final now = DateTime.now();
+    for (final (index, reminder)
+        in reminders.take(_maxWindDownReminders).indexed) {
+      if (!reminder.at.isAfter(now)) continue;
+      try {
+        await _localNotificationsPlugin.zonedSchedule(
+          _windDownReminderBaseId + index,
+          'Time to wind down',
+          reminder.body,
+          tz.TZDateTime.from(reminder.at, tz.local),
+          const NotificationDetails(
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentSound: true,
+              presentBanner: true,
+              presentList: true,
+            ),
+            android: AndroidNotificationDetails(
+              'wind_down_reminders',
+              'Wind-down reminders',
+            ),
+          ),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          payload: '{"screen": "calendar", "type": "wind_down"}',
+        );
+      } on PlatformException catch (error) {
+        // iOS refuses to schedule while notifications are denied.
+        debugPrint('Wind-down reminder not scheduled: $error');
+        return;
+      }
+    }
+  }
+
+  Future<void> cancelWindDownReminders() async {
+    if (kIsWeb) return;
+    for (var index = 0; index < _maxWindDownReminders; index++) {
+      await _localNotificationsPlugin.cancel(_windDownReminderBaseId + index);
+    }
   }
 
   /// Cancel the daily scan reminder notification.

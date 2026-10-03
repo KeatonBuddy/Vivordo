@@ -162,4 +162,86 @@ void main() {
     expect(find.textContaining('Peak'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  test('wind-down reminders follow each night\'s forecast', () {
+    String t(String time) => time.replaceAll(' ', '\u202f');
+    // A Thursday; 11 PM–7 AM nights and an 8 h need.
+    final textbook = windDownReminders(
+      today: day,
+      nights: [
+        for (var i = 0; i < 14; i++)
+          (
+            start: DateTime(2026, 10, 7 - i, 23),
+            end: DateTime(2026, 10, 8 - i, 7),
+          ),
+      ],
+      sleepNeedHours: 8,
+    );
+    expect(textbook, hasLength(7));
+    expect(textbook.first.at, DateTime(2026, 10, 8, 22));
+    expect(
+      textbook.first.body,
+      startsWith('Bed by ${t('11:00 PM')} for 8 h before ${t('7:00 AM')}.'),
+    );
+    expect(textbook.first.body, contains("Tomorrow's peak is"));
+    expect(textbook.last.at, DateTime(2026, 10, 14, 22));
+
+    // A 6:30 AM start tomorrow pulls only tonight earlier: 6:30 − 1 h prep
+    // − 8 h = 9:30 PM bed, so wind down at 8:30.
+    final early = windDownReminders(
+      today: day,
+      nights: const [],
+      sleepNeedHours: 8,
+      schedule: const SleepSchedule(
+        bed: 23 * 60,
+        wake: 7 * 60,
+        weekendBed: 30,
+        weekendWake: 9 * 60,
+      ),
+      tomorrowFirstEvent: DateTime(2026, 10, 9, 6, 30),
+    );
+    expect(early.first.at, DateTime(2026, 10, 8, 20, 30));
+    // Friday night uses the weekend bedtime (12:30 AM), Sunday the
+    // weekday one again.
+    expect(early[1].at, DateTime(2026, 10, 9, 23, 30));
+    expect(early[3].at, DateTime(2026, 10, 11, 22));
+  });
+
+  testWidgets('the evening card offers the reminder once', (tester) async {
+    String t(String time) => time.replaceAll(' ', '\u202f');
+    final tonight = forecastEnergy(
+      day: day,
+      nights: nights(),
+      sleepNeedHours: 8,
+    );
+    final answers = <bool>[];
+    Future<void> show(bool? reminder) => tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: EnergyEveningCard(
+              tonight: tonight,
+              tomorrow: tonight,
+              reminder: reminder,
+              onReminder: answers.add,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await show(null);
+    await tester.tap(find.text('Remind me at ${t('10:00 PM')}'));
+    await tester.tap(find.text('No thanks'));
+    expect(answers, [true, false]);
+
+    await show(true);
+    expect(find.text('Reminder at ${t('10:00 PM')}'), findsOneWidget);
+    await tester.tap(find.text('Turn off'));
+    expect(answers.last, isFalse);
+
+    await show(false);
+    expect(find.textContaining('Remind'), findsNothing);
+  });
 }

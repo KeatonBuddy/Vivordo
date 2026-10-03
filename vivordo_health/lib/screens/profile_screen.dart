@@ -11,6 +11,7 @@ import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/account_deletion_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
@@ -614,6 +615,18 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Future<void> _setWindDownReminder(bool enabled) async {
+    try {
+      await WindDownReminders.setEnabled(enabled);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't update your reminder.")),
+        );
+      }
+    }
+  }
+
   Future<void> _updateReminderPreference({
     required String field,
     required bool enabled,
@@ -1012,6 +1025,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         final scanReminderEnabled = preferences['scanReminderEnabled'] != false;
         final checkInReminderEnabled =
             preferences['checkInReminderEnabled'] != false;
+        final windDownReminder = preferences['windDownReminder'] == true;
         final circleNotificationsEnabled =
             preferences['circleNotificationsEnabled'] != false;
         final fitnessNotificationsEnabled =
@@ -1172,6 +1186,18 @@ class _SettingsScreenState extends State<SettingsScreen>
                           field: 'checkInReminderEnabled',
                           enabled: value,
                         ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.bedtime_outlined,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Wind-down reminder',
+                      subtitle: 'An hour before bed, moving with your forecast',
+                      trailing: _SettingsSwitch(
+                        value: windDownReminder,
+                        onChanged: _setWindDownReminder,
                       ),
                     ),
                     _SettingsRow(

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
+import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
@@ -722,6 +723,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final events = await CalendarService.getWeekEvents(
         todayStart,
       ).timeout(const Duration(seconds: 15), onTimeout: () => <gcal.Event>[]);
+      // ponytail: Google events only; add Outlook's here if it's unbenched
+      // (OutlookCalendarService.enabled), or tonight's reminder can miss an
+      // early Outlook start until My Day reschedules it.
+      unawaited(
+        WindDownReminders.sync(
+          tomorrowFirstEvent: _firstTimedStart(
+            events,
+            todayStart.add(const Duration(days: 1)),
+          ),
+        ),
+      );
       final signedIn = await CalendarService.isSignedIn();
       if (!signedIn) {
         await NotificationService().cancelCalendarCheckIn();
@@ -734,6 +746,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       debugPrint('Reachable windows calendar load failed: $e');
       return [];
     }
+  }
+
+  /// The first timed, uncancelled event starting on [day].
+  DateTime? _firstTimedStart(List<gcal.Event> events, DateTime day) {
+    final next = day.add(const Duration(days: 1));
+    return (events
+            .where((event) => event.status != 'cancelled')
+            .map((event) => event.start?.dateTime?.toLocal())
+            .whereType<DateTime>()
+            .where((start) => !start.isBefore(day) && start.isBefore(next))
+            .toList()
+          ..sort())
+        .firstOrNull;
   }
 
   Future<void> _scheduleFinalEventCheckIn(

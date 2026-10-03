@@ -40,6 +40,7 @@ import '../src/utils/burnout_view.dart';
 import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
 import '../src/utils/sleep_schedule.dart';
+import '../src/services/wind_down_reminder.dart';
 import '../widgets/energy_forecast_view.dart';
 
 class MyDayScreen extends StatefulWidget {
@@ -65,6 +66,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   /// Your usual sleep times, for the energy forecast when no sleep is tracked.
   SleepSchedule? _sleepSchedule;
+
+  /// `preferences.windDownReminder`: null until asked, then on or off.
+  bool? _windDownReminder;
   String? _calendarLoadError;
   int _loadGeneration = 0;
   bool _isLoading = true;
@@ -197,6 +201,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       setState(() {
         if (minutes is int) _wrapUpMinutes = minutes;
         _sleepSchedule = SleepSchedule.fromPreferences(preferences);
+        _windDownReminder = preferences?['windDownReminder'] as bool?;
       });
     } catch (_) {
       // Keeps the 5 PM default.
@@ -426,6 +431,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       _events = events;
       _tomorrowEvents = tomorrowEvents;
       unawaited(_rateEvents([...events, ...tomorrowEvents]));
+      // Tonight's reminder moves earlier for an early start tomorrow.
+      unawaited(
+        WindDownReminders.sync(tomorrowFirstEvent: _tomorrowFirst()?.start),
+      );
       _calendarLoadError = null;
       _isLoading = false;
     });
@@ -731,21 +740,40 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Tomorrow's first timed event, which sets tonight's bed-by.
+  _CalendarEvent? _tomorrowFirst() => ([
+    for (final e in _tomorrowEvents)
+      if (!e.isAllDay) e,
+  ]..sort((a, b) => a.start.compareTo(b.start))).firstOrNull;
+
+  Future<void> _setWindDownReminder(bool on, DateTime? firstEvent) async {
+    final before = _windDownReminder;
+    setState(() => _windDownReminder = on);
+    try {
+      await WindDownReminders.setEnabled(on, tomorrowFirstEvent: firstEvent);
+      if (!on) {
+        _showMessage(
+          'No wind-down reminder. You can turn it on any time in Settings '
+          'or from the Sleep screen.',
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _windDownReminder = before);
+      _showMessage("Couldn't update your reminder.");
+    }
+  }
+
   /// Today's energy forecast (docs/scores.md §8), once any night is
   /// recorded or your usual sleep times are set. Tomorrow's first timed event
   /// sets tonight's bed-by.
   EnergyForecast? _energyForecast(DateTime today) {
     final nights = _briefSnapshot.value.data?.sleepNights ?? const [];
     if (nights.isEmpty && _sleepSchedule == null) return null;
-    final firsts = [
-      for (final e in _tomorrowEvents)
-        if (!e.isAllDay) e,
-    ]..sort((a, b) => a.start.compareTo(b.start));
     return forecastEnergy(
       day: today,
       nights: nights,
       sleepNeedHours: _capacitySnapshot.value.data?.sleepNeedHours,
-      tomorrowFirstEvent: firsts.firstOrNull?.start,
+      tomorrowFirstEvent: _tomorrowFirst()?.start,
       schedule: _sleepSchedule,
     );
   }
@@ -761,10 +789,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       }
       final tonight = _energyForecast(today);
       if (tonight == null) return const SizedBox.shrink();
-      final first = ([
-        for (final e in _tomorrowEvents)
-          if (!e.isAllDay) e,
-      ]..sort((a, b) => a.start.compareTo(b.start))).firstOrNull;
+      final first = _tomorrowFirst();
       return Padding(
         padding: const EdgeInsets.only(top: 12),
         child: EnergyEveningCard(
@@ -778,6 +803,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           firstEventTitle: first?.title,
           firstEventStart: first?.start,
           onTap: () => showEnergyForecastSheet(context, tonight),
+          reminder: _windDownReminder,
+          onReminder: (on) => _setWindDownReminder(on, first?.start),
         ),
       );
     },

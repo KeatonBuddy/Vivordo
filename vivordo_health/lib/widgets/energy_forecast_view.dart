@@ -393,6 +393,8 @@ class EnergyEveningCard extends StatelessWidget {
     this.firstEventTitle,
     this.firstEventStart,
     this.onTap,
+    this.reminder,
+    this.onReminder,
   });
 
   /// Today's forecast, with bed-by from tomorrow's first event.
@@ -404,10 +406,18 @@ class EnergyEveningCard extends StatelessWidget {
   final DateTime? firstEventStart;
   final VoidCallback? onTap;
 
+  /// The wind-down reminder (`preferences.windDownReminder`): null until
+  /// asked, then on or off. Off hides the offer for good.
+  final bool? reminder;
+  final ValueChanged<bool>? onReminder;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final windDown = tonight.window(EnergyPhase.windDown);
+    final remindAt = windDown == null
+        ? null
+        : DateFormat.jm().format(windDown.start);
     final wakeBy = tonight.bedBy.add(
       Duration(minutes: (tonight.sleepNeedHours * 60).round()),
     );
@@ -527,6 +537,78 @@ class EnergyEveningCard extends StatelessWidget {
                 "If you're in bed by ${DateFormat.jm().format(tonight.bedBy)}.",
                 style: TextStyle(fontSize: 12, color: colors.textSecondary),
               ),
+              if (remindAt != null && onReminder != null)
+                if (reminder == null) ...[
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: VivordoTheme.brand,
+                      ),
+                      onPressed: () => onReminder!(true),
+                      icon: const Icon(
+                        Icons.notifications_none_rounded,
+                        size: 18,
+                      ),
+                      label: Text('Remind me at $remindAt'),
+                    ),
+                  ),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => onReminder!(false),
+                      child: Text(
+                        'No thanks',
+                        style: TextStyle(color: colors.textSecondary),
+                      ),
+                    ),
+                  ),
+                ] else if (reminder == true) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+                    decoration: BoxDecoration(
+                      color: VivordoTheme.brand.withValues(alpha: .1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.notifications_active_outlined,
+                          size: 18,
+                          color: VivordoTheme.brand,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Reminder at $remindAt',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: colors.textPrimary,
+                                ),
+                              ),
+                              Text(
+                                'Moves with your forecast each night',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => onReminder!(false),
+                          child: const Text('Turn off'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
             ],
           ),
         ),
@@ -553,6 +635,52 @@ EnergyForecast tomorrowEnergyForecast({
     sleepNeedHours: tonight.sleepNeedHours,
     schedule: schedule,
   );
+}
+
+/// The wind-down reminders for tonight and the following nights: each at
+/// the start of that night's wind-down, with bed-by and the next day's peak.
+/// Only tonight knows tomorrow's first event; later nights use your usual
+/// bedtime until the app reschedules them.
+List<({DateTime at, String body})> windDownReminders({
+  required DateTime today,
+  required List<SleepPeriod> nights,
+  double? sleepNeedHours,
+  SleepSchedule? schedule,
+  DateTime? tomorrowFirstEvent,
+  int count = 7,
+}) {
+  final reminders = <({DateTime at, String body})>[];
+  for (var i = 0; i < count; i++) {
+    final day = DateTime(today.year, today.month, today.day + i);
+    final night = forecastEnergy(
+      day: day,
+      nights: nights,
+      sleepNeedHours: sleepNeedHours,
+      tomorrowFirstEvent: i == 0 ? tomorrowFirstEvent : null,
+      schedule: schedule,
+    );
+    final windDown = night.window(EnergyPhase.windDown);
+    if (windDown == null) continue;
+    final wake = night.bedBy.add(
+      Duration(minutes: (night.sleepNeedHours * 60).round()),
+    );
+    final peak = tomorrowEnergyForecast(
+      tonight: night,
+      today: day,
+      nights: nights,
+      schedule: schedule,
+    ).window(EnergyPhase.peak);
+    reminders.add((
+      at: windDown.start,
+      body: [
+        'Bed by ${DateFormat.jm().format(night.bedBy)} for '
+            '${_hoursText(night.sleepNeedHours)} before '
+            '${DateFormat.jm().format(wake)}.',
+        if (peak != null) "Tomorrow's peak is ${energyWindowText(peak)}.",
+      ].join(' '),
+    ));
+  }
+  return reminders;
 }
 
 /// The first clash's sentence, e.g. "Your 2 PM Q4 budget review lands in
