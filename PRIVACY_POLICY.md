@@ -1,6 +1,6 @@
 # Vivordo Privacy Policy
 
-**Last updated: October 1, 2026**
+**Last updated: October 3, 2026**
 
 ## Introduction
 
@@ -65,9 +65,11 @@ If you use Vivordo's fingertip pulse scan, the app uses the camera and flash dur
 
 We collect information you choose to provide in check-ins, questionnaires, goals, journals, chats, support requests, social or circle features, and other app features. This may include mood, perceived stress, energy, notes, priorities, journal entries, messages, profile information, and content you share with other users.
 
-The optional morning check-in asks how you feel and how you slept. Vivordo stores your answers with that day's information, saves your "how do you feel" answer as a mood check-in, and uses both answers in the Capacity and Physical Health scores.
+The optional daily check-in, shown on Home from 5 AM until you answer it, asks how you feel and how you slept. Vivordo stores your answers with that day's information, saves your "how do you feel" answer as a mood check-in, and uses both answers in the Capacity and Physical Health scores.
 
 Onboarding asks when you usually finish your main work or classes for the day. Vivordo stores this time and uses it to tell after-hours activity apart from your working day. Earlier versions of onboarding asked a set of work and stress questions; Vivordo no longer asks them, and answers you gave before are kept until you delete them or your account.
+
+Onboarding and the Sleep screen also ask when you usually go to bed and wake up, with separate weekend times if you choose. If you've connected Apple Health or Health Connect, Vivordo can fill these in from your last two weeks of sleep, read on your device. Your usual sleep times are stored in your account and used to forecast your energy through the day and to time the optional wind-down reminder. They are never counted as sleep in your scores.
 
 ### Calendar information
 
@@ -87,7 +89,9 @@ Vivordo AI uses Anthropic's Claude and asks for your consent before sending anyt
 
 - **Sorting calendar events.** When Vivordo can't tell how demanding an event is, it sends the event's title, duration, and number of attendees—never its description or notes—through Vivordo's servers to Anthropic, which rates the event so Demand and Effort are accurate. Ratings are kept on your device so the same event isn't sent again.
 - **Estimating priorities.** When you leave a priority's effort or duration blank, Vivordo sends only the priority's title to Anthropic to estimate them. Estimates are saved with the priority and labelled as estimated; values you enter yourself are never replaced.
-- **Remembering context.** Vivordo AI saves short facts you share in chat—such as what stresses you, what helps, patterns you notice, life context, and preferences—and a short summary of each conversation. It sends them with later messages so it doesn't lose track of what you've told it. Nothing is saved from a conversation about a crisis. Saved facts and summaries are deleted when you delete your account, or on request.
+- **Chat history.** Your messages and Vivordo AI's replies, including suggested changes and charts, are stored in your account so the conversation is still there when you come back, and earlier messages from the same conversation are sent with each new one. If you send a message from an insight card, that insight's title is stored with it. Chat history is kept until you delete your account or ask us to delete it.
+- **Remembering context.** Vivordo AI saves short facts you share in chat—such as what stresses you, what helps, patterns you notice, life context, and preferences—and a short summary of each conversation. It sends them with later messages so it doesn't lose track of what you've told it. Nothing is saved from a conversation about a crisis. You can see and delete each saved fact and summary, or forget everything, on Vivordo AI's Memory page; they're also deleted when you delete your account.
+- **Your energy forecast.** With each chat message, Vivordo sends a short summary of today's energy forecast: your predicted energy windows and bedtime, last night's sleep against your sleep need, any sleep debt, and the titles and times of planned items that fall in a low-energy window. The app works this out on your device from the sleep and calendar information described above.
 
 If you don't give consent, Vivordo AI is unavailable and events and priorities are not sent to Anthropic. You can withdraw consent in Profile under Vivordo AI.
 
@@ -106,6 +110,8 @@ Vivordo's servers calculate scores from the information described above and stor
 - **Physical Health**—your longer-term fitness and habits—from active minutes, steps, strength workouts, cardio fitness (VO₂ max, measured or estimated from your age, sex, height, weight, activity, and resting heart rate), and sleep; and
 - **the burnout check**—a nightly comparison of your last two weeks of Capacity, Effort, and mood with your own usual levels, using sleep, resting heart rate, heart-rate variability, back-to-back events, and after-hours time to explain the result. When a warning starts, Vivordo may send you one notification.
 
+Vivordo also forecasts your energy through the day—when you're likely to be at your sharpest or in a dip—on your device, from your sleep, usual sleep times, and sleep need, and compares it with your calendar and priorities. The forecast isn't stored. If you turn on the wind-down reminder, Vivordo schedules notifications on your device for the hour before your suggested bedtime and saves only that the reminder is on.
+
 These are wellness signals, not medical assessments or diagnoses.
 
 ## How We Use Information
@@ -117,7 +123,7 @@ We use personal information to:
 - display health, fitness, sleep, calendar, journal, and activity information;
 - calculate and explain Vivordo stress, Capacity, Demand, Effort, Physical Health, heart-health, activity, and related scores, and run the burnout check;
 - personalize insights, recommendations, reminders, and AI-assisted responses;
-- send notifications you've allowed, such as check-in reminders and burnout warnings, and silent notifications that keep your daily records up to date;
+- send notifications you've allowed, such as check-in reminders, wind-down reminders, and burnout warnings, and silent notifications that keep your daily records up to date;
 - support social or sharing features you intentionally use;
 - respond to support, privacy, and security requests;
 - diagnose errors, monitor performance, prevent abuse, and protect Vivordo and its users;
@@ -174,7 +180,7 @@ If we discover a security incident, we will investigate and provide notices to a
 
 We retain account information and user content while your account is active and as reasonably necessary to provide Vivordo. Imported WHOOP, Fitbit/Google Health, Apple Health, Bluetooth wearable, and other health information is generally retained until you delete the applicable information, delete your account, or ask us to delete it. OAuth credentials are retained only while the relevant connection remains authorized and are deleted when you disconnect it.
 
-You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; daily records; Vivordo AI saved facts and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, comments, likes, activity, and challenge participation; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
+You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; daily records; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, comments, likes, activity, and challenge participation; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
 
 After a verified deletion request, we delete or de-identify information under our control within the period required by applicable law, except information we must retain for legal compliance, fraud prevention, dispute resolution, security, or enforcement. Information may remain temporarily in encrypted backups until those backups are overwritten through their ordinary lifecycle. We do not use backup copies for ordinary product purposes.
 
