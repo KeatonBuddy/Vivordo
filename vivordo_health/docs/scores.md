@@ -330,18 +330,26 @@ zone, right after that day's final Effort.
 - An area is **strained** when its last 2 weeks are off by at least the
   minimum meaningful change (Capacity/Effort/Mood: 5 points) on at least
   65% of days, scored against the normal's spread.
-- **Levels:** learning (no area has enough data: 7 recent days and 14 in
-  the normal, so ~6 weeks), steady, **watch** (one area strained; no
-  notification), **warning** (two areas strained for 7 nights, or one area
-  far off plus another strained). A warning holds until 7 calm nights.
+- **Levels:** learning (no area has enough data), steady, **watch** (one
+  area strained; no notification), **warning** (two areas strained for 7
+  nights, or one area far off plus another strained). A warning holds until
+  7 calm nights.
+- **Early check** (from ~3 weeks until the full check has enough data at
+  ~6 weeks): the last 7 days (at least 5 with data) against every day before
+  them (at least 14), no gap. It can say steady or watch but never warning
+  or notify, since a short normal is noisy and may include the strain
+  itself; its strained nights don't count towards a warning. Saved with
+  `early: true`; the app shows "Steady · early check" and words reasons as
+  "for a week".
 - **One push** when a warning starts (not within 7 days of the last), naming
   the areas: "Lower energy and heavier days than usual." Respects
   `preferences.notificationsEnabled`; tapping opens My Day.
 - Saved in `scores_daily/{day}.burnout` (`level`, `since`, `areas`,
-  `drivers`, `learningDays`, `state`). Each day is evaluated once.
+  `drivers`, `learningDays`, `early`, `state`). Each day is evaluated once.
 - **App:** under My Day's brief (`lib/widgets/burnout_card.dart`, words
   from `lib/src/utils/burnout_view.dart`): a one-line row while learning or
-  steady ("Burnout check · Steady"), the full card at Watch or Warning; both
+  steady ("Burnout check · Learning your normal" with no day count, or
+  "Steady"), the full card at Watch or Warning; both
   open a detail sheet. During a warning the brief's headline softens.
 - No backfills: history starts when each person is on this build.
 - Known limits: a day without a day record (app not opened that day or the

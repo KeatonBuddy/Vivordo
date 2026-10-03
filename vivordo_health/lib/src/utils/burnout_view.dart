@@ -1,6 +1,7 @@
-/// Days of history the first burnout check needs: 14 of normal, then the
-/// 2-week gap and 2 recent weeks (functions/burnout.js).
-const burnoutLearningDays = 42;
+/// Days of history the first (early) burnout check needs: 14 of normal and
+/// the last 7 (functions/burnout.js). The full check follows at about 6
+/// weeks.
+const burnoutLearningDays = 21;
 
 /// One area (Capacity, Effort or Mood) in the last 2 weeks vs its normal.
 class BurnoutArea {
@@ -29,6 +30,7 @@ class BurnoutView {
     required this.drivers,
     required this.suggestions,
     this.learningProgress,
+    this.early = false,
   });
 
   /// "learning", "steady", "watch" or "warning".
@@ -43,10 +45,15 @@ class BurnoutView {
   /// 0–1 towards the first check while learning.
   final double? learningProgress;
 
+  /// An early check: the last week against the first few, which can watch
+  /// but never warn.
+  final bool early;
+
   static BurnoutView? fromMap(Map<String, dynamic>? data, String evaluatedDay) {
     final level = data?['level'];
     if (data == null || level is! String) return null;
     final areas = (data['areas'] as Map?) ?? const {};
+    final early = data['early'] == true;
     BurnoutArea area(String name, String worse, String label) {
       final a = areas[name];
       if (a is! Map) return BurnoutArea(label, 'Not enough data yet', 'none');
@@ -96,8 +103,8 @@ class BurnoutView {
         progress = (days / burnoutLearningDays).clamp(0, 1).toDouble();
         title = 'Learning your normal';
         body =
-            'Vivordo needs about 6 weeks of Capacity, Effort and Mood to '
-            'spot a slide. ${days.clamp(0, burnoutLearningDays)} of '
+            'Vivordo needs about 3 weeks of Capacity, Effort and Mood '
+            'for a first check. ${days.clamp(0, burnoutLearningDays)} of '
             '$burnoutLearningDays days so far.';
       case 'watch':
         title = switch (strained.firstOrNull) {
@@ -115,7 +122,8 @@ class BurnoutView {
             .toList();
         body =
             '${first.name} has been ${first.worse}'
-            '${steady.isEmpty ? '' : ', while ${_join(steady)} held steady'}.';
+            '${steady.isEmpty ? '' : ', while ${_join(steady)} held steady'}.'
+            '${early ? ' An early check, from your first few weeks.' : ''}';
       case 'warning':
         // How long the strain has run: the nights two areas have been off
         // (a warning starts after 7), or since the warning began if longer.
@@ -137,7 +145,10 @@ class BurnoutView {
             '${strainedDays >= 7 ? ', and it\'s held for over a week' : ' by a lot'}.';
       default:
         title = 'You\'re in your normal range';
-        body = 'Your last 2 weeks look like your usual. Checked last night.';
+        body = early
+            ? 'Your last week looks like your first few. An early check: '
+                  'it gets sharper as Vivordo learns your normal.'
+            : 'Your last 2 weeks look like your usual. Checked last night.';
     }
 
     return BurnoutView(
@@ -150,6 +161,7 @@ class BurnoutView {
           ? _suggestions(driverNames, strained)
           : const [],
       learningProgress: progress,
+      early: early,
     );
   }
 }

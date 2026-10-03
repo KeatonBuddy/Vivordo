@@ -15,12 +15,12 @@ void main() {
   test('learning counts days towards the first check', () {
     final view = BurnoutView.fromMap({
       'level': 'learning',
-      'learningDays': 21,
+      'learningDays': 7,
       'areas': {},
     }, '2026-10-01')!;
     expect(view.title, 'Learning your normal');
-    expect(view.learningProgress, 0.5);
-    expect(view.body, contains('21 of 42 days'));
+    expect(view.learningProgress, closeTo(1 / 3, 1e-9));
+    expect(view.body, contains('7 of 21 days'));
   });
 
   test('watch names the drifting area and what held steady', () {
@@ -93,11 +93,14 @@ void main() {
 
     await show({'level': 'learning', 'learningDays': 13, 'areas': {}});
     expect(find.text('Burnout check'), findsOneWidget);
-    expect(find.text('Learning · 13 of 42 days'), findsOneWidget);
-    expect(find.text('Learning your normal'), findsNothing);
+    expect(find.text('Learning your normal'), findsOneWidget);
+    expect(find.textContaining('42'), findsNothing);
 
     await show({'level': 'steady', 'areas': {}});
     expect(find.text('Steady'), findsOneWidget);
+
+    await show({'level': 'steady', 'early': true, 'areas': {}});
+    expect(find.text('Steady · early check'), findsOneWidget);
     expect(find.textContaining('normal range'), findsNothing);
 
     await show({

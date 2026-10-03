@@ -114,6 +114,27 @@ test("a new user is learning, with days counted towards the first check", () => 
   assert.equal(night.learningDays, 20);
 });
 
+test("from 3 weeks in, an early check runs on the last 7 days", () => {
+  const [night] = evaluateRange(history({days: 21}), END, END);
+  assert.equal(night.level, "steady");
+  assert.equal(night.early, true);
+  assert.equal(night.learningDays, null);
+  // With enough history the full check takes over.
+  assert.equal(evaluateRange(history(), END, END)[0].early, false);
+});
+
+test("an early check can watch but never warns or notifies", () => {
+  // A month in, the last week slides hard in Capacity, Effort and Mood:
+  // the full check would warn; the early one stops at watch.
+  const days = history({days: 30, shape: (ago) => ago < 7 ? {capacity: 55, effort: 60, mood: 45} : {}});
+  const results = evaluateRange(days, dayKey(end - 9), END);
+  assert.ok(results.every((r) => r.early), "all early");
+  assert.equal(results.at(-1).level, "watch");
+  assert.ok(results.every((r) => r.level !== "warning"), levels(results).join(","));
+  assert.equal(results.filter((r) => r.notify).length, 0);
+  assert.match(results.at(-1).reasons[0], /for a week$/);
+});
+
 test("before Effort exists, Capacity and Mood still work", () => {
   const days = history({skip: (key) => key === "effort", shape: (ago) => ago < 21 ? {capacity: 62, mood: 52} : {}});
   assert.equal(evaluateRange(days, END, END)[0].level, "warning");

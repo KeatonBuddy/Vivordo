@@ -126,10 +126,11 @@ class BurnoutCard extends StatelessWidget {
   /// Learning or Steady: "Burnout check · Steady ›" in one line.
   Widget _row(BuildContext context) {
     final colors = context.vivordoColors;
-    final progress = view.learningProgress;
-    final status = progress != null
-        ? 'Learning · ${(progress * burnoutLearningDays).round()} of '
-              '$burnoutLearningDays days'
+    // No day count: "14 of 42 days" reads as a long wait.
+    final status = view.level == 'learning'
+        ? 'Learning your normal'
+        : view.early
+        ? 'Steady · early check'
         : 'Steady';
     return Material(
       color: colors.card,
@@ -251,6 +252,8 @@ class _BurnoutDetails extends StatelessWidget {
               Text(
                 view.level == 'learning'
                     ? 'How this works'
+                    : view.early
+                    ? 'Last week vs your first few'
                     : 'Last 2 weeks vs your normal',
                 style: TextStyle(
                   fontSize: 20,
@@ -268,7 +271,10 @@ class _BurnoutDetails extends StatelessWidget {
                   '• Mood: your check-ins\n\n'
                   'One area drifting is worth watching. It only warns you when '
                   'two agree for more than a week, so one bad day never sets '
-                  'it off.',
+                  'it off.\n\n'
+                  'The first check comes after about 3 weeks, comparing your '
+                  'last week with the weeks before. It gets sharper as it '
+                  'learns your normal, and only warns from about 6 weeks.',
                   style: secondary(14),
                 ),
               ] else ...[

@@ -3,6 +3,9 @@
 // Burnout early warning: compares the last 14 days of Capacity, Effort and
 // Mood with the person's own normal (8 weeks, ending 2 weeks before the
 // recent window). One area drifting is Watch; two agreeing is a Warning.
+// Until there's history for that (about 6 weeks), an early check compares
+// the last 7 days with every day before them (from 3 weeks in); it can say
+// Watch but never Warning or notify, since a short normal is noisy.
 // Thresholds are starting values to tune against real histories; this is a
 // wellness signal, not a diagnosis.
 
@@ -25,6 +28,12 @@ const HIGH = 2;
 const WARNING_AFTER_DAYS = 7; // two strained weekly checks in a row
 const CALM_DAYS_TO_CLEAR = 7;
 const NOTIFY_COOLDOWN_DAYS = 7;
+const EARLY_RECENT_DAYS = 7;
+const EARLY_MIN_RECENT = 5;
+
+/** The full check's windows, and the early check's (no gap). */
+const FULL = {recent: RECENT_DAYS, gap: GAP_DAYS, minRecent: MIN_RECENT};
+const EARLY = {recent: EARLY_RECENT_DAYS, gap: 0, minRecent: EARLY_MIN_RECENT};
 
 // direction: +1 when a rise is worse, -1 when a fall is worse.
 // minChange: smallest shift that counts; relative: as a share of the normal.
@@ -95,12 +104,13 @@ function median(values) {
 /**
  * How far one signal has drifted from its normal, worse-is-positive.
  * @param {object} config Entry from SIGNALS.
- * @param {number[]} recent Last 14 days' values.
+ * @param {number[]} recent Last 14 days' values (7 in an early check).
  * @param {number[]} baseline The 8 weeks before.
+ * @param {number} minRecent Fewest recent values to score.
  * @return {object|null} Score details, or null without enough data.
  */
-function scoreSignal(config, recent, baseline) {
-  if (recent.length < MIN_RECENT || baseline.length < MIN_BASELINE) {
+function scoreSignal(config, recent, baseline, minRecent = MIN_RECENT) {
+  if (recent.length < minRecent || baseline.length < MIN_BASELINE) {
     return null;
   }
   const usual = median(baseline);
@@ -128,9 +138,10 @@ function scoreSignal(config, recent, baseline) {
  * Evaluates one night from raw daily signals.
  * @param {Map<string, object>} byDay Day key -> dailySignals result.
  * @param {string} today Day key being evaluated.
+ * @param {object} windows FULL, or EARLY for the early check.
  * @return {object} Signals, groups and the night's raw condition.
  */
-function assess(byDay, today) {
+function assess(byDay, today, windows = FULL) {
   const end = dayIndex(today);
   const signals = {};
   for (const [name, config] of Object.entries(SIGNALS)) {
@@ -144,10 +155,10 @@ function assess(byDay, today) {
         const day = byDay.get(dayKey(i))?.[name];
         const value = kind ? day?.[kind] : day;
         if (value == null) continue;
-        if (i > end - RECENT_DAYS) recent.push(value);
-        else if (i <= end - RECENT_DAYS - GAP_DAYS) baseline.push(value);
+        if (i > end - windows.recent) recent.push(value);
+        else if (i <= end - windows.recent - windows.gap) baseline.push(value);
       }
-      const result = scoreSignal(config, recent, baseline);
+      const result = scoreSignal(config, recent, baseline, windows.minRecent);
       if (!result) continue;
       signals[name] = {...result, group: config.group, ...kind && {kind}};
       break;
@@ -175,9 +186,10 @@ function assess(byDay, today) {
 /**
  * Plain-language reasons: the three most-drifted signals.
  * @param {object} signals Scored signals from assess().
+ * @param {boolean} early From an early check (the last week, not two).
  * @return {string[]} Reasons, worst first.
  */
-function reasons(signals) {
+function reasons(signals, early = false) {
   const format = (name, value) => {
     const config = SIGNALS[name];
     if (name === "sleepHours") {
@@ -193,7 +205,8 @@ function reasons(signals) {
       .slice(0, 3)
       .map(([name, signal]) => `${SIGNALS[name].label} has been ` +
         `${format(name, signal.recent)} vs your usual ` +
-        `${format(name, signal.usual)} on most days for 2 weeks`);
+        `${format(name, signal.usual)} on most days for ` +
+        `${early ? "a week" : "2 weeks"}`);
 }
 
 /**
@@ -221,7 +234,8 @@ function details(signals) {
 }
 
 /**
- * Days so far towards the ~6 weeks a first check needs: the days since the
+ * Days so far towards the first check (3 weeks; the full one at about
+ * 6): the days since the
  * earliest Capacity, Effort or Mood in the 12-week window.
  * @param {Map<string, object>} byDay Day key -> dailySignals result.
  * @param {string} today Day key being evaluated.
@@ -249,19 +263,26 @@ function learningDays(byDay, today) {
 function evaluateNight(byDay, today, previous) {
   const state = {strainedDays: 0, calmDays: 0, level: "steady",
     lastNotified: null, ...previous};
-  const night = assess(byDay, today);
+  const full = assess(byDay, today);
+  const night = full.enoughData ? full : assess(byDay, today, EARLY);
   if (!night.enoughData) {
-    return {level: "learning", reasons: [], notify: false,
+    return {level: "learning", reasons: [], notify: false, early: false,
       learningDays: learningDays(byDay, today), since: null,
       ...details(night.signals),
       state: {...state, strainedDays: 0, calmDays: 0, level: "learning",
         since: null}};
   }
-  state.strainedDays = night.strainedGroups >= 2 ? state.strainedDays + 1 : 0;
+  const early = !full.enoughData;
+  // An early check only watches; strain counts towards a Warning once the
+  // full check runs.
+  state.strainedDays = !early && night.strainedGroups >= 2 ?
+    state.strainedDays + 1 : 0;
   state.calmDays = night.strainedGroups === 0 ? state.calmDays + 1 : 0;
 
   let level;
-  if (night.acute || state.strainedDays >= WARNING_AFTER_DAYS) {
+  if (early) {
+    level = night.watch ? "watch" : "steady";
+  } else if (night.acute || state.strainedDays >= WARNING_AFTER_DAYS) {
     level = "warning";
   } else if (state.level === "warning" &&
       state.calmDays < CALM_DAYS_TO_CLEAR) {
@@ -277,7 +298,7 @@ function evaluateNight(byDay, today, previous) {
   // When the current level started, for "Signs of a slide for 10 days".
   const since = level === state.level ? state.since ?? today : today;
   return {
-    level, reasons: reasons(night.signals), notify, since,
+    level, reasons: reasons(night.signals, early), notify, since, early,
     learningDays: null, ...details(night.signals),
     state: {...state, level, since,
       lastNotified: notify ? today : state.lastNotified},
@@ -303,7 +324,7 @@ function evaluateRange(days, from, to) {
     results.push({day: dayKey(i), level: night.level,
       reasons: night.reasons, notify: night.notify, since: night.since,
       areas: night.areas, drivers: night.drivers,
-      learningDays: night.learningDays});
+      learningDays: night.learningDays, early: night.early});
   }
   return results;
 }
@@ -357,7 +378,7 @@ async function refreshBurnout(db, messaging, uid, day, timestamp) {
     if (existing.data()?.burnout) return "done";
     tx.set(target, {burnout: {
       version: VERSION, level: night.level, since: night.since,
-      areas: night.areas, drivers: night.drivers,
+      areas: night.areas, drivers: night.drivers, early: night.early,
       learningDays: night.learningDays, notified: night.notify,
       state: night.state, computedAt: timestamp(),
     }}, {merge: true});
