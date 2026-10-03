@@ -34,13 +34,12 @@ import '../widgets/daily_brief_card.dart';
 import '../src/utils/owned_stream_snapshot.dart';
 import '../src/utils/server_capacity.dart';
 import '../src/services/metrics_repository.dart';
-import '../src/services/metrics_service.dart';
 import '../src/utils/day_key.dart';
-import '../widgets/morning_check_in_card.dart';
 import '../widgets/burnout_card.dart';
 import '../src/utils/burnout_view.dart';
 import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
+import '../src/utils/sleep_schedule.dart';
 import '../widgets/energy_forecast_view.dart';
 
 class MyDayScreen extends StatefulWidget {
@@ -63,6 +62,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// local rules can't, with AI consent), keyed by sourceEventKey.
   Map<String, CognitiveLoadScore> _eventScores = const {};
   int _wrapUpMinutes = kDefaultDayWrapUpMinutes;
+
+  /// Your usual sleep times, for the energy forecast when no sleep is tracked.
+  SleepSchedule? _sleepSchedule;
   String? _calendarLoadError;
   int _loadGeneration = 0;
   bool _isLoading = true;
@@ -191,7 +193,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   .data()?['preferences']
               as Map?;
       final minutes = preferences?['dayWrapUpMinutes'];
-      if (minutes is int && mounted) setState(() => _wrapUpMinutes = minutes);
+      if (!mounted) return;
+      setState(() {
+        if (minutes is int) _wrapUpMinutes = minutes;
+        _sleepSchedule = SleepSchedule.fromPreferences(preferences);
+      });
     } catch (_) {
       // Keeps the 5 PM default.
     }
@@ -646,7 +652,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 ),
               ],
               const SizedBox(height: 18),
-              _buildMorningCheckIn(),
               _buildDayOutlookCard(timedEvents: timedEvents),
               ValueListenableBuilder<AsyncSnapshot<BurnoutView?>>(
                 valueListenable: _burnoutSnapshot,
@@ -726,71 +731,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// The optional morning check-in (docs/scores.md §4), shown 5 AM to noon.
-  /// "How do you feel?" also counts as today's mood check-in.
-  Widget _buildMorningCheckIn() =>
-      ValueListenableBuilder<AsyncSnapshot<DailyBriefMetricsSummary>>(
-        valueListenable: _briefSnapshot,
-        builder: (context, snapshot, _) {
-          final summary = snapshot.data;
-          final checkIn = summary?.checkIn;
-          if (summary == null ||
-              !morningCheckInOpen(DateTime.now()) ||
-              checkIn?['dismissed'] == true) {
-            return const SizedBox.shrink();
-          }
-          final feel = checkIn?['feel'];
-          final sleep = checkIn?['sleep'];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: MorningCheckInCard(
-              feel: feel is num ? MetricsService.moodLabelForScore(feel) : null,
-              sleep: sleep is num
-                  ? sleepCheckInScores.entries
-                        .where((e) => e.value == sleep)
-                        .firstOrNull
-                        ?.key
-                  : null,
-              sleepHours: summary.sleep,
-              onFeel: (label) => _saveMorningCheckIn({
-                'feel': MetricsService.moodScoreForLabel(label),
-              }, mood: label),
-              onSleep: (label) =>
-                  _saveMorningCheckIn({'sleep': sleepCheckInScores[label]!}),
-              onDismiss: () => _saveMorningCheckIn({'dismissed': true}),
-            ),
-          );
-        },
-      );
-
-  /// Saves answers to today's `metrics_daily.morning_check_in`, which the
-  /// server's Capacity reads. [mood] is also saved as the mood check-in.
-  Future<void> _saveMorningCheckIn(
-    Map<String, Object> fields, {
-    String? mood,
-  }) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    try {
-      await Future.wait([
-        FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('metrics_daily')
-            .doc(localDayKey(DateTime.now()))
-            .set({'morning_check_in': fields}, SetOptions(merge: true)),
-        if (mood != null) MetricsService.saveMoodCheckIn(mood),
-      ]);
-    } catch (_) {
-      _showMessage('Could not save your check-in.');
-    }
-  }
-
   /// Today's energy forecast (docs/scores.md §8), once any night is
-  /// recorded. Tomorrow's first timed event sets tonight's bed-by.
+  /// recorded or your usual sleep times are set. Tomorrow's first timed event
+  /// sets tonight's bed-by.
   EnergyForecast? _energyForecast(DateTime today) {
     final nights = _briefSnapshot.value.data?.sleepNights ?? const [];
-    if (nights.isEmpty) return null;
+    if (nights.isEmpty && _sleepSchedule == null) return null;
     final firsts = [
       for (final e in _tomorrowEvents)
         if (!e.isAllDay) e,
@@ -800,6 +746,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       nights: nights,
       sleepNeedHours: _capacitySnapshot.value.data?.sleepNeedHours,
       tomorrowFirstEvent: firsts.firstOrNull?.start,
+      schedule: _sleepSchedule,
     );
   }
 
@@ -826,6 +773,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             tonight: tonight,
             today: today,
             nights: _briefSnapshot.value.data?.sleepNights ?? const [],
+            schedule: _sleepSchedule,
           ),
           firstEventTitle: first?.title,
           firstEventStart: first?.start,

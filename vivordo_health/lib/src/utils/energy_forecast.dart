@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'sleep_schedule.dart';
+
 /// One night's sleep, from falling asleep to waking.
 typedef SleepPeriod = ({DateTime start, DateTime end});
 
@@ -29,6 +31,7 @@ class EnergyForecast {
     required this.sleepDebtHours,
     required this.midSleepHours,
     required this.estimated,
+    this.usesSchedule = false,
   });
 
   final DateTime wake;
@@ -52,6 +55,9 @@ class EnergyForecast {
 
   /// True when last night's sleep is missing and your usual pattern was used.
   final bool estimated;
+
+  /// True when your saved sleep schedule stood in for tracked sleep.
+  final bool usesSchedule;
 
   /// Energy at [time], or null outside the waking day.
   double? at(DateTime time) {
@@ -130,12 +136,15 @@ const _maxDebtHours = 10.0;
 
 /// Forecasts [day]'s energy from recent [nights] (any order, including last
 /// night). [sleepNeedHours] is Capacity's sleep need; [tomorrowFirstEvent]
-/// sets tonight's bed-by time.
+/// sets tonight's bed-by time. Until [_minNights] nights are tracked, your
+/// usual [schedule] sets the body clock, the length of a usual night and
+/// tonight's bedtime.
 EnergyForecast forecastEnergy({
   required DateTime day,
   required List<SleepPeriod> nights,
   double? sleepNeedHours,
   DateTime? tomorrowFirstEvent,
+  SleepSchedule? schedule,
 }) {
   final date = DateTime(day.year, day.month, day.day);
   final need = sleepNeedHours ?? _defaultNeedHours;
@@ -157,21 +166,33 @@ EnergyForecast forecastEnergy({
 
   final free = recent.where((n) => n.end.weekday >= DateTime.saturday);
   final history = recent.length >= _minNights;
+  final usual = history ? null : schedule?.nightEnding(date);
   final midSleep = history
       ? _median([for (final n in free.length >= 2 ? free : recent) midOf(n)])
+      : usual != null
+      ? midOf(usual)
       : lastNight != null
       ? midOf(lastNight)
       : _defaultMidSleepHours;
   final usualHours = history
       ? _median([for (final n in recent) _hours(n.end.difference(n.start))])
+      : usual != null
+      ? _hours(usual.end.difference(usual.start))
       : need;
 
   final anchor = date.add(_fromHours(midSleep));
   final wake = lastNight?.end ?? anchor.add(_fromHours(usualHours / 2));
-  final slept = lastNight == null
-      ? need
-      : _hours(lastNight.end.difference(lastNight.start));
-  final usualBedtime = _toQuarter(anchor.add(_fromHours(24 - usualHours / 2)));
+  final slept = lastNight != null
+      ? _hours(lastNight.end.difference(lastNight.start))
+      : usual != null
+      ? usualHours
+      : need;
+  // Tonight's scheduled bedtime, so a Friday uses the weekend's.
+  final usualBedtime = usual != null
+      ? schedule!
+            .nightEnding(DateTime(date.year, date.month, date.day + 1))
+            .start
+      : _toQuarter(anchor.add(_fromHours(24 - usualHours / 2)));
 
   final debt = math.min(
     _maxDebtHours,
@@ -229,6 +250,7 @@ EnergyForecast forecastEnergy({
     sleepDebtHours: debt,
     midSleepHours: midSleep,
     estimated: lastNight == null,
+    usesSchedule: usual != null,
   );
 }
 

@@ -13,7 +13,10 @@ import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
+import 'package:vivordo_health/src/utils/sleep_nights.dart';
+import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/sleep_schedule_editor.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 bool hasRecordedSleep(Map<String, dynamic>? dailyMetrics) {
@@ -153,6 +156,40 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         .snapshots();
   }
 
+  Future<void> _editSleepSchedule() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    SleepSchedule? current;
+    try {
+      final user = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      current = SleepSchedule.fromPreferences(
+        user.data()?['preferences'] as Map?,
+      );
+      // Nothing saved yet: start from the last two weeks of tracked sleep.
+      if (current == null) {
+        final today = DateUtils.dateOnly(DateTime.now());
+        final days = await user.reference
+            .collection('metrics_daily')
+            .where(
+              FieldPath.documentId,
+              isGreaterThan: localDayKey(
+                today.subtract(const Duration(days: 14)),
+              ),
+            )
+            .get();
+        current = SleepSchedule.fromNights(
+          sleepNights([for (final day in days.docs) day.data()]),
+        );
+      }
+    } catch (_) {
+      // Starts from 11:30 PM–7 AM.
+    }
+    if (mounted) await showSleepScheduleSheet(context, current);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -169,6 +206,24 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           'Sleep',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
+        actions: [
+          PopupMenuButton<void>(
+            tooltip: 'Sleep options',
+            icon: const Icon(Icons.more_horiz_rounded, color: _purple),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                onTap: _editSleepSchedule,
+                child: const Row(
+                  children: [
+                    Icon(Icons.bedtime_outlined, size: 20),
+                    SizedBox(width: 12),
+                    Text('Usual sleep schedule'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _sleepStream(),

@@ -486,25 +486,46 @@ class HealthService {
     }
   }
 
-  Future<void> _syncSleep(
-    String uid, {
-    required DateTime start,
-    required DateTime end,
-  }) async {
+  Future<List<SleepInterval>> _sleepIntervals(
+    DateTime start,
+    DateTime end,
+  ) async {
     final points = await _health.getHealthDataFromTypes(
       startTime: start.subtract(const Duration(hours: 12)),
       endTime: end,
       types: [HealthDataType.SLEEP_ASLEEP, ...kSleepStageTypes],
     );
-    final unique = _health.removeDuplicates(points);
-    final intervals = <SleepInterval>[];
-    for (final point in unique) {
-      final stage = _sleepStageForType(point.type);
-      if (stage == null || !point.dateTo.isAfter(point.dateFrom)) continue;
-      intervals.add(
-        SleepInterval(stage: stage, start: point.dateFrom, end: point.dateTo),
-      );
-    }
+    return [
+      for (final point in _health.removeDuplicates(points))
+        if (_sleepStageForType(point.type) case final stage?
+            when point.dateTo.isAfter(point.dateFrom))
+          SleepInterval(stage: stage, start: point.dateFrom, end: point.dateTo),
+    ];
+  }
+
+  /// The last [days] nights (bed to wake) straight from Apple Health or
+  /// Health Connect, for prefilling the usual sleep schedule in onboarding,
+  /// before the first sync has reached Firestore.
+  Future<List<({DateTime start, DateTime end})>> recentSleepNights({
+    int days = 14,
+  }) async {
+    final end = DateTime.now();
+    final intervals = await _sleepIntervals(
+      end.subtract(Duration(days: days)),
+      end,
+    );
+    return [
+      for (final summary in summarizeSleepByWakeDay(intervals))
+        (start: summary.bedtime, end: summary.wakeTime),
+    ];
+  }
+
+  Future<void> _syncSleep(
+    String uid, {
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final intervals = await _sleepIntervals(start, end);
 
     final summaries = summarizeSleepByWakeDay(intervals).where((summary) {
       return !summary.date.isBefore(

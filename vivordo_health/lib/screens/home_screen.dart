@@ -22,6 +22,7 @@ import 'package:vivordo_health/src/utils/day_agenda.dart';
 import 'package:vivordo_health/src/utils/day_effort.dart';
 import 'package:vivordo_health/src/utils/day_wrap_up.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/widgets/morning_check_in_card.dart';
 import 'package:vivordo_health/src/utils/home_day_load.dart';
 import 'package:vivordo_health/src/utils/owned_stream_snapshot.dart';
 import 'package:vivordo_health/widgets/add_calendar_event_sheet.dart';
@@ -31,6 +32,7 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
 import 'package:vivordo_health/src/utils/energy_fit.dart';
 import 'package:vivordo_health/src/utils/energy_forecast.dart';
+import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/src/utils/home_metrics_summary.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/widgets/energy_forecast_view.dart';
@@ -603,6 +605,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final activeCaloriesMap = data?['active_calories'] as Map?;
         final exerciseTimeMap = data?['exercise_time'] as Map?;
         final moodMap = data?['mood'] as Map?;
+        final checkIn = data?['morning_check_in'] as Map?;
 
         // Stress: prefer the LIVE accumulating BaaS value, then the day's
         // mean, then the HRV-derived fallback.
@@ -703,6 +706,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     !scanSnap.hasData,
                 moodScore: savedMoodScore,
                 sleepNights: metricsSummary.sleepNights,
+                checkIn: loading ? null : checkIn ?? const {},
               ),
             );
           },
@@ -868,6 +872,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required bool hrLoading,
     required double? moodScore,
     List<SleepPeriod> sleepNights = const [],
+    Map? checkIn,
   }) {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
@@ -904,6 +909,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         sleepIsWhoop || latestHeartRate?.source == 'whoop_ble',
                   ),
                 ),
+                _buildCheckIn(checkIn, sleepHours),
                 const SizedBox(height: 12),
                 _buildVitals(
                   sleepHours: sleepHours,
@@ -955,6 +961,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  /// The daily check-in (docs/scores.md §4), from 5 AM until both questions
+  /// are answered or it's dismissed. "How do you feel?" also counts as
+  /// today's mood check-in. [checkIn] is null until today's metrics load.
+  Widget _buildCheckIn(Map? checkIn, double? sleepHours) {
+    if (!checkInDue(checkIn, DateTime.now())) return const SizedBox.shrink();
+    final feel = checkIn!['feel'];
+    final sleep = checkIn['sleep'];
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: MorningCheckInCard(
+        feel: feel is num ? MetricsService.moodLabelForScore(feel) : null,
+        sleep: sleep is num
+            ? sleepCheckInScores.entries
+                  .where((e) => e.value == sleep)
+                  .firstOrNull
+                  ?.key
+            : null,
+        sleepHours: sleepHours,
+        onFeel: (label) => _saveCheckIn({
+          'feel': MetricsService.moodScoreForLabel(label),
+        }, mood: label),
+        onSleep: (label) => _saveCheckIn({'sleep': sleepCheckInScores[label]!}),
+        onDismiss: () => _saveCheckIn({'dismissed': true}),
+      ),
+    );
+  }
+
+  /// Saves answers to today's `metrics_daily.morning_check_in`, which the
+  /// server's Capacity reads. [mood] is also saved as the mood check-in.
+  Future<void> _saveCheckIn(Map<String, Object> fields, {String? mood}) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await Future.wait([
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('metrics_daily')
+            .doc(localDayKey(DateTime.now()))
+            .set({'morning_check_in': fields}, SetOptions(merge: true)),
+        if (mood != null) MetricsService.saveMoodCheckIn(mood),
+      ]);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save your check-in.')),
+        );
+      }
+    }
   }
 
   void _push(Widget screen) => Navigator.of(
@@ -1700,13 +1757,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       untimedDone: untimedDone,
       workouts: effortContext.workouts,
     );
-    // The energy forecast (docs/scores.md §8), once any night is recorded.
-    final energy = sleepNights.isEmpty
+    // The energy forecast (docs/scores.md §8), once any night is recorded
+    // or your usual sleep times are set.
+    final energy = sleepNights.isEmpty && effortContext.sleepSchedule == null
         ? null
         : forecastEnergy(
             day: today,
             nights: sleepNights,
             sleepNeedHours: effortContext.sleepNeedHours,
+            schedule: effortContext.sleepSchedule,
           );
     final clash = energy == null
         ? null
@@ -2118,11 +2177,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         user.get(),
         user.collection('scores_daily').doc(localDayKey(day)).get(),
       ]);
-      final wrapUp =
-          ((profile as DocumentSnapshot<Map<String, dynamic>>)
+      final preferences =
+          (profile as DocumentSnapshot<Map<String, dynamic>>)
                   .data()?['preferences']
-              as Map?)?['dayWrapUpMinutes'];
+              as Map?;
+      final wrapUp = preferences?['dayWrapUpMinutes'];
       return _EffortContext(
+        sleepSchedule: SleepSchedule.fromPreferences(preferences),
         sleepNeedHours:
             (((todayScores as DocumentSnapshot<Map<String, dynamic>>)
                             .data()?['capacity']
@@ -3193,9 +3254,13 @@ class _EffortContext {
     this.workouts = const [],
     this.pastByHour = const [],
     this.sleepNeedHours,
+    this.sleepSchedule,
   });
 
   final int wrapUpMinutes;
+
+  /// Your usual sleep times, for the forecast when no sleep is tracked.
+  final SleepSchedule? sleepSchedule;
 
   /// Today's sleep need from the server's Capacity, for the energy forecast.
   final double? sleepNeedHours;

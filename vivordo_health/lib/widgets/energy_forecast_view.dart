@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/utils/energy_forecast.dart';
+import '../src/utils/sleep_schedule.dart';
 
 /// The energy forecast's colours: green when you're at your best, amber in
 /// the dip, muted while groggy, purple while winding down.
@@ -337,7 +338,10 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
   return [
     (
       Icons.bedtime_rounded,
-      forecast.estimated
+      forecast.estimated && forecast.usesSchedule
+          ? "No sleep is tracked for last night, so this uses your usual "
+                'sleep times. You can change them on the Sleep screen.'
+          : forecast.estimated
           ? "Last night's sleep hasn't synced yet, so this uses your usual "
                 'pattern.'
           : short >= 0.5
@@ -537,6 +541,7 @@ EnergyForecast tomorrowEnergyForecast({
   required EnergyForecast tonight,
   required DateTime today,
   required List<SleepPeriod> nights,
+  SleepSchedule? schedule,
 }) {
   final start = tonight.bedBy;
   final end = start.add(
@@ -546,6 +551,7 @@ EnergyForecast tomorrowEnergyForecast({
     day: DateTime(today.year, today.month, today.day + 1),
     nights: [...nights, (start: start, end: end)],
     sleepNeedHours: tonight.sleepNeedHours,
+    schedule: schedule,
   );
 }
 

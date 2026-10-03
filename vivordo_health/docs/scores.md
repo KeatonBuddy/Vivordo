@@ -204,15 +204,17 @@ twice (and, without a wearable, it adds little beyond sleep and mood).
 Stress stays its own live number. The check-in replaces it as the one
 signal sensors can't measure. It is left out on days it isn't answered.
 
-**The morning check-in card** sits at the top of My Day from 5 AM to noon (local; not
-before 5 AM, when most people haven't slept yet),
-until answered or dismissed. "How do you feel?" uses the mood labels
+**The daily check-in card** sits on Home under the stress card from 5 AM
+(local; not before 5 AM, when most people haven't slept yet) until both
+questions are answered or it's dismissed; unanswered, it goes at midnight
+and comes back at 5 AM. "How do you feel?" uses the mood labels
 (Awful 10, Down 30, Okay 50, Good 75, Great 95) and is also saved as the
 day's mood check-in. "How did you sleep?" is asked even when sleep was
 recorded, with the recorded duration shown beside it. Answers are saved to
 `metrics_daily/{day}.morning_check_in` as `{feel, sleep, dismissed}`
 (scores), which the Capacity trigger reads. Once both are answered the card
-collapses to a confirmation with Edit.
+disappears; an answer given late in the day still counts for that day's
+Capacity.
 
 - **Your sleep need** is your 90-day median sleep, kept between 7 and 9 h.
   With fewer than 14 nights it is 8 h.
@@ -391,7 +393,8 @@ and words, never a score.
 - **Inputs:** the last 14 nights (sleep start and end), last night, and
   Capacity's sleep need (8 h if missing).
   - **Chronotype:** the median sleep midpoint, preferring weekend nights
-    when there are at least 2. Defaults to 3:30 AM until there are 5 nights.
+    when there are at least 2. Until there are 5 nights it comes from your
+    usual sleep schedule (below), else 3:30 AM.
   - **Sleep debt:** the shortfall against your need over the last 7 nights,
     capped at 10 h.
 - **Windows:**
@@ -404,6 +407,19 @@ and words, never a score.
   than your usual bedtime.
 - **Missing last night:** your usual pattern is used and the forecast is
   marked `estimated`.
+- **Usual sleep schedule** (`preferences.sleepSchedule`: `bed`, `wake`, and
+  `weekendBed`/`weekendWake` for Friday and Saturday nights when they
+  differ; minutes after midnight, `lib/src/utils/sleep_schedule.dart`).
+  Asked in onboarding for everyone, after Health, and changed from the Sleep
+  screen's menu. Both are prefilled from the last two weeks of tracked sleep
+  when there are at least 3 nights (medians, rounded to 15 min; weekend
+  times only when they differ by 30 min or more). Until 5 nights are
+  tracked it sets the chronotype, a usual night's length (and so the
+  morning's sleep pressure when last night is missing) and tonight's
+  bedtime; it also lets the forecast show with no tracked sleep at all.
+  Tracked nights always win: last night's real wake time replaces the
+  scheduled one, and from 5 nights on the schedule is ignored. It's never
+  counted as sleep (Capacity doesn't see it).
 - **Night shifts:** everything is anchored to your actual sleep, not clock
   time. Known limit: a mix of day and night sleeps gives a meaningless
   median midpoint.
@@ -434,7 +450,8 @@ still ahead (Your Day's events and timed priorities) against the forecast.
   `sleep.wakeTime` (Home's history window, My Day's brief window), so no
   extra Firestore reads are needed (`lib/src/utils/sleep_nights.dart`).
   Sleep need comes from today's server Capacity (`capacity.sleepNeed`). The
-  forecast only shows once a night is recorded.
+  forecast shows once a night is recorded or a usual sleep schedule is
+  saved.
 - **Home, Your Day:**
   - the curve drawn over the bars, scaled to the day's own range so its
     shape shows;

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/energy_forecast.dart';
 import 'package:vivordo_health/src/utils/server_capacity.dart';
 import 'package:vivordo_health/src/utils/sleep_nights.dart';
+import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/energy_forecast_view.dart';
 
@@ -108,6 +109,16 @@ void main() {
     expect(
       energyReasons(forecastEnergy(day: day, nights: const [])).first.$2,
       contains("hasn't synced"),
+    );
+    expect(
+      energyReasons(
+        forecastEnergy(
+          day: day,
+          nights: const [],
+          schedule: SleepSchedule.fallback,
+        ),
+      ).first.$2,
+      contains('your usual sleep times'),
     );
   });
 

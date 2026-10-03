@@ -137,6 +137,7 @@ Map<String, dynamic> projectScreenFields(
       'active_calories': ['sum'],
       'exercise_time': ['sum'],
       'mood': ['avg', 'label'],
+      'morning_check_in': ['feel', 'sleep', 'dismissed'],
     },
     MetricsProjection.homeHistory => const {
       'stress': ['anchor', 'current', 'avg'],
@@ -147,7 +148,6 @@ Map<String, dynamic> projectScreenFields(
       'sleep': ['avg', 'bedtime', 'wakeTime'],
       'stress': ['current', 'avg', 'algorithm_version', 'computedAt'],
       'hrv': ['stressScore'],
-      'morning_check_in': ['feel', 'sleep', 'dismissed'],
     },
     MetricsProjection.activity => throw ArgumentError(
       'Use activity projection',

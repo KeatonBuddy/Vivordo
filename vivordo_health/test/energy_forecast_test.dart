@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/energy_forecast.dart';
+import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 
 void main() {
   // A Thursday.
@@ -152,5 +153,112 @@ void main() {
       sleepNeedHours: 8,
     );
     expect(f.wake, at(7));
+  });
+
+  group('usual sleep schedule', () {
+    // 1 AM–9 AM on weeknights, 2 AM–10:30 AM on Friday and Saturday nights.
+    const late = SleepSchedule(
+      bed: 60,
+      wake: 9 * 60,
+      weekendBed: 2 * 60,
+      weekendWake: 10 * 60 + 30,
+    );
+
+    test('nights land on the right dates', () {
+      expect(SleepSchedule.fallback.nightEnding(day), (
+        start: at(23, 30, -1),
+        end: at(7),
+      ));
+      expect(late.nightEnding(day), (start: at(1), end: at(9)));
+      // Saturday morning uses the weekend times.
+      expect(late.nightEnding(at(0, 0, 2)), (
+        start: at(2, 0, 2),
+        end: at(10, 30, 2),
+      ));
+    });
+
+    test('stands in for tracked sleep until there is a week of it', () {
+      final f = forecastEnergy(day: day, nights: const [], schedule: late);
+      expect(f.estimated, isTrue);
+      expect(f.usesSchedule, isTrue);
+      expect(f.wake, at(9));
+      expect(f.midSleepHours, 5);
+      // Thursday night is a weeknight: bed at 1 AM.
+      expect(f.usualBedtime, at(1, 0, 1));
+      // A late sleeper peaks later than the textbook 9 AM.
+      final peak = window(f, EnergyPhase.peak);
+      expect(peak.start.isAfter(at(10, 30)), isTrue);
+
+      // Friday's bedtime is the weekend's.
+      final friday = forecastEnergy(
+        day: at(0, 0, 1),
+        nights: const [],
+        schedule: late,
+      );
+      expect(friday.usualBedtime, at(2, 0, 2));
+    });
+
+    test('tracked sleep wins once there is enough of it', () {
+      final tracked = forecastEnergy(day: day, nights: nights());
+      final both = forecastEnergy(day: day, nights: nights(), schedule: late);
+      expect(both.usesSchedule, isFalse);
+      expect(both.wake, tracked.wake);
+      expect(both.usualBedtime, tracked.usualBedtime);
+      expect(
+        both.windows.map((w) => w.start),
+        tracked.windows.map((w) => w.start),
+      );
+    });
+
+    test('prefills from tracked nights, across midnight', () {
+      // Two weeks ending Thursday 8 Oct: weeknights 11:50 PM or 12:10 AM to
+      // 7 AM, weekends 1 AM to 9:30 AM.
+      final tracked = [
+        for (var i = 0; i < 14; i++)
+          () {
+            final wakeDay = DateTime(2026, 10, 8 - i);
+            final weekend = wakeDay.weekday >= DateTime.saturday;
+            final end = wakeDay.add(
+              Duration(minutes: weekend ? 9 * 60 + 30 : 7 * 60),
+            );
+            final start = wakeDay.add(
+              Duration(minutes: weekend ? 60 : (i.isEven ? -10 : 10)),
+            );
+            return (start: start, end: end);
+          }(),
+      ];
+      final s = SleepSchedule.fromNights(tracked)!;
+      // 11:45 PM or 12:15 AM, never midday.
+      expect(s.bed, anyOf(1425, 15));
+      expect(s.wake, 7 * 60);
+      expect(s.weekendBed, 60);
+      expect(s.weekendWake, 9 * 60 + 30);
+
+      // Weekends within half an hour of weeknights: one pair of times.
+      final steady = SleepSchedule.fromNights(nights())!;
+      expect(steady.toMap(), {'bed': 23 * 60, 'wake': 7 * 60});
+      expect(SleepSchedule.fromNights(nights(count: 2)), isNull);
+    });
+
+    test('saves and reads back, dropping weekend times when they match', () {
+      expect(late.toMap(), {
+        'bed': 60,
+        'wake': 540,
+        'weekendBed': 120,
+        'weekendWake': 630,
+      });
+      final read = SleepSchedule.fromPreferences({
+        'sleepSchedule': {'bed': 60, 'wake': 540},
+      })!;
+      expect(read.weekendsDiffer, isFalse);
+      expect(read.toMap(), {'bed': 60, 'wake': 540});
+      expect(
+        SleepSchedule.fromPreferences({
+          'sleepSchedule': {'bed': 60},
+        }),
+        isNull,
+      );
+      expect(SleepSchedule.fromPreferences(null), isNull);
+    });
   });
 }

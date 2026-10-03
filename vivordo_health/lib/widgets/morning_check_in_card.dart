@@ -13,10 +13,20 @@ const sleepCheckInScores = {
 
 /// "How do you feel?" uses the mood check-in labels, so the answer is also
 /// today's mood (scored by MetricsService.moodScoreForLabel).
-/// The morning check-in is asked from 5 AM to noon. Before 5 AM most people
-/// are still up from the night before and haven't slept yet, and an answer
-/// would be saved to a day that hasn't really started.
-bool morningCheckInOpen(DateTime now) => now.hour >= 5 && now.hour < 12;
+/// The check-in is asked from 5 AM until midnight, until it's answered.
+/// Before 5 AM most people are still up from the night before and haven't
+/// slept yet, and an answer would be saved to a day that hasn't really
+/// started.
+bool morningCheckInOpen(DateTime now) => now.hour >= 5;
+
+/// Whether Home shows the check-in: today's answers are loaded ([checkIn]
+/// is null until then), it's open, not dismissed, and a question is still
+/// unanswered.
+bool checkInDue(Map? checkIn, DateTime now) =>
+    checkIn != null &&
+    morningCheckInOpen(now) &&
+    checkIn['dismissed'] != true &&
+    !(checkIn['feel'] is num && checkIn['sleep'] is num);
 
 const feelCheckInLabels = ['Awful', 'Down', 'Okay', 'Good', 'Great'];
 
@@ -36,10 +46,9 @@ const _sleepIcons = [
   Icons.bedtime_rounded,
 ];
 
-/// The optional morning check-in at the top of My Day. Shown before noon
-/// until answered or dismissed; once both questions are answered it collapses
-/// to a confirmation with an Edit button.
-class MorningCheckInCard extends StatefulWidget {
+/// The optional daily check-in on Home, under the stress card. Shown from
+/// 5 AM until both questions are answered or it's dismissed.
+class MorningCheckInCard extends StatelessWidget {
   const MorningCheckInCard({
     super.key,
     required this.feel,
@@ -59,17 +68,9 @@ class MorningCheckInCard extends StatefulWidget {
   final VoidCallback onDismiss;
 
   @override
-  State<MorningCheckInCard> createState() => _MorningCheckInCardState();
-}
-
-class _MorningCheckInCardState extends State<MorningCheckInCard> {
-  bool _editing = false;
-
-  @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    final done = widget.feel != null && widget.sleep != null && !_editing;
-    final minutes = ((widget.sleepHours ?? 0) * 60).round();
+    final minutes = ((sleepHours ?? 0) * 60).round();
     final recorded = minutes <= 0
         ? ''
         : ' · ${minutes ~/ 60}h ${minutes % 60}m recorded';
@@ -80,99 +81,61 @@ class _MorningCheckInCardState extends State<MorningCheckInCard> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.black.withValues(alpha: .07)),
       ),
-      child: done
-          ? Row(
-              children: [
-                const Icon(
-                  Icons.check_circle_rounded,
-                  color: Color(0xFF1D9E75),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Thanks, added to today's Capacity",
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Text(
-                        'Feeling ${widget.feel!.toLowerCase()} · '
-                        'slept ${widget.sleep!.toLowerCase()}',
-                        style: TextStyle(
-                          color: colors.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _editing = true),
-                  child: const Text('Edit'),
-                ),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'GOOD MORNING',
-                            style: TextStyle(
-                              color: colors.textSecondary,
-                              fontSize: 11,
-                              letterSpacing: .7,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          const Text(
-                            'How are you starting the day?',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      'DAILY CHECK-IN',
+                      style: TextStyle(
+                        color: colors.textSecondary,
+                        fontSize: 11,
+                        letterSpacing: .7,
                       ),
                     ),
-                    IconButton(
-                      tooltip: _editing ? 'Done' : 'Dismiss',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: _editing
-                          ? () => setState(() => _editing = false)
-                          : widget.onDismiss,
-                      icon: Icon(
-                        _editing ? Icons.check_rounded : Icons.close_rounded,
-                        color: colors.textSecondary,
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Two quick questions',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
-                _question(
-                  context,
-                  'How do you feel?',
-                  feelCheckInLabels,
-                  _feelIcons,
-                  widget.feel,
-                  widget.onFeel,
-                ),
-                _question(
-                  context,
-                  'How did you sleep?$recorded',
-                  sleepCheckInScores.keys.toList(),
-                  _sleepIcons,
-                  widget.sleep,
-                  widget.onSleep,
-                ),
-              ],
-            ),
+              ),
+              IconButton(
+                tooltip: 'Dismiss',
+                visualDensity: VisualDensity.compact,
+                onPressed: onDismiss,
+                icon: Icon(Icons.close_rounded, color: colors.textSecondary),
+              ),
+            ],
+          ),
+          _question(
+            context,
+            'How do you feel?',
+            feelCheckInLabels,
+            _feelIcons,
+            feel,
+            onFeel,
+          ),
+          _question(
+            context,
+            'How did you sleep?$recorded',
+            sleepCheckInScores.keys.toList(),
+            _sleepIcons,
+            sleep,
+            onSleep,
+          ),
+        ],
+      ),
     );
   }
 

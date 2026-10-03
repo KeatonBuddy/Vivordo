@@ -18,8 +18,10 @@ import '../src/services/personal_profile_service.dart';
 import '../src/services/user_service.dart';
 import '../src/services/whoop_service.dart';
 import '../src/utils/day_wrap_up.dart';
+import '../src/utils/sleep_schedule.dart';
 import '../widgets/birth_year_picker.dart';
 import '../widgets/privacy_support_links.dart';
+import '../widgets/sleep_schedule_editor.dart';
 import 'personal_profile_screen.dart' show MeasurementEditorSheet;
 
 /// The onboarding everyone completes once. Bump it to send everyone through
@@ -35,6 +37,7 @@ enum OnboardingStep {
   about,
   wrapUp,
   health,
+  sleep,
   wearables,
   calendar,
   ai,
@@ -93,6 +96,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   late bool _wrapUpVaries =
       _preferences.containsKey('dayWrapUpMinutes') && _savedWrapUp == null;
 
+  late SleepSchedule _sleep =
+      SleepSchedule.fromPreferences(_preferences) ?? SleepSchedule.fallback;
+
+  /// Whether [_sleep] was filled in from tracked sleep.
+  bool _sleepFromHealth = false;
+
   late bool _healthConnected =
       (widget.userDoc?['healthKitConsent'] as Map?)?.values.contains(true) ==
       true;
@@ -115,6 +124,29 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     super.initState();
     _name.addListener(() => setState(() {}));
     unawaited(_loadConnections());
+    if (_healthConnected) unawaited(_prefillSleep());
+  }
+
+  /// Fills the sleep step from the last two weeks of tracked sleep, unless
+  /// a schedule is already saved or the times were already changed.
+  Future<void> _prefillSleep() async {
+    if (SleepSchedule.fromPreferences(_preferences) != null) return;
+    try {
+      final tracked = SleepSchedule.fromNights(
+        await HealthService().recentSleepNights(),
+      );
+      if (tracked == null ||
+          !mounted ||
+          !identical(_sleep, SleepSchedule.fallback)) {
+        return;
+      }
+      setState(() {
+        _sleep = tracked;
+        _sleepFromHealth = true;
+      });
+    } catch (error) {
+      debugPrint('Sleep schedule prefill failed: $error');
+    }
   }
 
   Future<void> _loadConnections() async {
@@ -426,6 +458,29 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         ),
       ],
     ),
+    OnboardingStep.sleep => _StepLayout(
+      kicker: 'YOUR SLEEP',
+      title: 'When do you usually sleep?',
+      body:
+          'Vivordo forecasts your energy through the day from this until it '
+          'has a week of your tracked sleep. You can change it on the Sleep '
+          'screen.',
+      primary: 'Continue',
+      onPrimary: _busy ? null : () => _next(() => saveSleepSchedule(_sleep)),
+      children: [
+        SleepScheduleEditor(
+          schedule: _sleep,
+          onChanged: (schedule) => setState(() => _sleep = schedule),
+        ),
+        if (_sleepFromHealth) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Filled in from your last two weeks in $_healthName.',
+            style: const TextStyle(fontSize: 12, color: _grey),
+          ),
+        ],
+      ],
+    ),
     OnboardingStep.health => _StepLayout(
       icon: Icons.favorite_rounded,
       iconColor: const Color(0xFFE24B4A),
@@ -647,6 +702,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     if (!granted) return;
     _healthConnected = true;
     unawaited(HealthService().enableAll());
+    unawaited(_prefillSleep());
   }
 
   Future<void> _connectFitbit() => _connect(() async {
