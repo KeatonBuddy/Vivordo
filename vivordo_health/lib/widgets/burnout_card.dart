@@ -21,8 +21,9 @@ String _levelLabel(String level) => switch (level) {
   _ => 'BURNOUT CHECK',
 };
 
-/// The nightly burnout check on My Day (docs/scores.md §6). Tapping it opens
-/// the last 2 weeks against the person's normal.
+/// The nightly burnout check on My Day (docs/scores.md §6): a full card at
+/// Watch or Warning, otherwise a one-line row. Tapping either opens the last
+/// 2 weeks against the person's normal.
 class BurnoutCard extends StatelessWidget {
   const BurnoutCard({super.key, required this.view});
 
@@ -33,6 +34,7 @@ class BurnoutCard extends StatelessWidget {
     final colors = context.vivordoColors;
     final color = _levelColor(view.level);
     final alert = view.level == 'warning' || view.level == 'watch';
+    if (!alert) return _row(context);
     return Material(
       color: alert
           ? Color.alphaBlend(color.withValues(alpha: .10), colors.card)
@@ -114,6 +116,62 @@ class BurnoutCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Learning or Steady: "Burnout check · Steady ›" in one line.
+  Widget _row(BuildContext context) {
+    final colors = context.vivordoColors;
+    final progress = view.learningProgress;
+    final status = progress != null
+        ? 'Learning · ${(progress * burnoutLearningDays).round()} of '
+              '$burnoutLearningDays days'
+        : 'Steady';
+    return Material(
+      color: colors.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.black.withValues(alpha: .07)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => showBurnoutDetails(context, view),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(
+                  color: _levelColor(view.level),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Burnout check',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                status,
+                style: TextStyle(fontSize: 13, color: colors.textSecondary),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: colors.textSecondary,
+                size: 20,
+              ),
             ],
           ),
         ),

@@ -1,5 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/burnout_view.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/burnout_card.dart';
 
 void main() {
   Map<String, dynamic> area({bool elevated = false, num score = 0}) => {
@@ -74,5 +77,34 @@ void main() {
 
   test('no result yet shows nothing', () {
     expect(BurnoutView.fromMap(null, '2026-10-01'), isNull);
+  });
+
+  testWidgets('learning and steady are one line; watch is the full card', (
+    tester,
+  ) async {
+    Future<void> show(Map<String, dynamic> data) => tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Scaffold(
+          body: BurnoutCard(view: BurnoutView.fromMap(data, '2026-10-01')!),
+        ),
+      ),
+    );
+
+    await show({'level': 'learning', 'learningDays': 13, 'areas': {}});
+    expect(find.text('Burnout check'), findsOneWidget);
+    expect(find.text('Learning · 13 of 42 days'), findsOneWidget);
+    expect(find.text('Learning your normal'), findsNothing);
+
+    await show({'level': 'steady', 'areas': {}});
+    expect(find.text('Steady'), findsOneWidget);
+    expect(find.textContaining('normal range'), findsNothing);
+
+    await show({
+      'level': 'watch',
+      'areas': {'capacity': area(elevated: true, score: 1.4)},
+    });
+    expect(find.text('BURNOUT CHECK · WORTH WATCHING'), findsOneWidget);
+    expect(find.text('Burnout check'), findsNothing);
   });
 }

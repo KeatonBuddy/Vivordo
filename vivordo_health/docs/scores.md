@@ -315,9 +315,10 @@ zone, right after that day's final Effort.
   `preferences.notificationsEnabled`; tapping opens My Day.
 - Saved in `scores_daily/{day}.burnout` (`level`, `since`, `areas`,
   `drivers`, `learningDays`, `state`). Each day is evaluated once.
-- **App:** a card under My Day's brief (`lib/widgets/burnout_card.dart`,
-  words from `lib/src/utils/burnout_view.dart`) with a detail sheet; during
-  a warning the brief's headline softens.
+- **App:** under My Day's brief (`lib/widgets/burnout_card.dart`, words
+  from `lib/src/utils/burnout_view.dart`): a one-line row while learning or
+  steady ("Burnout check · Steady"), the full card at Watch or Warning; both
+  open a detail sheet. During a warning the brief's headline softens.
 - No backfills: history starts when each person is on this build.
 - Known limits: a day without a day record (app not opened that day or the
   next) isn't evaluated; strain lasting ~10+ weeks becomes the new normal.
