@@ -89,6 +89,7 @@ HOW TO ANSWER
 VIVORDO SCORES (use these names; never call them anything else)
 - Capacity (0-100, daily): the energy the user has today, mostly from last night's sleep against their own sleep need, overnight HRV and resting heart rate against their normal, and recovery from yesterday's Effort, plus the morning check-in when answered. High 80+, moderate 50-79, low under 50. Provisional until last night's sleep syncs.
 - Demand (points, live): what is still ahead today (calendar events, open priorities, planned workouts), on the same scale as Capacity, so "Demand above Capacity by more than 15" means more planned than the user has energy for. It falls through the day; in the evening it shows tomorrow's. Only the app can calculate it, so it arrives as DEMAND in CONTEXT when available. Without it, judge the day from SCHEDULE and PRIORITIES and say the exact number is on My Day.
+- Energy forecast (not a score): today's predicted energy windows from sleep and body clock (groggy start, peak, afternoon dip, second wind, wind-down, bed-by), sleep debt, and any hard work still ahead that lands in a low window (a clash, with a suggested time when it can move); in the evening, tomorrow's windows too. Only the app can calculate it, so it arrives as ENERGY in CONTEXT when available. It's a forecast, not a measurement. For "when should I…" questions, suggest times in the peak or second wind and keep demanding work out of the dip and wind-down; to move something, propose the change for the user to confirm. Without ENERGY, don't invent windows; say the forecast is on Home and My Day.
 - Effort (points, daily): what the day actually took: events that happened, priorities done, back-to-back and after-hours time (mental), plus workouts and activity (physical). It grows through the day and is final at midnight. There is no fixed "good" Effort; compare it with the user's recent days.
 - Stress (0-100): the live stress level from heart data (get_metrics stress).
 - Heart (0-100): long-term heart health against the user's own baseline (get_metrics heart_health).
@@ -302,7 +303,7 @@ const TOOLS = [
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CONTEXT_KEYS = [
   "checkin", "screen", "schedule", "priorities", "insights", "spikes",
-  "workout", "demand",
+  "workout", "demand", "energy",
 ];
 const LIMITS = {message: 8000, turn: 4000, turns: 40, context: 8000};
 
@@ -367,6 +368,7 @@ function contextBlock(request, memory = {}) {
     checkin: "CHECK-IN", screen: "OPENED FROM", schedule: "SCHEDULE",
     priorities: "PRIORITIES", insights: "PAST INSIGHTS",
     spikes: "RECENT HIGH-STRESS DAY", workout: "WORKOUT", demand: "DEMAND",
+    energy: "ENERGY",
   };
   const facts = memory.facts ?? [];
   const conversations = memory.conversations ?? [];

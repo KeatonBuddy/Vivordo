@@ -1783,7 +1783,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       workouts: effortContext.workouts,
     );
     // The energy forecast (docs/scores.md §8), once any night is recorded
-    // or your usual sleep times are set.
+    // or your usual sleep times are set. Tomorrow's first event sets bed-by.
+    final tomorrow = DateTime(today.year, today.month, today.day + 1);
     final energy = sleepNights.isEmpty && effortContext.sleepSchedule == null
         ? null
         : forecastEnergy(
@@ -1791,14 +1792,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             nights: sleepNights,
             sleepNeedHours: effortContext.sleepNeedHours,
             schedule: effortContext.sleepSchedule,
+            tomorrowFirstEvent: ([
+              for (final event in events ?? const <_ScheduleEvent>[])
+                if (!event.start.isBefore(tomorrow) &&
+                    event.start.isBefore(tomorrow.add(const Duration(days: 1))))
+                  event.start,
+            ]..sort()).firstOrNull,
           );
-    final clash = energy == null
-        ? null
-        : fitDayToEnergy(
-            forecast: energy,
-            items: items,
-            now: now,
-          ).where((f) => f.kind == EnergyFitKind.clash).firstOrNull;
+    final fits = energy == null
+        ? const <EnergyFit>[]
+        : fitDayToEnergy(forecast: energy, items: items, now: now);
+    final clash = fits.where((f) => f.kind == EnergyFitKind.clash).firstOrNull;
+    if (energy != null) {
+      final evening = !now.isBefore(
+        today.add(Duration(minutes: effortContext.wrapUpMinutes)),
+      );
+      latestEnergy = (
+        text: energyContext(
+          today: energy,
+          fits: fits,
+          tomorrow: evening
+              ? tomorrowEnergyForecast(
+                  tonight: energy,
+                  today: today,
+                  nights: sleepNights,
+                  schedule: effortContext.sleepSchedule,
+                )
+              : null,
+        ),
+        at: now,
+      );
+    }
     final opening = nextDayOpening(now, [
       for (final event in events ?? const <_ScheduleEvent>[])
         AgendaItem(event.title, event.start, event.end),

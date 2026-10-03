@@ -1500,6 +1500,26 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           ))
             fit.id: fit,
       };
+      if (energy != null) {
+        final evening = !now.isBefore(
+          today.add(Duration(minutes: _wrapUpMinutes)),
+        );
+        latestEnergy = (
+          text: energyContext(
+            today: energy,
+            fits: fits.values.toList(),
+            tomorrow: evening
+                ? tomorrowEnergyForecast(
+                    tonight: energy,
+                    today: today,
+                    nights: _briefSnapshot.value.data?.sleepNights ?? const [],
+                    schedule: _sleepSchedule,
+                  )
+                : null,
+          ),
+          at: now,
+        );
+      }
 
       Widget itemRow(AgendaItem<_TimelineItem> entry, {bool past = false}) {
         final event = entry.item.event;

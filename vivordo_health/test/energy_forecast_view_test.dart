@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
+import 'package:vivordo_health/src/utils/energy_fit.dart';
 import 'package:vivordo_health/src/utils/energy_forecast.dart';
 import 'package:vivordo_health/src/utils/server_capacity.dart';
 import 'package:vivordo_health/src/utils/sleep_nights.dart';
@@ -243,5 +245,73 @@ void main() {
 
     await show(false);
     expect(find.textContaining('Remind'), findsNothing);
+  });
+
+  test('Vivordo AI gets the day\'s windows, sleep and clashes', () {
+    String t(String time) => time.replaceAll(' ', '\u202f');
+    final short = forecastEnergy(
+      day: day,
+      nights: [
+        (start: DateTime(2026, 10, 8, 0, 20), end: DateTime(2026, 10, 8, 7)),
+        ...nights().skip(1),
+      ],
+      sleepNeedHours: 8,
+    );
+    final deepWork = (
+      event: CalendarCognitiveEvent(
+        id: 'deep work',
+        title: 'Deep work',
+        start: DateTime(2026, 10, 8, 14),
+        end: DateTime(2026, 10, 8, 15),
+      ),
+      score: const CognitiveLoadScore(
+        eventId: 'deep work',
+        score: 55,
+        category: 'focused-work',
+        reason: '',
+        usedAi: false,
+      ),
+      done: false,
+      open: false,
+    );
+    final text = energyContext(
+      today: short,
+      fits: fitDayToEnergy(
+        forecast: short,
+        items: [deepWork],
+        now: DateTime(2026, 10, 8, 8),
+      ),
+      tomorrow: forecastEnergy(day: DateTime(2026, 10, 9), nights: nights()),
+    );
+    expect(text, startsWith('Today: woke ${t('7:00 AM')}, groggy until'));
+    expect(text, contains('peak '));
+    expect(text, contains('Bed by '));
+    expect(text, contains('Last night: slept 6 h 40 (needs 8 h).'));
+    expect(
+      text,
+      contains(
+        'Clashes: Your ${t('2 PM')} Deep work lands in your afternoon dip. '
+        'It could move to',
+      ),
+    );
+    expect(text, contains('\nTomorrow, if in bed by'));
+
+    final usual = energyContext(
+      today: forecastEnergy(
+        day: day,
+        nights: const [],
+        schedule: SleepSchedule.fallback,
+      ),
+    );
+    expect(
+      usual,
+      startsWith(
+        'Today (estimated from usual sleep times; no sleep tracked): '
+        'usually wakes ${t('7:00 AM')}',
+      ),
+    );
+    expect(usual, isNot(contains('Last night')));
+    expect(usual, contains('No hard work still ahead'));
+    expect(usual, isNot(contains('Tomorrow')));
   });
 }

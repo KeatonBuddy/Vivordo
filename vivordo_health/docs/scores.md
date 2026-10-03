@@ -491,6 +491,20 @@ still ahead (Your Day's events and timed priorities) against the forecast.
 - **Text:** "Time to wind down. Bed by 11:15 PM for 8 h before 7:15 AM.
   Tomorrow's peak is 9:15–11:30 AM." Tapping opens My Day.
 
+**Phase 5 implemented** (Vivordo AI context): Home and My Day keep the
+forecast they last showed in `latestEnergy` (`energyContext`), and each chat
+message sends it as ENERGY when it's from today:
+- today's wake (or usual wake, marked estimated), groggy end, windows and
+  bed-by (Home now also uses tomorrow's first event, like My Day);
+- last night against need, and sleep debt;
+- each clash still ahead, whether it can move and where;
+- after the end-of-day time, tomorrow's windows if in bed by bed-by.
+
+`functions/assistant.js` accepts the `energy` key and has one rule: it's a
+forecast, suggest the peak or second wind for demanding work, propose moves
+for the user to confirm, and never invent windows without it. The server
+ignores unknown keys, so app and functions can ship in either order.
+
 ## Open questions
 
 None. Decided (2026-10-01):

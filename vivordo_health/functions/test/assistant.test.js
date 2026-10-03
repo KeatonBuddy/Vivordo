@@ -232,6 +232,13 @@ test("the score lineup is current: Heart in metrics, Wellness retired, Demand fr
   assert.match(buildMessages(request).at(-1).content[0].text, /DEMAND:\n42 points ahead today/);
 });
 
+test("the energy forecast arrives from the app as ENERGY", () => {
+  assert.match(SYSTEM_PROMPT, /- Energy forecast \(not a score\)/);
+  assert.match(SYSTEM_PROMPT, /arrives as ENERGY in CONTEXT/);
+  const request = validateAssistantRequest({...base, context: {energy: "Today: woke 7:00 AM; peak 9–11:15 AM."}});
+  assert.match(buildMessages(request).at(-1).content[0].text, /ENERGY:\nToday: woke 7:00 AM; peak 9–11:15 AM\./);
+});
+
 const now = () => "TS";
 const at = (iso) => ({toDate: () => new Date(iso)});
 

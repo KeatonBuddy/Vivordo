@@ -21,6 +21,7 @@ import '../src/utils/workout_opening.dart';
 import '../widgets/assistant_blocks.dart';
 import '../widgets/contextual_insight_bar.dart';
 import '../widgets/crisis_support_card.dart';
+import '../widgets/energy_forecast_view.dart' show latestEnergy;
 import '../widgets/privacy_support_links.dart';
 import '../widgets/vivordo_robot.dart';
 import 'assistant_memory_screen.dart';
@@ -285,6 +286,17 @@ class _AssistantScreenState extends State<AssistantScreen> {
         'My Day says: "${latest.headline}".';
   }
 
+  /// The energy forecast Home or My Day last showed today (docs/scores.md
+  /// §8, phase 5).
+  String _energyContext() {
+    final latest = latestEnergy;
+    if (latest == null || !DateUtils.isSameDay(latest.at, DateTime.now())) {
+      return '';
+    }
+    return 'As of ${DateFormat('h:mm a').format(latest.at)}. '
+        '${latest.text}';
+  }
+
   String _screenContext() {
     final screen = _screen;
     if (screen == null) return '';
@@ -330,6 +342,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
       if (_screen?.screen == 'workout_summary')
         'workout': _screen!.context ?? '',
       'demand': _demandContext(),
+      'energy': _energyContext(),
     };
   }
 

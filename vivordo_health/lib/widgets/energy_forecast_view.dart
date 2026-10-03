@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
+import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
 import '../src/utils/sleep_schedule.dart';
 
@@ -681,6 +682,64 @@ List<({DateTime at, String body})> windDownReminders({
     ));
   }
   return reminders;
+}
+
+/// The forecast Home or My Day last showed, for Vivordo AI's ENERGY context
+/// (docs/scores.md §8, phase 5): only the phone can calculate it.
+({String text, DateTime at})? latestEnergy;
+
+/// ENERGY for Vivordo AI: today's windows and bed-by, last night against
+/// need, sleep debt, the clashes still ahead (from [fits]) and, in the
+/// evening, [tomorrow]'s windows.
+String energyContext({
+  required EnergyForecast today,
+  List<EnergyFit> fits = const [],
+  EnergyForecast? tomorrow,
+}) {
+  final time = DateFormat.jm();
+  String windows(EnergyForecast f) => [
+    for (final w in f.windows)
+      if (w.phase != EnergyPhase.groggy)
+        '${energyPhaseName(w.phase).toLowerCase()} ${energyWindowText(w)}',
+  ].join('; ');
+  final groggy = today.window(EnergyPhase.groggy);
+  final clashes = [
+    for (final fit in fits)
+      if (fit.kind == EnergyFitKind.clash)
+        energyClashText(
+              title: fit.item.event.title,
+              start: fit.item.event.start,
+              phase: fit.phase,
+            ) +
+            (!fit.movable
+                ? ' It has other guests, so it stays put.'
+                : fit.suggestedStart == null
+                ? ' It could move, but the peak and second wind are full.'
+                : ' It could move to ${time.format(fit.suggestedStart!)}.'),
+  ];
+  return [
+    'Today'
+        '${today.usesSchedule && today.estimated
+            ? ' (estimated from usual sleep times; no sleep tracked)'
+            : today.estimated
+            ? " (last night's sleep hasn't synced; from the usual pattern)"
+            : ''}: '
+        '${today.estimated ? 'usually wakes' : 'woke'} '
+        '${time.format(today.wake)}'
+        '${groggy == null ? '' : ', groggy until ${time.format(groggy.end)}'}; '
+        '${windows(today)}. Bed by ${time.format(today.bedBy)}.',
+    if (!today.estimated)
+      'Last night: slept ${_hoursText(today.sleptHours)} '
+          '(needs ${_hoursText(today.sleepNeedHours)}).',
+    if (today.sleepDebtHours >= 0.25)
+      'Sleep debt: ${_hoursText(today.sleepDebtHours)} over the last 7 nights.',
+    clashes.isEmpty
+        ? 'No hard work still ahead lands in a low-energy window.'
+        : 'Clashes: ${clashes.join(' ')}',
+    if (tomorrow != null)
+      'Tomorrow, if in bed by ${time.format(today.bedBy)}: '
+          '${windows(tomorrow)}.',
+  ].join('\n');
 }
 
 /// The first clash's sentence, e.g. "Your 2 PM Q4 budget review lands in
