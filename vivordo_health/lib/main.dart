@@ -74,6 +74,7 @@ Future<void> openActiveWorkoutFromExternal({
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  HealthService.listenForNewSleep();
 
   // Uncomment to route Cloud Function calls to the local emulator instead of
   // the deployed function. Requires `firebase emulators:start --only functions`.

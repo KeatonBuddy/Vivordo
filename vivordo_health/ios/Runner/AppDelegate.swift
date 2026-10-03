@@ -11,6 +11,7 @@ import WidgetKit
   private var homeWidgetChannel: FlutterMethodChannel?
   private var vo2MaxChannel: FlutterMethodChannel?
   private let vo2MaxReader = Vo2MaxReader()
+  private let sleepObserver = SleepObserver()
   private var pendingWorkoutLaunch = false
   private var pendingWidgetDestination: String?
 
@@ -32,6 +33,8 @@ import WidgetKit
 
     UNUserNotificationCenter.current().delegate = self
     application.registerForRemoteNotifications()
+    // HealthKit only delivers in the background to queries started at launch.
+    sleepObserver.start()
 
     return launched
   }
@@ -64,6 +67,19 @@ import WidgetKit
         self?.vo2MaxReader.read(days: days) { samples in
           DispatchQueue.main.async { result(samples) }
         }
+      }
+
+      let sleepChannel = FlutterMethodChannel(
+        name: "com.vivordo.health/sleep_observer",
+        binaryMessenger: engineBridge.applicationRegistrar.messenger()
+      )
+      sleepChannel.setMethodCallHandler { [weak self] call, result in
+        guard call.method == "ready" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        self?.sleepObserver.attach(sleepChannel)
+        result(nil)
       }
 
       let widgetChannel = FlutterMethodChannel(
@@ -267,6 +283,58 @@ private final class Vo2MaxReader {
         })
       }
       self.store.execute(query)
+    }
+  }
+}
+
+/// Wakes Vivordo when new sleep reaches the iPhone's Health store (from
+/// Apple Watch, or any app writing sleep), so last night shows up without
+/// opening Apple Health. Dart syncs it (HealthService.listenForNewSleep).
+/// HealthKit stops waking an app that doesn't call the completion handler,
+/// so each one is called when Dart replies, or after 25 seconds at most.
+private final class SleepObserver {
+  private let store = HKHealthStore()
+  private let type = HKCategoryType(.sleepAnalysis)
+  private var channel: FlutterMethodChannel?
+  private var waiting: [() -> Void] = []
+  private var syncing = false
+
+  func start() {
+    guard HKHealthStore.isHealthDataAvailable() else { return }
+    let query = HKObserverQuery(sampleType: type, predicate: nil) {
+      [weak self] _, completion, error in
+      DispatchQueue.main.async {
+        guard let self, error == nil else { return completion() }
+        var called = false
+        let done = {
+          guard !called else { return }
+          called = true
+          completion()
+        }
+        self.waiting.append(done)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25, execute: done)
+        self.syncIfReady()
+      }
+    }
+    store.execute(query)
+    store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
+  }
+
+  /// Called once Dart has its handler, which may be after the first wake.
+  func attach(_ channel: FlutterMethodChannel) {
+    self.channel = channel
+    syncIfReady()
+  }
+
+  private func syncIfReady() {
+    guard let channel, !syncing, !waiting.isEmpty else { return }
+    syncing = true
+    let batch = waiting
+    waiting = []
+    channel.invokeMethod("sleepChanged", arguments: nil) { [weak self] _ in
+      batch.forEach { $0() }
+      self?.syncing = false
+      self?.syncIfReady()
     }
   }
 }

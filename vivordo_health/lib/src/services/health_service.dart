@@ -3,6 +3,7 @@ import '../utils/performance_trace.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:health/health.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/exercise_minutes.dart';
@@ -687,6 +688,31 @@ class HealthService {
   }
 
   Future<void> syncToday() => syncToFirestore(daysBack: 1);
+
+  static const _sleepObserverChannel = MethodChannel(
+    'com.vivordo.health/sleep_observer',
+  );
+
+  /// Syncs today's sleep whenever new sleep reaches the iPhone's Health
+  /// store, even with Vivordo in the background, so last night shows up
+  /// without opening Apple Health. HealthKit wakes the app for it
+  /// (ios/Runner/AppDelegate.swift, SleepObserver), which waits for the
+  /// reply, so this always returns.
+  static void listenForNewSleep() {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return;
+    _sleepObserverChannel.setMethodCallHandler((call) async {
+      if (call.method != 'sleepChanged') return;
+      if (FirebaseAuth.instance.currentUser == null) return;
+      try {
+        if ((await _instance.getConsent())['sleep'] != true) return;
+        debugPrint('[HealthService] New sleep in Health; syncing.');
+        await _instance.syncMetric('sleep', daysBack: 1);
+      } catch (e) {
+        debugPrint('[HealthService] Sleep observer sync failed: $e');
+      }
+    });
+    _sleepObserverChannel.invokeMethod<void>('ready').catchError((_) {});
+  }
 
   /// Returns walking/running distance recorded by HealthKit in the supplied
   /// interval. HealthKit reports these samples in metres, so the public value
