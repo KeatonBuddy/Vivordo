@@ -514,94 +514,85 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 26),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Metrics',
-                          style: TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w900,
-                            color: context.vivordoColors.textPrimary,
-                            letterSpacing: -1,
+        child: RefreshIndicator(
+          onRefresh: () => _refreshHealthMetricsFromHealth(showFeedback: true),
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 26),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Metrics',
+                            style: TextStyle(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w900,
+                              color: context.vivordoColors.textPrimary,
+                              letterSpacing: -1,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        VisibleStreamBuilder<
-                          QuerySnapshot<Map<String, dynamic>>
-                        >(
-                          stream: _allMetricsStream,
-                          builder: (context, snapshot) => Wrap(
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 7,
-                            runSpacing: 4,
-                            children: [
-                              Text(
-                                '${_lastManualHealthRefresh == null ? 'Synced automatically' : _manualRefreshLabel().replaceFirst('Updated', 'Synced')}${_hasVisibleWhoopData(snapshot.data) ? ' · Data includes' : ''}',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  color: context.vivordoColors.textSecondary,
+                          const SizedBox(height: 2),
+                          VisibleStreamBuilder<
+                            QuerySnapshot<Map<String, dynamic>>
+                          >(
+                            stream: _allMetricsStream,
+                            builder: (context, snapshot) => Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 7,
+                              runSpacing: 4,
+                              children: [
+                                Text(
+                                  '${_lastManualHealthRefresh == null ? 'Synced automatically' : _manualRefreshLabel().replaceFirst('Updated', 'Synced')}${_hasVisibleWhoopData(snapshot.data) ? ' · Data includes' : ''}',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    color: context.vivordoColors.textSecondary,
+                                  ),
                                 ),
-                              ),
-                              if (_hasVisibleWhoopData(snapshot.data))
-                                const WhoopSourceBadge(compact: true),
-                            ],
+                                if (_hasVisibleWhoopData(snapshot.data))
+                                  const WhoopSourceBadge(compact: true),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Refresh Apple Health',
-                    onPressed: _refreshingHealthMetrics
-                        ? null
-                        : () => _refreshHealthMetricsFromHealth(
-                            showFeedback: true,
-                          ),
-                    icon: _refreshingHealthMetrics
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2.4),
-                          )
-                        : const Icon(Icons.refresh_rounded),
-                    color: accentPurple,
-                  ),
-                  TextButton.icon(
-                    onPressed: _isLoadingMetricOrder ? null : _showLayoutEditor,
-                    icon: const Icon(Icons.tune_rounded, size: 18),
-                    label: const Text('Customize'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: accentPurple,
-                      textStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+                        ],
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 28),
-              VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _allMetricsStream,
-                builder: (_, metricsSnap) => _buildMetricsOverview(
-                  metricsSnap.data,
-                  loading:
-                      metricsSnap.connectionState == ConnectionState.waiting,
+                    TextButton.icon(
+                      onPressed: _isLoadingMetricOrder
+                          ? null
+                          : _showLayoutEditor,
+                      icon: const Icon(Icons.tune_rounded, size: 18),
+                      label: const Text('Customize'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: accentPurple,
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 28),
+                VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _allMetricsStream,
+                  builder: (_, metricsSnap) => _buildMetricsOverview(
+                    metricsSnap.data,
+                    loading:
+                        metricsSnap.connectionState == ConnectionState.waiting,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
