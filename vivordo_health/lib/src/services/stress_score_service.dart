@@ -639,7 +639,11 @@ class StressScoreService {
       if (!covered(date, 'sleep') && sleepHours != null && sleepHours > 0) {
         samples.add({
           'metric_type': 'sleep',
-          'timestamp': '${date}T23:00:00+00:00',
+          // Sleep is filed under the wake day, so the night began the
+          // evening before.
+          'timestamp': DateTime.parse(
+            '${date}T23:00:00Z',
+          ).subtract(const Duration(days: 1)).toIso8601String(),
           'value': sleepHours,
           'unit': 'hours',
           'source': sleepMap?['source'] ?? 'apple_health',
