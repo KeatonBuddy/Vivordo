@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
+import 'package:vivordo_health/src/services/check_in_reminder.dart';
 import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
@@ -726,6 +727,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // ponytail: Google events only; add Outlook's here if it's unbenched
       // (OutlookCalendarService.enabled), or tonight's reminder can miss an
       // early Outlook start until My Day reschedules it.
+      // Keeps the next week of morning check-in reminders scheduled.
+      unawaited(CheckInReminders.sync());
       unawaited(
         WindDownReminders.sync(
           tomorrowFirstEvent: _firstTimedStart(
@@ -1030,6 +1033,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             .set({'morning_check_in': fields}, SetOptions(merge: true)),
         if (mood != null) MetricsService.saveMoodCheckIn(mood),
       ]);
+      // Answered or dismissed: today's 10 AM reminder isn't needed.
+      unawaited(CheckInReminders.sync());
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

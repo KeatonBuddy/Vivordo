@@ -642,7 +642,10 @@ exports.achievementUnlockNotification = onDocumentWritten(
         user.collection("notification_tokens").get(),
       ]);
 
-      if (userSnapshot.data()?.preferences?.notificationsEnabled === false) {
+      // Settings → Achievements (on unless switched off).
+      const preferences = userSnapshot.data()?.preferences;
+      if (preferences?.notificationsEnabled === false ||
+          preferences?.achievementNotificationsEnabled === false) {
         console.info("Achievement notification disabled by user", {
           userUid,
           achievementId,

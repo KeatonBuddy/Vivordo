@@ -350,6 +350,7 @@ class _MyAppState extends State<MyApp> {
         '/scan': (context) => const MainNavigationScreen(initialIndex: 2),
         '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 5),
         '/circle': (context) => const CircleScreen(),
+        '/circle/challenges': (context) => const CircleScreen(initialTab: 1),
         '/active-workout': (context) => const ActiveWorkoutScreen(),
       },
     );

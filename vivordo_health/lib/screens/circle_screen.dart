@@ -28,7 +28,10 @@ part 'circle/profile.dart';
 part 'circle/ui.dart';
 
 class CircleScreen extends StatelessWidget {
-  const CircleScreen({super.key});
+  const CircleScreen({super.key, this.initialTab = 0});
+
+  /// 0 Feed, 1 Challenges (a challenge or achievement notification).
+  final int initialTab;
 
   @override
   Widget build(BuildContext context) => StreamBuilder<CircleProfile?>(
@@ -44,7 +47,7 @@ class CircleScreen extends StatelessWidget {
       final profile = snapshot.data;
       return profile == null
           ? const CreateCircleProfileScreen(intro: _CircleOnboardingIntro())
-          : _CircleProfileHome(profile: profile);
+          : _CircleProfileHome(profile: profile, initialTab: initialTab);
     },
   );
 }
@@ -245,17 +248,18 @@ class _ConnectionsPainter extends CustomPainter {
 }
 
 class _CircleProfileHome extends StatefulWidget {
-  const _CircleProfileHome({required this.profile});
+  const _CircleProfileHome({required this.profile, this.initialTab = 0});
 
   final CircleProfile profile;
+  final int initialTab;
 
   @override
   State<_CircleProfileHome> createState() => _CircleProfileHomeState();
 }
 
 class _CircleProfileHomeState extends State<_CircleProfileHome> {
-  var _tab = 0;
-  var _challengesVisited = false;
+  late var _tab = widget.initialTab;
+  late var _challengesVisited = widget.initialTab == 1;
   late final Stream<List<CircleChallengeMembership>> _memberships =
       CircleChallengeService.watchMemberships();
   late final Stream<int> _requestCount =

@@ -11,6 +11,7 @@ import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/check_in_reminder.dart';
 import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/account_deletion_service.dart';
@@ -615,6 +616,27 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Future<void> _setPreference(String field, bool value) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      'preferences': {field: value},
+    }, SetOptions(merge: true));
+  }
+
+  /// Runs a settings change, saying so if it fails.
+  Future<void> _setPreferenceWith(Future<void> Function() change) async {
+    try {
+      await change();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't update that setting.")),
+        );
+      }
+    }
+  }
+
   Future<void> _setWindDownReminder(bool enabled) async {
     try {
       await WindDownReminders.setEnabled(enabled);
@@ -1026,6 +1048,13 @@ class _SettingsScreenState extends State<SettingsScreen>
         final checkInReminderEnabled =
             preferences['checkInReminderEnabled'] != false;
         final windDownReminder = preferences['windDownReminder'] == true;
+        final checkInMorningReminder =
+            preferences['checkInMorningReminder'] == true;
+        // Server pushes: on unless switched off.
+        final burnoutNotificationsEnabled =
+            preferences['burnoutNotificationsEnabled'] != false;
+        final achievementNotificationsEnabled =
+            preferences['achievementNotificationsEnabled'] != false;
         final circleNotificationsEnabled =
             preferences['circleNotificationsEnabled'] != false;
         final fitnessNotificationsEnabled =
@@ -1178,7 +1207,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         Icons.chat_bubble_outline_rounded,
                         _green,
                       ),
-                      title: 'Daily check-in',
+                      title: 'End-of-day check-in',
                       subtitle: 'After your final calendar event',
                       trailing: _SettingsSwitch(
                         value: checkInReminderEnabled,
@@ -1201,9 +1230,58 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ),
                     _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.wb_sunny_outlined,
+                        Color(0xFFEF9F27),
+                      ),
+                      title: 'Morning check-in reminder',
+                      subtitle: "10 AM, if today's check-in is still open",
+                      trailing: _SettingsSwitch(
+                        value: checkInMorningReminder,
+                        onChanged: (value) => _setPreferenceWith(
+                          () => CheckInReminders.setEnabled(value),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.monitor_heart_outlined,
+                        Color(0xFFE24B4A),
+                      ),
+                      title: 'Burnout check',
+                      subtitle: 'Only when a warning starts',
+                      trailing: _SettingsSwitch(
+                        value: burnoutNotificationsEnabled,
+                        onChanged: (value) => _setPreferenceWith(
+                          () => _setPreference(
+                            'burnoutNotificationsEnabled',
+                            value,
+                          ),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.emoji_events_outlined,
+                        Color(0xFFBA7517),
+                      ),
+                      title: 'Achievements',
+                      subtitle: 'When you earn one',
+                      trailing: _SettingsSwitch(
+                        value: achievementNotificationsEnabled,
+                        onChanged: (value) => _setPreferenceWith(
+                          () => _setPreference(
+                            'achievementNotificationsEnabled',
+                            value,
+                          ),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
                       leading: const _IconBadge(Icons.group_outlined, _orange),
                       title: 'Circle',
-                      subtitle: 'Likes and comments on your activity',
+                      subtitle:
+                          'Likes, comments, friend requests and challenges',
                       trailing: _SettingsSwitch(
                         value: circleNotificationsEnabled,
                         onChanged: (value) => _updateReminderPreference(

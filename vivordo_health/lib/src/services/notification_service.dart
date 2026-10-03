@@ -58,6 +58,10 @@ class NotificationService {
   static const int _windDownReminderBaseId = 1401;
   static const int _maxWindDownReminders = 7;
 
+  /// The morning check-in reminder, today and the next six days.
+  static const int _checkInReminderBaseId = 1501;
+  static const int _maxCheckInReminders = 7;
+
   factory NotificationService() {
     return _instance;
   }
@@ -581,7 +585,10 @@ class NotificationService {
       unawaited(openActiveWorkoutFromExternal());
       return;
     }
-    _navigateToNotificationScreen(screen);
+    _navigateToNotificationScreen(
+      screen,
+      type: message.data['type'] as String?,
+    );
   }
 
   /// Handle local notification tap
@@ -611,14 +618,17 @@ class NotificationService {
       unawaited(openActiveWorkoutFromExternal());
       return;
     }
-    _navigateToNotificationScreen(screen);
+    _navigateToNotificationScreen(screen, type: type);
   }
 
-  void _navigateToNotificationScreen(String? screen) {
-    unawaited(_openNotificationRouteStack(screen));
+  void _navigateToNotificationScreen(String? screen, {String? type}) {
+    unawaited(_openNotificationRouteStack(screen, type: type));
   }
 
-  Future<void> _openNotificationRouteStack(String? screen) async {
+  Future<void> _openNotificationRouteStack(
+    String? screen, {
+    String? type,
+  }) async {
     if (screen == 'active_workout') {
       await openActiveWorkoutFromExternal();
       return;
@@ -632,7 +642,7 @@ class NotificationService {
     }
     if (navigator == null) return;
 
-    final routes = notificationRouteStack(screen);
+    final routes = notificationRouteStack(screen, type: type);
     navigator.pushNamedAndRemoveUntil(routes.first, (_) => false);
     if (routes.length == 1) return;
 
@@ -686,24 +696,6 @@ class NotificationService {
     } catch (error) {
       print('NotificationService: Could not remove signed-out token: $error');
     }
-  }
-
-  /// Show a local notification for testing purposes
-  Future<void> showTestNotification() async {
-    await showLocalNotification(
-      title: 'Test Notification',
-      body: 'This is a test notification from Vivordo Health',
-      payload: '{"screen": "home"}',
-    );
-  }
-
-  /// Show a notification when a new goal is created
-  Future<void> showGoalCreatedNotification(String goalTitle) async {
-    await showLocalNotification(
-      title: 'Goal Created! 🎯',
-      body: 'Successfully added: "$goalTitle". Let\'s get to work!',
-      payload: '{"screen": "goals"}',
-    );
   }
 
   /// Show a local notification
@@ -862,6 +854,51 @@ class NotificationService {
         debugPrint('Wind-down reminder not scheduled: $error');
         return;
       }
+    }
+  }
+
+  /// Replaces the scheduled check-in reminders with one at each of [times]
+  /// (the first [_maxCheckInReminders]); any already past are skipped.
+  Future<void> scheduleCheckInReminders(List<DateTime> times) async {
+    if (kIsWeb) return;
+    await cancelCheckInReminders();
+    final now = DateTime.now();
+    for (final (index, at) in times.take(_maxCheckInReminders).indexed) {
+      if (!at.isAfter(now)) continue;
+      try {
+        await _localNotificationsPlugin.zonedSchedule(
+          _checkInReminderBaseId + index,
+          'How did you sleep?',
+          "Two quick questions for today's Capacity.",
+          tz.TZDateTime.from(at, tz.local),
+          const NotificationDetails(
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentSound: true,
+              presentBanner: true,
+              presentList: true,
+            ),
+            android: AndroidNotificationDetails(
+              'check_in_reminders',
+              'Check-in reminders',
+            ),
+          ),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          payload: '{"screen": "home", "type": "check_in_reminder"}',
+        );
+      } on PlatformException catch (error) {
+        debugPrint('Check-in reminder not scheduled: $error');
+        return;
+      }
+    }
+  }
+
+  Future<void> cancelCheckInReminders() async {
+    if (kIsWeb) return;
+    for (var index = 0; index < _maxCheckInReminders; index++) {
+      await _localNotificationsPlugin.cancel(_checkInReminderBaseId + index);
     }
   }
 

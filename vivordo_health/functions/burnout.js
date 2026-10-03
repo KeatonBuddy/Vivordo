@@ -416,7 +416,10 @@ async function notifyWarning(user, messaging, areas) {
   const [profile, tokens] = await Promise.all([
     user.get(), user.collection("notification_tokens").get(),
   ]);
-  if (profile.data()?.preferences?.notificationsEnabled === false) return;
+  const preferences = profile.data()?.preferences;
+  // Settings → Burnout check (on unless switched off).
+  if (preferences?.notificationsEnabled === false ||
+      preferences?.burnoutNotificationsEnabled === false) return;
   const valid = tokens.docs.filter((d) =>
     typeof d.get("token") === "string" && d.get("token"));
   if (!valid.length) return;

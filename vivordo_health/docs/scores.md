@@ -258,7 +258,11 @@ recorded, with the recorded duration shown beside it. Answers are saved to
 `metrics_daily/{day}.morning_check_in` as `{feel, sleep, dismissed}`
 (scores), which the Capacity trigger reads. Once both are answered the card
 disappears; an answer given late in the day still counts for that day's
-Capacity.
+Capacity. An opt-in reminder (Settings → Morning check-in reminder,
+`preferences.checkInMorningReminder`, `lib/src/services/check_in_reminder.dart`)
+fires at 10 AM on days the check-in is still open; the next 7 mornings are
+scheduled whenever Home loads the calendar, and today's is dropped as soon
+as the check-in is answered or dismissed.
 
 - **Your sleep need** is your 90-day median sleep, kept between 7 and 9 h.
   With fewer than 14 nights it is 8 h.
@@ -362,8 +366,9 @@ zone, right after that day's final Effort.
   `early: true`; the app shows "Steady · early check" and words reasons as
   "for a week".
 - **One push** when a warning starts (not within 7 days of the last), naming
-  the areas: "Lower energy and heavier days than usual." Respects
-  `preferences.notificationsEnabled`; tapping opens My Day.
+  the areas: "Lower energy and heavier days than usual." Off with Settings →
+  Burnout check (`preferences.burnoutNotificationsEnabled`, on unless
+  false) or `preferences.notificationsEnabled`; tapping opens My Day.
 - Saved in `scores_daily/{day}.burnout` (`level`, `since`, `areas`,
   `drivers`, `learningDays`, `early`, `state`). Each day is evaluated once.
 - **App:** under My Day's brief (`lib/widgets/burnout_card.dart`, words
