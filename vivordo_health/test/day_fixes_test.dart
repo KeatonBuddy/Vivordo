@@ -245,4 +245,102 @@ void main() {
       );
     });
   });
+
+  group('learning which fixes you use', () {
+    final today = DateTime(2026, 10, 8);
+    DayFix fix(DayFixKind kind, double saved) =>
+        DayFix(kind: kind, id: kind.name, title: kind.name, demandSaved: saved);
+    final move = fix(DayFixKind.movePriority, 6);
+    final buffer = fix(DayFixKind.buffer, 1);
+    final rest = fix(DayFixKind.addBreak, 0);
+
+    /// [days] earlier days on which [kind] was shown, kept or undone.
+    List<FixDay> history(
+      DayFixKind kind,
+      int days, {
+      int ago = 1,
+      bool used = false,
+      bool undone = false,
+    }) => [
+      for (var i = 0; i < days; i++)
+        (
+          day: DateTime(2026, 10, 8 - ago - i),
+          data: {
+            'kinds': {
+              kind.name: {
+                'shown': true,
+                if (used) 'used': true,
+                if (undone) 'undone': true,
+              },
+            },
+          },
+        ),
+    ];
+    List<DayFixKind> ranked(List<DayFix> fixes, List<FixDay> past) => [
+      for (final f in rankByHistory(fixes, past, today)) f.kind,
+    ];
+
+    test('with no history, the biggest saving first', () {
+      expect(ranked([buffer, move, rest], const []), [
+        DayFixKind.movePriority,
+        DayFixKind.buffer,
+        DayFixKind.addBreak,
+      ]);
+      expect(rankByHistory([buffer, move, rest], const [], today, max: 2), [
+        move,
+        buffer,
+      ]);
+    });
+
+    test('a kind skipped on 5 days stops being offered', () {
+      expect(
+        ranked([move, rest], history(DayFixKind.addBreak, 4)),
+        contains(DayFixKind.addBreak),
+        reason: '4 skips are not enough',
+      );
+      expect(ranked([move, rest], history(DayFixKind.addBreak, 5)), [
+        DayFixKind.movePriority,
+      ]);
+      // Undo counts as a skip.
+      expect(
+        ranked([
+          move,
+          rest,
+        ], history(DayFixKind.addBreak, 5, used: true, undone: true)),
+        [DayFixKind.movePriority],
+      );
+    });
+
+    test('a dropped kind gets one more try after 3 weeks unseen', () {
+      final skipped = history(DayFixKind.addBreak, 5, ago: 21);
+      expect(ranked([rest], skipped), [DayFixKind.addBreak]);
+      // Skipped again on that try: dropped for another 3 weeks.
+      expect(
+        ranked([rest], [...skipped, ...history(DayFixKind.addBreak, 1)]),
+        isEmpty,
+      );
+    });
+
+    test('kinds you keep rank above bigger savings you never take', () {
+      final past = [
+        ...history(DayFixKind.addBreak, 4, used: true),
+        ...history(DayFixKind.buffer, 4, ago: 5),
+      ];
+      expect(ranked([buffer, rest], past), [
+        DayFixKind.addBreak,
+        DayFixKind.buffer,
+      ]);
+    });
+
+    test('today and anything over 4 weeks old are ignored', () {
+      expect(
+        ranked([rest], history(DayFixKind.addBreak, 5, ago: 0)),
+        [DayFixKind.addBreak],
+        reason: "today's skips count from tomorrow",
+      );
+      expect(ranked([rest], history(DayFixKind.addBreak, 5, ago: 29)), [
+        DayFixKind.addBreak,
+      ]);
+    });
+  });
 }

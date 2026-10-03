@@ -130,8 +130,21 @@ the card until tomorrow (`users/{uid}/day_fixes/{day}.hidden`).
   keeps recovery time from being booked. Undo deletes the event. Only with
   Google Calendar connected.
 
-Not built yet: logging which fixes are accepted so unwanted kinds stop
-being offered, and a morning notification.
+**Learning (phase 1)** (`rankByHistory`): each kind of fix shown, used or
+undone is logged per day in `day_fixes/{day}.kinds.<kind>` (`shown`,
+`used`, `undone`, and `item: {category, guests}` for later per-item
+learning; never titles). From the last 4 weeks before today:
+- a kind shown on 5+ days and never kept (an Undo counts as not kept) stops
+  being offered; after 3 weeks unseen it gets one more try;
+- the rest rank by (kept + 1) / (shown + 2) × (1 + Demand saved), so with
+  no history the order is by Demand saved, and a kind someone uses can
+  outrank a bigger saving they never take.
+The ranking only uses earlier days, so the card doesn't change while it's
+showing. The X (hidden) leaves everything on the card as shown, not used.
+
+Not built yet: learning which items people move (phase 2, from the logged
+`item`), learning which fixes help (phase 3), a morning notification and
+the evening-before card.
 
 ## 3. Effort: what the day took
 

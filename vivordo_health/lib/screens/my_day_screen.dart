@@ -74,6 +74,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   /// The day the fixes card was hidden with its X (day_fixes/{day}.hidden).
   String? _fixesHiddenDay;
+
+  /// Earlier days' fix outcomes (day_fixes, last 4 weeks), for learning
+  /// which kinds of fix this person uses.
+  List<FixDay> _fixHistory = const [];
+
+  /// "day:kind" already logged as shown, so each logs once a day.
+  final _fixesShown = <String>{};
   String? _calendarLoadError;
   int _loadGeneration = 0;
   bool _isLoading = true;
@@ -191,7 +198,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _connectPriorities();
     _loadTodayEvents();
     unawaited(_loadWrapUp());
-    unawaited(_loadFixesHidden());
+    unawaited(_loadFixHistory());
   }
 
   Future<void> _loadWrapUp() async {
@@ -1010,6 +1017,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     ? const <DayFix>[]
                     : _dayFixes(now, timedEvents, todayPriorities);
                 if (fixes.isEmpty) return brief;
+                _logFixesShown(fixes);
                 return Column(
                   children: [
                     brief,
@@ -1078,9 +1086,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final energy = _energyForecast(today);
     // A break goes in Google Calendar, so it needs a connected one.
     final calendar = events.any((e) => e.googleEvent != null);
-    return findDayFixes(
+    final found = findDayFixes(
       now: now,
       items: items,
+      // Every kind, so learning chooses the three to show.
+      max: DayFixKind.values.length,
       untimed: [
         for (final p in priorities)
           if (_priorityMovable(p) &&
@@ -1099,7 +1109,48 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           ? const []
           : fitDayToEnergy(forecast: energy, items: items, now: now),
     ).where((f) => calendar || f.kind != DayFixKind.addBreak).toList();
+    return rankByHistory(found, _fixHistory, today);
   }
+
+  DocumentReference<Map<String, dynamic>>? _fixDay() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return uid == null
+        ? null
+        : FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('day_fixes')
+              .doc(localDayKey(DateTime.now()));
+  }
+
+  /// Merges [fields] into today's entry for [kind]: what happened to it, and
+  /// for later learning the kind of item (never its title).
+  Future<void> _logFix(DayFixKind kind, Map<String, Object?> fields) async {
+    try {
+      await _fixDay()?.set({
+        'kinds': {kind.name: fields},
+      }, SetOptions(merge: true));
+    } catch (_) {
+      // Learning misses one entry; nothing the person sees changes.
+    }
+  }
+
+  void _logFixesShown(List<DayFix> fixes) {
+    final day = localDayKey(DateTime.now());
+    for (final fix in fixes) {
+      if (!_fixesShown.add('$day:${fix.kind.name}')) continue;
+      unawaited(
+        _logFix(fix.kind, {
+          'shown': true,
+          'item': {'category': fix.category, 'guests': fix.guests},
+        }),
+      );
+    }
+  }
+
+  /// A fix applied (or, with [undone], taken back).
+  Future<void> _logFixUsed(DayFixKind kind, {bool undone = false}) =>
+      _logFix(kind, {'shown': true, 'used': true, 'undone': undone});
 
   Future<void> _hideDayFixes() async {
     final day = localDayKey(DateTime.now());
@@ -1126,22 +1177,42 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _loadFixesHidden() async {
+  /// The last 4 weeks of day_fixes: today's says whether the card is
+  /// hidden and what's been logged; earlier days feed learning.
+  Future<void> _loadFixHistory() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final day = localDayKey(DateTime.now());
+    final today = DateUtils.dateOnly(DateTime.now());
+    final day = localDayKey(today);
     try {
-      final doc = await FirebaseFirestore.instance
+      final docs = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .collection('day_fixes')
-          .doc(day)
+          .where(
+            FieldPath.documentId,
+            isGreaterThanOrEqualTo: localDayKey(
+              today.subtract(const Duration(days: 28)),
+            ),
+          )
+          .where(FieldPath.documentId, isLessThanOrEqualTo: day)
           .get();
-      if (doc.data()?['hidden'] == true && mounted) {
-        setState(() => _fixesHiddenDay = day);
-      }
+      if (!mounted) return;
+      final todays = docs.docs.where((d) => d.id == day).firstOrNull?.data();
+      setState(() {
+        _fixHistory = [
+          for (final doc in docs.docs)
+            if (doc.id != day)
+              if (DateTime.tryParse(doc.id) case final date?)
+                (day: date, data: doc.data()),
+        ];
+        if (todays?['hidden'] == true) _fixesHiddenDay = day;
+        for (final kind in ((todays?['kinds'] as Map?) ?? const {}).keys) {
+          _fixesShown.add('$day:$kind');
+        }
+      });
     } catch (_) {
-      // Shows the card.
+      // No learning this time; the card still shows.
     }
   }
 
@@ -1218,9 +1289,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         recurrence: 'none',
       );
       await _loadTodayEvents(forceRefresh: true);
+      unawaited(_logFixUsed(fix.kind));
       if (await _showUndo(
         'Break added at ${DateFormat.jm().format(fix.newStart!)}',
       )) {
+        unawaited(_logFixUsed(fix.kind, undone: true));
         await CalendarService.deleteEvent(created);
         await _loadTodayEvents(forceRefresh: true);
       }
@@ -1237,7 +1310,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         end: fix.newEnd,
       );
       await _loadTodayEvents(forceRefresh: true);
+      unawaited(_logFixUsed(fix.kind));
       if (await _showUndo(_movedText(fix))) {
+        unawaited(_logFixUsed(fix.kind, undone: true));
         await CalendarService.updateEvent(
           moved,
           start: fix.start,
@@ -1269,7 +1344,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         );
     try {
       await setStart(p, fix.newStart!);
+      unawaited(_logFixUsed(fix.kind));
       if (await _showUndo(_movedText(fix))) {
+        unawaited(_logFixUsed(fix.kind, undone: true));
         final now = await _priorityOn(fix.newStart!, p.id);
         if (now != null) await setStart(now, fix.start!);
       }
@@ -1312,11 +1389,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         );
     try {
       await moveTo(p, day);
+      unawaited(_logFixUsed(DayFixKind.movePriority));
       final undo = await _showUndo(
         '"${p.title}" moved to ${DateFormat('EEEE').format(day)} · '
         '−${saved.round()}',
       );
       if (undo) {
+        unawaited(_logFixUsed(DayFixKind.movePriority, undone: true));
         final moved = await _priorityOn(day, p.id);
         if (moved != null) await moveTo(moved, from);
       }

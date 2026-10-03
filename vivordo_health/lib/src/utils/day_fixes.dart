@@ -34,6 +34,7 @@ class DayFix {
     this.guests = 0,
     this.runMinutes = 0,
     this.beforeRun = false,
+    this.category,
   });
 
   final DayFixKind kind;
@@ -62,6 +63,10 @@ class DayFix {
   /// goes before it (no room after).
   final int runMinutes;
   final bool beforeRun;
+
+  /// The item's kind of work (calendar_cognitive_load categories, or
+  /// "priority"), logged with each fix for learning which items people move.
+  final String? category;
 
   DateTime? get newEnd => newStart == null || start == null || end == null
       ? null
@@ -126,6 +131,7 @@ List<DayFix> findDayFixes({
         demandSaved: saved,
         start: item.event.start,
         end: item.event.end,
+        category: item.score.category,
       );
     }
   }
@@ -142,6 +148,7 @@ List<DayFix> findDayFixes({
         id: p.id,
         title: p.title,
         demandSaved: saved,
+        category: 'priority',
       );
     }
   }
@@ -196,6 +203,7 @@ List<DayFix> findDayFixes({
         newStart: newStart,
         after: before.event.title,
         guests: guests(item),
+        category: item.score.category,
       );
     }
   }
@@ -228,6 +236,7 @@ List<DayFix> findDayFixes({
         end: fit.item.event.end,
         newStart: to,
         guests: guests(fit.item),
+        category: fit.item.score.category,
       ),
     );
     break;
@@ -315,7 +324,63 @@ DayFix? _breakFix(DateTime now, List<EffortItem> busy) {
     after: (at == before ? found.first : found.last).event.title,
     runMinutes: found.end.difference(found.start).inMinutes,
     beforeRun: at == before,
+    category: 'rest',
   );
+}
+
+/// One earlier day's fix outcomes (`users/{uid}/day_fixes/{day}`): under
+/// `kinds`, each kind shown that day with `shown`, `used` and `undone`.
+typedef FixDay = ({DateTime day, Map<String, dynamic> data});
+
+/// How far back learning looks.
+const _learnDays = 28;
+
+/// A kind shown on this many days and never kept stops being offered...
+const _dropAfter = 5;
+
+/// ...until it hasn't been shown for this long: then it gets one more try.
+const _retryAfter = Duration(days: 21);
+
+/// Learns from [history] which kinds of fix this person uses (docs/scores.md
+/// §2): drops a kind they keep skipping and ranks the rest by Demand saved
+/// times how often each kind is kept (a kind never shown counts as kept
+/// half the time, so with no history the order is by Demand saved). Only
+/// days before [today] count, so the card doesn't change while it's showing.
+List<DayFix> rankByHistory(
+  List<DayFix> fixes,
+  List<FixDay> history,
+  DateTime today, {
+  int max = 3,
+}) {
+  final day = DateTime(today.year, today.month, today.day);
+  final from = DateTime(day.year, day.month, day.day - _learnDays);
+  final scored = <(DayFix, double)>[];
+  for (final fix in fixes) {
+    var shown = 0, kept = 0;
+    DateTime? last;
+    for (final past in history) {
+      if (past.day.isBefore(from) || !past.day.isBefore(day)) continue;
+      final kind = (past.data['kinds'] as Map?)?[fix.kind.name];
+      if (kind is! Map || kind['shown'] != true) continue;
+      shown++;
+      if (kind['used'] == true && kind['undone'] != true) kept++;
+      if (last == null || past.day.isAfter(last)) last = past.day;
+    }
+    final skipped =
+        shown >= _dropAfter &&
+        kept == 0 &&
+        last != null &&
+        day.difference(last) < _retryAfter;
+    if (skipped) continue;
+    scored.add((fix, (kept + 1) / (shown + 2) * (1 + fix.demandSaved)));
+  }
+  final order = [...scored.indexed]
+    ..sort((a, b) {
+      final byScore = b.$2.$2.compareTo(a.$2.$2);
+      // Ties keep findDayFixes' order.
+      return byScore != 0 ? byScore : a.$1.compareTo(b.$1);
+    });
+  return [for (final (_, (fix, _)) in order.take(max)) fix];
 }
 
 bool _isPriority(EffortItem i) => i.score.category == 'priority';
