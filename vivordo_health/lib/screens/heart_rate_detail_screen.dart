@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
 import 'package:vivordo_health/src/utils/hrv.dart';
@@ -29,10 +30,27 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   int rangeIndex = 0;
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _heartDataStream;
 
+  static const _storage = FlutterSecureStorage();
+  static const _wearableCollapsedKey = 'heart_wearable_card_collapsed';
+  // Kept for the app session so reopening the screen doesn't wait on storage.
+  static bool? _savedWearableCollapsed;
+  bool? _wearableCollapsed = _savedWearableCollapsed;
+
   @override
   void initState() {
     super.initState();
     _heartDataStream = _heartDataSnapshots();
+    if (_wearableCollapsed == null) {
+      _storage
+          .read(key: _wearableCollapsedKey)
+          .catchError((Object _) => null)
+          .then((value) {
+            _savedWearableCollapsed = value == 'true';
+            if (mounted) {
+              setState(() => _wearableCollapsed = _savedWearableCollapsed);
+            }
+          });
+    }
     unawaited(
       WhoopBleHeartRateService.instance.startIfPaired().catchError(
         (Object _) {},
@@ -261,7 +279,8 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           const SizedBox(height: 18),
           rangeSelector(),
           const SizedBox(height: 18),
-          if (hasConnectedWearable) ...[
+          // Hidden until the saved collapsed state loads, so it doesn't jump.
+          if (hasConnectedWearable && _wearableCollapsed != null) ...[
             ValueListenableBuilder<WhoopBleState>(
               valueListenable: WhoopBleHeartRateService.instance.state,
               builder: (context, bleState, _) => wearableLiveCard(bleState),
@@ -346,12 +365,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     }
   }
 
-  Future<void> _toggleWearableLive(WhoopBleState bleState) async {
-    if (bleState.isConnected) {
-      await WhoopBleHeartRateService.instance.stop();
-    } else {
-      await WhoopBleHeartRateService.instance.startIfPaired();
-    }
+  void _toggleWearableCollapsed() {
+    final collapsed = !(_wearableCollapsed ?? false);
+    setState(() => _wearableCollapsed = _savedWearableCollapsed = collapsed);
+    unawaited(
+      _storage
+          .write(key: _wearableCollapsedKey, value: '$collapsed')
+          .catchError((Object _) {}),
+    );
   }
 
   Future<void> _forgetWearable() =>
@@ -362,6 +383,10 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         bleState.status == WhoopBleStatus.scanning ||
         bleState.status == WhoopBleStatus.connecting;
     final hasReading = bleState.isConnected && bleState.bpm != null;
+    // Stop works while connecting too, so a band that isn't nearby can be
+    // left alone instead of retried.
+    final live = bleState.isPaired && (bleState.isConnected || busy);
+    final collapsed = _wearableCollapsed ?? false;
     final statusLabel = switch (bleState.status) {
       WhoopBleStatus.unpaired => 'NOT PAIRED',
       WhoopBleStatus.scanning => 'SCANNING',
@@ -393,223 +418,248 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         bleState.message ?? 'Wearable Bluetooth is unavailable.',
     };
     return card(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: purple.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.bluetooth_rounded,
-                  color: purple,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'LIVE WEARABLE HEART RATE',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(99),
-                ),
+      padding: EdgeInsets.fromLTRB(20, 18, 20, collapsed ? 18 : 16),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 200),
+        alignment: Alignment.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              button: true,
+              expanded: !collapsed,
+              label: 'Live wearable heart rate',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _toggleWearableCollapsed,
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (hasReading) ...[
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: statusColor,
-                          shape: BoxShape.circle,
-                        ),
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: purple.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(width: 6),
-                    ],
-                    Text(
-                      statusLabel,
-                      style: TextStyle(
-                        color: statusColor,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: .5,
+                      child: const Icon(
+                        Icons.bluetooth_rounded,
+                        color: purple,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'LIVE WEARABLE HEART RATE',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (hasReading) ...[
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: statusColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Text(
+                            statusLabel,
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    AnimatedRotation(
+                      turns: collapsed ? 0 : .5,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.expand_more_rounded,
+                        color: context.vivordoColors.textSecondary,
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            child: hasReading
-                ? Row(
-                    key: ValueKey(bleState.bpm),
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 7),
-                        child: Icon(
-                          Icons.favorite_rounded,
-                          color: red,
-                          size: 28,
-                        ),
-                      ),
-                      const SizedBox(width: 11),
-                      Text(
-                        '${bleState.bpm}',
-                        style: const TextStyle(
-                          color: red,
-                          fontSize: 58,
-                          height: .9,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -2,
-                        ),
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.only(left: 7, bottom: 5),
-                        child: Text(
-                          'bpm',
-                          style: TextStyle(
-                            color: red,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
+            ),
+            if (!collapsed) ...[
+              const SizedBox(height: 20),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: hasReading
+                    ? Row(
+                        key: ValueKey(bleState.bpm),
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 7),
+                            child: Icon(
+                              Icons.favorite_rounded,
+                              color: red,
+                              size: 28,
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 11),
+                          Text(
+                            '${bleState.bpm}',
+                            style: const TextStyle(
+                              color: red,
+                              fontSize: 58,
+                              height: .9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -2,
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.only(left: 7, bottom: 5),
+                            child: Text(
+                              'bpm',
+                              style: TextStyle(
+                                color: red,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        key: ValueKey(bleState.status),
+                        children: [
+                          if (busy)
+                            const SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(strokeWidth: 3),
+                            )
+                          else
+                            Icon(
+                              Icons.monitor_heart_outlined,
+                              color: statusColor,
+                              size: 36,
+                            ),
+                          const SizedBox(width: 12),
+                          Text(
+                            bleState.isConnected ? '-- bpm' : 'Live heart rate',
+                            style: TextStyle(
+                              color: context.vivordoColors.textPrimary,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  )
-                : Row(
-                    key: ValueKey(bleState.status),
-                    children: [
-                      if (busy)
-                        const SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(strokeWidth: 3),
-                        )
-                      else
-                        Icon(
-                          Icons.monitor_heart_outlined,
-                          color: statusColor,
-                          size: 36,
-                        ),
-                      const SizedBox(width: 12),
-                      Text(
-                        bleState.isConnected ? '-- bpm' : 'Live heart rate',
-                        style: TextStyle(
-                          color: context.vivordoColors.textPrimary,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-          if (detailText != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              detailText,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.vivordoColors.textSecondary,
-                fontSize: 14,
               ),
-            ),
-          ],
-          if (bleState.deviceName != null) ...[
-            const SizedBox(height: 5),
-            Text(
-              bleState.deviceName!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.vivordoColors.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          const SizedBox(height: 16),
-          Divider(height: 1, color: context.vivordoColors.border),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: busy
-                      ? null
-                      : bleState.isPaired
-                      ? () => _toggleWearableLive(bleState)
-                      : _pairWearable,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: bleState.isConnected
-                        ? context.vivordoColors.cardMuted
-                        : purple,
-                    foregroundColor: bleState.isConnected
-                        ? context.vivordoColors.textPrimary
-                        : Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                  ),
-                  icon: Icon(
-                    bleState.isConnected
-                        ? Icons.stop_rounded
-                        : Icons.play_arrow_rounded,
-                    size: 19,
-                  ),
-                  label: Text(
-                    bleState.isConnected
-                        ? 'Stop live'
-                        : bleState.isPaired
-                        ? 'Start live'
-                        : 'Pair wearable',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
-              if (bleState.isPaired) ...[
-                const SizedBox(width: 10),
-                TextButton(
-                  onPressed: busy ? null : _forgetWearable,
-                  child: Text(
-                    'Forget',
-                    style: TextStyle(
-                      color: context.vivordoColors.textSecondary,
-                      fontWeight: FontWeight.w700,
-                    ),
+              if (detailText != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  detailText,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.vivordoColors.textSecondary,
+                    fontSize: 14,
                   ),
                 ),
               ],
+              if (bleState.deviceName != null) ...[
+                const SizedBox(height: 5),
+                Text(
+                  bleState.deviceName!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.vivordoColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Divider(height: 1, color: context.vivordoColors.border),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: !bleState.isPaired
+                          ? (busy ? null : _pairWearable)
+                          : live
+                          ? WhoopBleHeartRateService.instance.pause
+                          : WhoopBleHeartRateService.instance.resume,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: live
+                            ? context.vivordoColors.cardMuted
+                            : purple,
+                        foregroundColor: live
+                            ? context.vivordoColors.textPrimary
+                            : Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                      ),
+                      icon: Icon(
+                        live ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                        size: 19,
+                      ),
+                      label: Text(
+                        live
+                            ? 'Stop live'
+                            : bleState.isPaired
+                            ? 'Start live'
+                            : 'Pair wearable',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                  if (bleState.isPaired) ...[
+                    const SizedBox(width: 10),
+                    TextButton(
+                      onPressed: busy ? null : _forgetWearable,
+                      child: Text(
+                        'Forget',
+                        style: TextStyle(
+                          color: context.vivordoColors.textSecondary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

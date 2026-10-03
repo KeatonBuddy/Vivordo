@@ -77,6 +77,7 @@ class WhoopBleHeartRateService {
   static const _deviceIdKey = 'whoop_ble_device_id';
   static const _deviceNameKey = 'whoop_ble_device_name';
   static const _ownerUidKey = 'whoop_ble_owner_uid';
+  static const _pausedKey = 'whoop_ble_paused';
   static final Uuid _heartRateService = Uuid.parse(
     '0000180d-0000-1000-8000-00805f9b34fb',
   );
@@ -149,6 +150,10 @@ class WhoopBleHeartRateService {
   String? _deviceId;
   String? _deviceName;
   bool _shouldMonitor = false;
+
+  /// Set by [pause]; keeps launches, resumes and screens from reconnecting
+  /// until [resume].
+  bool _paused = false;
   bool _isFlushing = false;
   int _connectionGeneration = 0;
   DateTime? _lastFlushAt;
@@ -159,10 +164,12 @@ class WhoopBleHeartRateService {
         _storage.read(key: _deviceIdKey),
         _storage.read(key: _deviceNameKey),
         _storage.read(key: _ownerUidKey),
+        _storage.read(key: _pausedKey),
       ]);
       if (values[2] != FirebaseAuth.instance.currentUser?.uid) return;
       _deviceId = values[0];
       _deviceName = values[1];
+      _paused = values[3] == 'true';
       if (_deviceId != null) {
         state.value = WhoopBleState(
           status: WhoopBleStatus.disconnected,
@@ -236,11 +243,29 @@ class WhoopBleHeartRateService {
     }
     _deviceId = device.id;
     _deviceName = device.name;
+    _paused = false;
     await Future.wait([
       _storage.write(key: _deviceIdKey, value: device.id),
       _storage.write(key: _deviceNameKey, value: device.name),
       _storage.write(key: _ownerUidKey, value: uid),
+      _storage.delete(key: _pausedKey),
     ]);
+    await startIfPaired();
+  }
+
+  /// Stops live monitoring, including a connection still being attempted,
+  /// and keeps it stopped across launches until [resume].
+  Future<void> pause() async {
+    await _loadPairing();
+    _paused = true;
+    await _storage.write(key: _pausedKey, value: 'true');
+    await stop();
+  }
+
+  Future<void> resume() async {
+    await _loadPairing();
+    _paused = false;
+    await _storage.delete(key: _pausedKey);
     await startIfPaired();
   }
 
@@ -268,7 +293,9 @@ class WhoopBleHeartRateService {
     if (startGeneration != _connectionGeneration) return;
     await _restorePending();
     await flush().catchError((Object _) {});
-    if (_deviceId == null || _connectionSubscription != null) return;
+    if (_paused || _deviceId == null || _connectionSubscription != null) {
+      return;
+    }
     try {
       _ensurePlatformSupport();
     } catch (error) {
@@ -656,9 +683,11 @@ class WhoopBleHeartRateService {
         _storage.delete(key: _deviceIdKey),
         _storage.delete(key: _deviceNameKey),
         _storage.delete(key: _ownerUidKey),
+        _storage.delete(key: _pausedKey),
       ]);
       _deviceId = null;
       _deviceName = null;
+      _paused = false;
       _pendingBuckets.clear();
       _sessionBuckets.clear();
       state.value = const WhoopBleState(status: WhoopBleStatus.unpaired);
@@ -680,6 +709,7 @@ class WhoopBleHeartRateService {
     await stop();
     _deviceId = null;
     _deviceName = null;
+    _paused = false;
     _loadPairingFuture = null;
     state.value = const WhoopBleState(status: WhoopBleStatus.unpaired);
   }
