@@ -216,4 +216,18 @@ void main() {
       );
     }
   });
+
+  test('a break adds nothing and keeps the next event off back-to-back', () {
+    final meetings = [
+      event('a', 0, 30, title: 'Team meeting'),
+      event('b', 45, 60, title: 'Team meeting'),
+    ];
+    final withBreak = calculate([
+      ...meetings,
+      event('break', 30, 45, title: 'Break'),
+    ]).single;
+    final without = calculate(meetings).single;
+    expect(withBreak.score, without.score);
+    expect(withBreak.backToBackTransitions, 0);
+  });
 }

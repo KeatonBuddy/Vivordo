@@ -51,6 +51,7 @@ Map<String, Object?> buildDayRecord({
           .where(
             (e) =>
                 e.event.contributesToSchedule &&
+                e.score.category != 'rest' &&
                 e.event.start.isBefore(dayEnd) &&
                 e.event.end.isAfter(dayStart),
           )

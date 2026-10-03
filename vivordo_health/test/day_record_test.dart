@@ -130,4 +130,18 @@ void main() {
     final hour = nightlyPushUtcHour(DateTime(2026, 10, 1, 9));
     expect(DateTime.utc(2026, 10, 1, hour).toLocal().hour, 23);
   });
+
+  test('breaks stay out of the day record', () {
+    final record = buildDayRecord(
+      day: day,
+      wrapUpMinutes: 17 * 60,
+      calendarAvailable: true,
+      events: [
+        event('Team meeting', at(9), at(10)),
+        event('Break', at(10), at(10, 15)),
+      ],
+      priorities: const [],
+    );
+    expect(record['events'], hasLength(1));
+  });
 }

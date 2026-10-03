@@ -75,7 +75,11 @@ class HourlyCalendarLoadCalculator {
     // have separate IDs at the provider boundary.
     final eligible = {
       for (final event in events)
-        if (event.contributesToSchedule && event.start.isBefore(cutoff))
+        // A break is time off: no load, and it doesn't make the next event
+        // back-to-back.
+        if (event.contributesToSchedule &&
+            event.start.isBefore(cutoff) &&
+            byId[event.id]?.category != 'rest')
           event.id: event,
     }.values.toList()..sort((a, b) => a.start.compareTo(b.start));
     // A back-to-back event (starting < 15 min after another ends) costs a

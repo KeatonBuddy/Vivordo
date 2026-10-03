@@ -11,7 +11,7 @@ const MAX_PRIORITIES = 10;
 const MAX_TITLE = 120;
 const DAILY_CALL_LIMIT = 50;
 const CATEGORIES = ["routine", "social", "collaboration", "focused-work",
-  "high-consequence", "unknown"];
+  "high-consequence", "rest", "unknown"];
 const EFFORTS = ["light", "moderate", "demanding"]; // the app's words
 
 const SYSTEM = `You sort calendar events and to-do items so a wellness app \
@@ -24,6 +24,7 @@ Events: choose how mentally demanding the event itself is.
 - collaboration: meetings, 1:1s, calls, stand-ups, classes or lectures attended
 - focused-work: coding, writing, studying, designing, preparing something
 - high-consequence: presenting, exams, interviews, pitches, performance reviews
+- rest: a break or downtime blocked off to recover (not a meal with others)
 - unknown: the title doesn't say (e.g. "Busy", "Hold", only a name or a code)
 
 Priorities: estimate effort and how long it takes to do once.

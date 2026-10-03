@@ -53,14 +53,19 @@ void main() {
     List<DayFixPriority> untimed = const [],
     bool Function(EffortItem)? canMove,
     List<EnergyFit> fits = const [],
-  }) => findDayFixes(
-    now: now,
-    items: items,
-    untimed: untimed,
-    demandOf: demandOf,
-    canMove: canMove ?? (_) => true,
-    fits: fits,
-  );
+    bool breaks = false,
+  }) => [
+    for (final fix in findDayFixes(
+      now: now,
+      items: items,
+      untimed: untimed,
+      demandOf: demandOf,
+      canMove: canMove ?? (_) => true,
+      fits: fits,
+    ))
+      // Most days here have a long run; breaks have their own tests.
+      if (breaks || fix.kind != DayFixKind.addBreak) fix,
+  ];
 
   test('a buffer opens a gap in a back-to-back run, priced for real', () {
     final day = [
@@ -161,7 +166,7 @@ void main() {
         untimed: const [],
         demandOf: demandOf,
         canMove: (_) => true,
-      ),
+      ).where((f) => f.kind != DayFixKind.addBreak),
       isEmpty,
     );
   });
@@ -194,5 +199,50 @@ void main() {
     expect(found.last.id, 'deep work');
     // The free peak start nearest 2 PM that ends before the noon standup.
     expect(found.last.newStart, at(11));
+  });
+
+  group('a break', () {
+    final run = [
+      item('standup', at(12), 30),
+      item('review', at(12, 30), 60),
+      item('planning', at(13, 30), 30),
+    ];
+
+    test('goes right after a long back-to-back run, saving nothing', () {
+      final fix = fixes(run, canMove: (_) => false, breaks: true).single;
+      expect(fix.kind, DayFixKind.addBreak);
+      expect(fix.newStart, at(14));
+      expect(fix.newEnd, at(14, 15));
+      expect(fix.after, 'planning');
+      expect(fix.runMinutes, 120);
+      expect(fix.beforeRun, isFalse);
+      expect(fix.demandSaved, 0);
+    });
+
+    test('goes before the run when there is no room after', () {
+      // Anything right after a run joins it, so "no room" is the day's end.
+      final fix = fixes(
+        [item('late shift', at(22), 115), item('wrap-up', at(23, 55), 5)],
+        canMove: (_) => false,
+        breaks: true,
+      ).single;
+      expect(fix.newStart, at(21, 45));
+      expect(fix.beforeRun, isTrue);
+      expect(fix.after, 'late shift');
+    });
+
+    test('is not offered for a short run or when a break is there', () {
+      final hour = [item('standup', at(12), 30), item('sync', at(12, 30), 30)];
+      expect(
+        fixes(hour, canMove: (_) => false, breaks: true),
+        isEmpty,
+        reason: '90 minutes is the minimum',
+      );
+      final rested = item('Break', at(14), 15, category: 'rest', score: 0);
+      expect(
+        fixes([...run, rested], canMove: (_) => false, breaks: true),
+        isEmpty,
+      );
+    });
   });
 }

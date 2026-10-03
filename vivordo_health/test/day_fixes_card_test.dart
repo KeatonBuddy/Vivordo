@@ -62,6 +62,40 @@ void main() {
     expect(find.text('Deep work at ${t('10 AM')}'), findsOneWidget);
     expect(find.text('Fits peak'), findsOneWidget);
 
+    await tester.pumpWidget(
+      app(
+        DayFixesCard(
+          fixes: [
+            DayFix(
+              kind: DayFixKind.addBreak,
+              id: 'break',
+              title: 'Break',
+              demandSaved: 0,
+              start: at(14),
+              end: at(14, 15),
+              newStart: at(14),
+              after: 'Planning',
+              runMinutes: 105,
+            ),
+          ],
+          onOpen: opened.add,
+          onHide: () {},
+        ),
+      ),
+    );
+    expect(find.text('15-min break at ${t('2 PM')}'), findsOneWidget);
+    expect(find.text('After 1 h 45 of back-to-back'), findsOneWidget);
+    expect(find.text('Breather'), findsOneWidget);
+
+    await tester.pumpWidget(
+      app(
+        DayFixesCard(
+          fixes: [move, buffer, energy],
+          onOpen: opened.add,
+          onHide: () => hidden = true,
+        ),
+      ),
+    );
     await tester.tap(find.text('15-min buffer before Client call'));
     expect(opened.single, buffer);
     await tester.tap(find.byTooltip('Hide until tomorrow'));

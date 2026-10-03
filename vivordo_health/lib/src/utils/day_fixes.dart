@@ -14,6 +14,11 @@ enum DayFixKind {
 
   /// Move hard work out of a low-energy window into the peak or second wind.
   energySlot,
+
+  /// Add a 15-minute Break event next to a long back-to-back run, so the
+  /// time stays free. Breaks take no part in Demand, so it saves nothing on
+  /// paper; it protects recovery.
+  addBreak,
 }
 
 class DayFix {
@@ -27,6 +32,8 @@ class DayFix {
     this.newStart,
     this.after,
     this.guests = 0,
+    this.runMinutes = 0,
+    this.beforeRun = false,
   });
 
   final DayFixKind kind;
@@ -51,6 +58,11 @@ class DayFix {
   /// Other guests who'd get the new time.
   final int guests;
 
+  /// Add a break: how long the back-to-back run is, and whether the break
+  /// goes before it (no room after).
+  final int runMinutes;
+  final bool beforeRun;
+
   DateTime? get newEnd => newStart == null || start == null || end == null
       ? null
       : newStart!.add(end!.difference(start!));
@@ -66,8 +78,11 @@ const _buffer = Duration(minutes: 15);
 /// Fixes worth less than this aren't offered.
 const _minSaving = 0.5;
 
+/// A back-to-back run this long earns a break.
+const _longRun = Duration(minutes: 90);
+
 /// Up to [max] fixes for today: the best priority to move, the best buffer,
-/// then a better energy slot. [items] and [untimed] are today's, as for
+/// then a better energy slot, then a break after the longest run. [items] and [untimed] are today's, as for
 /// Demand; [demandOf] prices a version of the day. [canMove] says which items
 /// the app may change (Google events not linked to a priority, and one-off
 /// priorities of your own); events with other guests also need you to be
@@ -217,7 +232,90 @@ List<DayFix> findDayFixes({
     );
     break;
   }
+  if (_breakFix(now, busy) case final fix?) ranked.add(fix);
   return ranked.take(max).toList();
+}
+
+bool _isRest(EffortItem i) => i.score.category == 'rest';
+
+/// A 15-minute break right after the longest back-to-back run of at least
+/// [_longRun] still to come (or just before it when there's no room after),
+/// unless a break is already there.
+DayFix? _breakFix(DateTime now, List<EffortItem> busy) {
+  final work = [
+    for (final i in busy)
+      if (!_isRest(i)) i,
+  ];
+  ({DateTime start, DateTime end, EffortItem first, EffortItem last})? longest;
+  ({DateTime start, DateTime end, EffortItem first, EffortItem last})? run;
+  for (final item in work) {
+    final current = run;
+    if (current != null && item.event.start.difference(current.end) < _buffer) {
+      run = (
+        start: current.start,
+        first: current.first,
+        end: item.event.end.isAfter(current.end) ? item.event.end : current.end,
+        last: item.event.end.isAfter(current.end) ? item : current.last,
+      );
+    } else {
+      run = (
+        start: item.event.start,
+        end: item.event.end,
+        first: item,
+        last: item,
+      );
+    }
+    final candidate = run;
+    if (candidate.end.difference(candidate.start) >= _longRun &&
+        candidate.end.isAfter(now) &&
+        (longest == null ||
+            candidate.end.difference(candidate.start) >
+                longest.end.difference(longest.start))) {
+      longest = candidate;
+    }
+  }
+  final found = longest;
+  if (found == null) return null;
+  bool free(DateTime start) {
+    final end = start.add(_buffer);
+    return !start.isBefore(now) &&
+        // Never into the next day (a run can end at midnight).
+        !end.isAfter(
+          DateTime(found.start.year, found.start.month, found.start.day + 1),
+        ) &&
+        !busy.any(
+          (o) => o.event.start.isBefore(end) && o.event.end.isAfter(start),
+        );
+  }
+
+  // Already resting right around it.
+  if (busy.any(
+    (o) =>
+        _isRest(o) &&
+        o.event.start.isBefore(found.end.add(_buffer * 2)) &&
+        o.event.end.isAfter(found.start.subtract(_buffer * 2)),
+  )) {
+    return null;
+  }
+  final before = found.start.subtract(_buffer);
+  final at = free(found.end)
+      ? found.end
+      : free(before)
+      ? before
+      : null;
+  if (at == null) return null;
+  return DayFix(
+    kind: DayFixKind.addBreak,
+    id: 'break:${at.toIso8601String()}',
+    title: 'Break',
+    demandSaved: 0,
+    start: at,
+    end: at.add(_buffer),
+    newStart: at,
+    after: (at == before ? found.first : found.last).event.title,
+    runMinutes: found.end.difference(found.start).inMinutes,
+    beforeRun: at == before,
+  );
 }
 
 bool _isPriority(EffortItem i) => i.score.category == 'priority';

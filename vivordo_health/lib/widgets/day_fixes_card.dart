@@ -9,6 +9,11 @@ const _amber = Color(0xFFBA7517);
 
 String _time(DateTime t) => DateFormat.jm().format(t).replaceAll(':00', '');
 
+/// "2 h", "1 h 45".
+String _runText(int minutes) => minutes % 60 == 0
+    ? '${minutes ~/ 60} h'
+    : '${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')}';
+
 /// "Ways to lighten today" under My Day's brief when Demand outruns Capacity
 /// (docs/scores.md §2). The X hides it until tomorrow.
 class DayFixesCard extends StatelessWidget {
@@ -92,8 +97,21 @@ class _FixRow extends StatelessWidget {
         '${fix.title} at ${_time(fix.newStart!)}',
         'Out of a low-energy window, into your best time',
       ),
+      DayFixKind.addBreak => (
+        Icons.self_improvement_rounded,
+        const Color(0xFF0F6E56),
+        '15-min break at ${_time(fix.newStart!)}',
+        '${fix.beforeRun ? 'Before' : 'After'} ${_runText(fix.runMinutes)} '
+            'of back-to-back',
+      ),
     };
     final saved = fix.demandSaved.round();
+    // Fixes that don't take Demand off say what they do instead.
+    final label = saved >= 1
+        ? null
+        : fix.kind == DayFixKind.addBreak
+        ? 'Breather'
+        : 'Fits peak';
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
@@ -136,23 +154,17 @@ class _FixRow extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color:
-                    (fix.kind == DayFixKind.energySlot && saved < 1
-                            ? VivordoTheme.brand
-                            : _green)
-                        .withValues(alpha: .12),
+                color: (label == null ? _green : VivordoTheme.brand).withValues(
+                  alpha: .12,
+                ),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                fix.kind == DayFixKind.energySlot && saved < 1
-                    ? 'Fits peak'
-                    : '−$saved',
+                label ?? '−$saved',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: fix.kind == DayFixKind.energySlot && saved < 1
-                      ? VivordoTheme.brand
-                      : _green,
+                  color: label == null ? _green : VivordoTheme.brand,
                 ),
               ),
             ),
@@ -193,25 +205,35 @@ Future<bool> showDayFixTimeSheet(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              fix.kind == DayFixKind.buffer
-                  ? 'Add 15 minutes before ${fix.title}'
-                  : 'Move ${fix.title} to ${_time(newStart)}',
+              switch (fix.kind) {
+                DayFixKind.buffer => 'Add 15 minutes before ${fix.title}',
+                DayFixKind.addBreak => 'Add a 15-min break',
+                _ => 'Move ${fix.title} to ${_time(newStart)}',
+              },
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
-            Text(
-              fix.kind == DayFixKind.buffer
-                  ? 'A breather after ${fix.after}, so the run of meetings '
-                        'gets a gap.'
-                  : 'Hard work lands in a low-energy window now. '
-                        '${_time(newStart)} is in your peak or second wind.',
-              style: TextStyle(color: colors.textSecondary),
-            ),
+            Text(switch (fix.kind) {
+              DayFixKind.buffer =>
+                'A breather after ${fix.after}, so the run of meetings '
+                    'gets a gap.',
+              DayFixKind.addBreak =>
+                'A "Break" in your Google Calendar '
+                    '${fix.beforeRun ? 'before' : 'after'} ${fix.after}, so '
+                    'the time stays free. Breaks don\'t count towards '
+                    'Demand or Effort.',
+              _ =>
+                'Hard work lands in a low-energy window now. '
+                    '${_time(newStart)} is in your peak or second wind.',
+            }, style: TextStyle(color: colors.textSecondary)),
             const SizedBox(height: 16),
-            _BeforeAfter(
-              before: range(start, end),
-              after: range(newStart, newEnd),
-            ),
+            if (fix.kind == DayFixKind.addBreak)
+              _BeforeAfter(before: null, after: range(newStart, newEnd))
+            else
+              _BeforeAfter(
+                before: range(start, end),
+                after: range(newStart, newEnd),
+              ),
             if (fix.guests > 0 || recurring) ...[
               const SizedBox(height: 12),
               _Warning(
@@ -237,7 +259,11 @@ Future<bool> showDayFixTimeSheet(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 onPressed: () => Navigator.pop(sheetContext, true),
-                child: Text('Move to ${_time(newStart)}'),
+                child: Text(
+                  fix.kind == DayFixKind.addBreak
+                      ? 'Add break'
+                      : 'Move to ${_time(newStart)}',
+                ),
               ),
             ),
             Center(
@@ -488,7 +514,9 @@ class _DayOption extends StatelessWidget {
 class _BeforeAfter extends StatelessWidget {
   const _BeforeAfter({required this.before, required this.after});
 
-  final String before, after;
+  /// Null for something new (a break): just the one time.
+  final String? before;
+  final String after;
 
   @override
   Widget build(BuildContext context) {
@@ -522,11 +550,11 @@ class _BeforeAfter extends StatelessWidget {
         ),
       ),
     );
+    final was = before;
     return Row(
       children: [
-        side('Now', before, false),
-        const SizedBox(width: 8),
-        side('After', after, true),
+        if (was != null) ...[side('Now', was, false), const SizedBox(width: 8)],
+        side(was == null ? 'When' : 'After', after, true),
       ],
     );
   }

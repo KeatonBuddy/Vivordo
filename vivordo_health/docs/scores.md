@@ -16,7 +16,8 @@ Items are calendar events and timed priorities, priced by the existing
 hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
 
 - Base demand per minute from the category: routine 15, social 20,
-  collaboration 40, focused work 55, high-consequence 75. Priorities use
+  collaboration 40, focused work 55, high-consequence 75; rest (breaks)
+  takes no part at all, not even as a back-to-back. Priorities use
   the effort they were given, as Home does today: light 20, moderate 45,
   demanding 75 (unset = moderate).
 - **Unknown events** (titles the local rules can't classify) are sent to
@@ -122,9 +123,15 @@ the card until tomorrow (`users/{uid}/day_fixes/{day}.hidden`).
 - Each fix confirms in a sheet (before and after, Demand change), applies
   through the calendar or priority service, and offers Undo for 5 seconds.
 
-Not built yet: a Break event (needs a zero-point "rest" category), logging
-which fixes are accepted so unwanted kinds stop being offered, and a
-morning notification.
+- **Break:** a 15-minute "Break" event in Google Calendar right after the
+  longest back-to-back run of 90+ minutes still to come (or just before it
+  if the run ends the day), unless a break is already there. Breaks are the
+  rest category, so it saves nothing on paper ("Breather" on the card); it
+  keeps recovery time from being booked. Undo deletes the event. Only with
+  Google Calendar connected.
+
+Not built yet: logging which fixes are accepted so unwanted kinds stop
+being offered, and a morning notification.
 
 ## 3. Effort: what the day took
 

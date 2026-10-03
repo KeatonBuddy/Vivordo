@@ -1076,6 +1076,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
 
     final energy = _energyForecast(today);
+    // A break goes in Google Calendar, so it needs a connected one.
+    final calendar = events.any((e) => e.googleEvent != null);
     return findDayFixes(
       now: now,
       items: items,
@@ -1096,7 +1098,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       fits: energy == null
           ? const []
           : fitDayToEnergy(forecast: energy, items: items, now: now),
-    );
+    ).where((f) => calendar || f.kind != DayFixKind.addBreak).toList();
   }
 
   Future<void> _hideDayFixes() async {
@@ -1197,10 +1199,33 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     )) {
       return;
     }
-    if (event?.googleEvent case final google?) {
+    if (fix.kind == DayFixKind.addBreak) {
+      await _addBreak(fix);
+    } else if (event?.googleEvent case final google?) {
       await _moveEvent(google, fix);
     } else if (priority != null) {
       await _retimePriority(priority, fix);
+    }
+  }
+
+  /// A "Break" event in Google Calendar; Undo deletes it.
+  Future<void> _addBreak(DayFix fix) async {
+    try {
+      final created = await CalendarService.createEvent(
+        title: 'Break',
+        start: fix.newStart!,
+        end: fix.newEnd!,
+        recurrence: 'none',
+      );
+      await _loadTodayEvents(forceRefresh: true);
+      if (await _showUndo(
+        'Break added at ${DateFormat.jm().format(fix.newStart!)}',
+      )) {
+        await CalendarService.deleteEvent(created);
+        await _loadTodayEvents(forceRefresh: true);
+      }
+    } catch (_) {
+      _showMessage("Couldn't add the break.");
     }
   }
 

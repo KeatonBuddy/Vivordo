@@ -8,7 +8,10 @@ BaaS weighting changes, deployment and user demand overrides remain separate.
 `CalendarCognitiveLoadService.scoreEvents` uses local rules by default. AI is
 optional (`allowAi: true`) and is not invoked by Home. Categories have fixed
 starting demand: routine 15, social 20, collaboration 40, focused-work 55,
-high-consequence 75. Unknown has a numeric placeholder of 0 and confidence 0;
+high-consequence 75, rest 0 ("Break", "Lunch break", "Coffee break",
+"Breather"). Rest events take no part in load: the hourly calculator skips
+them, so they never make the next event back-to-back, and the day record
+leaves them out, so the server's Effort never sees them. Unknown has a numeric placeholder of 0 and confidence 0;
 consumers must use `isKnown` rather than interpret it as low demand.
 
 Title matches take precedence over notes. More specific (longer) matching

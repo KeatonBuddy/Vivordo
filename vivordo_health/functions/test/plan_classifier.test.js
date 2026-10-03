@@ -58,3 +58,8 @@ test("calls Opus 5.5 at low effort with a JSON schema; titles only", async () =>
   client.messages.create = async () => ({stop_reason: "max_tokens", content: []});
   assert.deepEqual(await classifyPlanItems(client, request), {events: [], priorities: []});
 });
+
+test("a break can come back as rest", () => {
+  const answer = cleanAnswer({events: [{id: "e1", category: "rest"}], priorities: []}, {events: [{id: "e1"}], priorities: []});
+  assert.deepEqual(answer.events, [{id: "e1", category: "rest"}]);
+});

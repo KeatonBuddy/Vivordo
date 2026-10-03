@@ -316,6 +316,9 @@ class CalendarCognitiveLoadService {
     'collaboration': 40,
     'focused-work': 55,
     'high-consequence': 75,
+    // Breaks recover rather than demand: they take no part in Demand or
+    // Effort (hourly_calendar_load.dart, day_record_service.dart).
+    'rest': 0,
     'unknown': 0,
   };
 
@@ -332,7 +335,6 @@ class CalendarCognitiveLoadService {
       'travel',
       'flight',
       'appointment',
-      'break',
       'workout',
       'gym',
       'walk',
@@ -390,14 +392,14 @@ class CalendarCognitiveLoadService {
       'pto',
       'ooo',
       'annual leave',
-      'lunch break',
-      'coffee break',
       'stretching',
       'yoga',
       'pilates',
       'meditation',
     ])
       _DemandRule(term, 'routine', 15),
+    for (final term in ['break', 'lunch break', 'coffee break', 'breather'])
+      _DemandRule(term, 'rest', 0),
     for (final term in [
       'pub golf',
       'golf',
