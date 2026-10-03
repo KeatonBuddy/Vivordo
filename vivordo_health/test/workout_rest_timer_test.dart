@@ -48,4 +48,50 @@ void main() {
     expect(find.text('1:15'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('adjusting rest keeps the keyboard up; other taps close it', (
+    tester,
+  ) async {
+    final reps = FocusNode();
+    void unfocus(PointerDownEvent _) =>
+        FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Scaffold(
+          // As in ActiveWorkoutScreen: set fields close the keyboard on taps
+          // outside them, and the rest bar counts as inside.
+          bottomNavigationBar: TextFieldTapRegion(
+            child: WorkoutRestTimer(onDeadlineChanged: (_) async {}),
+          ),
+          body: Column(
+            children: [
+              TextField(focusNode: reps, onTapOutside: unfocus),
+              const SizedBox(height: 200, width: 300, child: Text('Elsewhere')),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(reps.hasFocus, isTrue);
+
+    for (final control in [
+      find.byTooltip('Add 15 seconds'),
+      find.byTooltip('Subtract 15 seconds'),
+      find.byTooltip('Start rest timer'),
+      find.text('Reset'),
+    ]) {
+      await tester.tap(control);
+      await tester.pump();
+      expect(reps.hasFocus, isTrue, reason: '$control');
+    }
+
+    await tester.tap(find.text('Elsewhere'));
+    await tester.pump();
+    expect(reps.hasFocus, isFalse);
+    await tester.pumpWidget(const SizedBox());
+    reps.dispose();
+  });
 }

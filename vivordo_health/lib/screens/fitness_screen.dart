@@ -2441,9 +2441,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           const SizedBox(width: 6),
         ],
       ),
-      bottomNavigationBar: WorkoutRestTimer(
-        onDeadlineChanged: (deadline) =>
-            NotificationService().updateRestTimerNotification(deadline),
+      // Counts as part of the set fields, so adjusting rest while typing a
+      // weight or reps keeps the keyboard up; any other tap still closes it.
+      bottomNavigationBar: TextFieldTapRegion(
+        child: WorkoutRestTimer(
+          onDeadlineChanged: (deadline) =>
+              NotificationService().updateRestTimerNotification(deadline),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
