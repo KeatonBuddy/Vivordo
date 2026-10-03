@@ -109,6 +109,8 @@ class TimelineRow extends StatelessWidget {
     this.onToggle,
     this.energyColor,
     this.energyNote,
+    this.energyAction,
+    this.onEnergyAction,
   });
 
   final DateTime start;
@@ -124,6 +126,11 @@ class TimelineRow extends StatelessWidget {
 
   /// A clash with the energy forecast, e.g. "Lands in your afternoon dip".
   final String? energyNote;
+
+  /// A move for the clash, e.g. "Move to 10 AM, in your peak", and what
+  /// tapping it does.
+  final String? energyAction;
+  final VoidCallback? onEnergyAction;
 
   /// Null when the row is a plain event with no linked priority.
   final bool? completed;
@@ -234,6 +241,22 @@ class TimelineRow extends StatelessWidget {
                                     ),
                                   ),
                                 ],
+                              ),
+                            ),
+                          if (energyAction != null)
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: onEnergyAction,
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  energyAction!,
+                                  style: const TextStyle(
+                                    color: VivordoTheme.brand,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ),
                         ],

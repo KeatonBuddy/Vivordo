@@ -37,10 +37,12 @@ import '../src/services/metrics_repository.dart';
 import '../src/utils/day_key.dart';
 import '../widgets/burnout_card.dart';
 import '../src/utils/burnout_view.dart';
+import '../src/utils/day_fixes.dart';
 import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
 import '../src/utils/sleep_schedule.dart';
 import '../src/services/wind_down_reminder.dart';
+import '../widgets/day_fixes_card.dart';
 import '../widgets/energy_forecast_view.dart';
 
 class MyDayScreen extends StatefulWidget {
@@ -69,6 +71,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   /// `preferences.windDownReminder`: null until asked, then on or off.
   bool? _windDownReminder;
+
+  /// The day the fixes card was hidden with its X (day_fixes/{day}.hidden).
+  String? _fixesHiddenDay;
   String? _calendarLoadError;
   int _loadGeneration = 0;
   bool _isLoading = true;
@@ -186,6 +191,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _connectPriorities();
     _loadTodayEvents();
     unawaited(_loadWrapUp());
+    unawaited(_loadFixesHidden());
   }
 
   Future<void> _loadWrapUp() async {
@@ -931,70 +937,421 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     at: now,
                   );
                 }
-                return DailyBriefCard(
-                  headline: headline,
-                  summary:
-                      '${sleepComparison(sleep, usualSleep)} $calendarText',
-                  capacityScore: capacityScore,
-                  capacityLabel: server != null
-                      ? server.note
-                      : capacity?.score == null
-                      ? 'Needs health data'
-                      : capacityNote,
-                  scheduleScore: ready ? demand.round().clamp(0, 100) : null,
-                  scheduleLabel: !ready
-                      ? 'Plan unavailable'
-                      : evening
-                      ? 'Expected tomorrow'
-                      : 'Remaining today',
-                  footer: capacityStale || !ready
-                      ? 'Limited data'
-                      : 'Available data',
-                  onDetails: () => showDialog<void>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Daily Brief data'),
-                      content: SingleChildScrollView(
-                        child: Text(
-                          'Calendar loaded: ${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).\n'
-                          'Heart rate measured: ${timeLabel(healthTime)}.\n'
-                          'Stress calculated: ${timeLabel(stressTime)}.\n'
-                          '${summary?.isFromCache == true ? 'Health data is from the local cache.\n' : ''}'
-                          'Sleep baseline: ${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.\n'
-                          '${server != null ? 'Capacity compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. It is compared with your usual after 7 days.' : 'Capacity uses sleep and stress, not raw heart rate. Comparisons require 7 days with matching inputs and stress readings at a similar time of day.'} These are wellness estimates, not clinical assessments.\n'
-                          'Demand is the Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work does not block a specific opening.',
+                final brief =
+                    DailyBriefCard(
+                      headline: headline,
+                      summary:
+                          '${sleepComparison(sleep, usualSleep)} $calendarText',
+                      capacityScore: capacityScore,
+                      capacityLabel: server != null
+                          ? server.note
+                          : capacity?.score == null
+                          ? 'Needs health data'
+                          : capacityNote,
+                      scheduleScore: ready
+                          ? demand.round().clamp(0, 100)
+                          : null,
+                      scheduleLabel: !ready
+                          ? 'Plan unavailable'
+                          : evening
+                          ? 'Expected tomorrow'
+                          : 'Remaining today',
+                      footer: capacityStale || !ready
+                          ? 'Limited data'
+                          : 'Available data',
+                      onDetails: () => showDialog<void>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Daily Brief data'),
+                          content: SingleChildScrollView(
+                            child: Text(
+                              'Calendar loaded: ${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).\n'
+                              'Heart rate measured: ${timeLabel(healthTime)}.\n'
+                              'Stress calculated: ${timeLabel(stressTime)}.\n'
+                              '${summary?.isFromCache == true ? 'Health data is from the local cache.\n' : ''}'
+                              'Sleep baseline: ${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.\n'
+                              '${server != null ? 'Capacity compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. It is compared with your usual after 7 days.' : 'Capacity uses sleep and stress, not raw heart rate. Comparisons require 7 days with matching inputs and stress readings at a similar time of day.'} These are wellness estimates, not clinical assessments.\n'
+                              'Demand is the Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work does not block a specific opening.',
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Close'),
+                            ),
+                          ],
                         ),
                       ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Close'),
+                    ).withScreenInsight(
+                      ScreenInsight(
+                        'my_day',
+                        'Your day',
+                        myDayPlanningInsight(
+                          now: now,
+                          events: briefEvents,
+                          priorities: briefPriorities,
+                          calendarReady: calendarReady,
+                          prioritiesReady:
+                              priorities.hasData && !priorities.hasError,
+                          allDayEvents: _events
+                              .where((e) => e.isAllDay && e.end.isAfter(now))
+                              .length,
                         ),
-                      ],
+                      ),
+                    );
+                // Ways to lighten today (docs/scores.md §2), when Demand
+                // outruns Capacity and the card isn't hidden for today.
+                final fixes =
+                    !ready ||
+                        evening ||
+                        capacityScore == null ||
+                        demand <= capacityScore + 15 ||
+                        _fixesHiddenDay == localDayKey(today)
+                    ? const <DayFix>[]
+                    : _dayFixes(now, timedEvents, todayPriorities);
+                if (fixes.isEmpty) return brief;
+                return Column(
+                  children: [
+                    brief,
+                    const SizedBox(height: 12),
+                    DayFixesCard(
+                      fixes: fixes,
+                      onOpen: (fix) => _openDayFix(
+                        fix,
+                        demand,
+                        timedEvents,
+                        todayPriorities,
+                      ),
+                      onHide: _hideDayFixes,
                     ),
-                  ),
-                ).withScreenInsight(
-                  ScreenInsight(
-                    'my_day',
-                    'Your day',
-                    myDayPlanningInsight(
-                      now: now,
-                      events: briefEvents,
-                      priorities: briefPriorities,
-                      calendarReady: calendarReady,
-                      prioritiesReady:
-                          priorities.hasData && !priorities.hasError,
-                      allDayEvents: _events
-                          .where((e) => e.isAllDay && e.end.isAfter(now))
-                          .length,
-                    ),
-                  ),
+                  ],
                 );
               },
             ),
       );
     },
   );
+
+  /// Today's Demand as [buildDayEffort] prices it, for trying fixes.
+  double _demandToday(
+    DateTime now,
+    List<EffortItem> items,
+    List<Object?> untimed,
+  ) {
+    final today = DateUtils.dateOnly(now);
+    return buildDayEffort(
+      now: now,
+      from: today,
+      until: today.add(const Duration(days: 1)),
+      wrapUp: today.add(Duration(minutes: _wrapUpMinutes)),
+      items: items,
+      untimedOpen: untimed,
+    ).demand;
+  }
+
+  /// A one-off priority of your own: recurring and calendar ones stay put.
+  bool _priorityMovable(DailyPriority p) =>
+      !p.completed &&
+      p.source == 'manual' &&
+      p.templateId == null &&
+      _linkedKey(p) == null;
+
+  List<DayFix> _dayFixes(
+    DateTime now,
+    List<_CalendarEvent> events,
+    List<DailyPriority> priorities,
+  ) {
+    final today = DateUtils.dateOnly(now);
+    final items = _effortItems(today, events, priorities);
+    final byKey = {for (final e in events) e.sourceEventKey: e};
+    final byPath = {
+      for (final p in priorities) 'priority:${p.reference.path}': p,
+    };
+    bool canMove(EffortItem item) {
+      if (byPath[item.event.id] case final p?) return _priorityMovable(p);
+      final event = byKey[item.event.id];
+      return event?.googleEvent != null &&
+          !event!.isPriorityLinked &&
+          !event.isAllDay;
+    }
+
+    final energy = _energyForecast(today);
+    return findDayFixes(
+      now: now,
+      items: items,
+      untimed: [
+        for (final p in priorities)
+          if (_priorityMovable(p) &&
+              (p.isAllDay ||
+                  p.sourceStart == null ||
+                  !DateUtils.isSameDay(p.sourceStart, today)))
+            (
+              id: p.reference.path,
+              title: p.title,
+              effort: p.planning['effort'],
+            ),
+      ],
+      demandOf: (items, untimed) => _demandToday(now, items, untimed),
+      canMove: canMove,
+      fits: energy == null
+          ? const []
+          : fitDayToEnergy(forecast: energy, items: items, now: now),
+    );
+  }
+
+  Future<void> _hideDayFixes() async {
+    final day = localDayKey(DateTime.now());
+    setState(() => _fixesHiddenDay = day);
+    Future<void> save(bool hidden) async {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('day_fixes')
+            .doc(day)
+            .set({'hidden': hidden}, SetOptions(merge: true));
+      } catch (_) {
+        // Still hidden (or shown) for this session.
+      }
+    }
+
+    unawaited(save(true));
+    if (await _showUndo('Hidden until tomorrow')) {
+      if (mounted) setState(() => _fixesHiddenDay = null);
+      await save(false);
+    }
+  }
+
+  Future<void> _loadFixesHidden() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final day = localDayKey(DateTime.now());
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('day_fixes')
+          .doc(day)
+          .get();
+      if (doc.data()?['hidden'] == true && mounted) {
+        setState(() => _fixesHiddenDay = day);
+      }
+    } catch (_) {
+      // Shows the card.
+    }
+  }
+
+  /// A snackbar with Undo; true when Undo was tapped.
+  Future<bool> _showUndo(String message) async {
+    if (!mounted) return false;
+    var undone = false;
+    await ScaffoldMessenger.of(context)
+        .showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 5),
+            // With an action, a snackbar otherwise stays until dismissed.
+            persist: false,
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () => undone = true,
+            ),
+          ),
+        )
+        .closed;
+    return undone;
+  }
+
+  Future<void> _openDayFix(
+    DayFix fix,
+    double demandNow,
+    List<_CalendarEvent> events,
+    List<DailyPriority> priorities,
+  ) async {
+    final event = events.where((e) => e.sourceEventKey == fix.id).firstOrNull;
+    final priority = priorities
+        .where(
+          (p) =>
+              'priority:${p.reference.path}' == fix.id ||
+              p.reference.path == fix.id,
+        )
+        .firstOrNull;
+    if (fix.kind == DayFixKind.movePriority) {
+      if (priority == null) return;
+      final day = await showMovePrioritySheet(
+        context,
+        fix: fix,
+        demandNow: demandNow,
+        days: _expectedDemandDays(),
+      );
+      if (day != null) await _movePriority(priority, day, fix.demandSaved);
+      return;
+    }
+    if (!await showDayFixTimeSheet(
+      context,
+      fix: fix,
+      demandNow: demandNow,
+      recurring: event?.isRecurring == true,
+    )) {
+      return;
+    }
+    if (event?.googleEvent case final google?) {
+      await _moveEvent(google, fix);
+    } else if (priority != null) {
+      await _retimePriority(priority, fix);
+    }
+  }
+
+  Future<void> _moveEvent(gcal.Event google, DayFix fix) async {
+    try {
+      final moved = await CalendarService.updateEvent(
+        google,
+        start: fix.newStart,
+        end: fix.newEnd,
+      );
+      await _loadTodayEvents(forceRefresh: true);
+      if (await _showUndo(_movedText(fix))) {
+        await CalendarService.updateEvent(
+          moved,
+          start: fix.start,
+          end: fix.end,
+        );
+        await _loadTodayEvents(forceRefresh: true);
+      }
+    } catch (_) {
+      _showMessage("Couldn't move ${fix.title}.");
+    }
+  }
+
+  /// A timed priority to a better energy slot today.
+  Future<void> _retimePriority(DailyPriority p, DayFix fix) async {
+    Future<void> setStart(DailyPriority priority, DateTime start) =>
+        DailyPriorityService.editPriority(
+          priority,
+          title: priority.title,
+          date: start,
+          scheduledAt: start,
+          completed: priority.completed,
+          reminderMinutes: priority.reminderMinutes,
+          reminderTimeMinutes: priority.reminderTimeMinutes,
+          // editPriority drops the end, so keep the length as its estimate.
+          planning: {
+            ...priority.planning,
+            'minutes': fix.end!.difference(fix.start!).inMinutes,
+          },
+        );
+    try {
+      await setStart(p, fix.newStart!);
+      if (await _showUndo(_movedText(fix))) {
+        final now = await _priorityOn(fix.newStart!, p.id);
+        if (now != null) await setStart(now, fix.start!);
+      }
+    } catch (_) {
+      _showMessage("Couldn't move ${fix.title}.");
+    }
+  }
+
+  /// A priority to another day, keeping its time of day if it has one.
+  Future<void> _movePriority(
+    DailyPriority p,
+    DateTime day,
+    double saved,
+  ) async {
+    final from = p.date ?? DateUtils.dateOnly(DateTime.now());
+    Future<void> moveTo(DailyPriority priority, DateTime to) =>
+        DailyPriorityService.editPriority(
+          priority,
+          title: priority.title,
+          date: to,
+          scheduledAt: p.sourceStart == null
+              ? null
+              : DateTime(
+                  to.year,
+                  to.month,
+                  to.day,
+                  p.sourceStart!.hour,
+                  p.sourceStart!.minute,
+                ),
+          completed: false,
+          reminderMinutes: priority.reminderMinutes,
+          reminderTimeMinutes: priority.reminderTimeMinutes,
+          planning: {
+            ...priority.planning,
+            if (priority.planning['plannedDay'] != null)
+              'plannedDay': localDayKey(to),
+            if (p.sourceStart != null && p.sourceEnd != null)
+              'minutes': p.sourceEnd!.difference(p.sourceStart!).inMinutes,
+          },
+        );
+    try {
+      await moveTo(p, day);
+      final undo = await _showUndo(
+        '"${p.title}" moved to ${DateFormat('EEEE').format(day)} · '
+        '−${saved.round()}',
+      );
+      if (undo) {
+        final moved = await _priorityOn(day, p.id);
+        if (moved != null) await moveTo(moved, from);
+      }
+    } catch (_) {
+      _showMessage("Couldn't move \"${p.title}\".");
+    }
+  }
+
+  Future<DailyPriority?> _priorityOn(DateTime day, String id) async =>
+      (await DailyPriorityService.forDay(
+        day,
+      )).where((p) => p.id == id).firstOrNull;
+
+  String _movedText(DayFix fix) =>
+      '${fix.title} moved to ${DateFormat.jm().format(fix.newStart!)}'
+      '${fix.demandSaved >= 0.5 ? ' · −${fix.demandSaved.round()}' : ''}';
+
+  /// Expected Demand for the next 5 days, for the move-priority picker.
+  Future<List<({DateTime day, double demand})>> _expectedDemandDays() async {
+    final start = DateUtils.dateOnly(
+      DateTime.now(),
+    ).add(const Duration(days: 1));
+    final days = [for (var i = 0; i < 5; i++) start.add(Duration(days: i))];
+    final results = await Future.wait([
+      CalendarService.getEventsBetween(
+        start,
+        start.add(const Duration(days: 5)),
+      ),
+      for (final day in days) DailyPriorityService.forDay(day),
+    ]);
+    final events = [
+      for (final e in results.first as List<gcal.Event>)
+        ?_CalendarEvent.fromGoogle(e),
+    ];
+    // Only what belongs to each day: untimed priorities carried over from
+    // earlier days would otherwise count on every day alike.
+    List<DailyPriority> own(int i) => [
+      for (final p in results[i + 1] as List<DailyPriority>)
+        if (DateUtils.isSameDay(p.date, days[i]) ||
+            p.planning['plannedDay'] == localDayKey(days[i]))
+          p,
+    ];
+    return [
+      for (final (i, day) in days.indexed)
+        (
+          day: day,
+          demand: buildDayEffort(
+            now: day,
+            from: day,
+            until: day.add(const Duration(days: 1)),
+            wrapUp: day.add(Duration(minutes: _wrapUpMinutes)),
+            items: _effortItems(day, [
+              for (final e in events)
+                if (!e.isAllDay && DateUtils.isSameDay(e.start, day)) e,
+            ], own(i)),
+            untimedOpen: _untimedOpen(day, own(i)),
+          ).demand,
+        ),
+    ];
+  }
 
   Widget _buildWatchStrip(BackToBackEventBlock block) {
     final colors = context.vivordoColors;
@@ -1534,6 +1891,15 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   'priority:${priority!.reference.path}'];
         final phase = past ? null : energy?.phaseAt(entry.start);
         final suggested = fit?.suggestedStart;
+        // A clash Vivordo can move: one tap opens the confirm sheet.
+        final canMove =
+            fit != null &&
+            fit.kind == EnergyFitKind.clash &&
+            fit.movable &&
+            suggested != null &&
+            (event != null
+                ? event.googleEvent != null && !event.isPriorityLinked
+                : !priority!.completed);
         return TimelineRow(
           start: entry.start,
           title: event?.title ?? priority!.title,
@@ -1545,12 +1911,30 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           ].join(' · '),
           energyColor: phase == null ? null : energyPhaseColor(phase),
           energyNote: fit?.kind == EnergyFitKind.clash
-              ? [
-                  'Lands in ${energyPhasePhrase(fit!.phase)}',
-                  if (suggested != null && event?.isRecurring != true)
-                    energyMoveHint(suggested, energy!),
-                ].join('. ')
+              ? 'Lands in ${energyPhasePhrase(fit!.phase)}'
               : null,
+          energyAction: canMove
+              ? energyMoveHint(
+                  suggested,
+                  energy!,
+                ).replaceFirst('Try', 'Move to')
+              : null,
+          onEnergyAction: !canMove
+              ? null
+              : () => _openDayFix(
+                  DayFix(
+                    kind: DayFixKind.energySlot,
+                    id: fit.id,
+                    title: fit.item.event.title,
+                    demandSaved: 0,
+                    start: fit.item.event.start,
+                    end: fit.item.event.end,
+                    newStart: suggested,
+                  ),
+                  0,
+                  _events,
+                  snapshot.data ?? const <DailyPriority>[],
+                ),
           color: priority != null ? timelineDoneGreen : event!.color,
           past: past,
           completed: priority?.completed,

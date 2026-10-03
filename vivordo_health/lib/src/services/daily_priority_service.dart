@@ -383,6 +383,27 @@ class DailyPriorityService {
         (data['completed'] != true || data['completedDay'] == viewingDay);
   }
 
+  /// The time fields to update on an imported calendar priority whose event
+  /// has moved, or null when nothing changed (or it isn't one).
+  @visibleForTesting
+  static Map<String, Object>? calendarTimeChanges(
+    Map<String, dynamic> data,
+    CalendarPriorityCandidate event,
+  ) {
+    if (data['source'] != 'calendar') return null;
+    DateTime? at(Object? value) => (value as Timestamp?)?.toDate();
+    if (at(data['sourceStart']) == event.start &&
+        at(data['sourceEnd']) == event.end &&
+        data['isAllDay'] == event.isAllDay) {
+      return null;
+    }
+    return {
+      'sourceStart': Timestamp.fromDate(event.start),
+      'sourceEnd': Timestamp.fromDate(event.end),
+      'isAllDay': event.isAllDay,
+    };
+  }
+
   static Future<void> seedFromCalendar(
     DateTime day,
     Iterable<CalendarPriorityCandidate> candidates,
@@ -419,7 +440,20 @@ class DailyPriorityService {
         }
         continue;
       }
-      if (existingDocument != null) continue;
+      if (existingDocument != null) {
+        // The event moved (in the app, a day fix or Google Calendar): keep
+        // its priority, and so its reminder, at the new time.
+        final moved = calendarTimeChanges(existingDocument.data(), candidate);
+        if (moved != null) {
+          batch.update(existingDocument.reference, {
+            ...moved,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          writes++;
+          await flushIfFull();
+        }
+        continue;
+      }
       batch.set(collection.doc(id), {
         'title': candidate.title.trim(),
         'completed': false,

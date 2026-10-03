@@ -102,6 +102,30 @@ it when burnout or trends need it.
 - Within ±15: "A full day".
 - Demand > Capacity + 15: "More than you've got: protect a break".
 
+**Ways to lighten today** (`lib/src/utils/day_fixes.dart`,
+`lib/widgets/day_fixes_card.dart`): under a "More than you've got" brief,
+up to 3 one-tap fixes, each priced by re-running Demand with the change
+made (a real "−6", not a guess). Shown only when a fix exists; the X hides
+the card until tomorrow (`users/{uid}/day_fixes/{day}.hidden`).
+- **Move a priority:** the open one-off priority of your own that saves the
+  most (recurring and calendar-linked ones stay put). A sheet shows the next
+  5 days' expected Demand with the lightest picked; it keeps its time of day
+  and `plannedDay` moves with it.
+- **Buffer:** an event that starts within 15 min of another moves to 15 min
+  after it, if it then fits before whatever comes next. Only Google events
+  not linked to a priority, with no other guests unless you organised them
+  (the sheet warns that guests will get the new time). A repeating event
+  moves this occurrence only.
+- **Better energy slot:** hard work in a low-energy window moves to the
+  forecast's suggested time (§8). Also offered as "Move to …" on the clash
+  note in My Day's timeline, even when the day isn't overloaded.
+- Each fix confirms in a sheet (before and after, Demand change), applies
+  through the calendar or priority service, and offers Undo for 5 seconds.
+
+Not built yet: a Break event (needs a zero-point "rest" category), logging
+which fixes are accepted so unwanted kinds stop being offered, and a
+morning notification.
+
 ## 3. Effort: what the day took
 
 `Effort = mental points + physical points` (grows through the day). Both
