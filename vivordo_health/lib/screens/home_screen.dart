@@ -297,6 +297,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     StressScoreService.submitPendingFeedback().catchError((_) {});
     WidgetsBinding.instance.addObserver(this);
     _connectMetricStreams();
+    // Events added or moved anywhere (My Day, Vivordo AI) reload Your Day.
+    CalendarService.eventsChanged.addListener(_refreshHomeCalendarCards);
     if (widget.openMoodCheckIn) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_showMoodCheck());
@@ -346,6 +348,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    CalendarService.eventsChanged.removeListener(_refreshHomeCalendarCards);
+    _sleepRefreshTimer?.cancel();
     _prioritySnapshot.dispose();
     _friendsSnapshot.dispose();
     _engagementSnapshot.dispose();
@@ -452,6 +456,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               .map((doc) => MetricDayEntry(dayKey: doc.key, data: doc.value))
               .toList(growable: false),
     );
+  }
+
+  /// Today's wake time as last seen, so new sleep can refresh Your Day.
+  Object? _seenWakeTime;
+  Timer? _sleepRefreshTimer;
+
+  /// The forecast's sleep times arrive with the metrics stream, but its sleep
+  /// need comes from Capacity, which the server recalculates once the sleep
+  /// lands. Refetch it shortly after today's sleep changes.
+  void _refreshForNewSleep(Object? wakeTime) {
+    final key = (_streamsDayKey, wakeTime);
+    if (_seenWakeTime == null) {
+      _seenWakeTime = key;
+      return;
+    }
+    if (_seenWakeTime == key) return;
+    _seenWakeTime = key;
+    _sleepRefreshTimer?.cancel();
+    _sleepRefreshTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      setState(() {
+        _effortContextFuture = null;
+        _effortContextDate = null;
+      });
+    });
   }
 
   void _syncMoodAfterBuild(String savedMood, double savedMoodScore) {
@@ -603,6 +632,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final hrvMap = data?['hrv'] as Map?;
         final sleepMap = data?['sleep'] as Map?;
         final sleepIsWhoop = sleepMap?['source'] == 'whoop';
+        if (!loading) _refreshForNewSleep(sleepMap?['wakeTime']);
         final stepsMap = data?['steps'] as Map?;
         final activeCaloriesMap = data?['active_calories'] as Map?;
         final exerciseTimeMap = data?['exercise_time'] as Map?;

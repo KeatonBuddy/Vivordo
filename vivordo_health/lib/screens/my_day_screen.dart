@@ -199,6 +199,21 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _loadTodayEvents();
     unawaited(_loadWrapUp());
     unawaited(_loadFixHistory());
+    CalendarService.eventsChanged.addListener(_onEventsChanged);
+  }
+
+  /// Set when the calendar changed while this tab was hidden.
+  bool _eventsStale = false;
+
+  /// An event was added, moved or deleted somewhere (Home, Vivordo AI, the
+  /// calendar screen): reload now, or when this tab is next shown.
+  void _onEventsChanged() {
+    if (!mounted) return;
+    if (_screenActive) {
+      unawaited(_loadTodayEvents());
+    } else {
+      _eventsStale = true;
+    }
   }
 
   Future<void> _loadWrapUp() async {
@@ -329,7 +344,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _screenActive = active;
     _clockTimer?.cancel();
     if (!active) return;
-    if (!_handleDayRollover()) _refreshBriefClock();
+    if (!_handleDayRollover()) {
+      _refreshBriefClock();
+      if (_eventsStale) unawaited(_loadTodayEvents());
+    }
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
       if (!_handleDayRollover()) {
@@ -376,6 +394,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    CalendarService.eventsChanged.removeListener(_onEventsChanged);
     _clockTimer?.cancel();
     _briefSnapshot.dispose();
     _capacitySnapshot.dispose();
@@ -390,6 +409,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// show them what they just changed away from.
   Future<void> _loadTodayEvents({bool forceRefresh = false}) async {
     final generation = ++_loadGeneration;
+    _eventsStale = false;
     if (mounted) setState(() => _isLoading = true);
     final now = DateTime.now();
     final dayStart = DateTime(now.year, now.month, now.day);

@@ -31,7 +31,14 @@ class CalendarService {
       RequestCoalescer<List<gcal.Event>>(ttl: _eventCacheTtl);
 
   /// Drops cached ranges after a local edit, deletion or account change.
-  static void invalidateEventCache() => _eventRequests.invalidateAll();
+  static void invalidateEventCache() {
+    _eventRequests.invalidateAll();
+    eventsChanged.value++;
+  }
+
+  /// Bumped whenever the events may have changed, from any screen or Vivordo
+  /// AI, so open screens can reload their schedule.
+  static final ValueNotifier<int> eventsChanged = ValueNotifier<int>(0);
 
   /// Silent, all-or-nothing fetch for scoring. Null means unavailable, while
   /// an empty list means a successful fetch with no events.
