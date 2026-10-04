@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -295,21 +296,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           _stressScale(score),
           if (change != null) ...[
             const SizedBox(height: 18),
-            Row(
-              children: [
-                Icon(
-                  change <= 0 ? Icons.south_rounded : Icons.north_rounded,
-                  color: change <= 0 ? _green : _red,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${change.abs().round()} points ${change <= 0 ? 'lower' : 'higher'} than yesterday',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
+            _changeRow(change.round()),
           ],
         ],
       ),
@@ -404,6 +391,33 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
     ],
   );
 
+  Widget _changeRow(int points) => Row(
+    children: [
+      Icon(
+        points == 0
+            ? Icons.east_rounded
+            : points < 0
+            ? Icons.south_rounded
+            : Icons.north_rounded,
+        color: points == 0
+            ? context.vivordoColors.textSecondary
+            : points < 0
+            ? _green
+            : _red,
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: Text(
+          points == 0
+              ? 'Same as yesterday'
+              : '${points.abs()} point${points.abs() == 1 ? '' : 's'} '
+                    '${points < 0 ? 'lower' : 'higher'} than yesterday',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+    ],
+  );
+
   Widget _stressScale(double? score) => Column(
     children: [
       LayoutBuilder(
@@ -416,11 +430,16 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               children: [
                 Row(
                   children: [
-                    Expanded(child: _scaleSegment(_green, left: true)),
+                    Expanded(
+                      flex: 30,
+                      child: _scaleSegment(_green, left: true),
+                    ),
                     const SizedBox(width: 2),
-                    Expanded(child: _scaleSegment(_yellow)),
+                    Expanded(flex: 30, child: _scaleSegment(_green)),
                     const SizedBox(width: 2),
-                    Expanded(child: _scaleSegment(_red, right: true)),
+                    Expanded(flex: 20, child: _scaleSegment(_yellow)),
+                    const SizedBox(width: 2),
+                    Expanded(flex: 20, child: _scaleSegment(_red, right: true)),
                   ],
                 ),
                 Positioned(
@@ -445,11 +464,27 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
       ),
       const SizedBox(height: 4),
       const Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text('Calm', style: TextStyle(color: _green)),
-          Text('Moderate', style: TextStyle(color: _yellow)),
-          Text('High', style: TextStyle(color: _red)),
+          Expanded(
+            flex: 30,
+            child: Text('Low', style: TextStyle(color: _green)),
+          ),
+          Expanded(
+            flex: 30,
+            child: Text('Moderate', style: TextStyle(color: _green)),
+          ),
+          Expanded(
+            flex: 20,
+            child: Text('Elevated', style: TextStyle(color: _yellow)),
+          ),
+          Expanded(
+            flex: 20,
+            child: Text(
+              'High',
+              textAlign: TextAlign.right,
+              style: TextStyle(color: _red),
+            ),
+          ),
         ],
       ),
     ],
@@ -745,17 +780,13 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
     child: child,
   );
 
-  String _band(double? score) {
-    if (score == null) return 'No data';
-    if (score < 35) return 'Calm';
-    if (score < 67) return 'Moderate';
-    return 'High';
-  }
+  // Same bands as Home and the widgets.
+  String _band(double? score) => homeStressLevel(score) ?? 'No data';
 
   Color _bandColor(double? score) {
     if (score == null) return context.vivordoColors.textSecondary;
-    if (score < 35) return _green;
-    if (score < 67) return _yellow;
+    if (score < 60) return _green;
+    if (score < 80) return _yellow;
     return _red;
   }
 
