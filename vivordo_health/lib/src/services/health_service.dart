@@ -759,7 +759,6 @@ class HealthService {
     'respiratory_rate': 'brpm',
     'blood_oxygen': '%',
     'steps': 'steps',
-    'mindfulness': 'min',
     'exercise_time': 'min',
     'sleep': 'hours',
   };
@@ -776,7 +775,6 @@ class HealthService {
   /// signal, so those get thinned instead.
   static const _cumulativeMetrics = {
     'steps',
-    'mindfulness',
     'exercise_time',
     'active_calories',
   };
