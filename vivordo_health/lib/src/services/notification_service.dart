@@ -286,7 +286,7 @@ class NotificationService {
             unawaited(_evaluateFitnessGoals(uid, snapshot.docs.first));
           },
           onError: (Object error) {
-            print('NotificationService: Fitness goal listener failed: $error');
+            debugPrint('NotificationService: Fitness goal listener failed: $error');
           },
         );
   }
@@ -366,7 +366,7 @@ class NotificationService {
         await _showFitnessGoalNotification(type, goals);
       }
     } catch (error) {
-      print('NotificationService: Could not evaluate fitness goals: $error');
+      debugPrint('NotificationService: Could not evaluate fitness goals: $error');
     } finally {
       _evaluatingFitnessGoals = false;
       final queued = _queuedFitnessDocument;
@@ -443,7 +443,7 @@ class NotificationService {
     if (_isInitialized) return;
 
     if (kIsWeb) {
-      print(
+      debugPrint(
         'NotificationService: Web platform detected, skipping initialization',
       );
       _isInitialized = true;
@@ -454,7 +454,7 @@ class NotificationService {
       tz.initializeTimeZones();
       final deviceTimeZone = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(deviceTimeZone.identifier));
-      print(
+      debugPrint(
         'NotificationService: Local timezone set to ${deviceTimeZone.identifier}',
       );
 
@@ -488,11 +488,11 @@ class NotificationService {
 
       // Listen for token refresh
       _firebaseMessaging.onTokenRefresh.listen((newToken) async {
-        print('NotificationService: FCM Token refreshed: $newToken');
+        debugPrint('NotificationService: FCM Token refreshed: $newToken');
         try {
           await _persistFcmToken(newToken);
         } catch (error) {
-          print('NotificationService: Could not store refreshed token: $error');
+          debugPrint('NotificationService: Could not store refreshed token: $error');
         }
       });
 
@@ -505,32 +505,32 @@ class NotificationService {
             apnsToken = await _firebaseMessaging.getAPNSToken();
 
             if (apnsToken != null) {
-              print('NotificationService: APNs Token received: $apnsToken');
+              debugPrint('NotificationService: APNs Token received: $apnsToken');
               break;
             }
 
-            print(
+            debugPrint(
               'NotificationService: APNs token not available yet, retrying ($attempt/10)',
             );
             await Future.delayed(const Duration(seconds: 1));
           }
 
           if (apnsToken == null) {
-            print(
+            debugPrint(
               'NotificationService: Warning - APNs token still unavailable; skipping FCM token for now',
             );
           } else {
             final token = await _firebaseMessaging.getToken();
-            print('NotificationService: FCM Token: $token');
+            debugPrint('NotificationService: FCM Token: $token');
             await _persistFcmToken(token);
           }
         } else {
           final token = await _firebaseMessaging.getToken();
-          print('NotificationService: FCM Token: $token');
+          debugPrint('NotificationService: FCM Token: $token');
           await _persistFcmToken(token);
         }
       } catch (e) {
-        print('NotificationService: Warning - Could not get FCM token: $e');
+        debugPrint('NotificationService: Warning - Could not get FCM token: $e');
       }
 
       // Handle foreground messages
@@ -552,15 +552,15 @@ class NotificationService {
       }
 
       _isInitialized = true;
-      print('NotificationService: Initialization complete');
+      debugPrint('NotificationService: Initialization complete');
     } catch (e) {
-      print('NotificationService: Error during initialization: $e');
+      debugPrint('NotificationService: Error during initialization: $e');
     }
   }
 
   /// Handle foreground messages by showing local notification
   void _handleForegroundMessage(RemoteMessage message) {
-    print(
+    debugPrint(
       'NotificationService: Foreground message received: ${message.messageId}',
     );
 
@@ -575,7 +575,7 @@ class NotificationService {
 
   /// Handle notification tap
   void _handleNotificationTap(RemoteMessage message) {
-    print('NotificationService: Notification tapped, data: ${message.data}');
+    debugPrint('NotificationService: Notification tapped, data: ${message.data}');
     final screen = message.data['screen'] as String?;
     AnalyticsService().logNotificationTap(
       notificationType: message.data['type'] as String? ?? 'remote',
@@ -593,7 +593,7 @@ class NotificationService {
 
   /// Handle local notification tap
   void _onNotificationTapped(NotificationResponse response) {
-    print(
+    debugPrint(
       'NotificationService: Local notification tapped, payload: ${response.payload}',
     );
 
@@ -606,7 +606,7 @@ class NotificationService {
         screen = data['screen'] as String?;
         type = data['type'] as String?;
       } catch (e) {
-        print('NotificationService: Invalid notification payload: $e');
+        debugPrint('NotificationService: Invalid notification payload: $e');
       }
     }
 
@@ -656,7 +656,7 @@ class NotificationService {
     try {
       await _persistFcmToken(await _firebaseMessaging.getToken());
     } catch (error) {
-      print('NotificationService: Could not refresh stored FCM token: $error');
+      debugPrint('NotificationService: Could not refresh stored FCM token: $error');
     }
   }
 
@@ -694,7 +694,7 @@ class NotificationService {
           .doc(tokenId)
           .delete();
     } catch (error) {
-      print('NotificationService: Could not remove signed-out token: $error');
+      debugPrint('NotificationService: Could not remove signed-out token: $error');
     }
   }
 
@@ -707,7 +707,7 @@ class NotificationService {
     String? payload,
   }) async {
     if (kIsWeb) {
-      print('NotificationService: Cannot show local notification on web');
+      debugPrint('NotificationService: Cannot show local notification on web');
       return;
     }
 
@@ -749,7 +749,7 @@ class NotificationService {
       screen: shownScreen,
     );
 
-    print('NotificationService: Local notification shown - $title');
+    debugPrint('NotificationService: Local notification shown - $title');
   }
 
   /// Schedule a daily scan reminder notification.
@@ -759,7 +759,7 @@ class NotificationService {
     int notificationId = _dailyScanReminderBaseId,
   }) async {
     if (kIsWeb) {
-      print('NotificationService: Cannot schedule daily scan reminder on web');
+      debugPrint('NotificationService: Cannot schedule daily scan reminder on web');
       return;
     }
     if (!_dailyScanRemindersEnabled) return;
@@ -809,7 +809,7 @@ class NotificationService {
       return;
     }
 
-    print(
+    debugPrint(
       'NotificationService: Daily scan reminder $notificationId scheduled for '
       '$scheduledTime',
     );
@@ -916,7 +916,7 @@ class NotificationService {
     for (var index = 0; index < _maxDailyScanReminders; index++) {
       await _localNotificationsPlugin.cancel(_dailyScanReminderBaseId + index);
     }
-    print('NotificationService: Daily scan reminder canceled');
+    debugPrint('NotificationService: Daily scan reminder canceled');
   }
 
   /// Schedule a check-in when today's final calendar event ends.
@@ -933,7 +933,7 @@ class NotificationService {
 
     final scheduledTime = tz.TZDateTime.from(eventEnd, tz.local);
     if (!scheduledTime.isAfter(tz.TZDateTime.now(tz.local))) {
-      print('NotificationService: Final calendar event has already ended');
+      debugPrint('NotificationService: Final calendar event has already ended');
       return;
     }
 
@@ -965,7 +965,7 @@ class NotificationService {
       return;
     }
 
-    print(
+    debugPrint(
       'NotificationService: Calendar check-in scheduled for $scheduledTime',
     );
   }
@@ -1068,13 +1068,13 @@ class NotificationService {
   Future<void> subscribeToTopic(String topic) async {
     if (kIsWeb) return;
     await _firebaseMessaging.subscribeToTopic(topic);
-    print('NotificationService: Subscribed to topic: $topic');
+    debugPrint('NotificationService: Subscribed to topic: $topic');
   }
 
   /// Unsubscribe from a topic
   Future<void> unsubscribeFromTopic(String topic) async {
     if (kIsWeb) return;
     await _firebaseMessaging.unsubscribeFromTopic(topic);
-    print('NotificationService: Unsubscribed from topic: $topic');
+    debugPrint('NotificationService: Unsubscribed from topic: $topic');
   }
 }

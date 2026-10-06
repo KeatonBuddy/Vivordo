@@ -15,15 +15,7 @@ class VivordoRobot extends StatelessWidget {
 
 // Reuse the same head artwork, excluding the body and hover platform.
 final String _kRobotFaceSvg =
-    _kRobotSvg
-        .split('<path d="M420 502')
-        .first
-        .replaceFirst('viewBox="288 35 648 900"', 'viewBox="300 35 624 440"')
-        .replaceFirst(
-          RegExp(r'<ellipse cx="610"[\s\S]*?<g opacity=".95">'),
-          '<g opacity=".95">',
-        ) +
-    '</svg>';
+    '${_kRobotSvg.split('<path d="M420 502').first.replaceFirst('viewBox="288 35 648 900"', 'viewBox="300 35 624 440"').replaceFirst(RegExp(r'<ellipse cx="610"[\s\S]*?<g opacity=".95">'), '<g opacity=".95">')}</svg>';
 
 const String _kRobotSvg =
     r'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="288 35 648 900" fill="none">

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+// Mocks the platform interface the app gets through url_launcher.
+// ignore: depend_on_referenced_packages
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 import 'package:vivordo_health/widgets/privacy_support_links.dart';
 

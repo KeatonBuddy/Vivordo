@@ -12,8 +12,9 @@ DateTime? priorityReminderTime({
     if (priorityDate == null ||
         reminderTimeMinutes == null ||
         reminderTimeMinutes < 0 ||
-        reminderTimeMinutes >= 1440)
+        reminderTimeMinutes >= 1440) {
       return null;
+    }
     final time = DateTime(
       priorityDate.year,
       priorityDate.month,

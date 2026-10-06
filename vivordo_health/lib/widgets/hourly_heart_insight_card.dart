@@ -61,14 +61,16 @@ class HourlyHeartInsightCardState extends State<HourlyHeartInsightCard>
   Future<void> refresh({bool force = false}) async {
     if (!widget.isActive ||
         !_foreground ||
-        (mounted && ModalRoute.of(context)?.isCurrent == false))
+        (mounted && ModalRoute.of(context)?.isCurrent == false)) {
       return;
+    }
     final now = DateTime.now();
     if (_busy ||
         (!force &&
             _updated != null &&
-            now.difference(_updated!) < const Duration(minutes: 5)))
+            now.difference(_updated!) < const Duration(minutes: 5))) {
       return;
+    }
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     _busy = true;
@@ -154,17 +156,19 @@ class HourlyHeartInsightCardState extends State<HourlyHeartInsightCard>
       _updated = now;
       if (mounted &&
           (result.title != _insight.title ||
-              result.subtitle != _insight.subtitle))
+              result.subtitle != _insight.subtitle)) {
         setState(() => _insight = result);
+      }
     } catch (error) {
       debugPrint('[HourlyHeartInsight] Refresh failed: $error');
-      if (mounted)
+      if (mounted) {
         setState(
           () => _insight = const HourlyHeartInsight(
             'Insight unavailable',
             'Couldn’t refresh your heart-rate summary. Please try again.',
           ),
         );
+      }
     } finally {
       _busy = false;
     }

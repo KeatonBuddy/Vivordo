@@ -757,15 +757,17 @@ class PandaPrompts {
       final rendered = stressors
           .map((st) {
             final c = (counts[st] as num?)?.toInt() ?? 0;
-            return c > 1 ? '$st (${c}×)' : st;
+            return c > 1 ? '$st ($c×)' : st;
           })
           .join(', ');
       lines.add('Recurring stressors (by frequency): $rendered');
     }
-    if (emotions.isNotEmpty)
+    if (emotions.isNotEmpty) {
       lines.add('Common emotions: ${emotions.join(', ')}');
-    if (coping.isNotEmpty)
+    }
+    if (coping.isNotEmpty) {
       lines.add('Coping that came up: ${coping.join(', ')}');
+    }
     if (intensity.isNotEmpty) lines.add('Typical intensity: $intensity');
     if (recents.isNotEmpty) {
       lines.add('Recent session recaps:');

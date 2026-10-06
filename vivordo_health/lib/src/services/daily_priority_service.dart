@@ -339,8 +339,9 @@ class DailyPriorityService {
             .map(DailyPriority.fromDocument),
       );
     }
-    if (_userDocument()?.path != user.path)
+    if (_userDocument()?.path != user.path) {
       throw StateError('Account changed.');
+    }
     result.sort(
       (a, b) => (a.sourceStart ?? DateTime(9999)).compareTo(
         b.sourceStart ?? DateTime(9999),

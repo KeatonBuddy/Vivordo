@@ -25,8 +25,9 @@ export 'panda_prompts.dart';
 
 class ClaudeService {
   Future<String> workoutInsight(String context) async {
-    if (context.length > 20000)
+    if (context.length > 20000) {
       throw StateError('Workout is too large for analysis.');
+    }
     final text = await _task('workout_insight', {'context': context});
     if (text.isEmpty) throw StateError('No workout insight returned.');
     return text;

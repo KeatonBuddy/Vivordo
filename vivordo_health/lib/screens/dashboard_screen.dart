@@ -58,14 +58,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     'sleep',
   ];
 
-  // 0 = Day (default), 1 = Week, 2 = Month
-  int _filterIndex = 0;
-  static const _filterLabels = ['Day', 'Week', 'Month'];
-  int get _daysBack => _filterIndex == 0
-      ? 1
-      : _filterIndex == 1
-      ? 7
-      : 30;
+  // Today only: the Day / Week / Month filter is no longer shown.
+  static const _daysBack = 1;
 
   // ── ONE combined stream for all metrics_daily docs in the date window ──────
   late Stream<QuerySnapshot<Map<String, dynamic>>> _allMetricsStream;
@@ -327,18 +321,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   /// Month view: only label Mondays to avoid x-axis crowding.
-  List<String> _monthLabels(
-    QuerySnapshot<Map<String, dynamic>>? snap,
-    String metricType,
-  ) {
-    if (snap == null) return [];
-    return snap.docs.where((d) => d.data().containsKey(metricType)).map((d) {
-      final dt = DateTime.tryParse(d.id);
-      if (dt == null || dt.weekday != DateTime.monday) return '';
-      return '${dt.day}/${dt.month}';
-    }).toList();
-  }
-
   // ── Daily mood helpers ─────────────────────────────────────────────────────
   List<Map<String, dynamic>> _dailyMoodPoints(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
@@ -384,63 +366,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) => _dailyMoodPoints(docs).map((point) => point['score'] as double).toList();
 
-  List<String> _dailyMoodLabels(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final points = _dailyMoodPoints(docs);
-    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-    return points.map((point) {
-      final dateTime = point['dateTime'] as DateTime;
-
-      if (_filterIndex == 2 && dateTime.weekday != DateTime.monday) {
-        return '';
-      }
-
-      return dayNames[dateTime.weekday - 1];
-    }).toList();
-  }
-
-  List<Map<String, dynamic>> _todayMoodEntries(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final entries = <Map<String, dynamic>>[];
-
-    for (final doc in docs) {
-      final moodMap = doc.data()['mood'] as Map?;
-      final rawEntries = moodMap?['entries'];
-      if (rawEntries is! List) continue;
-
-      for (final entry in rawEntries) {
-        if (entry is! Map || entry['score'] is! num) continue;
-        final timestamp = entry['timestamp'];
-        entries.add({
-          'score': (entry['score'] as num).toDouble(),
-          'dateTime': timestamp is Timestamp
-              ? timestamp.toDate()
-              : DateTime.tryParse(doc.id),
-        });
-      }
-    }
-
-    entries.sort((a, b) {
-      final aTime = a['dateTime'] as DateTime?;
-      final bTime = b['dateTime'] as DateTime?;
-      if (aTime == null) return -1;
-      if (bTime == null) return 1;
-      return aTime.compareTo(bTime);
-    });
-    return entries;
-  }
-
-  String _formatMoodEntryTime(DateTime? dateTime) {
-    if (dateTime == null) return '';
-    final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
-    final minute = dateTime.minute.toString().padLeft(2, '0');
-    final suffix = dateTime.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $suffix';
-  }
-
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _heartRateDocs(
     QuerySnapshot<Map<String, dynamic>>? snapshot,
   ) {
@@ -481,21 +406,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return points;
   }
 
-  List<Map<String, dynamic>> _dailyBpmPoints(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final points = <Map<String, dynamic>>[];
-    for (final doc in docs) {
-      final entries = _heartRateEntries([doc]);
-      if (entries.isEmpty) continue;
-      points.add({
-        'bpm': _avg(entries.map((entry) => entry['bpm'] as double).toList()),
-        'dateTime': DateTime.tryParse(doc.id),
-      });
-    }
-    return points;
-  }
-
   double _avg(List<double> vals) =>
       vals.isEmpty ? 0 : vals.reduce((a, b) => a + b) / vals.length;
 
@@ -515,16 +425,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     }
     return false;
-  }
-
-  String _trend(List<double> vals) {
-    if (vals.length < 2) return '';
-    final half = vals.length ~/ 2;
-    final old = _avg(vals.sublist(0, half));
-    final recent = _avg(vals.sublist(half));
-    if (old == 0) return '';
-    final pct = ((recent - old) / old * 100).round();
-    return pct >= 0 ? '+$pct%' : '$pct%';
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -1149,12 +1049,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return 'Above typical resting range';
   }
 
-  bool _isManualMetric(String key) =>
-      key == 'stress' ||
-      key == 'mood' ||
-      key == 'wellness' ||
-      key == 'heart_rate_scan';
-
   String _metricTitle(String key) {
     switch (key) {
       case 'stress':
@@ -1235,60 +1129,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _metricField(String key) {
     const summed = {'steps', 'active_calories', 'exercise_time'};
     return summed.contains(key) ? 'sum' : 'avg';
-  }
-
-  double _metricMaxY(String key) {
-    switch (key) {
-      case 'stress':
-      case 'mood':
-      case 'wellness':
-      case 'blood_oxygen':
-        return 100;
-      case 'steps':
-        return 20000;
-      case 'active_calories':
-        return 1000;
-      case 'exercise_time':
-      case 'resting_heart_rate':
-      case 'hrv':
-        return 120;
-      case 'heart_rate':
-      case 'heart_rate_scan':
-        return 200;
-      case 'respiratory_rate':
-        return 30;
-      case 'sleep':
-        return 12;
-      case 'body_fat':
-        return 50;
-      case 'vo2max':
-        return 70;
-      default:
-        return 0;
-    }
-  }
-
-  Widget _buildOrderedMetric(
-    QuerySnapshot<Map<String, dynamic>>? snap,
-    Map<String, bool> consent,
-    String metric,
-  ) {
-    final hasData = metric == 'heart_rate_scan'
-        ? _heartRateDocs(snap).isNotEmpty
-        : _docsFor(snap, metric).isNotEmpty;
-    return KeyedSubtree(
-      key: ValueKey('dashboard-metric-$metric'),
-      child: !_isManualMetric(metric) && consent[metric] != true && !hasData
-          ? const SizedBox.shrink()
-          : _maybeChart(
-              snap,
-              metric,
-              _metricTitle(metric),
-              _metricColor(metric),
-              _metricField(metric),
-              _metricMaxY(metric),
-            ),
-    );
   }
 
   Future<void> _showLayoutEditor() async {
@@ -1484,181 +1324,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   };
 
   /// Returns a chart card if the metric has data, otherwise SizedBox.shrink().
-  Widget _maybeChart(
-    QuerySnapshot<Map<String, dynamic>>? snap,
-    String metricType,
-    String title,
-    Color color,
-    String field,
-    double maxY,
-  ) {
-    final docs = metricType == 'heart_rate_scan'
-        ? _heartRateDocs(snap)
-        : _docsFor(snap, metricType);
-    if (metricType == 'heart_rate_scan') {
-      final points = _filterIndex == 0
-          ? _heartRateEntries(docs)
-          : _dailyBpmPoints(docs);
-      if (points.isEmpty) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: _buildChartCard(
-          title: title,
-          icon: _metricIcon(metricType),
-          color: color,
-          values: points.map((point) => point['bpm'] as double).toList(),
-          maxY: maxY,
-          labels: points.map((point) {
-            final dateTime = point['dateTime'] as DateTime?;
-            if (_filterIndex == 0) return _formatMoodEntryTime(dateTime);
-            if (dateTime == null) return '';
-            if (_filterIndex == 2 && dateTime.weekday != DateTime.monday) {
-              return '';
-            }
-            const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-            return names[dateTime.weekday - 1];
-          }).toList(),
-        ),
-      );
-    }
-    if (metricType == 'mood' && _filterIndex == 0) {
-      final entries = _todayMoodEntries(docs);
-      if (entries.isEmpty) return const SizedBox.shrink();
-
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: _buildChartCard(
-          title: title,
-          icon: _metricIcon(metricType),
-          color: color,
-          values: entries.map((entry) => entry['score'] as double).toList(),
-          maxY: maxY,
-          labels: entries
-              .map(
-                (entry) => _formatMoodEntryTime(entry['dateTime'] as DateTime?),
-              )
-              .toList(),
-        ),
-      );
-    }
-
-    final values = metricType == 'mood'
-        ? _dailyMoodValues(docs)
-        : _vals(docs, metricType, field);
-    final labels = metricType == 'mood'
-        ? _dailyMoodLabels(docs)
-        : _filterIndex == 2
-        ? _monthLabels(snap, metricType)
-        : _dayLabels(snap, metricType);
-    if (values.isEmpty) return const SizedBox.shrink();
-
-    if (_filterIndex == 0) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: _buildDailyMetricTile(
-          title: title,
-          icon: _metricIcon(metricType),
-          color: color,
-          metricType: metricType,
-          field: field,
-          values: values,
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: _buildChartCard(
-        title: title,
-        icon: _metricIcon(metricType),
-        color: color,
-        values: values,
-        maxY: maxY > 0
-            ? maxY
-            : (values.reduce((a, b) => a > b ? a : b) * 1.2).clamp(
-                1,
-                double.infinity,
-              ),
-        labels: labels,
-      ),
-    );
-  }
-
-  Widget _buildDailyMetricTile({
-    required String title,
-    required IconData icon,
-    required Color color,
-    required String metricType,
-    required String field,
-    required List<double> values,
-  }) {
-    final primaryValue = field == 'sum'
-        ? values.fold<double>(0, (total, value) => total + value)
-        : values.last;
-    final avgValue = _avg(values);
-    final hasMultipleValues = values.length > 1;
-
-    final primaryLabel = _formatMetricValue(metricType, primaryValue);
-    final subtitle = hasMultipleValues
-        ? field == 'sum'
-              ? '${values.length} entries today'
-              : 'avg ${_formatMetricValue(metricType, avgValue)} today'
-        : 'today';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 20, color: color),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: context.vivordoColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(fontSize: 12, color: textGrey),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            primaryLabel,
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   String _formatMetricValue(String metricType, double value) {
     String number({int decimals = 0}) => decimals == 0
         ? value.round().toString()
@@ -1736,230 +1401,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  // ── Filter chips ───────────────────────────────────────────────────────────
-
-  Widget _buildFilter() {
-    return Row(
-      children: List.generate(_filterLabels.length, (i) {
-        final active = _filterIndex == i;
-        return Padding(
-          padding: EdgeInsets.only(right: i < _filterLabels.length - 1 ? 8 : 0),
-          child: GestureDetector(
-            onTap: () {
-              setState(() {
-                _filterIndex = i;
-                _rebuildStreams();
-              });
-              _refreshHealthMetricsFromHealth();
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-              decoration: BoxDecoration(
-                color: active ? accentPurple : context.vivordoColors.cardMuted,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: active ? accentPurple : context.vivordoColors.border,
-                ),
-              ),
-              child: Text(
-                _filterLabels[i],
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: active ? Colors.white : textGrey,
-                ),
-              ),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
-  // ── Shared UI widgets (from dev — unchanged) ──────────────────────────────
-
-  Widget _buildStatCard({
-    required String label,
-    required String value,
-    required String change,
-    required bool trendUp,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Column(
-        children: [
-          Text(
-            label.toUpperCase(),
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 9,
-              color: textGrey,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: context.vivordoColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          if (change.isNotEmpty)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  change.startsWith('+')
-                      ? Icons.trending_up_rounded
-                      : Icons.trending_down_rounded,
-                  size: 13,
-                  color: trendUp ? greenColor : const Color(0xFFFF3B30),
-                ),
-                const SizedBox(width: 3),
-                Text(
-                  change,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: trendUp ? greenColor : const Color(0xFFFF3B30),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWellnessCard(List<double> vals) {
-    final avg = vals.isEmpty ? null : _avg(vals);
-    final trend = _trend(vals);
-
-    Color labelColor;
-    String labelText;
-    if (avg == null) {
-      labelColor = textGrey;
-      labelText = 'No data yet';
-    } else if (avg >= 70) {
-      labelColor = greenColor;
-      labelText = 'Good';
-    } else if (avg >= 50) {
-      labelColor = const Color(0xFFFF9500);
-      labelText = 'Fair';
-    } else {
-      labelColor = const Color(0xFFFF3B30);
-      labelText = 'Needs attention';
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: labelColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.spa_rounded, size: 18, color: labelColor),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'WELLNESS SCORE',
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: textGrey,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      avg == null ? '--' : avg.toInt().toString(),
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: context.vivordoColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: labelColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        labelText,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: labelColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (trend.isNotEmpty)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  trend.startsWith('+')
-                      ? Icons.trending_up_rounded
-                      : Icons.trending_down_rounded,
-                  size: 16,
-                  color: trend.startsWith('+')
-                      ? greenColor
-                      : const Color(0xFFFF3B30),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  trend,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: trend.startsWith('+')
-                        ? greenColor
-                        : const Color(0xFFFF3B30),
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEmptyState() {
     return Container(
       width: double.infinity,
@@ -2012,194 +1453,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHealthConsentLoadingCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              color: accentPurple,
-            ),
-          ),
-          SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Checking Apple Health permissions',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: context.vivordoColors.textPrimary,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Loading your connected health data…',
-                  style: TextStyle(fontSize: 12, color: textGrey, height: 1.4),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildConnectCard() {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const SettingsScreen()),
-      ),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: context.vivordoColors.border),
-        ),
-        child: Column(
-          children: [
-            const Icon(
-              Icons.health_and_safety_outlined,
-              size: 36,
-              color: VivordoTheme.brand,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Apple Health not connected',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: context.vivordoColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Tap to go to App Settings → Health Data Permissions',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: textGrey, height: 1.5),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: accentPurple,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                'Enable Health Data',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChartCard({
-    required String title,
-    required Color color,
-    required List<double> values,
-    required double maxY,
-    required List<String> labels,
-    IconData? icon,
-  }) {
-    // Compute a quick summary value for the subtitle
-    final avg = values.isEmpty
-        ? 0.0
-        : values.reduce((a, b) => a + b) / values.length;
-    final latest = values.isNotEmpty ? values.last : 0.0;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (icon != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(icon, size: 16, color: color),
-                ),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: context.vivordoColors.textPrimary,
-                  ),
-                ),
-              ),
-              // Latest value badge
-              Text(
-                latest == latest.roundToDouble()
-                    ? latest.toInt().toString()
-                    : latest.toStringAsFixed(1),
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-          if (values.length > 1) ...[
-            const SizedBox(height: 2),
-            Padding(
-              padding: EdgeInsets.only(left: icon != null ? 42 : 0),
-              child: Text(
-                'avg ${avg == avg.roundToDouble() ? avg.toInt() : avg.toStringAsFixed(1)}',
-                style: const TextStyle(fontSize: 11, color: textGrey),
-              ),
-            ),
-          ],
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 160,
-            child: _AreaChart(
-              values: values,
-              maxY: maxY,
-              color: color,
-              labels: labels,
-            ),
           ),
         ],
       ),
@@ -2297,7 +1550,7 @@ class _AreaChartState extends State<_AreaChart>
             _selectPoint(details.localPosition.dx, constraints.maxWidth),
         child: AnimatedBuilder(
           animation: _animation,
-          builder: (_, __) => CustomPaint(
+          builder: (_, _) => CustomPaint(
             painter: _AreaChartPainter(
               values: widget.values,
               maxY: widget.maxY,
@@ -2341,7 +1594,7 @@ class _AreaChartPainter extends CustomPainter {
 
     // Grid lines — light translucent for a modern look
     final gridPaint = Paint()
-      ..color = Colors.black.withOpacity(0.06)
+      ..color = Colors.black.withValues(alpha: 0.06)
       ..strokeWidth = 0.8;
     const gridLines = 4;
     for (int i = 0; i <= gridLines; i++) {

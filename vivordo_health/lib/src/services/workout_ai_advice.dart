@@ -13,17 +13,20 @@ Future<String> loadWorkoutAiAdvice(String uid, String context) async {
     final cached = raw == null ? null : jsonDecode(raw);
     if (cached is Map &&
         cached['context'] == context &&
-        cached['text'] is String)
+        cached['text'] is String) {
       return cached['text'] as String;
+    }
   } catch (_) {
     /* An unavailable cache must not block advice. */
   }
   if (FirebaseAuth.instance.currentUser?.uid != uid ||
-      !await AiConsent.granted(uid))
+      !await AiConsent.granted(uid)) {
     throw StateError('Workout advice is not authorized.');
+  }
   final text = await ClaudeService().workoutInsight(context);
-  if (FirebaseAuth.instance.currentUser?.uid != uid)
+  if (FirebaseAuth.instance.currentUser?.uid != uid) {
     throw StateError('Account changed.');
+  }
   try {
     await storage.write(
       key: key,

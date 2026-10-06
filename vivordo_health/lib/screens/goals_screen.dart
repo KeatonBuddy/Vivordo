@@ -132,13 +132,13 @@ class _GoalsScreenState extends State<GoalsScreen>
               children: [
                 AnimatedBuilder(
                   animation: _pulseAnimation,
-                  builder: (_, __) => Transform.scale(
+                  builder: (_, _) => Transform.scale(
                     scale: _pulseAnimation.value,
                     child: Container(
                       width: 160,
                       height: 160,
                       decoration: BoxDecoration(
-                        color: accentPurple.withOpacity(0.08),
+                        color: accentPurple.withValues(alpha: 0.08),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -148,7 +148,7 @@ class _GoalsScreenState extends State<GoalsScreen>
                   width: 140,
                   height: 140,
                   decoration: BoxDecoration(
-                    color: accentPurple.withOpacity(0.1),
+                    color: accentPurple.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -212,7 +212,7 @@ class _GoalsScreenState extends State<GoalsScreen>
                   width: 140,
                   height: 140,
                   decoration: BoxDecoration(
-                    color: accentPurple.withOpacity(0.1),
+                    color: accentPurple.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -223,7 +223,7 @@ class _GoalsScreenState extends State<GoalsScreen>
                     height: 150,
                     child: CircularProgressIndicator(
                       strokeWidth: 4,
-                      backgroundColor: accentPurple.withOpacity(0.2),
+                      backgroundColor: accentPurple.withValues(alpha: 0.2),
                       valueColor: const AlwaysStoppedAnimation<Color>(
                         accentPurple,
                       ),
@@ -232,7 +232,7 @@ class _GoalsScreenState extends State<GoalsScreen>
                 ),
                 AnimatedBuilder(
                   animation: _pulseController,
-                  builder: (_, __) => Opacity(
+                  builder: (_, _) => Opacity(
                     opacity: 0.6 + 0.4 * _pulseController.value,
                     child: const Icon(
                       Icons.show_chart_rounded,
@@ -261,7 +261,7 @@ class _GoalsScreenState extends State<GoalsScreen>
           child: LinearProgressIndicator(
             value: _progress / 100,
             minHeight: 12,
-            backgroundColor: accentPurple.withOpacity(0.15),
+            backgroundColor: accentPurple.withValues(alpha: 0.15),
             valueColor: const AlwaysStoppedAnimation<Color>(accentPurple),
           ),
         ),
@@ -355,9 +355,9 @@ class _GoalsScreenState extends State<GoalsScreen>
           width: double.infinity,
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: accentPurple.withOpacity(0.05),
+            color: accentPurple.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: accentPurple.withOpacity(0.2)),
+            border: Border.all(color: accentPurple.withValues(alpha: 0.2)),
           ),
           child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -411,7 +411,7 @@ class _GoalsScreenState extends State<GoalsScreen>
         border: Border.all(color: const Color(0xFFE5E5EA)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),

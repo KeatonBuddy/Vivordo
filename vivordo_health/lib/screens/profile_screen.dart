@@ -729,7 +729,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final isAdding = index == null;
     final currentMinutes = isAdding
         ? (reminderTimes.last + 4 * 60) % (24 * 60)
-        : reminderTimes[index!];
+        : reminderTimes[index];
     final selected = await showVivordoTimePicker(
       context: context,
       initialTime: TimeOfDay(
@@ -751,7 +751,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (isAdding) {
       updatedTimes.add(selectedMinutes);
     } else {
-      updatedTimes[index!] = selectedMinutes;
+      updatedTimes[index] = selectedMinutes;
     }
     updatedTimes.sort();
     await _saveScanReminderTimes(updatedTimes);

@@ -25,7 +25,6 @@ class EmailVerificationScreen extends StatefulWidget {
 
 class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   static const Color accentPurple = VivordoTheme.brand;
-  static const Color textDark = Color(0xFF1C1C1E);
   static const Color textGrey = Color(0xFF8E8E93);
 
   Timer? _pollTimer;
@@ -69,8 +68,9 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     if (!silent) setState(() => _checking = true);
     try {
       await FirebaseAuth.instance.currentUser?.reload();
-      if (_verifiedHandled)
+      if (_verifiedHandled) {
         return; // another in-flight check already won the race
+      }
       final user = FirebaseAuth.instance.currentUser;
       if (user != null && user.emailVerified) {
         _verifiedHandled = true;
@@ -157,7 +157,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 width: 88,
                 height: 88,
                 decoration: BoxDecoration(
-                  color: accentPurple.withOpacity(0.1),
+                  color: accentPurple.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(

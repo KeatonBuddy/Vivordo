@@ -62,13 +62,15 @@ class PandaSlots {
     if (stressor?.isNotEmpty == true) m['stressor'] = stressor;
     if (emotion?.isNotEmpty == true) m['emotion'] = emotion;
     if (intensity?.isNotEmpty == true) m['intensity'] = intensity;
-    if (physicalSymptom?.isNotEmpty == true)
+    if (physicalSymptom?.isNotEmpty == true) {
       m['physical_symptom'] = physicalSymptom;
+    }
     if (activity?.isNotEmpty == true) m['activity'] = activity;
     if (location?.isNotEmpty == true) m['location'] = location;
     if (timeContext?.isNotEmpty == true) m['time_context'] = timeContext;
-    if (copingStrategy?.isNotEmpty == true)
+    if (copingStrategy?.isNotEmpty == true) {
       m['coping_strategy'] = copingStrategy;
+    }
     if (sleepQuality?.isNotEmpty == true) m['sleep_quality'] = sleepQuality;
     if (socialContext?.isNotEmpty == true) m['social_context'] = socialContext;
     if (other?.isNotEmpty == true) m['other'] = other;
@@ -89,7 +91,7 @@ class PandaSlots {
     other: m['other'] as String?,
   );
 
-  /// Build from the raw Map<String,String> accumulated in PandaScreen.
+  /// Build from the raw `Map<String, String>` accumulated in PandaScreen.
   factory PandaSlots.fromSessionSlots(Map<String, String> slots) => PandaSlots(
     stressor: slots['stressor'],
     emotion: slots['emotion'],
@@ -274,14 +276,18 @@ class Insights {
 
     // Derive a brief body summary
     final bodyParts = <String>[];
-    if (slots.stressor?.isNotEmpty == true)
+    if (slots.stressor?.isNotEmpty == true) {
       bodyParts.add('Stressor: ${slots.stressor}');
-    if (slots.emotion?.isNotEmpty == true)
+    }
+    if (slots.emotion?.isNotEmpty == true) {
       bodyParts.add('Feeling: ${slots.emotion}');
-    if (slots.intensity?.isNotEmpty == true)
+    }
+    if (slots.intensity?.isNotEmpty == true) {
       bodyParts.add('Intensity: ${slots.intensity}');
-    if (slots.copingStrategy?.isNotEmpty == true)
+    }
+    if (slots.copingStrategy?.isNotEmpty == true) {
       bodyParts.add('Coping: ${slots.copingStrategy}');
+    }
     final body = bodyParts.isNotEmpty
         ? bodyParts.join(' · ')
         : 'Wellness check-in completed.';
@@ -304,9 +310,9 @@ class Insights {
       pandaSlots: slots,
       pandaLabeledAnswers: Map<String, String>.from(labeledAnswers),
       pandaCorrections: [],
-      conversation: conversation == null
-          ? null
-          : conversation.map((turn) => Map<String, String>.from(turn)).toList(),
+      conversation: conversation
+          ?.map((turn) => Map<String, String>.from(turn))
+          .toList(),
       // Prefer the LLM-generated continuity note; fall back to the
       // deterministic recap when it is unavailable (offline / call failed).
       summary: (summary != null && summary.trim().isNotEmpty)
@@ -667,10 +673,12 @@ class Insights {
     final ctx = <String>[];
     if (slots.stressor?.isNotEmpty == true) ctx.add(slots.stressor!);
     if (slots.emotion?.isNotEmpty == true) ctx.add('felt ${slots.emotion}');
-    if (slots.intensity?.isNotEmpty == true)
+    if (slots.intensity?.isNotEmpty == true) {
       ctx.add('${slots.intensity} intensity');
-    if (slots.copingStrategy?.isNotEmpty == true)
+    }
+    if (slots.copingStrategy?.isNotEmpty == true) {
       ctx.add('tried ${slots.copingStrategy}');
+    }
 
     // The user's own words — the "chat" part. Keep the last two user turns.
     final userWords = (conversation ?? const <Map<String, String>>[])

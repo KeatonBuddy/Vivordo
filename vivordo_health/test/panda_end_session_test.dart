@@ -9,7 +9,7 @@ void main() {
         jsonEncode({
           'intent': 'chitchat',
           'message': 'You have a plan for today.',
-          if (value != null) 'offer_end_session': value,
+          'offer_end_session': ?value,
         }),
       );
       expect(reply.offerEndSession, value == true);

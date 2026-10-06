@@ -45,11 +45,12 @@ HourlyHeartInsight summarizeHeartHour({
   final all = byMinute.values.toList()
     ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
   final hour = all.where((r) => !r.timestamp.isBefore(cutoff)).toList();
-  if (hour.isEmpty)
+  if (hour.isEmpty) {
     return const HourlyHeartInsight(
       'No recent heart-rate data',
       'No readings are available from the past hour.',
     );
+  }
   final quarters = hour
       .map((r) => r.timestamp.difference(cutoff).inMinutes ~/ 15)
       .toSet();
@@ -109,8 +110,9 @@ HourlyHeartInsight summarizeHeartHour({
         b.bpm > spikeThreshold &&
         b.timestamp.difference(a.timestamp).inMinutes <= _maxRiseGapMinutes &&
         (spikes.isEmpty ||
-            a.timestamp.difference(spikes.last.timestamp).inMinutes > 10))
+            a.timestamp.difference(spikes.last.timestamp).inMinutes > 10)) {
       spikes.add(a);
+    }
   }
   final workoutSpikes = spikes.where((r) => exercising(r.timestamp)).toList();
   final otherSpikes = spikes.where((r) => !exercising(r.timestamp)).toList();
@@ -146,8 +148,9 @@ HourlyHeartInsight summarizeHeartHour({
     detail +=
         ' A rise was recorded around ${otherSpikes.take(2).map((r) => DateFormat.jm().format(r.timestamp.toLocal())).join(' and ')}.';
   }
-  if (workoutSpikes.isNotEmpty)
+  if (workoutSpikes.isNotEmpty) {
     detail +=
         ' A rise around ${DateFormat.jm().format(workoutSpikes.first.timestamp.toLocal())} coincided with your recorded workout.';
+  }
   return HourlyHeartInsight(title, detail);
 }

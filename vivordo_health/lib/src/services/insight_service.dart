@@ -145,7 +145,7 @@ class InsightService {
               'frequency': FieldValue.increment(1),
               'updatedAt': FieldValue.serverTimestamp(),
               'sessionDate': Timestamp.fromDate(sessionDate),
-              if (chatSessionId != null) 'chatSessionId': chatSessionId,
+              'chatSessionId': ?chatSessionId,
               'title': insight.title,
               'body': insight.body,
               'severity': insight.severity,
@@ -308,7 +308,9 @@ class InsightService {
       var key = e.key;
       if (merged.containsKey(key)) {
         var i = 2;
-        while (merged.containsKey('$key ($i)')) i++;
+        while (merged.containsKey('$key ($i)')) {
+          i++;
+        }
         key = '$key ($i)';
       }
       merged[key] = e.value;

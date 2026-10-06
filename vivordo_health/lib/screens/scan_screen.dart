@@ -50,13 +50,8 @@ class _ScanScreenState extends State<ScanScreen>
   late Animation<double> _pulseAnimation;
   final PageController _tutorialPageController = PageController();
   int _tutorialPageIndex = 0;
-  bool _dismissedFirstScanTutorial = false;
 
   static const Color accentPurple = VivordoTheme.brand;
-  static const Color bgColor = Color(0xFFF2F2F7);
-  static const Color cardWhite = Colors.white;
-  static const Color textDark = Color(0xFF1C1C1E);
-  static const Color textGrey = Color(0xFF8E8E93);
   static const Color greenColor = Color(0xFF34C759);
   static const Color redColor = Color(0xFFFF3B30);
 
@@ -138,7 +133,6 @@ class _ScanScreenState extends State<ScanScreen>
       setState(() {
         _isFirstScan = isFirstScan;
         _showTutorial = isFirstScan;
-        _dismissedFirstScanTutorial = !isFirstScan;
       });
     } catch (e) {
       debugPrint('[PPG] Failed to check first scan status: $e');
@@ -155,7 +149,6 @@ class _ScanScreenState extends State<ScanScreen>
     if (!mounted) return;
     setState(() {
       _showTutorial = false;
-      _dismissedFirstScanTutorial = true;
       _isFirstScan = false;
       _fingerDetectedFrames = 0;
     });
@@ -167,7 +160,6 @@ class _ScanScreenState extends State<ScanScreen>
     _spinController.stop();
     setState(() {
       _showTutorial = true;
-      _dismissedFirstScanTutorial = false;
       _tutorialPageIndex = 0;
       _fingerDetectedFrames = 0;
       _scanArmed = false;
@@ -623,7 +615,6 @@ class _ScanScreenState extends State<ScanScreen>
           setState(() {
             _isFirstScan = false;
             _showTutorial = false;
-            _dismissedFirstScanTutorial = true;
           });
         }
       }
@@ -755,9 +746,11 @@ class _ScanScreenState extends State<ScanScreen>
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFF9500).withOpacity(0.10),
+        color: const Color(0xFFFF9500).withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFF9500).withOpacity(0.35)),
+        border: Border.all(
+          color: const Color(0xFFFF9500).withValues(alpha: 0.35),
+        ),
       ),
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -814,10 +807,10 @@ class _ScanScreenState extends State<ScanScreen>
       decoration: BoxDecoration(
         color: context.vivordoColors.card,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: accentPurple.withOpacity(0.22)),
+        border: Border.all(color: accentPurple.withValues(alpha: 0.22)),
         boxShadow: [
           BoxShadow(
-            color: accentPurple.withOpacity(0.08),
+            color: accentPurple.withValues(alpha: 0.08),
             blurRadius: 20,
             offset: const Offset(0, 6),
           ),
@@ -862,7 +855,7 @@ class _ScanScreenState extends State<ScanScreen>
                         width: 48,
                         height: 48,
                         decoration: BoxDecoration(
-                          color: accentPurple.withOpacity(0.10),
+                          color: accentPurple.withValues(alpha: 0.10),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
@@ -909,7 +902,7 @@ class _ScanScreenState extends State<ScanScreen>
                 decoration: BoxDecoration(
                   color: isActive
                       ? accentPurple
-                      : accentPurple.withOpacity(0.22),
+                      : accentPurple.withValues(alpha: 0.22),
                   borderRadius: BorderRadius.circular(10),
                 ),
               );
@@ -975,7 +968,7 @@ class _ScanScreenState extends State<ScanScreen>
             width: 160,
             height: 160,
             decoration: BoxDecoration(
-              color: accentPurple.withOpacity(0.1),
+              color: accentPurple.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: const Center(
@@ -1009,13 +1002,13 @@ class _ScanScreenState extends State<ScanScreen>
               children: [
                 AnimatedBuilder(
                   animation: _pulseAnimation,
-                  builder: (_, __) => Transform.scale(
+                  builder: (_, _) => Transform.scale(
                     scale: _pulseAnimation.value,
                     child: Container(
                       width: 160,
                       height: 160,
                       decoration: BoxDecoration(
-                        color: accentPurple.withOpacity(0.08),
+                        color: accentPurple.withValues(alpha: 0.08),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -1025,7 +1018,7 @@ class _ScanScreenState extends State<ScanScreen>
                   width: 130,
                   height: 130,
                   decoration: BoxDecoration(
-                    color: accentPurple.withOpacity(0.12),
+                    color: accentPurple.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -1107,7 +1100,7 @@ class _ScanScreenState extends State<ScanScreen>
             border: Border.all(color: context.vivordoColors.border),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
@@ -1176,9 +1169,9 @@ class _ScanScreenState extends State<ScanScreen>
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: accentPurple.withOpacity(0.05),
+            color: accentPurple.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: accentPurple.withOpacity(0.15)),
+            border: Border.all(color: accentPurple.withValues(alpha: 0.15)),
           ),
           child: Column(
             children: [
@@ -1236,7 +1229,7 @@ class _ScanScreenState extends State<ScanScreen>
               alignment: Alignment.center,
               children: [
                 ClipOval(
-                  child: Container(
+                  child: SizedBox(
                     width: 168,
                     height: 168,
                     child:
@@ -1272,7 +1265,7 @@ class _ScanScreenState extends State<ScanScreen>
                   child: CircularProgressIndicator(
                     value: _progress,
                     strokeWidth: 6,
-                    backgroundColor: accentPurple.withOpacity(0.15),
+                    backgroundColor: accentPurple.withValues(alpha: 0.15),
                     valueColor: const AlwaysStoppedAnimation<Color>(
                       accentPurple,
                     ),
@@ -1287,7 +1280,7 @@ class _ScanScreenState extends State<ScanScreen>
                       strokeWidth: 3,
                       backgroundColor: Colors.transparent,
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        accentPurple.withOpacity(0.3),
+                        accentPurple.withValues(alpha: 0.3),
                       ),
                     ),
                   ),
@@ -1307,7 +1300,7 @@ class _ScanScreenState extends State<ScanScreen>
           child: LinearProgressIndicator(
             value: _progress,
             minHeight: 8,
-            backgroundColor: accentPurple.withOpacity(0.12),
+            backgroundColor: accentPurple.withValues(alpha: 0.12),
             valueColor: const AlwaysStoppedAnimation<Color>(accentPurple),
           ),
         ),
@@ -1332,7 +1325,7 @@ class _ScanScreenState extends State<ScanScreen>
             width: 130,
             height: 130,
             decoration: BoxDecoration(
-              color: accentPurple.withOpacity(0.1),
+              color: accentPurple.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: const Center(
@@ -1392,7 +1385,7 @@ class _ScanScreenState extends State<ScanScreen>
             borderRadius: BorderRadius.circular(28),
             boxShadow: [
               BoxShadow(
-                color: accentPurple.withOpacity(0.35),
+                color: accentPurple.withValues(alpha: 0.35),
                 blurRadius: 24,
                 offset: const Offset(0, 8),
               ),
@@ -1434,7 +1427,7 @@ class _ScanScreenState extends State<ScanScreen>
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.18),
+                  color: Colors.white.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -1504,9 +1497,9 @@ class _ScanScreenState extends State<ScanScreen>
           width: double.infinity,
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: accentPurple.withOpacity(0.05),
+            color: accentPurple.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: accentPurple.withOpacity(0.2)),
+            border: Border.all(color: accentPurple.withValues(alpha: 0.2)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1578,7 +1571,7 @@ class _ScanScreenState extends State<ScanScreen>
             width: 130,
             height: 130,
             decoration: BoxDecoration(
-              color: redColor.withOpacity(0.08),
+              color: redColor.withValues(alpha: 0.08),
               shape: BoxShape.circle,
             ),
             child: Icon(
