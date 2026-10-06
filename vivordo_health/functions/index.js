@@ -33,7 +33,7 @@ const {
   whoopVitals,
 } = require("./wearable_vitals");
 const {whoopDeletionPlan} = require("./whoop_deletion");
-const {validatePandaRequest, nextUsage} = require("./panda_limits");
+const {nextUsage} = require("./ai_limits");
 const {runAssistant, validateAssistantRequest} = require("./assistant");
 const {buildTask, runTask} = require("./ai_tasks");
 const {
@@ -726,13 +726,12 @@ exports.achievementUnlockNotification = onDocumentWritten(
 );
 
 // =============================================================================
-// pandaClaude — real-time HTTPS Callable proxy for Anthropic API
-// Security: API key stays server-side (VIV-309).
+// AI budget. The Anthropic API key stays server-side (VIV-309).
 // =============================================================================
 
 /**
- * Spends one call of the account's daily AI budget, shared by pandaClaude and
- * assistant. ai_usage has no client rule, so only the Admin SDK can read or
+ * Spends one call of the account's daily AI budget, shared by assistant and
+ * aiTask. ai_usage has no client rule, so only the Admin SDK can read or
  * reset it.
  *
  * @param {string} uid The caller.
@@ -807,49 +806,6 @@ exports.aiTask = onCall({secrets: [anthropicApiKey]}, async (request) => {
     output: usage?.output_tokens ?? 0,
   }));
   return {text};
-});
-
-// ponytail: kept only for app builds older than the aiTask/assistant move;
-// delete once Remote Config minimum_supported_version is past them.
-exports.pandaClaude = onCall({secrets: [anthropicApiKey]}, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Must be logged in.");
-  }
-
-  // Text blocks only, bounded input and output (see panda_limits.js).
-  const validated = validatePandaRequest(request.data);
-  if (validated.error) {
-    throw new HttpsError("invalid-argument", validated.error);
-  }
-
-  await consumeAiQuota(request.auth.uid);
-
-  const msg = await getAnthropicClient().messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: validated.maxTokens,
-    system: validated.system,
-    messages: [{role: "user", content: validated.user}],
-  });
-
-  const text = (msg.content || []).reduce((acc, block) => {
-    if (block && block.type === "text") {
-      return acc ? `${acc}\n${block.text}` : block.text;
-    }
-    return acc;
-  }, "");
-
-  // VIV-307: log cache token usage so billing dashboard shows cache hits.
-  console.log("[pandaClaude] usage", JSON.stringify({
-    input: msg.usage?.input_tokens ?? 0,
-    output: msg.usage?.output_tokens ?? 0,
-    cache_create: msg.usage?.cache_creation_input_tokens ?? 0,
-    cache_read: msg.usage?.cache_read_input_tokens ?? 0,
-  }));
-
-  return {
-    text,
-    usage: msg.usage || {},
-  };
 });
 
 // =============================================================================
