@@ -84,4 +84,12 @@ void main() {
       'Estimated · waiting for sleep',
     );
   });
+
+  test('exposes usual Capacity for the evening card, null until 7 days', () {
+    expect(serverCapacityFor({...week(68), today: day(90)}, today)!.usual, 68);
+    expect(
+      serverCapacityFor({'2026-09-30': day(70), today: day(90)}, today)!.usual,
+      isNull,
+    );
+  });
 }

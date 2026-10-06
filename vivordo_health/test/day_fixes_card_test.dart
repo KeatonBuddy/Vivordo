@@ -165,4 +165,44 @@ void main() {
     await tester.pumpAndSettle();
     expect(await result, DateTime(2026, 10, 11));
   });
+
+  testWidgets('the evening card and sheets talk about tomorrow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      app(
+        DayFixesCard(
+          fixes: [move, buffer],
+          tomorrow: true,
+          onOpen: (_) {},
+          onHide: () {},
+        ),
+      ),
+    );
+    expect(find.text('WAYS TO LIGHTEN TOMORROW'), findsOneWidget);
+    expect(find.byTooltip('Hide until morning'), findsOneWidget);
+
+    await tester.pumpWidget(
+      app(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showDayFixTimeSheet(
+              context,
+              fix: buffer,
+              demandNow: 89,
+              tomorrow: true,
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Add 15 minutes before Client call tomorrow'),
+      findsOneWidget,
+    );
+    expect(find.text("Tomorrow's Demand"), findsOneWidget);
+  });
 }

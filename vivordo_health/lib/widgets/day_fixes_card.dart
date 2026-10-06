@@ -15,18 +15,21 @@ String _runText(int minutes) => minutes % 60 == 0
     : '${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')}';
 
 /// "Ways to lighten today" under My Day's brief when Demand outruns Capacity
-/// (docs/scores.md §2). The X hides it until tomorrow.
+/// (docs/scores.md §2). The X hides it until tomorrow. With [tomorrow], the
+/// evening version for tomorrow's plan, hidden until morning.
 class DayFixesCard extends StatelessWidget {
   const DayFixesCard({
     super.key,
     required this.fixes,
     required this.onOpen,
     required this.onHide,
+    this.tomorrow = false,
   });
 
   final List<DayFix> fixes;
   final ValueChanged<DayFix> onOpen;
   final VoidCallback onHide;
+  final bool tomorrow;
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +48,9 @@ class DayFixesCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'WAYS TO LIGHTEN TODAY',
+                  tomorrow
+                      ? 'WAYS TO LIGHTEN TOMORROW'
+                      : 'WAYS TO LIGHTEN TODAY',
                   style: TextStyle(
                     fontSize: 11,
                     letterSpacing: .8,
@@ -55,7 +60,9 @@ class DayFixesCard extends StatelessWidget {
                 ),
               ),
               IconButton(
-                tooltip: 'Hide until tomorrow',
+                tooltip: tomorrow
+                    ? 'Hide until morning'
+                    : 'Hide until tomorrow',
                 visualDensity: VisualDensity.compact,
                 onPressed: onHide,
                 icon: Icon(Icons.close_rounded, color: colors.textSecondary),
@@ -183,6 +190,7 @@ Future<bool> showDayFixTimeSheet(
   required DayFix fix,
   required double demandNow,
   bool recurring = false,
+  bool tomorrow = false,
 }) async {
   final colors = context.vivordoColors;
   final start = fix.start!, end = fix.end!;
@@ -207,10 +215,11 @@ Future<bool> showDayFixTimeSheet(
           children: [
             Text(
               switch (fix.kind) {
-                DayFixKind.buffer => 'Add 15 minutes before ${fix.title}',
-                DayFixKind.addBreak => 'Add a 15-min break',
-                _ => 'Move ${fix.title} to ${_time(newStart)}',
-              },
+                    DayFixKind.buffer => 'Add 15 minutes before ${fix.title}',
+                    DayFixKind.addBreak => 'Add a 15-min break',
+                    _ => 'Move ${fix.title} to ${_time(newStart)}',
+                  } +
+                  (tomorrow ? ' tomorrow' : ''),
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
@@ -249,7 +258,11 @@ Future<bool> showDayFixTimeSheet(
             ],
             if (fix.demandSaved >= 0.5) ...[
               const SizedBox(height: 14),
-              _DemandChange(from: demandNow, to: demandNow - fix.demandSaved),
+              _DemandChange(
+                from: demandNow,
+                to: demandNow - fix.demandSaved,
+                tomorrow: tomorrow,
+              ),
             ],
             const SizedBox(height: 16),
             SizedBox(
@@ -292,6 +305,7 @@ Future<DateTime?> showMovePrioritySheet(
   required DayFix fix,
   required double demandNow,
   required Future<List<({DateTime day, double demand})>> days,
+  bool tomorrow = false,
 }) {
   final colors = context.vivordoColors;
   return showModalBottomSheet<DateTime>(
@@ -312,6 +326,7 @@ Future<DateTime?> showMovePrioritySheet(
             return _DayPicker(
               fix: fix,
               demandNow: demandNow,
+              tomorrow: tomorrow,
               options: options,
               failed: snapshot.hasError,
               onPick: (day) => Navigator.pop(sheetContext, day),
@@ -328,6 +343,7 @@ class _DayPicker extends StatefulWidget {
   const _DayPicker({
     required this.fix,
     required this.demandNow,
+    this.tomorrow = false,
     required this.options,
     required this.failed,
     required this.onPick,
@@ -336,6 +352,7 @@ class _DayPicker extends StatefulWidget {
 
   final DayFix fix;
   final double demandNow;
+  final bool tomorrow;
   final List<({DateTime day, double demand})>? options;
   final bool failed;
   final ValueChanged<DateTime> onPick;
@@ -413,6 +430,7 @@ class _DayPickerState extends State<_DayPicker> {
         _DemandChange(
           from: widget.demandNow,
           to: widget.demandNow - widget.fix.demandSaved,
+          tomorrow: widget.tomorrow,
         ),
         const SizedBox(height: 16),
         SizedBox(
@@ -591,9 +609,14 @@ class _Warning extends StatelessWidget {
 }
 
 class _DemandChange extends StatelessWidget {
-  const _DemandChange({required this.from, required this.to});
+  const _DemandChange({
+    required this.from,
+    required this.to,
+    this.tomorrow = false,
+  });
 
   final double from, to;
+  final bool tomorrow;
 
   @override
   Widget build(BuildContext context) {
@@ -602,7 +625,7 @@ class _DemandChange extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            "Today's Demand",
+            tomorrow ? "Tomorrow's Demand" : "Today's Demand",
             style: TextStyle(color: colors.textSecondary),
           ),
         ),

@@ -7,6 +7,7 @@ class ServerCapacity {
     required this.provisional,
     required this.note,
     this.sleepNeedHours,
+    this.usual,
   });
 
   final int score;
@@ -23,6 +24,10 @@ class ServerCapacity {
 
   /// The person's sleep need in hours (90-day median, 7–9 h).
   final double? sleepNeedHours;
+
+  /// Median Capacity of earlier days (same formula version); null until
+  /// there are 7.
+  final double? usual;
 }
 
 /// Today's server Capacity from a window of `scores_daily` documents (day
@@ -67,5 +72,6 @@ ServerCapacity? serverCapacityFor(
     provisional: provisional,
     note: note,
     sleepNeedHours: (today['sleepNeed'] as num?)?.toDouble(),
+    usual: usual,
   );
 }
