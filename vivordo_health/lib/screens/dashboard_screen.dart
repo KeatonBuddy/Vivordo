@@ -7,7 +7,10 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
+import 'package:vivordo_health/src/utils/home_metrics_summary.dart'
+    show durationUntilNextLocalDay;
 import 'profile_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'active_calories_detail_screen.dart';
@@ -99,6 +102,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _automaticRefreshScheduled = false;
     }
     if (!oldWidget.isActive && widget.isActive) {
+      if (_streamDay != localDayKey(DateTime.now())) _rebuildStreams();
       _requestAutomaticRefreshIfActive();
     }
   }
@@ -128,6 +132,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _automaticRefreshTimer?.cancel();
+    _dayRolloverTimer?.cancel();
     super.dispose();
   }
 
@@ -192,8 +197,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }, SetOptions(merge: true));
   }
 
+  /// The local day the query was built for; it moves at midnight (a timer
+  /// that also fires late, on resume) or when the tab is shown again.
+  String _streamDay = '';
+  Timer? _dayRolloverTimer;
+
   void _rebuildStreams() {
+    _streamDay = localDayKey(DateTime.now());
     _allMetricsStream = _buildCombinedStream();
+    _dayRolloverTimer?.cancel();
+    _dayRolloverTimer = Timer(durationUntilNextLocalDay(DateTime.now()), () {
+      if (mounted) setState(_rebuildStreams);
+    });
   }
 
   Future<void> _refreshHealthMetricsFromHealth({
@@ -657,11 +672,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 10),
-        _buildInsightsCard(
-          steps: steps,
-          stress: stress,
-          labels: stepLabels,
-        ),
+        _buildInsightsCard(steps: steps, stress: stress, labels: stepLabels),
         if (snap == null || snap.docs.isEmpty) ...[
           const SizedBox(height: 18),
           _buildEmptyState(),
@@ -852,7 +863,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Key metric tiles describe the current day. Resolve summed daily metrics
     // by today's document ID so a missing sync never falls back to yesterday.
     final todaySummedValue =
-        metric == 'exercise_time' || metric == 'active_calories'
+        metric == 'steps' ||
+            metric == 'exercise_time' ||
+            metric == 'active_calories'
         ? _todayMetricValue(snap, metric, 'sum') ?? 0
         : null;
 
@@ -869,7 +882,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _ => _metricTitle(metric),
     };
     final value = todaySummedValue != null
-        ? _formatMetricValue(metric, todaySummedValue)
+        ? metric == 'steps'
+              ? _formatCount(todaySummedValue)
+              : _formatMetricValue(metric, todaySummedValue)
         : values.isEmpty
         ? 'No data'
         : metric == 'steps'
@@ -880,6 +895,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ? _comparisonText(values, lowerIsBetter: false)
               : metric == 'active_calories'
               ? 'No active calories recorded today'
+              : metric == 'steps'
+              ? 'No steps recorded today'
               : 'No exercise recorded today'
         : values.isEmpty
         ? 'Not synced recently'
