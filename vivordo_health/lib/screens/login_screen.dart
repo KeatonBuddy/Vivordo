@@ -15,7 +15,6 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   static const Color accentPurple = VivordoTheme.brand;
-  static const Color textGrey = Color(0xFF8E8E93);
 
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
@@ -207,30 +206,33 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final textGrey = colors.textSecondary;
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: colors.page,
       body: Stack(
         children: [
           // ── Purple decorative orbs ──────────────────────────────────────
           Positioned(
             top: -80,
             right: -80,
-            child: _Orb(size: 260, color: accentPurple.withOpacity(0.12)),
+            child: _Orb(size: 260, color: accentPurple.withValues(alpha: 0.12)),
           ),
           Positioned(
             top: 60,
             right: -30,
-            child: _Orb(size: 120, color: accentPurple.withOpacity(0.08)),
+            child: _Orb(size: 120, color: accentPurple.withValues(alpha: 0.08)),
           ),
           Positioned(
             bottom: -100,
             left: -80,
-            child: _Orb(size: 300, color: accentPurple.withOpacity(0.10)),
+            child: _Orb(size: 300, color: accentPurple.withValues(alpha: 0.10)),
           ),
           Positioned(
             bottom: 160,
             left: -30,
-            child: _Orb(size: 100, color: accentPurple.withOpacity(0.07)),
+            child: _Orb(size: 100, color: accentPurple.withValues(alpha: 0.07)),
           ),
 
           // ── Content ─────────────────────────────────────────────────────
@@ -254,16 +256,20 @@ class _LoginScreenState extends State<LoginScreen> {
                               height: 100,
                               child: OverflowBox(
                                 maxHeight: 300,
+                                // The wordmark is dark purple; lighten it so
+                                // it stays readable on the dark page.
                                 child: Image.asset(
                                   'assets/vivordo_logo_long.png',
                                   width: 380,
                                   height: 300,
                                   fit: BoxFit.contain,
+                                  color: dark ? colors.textPrimary : null,
+                                  colorBlendMode: BlendMode.srcIn,
                                 ),
                               ),
                             ),
                           ),
-                          const Text(
+                          Text(
                             'See your stress. Find your balance.',
                             style: TextStyle(fontSize: 18, color: textGrey),
                           ),
@@ -283,7 +289,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'Sign in to your account',
                       style: TextStyle(fontSize: 14, color: textGrey),
                     ),
@@ -389,18 +395,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     // Divider
                     Row(
                       children: [
-                        Expanded(child: Divider(color: Colors.grey.shade200)),
+                        Expanded(child: Divider(color: colors.border)),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           child: Text(
                             'or',
-                            style: TextStyle(
-                              color: Colors.grey.shade400,
-                              fontSize: 12,
-                            ),
+                            style: TextStyle(color: textGrey, fontSize: 12),
                           ),
                         ),
-                        Expanded(child: Divider(color: Colors.grey.shade200)),
+                        Expanded(child: Divider(color: colors.border)),
                       ],
                     ),
 
@@ -417,24 +420,30 @@ class _LoginScreenState extends State<LoginScreen> {
                               ? null
                               : _loginWithApple,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.black,
-                            disabledBackgroundColor: Colors.black.withValues(
-                              alpha: 0.62,
-                            ),
-                            foregroundColor: Colors.white,
-                            disabledForegroundColor: Colors.white,
+                            // Apple's style: black on light, white on dark.
+                            backgroundColor: dark ? Colors.white : Colors.black,
+                            disabledBackgroundColor:
+                                (dark ? Colors.white : Colors.black).withValues(
+                                  alpha: 0.62,
+                                ),
+                            foregroundColor: dark ? Colors.black : Colors.white,
+                            disabledForegroundColor: dark
+                                ? Colors.black
+                                : Colors.white,
                             elevation: 0,
-                            overlayColor: const Color(0xFF2C2C2E),
+                            overlayColor: dark
+                                ? const Color(0xFFD1D1D6)
+                                : const Color(0xFF2C2C2E),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
                           child: _isAppleLoading
-                              ? const SizedBox(
+                              ? SizedBox(
                                   width: 22,
                                   height: 22,
                                   child: CircularProgressIndicator(
-                                    color: Colors.white,
+                                    color: dark ? Colors.black : Colors.white,
                                     strokeWidth: 2.5,
                                   ),
                                 )
@@ -448,7 +457,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                       style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w700,
-                                        color: Colors.white,
                                       ),
                                     ),
                                   ],
@@ -511,18 +519,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     // Divider
                     Row(
                       children: [
-                        Expanded(child: Divider(color: Colors.grey.shade200)),
+                        Expanded(child: Divider(color: colors.border)),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           child: Text(
                             'New here?',
-                            style: TextStyle(
-                              color: Colors.grey.shade400,
-                              fontSize: 12,
-                            ),
+                            style: TextStyle(color: textGrey, fontSize: 12),
                           ),
                         ),
-                        Expanded(child: Divider(color: Colors.grey.shade200)),
+                        Expanded(child: Divider(color: colors.border)),
                       ],
                     ),
 
@@ -542,7 +547,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: accentPurple,
                           side: BorderSide(
-                            color: accentPurple.withOpacity(0.4),
+                            color: accentPurple.withValues(alpha: 0.4),
                           ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -568,15 +573,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           Icon(
                             Icons.lock_outline_rounded,
                             size: 13,
-                            color: Colors.grey.shade400,
+                            color: textGrey,
                           ),
                           const SizedBox(width: 5),
                           Text(
                             'All data is encrypted and securely stored.',
-                            style: TextStyle(
-                              color: Colors.grey.shade400,
-                              fontSize: 11,
-                            ),
+                            style: TextStyle(color: textGrey, fontSize: 11),
                           ),
                         ],
                       ),
@@ -597,12 +599,13 @@ class _LoginScreenState extends State<LoginScreen> {
     required String hintText,
     required IconData icon,
   }) {
+    final colors = context.vivordoColors;
     return InputDecoration(
       hintText: hintText,
-      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-      prefixIcon: Icon(icon, color: Colors.grey.shade400, size: 20),
+      hintStyle: TextStyle(color: colors.textSecondary, fontSize: 14),
+      prefixIcon: Icon(icon, color: colors.textSecondary, size: 20),
       filled: true,
-      fillColor: const Color(0xFFF7F7FB),
+      fillColor: colors.input,
       contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -610,7 +613,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: Colors.grey.shade100),
+        borderSide: BorderSide(color: colors.border),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),

@@ -374,24 +374,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         const SizedBox(height: 14),
         const Text('Sex', style: TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
-        CupertinoSlidingSegmentedControl<String>(
-          groupValue: _sex,
-          thumbColor: _purple,
-          children: {
-            for (final sex in profileSexes)
-              sex: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  profileSexLabels[sex]!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _sex == sex ? Colors.white : _ink,
-                  ),
-                ),
-              ),
+        AppSegmented<String>(
+          segments: {
+            for (final sex in profileSexes) sex: profileSexLabels[sex]!,
           },
-          onValueChanged: (sex) => setState(() => _sex = sex),
+          value: _sex,
+          onChanged: (sex) => setState(() => _sex = sex),
         ),
         const SizedBox(height: 10),
         const Text(

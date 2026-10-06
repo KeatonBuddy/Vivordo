@@ -921,7 +921,9 @@ class AppSegmented<T extends Object> extends StatelessWidget {
 
   /// Value → label, in display order.
   final Map<T, String> segments;
-  final T value;
+
+  /// Null shows nothing selected (e.g. a question not answered yet).
+  final T? value;
   final ValueChanged<T> onChanged;
 
   @override
@@ -932,7 +934,10 @@ class AppSegmented<T extends Object> extends StatelessWidget {
       child: CupertinoSlidingSegmentedControl<T>(
         groupValue: value,
         backgroundColor: colors.input,
-        thumbColor: colors.card,
+        // iOS keeps the thumb lighter than the track in dark mode too.
+        thumbColor: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF4A4952)
+            : colors.card,
         onValueChanged: (selected) {
           if (selected != null) onChanged(selected);
         },

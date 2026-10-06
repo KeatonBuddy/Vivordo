@@ -627,10 +627,11 @@ class _AboutYou extends StatelessWidget {
           divider,
           const Text('Sex', style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 10),
-          _Choice<String?>(
-            values: profileSexes,
-            selected: profile.sex,
-            label: (value) => profileSexLabels[value] ?? '',
+          AppSegmented<String>(
+            segments: {
+              for (final sex in profileSexes) sex: profileSexLabels[sex]!,
+            },
+            value: profile.sex,
             onChanged: (value) => _save(context, sex: value),
           ),
           const SizedBox(height: 10),
@@ -656,56 +657,6 @@ class _SectionLabel extends StatelessWidget {
       fontWeight: FontWeight.w800,
       letterSpacing: 1.3,
       color: context.vivordoColors.textSecondary,
-    ),
-  );
-}
-
-class _Choice<T> extends StatelessWidget {
-  const _Choice({
-    required this.values,
-    required this.selected,
-    required this.label,
-    required this.onChanged,
-  });
-  final List<T> values;
-  final T selected;
-  final String Function(T value) label;
-  final ValueChanged<T> onChanged;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(3),
-    decoration: BoxDecoration(
-      color: context.vivordoColors.input,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Row(
-      children: [
-        for (final value in values)
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => onChanged(value),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: selected == value ? _purple : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  label(value),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: selected == value ? Colors.white : _muted,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
     ),
   );
 }
@@ -788,10 +739,9 @@ class _TrendCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Choice<_ProfileMetric>(
-            values: _ProfileMetric.values,
-            selected: metric,
-            label: (metric) => metric.label,
+          AppSegmented<_ProfileMetric>(
+            segments: {for (final m in _ProfileMetric.values) m: m.label},
+            value: metric,
             onChanged: onMetricChanged,
           ),
           const SizedBox(height: 14),
@@ -842,10 +792,9 @@ class _TrendCard extends StatelessWidget {
                   ),
           ),
           const SizedBox(height: 12),
-          _Choice<_ProfileRange>(
-            values: _ProfileRange.values,
-            selected: range,
-            label: (range) => range.label,
+          AppSegmented<_ProfileRange>(
+            segments: {for (final r in _ProfileRange.values) r: r.label},
+            value: range,
             onChanged: onRangeChanged,
           ),
         ],
