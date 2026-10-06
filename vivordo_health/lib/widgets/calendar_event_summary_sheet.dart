@@ -42,6 +42,7 @@ Future<CalendarEventSummaryAction?> showCalendarEventSummarySheet(
   required CalendarEventSummaryData event,
 }) => showModalBottomSheet<CalendarEventSummaryAction>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   useSafeArea: true,
   backgroundColor: Colors.transparent,

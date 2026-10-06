@@ -15,6 +15,7 @@ import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 class HeartRateDetailScreen extends StatefulWidget {
@@ -317,53 +318,48 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
       final devices = await WhoopBleHeartRateService.instance.scanForDevices();
       if (!mounted) return;
       if (devices.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No heart-rate broadcast found. Enable heart-rate sharing or broadcasting on your wearable and try again.',
-            ),
-          ),
+        showToast(
+          context,
+          'No heart-rate broadcast found. Turn on heart-rate sharing or broadcasting on your wearable and try again.',
+          kind: ToastKind.error,
         );
         return;
       }
       final selected = devices.length == 1
           ? devices.first
-          : await showModalBottomSheet<WhoopBleDevice>(
-              context: context,
-              builder: (context) => SafeArea(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    const ListTile(
-                      title: Text(
-                        'Choose your wearable',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      subtitle: Text('Nearby heart-rate broadcasters'),
-                    ),
-                    ...devices.map(
-                      (device) => ListTile(
-                        leading: const Icon(Icons.bluetooth_rounded),
-                        title: Text(device.name),
-                        subtitle: Text('Signal ${device.rssi} dBm'),
-                        onTap: () => Navigator.pop(context, device),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          : await showAppleActionSheet<WhoopBleDevice>(
+              context,
+              title: 'Choose your wearable',
+              message: 'Nearby heart-rate broadcasters',
+              actions: [
+                for (final device in devices)
+                  AppleSheetAction(
+                    '${device.name} · ${_signalLabel(device.rssi)}',
+                    device,
+                  ),
+              ],
             );
       if (selected == null) return;
       await WhoopBleHeartRateService.instance.pairAndStart(selected);
     } catch (error) {
+      debugPrint('Could not pair wearable: $error');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Bad state: ', '')),
-        ),
+      // The service's StateErrors carry our own plain-language messages.
+      showToast(
+        context,
+        error is StateError
+            ? error.message
+            : "Couldn't connect to your wearable. Try again.",
+        kind: ToastKind.error,
       );
     }
   }
+
+  static String _signalLabel(int rssi) => rssi >= -60
+      ? 'Strong signal'
+      : rssi >= -75
+      ? 'Fair signal'
+      : 'Weak signal';
 
   void _toggleWearableCollapsed() {
     final collapsed = !(_wearableCollapsed ?? false);

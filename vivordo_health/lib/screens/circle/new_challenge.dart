@@ -118,6 +118,7 @@ Future<void> _startNewChallenge(
 }) async {
   final draft = await showModalBottomSheet<_ChallengeDraft>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
@@ -157,17 +158,24 @@ Future<void> _startNewChallenge(
       targetName: draft.targetName,
       message: draft.message,
     );
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text('${draft.title} sent to $recipients.')),
+    messenger.hideCurrentSnackBar();
+    if (context.mounted) {
+      showToast(
+        context,
+        '${draft.title} sent to $recipients.',
+        kind: ToastKind.success,
       );
+    }
   } catch (error) {
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text('Could not send challenge: $error')),
+    debugPrint('Send challenge failed: $error');
+    messenger.hideCurrentSnackBar();
+    if (context.mounted) {
+      showToast(
+        context,
+        "Couldn't send the challenge. Try again.",
+        kind: ToastKind.error,
       );
+    }
   }
 }
 
@@ -626,6 +634,7 @@ class _TargetPicker extends StatelessWidget {
           final selection =
               await showModalBottomSheet<_SpecificExerciseSelection>(
                 context: context,
+                useRootNavigator: true,
                 isScrollControlled: true,
                 useSafeArea: true,
                 backgroundColor: Colors.transparent,

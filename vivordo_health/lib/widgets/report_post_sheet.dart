@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../theme/vivordo_theme.dart';
+import 'apple_ui.dart';
+
 const postReportReasons = <String, String>{
   'harassment': 'Harassment or bullying',
   'inappropriate_content': 'Inappropriate content',
@@ -36,13 +39,21 @@ class _ReportPostSheetState extends State<ReportPostSheet> {
     super.dispose();
   }
 
+  String get _noun => widget.isComment
+      ? 'comment'
+      : widget.isProfile
+      ? 'profile'
+      : 'post';
+
   Future<void> _submit() async {
     if (_submitting || _reason == null) return;
     final details = _reason == 'other' ? _details.text.trim() : '';
     if (_reason == 'other' && details.isEmpty) {
-      setState(
-        () => _error = 'Please describe why you are reporting this post.',
-      );
+      setState(() => _error = "Describe why you're reporting this $_noun.");
+      return;
+    }
+    if (details.length > 1000) {
+      setState(() => _error = 'Keep it under 1,000 characters.');
       return;
     }
     setState(() {
@@ -56,103 +67,76 @@ class _ReportPostSheetState extends State<ReportPostSheet> {
       if (mounted) {
         setState(() {
           _submitting = false;
-          _error = 'Could not send your report. Please try again.';
+          _error = "Couldn't send your report. Try again.";
         });
       }
     }
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: !_submitting,
-    child: SafeArea(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          12,
-          24,
-          24 + MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.isComment
-                        ? 'Report comment'
-                        : widget.isProfile
-                        ? 'Report profile'
-                        : 'Report post',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Close',
-                  onPressed: _submitting
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return PopScope(
+      canPop: !_submitting,
+      child: AppleFormSheet(
+        title: 'Report $_noun',
+        doneLabel: 'Send',
+        busy: _submitting,
+        onDone: _reason == null ? null : _submit,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
+            child: Text(
+              widget.isComment
+                  ? "Why are you reporting this comment? Your report isn't shared with its author."
+                  : widget.isProfile
+                  ? "Why are you reporting this profile? Your report isn't shared with this person."
+                  : "Why are you reporting this post? Your report isn't shared with the person who posted it.",
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                color: colors.textSecondary,
+              ),
+            ),
+          ),
+          AppleFormGroup(
+            children: [
+              for (final reason in postReportReasons.entries)
+                AppleChoiceRow(
+                  label: reason.value,
+                  selected: _reason == reason.key,
+                  onTap: _submitting
                       ? null
-                      : () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
+                      : () => setState(() {
+                          _reason = reason.key;
+                          _error = null;
+                        }),
+                ),
+            ],
+          ),
+          if (_reason == 'other')
+            AppleFormGroup(
+              header: 'Tell us more',
+              children: [
+                AppleFormTextRow(
+                  controller: _details,
+                  enabled: !_submitting,
+                  maxLines: 5,
+                  textCapitalization: TextCapitalization.sentences,
+                  placeholder: 'Describe the issue with this $_noun',
                 ),
               ],
             ),
-            Text(
-              widget.isComment
-                  ? 'Why are you reporting this comment? Your report is not shared with its author.'
-                  : widget.isProfile
-                  ? 'Why are you reporting this profile? Your report is not shared with this person.'
-                  : 'Why are you reporting this post? Your report is not shared with the person who posted it.',
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Text(
+                _error!,
+                style: const TextStyle(fontSize: 13, color: appleRed),
+              ),
             ),
-            const SizedBox(height: 16),
-            for (final reason in postReportReasons.entries)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  _reason == reason.key
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_unchecked,
-                ),
-                title: Text(reason.value),
-                selected: _reason == reason.key,
-                enabled: !_submitting,
-                onTap: () => setState(() {
-                  _reason = reason.key;
-                  _error = null;
-                }),
-              ),
-            if (_reason == 'other')
-              TextField(
-                controller: _details,
-                enabled: !_submitting,
-                maxLength: 1000,
-                minLines: 3,
-                maxLines: 5,
-                decoration: InputDecoration(
-                  labelText: 'Tell us more',
-                  hintText: widget.isProfile
-                      ? 'Describe the issue with this profile'
-                      : 'Describe the issue with this post',
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _submitting || _reason == null ? null : _submit,
-              child: Text(_submitting ? 'Sending…' : 'Submit report'),
-            ),
-          ],
-        ),
+        ],
       ),
-    ),
-  );
+    );
+  }
 }

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 
+import '../../widgets/apple_ui.dart';
+
 import 'calendar_service.dart';
 import 'daily_priority_service.dart';
 import 'panda_priority_action.dart';
@@ -83,59 +85,44 @@ Future<String> applyPriorityAction(
         ? reminder.hour * 60 + reminder.minute
         : existing?.reminderTimeMinutes;
     if (!context.mounted) return 'Cancelled — no priority changes made.';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          '${action.operation == 'create'
-              ? 'Create'
-              : action.operation == 'update'
-              ? 'Edit'
-              : 'Delete'} priority?',
-        ),
-        content: SingleChildScrollView(
-          child: Text(
-            [
-              title,
-              DateFormat('EEE, MMM d, yyyy').format(date),
-              scheduled == null
-                  ? 'No scheduled time'
-                  : 'Scheduled: ${DateFormat('h:mm a').format(scheduled)}',
-              if (reminder != null)
-                'Remind: ${DateFormat('MMM d, h:mm a').format(reminder)}',
-              if (reminder == null &&
-                  scheduled != null &&
-                  action.operation != 'delete')
-                'Reminder: $minutesBefore minutes before scheduled time',
-              if (reminder == null &&
-                  scheduled == null &&
-                  reminderClock != null &&
-                  action.operation != 'delete')
-                'Reminder: ${DateFormat('h:mm a').format(DateTime(date.year, date.month, date.day, reminderClock ~/ 60, reminderClock % 60))}',
-              if (existing?.templateId != null)
-                'This occurrence only; future repetitions stay unchanged.',
-              if (existing?.sourceEventKey != null)
-                'The calendar event will not be deleted.',
-              if (action.operation != 'delete')
-                reminder == null && scheduled == null && reminderClock == null
-                    ? 'No timed reminder notification'
-                    : 'Notifications depend on your device notification permissions.',
-            ].join('\n\n'),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
+    final verb = action.operation == 'create'
+        ? 'Create'
+        : action.operation == 'update'
+        ? 'Edit'
+        : 'Delete';
+    final confirmed = await confirmAction(
+      context,
+      title: '$verb priority?',
+      message: [
+        title,
+        DateFormat('EEE, MMM d, yyyy').format(date),
+        scheduled == null
+            ? 'No scheduled time'
+            : 'Scheduled: ${DateFormat('h:mm a').format(scheduled)}',
+        if (reminder != null)
+          'Remind: ${DateFormat('MMM d, h:mm a').format(reminder)}',
+        if (reminder == null &&
+            scheduled != null &&
+            action.operation != 'delete')
+          'Reminder: $minutesBefore minutes before scheduled time',
+        if (reminder == null &&
+            scheduled == null &&
+            reminderClock != null &&
+            action.operation != 'delete')
+          'Reminder: ${DateFormat('h:mm a').format(DateTime(date.year, date.month, date.day, reminderClock ~/ 60, reminderClock % 60))}',
+        if (existing?.templateId != null)
+          'This occurrence only; future repetitions stay unchanged.',
+        if (existing?.sourceEventKey != null)
+          'The calendar event will not be deleted.',
+        if (action.operation != 'delete')
+          reminder == null && scheduled == null && reminderClock == null
+              ? 'No timed reminder notification'
+              : 'Notifications depend on your device notification permissions.',
+      ].join('\n\n'),
+      confirmLabel: action.operation == 'update' ? 'Save' : verb,
+      destructive: action.operation == 'delete',
     );
-    if (confirmed != true) return 'Cancelled — no priority changes made.';
+    if (!confirmed) return 'Cancelled — no priority changes made.';
     if (FirebaseAuth.instance.currentUser?.uid != uid) {
       throw StateError('Your account changed. Please try again.');
     }

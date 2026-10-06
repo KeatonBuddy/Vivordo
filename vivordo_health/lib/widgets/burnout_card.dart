@@ -184,6 +184,7 @@ class BurnoutCard extends StatelessWidget {
 Future<void> showBurnoutDetails(BuildContext context, BurnoutView view) =>
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: context.vivordoColors.card,
       shape: const RoundedRectangleBorder(

@@ -3,6 +3,7 @@ import '../widgets/contextual_insight_bar.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
@@ -24,6 +25,7 @@ import '../src/utils/my_day_planning_insight.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
+import '../widgets/apple_ui.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/plan_slot_sheet.dart';
 import 'journal_screen.dart';
@@ -503,6 +505,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     final action = await showModalBottomSheet<_EventSummaryAction>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
@@ -551,7 +554,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       );
     } catch (error) {
       if (mounted) setState(() => _isLoading = false);
-      _showMessage('Could not save event: $error');
+      debugPrint('Save calendar event failed: $error');
+      _showMessage("Couldn't save the event. Try again.", error: true);
     }
   }
 
@@ -570,7 +574,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       _showMessage('Event deleted.');
     } catch (error) {
       if (mounted) setState(() => _isLoading = false);
-      _showMessage('Could not delete event: $error');
+      debugPrint('Delete calendar event failed: $error');
+      _showMessage("Couldn't delete the event. Try again.", error: true);
     }
   }
 
@@ -600,15 +605,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       _showMessage('Event added to Google Calendar.');
     } catch (error) {
       if (mounted) setState(() => _isLoading = false);
-      _showMessage('Could not create event: $error');
+      debugPrint('Create calendar event failed: $error');
+      _showMessage("Couldn't add the event. Try again.", error: true);
     }
   }
 
-  void _showMessage(String message) {
+  void _showMessage(String message, {bool error = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showToast(context, message, kind: error ? ToastKind.error : ToastKind.info);
   }
 
   @override
@@ -799,7 +803,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       }
     } catch (_) {
       if (mounted) setState(() => _windDownReminder = before);
-      _showMessage("Couldn't update your reminder.");
+      _showMessage("Couldn't update your reminder.", error: true);
     }
   }
 
@@ -993,28 +997,53 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       footer: capacityStale || !ready
                           ? 'Limited data'
                           : 'Available data',
-                      onDetails: () => showDialog<void>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Daily Brief data'),
-                          content: SingleChildScrollView(
-                            child: Text(
-                              'Calendar loaded: ${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).\n'
-                              'Heart rate measured: ${timeLabel(healthTime)}.\n'
-                              'Stress calculated: ${timeLabel(stressTime)}.\n'
-                              '${summary?.isFromCache == true ? 'Health data is from the local cache.\n' : ''}'
-                              'Sleep baseline: ${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.\n'
-                              '${server != null ? 'Capacity compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. It is compared with your usual after 7 days.' : 'Capacity uses sleep and stress, not raw heart rate. Comparisons require 7 days with matching inputs and stress readings at a similar time of day.'} These are wellness estimates, not clinical assessments.\n'
-                              'Demand is the Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work does not block a specific opening.',
-                            ),
+                      onDetails: () => showInfoSheet(
+                        context,
+                        icon: CupertinoIcons.info_circle,
+                        title: 'Daily Brief data',
+                        summary:
+                            'Where today\'s numbers come from. These are wellness estimates, not clinical assessments.',
+                        items: [
+                          AppleInfoItem(
+                            'Calendar loaded',
+                            '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
+                            icon: CupertinoIcons.calendar,
                           ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Close'),
+                          AppleInfoItem(
+                            'Heart rate measured',
+                            '${timeLabel(healthTime)}.',
+                            icon: CupertinoIcons.heart,
+                          ),
+                          AppleInfoItem(
+                            'Stress calculated',
+                            '${timeLabel(stressTime)}.',
+                            icon: CupertinoIcons.waveform_path,
+                          ),
+                          if (summary?.isFromCache == true)
+                            const AppleInfoItem(
+                              'Health data',
+                              'From the local cache.',
+                              icon: CupertinoIcons.tray,
                             ),
-                          ],
-                        ),
+                          AppleInfoItem(
+                            'Sleep baseline',
+                            '${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.',
+                            icon: CupertinoIcons.moon,
+                          ),
+                          AppleInfoItem(
+                            'Capacity',
+                            server != null
+                                ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. It\'s compared with your usual after 7 days.'
+                                : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
+                            icon: CupertinoIcons.battery_75_percent,
+                          ),
+                          const AppleInfoItem(
+                            'Demand',
+                            'The Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work doesn\'t block a specific opening.',
+                            icon: CupertinoIcons.chart_bar,
+                          ),
+                        ],
+                        buttonLabel: 'Close',
                       ),
                     ).withScreenInsight(
                       ScreenInsight(
@@ -1247,20 +1276,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Future<bool> _showUndo(String message) async {
     if (!mounted) return false;
     var undone = false;
-    await ScaffoldMessenger.of(context)
-        .showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 5),
-            // With an action, a snackbar otherwise stays until dismissed.
-            persist: false,
-            action: SnackBarAction(
-              label: 'Undo',
-              onPressed: () => undone = true,
-            ),
-          ),
-        )
-        .closed;
+    await showToast(
+      context,
+      message,
+      actionLabel: 'Undo',
+      onAction: () => undone = true,
+    ).closed;
     return undone;
   }
 
@@ -1325,7 +1346,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         await _loadTodayEvents(forceRefresh: true);
       }
     } catch (_) {
-      _showMessage("Couldn't add the break.");
+      _showMessage("Couldn't add the break.", error: true);
     }
   }
 
@@ -1348,7 +1369,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         await _loadTodayEvents(forceRefresh: true);
       }
     } catch (_) {
-      _showMessage("Couldn't move ${fix.title}.");
+      _showMessage("Couldn't move ${fix.title}.", error: true);
     }
   }
 
@@ -1378,7 +1399,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         if (now != null) await setStart(now, fix.start!);
       }
     } catch (_) {
-      _showMessage("Couldn't move ${fix.title}.");
+      _showMessage("Couldn't move ${fix.title}.", error: true);
     }
   }
 
@@ -1427,7 +1448,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         if (moved != null) await moveTo(moved, from);
       }
     } catch (_) {
-      _showMessage("Couldn't move \"${p.title}\".");
+      _showMessage("Couldn't move \"${p.title}\".", error: true);
     }
   }
 
@@ -1765,7 +1786,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     try {
       await DailyPriorityService.setCompleted(priority, !priority.completed);
     } catch (error) {
-      _showMessage('Could not update priority: $error');
+      debugPrint('Toggle priority failed: $error');
+      _showMessage("Couldn't update the priority. Try again.", error: true);
     }
   }
 
@@ -1773,7 +1795,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     try {
       await DailyPriorityService.delete(priority);
     } catch (error) {
-      _showMessage('Could not delete priority: $error');
+      debugPrint('Delete priority failed: $error');
+      _showMessage("Couldn't delete the priority. Try again.", error: true);
     }
   }
 
@@ -1838,12 +1861,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         await _addPriorityCalendarEvent(result, reference: destination);
       }
     } catch (error) {
+      debugPrint('Edit priority failed: $error');
+      const message = "Couldn't update the priority. Try again.";
       if (sheetContext != null && sheetContext.mounted) {
-        ScaffoldMessenger.of(sheetContext).showSnackBar(
-          SnackBar(content: Text('Could not update priority: $error')),
-        );
+        showToast(sheetContext, message, kind: ToastKind.error);
       } else {
-        _showMessage('Could not update priority: $error');
+        _showMessage(message, error: true);
       }
     }
   }
@@ -1871,7 +1894,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     try {
       warning = await savePriorityDraft(draft);
     } catch (error) {
-      _showMessage('Could not add priority: $error');
+      debugPrint('Add priority failed: $error');
+      _showMessage("Couldn't add the priority. Try again.", error: true);
       return;
     }
     if (warning != null) _showMessage(warning);
@@ -2462,28 +2486,15 @@ class _PriorityRowState extends State<_PriorityRow> {
     if (_deleting || _confirmingDelete) return;
     _confirmingDelete = true;
     try {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Delete priority?'),
-          content: Text(
+      final confirmed = await confirmAction(
+        context,
+        title: 'Delete priority?',
+        message:
             'Remove “${priority.title}” from your priorities?'
-            '${priority.source == 'manual' ? '' : '\n\nThis will not delete the original calendar event or recurring schedule.'}',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('Delete'),
-            ),
-          ],
-        ),
+            '${priority.source == 'manual' ? '' : '\n\nThis won\'t delete the original calendar event or recurring schedule.'}',
+        confirmLabel: 'Delete',
       );
-      if (confirmed == true && mounted) {
+      if (confirmed && mounted) {
         setState(() => _deleting = true);
         await widget.onDelete();
       }

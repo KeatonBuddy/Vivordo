@@ -154,40 +154,18 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
   }
 
   Future<void> _showFriendOptions(CircleProfile profile) async {
-    final palette = context.circle;
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: context.vivordoColors.card,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.person_remove_rounded),
-              title: const Text('Remove friend'),
-              onTap: () => Navigator.pop(sheetContext, 'remove'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.flag_outlined),
-              title: const Text('Report profile'),
-              onTap: () => Navigator.pop(sheetContext, 'report'),
-            ),
-            ListTile(
-              leading: Icon(Icons.block_rounded, color: palette.danger),
-              title: Text(
-                'Block ${profile.username}',
-                style: TextStyle(
-                  color: palette.danger,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              onTap: () => Navigator.pop(sheetContext, 'block'),
-            ),
-            const SizedBox(height: 8),
-          ],
+    final action = await showAppleActionSheet<String>(
+      context,
+      title: profile.username,
+      actions: [
+        const AppleSheetAction('Remove friend', 'remove', destructive: true),
+        const AppleSheetAction('Report profile', 'report'),
+        AppleSheetAction(
+          'Block ${profile.username}',
+          'block',
+          destructive: true,
         ),
-      ),
+      ],
     );
     if (!mounted) return;
     switch (action) {
@@ -211,13 +189,18 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
     try {
       await CircleProfileService.removeFriend(profile.uid);
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
+      // Shown before popping: the messenger outlives this page.
+      showToast(context, '${profile.username} was removed.');
       Navigator.pop(context);
-      messenger.showSnackBar(
-        SnackBar(content: Text('${profile.username} was removed.')),
-      );
     } catch (error) {
-      if (mounted) _showSnack(context, 'Could not remove friend: $error');
+      debugPrint('Remove friend failed: $error');
+      if (mounted) {
+        _showSnack(
+          context,
+          "Couldn't remove ${profile.username}. Try again.",
+          kind: ToastKind.error,
+        );
+      }
     }
   }
 
@@ -232,12 +215,17 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
     try {
       await CircleProfileService.blockUser(profile.uid);
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
+      // Shown before popping: the messenger outlives this page.
+      showToast(context, '${profile.username} is blocked.');
       Navigator.pop(context);
-      messenger.showSnackBar(const SnackBar(content: Text('User blocked.')));
-    } catch (_) {
+    } catch (error) {
+      debugPrint('Block user failed: $error');
       if (mounted) {
-        _showSnack(context, 'Could not block user. Please try again.');
+        _showSnack(
+          context,
+          "Couldn't block ${profile.username}. Try again.",
+          kind: ToastKind.error,
+        );
       }
     }
   }
@@ -246,34 +234,12 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
     required String title,
     required String body,
     required String action,
-  }) async =>
-      await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(title),
-          content: Text(body),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFD93B41),
-              ),
-              child: Text(action),
-            ),
-          ],
-        ),
-      ) ==
-      true;
+  }) =>
+      confirmAction(context, title: title, message: body, confirmLabel: action);
 
   Future<void> _reportProfile(CircleProfile profile) async {
-    final sent = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
+    final sent = await showAppleSheet<bool>(
+      context,
       builder: (_) => ReportPostSheet(
         isProfile: true,
         onSubmit: (reason, details) async {
@@ -294,7 +260,8 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
     if (sent == true && mounted) {
       _showSnack(
         context,
-        'Profile report submitted. Thank you for letting us know.',
+        'Report sent. Thanks for letting us know.',
+        kind: ToastKind.success,
       );
     }
   }
@@ -320,6 +287,7 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
     }
     final selected = await showModalBottomSheet<List<String>>(
       context: context,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => _FeaturedAchievementPicker(
@@ -331,8 +299,13 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
     try {
       await CircleProfileService.updateFeaturedAchievements(selected);
     } catch (error) {
+      debugPrint('Update featured achievements failed: $error');
       if (mounted) {
-        _showSnack(context, 'Could not update featured achievements: $error');
+        _showSnack(
+          context,
+          "Couldn't update your featured achievements. Try again.",
+          kind: ToastKind.error,
+        );
       }
     }
   }

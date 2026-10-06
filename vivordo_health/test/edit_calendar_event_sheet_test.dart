@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
@@ -56,13 +57,17 @@ void main() {
     ]) {
       expect(find.text(option), findsOneWidget);
     }
-    final custom = tester.widget<CheckedPopupMenuItem<Object?>>(
-      find.ancestor(
-        of: find.text('Custom…'),
-        matching: find.byWidgetPredicate((w) => w is CheckedPopupMenuItem),
-      ),
+    final custom = find.ancestor(
+      of: find.text('Custom…'),
+      matching: find.byWidgetPredicate((w) => w is PopupMenuItem),
     );
-    expect(custom.checked, isTrue);
+    expect(
+      find.descendant(
+        of: custom,
+        matching: find.byIcon(CupertinoIcons.checkmark_alt),
+      ),
+      findsOneWidget,
+    );
 
     // The menu item, not its text box, takes the tap.
     await tester.tap(find.text('Every year'), warnIfMissed: false);

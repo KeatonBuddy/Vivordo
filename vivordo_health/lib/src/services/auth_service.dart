@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/user_service.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 
 //TODO(favour): log flagged items to crashlytics
 
@@ -47,20 +48,22 @@ class AuthService {
       }
       return true;
     } on FirebaseAuthException catch (e) {
+      debugPrint('Email sign-up failed: ${e.code} ${e.message}');
       if (e.code == 'weak-password') {
-        const message = 'Password should be at least 6 characters';
+        final message = authErrorMessage(e);
         if (onPasswordError != null) {
           onPasswordError(message);
         } else if (context.mounted) {
           _authMessage(context, message);
         }
       } else if (context.mounted) {
-        if (e.code == 'email-already-in-use') {
-          const message = 'The account already exists for that email.';
-          _authMessage(context, message);
-        } else {
-          _authMessage(context, e.code);
-        }
+        _authMessage(
+          context,
+          authErrorMessage(
+            e,
+            fallback: "Couldn't create your account. Try again.",
+          ),
+        );
       }
     } catch (e) {
       debugPrint(e.toString());
@@ -79,11 +82,15 @@ class AuthService {
       );
       return true;
     } on FirebaseAuthException catch (e) {
+      debugPrint('Password reset failed: ${e.code} ${e.message}');
       if (context.mounted) {
-        final msg = e.code == 'user-not-found'
-            ? 'No account found for that email.'
-            : e.message ?? 'Failed to send reset email.';
-        _authMessage(context, msg);
+        _authMessage(
+          context,
+          authErrorMessage(
+            e,
+            fallback: "Couldn't send the reset email. Try again.",
+          ),
+        );
       }
       return false;
     } catch (e) {
@@ -108,7 +115,7 @@ class AuthService {
         if (context.mounted) {
           _authMessage(
             context,
-            'Google Sign-In is not supported on this device.',
+            "Google sign-in isn't available on this device.",
           );
         }
         return false;
@@ -144,15 +151,19 @@ class AuthService {
     } on GoogleSignInException catch (e) {
       // Don't show an error toast for a plain cancel — that's not a failure.
       if (e.code != GoogleSignInExceptionCode.canceled && context.mounted) {
-        _authMessage(context, 'Google sign-in failed. Please try again.');
+        _authMessage(context, "Couldn't sign in with Google. Try again.");
       }
       return false;
     } on FirebaseAuthException catch (e) {
+      debugPrint('Google sign-in failed: ${e.code} ${e.message}');
       if (context.mounted) {
-        final message = e.code == 'account-exists-with-different-credential'
-            ? 'An account already exists with this email using a different sign-in method.'
-            : e.message ?? e.code;
-        _authMessage(context, message);
+        _authMessage(
+          context,
+          authErrorMessage(
+            e,
+            fallback: "Couldn't sign in with Google. Try again.",
+          ),
+        );
       }
       return false;
     } catch (e) {
@@ -192,16 +203,20 @@ class AuthService {
         'web-context-cancelled',
       };
       if (!cancellationCodes.contains(e.code) && context.mounted) {
-        final message = e.code == 'account-exists-with-different-credential'
-            ? 'An account already exists with this email using a different sign-in method.'
-            : e.message ?? 'Apple sign-in failed. Please try again.';
-        _authMessage(context, message);
+        debugPrint('Apple sign-in failed: ${e.code} ${e.message}');
+        _authMessage(
+          context,
+          authErrorMessage(
+            e,
+            fallback: "Couldn't sign in with Apple. Try again.",
+          ),
+        );
       }
       return false;
     } catch (e) {
       debugPrint(e.toString());
       if (context.mounted) {
-        _authMessage(context, 'Apple sign-in failed. Please try again.');
+        _authMessage(context, "Couldn't sign in with Apple. Try again.");
       }
       return false;
     }
@@ -227,13 +242,12 @@ class AuthService {
       await UserService.syncEmailWithAuth();
       return true;
     } on FirebaseAuthException catch (e) {
+      debugPrint('Email sign-in failed: ${e.code} ${e.message}');
       if (context.mounted) {
-        if (e.code == 'invalid-credential') {
-          const message = 'Invalid email or password';
-          _authMessage(context, message);
-        } else {
-          _authMessage(context, e.code);
-        }
+        _authMessage(
+          context,
+          authErrorMessage(e, fallback: "Couldn't sign in. Try again."),
+        );
       }
       return false;
     } catch (e) {
@@ -243,6 +257,28 @@ class AuthService {
   }
 }
 
+/// Plain words for a [FirebaseAuthException]; never the raw code or message.
+String authErrorMessage(
+  FirebaseAuthException e, {
+  String fallback = 'Something went wrong. Try again.',
+}) => switch (e.code) {
+  'wrong-password' ||
+  'invalid-credential' ||
+  'INVALID_LOGIN_CREDENTIALS' => "That email or password isn't right.",
+  'user-not-found' => "There's no account with that email.",
+  'invalid-email' => "That email address doesn't look right.",
+  'email-already-in-use' => 'An account already exists with that email.',
+  'weak-password' => 'Use at least 6 characters for your password.',
+  'too-many-requests' => 'Too many attempts. Try again in a few minutes.',
+  'network-request-failed' =>
+    'No connection. Check your internet and try again.',
+  'user-disabled' => 'This account has been turned off. Contact support.',
+  'requires-recent-login' => 'For your security, sign in again and retry.',
+  'account-exists-with-different-credential' =>
+    'An account already exists with this email using a different sign-in method.',
+  _ => fallback,
+};
+
 void _authMessage(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  showToast(context, message, kind: ToastKind.error);
 }

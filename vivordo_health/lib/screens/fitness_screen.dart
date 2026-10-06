@@ -4,6 +4,8 @@ import '../widgets/contextual_insight_bar.dart';
 import '../src/services/active_workout_navigation.dart';
 import '../widgets/workout_rest_timer.dart';
 import '../widgets/ios_pull_down_menu.dart';
+import '../widgets/apple_ui.dart';
+import '../widgets/vivordo_time_picker.dart';
 import 'package:flutter/cupertino.dart' show CupertinoIcons, CupertinoSwitch;
 import '../src/services/notification_service.dart';
 import 'dart:math' as math;
@@ -354,15 +356,11 @@ class _FitnessScreenState extends State<FitnessScreen> {
   }
 
   Future<void> _logActivity() async {
-    final saved = await showDialog<bool>(
-      context: context,
+    // The sheet shows its own saved / will-sync toast before closing.
+    await showAppleSheet<bool>(
+      context,
       builder: (_) => const _LogActivityDialog(),
     );
-    if (saved == true && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Activity saved.')));
-    }
   }
 
   Future<void> _startWorkout() async {
@@ -1100,10 +1098,11 @@ class _WeekDayBar extends StatelessWidget {
 }
 
 /// Shown on the screen underneath, since the caller is about to close.
-void _showSavedOffline(BuildContext context, String what) =>
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("$what saved. It'll sync when you're online.")),
-    );
+void _showSavedOffline(BuildContext context, String what) => showToast(
+  context,
+  "$what saved. It'll sync when you're online.",
+  kind: ToastKind.offline,
+);
 
 enum _RecentFilter {
   all('All'),
@@ -1529,24 +1528,36 @@ class _LogActivityDialog extends StatefulWidget {
 }
 
 class _LogActivityDialogState extends State<_LogActivityDialog> {
-  String _name = '';
-  String _minutes = '';
-  String _km = '';
-  String _sets = '';
+  final _name = TextEditingController();
+  final _minutes = TextEditingController();
+  final _km = TextEditingController();
+  final _sets = TextEditingController();
   DateTime _day = DateUtils.dateOnly(DateTime.now());
   bool _saving = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _name.dispose();
+    _minutes.dispose();
+    _km.dispose();
+    _sets.dispose();
+    super.dispose();
+  }
+
   Future<void> _save() async {
-    final minutes = int.tryParse(_minutes);
-    final km = _km.trim().isEmpty ? null : double.tryParse(_km);
-    final sets = _sets.trim().isEmpty ? null : int.tryParse(_sets);
-    if (_name.trim().isEmpty || minutes == null || minutes <= 0) {
+    final name = _name.text;
+    final kmText = _km.text;
+    final setsText = _sets.text;
+    final minutes = int.tryParse(_minutes.text);
+    final km = kmText.trim().isEmpty ? null : double.tryParse(kmText);
+    final sets = setsText.trim().isEmpty ? null : int.tryParse(setsText);
+    if (name.trim().isEmpty || minutes == null || minutes <= 0) {
       setState(() => _error = 'Enter a name and valid number of minutes.');
       return;
     }
-    if ((_km.trim().isNotEmpty && km == null) ||
-        (_sets.trim().isNotEmpty && sets == null)) {
+    if ((kmText.trim().isNotEmpty && km == null) ||
+        (setsText.trim().isNotEmpty && sets == null)) {
       setState(() => _error = 'Enter valid numbers for kilometres and sets.');
       return;
     }
@@ -1556,92 +1567,95 @@ class _LogActivityDialogState extends State<_LogActivityDialog> {
     });
     try {
       final synced = await RecentActivityService.add(
-        name: _name,
+        name: name,
         minutes: minutes,
         day: _day,
         km: km,
         sets: sets,
       );
       if (!mounted) return;
-      if (!synced) _showSavedOffline(context, 'Activity');
+      if (synced) {
+        showToast(context, 'Activity saved.', kind: ToastKind.success);
+      } else {
+        _showSavedOffline(context, 'Activity');
+      }
       Navigator.pop(context, true);
     } catch (error) {
+      debugPrint('Could not save activity: $error');
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = 'Could not save activity: $error';
+        _error = "Couldn't save the activity. Try again.";
       });
     }
   }
 
+  Future<void> _pickDay() async {
+    final picked = await showVivordoDatePicker(
+      context: context,
+      initialDate: _day,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) setState(() => _day = picked);
+  }
+
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-    title: const Text('Log Activity'),
-    content: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) => AppleFormSheet(
+    title: 'Log activity',
+    doneLabel: 'Add',
+    busy: _saving,
+    onDone: _save,
+    onCancel: () => Navigator.pop(context, false),
+    children: [
+      AppleFormGroup(
+        footer: "Counts toward today's Exercise ring.",
         children: [
-          TextFormField(
+          AppleFormTextRow(
+            label: 'Activity',
+            controller: _name,
+            placeholder: 'e.g. Tennis',
             autofocus: true,
             textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(labelText: 'Activity name'),
-            onChanged: (value) => _name = value,
           ),
-          TextFormField(
+          AppleFormTextRow(
+            label: 'Duration',
+            controller: _minutes,
+            placeholder: 'Minutes',
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Time (minutes)'),
-            onChanged: (value) => _minutes = value,
           ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Day'),
-            subtitle: Text(DateFormat('MMMM d, y').format(_day)),
-            trailing: const Icon(Icons.calendar_today_rounded),
-            onTap: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _day,
-                firstDate: DateTime(2000),
-                lastDate: DateTime.now(),
-              );
-              if (picked != null) setState(() => _day = picked);
-            },
+          AppleFormRow(
+            label: 'Date',
+            onTap: _pickDay,
+            trailing: AppleValuePill(DateFormat('MMM d, y').format(_day)),
           ),
-          TextFormField(
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Kilometres (optional)',
-            ),
-            onChanged: (value) => _km = value,
-          ),
-          TextFormField(
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Sets (optional)'),
-            onChanged: (value) => _sets = value,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
-          ],
         ],
       ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: _saving ? null : () => Navigator.pop(context, false),
-        child: const Text('Cancel'),
+      AppleFormGroup(
+        header: 'Optional',
+        children: [
+          AppleFormTextRow(
+            label: 'Distance',
+            controller: _km,
+            placeholder: 'km',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          AppleFormTextRow(
+            label: 'Sets',
+            controller: _sets,
+            placeholder: 'Count',
+            keyboardType: TextInputType.number,
+          ),
+        ],
       ),
-      FilledButton(
-        onPressed: _saving ? null : _save,
-        child: _saving
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Text('Save'),
-      ),
+      if (_error != null)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Text(
+            _error!,
+            style: const TextStyle(color: appleRed, fontSize: 13),
+          ),
+        ),
     ],
   );
 }
@@ -1700,34 +1714,29 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
 
   Future<void> _edit(Map<String, int> target, String key, String unit) async {
     final editingActivityGoal = identical(target, activity);
-    var enteredValue = '${target[key]}';
-    final value = await showDialog<int>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Text('Edit $key Goal'),
-        content: TextFormField(
-          initialValue: enteredValue,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          onChanged: (value) => enteredValue = value,
-          decoration: InputDecoration(
-            suffixText: unit,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, int.tryParse(enteredValue)),
-            child: const Text('Save'),
+    final controller = TextEditingController(text: '${target[key]}');
+    final value = await showAppleSheet<int>(
+      context,
+      builder: (sheetContext) => AppleFormSheet(
+        title: '$key goal',
+        doneLabel: 'Save',
+        onDone: () =>
+            Navigator.pop(sheetContext, int.tryParse(controller.text)),
+        children: [
+          AppleFormGroup(
+            children: [
+              AppleFormTextRow(
+                label: '${unit[0].toUpperCase()}${unit.substring(1)}',
+                controller: controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+              ),
+            ],
           ),
         ],
       ),
     );
+    // Not disposed: the sheet's field is still animating out.
     if (value == null || value <= 0) return;
     setState(() => target[key] = value);
     try {
@@ -1737,10 +1746,13 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
         await ActivityGoalsService.saveStrengthGoals(widget.strengthGoals);
       }
     } catch (error) {
+      debugPrint('Could not save goal: $error');
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      showToast(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not save goal: $error')));
+        "Couldn't save the goal. Try again.",
+        kind: ToastKind.error,
+      );
     }
   }
 
@@ -2186,45 +2198,40 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   Future<void> _saveWorkoutTemplate() async {
     if (exercises.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add at least one exercise first.')),
-      );
+      showToast(context, 'Add at least one exercise first.');
       return;
     }
-    var workoutName = '';
+    // Not disposed: the alert's field is still animating out.
+    final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Save Workout'),
-        content: TextField(
-          autofocus: true,
-          maxLength: 40,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Workout name',
-            hintText: 'e.g. Push Day',
-            border: OutlineInputBorder(),
+      builder: (dialogContext) {
+        void save() {
+          final value = controller.text;
+          if (value.trim().isEmpty) return;
+          // The old field capped names at 40 characters.
+          Navigator.pop(
+            dialogContext,
+            value.length > 40 ? value.substring(0, 40) : value,
+          );
+        }
+
+        return AppleAlert(
+          title: 'Save workout',
+          message: 'Name it so you can start it again later.',
+          content: AppleAlertField(
+            controller: controller,
+            placeholder: 'e.g. Push Day',
           ),
-          onChanged: (value) => workoutName = value,
-          onSubmitted: (value) {
-            if (value.trim().isNotEmpty) Navigator.pop(dialogContext, value);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (workoutName.trim().isNotEmpty) {
-                Navigator.pop(dialogContext, workoutName);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+          buttons: [
+            AppleAlertButton(
+              'Cancel',
+              onPressed: () => Navigator.pop(dialogContext),
+            ),
+            AppleAlertButton('Save', bold: true, onPressed: save),
+          ],
+        );
+      },
     );
     if (name == null || !mounted) return;
 
@@ -2242,14 +2249,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             .toList(growable: false),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('$name saved.')));
+      showToast(context, '$name saved.', kind: ToastKind.success);
     } catch (error) {
+      debugPrint('Could not save workout template: $error');
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      showToast(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not save workout: $error')));
+        "Couldn't save the workout. Try again.",
+        kind: ToastKind.error,
+      );
     } finally {
       if (mounted) setState(() => savingTemplate = false);
     }
@@ -2275,9 +2283,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   Future<void> _finishWorkout() async {
     if (exercises.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add at least one exercise first.')),
-      );
+      showToast(context, 'Add at least one exercise first.');
       return;
     }
 
@@ -2321,12 +2327,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         final weight = double.tryParse(set.lbs);
         final reps = int.tryParse(set.reps);
         if (weight == null || weight < 0 || reps == null || reps <= 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Enter a valid weight and reps for every ${exercise.name} set.',
-              ),
-            ),
+          showToast(
+            context,
+            'Enter a valid weight and reps for every ${exercise.name} set.',
           );
           return;
         }
@@ -2358,34 +2361,25 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
+      debugPrint('Could not save workout: $error');
       setState(() => saving = false);
-      ScaffoldMessenger.of(
+      showToast(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not save workout: $error')));
+        "Couldn't save the workout. Try again.",
+        kind: ToastKind.error,
+      );
     }
   }
 
   Future<void> _cancelWorkout() async {
-    final cancel = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancel workout?'),
-        content: const Text(
-          'This will discard the workout and everything entered in it.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep Workout'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Cancel Workout'),
-          ),
-        ],
-      ),
+    final cancel = await confirmAction(
+      context,
+      title: 'Cancel workout?',
+      message: 'This discards the workout and everything entered in it.',
+      cancelLabel: 'Keep workout',
+      confirmLabel: 'Cancel workout',
     );
-    if (cancel != true || !mounted) return;
+    if (!cancel || !mounted) return;
     timer?.cancel();
     _activeWorkoutDraft = null;
     await ActiveWorkoutStorage.clear();
@@ -2705,27 +2699,13 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
   final Set<String> _deletingIds = {};
 
   Future<void> _deleteTemplate(WorkoutTemplate template) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Saved Workout?'),
-        content: Text(
-          'Delete "${template.name}"? This will not delete workouts you already completed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmAction(
+      context,
+      title: 'Delete "${template.name}"?',
+      message: "Workouts you've already completed stay in your history.",
+      confirmLabel: 'Delete',
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _deletingIds.add(template.id));
     try {
@@ -2735,14 +2715,15 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
         _deletingIds.remove(template.id);
         if (_selectedId == template.id) _selectedId = null;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('${template.name} deleted.')));
+      showToast(context, '${template.name} deleted.');
     } catch (error) {
+      debugPrint('Could not delete workout template: $error');
       if (!mounted) return;
       setState(() => _deletingIds.remove(template.id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete workout: $error')),
+      showToast(
+        context,
+        "Couldn't delete the workout. Try again.",
+        kind: ToastKind.error,
       );
     }
   }
@@ -3520,12 +3501,10 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
       });
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Could not load favourites. Reopen Add Exercise to retry.',
-          ),
-        ),
+      showToast(
+        context,
+        "Couldn't load favourites. Reopen Add exercise to try again.",
+        kind: ToastKind.error,
       );
     }
   }
@@ -3556,10 +3535,10 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
       setState(() {
         removing ? _favourites.add(key) : _favourites.remove(key);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not save favourite. Please try again.'),
-        ),
+      showToast(
+        context,
+        "Couldn't save the favourite. Try again.",
+        kind: ToastKind.error,
       );
     } finally {
       if (mounted) setState(() => _savingFavourites.remove(key));
@@ -3682,54 +3661,67 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   }
 
   Future<void> _createExercise() async {
-    var name = '';
+    // Not disposed: the sheet's field is still animating out.
+    final name = TextEditingController();
     var category = 'Other';
-    final created = await showDialog<_ExerciseDefinition>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text('Create Exercise'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                autofocus: true,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(labelText: 'Exercise name'),
-                onChanged: (value) => name = value,
-              ),
-              DropdownButtonFormField<String>(
-                initialValue: category,
-                decoration: const InputDecoration(labelText: 'Muscle group'),
-                items: [..._filters.skip(1), 'Other']
-                    .map(
-                      (value) =>
-                          DropdownMenuItem(value: value, child: Text(value)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => category = value);
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (name.trim().isEmpty) return;
-                Navigator.pop(
-                  dialogContext,
-                  _ExerciseDefinition(name: name.trim(), category: category),
-                );
-              },
-              child: const Text('Create'),
+    final created = await showAppleSheet<_ExerciseDefinition>(
+      context,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => AppleFormSheet(
+          title: 'Create exercise',
+          doneLabel: 'Create',
+          onDone: () {
+            if (name.text.trim().isEmpty) return;
+            Navigator.pop(
+              sheetContext,
+              _ExerciseDefinition(name: name.text.trim(), category: category),
+            );
+          },
+          children: [
+            AppleFormGroup(
+              children: [
+                AppleFormTextRow(
+                  label: 'Name',
+                  controller: name,
+                  placeholder: 'e.g. Cable Fly',
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.words,
+                ),
+                AppleFormRow(
+                  label: 'Muscle group',
+                  trailing: IosPullDownMenu<String>(
+                    tooltip: 'Muscle group',
+                    actions: [
+                      for (final value in [..._filters.skip(2), 'Other'])
+                        IosMenuAction(
+                          value: value,
+                          label: value,
+                          checked: value == category,
+                        ),
+                    ],
+                    onSelected: (value) =>
+                        setSheetState(() => category = value),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          category,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: context.vivordoColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          CupertinoIcons.chevron_up_chevron_down,
+                          size: 14,
+                          color: context.vivordoColors.textSecondary,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -3755,10 +3747,10 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
       );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Exercise added, but it could not be saved for later.'),
-        ),
+      showToast(
+        context,
+        "Exercise added, but it couldn't be saved for later.",
+        kind: ToastKind.error,
       );
     }
   }

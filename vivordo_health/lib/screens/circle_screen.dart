@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -14,6 +15,8 @@ import '../src/services/circle_challenge_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/workout_service.dart';
 import '../src/utils/workout_activity_visual.dart';
+import '../widgets/apple_ui.dart';
+import '../widgets/ios_pull_down_menu.dart';
 import '../widgets/report_post_sheet.dart';
 import 'create_circle_profile_screen.dart';
 import 'fitness_screen.dart' show ActivityRingsPainter;

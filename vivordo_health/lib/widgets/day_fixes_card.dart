@@ -191,6 +191,7 @@ Future<bool> showDayFixTimeSheet(
       '${DateFormat.jm().format(a)} – ${DateFormat.jm().format(b)}';
   final confirmed = await showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     backgroundColor: colors.card,
     shape: const RoundedRectangleBorder(
@@ -295,6 +296,7 @@ Future<DateTime?> showMovePrioritySheet(
   final colors = context.vivordoColors;
   return showModalBottomSheet<DateTime>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     backgroundColor: colors.card,
     shape: const RoundedRectangleBorder(

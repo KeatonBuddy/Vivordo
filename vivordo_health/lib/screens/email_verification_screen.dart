@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'login_screen.dart';
 
 /// Shown by AuthGate whenever a signed-in user's email isn't verified yet.
@@ -85,11 +87,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         return;
       }
       if (!silent && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Not verified yet — check your inbox for the link."),
-          ),
-        );
+        showToast(context, 'Not verified yet. Check your inbox for the link.');
       }
     } finally {
       if (!silent && mounted) setState(() => _checking = false);
@@ -102,15 +100,16 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     try {
       await FirebaseAuth.instance.currentUser?.sendEmailVerification();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Verification email sent.')),
-        );
+        showToast(context, 'Verification email sent.', kind: ToastKind.success);
       }
       _startCooldown();
     } on FirebaseAuthException catch (e) {
+      debugPrint('Resend verification failed: ${e.code} ${e.message}');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? 'Failed to resend email.')),
+        showToast(
+          context,
+          authErrorMessage(e, fallback: "Couldn't send the email. Try again."),
+          kind: ToastKind.error,
         );
       }
     } finally {

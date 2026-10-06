@@ -5,6 +5,7 @@ import '../widgets/calendar_event_summary_sheet.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'profile_screen.dart';
@@ -29,6 +30,7 @@ import 'package:vivordo_health/src/utils/home_day_load.dart';
 import 'package:vivordo_health/src/utils/owned_stream_snapshot.dart';
 import 'package:vivordo_health/widgets/add_calendar_event_sheet.dart';
 import 'package:vivordo_health/widgets/add_priority_sheet.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/plan_slot_sheet.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
@@ -579,22 +581,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _showStressScoreExplanation() {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Your stress score'),
-        content: const Text(
+    showInfoSheet(
+      context,
+      icon: CupertinoIcons.waveform_path_ecg,
+      title: 'Your stress score',
+      summary:
           'Vivordo combines signals such as heart rate, HRV, sleep, activity, '
           'and mood with your personal baseline. Lower scores generally mean '
           'your body is showing fewer signs of stress.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1065,10 +1059,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ]);
       // Answered or dismissed: today's 10 AM reminder isn't needed.
       unawaited(CheckInReminders.sync());
-    } catch (_) {
+    } catch (error) {
+      debugPrint('Save morning check-in failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not save your check-in.')),
+        showToast(
+          context,
+          "Couldn't save your check-in. Try again.",
+          kind: ToastKind.error,
         );
       }
     }
@@ -2498,10 +2495,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _showHomeCalendarMessage('Event added to Google Calendar.');
       }
     } catch (error) {
+      debugPrint('Plan opening save failed: $error');
       _showHomeCalendarMessage(
         result is PriorityDraft
-            ? 'Could not add priority: $error'
-            : 'Could not create event: $error',
+            ? "Couldn't add the priority. Try again."
+            : "Couldn't add the event. Try again.",
+        error: true,
       );
     }
   }
@@ -2823,7 +2822,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _refreshHomeCalendarCards();
       _showHomeCalendarMessage('Event deleted.');
     } catch (error) {
-      if (mounted) _showHomeCalendarMessage('Could not delete event: $error');
+      debugPrint('Delete calendar event failed: $error');
+      if (mounted) {
+        _showHomeCalendarMessage(
+          "Couldn't delete the event. Try again.",
+          error: true,
+        );
+      }
     }
   }
 
@@ -2831,56 +2836,54 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final originalStart = event.start?.dateTime?.toLocal();
     final originalEnd = event.end?.dateTime?.toLocal();
     if (originalStart == null || originalEnd == null) {
-      _showHomeCalendarMessage('All-day events cannot be edited here yet.');
+      _showHomeCalendarMessage("All-day events can't be edited here yet.");
       return;
     }
 
-    var title = event.summary ?? '';
+    final titleController = TextEditingController(text: event.summary ?? '');
     var date = DateUtils.dateOnly(originalStart);
     var startTime = TimeOfDay.fromDateTime(originalStart);
     var endTime = TimeOfDay.fromDateTime(originalEnd);
-    final shouldSave = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text('Edit event'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+    final shouldSave = await showAppleSheet<bool>(
+      context,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => AppleFormSheet(
+          title: 'Edit event',
+          doneLabel: 'Save',
+          onDone: titleController.text.trim().isEmpty
+              ? null
+              : () => Navigator.pop(sheetContext, true),
+          children: [
+            AppleFormGroup(
               children: [
-                TextFormField(
-                  initialValue: title,
+                AppleFormTextRow(
+                  controller: titleController,
+                  placeholder: 'Event title',
                   autofocus: true,
                   textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    labelText: 'Event title',
-                    prefixIcon: Icon(Icons.event_rounded),
-                  ),
-                  onChanged: (value) => title = value,
+                  onChanged: (_) => setSheetState(() {}),
                 ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.calendar_today_rounded),
-                  title: const Text('Date'),
-                  subtitle: Text(_formatCalendarDate(date)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            AppleFormGroup(
+              children: [
+                AppleFormRow(
+                  label: 'Date',
+                  trailing: AppleValuePill(_formatCalendarDate(date)),
                   onTap: () async {
-                    final picked = await showDatePicker(
+                    final picked = await showVivordoDatePicker(
                       context: context,
                       initialDate: date,
                       firstDate: DateTime(2000),
                       lastDate: DateTime(2100),
                     );
-                    if (picked != null) setDialogState(() => date = picked);
+                    if (picked != null) setSheetState(() => date = picked);
                   },
                 ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.schedule_rounded),
-                  title: const Text('Start time'),
-                  trailing: Text(startTime.format(context)),
+                AppleFormRow(
+                  label: 'Starts',
+                  trailing: AppleValuePill(startTime.format(context)),
                   onTap: () async {
                     final picked = await showVivordoTimePicker(
                       context: context,
@@ -2888,42 +2891,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       title: 'Start Time',
                     );
                     if (picked != null) {
-                      setDialogState(() => startTime = picked);
+                      setSheetState(() => startTime = picked);
                     }
                   },
                 ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.schedule_outlined),
-                  title: const Text('End time'),
-                  trailing: Text(endTime.format(context)),
+                AppleFormRow(
+                  label: 'Ends',
+                  trailing: AppleValuePill(endTime.format(context)),
                   onTap: () async {
                     final picked = await showVivordoTimePicker(
                       context: context,
                       initialTime: endTime,
                       title: 'End Time',
                     );
-                    if (picked != null) setDialogState(() => endTime = picked);
+                    if (picked != null) setSheetState(() => endTime = picked);
                   },
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Save'),
             ),
           ],
         ),
       ),
     );
+    // Not disposed: the sheet's field still uses it while closing.
+    final title = titleController.text.trim();
     if (shouldSave != true || !mounted) return;
-    title = title.trim();
     if (title.isEmpty) {
       _showHomeCalendarMessage('Enter an event title.');
       return;
@@ -2955,7 +2947,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _refreshHomeCalendarCards();
       _showHomeCalendarMessage('Event updated.');
     } catch (error) {
-      _showHomeCalendarMessage('Could not update event: $error');
+      debugPrint('Update calendar event failed: $error');
+      _showHomeCalendarMessage(
+        "Couldn't update the event. Try again.",
+        error: true,
+      );
     }
   }
 
@@ -2975,11 +2971,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
-  void _showHomeCalendarMessage(String message) {
+  void _showHomeCalendarMessage(String message, {bool error = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showToast(context, message, kind: error ? ToastKind.error : ToastKind.info);
   }
 
   String _getSleepInsightTitle(double hours) {

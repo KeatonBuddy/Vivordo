@@ -115,8 +115,13 @@ Future<bool> _respondToChallenge(
     }
     return true;
   } catch (error) {
+    debugPrint('Respond to challenge failed: $error');
     if (context.mounted) {
-      _showSnack(context, 'Could not update challenge: $error');
+      _showSnack(
+        context,
+        "Couldn't update the challenge. Try again.",
+        kind: ToastKind.error,
+      );
     }
     return false;
   }
@@ -884,56 +889,37 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
   }
 
   Future<void> _showOptions() async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: context.vivordoColors.card,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: ListTile(
-          leading: Icon(Icons.close_rounded, color: context.circle.danger),
-          title: Text(
-            'Cancel challenge',
-            style: TextStyle(
-              color: context.circle.danger,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          subtitle: const Text('Ends it for everyone who joined.'),
-          onTap: () => Navigator.pop(sheetContext, 'cancel'),
-        ),
-      ),
+    final action = await showAppleActionSheet<String>(
+      context,
+      message: 'Ends it for everyone who joined.',
+      actions: const [
+        AppleSheetAction('Cancel challenge', 'cancel', destructive: true),
+      ],
     );
     if (action != 'cancel' || !mounted) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Cancel ${membership.title}?'),
-        content: const Text(
-          'Everyone in this challenge will see it as cancelled. This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Keep it'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFD93B41),
-            ),
-            child: const Text('Cancel challenge'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmAction(
+      context,
+      title: 'Cancel ${membership.title}?',
+      message:
+          "Everyone in this challenge will see it as cancelled. This can't be undone.",
+      cancelLabel: 'Keep it',
+      confirmLabel: 'Cancel challenge',
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     try {
       await CircleChallengeService.cancel(membership.challengeId);
       if (!mounted) return;
       _showSnack(context, 'Challenge cancelled.');
       Navigator.of(context).pop();
     } catch (error) {
-      if (mounted) _showSnack(context, 'Could not cancel challenge: $error');
+      debugPrint('Cancel challenge failed: $error');
+      if (mounted) {
+        _showSnack(
+          context,
+          "Couldn't cancel the challenge. Try again.",
+          kind: ToastKind.error,
+        );
+      }
     }
   }
 
@@ -949,7 +935,14 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
       _commentController.clear();
       if (mounted) FocusScope.of(context).unfocus();
     } catch (error) {
-      if (mounted) _showSnack(context, 'Could not post comment: $error');
+      debugPrint('Post challenge comment failed: $error');
+      if (mounted) {
+        _showSnack(
+          context,
+          "Couldn't post your comment. Try again.",
+          kind: ToastKind.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _posting = false);
     }
@@ -962,7 +955,14 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
         commentId: comment.id,
       );
     } catch (error) {
-      if (mounted) _showSnack(context, 'Could not delete comment: $error');
+      debugPrint('Delete challenge comment failed: $error');
+      if (mounted) {
+        _showSnack(
+          context,
+          "Couldn't delete the comment. Try again.",
+          kind: ToastKind.error,
+        );
+      }
     }
   }
 }

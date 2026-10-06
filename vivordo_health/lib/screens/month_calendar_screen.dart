@@ -8,6 +8,7 @@ import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/day_agenda.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
+import '../widgets/apple_ui.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/plan_slot_sheet.dart';
@@ -205,7 +206,8 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
       );
     } catch (error) {
       if (mounted) setState(() => _loading = false);
-      _showMessage('Could not save event: $error');
+      debugPrint('Save calendar event failed: $error');
+      _showMessage("Couldn't save the event. Try again.", error: true);
     }
   }
 
@@ -224,7 +226,8 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
       _showMessage('Event deleted.');
     } catch (error) {
       if (mounted) setState(() => _loading = false);
-      _showMessage('Could not delete event: $error');
+      debugPrint('Delete calendar event failed: $error');
+      _showMessage("Couldn't delete the event. Try again.", error: true);
     }
   }
 
@@ -253,7 +256,8 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
         try {
           warning = await savePriorityDraft(draft);
         } catch (error) {
-          _showMessage('Could not add priority: $error');
+          debugPrint('Add priority failed: $error');
+          _showMessage("Couldn't add the priority. Try again.", error: true);
           return;
         }
         _showMessage(warning ?? 'Priority added.');
@@ -273,16 +277,15 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
           _showMessage('Event added to Google Calendar.');
         } catch (error) {
           if (mounted) setState(() => _loading = false);
-          _showMessage('Could not create event: $error');
+          debugPrint('Create calendar event failed: $error');
+          _showMessage("Couldn't add the event. Try again.", error: true);
         }
     }
   }
 
-  void _showMessage(String message) {
+  void _showMessage(String message, {bool error = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showToast(context, message, kind: error ? ToastKind.error : ToastKind.info);
   }
 
   @override

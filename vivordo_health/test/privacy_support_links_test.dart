@@ -25,7 +25,7 @@ void main() {
     );
     await tester.tap(find.text('Contact support'));
     await tester.pumpAndSettle();
-    expect(find.text('Could not open link'), findsOneWidget);
+    expect(find.text("Couldn't open link"), findsOneWidget);
     expect(
       find.byWidgetPredicate(
         (widget) =>

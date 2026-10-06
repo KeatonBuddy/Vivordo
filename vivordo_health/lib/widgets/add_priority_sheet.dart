@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
+import 'apple_ui.dart';
 import 'priority_reminder_picker.dart';
 import 'priority_duration_picker.dart';
 
@@ -74,6 +75,7 @@ class PriorityDraft {
 Future<PriorityDraft?> showAddPrioritySheet(BuildContext context) =>
     showModalBottomSheet<PriorityDraft>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
@@ -92,6 +94,7 @@ Future<PriorityDraft?> showPriorityEditor(
   bool occurrenceOnly = false,
 }) => showModalBottomSheet<PriorityDraft>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   useSafeArea: true,
   backgroundColor: Colors.transparent,
@@ -164,7 +167,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   void _changed() => setState(() {});
 
   Future<void> _pickDate() async {
-    final value = await showDatePicker(
+    final value = await showVivordoDatePicker(
       context: context,
       initialDate: _date,
       firstDate: _date.isBefore(DateUtils.dateOnly(DateTime.now()))
@@ -184,36 +187,13 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   }
 
   Future<void> _pickRepeatEnd() async {
-    final choice = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              title: Text(
-                'Repeat ends',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.all_inclusive_rounded),
-              title: const Text('Never'),
-              trailing: _repeatEnd == null
-                  ? const Icon(Icons.check_rounded, color: _purple)
-                  : null,
-              onTap: () => Navigator.pop(context, false),
-            ),
-            ListTile(
-              leading: const Icon(Icons.event_rounded),
-              title: const Text('On a date'),
-              onTap: () => Navigator.pop(context, true),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+    final choice = await showAppleActionSheet<bool>(
+      context,
+      title: 'Repeat ends',
+      actions: [
+        AppleSheetAction('Never', false, selected: _repeatEnd == null),
+        AppleSheetAction('On a date', true, selected: _repeatEnd != null),
+      ],
     );
     if (choice == null) return;
     if (!choice) {
@@ -221,11 +201,12 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
       return;
     }
     if (!mounted) return;
-    final value = await showDatePicker(
+    final value = await showVivordoDatePicker(
       context: context,
       initialDate: _repeatEnd ?? _date.add(const Duration(days: 30)),
       firstDate: _date,
       lastDate: DateTime(2100),
+      title: 'Repeat ends',
     );
     if (value != null) setState(() => _repeatEnd = value);
   }
@@ -253,12 +234,9 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
         _addToCalendar &&
         _time != null &&
         _planning['minutes'] == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Add an estimated duration before creating a timed calendar event.',
-          ),
-        ),
+      showToast(
+        context,
+        'Add an estimated duration before creating a timed calendar event.',
       );
       return;
     }
@@ -566,10 +544,8 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                                   ],
                                 ),
                               ),
-                              Switch(
+                              AppSwitch(
                                 value: _addToCalendar,
-                                activeThumbColor: Colors.white,
-                                activeTrackColor: _purple,
                                 onChanged: (value) =>
                                     setState(() => _addToCalendar = value),
                               ),
@@ -629,13 +605,11 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                     if (_editing) ...[
                       _Card(
                         children: [
-                          CheckboxListTile(
-                            value: _completed,
-                            onChanged: (value) =>
-                                setState(() => _completed = value ?? false),
-                            activeColor: _purple,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            title: const Text('Mark as completed'),
+                          AppleFormRow(
+                            label: 'Mark as completed',
+                            leading: AppCheckCircle(checked: _completed),
+                            onTap: () =>
+                                setState(() => _completed = !_completed),
                           ),
                         ],
                       ),
@@ -684,28 +658,14 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           icon: const Icon(Icons.delete_outline),
                           label: const Text('Delete Priority'),
                           onPressed: () async {
-                            final confirmed = await showDialog<bool>(
-                              context: context,
-                              builder: (dialogContext) => AlertDialog(
-                                title: const Text('Delete priority?'),
-                                content: const Text(
-                                  'Remove this priority? This will not delete the original calendar event or recurring schedule.',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, false),
-                                    child: const Text('Cancel'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, true),
-                                    child: const Text('Delete'),
-                                  ),
-                                ],
-                              ),
+                            final confirmed = await confirmAction(
+                              context,
+                              title: 'Delete priority?',
+                              message:
+                                  "This won't delete the original calendar event or recurring schedule.",
+                              confirmLabel: 'Delete',
                             );
-                            if (confirmed == true && mounted) {
+                            if (confirmed && mounted) {
                               _submit(deleteRequested: true);
                             }
                           },

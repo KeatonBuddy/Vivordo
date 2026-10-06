@@ -19,6 +19,7 @@ import '../src/services/user_service.dart';
 import '../src/services/whoop_service.dart';
 import '../src/utils/day_wrap_up.dart';
 import '../src/utils/sleep_schedule.dart';
+import '../widgets/apple_ui.dart';
 import '../widgets/birth_year_picker.dart';
 import '../widgets/privacy_support_links.dart';
 import '../widgets/sleep_schedule_editor.dart';
@@ -194,12 +195,10 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     } catch (error) {
       debugPrint('Onboarding step failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              "Couldn't save. Check your connection and try again.",
-            ),
-          ),
+        showToast(
+          context,
+          "Couldn't save. Check your connection and try again.",
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -219,9 +218,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     } catch (error) {
       debugPrint('Onboarding connect failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(onError)));
+        showToast(context, onError, kind: ToastKind.error);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -418,18 +415,31 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
             ignoring: _wrapUpVaries,
             child: SizedBox(
               height: 170,
-              child: CupertinoDatePicker(
-                mode: CupertinoDatePickerMode.time,
-                minuteInterval: 15,
-                initialDateTime: DateTime(
-                  2026,
-                  1,
-                  1,
-                  _wrapUp ~/ 60,
-                  _wrapUp % 60 - _wrapUp % 15,
+              // Same wheel look as showVivordoTimePicker.
+              child: CupertinoTheme(
+                data: CupertinoThemeData(
+                  brightness: Brightness.light,
+                  primaryColor: const Color(0xFF6254F4),
+                  textTheme: CupertinoTextThemeData(
+                    dateTimePickerTextStyle: TextStyle(
+                      color: context.vivordoColors.textPrimary,
+                      fontSize: 22,
+                    ),
+                  ),
                 ),
-                onDateTimeChanged: (time) =>
-                    _wrapUp = time.hour * 60 + time.minute,
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  minuteInterval: 15,
+                  initialDateTime: DateTime(
+                    2026,
+                    1,
+                    1,
+                    _wrapUp ~/ 60,
+                    _wrapUp % 60 - _wrapUp % 15,
+                  ),
+                  onDateTimeChanged: (time) =>
+                      _wrapUp = time.hour * 60 + time.minute,
+                ),
               ),
             ),
           ),
@@ -446,8 +456,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                       style: TextStyle(fontSize: 15, color: _ink),
                     ),
                   ),
-                  Switch.adaptive(
-                    activeTrackColor: _purple,
+                  AppSwitch(
                     value: _wrapUpVaries,
                     onChanged: (value) => setState(() => _wrapUpVaries = value),
                   ),
@@ -711,13 +720,10 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       if (mounted) setState(() => _fitbit = true);
     } on FitbitAccountNotLinkedException {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'This Google account isn\'t linked to Google Health yet. '
-              'Finish Fitbit in Settings later.',
-            ),
-          ),
+        showToast(
+          context,
+          "This Google account isn't linked to Google Health yet. "
+          'Finish Fitbit in Settings later.',
         );
       }
     }

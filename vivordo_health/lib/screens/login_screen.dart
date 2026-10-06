@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'welcome_beta_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -81,10 +82,11 @@ class _LoginScreenState extends State<LoginScreen> {
     final resetEmailCtrl = TextEditingController(text: _emailCtrl.text.trim());
     bool sending = false;
 
+    final colors = context.vivordoColors;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: colors.card,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -105,30 +107,46 @@ class _LoginScreenState extends State<LoginScreen> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: colors.textSecondary.withValues(alpha: .35),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
               const SizedBox(height: 24),
-              const Text(
-                'Reset Password',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              Text(
+                'Reset password',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: colors.textPrimary,
+                ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 "Enter your email and we'll send you a link to reset your password.",
-                style: TextStyle(fontSize: 14, color: textGrey, height: 1.5),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: colors.textSecondary,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 24),
               TextField(
                 controller: resetEmailCtrl,
                 keyboardType: TextInputType.emailAddress,
                 autofocus: true,
-                decoration: _inputDecoration(
-                  hintText: 'you@example.com',
-                  icon: Icons.mail_outline_rounded,
-                ),
+                style: TextStyle(color: colors.textPrimary),
+                decoration:
+                    _inputDecoration(
+                      hintText: 'you@example.com',
+                      icon: Icons.mail_outline_rounded,
+                    ).copyWith(
+                      fillColor: colors.input,
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: colors.border),
+                      ),
+                    ),
               ),
               const SizedBox(height: 20),
               SizedBox(
@@ -146,17 +164,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           );
                           if (!ctx.mounted) return;
                           Navigator.pop(ctx);
-                          if (ok) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Reset link sent to ${resetEmailCtrl.text.trim()}',
-                                ),
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
+                          if (ok && mounted) {
+                            showToast(
+                              context,
+                              'Reset link sent to ${resetEmailCtrl.text.trim()}',
+                              kind: ToastKind.success,
                             );
                           }
                         },
@@ -178,7 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         )
                       : const Text(
-                          'Send Reset Link',
+                          'Send reset link',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,

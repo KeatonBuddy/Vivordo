@@ -736,19 +736,25 @@ Future<bool> _respondToFriendRequest(
     if (accept) {
       await CircleProfileService.acceptFriendRequest(requester.uid);
       if (context.mounted) {
-        _showSnack(context, '${requester.username} joined your Circle');
+        _showSnack(
+          context,
+          '${requester.username} joined your Circle.',
+          kind: ToastKind.success,
+        );
       }
     } else {
       await CircleProfileService.declineFriendRequest(requester.uid);
     }
     return true;
-  } catch (_) {
+  } catch (error) {
+    debugPrint('Respond to friend request failed: $error');
     if (context.mounted) {
       _showSnack(
         context,
         accept
-            ? 'Could not accept this request'
-            : 'Could not decline this request',
+            ? "Couldn't accept this request. Try again."
+            : "Couldn't decline this request. Try again.",
+        kind: ToastKind.error,
       );
     }
     return false;
@@ -1069,8 +1075,15 @@ class _EngagementBarState extends State<_EngagementBar> {
         widget.activity,
         liked: !liked,
       );
-    } catch (_) {
-      if (mounted) _showSnack(context, 'Could not update your like');
+    } catch (error) {
+      debugPrint('Update like failed: $error');
+      if (mounted) {
+        _showSnack(
+          context,
+          "Couldn't update your like. Try again.",
+          kind: ToastKind.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1170,10 +1183,8 @@ class _AchievementActivityBadge extends StatelessWidget {
 }
 
 Future<void> _reportPost(BuildContext context, CircleActivity activity) async {
-  final submitted = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
+  final submitted = await showAppleSheet<bool>(
+    context,
     builder: (_) => ReportPostSheet(
       onSubmit: (reason, details) async {
         final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -1191,7 +1202,11 @@ Future<void> _reportPost(BuildContext context, CircleActivity activity) async {
     ),
   );
   if (submitted == true && context.mounted) {
-    _showSnack(context, 'Report submitted. Thank you for letting us know.');
+    _showSnack(
+      context,
+      'Report sent. Thanks for letting us know.',
+      kind: ToastKind.success,
+    );
   }
 }
 
@@ -1200,10 +1215,8 @@ Future<void> _reportComment(
   CircleActivity activity,
   CircleActivityComment comment,
 ) async {
-  final sent = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
+  final sent = await showAppleSheet<bool>(
+    context,
     builder: (_) => ReportPostSheet(
       isComment: true,
       onSubmit: (reason, details) async {
@@ -1225,13 +1238,18 @@ Future<void> _reportComment(
     ),
   );
   if (sent == true && context.mounted) {
-    _showSnack(context, 'Comment report submitted.');
+    _showSnack(
+      context,
+      'Report sent. Thanks for letting us know.',
+      kind: ToastKind.success,
+    );
   }
 }
 
 void _openActivityDetails(BuildContext context, CircleActivity activity) =>
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
@@ -1518,8 +1536,15 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
     setState(() => _savingLike = true);
     try {
       await CircleProfileService.setActivityLiked(activity, liked: !liked);
-    } catch (_) {
-      if (mounted) _showSnack(context, 'Could not update your like');
+    } catch (error) {
+      debugPrint('Update like failed: $error');
+      if (mounted) {
+        _showSnack(
+          context,
+          "Couldn't update your like. Try again.",
+          kind: ToastKind.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _savingLike = false);
     }
@@ -1533,8 +1558,15 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
       await CircleProfileService.addActivityComment(activity, text);
       _commentController.clear();
       if (mounted) FocusScope.of(context).unfocus();
-    } catch (_) {
-      if (mounted) _showSnack(context, 'Could not post your comment');
+    } catch (error) {
+      debugPrint('Post activity comment failed: $error');
+      if (mounted) {
+        _showSnack(
+          context,
+          "Couldn't post your comment. Try again.",
+          kind: ToastKind.error,
+        );
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -1677,21 +1709,33 @@ class _CommentRow extends StatelessWidget {
           ),
         ),
         if (onReport != null || onDelete != null)
-          PopupMenuButton<String>(
+          IosPullDownMenu<String>(
             tooltip: 'Comment options',
-            icon: Icon(
-              Icons.more_horiz_rounded,
-              size: 20,
-              color: context.muted,
-            ),
             onSelected: (value) =>
                 value == 'delete' ? onDelete?.call() : onReport?.call(),
-            itemBuilder: (_) => [
+            actions: [
               if (onReport != null)
-                const PopupMenuItem(value: 'report', child: Text('Report')),
+                const IosMenuAction(
+                  value: 'report',
+                  label: 'Report comment',
+                  icon: CupertinoIcons.flag,
+                ),
               if (onDelete != null)
-                const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                const IosMenuAction(
+                  value: 'delete',
+                  label: 'Delete comment',
+                  icon: CupertinoIcons.delete,
+                  destructive: true,
+                ),
             ],
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(
+                CupertinoIcons.ellipsis,
+                size: 20,
+                color: context.muted,
+              ),
+            ),
           ),
       ],
     ),

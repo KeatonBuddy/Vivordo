@@ -639,6 +639,7 @@ class _AchievementsPageState extends State<_AchievementsPage> {
     final unit = achievement.progressUnit ?? 'activities';
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         final colors = sheetContext.vivordoColors;

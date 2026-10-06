@@ -19,6 +19,7 @@ Future<int?> showBirthYearPicker(BuildContext context, {int? initial}) {
       : now - 30;
   return showModalBottomSheet<int>(
     context: context,
+    useRootNavigator: true,
     backgroundColor: context.vivordoColors.card,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),

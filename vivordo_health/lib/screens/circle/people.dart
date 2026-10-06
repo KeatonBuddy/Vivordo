@@ -205,8 +205,16 @@ class _PeoplePageState extends State<_PeoplePage> {
         _message = 'Friend request sent to ${recipient.username}';
       });
     } catch (error) {
+      debugPrint('Send friend request failed: $error');
       if (mounted) {
-        _showSnack(context, error.toString().replaceFirst('Bad state: ', ''));
+        // StateErrors from the service carry our own plain-English copy.
+        _showSnack(
+          context,
+          error is StateError
+              ? error.message
+              : "Couldn't send the friend request. Try again.",
+          kind: ToastKind.error,
+        );
       }
     }
   }
@@ -393,6 +401,7 @@ class _FriendRowState extends State<_FriendRow> {
 void _openFriendQuickLook(BuildContext context, CircleProfile profile) =>
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: context.circle.scrim,

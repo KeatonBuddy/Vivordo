@@ -20,6 +20,7 @@ import 'sleep_detail_screen.dart';
 import 'steps_detail_screen.dart';
 import 'physical_health_screen.dart';
 import '../src/utils/physical_health_view.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -222,8 +223,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!mounted) return;
       setState(() => _lastManualHealthRefresh = DateTime.now());
       if (showFeedback) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Apple Health metrics refreshed.')),
+        showToast(
+          context,
+          'Apple Health metrics refreshed.',
+          kind: ToastKind.success,
         );
       }
     } catch (e) {
@@ -231,8 +234,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'DashboardScreen: failed to refresh metrics from Apple Health: $e',
       );
       if (showFeedback && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Apple Health refresh failed: $e')),
+        showToast(
+          context,
+          "Couldn't refresh from Apple Health. Try again.",
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -1291,6 +1296,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final draftOrder = [..._keyMetricOrder];
     final result = await showModalBottomSheet<_KeyMetricPreferences>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
@@ -1448,9 +1454,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       await _saveKeyMetrics(result.enabled, result.order);
     } catch (e) {
+      debugPrint('Could not save metric preferences: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save metric preferences.')),
+      showToast(
+        context,
+        "Couldn't save your metric choices. Try again.",
+        kind: ToastKind.error,
       );
     }
   }

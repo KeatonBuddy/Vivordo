@@ -15,6 +15,7 @@ Future<Object?> showPlanSlotSheet(
   DateTime? end,
 }) => showModalBottomSheet<Object>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   useSafeArea: true,
   backgroundColor: Colors.transparent,

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 
 /// Deletes a remembered fact and the summary of the chat it came from, as
 /// when Vivordo AI forgets one itself, or the fact would come back through
@@ -46,25 +47,13 @@ class AssistantMemoryScreen extends StatelessWidget {
   ) => _commit(context, forgetFactBatch(FirebaseFirestore.instance, fact));
 
   Future<void> _forgetEverything(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Forget everything?'),
-        content: const Text(
+    final confirmed = await confirmAction(
+      context,
+      title: 'Forget everything?',
+      message:
           'Vivordo AI forgets every fact and chat summary below. Your chat '
           'messages and health data stay.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Forget'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Forget',
     );
     if (confirmed != true || !context.mounted) return;
     final [facts, chats] = await Future.wait([
@@ -82,10 +71,13 @@ class AssistantMemoryScreen extends StatelessWidget {
   Future<void> _commit(BuildContext context, WriteBatch batch) async {
     try {
       await batch.commit();
-    } catch (_) {
+    } catch (error) {
+      debugPrint('Forget memory failed: $error');
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Couldn’t remove that. Try again.')),
+        showToast(
+          context,
+          'Couldn’t remove that. Try again.',
+          kind: ToastKind.error,
         );
       }
     }

@@ -802,9 +802,11 @@ Color _achievementTierColor(String tier) => switch (tier) {
   _ => const Color(0xFFC86A31),
 };
 
-void _showSnack(BuildContext context, String message) => ScaffoldMessenger.of(
-  context,
-).showSnackBar(SnackBar(content: Text(message)));
+void _showSnack(
+  BuildContext context,
+  String message, {
+  ToastKind kind = ToastKind.info,
+}) => showToast(context, message, kind: kind);
 
 void _openProfile(BuildContext context, CircleProfile profile) {
   Navigator.of(context).push(

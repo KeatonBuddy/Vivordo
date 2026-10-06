@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -18,6 +19,8 @@ import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/sleep_nights.dart';
 import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/ios_pull_down_menu.dart';
 import 'package:vivordo_health/widgets/sleep_schedule_editor.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
@@ -105,14 +108,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     try {
       await WindDownReminders.setEnabled(on);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              on
-                  ? 'Wind-down reminder on. It follows your forecast each night.'
-                  : 'Wind-down reminder off.',
-            ),
-          ),
+        showToast(
+          context,
+          on
+              ? 'Wind-down reminder on. It follows your forecast each night.'
+              : 'Wind-down reminder off.',
         );
       }
     } catch (_) {
@@ -166,18 +166,18 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
       final updated = hasRecordedSleep(refreshed.data());
       if (!mounted) return;
       setState(() => _lastRefreshAt = DateTime.now());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(updated ? 'Sleep updated.' : 'No sleep data available'),
-        ),
+      showToast(
+        context,
+        updated ? 'Sleep updated.' : 'No sleep data available.',
+        kind: updated ? ToastKind.success : ToastKind.info,
       );
     } catch (error) {
       debugPrint('[SleepDetailScreen] Sleep refresh failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Sleep could not be refreshed. Try again.'),
-          ),
+        showToast(
+          context,
+          "Couldn't refresh sleep. Try again.",
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -254,41 +254,22 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         actions: [
-          PopupMenuButton<void>(
+          IosPullDownMenu<bool>(
             tooltip: 'Sleep options',
-            icon: const Icon(Icons.more_horiz_rounded, color: _purple),
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                onTap: _editSleepSchedule,
-                child: const Row(
-                  children: [
-                    Icon(Icons.bedtime_outlined, size: 20),
-                    SizedBox(width: 12),
-                    Text('Usual sleep schedule'),
-                  ],
-                ),
+            // true = wind-down reminder, false = usual sleep schedule.
+            onSelected: (reminder) =>
+                reminder ? _toggleWindDownReminder() : _editSleepSchedule(),
+            actions: [
+              const IosMenuAction(
+                value: false,
+                label: 'Usual sleep schedule',
+                icon: CupertinoIcons.bed_double,
               ),
-              PopupMenuItem(
-                onTap: _toggleWindDownReminder,
-                child: Row(
-                  children: [
-                    Icon(
-                      _windDownReminder
-                          ? Icons.notifications_active_outlined
-                          : Icons.notifications_none_rounded,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(child: Text('Wind-down reminder')),
-                    IgnorePointer(
-                      child: Switch.adaptive(
-                        activeTrackColor: VivordoTheme.brand,
-                        value: _windDownReminder,
-                        onChanged: (_) {},
-                      ),
-                    ),
-                  ],
-                ),
+              IosMenuAction(
+                value: true,
+                label: 'Wind-down reminder',
+                icon: CupertinoIcons.bell,
+                checked: _windDownReminder,
               ),
             ],
           ),
@@ -534,20 +515,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   }
 
   void _showInsightInfo(bool hasWhoopSleepData) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('About Vivordo Insight'),
-        content: Text(
-          sleepInsightInfoText(hasWhoopSleepData: hasWhoopSleepData),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
+    showInfoSheet(
+      context,
+      icon: CupertinoIcons.sparkles,
+      title: 'About Vivordo Insight',
+      summary: sleepInsightInfoText(hasWhoopSleepData: hasWhoopSleepData),
     );
   }
 

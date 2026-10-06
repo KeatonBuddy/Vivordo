@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../src/services/daily_priority_service.dart';
 import '../theme/vivordo_theme.dart';
+import '../widgets/apple_ui.dart';
+import '../widgets/ios_pull_down_menu.dart';
 
 const _accent = Color(0xFF8976FF);
 
@@ -62,7 +65,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
         },
       );
       DailyPriorityService.refreshReminders().catchError((Object error) {
-        if (mounted) _message('Could not refresh recurring priorities.');
+        if (mounted) _message("Couldn't refresh repeating priorities.");
       });
     }
   }
@@ -91,8 +94,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     super.dispose();
   }
 
-  void _message(String text) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  void _message(String text) => showToast(context, text, kind: ToastKind.error);
   Future<void> _toggle(DailyPriority p) async {
     final key = p.reference.path;
     if (_busy.contains(key)) return;
@@ -100,7 +102,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     try {
       await DailyPriorityService.setCompleted(p, !p.completed);
     } catch (_) {
-      if (mounted) _message('Could not update priority. Please try again.');
+      if (mounted) _message("Couldn't update the priority. Try again.");
     } finally {
       if (mounted) setState(() => _busy.remove(key));
     }
@@ -222,20 +224,21 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
                     _showCompleted ? 'Including completed' : 'Incomplete only',
                     style: TextStyle(color: colors.textSecondary, fontSize: 12),
                   ),
-                  PopupMenuButton<bool>(
+                  IosPullDownMenu<bool>(
                     tooltip: 'Filter priorities',
-                    icon: const Icon(Icons.tune, color: _accent),
-                    initialValue: _showCompleted,
+                    icon: CupertinoIcons.line_horizontal_3_decrease_circle,
                     onSelected: (value) =>
                         setState(() => _showCompleted = value),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(
-                        value: true,
-                        child: Text('Include completed'),
-                      ),
-                      PopupMenuItem(
+                    actions: [
+                      IosMenuAction(
                         value: false,
-                        child: Text('Incomplete only'),
+                        label: 'Incomplete only',
+                        checked: !_showCompleted,
+                      ),
+                      IosMenuAction(
+                        value: true,
+                        label: 'Include completed',
+                        checked: _showCompleted,
                       ),
                     ],
                   ),

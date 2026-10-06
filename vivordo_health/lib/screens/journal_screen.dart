@@ -12,6 +12,7 @@ import '../src/services/journal_lock_service.dart';
 import '../src/services/metrics_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/journal_summary.dart';
+import '../widgets/apple_ui.dart';
 import '../widgets/journal_entry_sheet.dart';
 
 const _purple = Color(0xFF5B4CF4);
@@ -583,9 +584,7 @@ class _JournalScreenState extends State<JournalScreen> {
       onSave: (draft) => _create(entries, date, draft),
     );
     if (saved == true && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Entry saved.')));
+      showToast(context, 'Entry saved.', kind: ToastKind.success);
     }
   }
 
@@ -829,18 +828,19 @@ class _JournalScreenState extends State<JournalScreen> {
         _journalLocked = enabling;
         _authenticating = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            enabling ? 'Journal Lock enabled.' : 'Journal Lock disabled.',
-          ),
-        ),
+      showToast(
+        context,
+        enabling ? 'Journal Lock on.' : 'Journal Lock off.',
+        kind: ToastKind.success,
       );
     } catch (error) {
       if (!mounted) return;
       setState(() => _authenticating = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not update Journal Lock: $error')),
+      debugPrint('Update Journal Lock failed: $error');
+      showToast(
+        context,
+        "Couldn't update Journal Lock. Try again.",
+        kind: ToastKind.error,
       );
     }
   }
@@ -1215,7 +1215,7 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
                   ],
                 ),
               ),
-              Switch(
+              AppSwitch(
                 value: item.shared,
                 onChanged: _sharing ? null : (shared) => _share(item, shared),
               ),
@@ -1262,9 +1262,7 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
       onSave: (draft) => widget.onEdit(item, draft),
     );
     if (saved == true && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Entry updated.')));
+      showToast(context, 'Entry updated.', kind: ToastKind.success);
     }
   }
 
@@ -1273,9 +1271,12 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
     try {
       await widget.onShare(item, shared);
     } catch (error) {
+      debugPrint('Change journal sharing failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Couldn’t change sharing. Try again.')),
+        showToast(
+          context,
+          'Couldn’t change sharing. Try again.',
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -1298,8 +1299,11 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
         _deleting = false;
         _confirmingDelete = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete journal entry: $error')),
+      debugPrint('Delete journal entry failed: $error');
+      showToast(
+        context,
+        "Couldn't delete the entry. Try again.",
+        kind: ToastKind.error,
       );
     }
   }

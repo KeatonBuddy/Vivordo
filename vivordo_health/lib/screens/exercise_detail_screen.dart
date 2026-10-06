@@ -12,6 +12,8 @@ import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
+import '../widgets/apple_ui.dart';
+
 class ExerciseDetailScreen extends StatefulWidget {
   const ExerciseDetailScreen({super.key});
 
@@ -446,11 +448,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   );
 
   Future<void> _showExercisePicker(List<String> names, String? selected) async {
-    final selection = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
+    final selection = await showAppleSheet<String>(
+      context,
       builder: (context) =>
           _ExercisePickerSheet(exercises: names, selectedExercise: selected),
     );
@@ -649,8 +648,20 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Grabber, matching the app's other sheets.
+          Center(
+            child: Container(
+              width: 36,
+              height: 5,
+              margin: const EdgeInsets.only(top: 6, bottom: 4),
+              decoration: BoxDecoration(
+                color: colors.textSecondary.withValues(alpha: .35),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
             child: Text(
               'Select exercise',
               style: Theme.of(

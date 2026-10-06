@@ -18,6 +18,7 @@ import '../src/services/workout_ai_advice.dart';
 import '../src/utils/day_effort.dart';
 import '../src/utils/panda_priority_context.dart';
 import '../src/utils/workout_opening.dart';
+import '../widgets/apple_ui.dart';
 import '../widgets/assistant_blocks.dart';
 import '../widgets/contextual_insight_bar.dart';
 import '../widgets/crisis_support_card.dart';
@@ -1041,33 +1042,37 @@ class _AssistantScreenState extends State<AssistantScreen> {
     );
   }
 
-  void _showPrivacy() => showDialog<void>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Privacy & Safety'),
-      content: const SingleChildScrollView(
-        child: Text(
-          'Vivordo AI uses Anthropic’s Claude through Vivordo’s servers. Your '
-          'messages and the health, fitness, calendar, priority and '
-          'past-conversation information relevant to them are sent to '
-          'Anthropic for processing, and your conversation is saved to your '
-          'account so it’s here next time.\n\n'
-          'Vivordo AI provides wellness information, not medical advice. '
-          'Responses can be inaccurate. Consult a qualified healthcare '
-          'professional before making medical decisions.',
-          style: TextStyle(height: 1.4),
-        ),
+  void _showPrivacy() => showInfoSheet(
+    context,
+    icon: Icons.shield_outlined,
+    title: 'Privacy & Safety',
+    items: const [
+      AppleInfoItem(
+        'Where your messages go',
+        'Vivordo AI uses Anthropic’s Claude through Vivordo’s servers. Your '
+            'messages and the health, fitness, calendar, priority and '
+            'past-conversation information relevant to them are sent to '
+            'Anthropic for processing.',
+        icon: Icons.cloud_outlined,
       ),
-      actions: [
-        TextButton(
-          onPressed: () => openVivordoLink(ctx, Uri.parse(vivordoPrivacyUrl)),
-          child: const Text('Privacy Policy'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Got it'),
-        ),
-      ],
+      AppleInfoItem(
+        'Saved to your account',
+        'Your conversation is saved to your account so it’s here next time.',
+        icon: Icons.history_rounded,
+      ),
+      AppleInfoItem(
+        'Not medical advice',
+        'Vivordo AI provides wellness information, not medical advice. '
+            'Responses can be inaccurate. Consult a qualified healthcare '
+            'professional before making medical decisions.',
+        icon: Icons.health_and_safety_outlined,
+      ),
+    ],
+    body: Builder(
+      builder: (ctx) => TextButton(
+        onPressed: () => openVivordoLink(ctx, Uri.parse(vivordoPrivacyUrl)),
+        child: const Text('Privacy Policy'),
+      ),
     ),
   );
 }

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import '../widgets/apple_ui.dart';
 import '../widgets/ios_pull_down_menu.dart';
 import '../widgets/workout_ai_insight.dart';
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
@@ -160,43 +161,34 @@ class WorkoutSummaryScreen extends StatelessWidget {
   }
 
   Future<void> _deleteWorkout(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete workout?'),
-        content: const Text(
+    final confirmed = await confirmAction(
+      context,
+      title: 'Delete workout?',
+      message:
           'This workout and all of its exercise data will be permanently deleted.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Keep Workout'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      cancelLabel: 'Keep workout',
+      confirmLabel: 'Delete',
     );
-    if (confirmed != true || !context.mounted) return;
+    if (!confirmed || !context.mounted) return;
 
     try {
       final synced = await WorkoutService.delete(workout.id);
       if (!context.mounted) return;
       if (!synced) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Workout deleted. It'll sync when you're online."),
-          ),
+        showToast(
+          context,
+          "Workout deleted. It'll sync when you're online.",
+          kind: ToastKind.offline,
         );
       }
       Navigator.pop(context, true);
     } catch (error) {
+      debugPrint('Could not delete workout: $error');
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete workout: $error')),
+      showToast(
+        context,
+        "Couldn't delete the workout. Try again.",
+        kind: ToastKind.error,
       );
     }
   }

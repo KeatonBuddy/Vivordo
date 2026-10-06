@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 
 /// Bed and wake times, with an optional weekend pair. Used by onboarding and
@@ -58,8 +59,7 @@ class SleepScheduleEditor extends StatelessWidget {
                     style: TextStyle(fontSize: 15),
                   ),
                 ),
-                Switch.adaptive(
-                  activeTrackColor: VivordoTheme.brand,
+                AppSwitch(
                   value: s.weekendsDiffer,
                   onChanged: (on) => onChanged(
                     SleepSchedule(
@@ -159,6 +159,7 @@ Future<void> showSleepScheduleSheet(
   SleepSchedule? current,
 ) => showModalBottomSheet<void>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   backgroundColor: context.vivordoColors.page,
   shape: const RoundedRectangleBorder(
@@ -209,15 +210,14 @@ Future<void> showSleepScheduleSheet(
                             if (sheetContext.mounted) {
                               Navigator.pop(sheetContext);
                             }
-                          } catch (_) {
+                          } catch (error) {
+                            debugPrint('Sleep schedule save failed: $error');
                             setState(() => saving = false);
                             if (sheetContext.mounted) {
-                              ScaffoldMessenger.of(sheetContext).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    "Couldn't save your sleep times.",
-                                  ),
-                                ),
+                              showToast(
+                                sheetContext,
+                                "Couldn't save your sleep times. Try again.",
+                                kind: ToastKind.error,
                               );
                             }
                           }

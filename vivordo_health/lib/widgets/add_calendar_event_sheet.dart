@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
@@ -5,6 +6,9 @@ import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/utils/event_repeat.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
+
+import 'apple_ui.dart';
+import 'ios_pull_down_menu.dart';
 
 const _purple = Color(0xFF6254F4);
 
@@ -105,35 +109,24 @@ Future<EventScope?> askEventScope(
   required String message,
   required List<EventScope> scopes,
   bool destructive = false,
-}) => showDialog<EventScope>(
-  context: context,
-  builder: (dialogContext) => AlertDialog(
-    title: Text(title),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(message),
-        const SizedBox(height: 12),
-        for (final scope in scopes)
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, scope),
-            style: TextButton.styleFrom(
-              alignment: Alignment.centerLeft,
-              foregroundColor: destructive ? Colors.red : null,
-            ),
-            child: Text(_scopeLabels[scope]!),
-          ),
-      ],
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(dialogContext),
-        child: const Text('Cancel'),
+}) {
+  const cancel = AppleAlertAction<EventScope?>('Cancel', null, bold: true);
+  final choices = [
+    for (final scope in scopes)
+      AppleAlertAction<EventScope?>(
+        _scopeLabels[scope]!,
+        scope,
+        destructive: destructive,
       ),
-    ],
-  ),
-);
+  ];
+  return showAppleAlert<EventScope?>(
+    context,
+    title: title,
+    message: message,
+    // Side by side (one choice) iOS puts Cancel first; stacked, last.
+    actions: choices.length == 1 ? [cancel, ...choices] : [...choices, cancel],
+  );
+}
 
 /// Confirms deleting [title]. A [repeating] occurrence asks which part of
 /// the series to delete. Null means cancel.
@@ -151,25 +144,13 @@ Future<EventScope?> confirmEventDelete(
       destructive: true,
     );
   }
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const Text('Delete event?'),
-      content: Text('This will delete “$title” from Google Calendar.'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: Colors.red),
-          onPressed: () => Navigator.pop(dialogContext, true),
-          child: const Text('Delete'),
-        ),
-      ],
-    ),
+  final confirmed = await confirmAction(
+    context,
+    title: 'Delete event?',
+    message: 'This deletes “$title” from Google Calendar.',
+    confirmLabel: 'Delete',
   );
-  return confirmed == true ? EventScope.thisEvent : null;
+  return confirmed ? EventScope.thisEvent : null;
 }
 
 Future<CalendarEventDraft?> showAddCalendarEventSheet(
@@ -178,6 +159,7 @@ Future<CalendarEventDraft?> showAddCalendarEventSheet(
   DateTime? initialEnd,
 }) => showModalBottomSheet<CalendarEventDraft>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   useSafeArea: true,
   backgroundColor: Colors.transparent,
@@ -221,6 +203,7 @@ Future<CalendarEventEditResult?> showEditCalendarEventSheet(
 
   return showModalBottomSheet<CalendarEventEditResult>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
@@ -371,61 +354,76 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
       setState(() => _loadingCalendars = true);
       await _loadCalendars();
       if (!mounted || _calendars.isNotEmpty) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not load writable calendars.')),
+      showToast(
+        context,
+        "Couldn't load your calendars. Try again.",
+        kind: ToastKind.error,
       );
       return;
     }
 
-    final selected = await showModalBottomSheet<WritableCalendar>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(sheetContext).height * .62,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
-                child: Text(
-                  'Choose calendar',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+    final selected = await showAppleSheet<WritableCalendar>(
+      context,
+      builder: (sheetContext) {
+        final colors = sheetContext.vivordoColors;
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * .62,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _Grabber(),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                  child: Text(
+                    'Choose calendar',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: colors.textPrimary,
+                    ),
+                  ),
                 ),
-              ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _calendars.length,
-                  itemBuilder: (context, index) {
-                    final calendar = _calendars[index];
-                    final isSelected = calendar.id == _selectedCalendar.id;
-                    return ListTile(
-                      leading: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: _calendarColor(calendar.colorHex),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const SizedBox(width: 14, height: 14),
-                      ),
-                      title: Text(calendar.name),
-                      subtitle: calendar.isPrimary
-                          ? const Text('Primary calendar')
-                          : null,
-                      trailing: isSelected
-                          ? const Icon(Icons.check_rounded, color: _purple)
-                          : null,
-                      onTap: () => Navigator.pop(sheetContext, calendar),
-                    );
-                  },
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: AppleFormGroup(
+                      children: [
+                        for (final calendar in _calendars)
+                          AppleFormRow(
+                            label: calendar.name,
+                            value: calendar.isPrimary ? 'Primary' : null,
+                            leading: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: _calendarColor(calendar.colorHex),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const SizedBox(width: 12, height: 12),
+                            ),
+                            trailing: SizedBox(
+                              width: 20,
+                              child: calendar.id == _selectedCalendar.id
+                                  ? const Icon(
+                                      CupertinoIcons.checkmark_alt,
+                                      size: 20,
+                                      color: _purple,
+                                    )
+                                  : null,
+                            ),
+                            onTap: () => Navigator.pop(sheetContext, calendar),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
     if (selected != null && mounted) {
       setState(() => _selectedCalendar = selected);
@@ -433,7 +431,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   }
 
   Future<void> _pickDate() async {
-    final value = await showDatePicker(
+    final value = await showVivordoDatePicker(
       context: context,
       initialDate: _date,
       firstDate: DateTime(2000),
@@ -684,10 +682,8 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                                   ),
                                 ),
                               ),
-                              Switch(
+                              AppSwitch(
                                 value: _isAllDay,
-                                activeThumbColor: Colors.white,
-                                activeTrackColor: _purple,
                                 onChanged: (value) =>
                                     setState(() => _isAllDay = value),
                               ),
@@ -701,29 +697,23 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                     const SizedBox(height: 10),
                     _SheetCard(
                       children: [
-                        PopupMenuButton<_RepeatOption>(
+                        IosPullDownMenu<_RepeatOption>(
                           tooltip: 'Repeat',
-                          position: PopupMenuPosition.under,
-                          color: colors.cardMuted,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
-                          ),
                           onSelected: _chooseRepeat,
-                          itemBuilder: (_) => [
-                            for (final (option, label) in _repeatOptions) ...[
-                              if (option == _RepeatOption.custom)
-                                const PopupMenuDivider(),
-                              CheckedPopupMenuItem(
+                          actions: [
+                            for (final (option, label) in _repeatOptions)
+                              IosMenuAction(
                                 value: option,
+                                label: label,
                                 checked: option == _optionFor(_repeat),
-                                child: Text(label),
                               ),
-                            ],
                           ],
                           // No onTap: the tap belongs to the menu button.
                           child: _PickerRow(
                             icon: Icons.repeat_rounded,
                             label: 'Repeat',
+                            trailingIcon:
+                                CupertinoIcons.chevron_up_chevron_down,
                             value: switch (_optionFor(_repeat)) {
                               _RepeatOption.custom => 'Custom',
                               _RepeatOption.selectedDays => 'Selected days',
@@ -884,8 +874,10 @@ class _PickerRow extends StatelessWidget {
     this.onTap,
     this.enabled = true,
     this.calendarColor,
+    this.trailingIcon = Icons.chevron_right_rounded,
   });
   final IconData icon;
+  final IconData trailingIcon;
   final String label;
   final String value;
   final VoidCallback? onTap;
@@ -945,9 +937,9 @@ class _PickerRow extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Icon(
-                Icons.chevron_right_rounded,
+                trailingIcon,
                 color: colors.textSecondary,
-                size: 22,
+                size: trailingIcon == Icons.chevron_right_rounded ? 22 : 17,
               ),
             ],
           ),
@@ -1076,13 +1068,25 @@ Future<EventRepeat?> _showCustomRepeatSheet(
   BuildContext context, {
   required EventRepeat initial,
   required DateTime start,
-}) => showModalBottomSheet<EventRepeat>(
-  context: context,
-  isScrollControlled: true,
-  useSafeArea: true,
-  showDragHandle: true,
+}) => showAppleSheet<EventRepeat>(
+  context,
   builder: (_) => _CustomRepeatSheet(initial: initial, start: start),
 );
+
+class _Grabber extends StatelessWidget {
+  const _Grabber();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 36,
+    height: 5,
+    margin: const EdgeInsets.only(top: 6, bottom: 4),
+    decoration: BoxDecoration(
+      color: context.vivordoColors.textSecondary.withValues(alpha: .35),
+      borderRadius: BorderRadius.circular(3),
+    ),
+  );
+}
 
 class _CustomRepeatSheet extends StatefulWidget {
   const _CustomRepeatSheet({required this.initial, required this.start});
@@ -1109,11 +1113,12 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
   });
 
   Future<void> _pickUntil() async {
-    final value = await showDatePicker(
+    final value = await showVivordoDatePicker(
       context: context,
       initialDate: _repeat.until ?? widget.start.add(const Duration(days: 30)),
       firstDate: widget.start,
       lastDate: DateTime(2100),
+      title: 'Ends on',
     );
     if (value != null) setState(() => _repeat = _repeat.copyWith(until: value));
   }
@@ -1122,130 +1127,102 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final interval = _repeat.interval;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 0, 22, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Custom repeat',
-            style: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
+    return AppleFormSheet(
+      title: 'Custom repeat',
+      onDone: () => Navigator.pop(context, _repeat),
+      children: [
+        const SizedBox(height: 8),
+        const _SheetLabel('EVERY'),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            IconButton.filledTonal(
+              tooltip: 'Fewer',
+              onPressed: interval > 1
+                  ? () => setState(
+                      () => _repeat = _repeat.copyWith(interval: interval - 1),
+                    )
+                  : null,
+              icon: const Icon(Icons.remove_rounded),
             ),
-          ),
-          const SizedBox(height: 20),
-          const _SheetLabel('EVERY'),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              IconButton.filledTonal(
-                tooltip: 'Fewer',
-                onPressed: interval > 1
-                    ? () => setState(
-                        () =>
-                            _repeat = _repeat.copyWith(interval: interval - 1),
-                      )
-                    : null,
-                icon: const Icon(Icons.remove_rounded),
-              ),
-              SizedBox(
-                width: 44,
-                child: Text(
-                  '$interval',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
+            SizedBox(
+              width: 44,
+              child: Text(
+                '$interval',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-              IconButton.filledTonal(
-                tooltip: 'More',
-                onPressed: interval < 99
-                    ? () => setState(
-                        () =>
-                            _repeat = _repeat.copyWith(interval: interval + 1),
-                      )
-                    : null,
-                icon: const Icon(Icons.add_rounded),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _Segmented(
-            value: _repeat.unit!,
-            choices: [
-              for (final unit in RepeatUnit.values)
-                (
-                  unit,
-                  '${unit.name[0].toUpperCase()}${unit.name.substring(1)}${interval == 1 ? '' : 's'}',
-                ),
-            ],
-            onChanged: _setUnit,
-          ),
-          if (_repeat.unit == RepeatUnit.week) ...[
-            const SizedBox(height: 20),
-            const _SheetLabel('ON'),
-            const SizedBox(height: 10),
-            _WeekdaySelector(
-              selected: _repeat.weekdays,
-              onChanged: (days) =>
-                  setState(() => _repeat = _repeat.copyWith(weekdays: days)),
+            ),
+            IconButton.filledTonal(
+              tooltip: 'More',
+              onPressed: interval < 99
+                  ? () => setState(
+                      () => _repeat = _repeat.copyWith(interval: interval + 1),
+                    )
+                  : null,
+              icon: const Icon(Icons.add_rounded),
             ),
           ],
-          const SizedBox(height: 20),
-          const _SheetLabel('ENDS'),
-          const SizedBox(height: 10),
-          _Segmented(
-            value: _repeat.until != null,
-            choices: const [(false, 'Never'), (true, 'On date')],
-            onChanged: (onDate) {
-              if (onDate) {
-                _pickUntil();
-              } else {
-                setState(() => _repeat = _repeat.copyWith(clearUntil: true));
-              }
-            },
-          ),
-          if (_repeat.until != null) ...[
-            const SizedBox(height: 10),
-            _SheetCard(
-              children: [
-                _PickerRow(
-                  icon: Icons.event_busy_rounded,
-                  label: 'End date',
-                  value: DateFormat('MMM d, y').format(_repeat.until!),
-                  onTap: _pickUntil,
-                ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 18),
-          Text(
-            _repeat.describe(),
-            style: TextStyle(color: colors.textSecondary, fontSize: 14),
-          ),
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: FilledButton(
-              onPressed: () => Navigator.pop(context, _repeat),
-              style: FilledButton.styleFrom(
-                backgroundColor: _purple,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+        ),
+        const SizedBox(height: 12),
+        _Segmented(
+          value: _repeat.unit!,
+          choices: [
+            for (final unit in RepeatUnit.values)
+              (
+                unit,
+                '${unit.name[0].toUpperCase()}${unit.name.substring(1)}${interval == 1 ? '' : 's'}',
               ),
-              child: const Text('Done', style: TextStyle(fontSize: 17)),
-            ),
+          ],
+          onChanged: _setUnit,
+        ),
+        if (_repeat.unit == RepeatUnit.week) ...[
+          const SizedBox(height: 20),
+          const _SheetLabel('ON'),
+          const SizedBox(height: 10),
+          _WeekdaySelector(
+            selected: _repeat.weekdays,
+            onChanged: (days) =>
+                setState(() => _repeat = _repeat.copyWith(weekdays: days)),
           ),
         ],
-      ),
+        const SizedBox(height: 20),
+        const _SheetLabel('ENDS'),
+        const SizedBox(height: 10),
+        _Segmented(
+          value: _repeat.until != null,
+          choices: const [(false, 'Never'), (true, 'On date')],
+          onChanged: (onDate) {
+            if (onDate) {
+              _pickUntil();
+            } else {
+              setState(() => _repeat = _repeat.copyWith(clearUntil: true));
+            }
+          },
+        ),
+        if (_repeat.until != null) ...[
+          const SizedBox(height: 10),
+          _SheetCard(
+            children: [
+              _PickerRow(
+                icon: Icons.event_busy_rounded,
+                label: 'End date',
+                value: DateFormat('MMM d, y').format(_repeat.until!),
+                onTap: _pickUntil,
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 18),
+        Text(
+          _repeat.describe(),
+          style: TextStyle(color: colors.textSecondary, fontSize: 14),
+        ),
+      ],
     );
   }
 }

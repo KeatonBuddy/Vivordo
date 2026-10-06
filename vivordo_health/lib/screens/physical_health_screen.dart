@@ -5,6 +5,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/utils/day_key.dart';
 import '../src/utils/physical_health_view.dart';
+import '../widgets/apple_ui.dart';
 import '../widgets/visible_stream_builder.dart';
 
 const _green = Color(0xFF1D9E75);
@@ -63,14 +64,7 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
     final colors = context.vivordoColors;
     return Scaffold(
       backgroundColor: colors.page,
-      appBar: AppBar(
-        backgroundColor: colors.page,
-        surfaceTintColor: Colors.transparent,
-        title: const Text(
-          'Physical Health',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-      ),
+      appBar: AppBar(title: const Text('Physical Health')),
       body: VisibleStreamBuilder<PhysicalHealthView?>(
         stream: _stream,
         builder: (context, snapshot) {
@@ -127,14 +121,10 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
                 ),
               ),
               const SizedBox(height: 14),
-              SegmentedButton<String>(
-                segments: [
-                  for (final r in _ranges.keys)
-                    ButtonSegment(value: r, label: Text(r)),
-                ],
-                selected: {_range},
-                showSelectedIcon: false,
-                onSelectionChanged: (s) => setState(() => _range = s.first),
+              AppSegmented<String>(
+                segments: {for (final r in _ranges.keys) r: r},
+                value: _range,
+                onChanged: (r) => setState(() => _range = r),
               ),
               const SizedBox(height: 14),
               _Card(

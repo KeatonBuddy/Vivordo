@@ -4,12 +4,14 @@ import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 
 class StressDetailScreen extends StatefulWidget {
   const StressDetailScreen({super.key});
@@ -791,99 +793,39 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
   }
 
   void _showCoverageExplanation(double coverage) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'What coverage means',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.pie_chart_outline_rounded,
-                    color: _green,
-                    size: 28,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      '${coverage.round()}% of relevant signals available',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'Coverage indicates how much of the relevant signal set—such as mood, sleep, heart and recovery readings, activity, and breathing data—was available when Vivordo calculated today’s score.',
-                style: TextStyle(
-                  color: context.vivordoColors.textSecondary,
-                  height: 1.45,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'It measures data completeness, not accuracy. A lower percentage usually means some signals have not been recorded or synced yet. Your score can still be calculated from the information that is available, and coverage may improve as more data arrives throughout the day.',
-                style: TextStyle(
-                  color: context.vivordoColors.textSecondary,
-                  height: 1.45,
-                ),
-              ),
-            ],
-          ),
+    showInfoSheet(
+      context,
+      icon: CupertinoIcons.chart_pie,
+      title: 'What coverage means',
+      summary: '${coverage.round()}% of relevant signals available',
+      items: const [
+        AppleInfoItem(
+          'What it counts',
+          'How much of the relevant signal set (mood, sleep, heart and recovery readings, activity, and breathing data) was available when Vivordo calculated today’s score.',
         ),
-      ),
+        AppleInfoItem(
+          'Completeness, not accuracy',
+          'A lower percentage usually means some signals haven’t been recorded or synced yet. Your score can still be calculated from what’s available, and coverage may improve as more data arrives through the day.',
+        ),
+      ],
     );
   }
 
   void _showHowItWorks() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'How your stress score works',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Vivordo combines available signals such as mood, sleep, heart and recovery readings, activity, and breathing data. It compares those signals with your own recent baseline—not another person’s.',
-                style: TextStyle(
-                  color: context.vivordoColors.textSecondary,
-                  height: 1.45,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Lower scores indicate a calmer state. Coverage explains how much relevant data was available. The score is a wellness insight and is not a medical diagnosis.',
-                style: TextStyle(
-                  color: context.vivordoColors.textSecondary,
-                  height: 1.45,
-                ),
-              ),
-            ],
-          ),
+    showInfoSheet(
+      context,
+      icon: CupertinoIcons.waveform_path_ecg,
+      title: 'How your stress score works',
+      items: const [
+        AppleInfoItem(
+          'Your own baseline',
+          'Vivordo combines available signals such as mood, sleep, heart and recovery readings, activity, and breathing data. It compares them with your own recent baseline, not another person’s.',
         ),
-      ),
+        AppleInfoItem(
+          'Reading the score',
+          'Lower scores mean a calmer state. Coverage explains how much relevant data was available. The score is a wellness insight, not a medical diagnosis.',
+        ),
+      ],
     );
   }
 }

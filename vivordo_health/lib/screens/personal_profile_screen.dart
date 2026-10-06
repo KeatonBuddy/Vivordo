@@ -8,7 +8,9 @@ import 'package:intl/intl.dart';
 
 import '../src/services/personal_profile_service.dart';
 import '../src/utils/smooth_chart_path.dart';
+import '../widgets/apple_ui.dart';
 import '../widgets/birth_year_picker.dart';
+import '../widgets/vivordo_time_picker.dart';
 
 const _purple = Color(0xFF6250E8);
 const _muted = Color(0xFF85859B);
@@ -307,6 +309,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
   /// Height, weight, age and sex: what Physical Health compares against.
   Future<void> _openProfile(BuildContext context) => showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     backgroundColor: context.vivordoColors.page,
     shape: const RoundedRectangleBorder(
@@ -353,6 +356,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
     final result =
         await showModalBottomSheet<(double, double, double?, DateTime)>(
           context: context,
+          useRootNavigator: true,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
           builder: (_) =>
@@ -367,9 +371,12 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
         recordedAt: result.$4,
       );
     } catch (error) {
+      debugPrint('Could not save measurement: $error');
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save measurement: $error')),
+      showToast(
+        context,
+        "Couldn't save the measurement. Try again.",
+        kind: ToastKind.error,
       );
     }
   }
@@ -554,9 +561,7 @@ class _AboutYou extends StatelessWidget {
       await PersonalProfileService.saveAbout(birthYear: birthYear, sex: sex);
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not save. Try again.')),
-        );
+        showToast(context, "Couldn't save. Try again.", kind: ToastKind.error);
       }
     }
   }
@@ -1222,7 +1227,7 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
 
   Future<void> _pickDate() async {
     FocusScope.of(context).unfocus();
-    final date = await showDatePicker(
+    final date = await showVivordoDatePicker(
       context: context,
       initialDate: selectedDate,
       firstDate: DateTime(1900),

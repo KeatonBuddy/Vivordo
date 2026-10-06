@@ -152,15 +152,23 @@ class _VersionGateState extends State<VersionGate> {
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const MaterialApp(
+          return MaterialApp(
             debugShowCheckedModeBanner: false,
-            home: Scaffold(body: Center(child: CircularProgressIndicator())),
+            theme: VivordoTheme.light,
+            darkTheme: VivordoTheme.dark,
+            themeMode: ThemeMode.system,
+            home: const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            ),
           );
         }
         final result = snapshot.data;
         if (result != null && result.updateRequired) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
+            theme: VivordoTheme.light,
+            darkTheme: VivordoTheme.dark,
+            themeMode: ThemeMode.system,
             home: ForceUpdateScreen(updateUrl: result.updateUrl),
           );
         }

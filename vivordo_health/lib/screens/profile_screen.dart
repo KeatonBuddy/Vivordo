@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -26,6 +25,8 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/day_wrap_up.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/src/services/auth_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -92,18 +93,12 @@ class _SettingsScreenState extends State<SettingsScreen>
           _isEmailVerificationSignOut,
           _isAccountDeletionSignOut,
         )) {
-          (true, _) =>
-            'Email verified! Please log in again with your new email.',
+          (true, _) => 'Email verified. Sign in again with your new email.',
           (_, true) => 'Your Vivordo account has been deleted.',
-          _ => 'You have been signed out.',
+          _ => 'You’ve been signed out.',
         };
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        showToast(context, message, duration: const Duration(seconds: 4));
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const LoginScreen()),
           (route) => false,
@@ -135,15 +130,20 @@ class _SettingsScreenState extends State<SettingsScreen>
       await UserService.submitBugReport(message);
       if (!mounted) return true;
       _bugReportController.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Thanks! Your bug report has been sent.')),
+      showToast(
+        context,
+        'Thanks. Your bug report has been sent.',
+        kind: ToastKind.success,
       );
       return true;
     } catch (e) {
+      debugPrint('Bug report failed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
+        showToast(
           context,
-        ).showSnackBar(SnackBar(content: Text('Could not send report: $e')));
+          'Couldn’t send your report. Try again.',
+          kind: ToastKind.error,
+        );
       }
       return false;
     }
@@ -162,26 +162,28 @@ class _SettingsScreenState extends State<SettingsScreen>
         password: confirmation.password,
       );
     } on FirebaseAuthException catch (error) {
+      debugPrint('Account deletion failed: ${error.code} ${error.message}');
       if (!mounted) return;
       setState(() => _isAccountDeletionSignOut = false);
       final message = switch (error.code) {
         'wrong-password' || 'invalid-credential' =>
-          'That password is incorrect. Your account was not deleted.',
+          'That password isn’t right. Your account wasn’t deleted.',
         'user-mismatch' => 'Sign in with the same account to confirm deletion.',
-        _ => error.message ?? 'Your account could not be deleted.',
+        _ => authErrorMessage(
+          error,
+          fallback: 'Couldn’t delete your account. Try again.',
+        ),
       };
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      showToast(context, message, kind: ToastKind.error);
     } catch (error) {
+      debugPrint('Account deletion failed: $error');
       if (!mounted) return;
       setState(() => _isAccountDeletionSignOut = false);
-      final message = error is FirebaseFunctionsException
-          ? error.message ?? 'Your account could not be deleted.'
-          : error.toString().replaceFirst('Bad state: ', '');
-      ScaffoldMessenger.of(
+      showToast(
         context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+        'Couldn’t delete your account. Try again.',
+        kind: ToastKind.error,
+      );
     } finally {
       if (mounted) setState(() => _isDeletingAccount = false);
     }
@@ -198,68 +200,73 @@ class _SettingsScreenState extends State<SettingsScreen>
         barrierDismissible: false,
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Permanently delete account?'),
-              content: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 240, maxWidth: 320),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
+            final colors = context.vivordoColors;
+            return AppleAlert(
+              title: 'Permanently delete account?',
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Bounded so the alert fits above the keyboard on small
+                  // phones.
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 140),
+                    child: SingleChildScrollView(
+                      child: Text(
                         'This permanently deletes your Vivordo profile, health '
                         'and wellness history, journal entries, workouts, '
                         'insights, Circle content, challenges, connected-provider '
-                        'credentials, and uploaded profile photo. This cannot be '
+                        'credentials, and uploaded profile photo. This can’t be '
                         'undone.',
-                      ),
-                      if (needsPassword) ...[
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: passwordController,
-                          autofocus: true,
-                          obscureText: true,
-                          enableSuggestions: false,
-                          autocorrect: false,
-                          onChanged: (value) => setDialogState(
-                            () => passwordReady = value.isNotEmpty,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Current password',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                      SlideToDelete(
-                        enabled: passwordReady,
-                        onConfirmed: () => Navigator.of(dialogContext).pop(
-                          _AccountDeletionConfirmation(
-                            password: needsPassword
-                                ? passwordController.text
-                                : null,
-                          ),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.35,
+                          color: colors.textSecondary,
                         ),
                       ),
-                      if (!passwordReady) ...[
-                        const SizedBox(height: 8),
-                        const Center(
-                          child: Text(
-                            'Enter your password to enable the slider.',
-                            style: TextStyle(fontSize: 12),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
-                ),
+                  if (needsPassword) ...[
+                    const SizedBox(height: 12),
+                    AppleAlertField(
+                      controller: passwordController,
+                      placeholder: 'Current password',
+                      obscureText: true,
+                      onChanged: (value) => setDialogState(
+                        () => passwordReady = value.isNotEmpty,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  SlideToDelete(
+                    enabled: passwordReady,
+                    onConfirmed: () => Navigator.of(dialogContext).pop(
+                      _AccountDeletionConfirmation(
+                        password: needsPassword
+                            ? passwordController.text
+                            : null,
+                      ),
+                    ),
+                  ),
+                  if (!passwordReady) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Enter your password to turn on the slider.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colors.textSecondary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ],
               ),
-              actions: [
-                TextButton(
+              buttons: [
+                AppleAlertButton(
+                  'Cancel',
+                  bold: true,
                   onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancel'),
                 ),
               ],
             );
@@ -299,20 +306,21 @@ class _SettingsScreenState extends State<SettingsScreen>
       final isConnected = CalendarService.connectionNotifier.value;
       if (mounted) {
         setState(() => _isGoogleCalendarConnected = isConnected);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isConnected
-                  ? 'Google Calendar has been signed in.'
-                  : 'Google Calendar has been logged out.',
-            ),
-          ),
+        showToast(
+          context,
+          isConnected
+              ? 'Google Calendar connected.'
+              : 'Google Calendar disconnected.',
+          kind: ToastKind.success,
         );
       }
     } catch (e) {
+      debugPrint('Google Calendar update failed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update Google Calendar: $e')),
+        showToast(
+          context,
+          'Couldn’t update Google Calendar. Try again.',
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -343,20 +351,21 @@ class _SettingsScreenState extends State<SettingsScreen>
       final isConnected = await OutlookCalendarService.isSignedIn();
       if (mounted) {
         setState(() => _isOutlookCalendarConnected = isConnected);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isConnected
-                  ? 'Outlook Calendar has been signed in.'
-                  : 'Outlook Calendar has been logged out.',
-            ),
-          ),
+        showToast(
+          context,
+          isConnected
+              ? 'Outlook Calendar connected.'
+              : 'Outlook Calendar disconnected.',
+          kind: ToastKind.success,
         );
       }
     } catch (e) {
+      debugPrint('Outlook Calendar update failed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update Outlook Calendar: $e')),
+        showToast(
+          context,
+          'Couldn’t update Outlook Calendar. Try again.',
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -374,26 +383,23 @@ class _SettingsScreenState extends State<SettingsScreen>
         await FitbitService.instance.connect();
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isConnected
-                  ? 'Fitbit has been disconnected.'
-                  : 'Fitbit connected and the last 30 days were synced.',
-            ),
-          ),
+        showToast(
+          context,
+          isConnected
+              ? 'Fitbit disconnected.'
+              : 'Fitbit connected and the last 30 days were synced.',
+          kind: ToastKind.success,
         );
       }
     } on FitbitAccountNotLinkedException catch (error) {
       if (mounted) await _showGoogleHealthSetupDialog(error.setupUrl);
-    } catch (_) {
+    } catch (error) {
+      debugPrint('Fitbit update failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Fitbit could not be updated. Please try again shortly.',
-            ),
-          ),
+        showToast(
+          context,
+          'Couldn’t update Fitbit. Try again shortly.',
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -401,64 +407,18 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
-  Future<bool?> _showWhoopDisconnectDialog() {
-    var deleteImportedData = false;
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Disconnect WHOOP?'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Vivordo will stop syncing new WHOOP data and revoke access '
-                'to your WHOOP account.',
-              ),
-              const SizedBox(height: 12),
-              RadioGroup<bool>(
-                groupValue: deleteImportedData,
-                onChanged: (value) =>
-                    setDialogState(() => deleteImportedData = value!),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const RadioListTile<bool>(
-                      contentPadding: EdgeInsets.zero,
-                      value: false,
-                      title: Text('Disconnect and keep history'),
-                      subtitle: Text(
-                        'Keep measurements already imported into Vivordo.',
-                      ),
-                    ),
-                    const RadioListTile<bool>(
-                      contentPadding: EdgeInsets.zero,
-                      value: true,
-                      title: Text('Disconnect and delete WHOOP data'),
-                      subtitle: Text(
-                        'Delete WHOOP measurements and invalidate affected scores.',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, deleteImportedData),
-              child: const Text('Disconnect'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Future<bool?> _showWhoopDisconnectDialog() => showAppleActionSheet<bool>(
+    context,
+    title: 'Disconnect WHOOP?',
+    message:
+        'Vivordo will stop syncing new WHOOP data and revoke access to your '
+        'WHOOP account. You can keep the measurements already imported, or '
+        'delete them and invalidate affected scores.',
+    actions: const [
+      AppleSheetAction('Disconnect, keep my data', false),
+      AppleSheetAction('Disconnect and delete data', true, destructive: true),
+    ],
+  );
 
   Future<void> _updateWhoopConnection(bool isConnected) async {
     if (_isUpdatingWhoop) return;
@@ -476,29 +436,25 @@ class _SettingsScreenState extends State<SettingsScreen>
         await WhoopService.instance.connect();
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isConnected
-                  ? deleteImportedData!
-                        ? 'WHOOP has been disconnected and imported WHOOP '
-                              'data has been deleted. Affected scores will be '
-                              'recalculated when new data is available.'
-                        : 'WHOOP has been disconnected. Previously imported '
-                              'WHOOP data remains in Vivordo.'
-                  : 'WHOOP connected and the last 30 days were synced.',
-            ),
-          ),
+        showToast(
+          context,
+          isConnected
+              ? deleteImportedData!
+                    ? 'WHOOP disconnected and its data deleted. Affected '
+                          'scores update when new data comes in.'
+                    : 'WHOOP disconnected. Data already imported stays in '
+                          'Vivordo.'
+              : 'WHOOP connected and the last 30 days were synced.',
+          kind: ToastKind.success,
         );
       }
-    } catch (_) {
+    } catch (error) {
+      debugPrint('WHOOP update failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'WHOOP could not be updated. Please try again shortly.',
-            ),
-          ),
+        showToast(
+          context,
+          'Couldn’t update WHOOP. Try again shortly.',
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -512,18 +468,19 @@ class _SettingsScreenState extends State<SettingsScreen>
     try {
       await WhoopService.instance.sync(daysBack: 30);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('WHOOP data is up to date.')),
+        showToast(
+          context,
+          'WHOOP data is up to date.',
+          kind: ToastKind.success,
         );
       }
-    } catch (_) {
+    } catch (error) {
+      debugPrint('WHOOP sync failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'WHOOP could not be synced. Please try again shortly.',
-            ),
-          ),
+        showToast(
+          context,
+          'Couldn’t sync WHOOP. Try again shortly.',
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -537,20 +494,21 @@ class _SettingsScreenState extends State<SettingsScreen>
     try {
       await FitbitService.instance.sync(daysBack: 30);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Fitbit data is up to date.')),
+        showToast(
+          context,
+          'Fitbit data is up to date.',
+          kind: ToastKind.success,
         );
       }
     } on FitbitAccountNotLinkedException catch (error) {
       if (mounted) await _showGoogleHealthSetupDialog(error.setupUrl);
-    } catch (_) {
+    } catch (error) {
+      debugPrint('Fitbit sync failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Fitbit could not be synced. Please try again shortly.',
-            ),
-          ),
+        showToast(
+          context,
+          'Couldn’t sync Fitbit. Try again shortly.',
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -564,56 +522,46 @@ class _SettingsScreenState extends State<SettingsScreen>
     try {
       await AiConsent.revoke(uid);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('AI consent reset. You will be asked again next time.'),
-        ),
+      showToast(
+        context,
+        'AI consent reset. You’ll be asked again next time.',
+        kind: ToastKind.success,
       );
-    } catch (_) {
+    } catch (error) {
+      debugPrint('AI consent reset failed: $error');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not reset consent. Please try again.'),
-        ),
+      showToast(
+        context,
+        'Couldn’t reset consent. Try again.',
+        kind: ToastKind.error,
       );
     }
   }
 
   Future<void> _showGoogleHealthSetupDialog(Uri setupUrl) async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Finish Google Health setup'),
-        content: const Text(
-          'This Google account is not linked to Google Health yet. Complete '
+    final open = await confirmAction(
+      context,
+      title: 'Finish Google Health setup',
+      message:
+          'This Google account isn’t linked to Google Health yet. Complete '
           'the setup using the same account that owns your Fitbit data, then '
           'return to Vivordo and sync again.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Not now'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.of(dialogContext).pop();
-              final opened = await launchUrl(
-                setupUrl,
-                mode: LaunchMode.externalApplication,
-              );
-              if (!opened && mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Could not open Google Health setup.'),
-                  ),
-                );
-              }
-            },
-            child: const Text('Open setup'),
-          ),
-        ],
-      ),
+      cancelLabel: 'Not now',
+      confirmLabel: 'Open setup',
+      destructive: false,
     );
+    if (!open) return;
+    final opened = await launchUrl(
+      setupUrl,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) {
+      showToast(
+        context,
+        'Couldn’t open Google Health setup.',
+        kind: ToastKind.error,
+      );
+    }
   }
 
   Future<void> _setPreference(String field, bool value) async {
@@ -630,8 +578,10 @@ class _SettingsScreenState extends State<SettingsScreen>
       await change();
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Couldn't update that setting.")),
+        showToast(
+          context,
+          'Couldn’t update that setting.',
+          kind: ToastKind.error,
         );
       }
     }
@@ -642,8 +592,10 @@ class _SettingsScreenState extends State<SettingsScreen>
       await WindDownReminders.setEnabled(enabled);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Couldn't update your reminder.")),
+        showToast(
+          context,
+          'Couldn’t update your reminder.',
+          kind: ToastKind.error,
         );
       }
     }
@@ -695,8 +647,10 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not update reminder settings.')),
+        showToast(
+          context,
+          'Couldn’t update reminder settings.',
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -719,28 +673,14 @@ class _SettingsScreenState extends State<SettingsScreen>
   /// When the person's main work or classes usually end. Plans after it
   /// count as after hours in Demand and Effort (docs/scores.md).
   Future<void> _chooseDayWrapUp(int current) async {
-    final choice = await showCupertinoModalPopup<String>(
-      context: context,
-      builder: (sheetContext) => CupertinoActionSheet(
-        title: const Text(
-          'When do you usually wrap up your main work or classes?',
-        ),
-        message: const Text('Plans after this count as your own time.'),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(sheetContext, 'time'),
-            child: const Text('Choose a time'),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(sheetContext, 'varies'),
-            child: const Text('It varies'),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(sheetContext),
-          child: const Text('Cancel'),
-        ),
-      ),
+    final choice = await showAppleActionSheet<String>(
+      context,
+      title: 'When do you usually wrap up your main work or classes?',
+      message: 'Plans after this count as your own time.',
+      actions: const [
+        AppleSheetAction('Choose a time', 'time'),
+        AppleSheetAction('It varies', 'varies'),
+      ],
     );
     if (choice == null || !mounted) return;
 
@@ -765,8 +705,10 @@ class _SettingsScreenState extends State<SettingsScreen>
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not update your end of day.')),
+        showToast(
+          context,
+          'Couldn’t update your end of day.',
+          kind: ToastKind.error,
         );
       }
     }
@@ -803,9 +745,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final existingTime = index == null ? null : reminderTimes[index];
     if (updatedTimes.contains(selectedMinutes) &&
         existingTime != selectedMinutes) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('That reminder time already exists.')),
-      );
+      showToast(context, 'You already have a reminder at that time.');
       return;
     }
     if (isAdding) {
@@ -839,8 +779,10 @@ class _SettingsScreenState extends State<SettingsScreen>
       await NotificationService().setDailyScanReminderTimes(reminderTimes);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not update reminder time.')),
+        showToast(
+          context,
+          'Couldn’t update the reminder time.',
+          kind: ToastKind.error,
         );
       }
     }
@@ -880,100 +822,122 @@ class _SettingsScreenState extends State<SettingsScreen>
     // requires-recent-login error after the fact.
     final TextEditingController currentPasswordController =
         TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Edit $field'),
-          content: field == "Password"
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: currentPasswordController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Current Password',
-                      ),
-                    ),
-                    TextField(
-                      controller: controller,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'New Password',
-                      ),
-                    ),
-                  ],
-                )
-              : TextField(
-                  controller: controller,
-                  decoration: InputDecoration(labelText: field),
-                ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  if (field == "Name") {
-                    await UserService.updateDisplayName(controller.text);
-                  } else if (field == "Email") {
-                    await UserService.updateEmail(controller.text);
-                  } else if (field == "Password") {
-                    if (controller.text.length < 6) {
-                      throw FirebaseAuthException(
-                        code: 'weak-password',
-                        message: 'Password should be at least 6 characters',
-                      );
-                    }
-                    await UserService.reauthenticate(
-                      currentPasswordController.text,
-                    );
-                    await UserService.updatePassword(controller.text);
-                  }
-
-                  if (mounted) {
-                    Navigator.pop(context);
-
-                    final message = field == "Email"
-                        ? 'Verification email sent to ${controller.text}. Tap the link to confirm your new email.'
-                        : '$field updated successfully!';
-
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text(message)));
-                  }
-                } on FirebaseAuthException catch (e) {
-                  String errorMessage = 'Error: ${e.message}';
-                  if (e.code == 'requires-recent-login') {
-                    errorMessage =
-                        'For security, please log out and log back in to change your $field.';
-                  } else if (e.code == 'wrong-password' ||
-                      e.code == 'invalid-credential') {
-                    errorMessage = 'Current password is incorrect.';
-                  } else if (e.code == 'weak-password') {
-                    errorMessage = e.message ?? 'Password is too weak.';
-                  }
-                  if (mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text(errorMessage)));
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: ${e.toString()}')),
-                    );
-                  }
+    final fieldName = field.toLowerCase();
+    var saving = false;
+    String? error;
+    showAppleSheet<void>(
+      context,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          Future<void> save() async {
+            setSheetState(() {
+              saving = true;
+              error = null;
+            });
+            try {
+              if (field == "Name") {
+                await UserService.updateDisplayName(controller.text);
+              } else if (field == "Email") {
+                await UserService.updateEmail(controller.text);
+              } else if (field == "Password") {
+                if (controller.text.length < 6) {
+                  throw FirebaseAuthException(code: 'weak-password');
                 }
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
+                await UserService.reauthenticate(
+                  currentPasswordController.text,
+                );
+                await UserService.updatePassword(controller.text);
+              }
+
+              if (mounted && sheetContext.mounted) {
+                Navigator.pop(sheetContext);
+                showToast(
+                  this.context,
+                  field == "Email"
+                      ? 'Verification email sent to ${controller.text}. Tap '
+                            'the link to confirm your new email.'
+                      : '$field updated.',
+                  kind: ToastKind.success,
+                );
+              }
+            } on FirebaseAuthException catch (e) {
+              debugPrint('Edit $fieldName failed: ${e.code} ${e.message}');
+              final message = switch (e.code) {
+                'requires-recent-login' =>
+                  'For your security, sign out and back in to change your '
+                      '$fieldName.',
+                'wrong-password' ||
+                'invalid-credential' => 'Your current password isn’t right.',
+                _ => authErrorMessage(
+                  e,
+                  fallback: 'Couldn’t update your $fieldName. Try again.',
+                ),
+              };
+              if (sheetContext.mounted) setSheetState(() => error = message);
+            } catch (e) {
+              debugPrint('Edit $fieldName failed: $e');
+              if (sheetContext.mounted) {
+                setSheetState(
+                  () => error = 'Couldn’t update your $fieldName. Try again.',
+                );
+              }
+            } finally {
+              if (sheetContext.mounted) setSheetState(() => saving = false);
+            }
+          }
+
+          return AppleFormSheet(
+            title: 'Edit $fieldName',
+            doneLabel: 'Save',
+            busy: saving,
+            onDone: save,
+            children: [
+              AppleFormGroup(
+                footer: field == "Email"
+                    ? 'We’ll email a link to confirm the new address.'
+                    : null,
+                children: field == "Password"
+                    ? [
+                        AppleFormTextRow(
+                          label: 'Current',
+                          controller: currentPasswordController,
+                          placeholder: 'Current password',
+                          obscureText: true,
+                          autofocus: true,
+                        ),
+                        AppleFormTextRow(
+                          label: 'New',
+                          controller: controller,
+                          placeholder: 'At least 6 characters',
+                          obscureText: true,
+                        ),
+                      ]
+                    : [
+                        AppleFormTextRow(
+                          label: field,
+                          controller: controller,
+                          autofocus: true,
+                          keyboardType: field == "Email"
+                              ? TextInputType.emailAddress
+                              : TextInputType.name,
+                          textCapitalization: field == "Name"
+                              ? TextCapitalization.words
+                              : TextCapitalization.none,
+                        ),
+                      ],
+              ),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Text(
+                    error!,
+                    style: const TextStyle(fontSize: 13, color: appleRed),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -1002,15 +966,46 @@ class _SettingsScreenState extends State<SettingsScreen>
 
         // Firestore error — show message with back button so user isn't stuck
         if (snapshot.hasError) {
+          final colors = context.vivordoColors;
           return Scaffold(
+            backgroundColor: colors.page,
             body: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.error_outline, color: Colors.grey, size: 40),
+                  Icon(
+                    CupertinoIcons.exclamationmark_circle,
+                    color: colors.textSecondary,
+                    size: 40,
+                  ),
                   const SizedBox(height: 12),
-                  const Text('Could not load profile'),
+                  Text(
+                    'Couldn’t load your profile',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: colors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Check your connection and try again.',
+                    style: TextStyle(color: colors.textSecondary),
+                  ),
                   const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () {
+                      final uid = FirebaseAuth.instance.currentUser?.uid;
+                      if (uid == null) return;
+                      setState(
+                        () => _userDocStream = FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(uid)
+                            .snapshots(),
+                      );
+                    },
+                    child: const Text('Try again'),
+                  ),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
                     child: const Text('Go back'),
@@ -1190,7 +1185,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                               '${scanReminderTimes.length} '
                               '${scanReminderTimes.length == 1 ? 'reminder' : 'reminders'} '
                               'each day',
-                          trailing: _SettingsSwitch(
+                          trailing: AppSwitch(
                             value: scanReminderEnabled,
                             onChanged: (value) => _updateReminderPreference(
                               field: 'scanReminderEnabled',
@@ -1209,7 +1204,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       title: 'End-of-day check-in',
                       subtitle: 'After your final calendar event',
-                      trailing: _SettingsSwitch(
+                      trailing: AppSwitch(
                         value: checkInReminderEnabled,
                         onChanged: (value) => _updateReminderPreference(
                           field: 'checkInReminderEnabled',
@@ -1224,7 +1219,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       title: 'Wind-down reminder',
                       subtitle: 'An hour before bed, moving with your forecast',
-                      trailing: _SettingsSwitch(
+                      trailing: AppSwitch(
                         value: windDownReminder,
                         onChanged: _setWindDownReminder,
                       ),
@@ -1236,7 +1231,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       title: 'Morning check-in reminder',
                       subtitle: "10 AM, if today's check-in is still open",
-                      trailing: _SettingsSwitch(
+                      trailing: AppSwitch(
                         value: checkInMorningReminder,
                         onChanged: (value) => _setPreferenceWith(
                           () => CheckInReminders.setEnabled(value),
@@ -1250,7 +1245,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       title: 'Burnout check',
                       subtitle: 'Only when a warning starts',
-                      trailing: _SettingsSwitch(
+                      trailing: AppSwitch(
                         value: burnoutNotificationsEnabled,
                         onChanged: (value) => _setPreferenceWith(
                           () => _setPreference(
@@ -1267,7 +1262,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       title: 'Achievements',
                       subtitle: 'When you earn one',
-                      trailing: _SettingsSwitch(
+                      trailing: AppSwitch(
                         value: achievementNotificationsEnabled,
                         onChanged: (value) => _setPreferenceWith(
                           () => _setPreference(
@@ -1282,7 +1277,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       title: 'Circle',
                       subtitle:
                           'Likes, comments, friend requests and challenges',
-                      trailing: _SettingsSwitch(
+                      trailing: AppSwitch(
                         value: circleNotificationsEnabled,
                         onChanged: (value) => _updateReminderPreference(
                           field: 'circleNotificationsEnabled',
@@ -1297,7 +1292,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       title: 'Fitness',
                       subtitle: 'Goal and fitness ring updates',
-                      trailing: _SettingsSwitch(
+                      trailing: AppSwitch(
                         value: fitnessNotificationsEnabled,
                         onChanged: (value) => _updateReminderPreference(
                           field: 'fitnessNotificationsEnabled',
@@ -1625,6 +1620,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   /// Name, email and password, each opening its existing edit dialog.
   Future<void> _showAccountSheet(UserModel user) => showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
     showDragHandle: true,
     backgroundColor: context.vivordoColors.page,
     builder: (sheetContext) {
@@ -1739,28 +1735,14 @@ class _SettingsScreenState extends State<SettingsScreen>
     required VoidCallback onDisconnect,
     VoidCallback? onSync,
   }) async {
-    final action = await showCupertinoModalPopup<String>(
-      context: context,
-      builder: (sheetContext) => CupertinoActionSheet(
-        title: Text(name),
-        message: const Text('Connected'),
-        actions: [
-          if (onSync != null)
-            CupertinoActionSheetAction(
-              onPressed: () => Navigator.pop(sheetContext, 'sync'),
-              child: const Text('Sync last 30 days'),
-            ),
-          CupertinoActionSheetAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(sheetContext, 'disconnect'),
-            child: const Text('Disconnect'),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(sheetContext),
-          child: const Text('Cancel'),
-        ),
-      ),
+    final action = await showAppleActionSheet<String>(
+      context,
+      title: name,
+      message: 'Connected',
+      actions: [
+        if (onSync != null) const AppleSheetAction('Sync last 30 days', 'sync'),
+        const AppleSheetAction('Disconnect', 'disconnect', destructive: true),
+      ],
     );
     if (!mounted) return;
     switch (action) {
@@ -1810,28 +1792,13 @@ class _SettingsScreenState extends State<SettingsScreen>
         index: index,
       );
     }
-    final action = await showCupertinoModalPopup<String>(
-      context: context,
-      builder: (sheetContext) => CupertinoActionSheet(
-        title: Text(
-          'Scan reminder at ${_formatReminderTime(reminderTimes[index])}',
-        ),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(sheetContext, 'change'),
-            child: const Text('Change time'),
-          ),
-          CupertinoActionSheetAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(sheetContext, 'remove'),
-            child: const Text('Remove reminder'),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(sheetContext),
-          child: const Text('Cancel'),
-        ),
-      ),
+    final action = await showAppleActionSheet<String>(
+      context,
+      title: 'Scan reminder at ${_formatReminderTime(reminderTimes[index])}',
+      actions: const [
+        AppleSheetAction('Change time', 'change'),
+        AppleSheetAction('Remove reminder', 'remove', destructive: true),
+      ],
     );
     if (!mounted) return;
     switch (action) {
@@ -1847,6 +1814,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _showBugReportSheet() => showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
     backgroundColor: context.vivordoColors.page,
@@ -1967,20 +1935,22 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
         : FirebaseFirestore.instance.collection('users').doc(uid).snapshots();
   }
 
-  void _showMessage(String message) {
+  void _showMessage(String message, {ToastKind kind = ToastKind.info}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showToast(context, message, kind: kind);
   }
 
   Future<void> _enableAll() async {
     setState(() => _isConnectingAll = true);
     try {
       final granted = await HealthService().enableAll();
-      if (!granted) _showMessage('Apple Health permissions were not granted.');
+      if (!granted) _showMessage('Apple Health access wasn’t granted.');
     } catch (e) {
-      _showMessage('Could not connect: $e');
+      debugPrint('Apple Health connect failed: $e');
+      _showMessage(
+        'Couldn’t connect Apple Health. Try again.',
+        kind: ToastKind.error,
+      );
     } finally {
       if (mounted) setState(() => _isConnectingAll = false);
     }
@@ -1994,7 +1964,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
         final granted = await HealthService().enableMetric(metric.key);
         if (!granted) {
           _showMessage(
-            '${metric.label} was not enabled. Review Vivordo permissions in '
+            '${metric.label} wasn’t turned on. Check Vivordo’s permissions in '
             'Apple Health.',
           );
         }
@@ -2002,7 +1972,11 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
         await HealthService().disableMetric(metric.key);
       }
     } catch (e) {
-      _showMessage('Error: $e');
+      debugPrint('Apple Health ${metric.key} toggle failed: $e');
+      _showMessage(
+        'Couldn’t update ${metric.label}. Try again.',
+        kind: ToastKind.error,
+      );
     } finally {
       if (mounted) setState(() => _togglingMetric = null);
     }
@@ -2119,7 +2093,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                 color: VivordoTheme.brand,
               ),
             )
-          : _SettingsSwitch(
+          : AppSwitch(
               value: enabled,
               onChanged: _togglingMetric == null
                   ? (value) => _toggleMetric(metric, value)
@@ -2385,20 +2359,6 @@ class _IconBadge extends StatelessWidget {
       child: child ?? Icon(icon, size: 18, color: tint),
     );
   }
-}
-
-class _SettingsSwitch extends StatelessWidget {
-  const _SettingsSwitch({required this.value, required this.onChanged});
-
-  final bool value;
-  final ValueChanged<bool>? onChanged;
-
-  @override
-  Widget build(BuildContext context) => Switch.adaptive(
-    value: value,
-    onChanged: onChanged,
-    activeTrackColor: VivordoTheme.brand,
-  );
 }
 
 class _PillButton extends StatelessWidget {

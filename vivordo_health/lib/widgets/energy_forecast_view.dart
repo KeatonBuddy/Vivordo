@@ -213,6 +213,7 @@ Future<void> showEnergyForecastSheet(
   EnergyForecast forecast,
 ) => showModalBottomSheet<void>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   backgroundColor: context.vivordoColors.card,
   shape: const RoundedRectangleBorder(

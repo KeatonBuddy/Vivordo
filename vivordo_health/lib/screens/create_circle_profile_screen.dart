@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../src/services/circle_profile_service.dart';
 import '../theme/vivordo_theme.dart';
+import '../widgets/apple_ui.dart';
 
 enum _UsernameStatus { idle, invalid, checking, available, taken, error }
 
@@ -107,34 +108,13 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
   }
 
   Future<void> _choosePhoto() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              title: Text(
-                'Choose a profile picture',
-                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Choose from Gallery'),
-              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('Take a Photo'),
-              subtitle: const Text('Uses the front-facing camera'),
-              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
-            ),
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
+    final source = await showAppleActionSheet<ImageSource>(
+      context,
+      title: 'Choose a profile picture',
+      actions: const [
+        AppleSheetAction('Take photo', ImageSource.camera),
+        AppleSheetAction('Choose from library', ImageSource.gallery),
+      ],
     );
     if (source == null) return;
     try {
@@ -154,8 +134,11 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
         errorMessage = null;
       });
     } catch (error) {
+      debugPrint('Open profile photo failed: $error');
       if (!mounted) return;
-      setState(() => errorMessage = 'Could not open that photo: $error');
+      setState(
+        () => errorMessage = "Couldn't open that photo. Try another one.",
+      );
     }
   }
 
@@ -202,11 +185,12 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
         errorMessage = 'That username was just taken. Choose another one.';
       });
     } catch (error) {
+      debugPrint('Save Circle profile failed: $error');
       if (!mounted) return;
       setState(
         () => errorMessage = editing
-            ? 'Could not update your profile: $error'
-            : 'Could not create your profile: $error',
+            ? "Couldn't update your profile. Try again."
+            : "Couldn't create your profile. Try again.",
       );
     } finally {
       if (mounted) setState(() => saving = false);
