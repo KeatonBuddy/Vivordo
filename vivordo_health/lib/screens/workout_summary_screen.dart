@@ -183,8 +183,16 @@ class WorkoutSummaryScreen extends StatelessWidget {
     if (confirmed != true || !context.mounted) return;
 
     try {
-      await WorkoutService.delete(workout.id);
-      if (context.mounted) Navigator.pop(context, true);
+      final synced = await WorkoutService.delete(workout.id);
+      if (!context.mounted) return;
+      if (!synced) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Workout deleted. It'll sync when you're online."),
+          ),
+        );
+      }
+      Navigator.pop(context, true);
     } catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

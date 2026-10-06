@@ -840,7 +840,8 @@ class WorkoutService {
     return latest;
   }
 
-  static Future<void> delete(String workoutId) async {
+  /// False when deleted on the phone but still waiting to sync.
+  static Future<bool> delete(String workoutId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in before deleting a workout.');
     if (workoutId.trim().isEmpty) {
@@ -857,33 +858,31 @@ class WorkoutService {
         .doc(user.uid)
         .collection('circle_activity')
         .doc(workoutId);
-    await db.runTransaction((transaction) async {
-      final workoutSnapshot = await transaction.get(workoutReference);
-      final workoutData = workoutSnapshot.data();
-      final goalDay = workoutData?['exerciseGoalDay'] as String?;
-      final goalMinutes =
-          (workoutData?['exerciseGoalMinutes'] as num?)?.toInt() ?? 0;
-
-      if (goalDay != null && goalMinutes > 0) {
-        final dailyReference = db
+    // A batch, not a transaction, so it works offline; the workout is read
+    // from the phone's copy (it was just on screen) to undo its minutes.
+    final workoutData = (await _readOrNull(workoutReference))?.data();
+    final goalDay = workoutData?['exerciseGoalDay'] as String?;
+    final goalMinutes =
+        (workoutData?['exerciseGoalMinutes'] as num?)?.toInt() ?? 0;
+    final batch = db.batch()
+      ..delete(workoutReference)
+      ..delete(circleActivityReference);
+    if (goalDay != null && goalMinutes > 0) {
+      batch.set(
+        db
             .collection('users')
             .doc(user.uid)
             .collection('metrics_daily')
-            .doc(goalDay);
-        final dailySnapshot = await transaction.get(dailyReference);
-        transaction.set(dailyReference, {
-          'exercise_time': exerciseTimeWithAppMinutes(
-            dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>?,
-            -goalMinutes,
-          ),
+            .doc(goalDay),
+        {
+          'exercise_time': exerciseTimeIncrement(-goalMinutes),
           'date': goalDay,
           'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-
-      transaction.delete(workoutReference);
-      transaction.delete(circleActivityReference);
-    });
+        },
+        SetOptions(merge: true),
+      );
+    }
+    return syncedOrQueued(batch.commit());
   }
 
   /// Saves without a transaction so it works offline: personal bests are
