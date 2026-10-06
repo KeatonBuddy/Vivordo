@@ -360,7 +360,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted && _screenActive) {
-      if (!_handleDayRollover()) _refreshBriefClock();
+      if (!_handleDayRollover()) {
+        _refreshBriefClock();
+        // Pick up events added in the Calendar app while we were away. The
+        // calendar cache (30 s) absorbs quick app switches.
+        unawaited(_loadTodayEvents());
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      _eventsStale = true; // reloads when this tab is next shown
     }
   }
 
