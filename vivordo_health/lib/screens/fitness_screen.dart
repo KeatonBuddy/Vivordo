@@ -24,6 +24,7 @@ import '../src/services/personal_profile_service.dart';
 import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import '../src/utils/day_key.dart';
+import '../src/utils/home_metrics_summary.dart' show durationUntilNextLocalDay;
 import '../src/utils/fitness_goal_insight.dart';
 import '../src/services/metrics_repository.dart';
 import 'exercise_detail_screen.dart';
@@ -1098,6 +1099,12 @@ class _WeekDayBar extends StatelessWidget {
   );
 }
 
+/// Shown on the screen underneath, since the caller is about to close.
+void _showSavedOffline(BuildContext context, String what) =>
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("$what saved. It'll sync when you're online.")),
+    );
+
 enum _RecentFilter {
   all('All'),
   workouts('Workouts'),
@@ -1548,14 +1555,16 @@ class _LogActivityDialogState extends State<_LogActivityDialog> {
       _error = null;
     });
     try {
-      await RecentActivityService.add(
+      final synced = await RecentActivityService.add(
         name: _name,
         minutes: minutes,
         day: _day,
         km: km,
         sets: sets,
       );
-      if (mounted) Navigator.pop(context, true);
+      if (!mounted) return;
+      if (!synced) _showSavedOffline(context, 'Activity');
+      Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -2334,7 +2343,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
     setState(() => saving = true);
     try {
-      await WorkoutService.save(
+      final saved = await WorkoutService.save(
         startedAt: startedAt,
         durationSeconds: seconds,
         exercises: records,
@@ -2344,7 +2353,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _activeWorkoutDraft = null;
       await ActiveWorkoutStorage.clear();
       FitnessWorkoutTimerState.stop();
-      if (mounted) Navigator.pop(context, true);
+      if (!mounted) return;
+      if (!saved.synced) _showSavedOffline(context, 'Workout');
+      Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
       setState(() => saving = false);
@@ -4109,12 +4120,31 @@ class _ThirtyDayActivityRings extends StatefulWidget {
 }
 
 class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
-  late DateTime _selectedDay;
+  /// A day the user tapped; null follows today, past midnight too.
+  DateTime? _pickedDay;
+  DateTime get _selectedDay => _pickedDay ?? DateUtils.dateOnly(DateTime.now());
+  Timer? _midnight;
 
   @override
   void initState() {
     super.initState();
-    _selectedDay = DateUtils.dateOnly(DateTime.now());
+    _scheduleMidnight();
+  }
+
+  /// Rebuild at midnight (late, on resume, if the app was asleep) so the
+  /// 30-day window and "Today's activity" move to the new day.
+  void _scheduleMidnight() {
+    _midnight = Timer(durationUntilNextLocalDay(DateTime.now()), () {
+      if (!mounted) return;
+      setState(() {});
+      _scheduleMidnight();
+    });
+  }
+
+  @override
+  void dispose() {
+    _midnight?.cancel();
+    super.dispose();
   }
 
   @override
@@ -4202,7 +4232,10 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
             final isSelected = DateUtils.isSameDay(date, _selectedDay);
             return InkWell(
               borderRadius: BorderRadius.circular(10),
-              onTap: () => setState(() => _selectedDay = date),
+              onTap: () => setState(
+                () =>
+                    _pickedDay = DateUtils.isSameDay(date, today) ? null : date,
+              ),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.all(3),

@@ -61,7 +61,8 @@ class RecentActivityService {
         );
   }
 
-  static Future<void> add({
+  /// False when saved on the phone but still waiting to sync.
+  static Future<bool> add({
     required String name,
     required int minutes,
     required DateTime day,
@@ -95,22 +96,19 @@ class RecentActivityService {
         .doc(goalDay);
     // Logged minutes count toward the Exercise ring the same way a tracked
     // workout's do; exerciseGoalDay/Minutes record what to undo on delete.
-    await FirebaseFirestore.instance.runTransaction((transaction) async {
-      final dailySnapshot = await transaction.get(dailyReference);
-      transaction.set(document, {
+    // A batch, not a transaction, so it works offline and syncs later.
+    final batch = FirebaseFirestore.instance.batch()
+      ..set(document, {
         ...activityData,
         'exerciseGoalDay': goalDay,
         'exerciseGoalMinutes': minutes,
-      });
-      transaction.set(circleDocument, {...activityData, 'kind': 'activity'});
-      transaction.set(dailyReference, {
-        'exercise_time': exerciseTimeWithAppMinutes(
-          dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>?,
-          minutes,
-        ),
+      })
+      ..set(circleDocument, {...activityData, 'kind': 'activity'})
+      ..set(dailyReference, {
+        'exercise_time': exerciseTimeIncrement(minutes),
         'date': goalDay,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-    });
+    return syncedOrQueued(batch.commit());
   }
 }
