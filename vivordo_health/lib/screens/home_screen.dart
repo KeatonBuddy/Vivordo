@@ -460,6 +460,78 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// The day the check-in pop-up was last considered, so it's tried once.
+  String? _checkInPopupDay;
+
+  /// The check-in as a sheet on the first morning open (checkInPopupDue).
+  /// Only over Home itself: not when another screen, sheet or dialog (an
+  /// achievement, a notification's destination) is showing. Answers save
+  /// as they're tapped; the card stays for anything left unanswered.
+  void _maybeShowCheckInPopup(Map? checkIn, double? sleepHours) {
+    final now = DateTime.now();
+    final day = localDayKey(now);
+    if (_checkInPopupDay == day ||
+        widget.openMoodCheckIn ||
+        !widget.isActive ||
+        !checkInPopupDue(checkIn, now, 0)) {
+      return;
+    }
+    _checkInPopupDay = day;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Let start-up pop-ups (achievements, What's New) go first.
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (!mounted || uid == null || !widget.isActive) return;
+      final onTop =
+          (ModalRoute.of(context)?.isCurrent ?? true) &&
+          !Navigator.of(context, rootNavigator: true).canPop();
+      if (!onTop) return;
+      final user = FirebaseFirestore.instance.collection('users').doc(uid);
+      int dismissed;
+      try {
+        dismissed =
+            (((await user.get()).data()?['preferences']
+                        as Map?)?['checkInPopupDismissals']
+                    as num?)
+                ?.toInt() ??
+            0;
+      } catch (_) {
+        return;
+      }
+      if (!mounted || !checkInPopupDue(checkIn, DateTime.now(), dismissed)) {
+        return;
+      }
+      // Once a day, wherever it's answered.
+      unawaited(_saveCheckIn({'prompted': true}));
+      final feel = checkIn!['feel'];
+      final sleep = checkIn['sleep'];
+      final answered = await showMorningCheckInSheet(
+        context,
+        feel: feel is num ? MetricsService.moodLabelForScore(feel) : null,
+        sleep: sleep is num
+            ? sleepCheckInScores.entries
+                  .where((e) => e.value == sleep)
+                  .firstOrNull
+                  ?.key
+            : null,
+        sleepHours: sleepHours,
+        onFeel: (label) => _saveCheckIn({
+          'feel': MetricsService.moodScoreForLabel(label),
+        }, mood: label),
+        onSleep: (label) => _saveCheckIn({'sleep': sleepCheckInScores[label]!}),
+      );
+      try {
+        await user.set({
+          'preferences': {
+            'checkInPopupDismissals': answered ? 0 : FieldValue.increment(1),
+          },
+        }, SetOptions(merge: true));
+      } catch (_) {
+        // The count is only a courtesy; the pop-up still shows once a day.
+      }
+    });
+  }
+
   /// Today's wake time as last seen, so new sleep can refresh Your Day.
   Object? _seenWakeTime;
   Timer? _sleepRefreshTimer;
@@ -649,6 +721,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             (hrvMap?['stressScore'] as num?)?.toDouble();
 
         final sleepHours = (sleepMap?['avg'] as num?)?.toDouble();
+        if (!loading) _maybeShowCheckInPopup(checkIn, sleepHours);
 
         final steps = (stepsMap?['sum'] as num?)?.toInt();
         final activeCalories =

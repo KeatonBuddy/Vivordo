@@ -264,6 +264,17 @@ fires at 10 AM on days the check-in is still open; the next 7 mornings are
 scheduled whenever Home loads the calendar, and today's is dropped as soon
 as the check-in is answered or dismissed.
 
+**The check-in pop-up.** On the first Home open between 5 AM and noon,
+while the check-in is still open, the same questions come up as a sheet:
+sleep first, then feel (an answer already given on the card is skipped),
+then "You're set for today" before it closes itself. It shows once a day
+(`morning_check_in.prompted`), only over Home itself (not over another
+screen, sheet or dialog, and not when the app opened to the mood check-in),
+so the 10 AM reminder, which opens Home, brings it up. "Not today" or a
+swipe down closes it without dismissing the card. After 3 dismissals in a
+row (`preferences.checkInPopupDismissals`, reset when both get answered in
+it) it stops popping up and the card stays as the way in.
+
 - **Your sleep need** is your 90-day median sleep, kept between 7 and 9 h.
   With fewer than 14 nights it is 8 h.
 - **Your usual Effort** is the 90-day median.
