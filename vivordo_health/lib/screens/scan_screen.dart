@@ -11,10 +11,22 @@ import '../src/services/user_service.dart';
 enum ScanState { initializing, idle, scanning, processing, success, error }
 
 class ScanScreen extends StatefulWidget {
-  const ScanScreen({super.key, this.onBackToHome, this.isActive = true});
+  const ScanScreen({
+    super.key,
+    this.onBackToHome,
+    this.isActive = true,
+    this.helpKey,
+    this.startKey,
+    this.howItWorksKey,
+  });
 
   final VoidCallback? onBackToHome;
   final bool isActive;
+
+  /// Spotlight targets for the Scan tour.
+  final Key? helpKey;
+  final Key? startKey;
+  final Key? howItWorksKey;
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
@@ -699,6 +711,7 @@ class _ScanScreenState extends State<ScanScreen>
                     ),
                   ),
                   IconButton(
+                    key: widget.helpKey,
                     tooltip: 'Show tutorial',
                     onPressed: _showScannerTutorial,
                     icon: const Icon(
@@ -992,106 +1005,118 @@ class _ScanScreenState extends State<ScanScreen>
   Widget _buildIdle() {
     return Column(
       children: [
-        const SizedBox(height: 32),
-        Center(
-          child: SizedBox(
-            width: 160,
-            height: 160,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                AnimatedBuilder(
-                  animation: _pulseAnimation,
-                  builder: (_, _) => Transform.scale(
-                    scale: _pulseAnimation.value,
-                    child: Container(
-                      width: 160,
-                      height: 160,
-                      decoration: BoxDecoration(
-                        color: accentPurple.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
+        KeyedSubtree(
+          key: widget.startKey,
+          child: Column(
+            children: [
+              const SizedBox(height: 32),
+              Center(
+                child: SizedBox(
+                  width: 160,
+                  height: 160,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _pulseAnimation,
+                        builder: (_, _) => Transform.scale(
+                          scale: _pulseAnimation.value,
+                          child: Container(
+                            width: 160,
+                            height: 160,
+                            decoration: BoxDecoration(
+                              color: accentPurple.withValues(alpha: 0.08),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        width: 130,
+                        height: 130,
+                        decoration: BoxDecoration(
+                          color: accentPurple.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.fingerprint,
+                          size: 68,
+                          color: accentPurple,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
+              Text(
+                _scanArmed
+                    ? 'Place your finger on the camera'
+                    : 'Ready to scan?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _scanArmed
+                    ? 'Cover the rear camera and hold still. The scan begins when your finger is detected.'
+                    : 'Tap Start Scan to turn on the torch, then cover the rear camera with your fingertip.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: context.vivordoColors.textSecondary,
+                  height: 1.6,
+                ),
+              ),
+              if (!_scanArmed && !_showTutorial) ...[
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: FilledButton.icon(
+                    onPressed: _isStartingScan ? null : _beginScanSession,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accentPurple,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: accentPurple.withValues(
+                        alpha: .55,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    icon: _isStartingScan
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.flashlight_on_rounded),
+                    label: Text(
+                      _isStartingScan ? 'Starting...' : 'Start Scan',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
                 ),
-                Container(
-                  width: 130,
-                  height: 130,
-                  decoration: BoxDecoration(
-                    color: accentPurple.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.fingerprint,
-                    size: 68,
-                    color: accentPurple,
-                  ),
-                ),
               ],
-            ),
+            ],
           ),
         ),
-        const SizedBox(height: 28),
-        Text(
-          _scanArmed ? 'Place your finger on the camera' : 'Ready to scan?',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            letterSpacing: -0.3,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _scanArmed
-              ? 'Cover the rear camera and hold still. The scan begins when your finger is detected.'
-              : 'Tap Start Scan to turn on the torch, then cover the rear camera with your fingertip.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 14,
-            color: context.vivordoColors.textSecondary,
-            height: 1.6,
-          ),
-        ),
-        if (!_scanArmed && !_showTutorial) ...[
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            height: 54,
-            child: FilledButton.icon(
-              onPressed: _isStartingScan ? null : _beginScanSession,
-              style: FilledButton.styleFrom(
-                backgroundColor: accentPurple,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: accentPurple.withValues(alpha: .55),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              icon: _isStartingScan
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.flashlight_on_rounded),
-              label: Text(
-                _isStartingScan ? 'Starting...' : 'Start Scan',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-        ],
         const SizedBox(height: 28),
 
         // ── How it works card ─────────────────────────────────────────
         Container(
+          key: widget.howItWorksKey,
           width: double.infinity,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(

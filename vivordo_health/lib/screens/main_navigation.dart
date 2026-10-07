@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/app_tour.dart';
 import '../widgets/contextual_insight_bar.dart';
 import '../widgets/vivordo_robot.dart';
 import 'dart:math' as math;
@@ -29,10 +30,14 @@ import '../theme/vivordo_theme.dart';
 class MainNavigationScreen extends StatefulWidget {
   final int initialIndex;
   final bool openMoodCheckIn;
+
+  /// `tours` from the user document: which screen tours have been seen.
+  final Map<String, dynamic>? seenTours;
   const MainNavigationScreen({
     super.key,
     this.initialIndex = 0,
     this.openMoodCheckIn = false,
+    this.seenTours,
   });
 
   @override
@@ -58,6 +63,37 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   bool _chatOpen = false;
   bool _detailRouteOpen = false;
   bool _startupSplashMounted = true;
+
+  /// The screen whose tour is running, if any.
+  String? _tourScreen;
+  bool _tourShowsChat = false;
+  late final Map<String, dynamic> _seenTours = {...?widget.seenTours};
+  final GlobalKey _navBarKey = GlobalKey();
+  final GlobalKey _chatLayerKey = GlobalKey();
+  final GlobalKey _homeRightNowKey = GlobalKey();
+  final GlobalKey _homeVitalsKey = GlobalKey();
+  final GlobalKey _homeCircleKey = GlobalKey();
+  final GlobalKey _homeYourDayKey = GlobalKey();
+  final GlobalKey _homeInsightsKey = GlobalKey();
+  final GlobalKey _myDayActionsKey = GlobalKey();
+  final GlobalKey _myDayBriefKey = GlobalKey();
+  final GlobalKey _myDayNowKey = GlobalKey();
+  final GlobalKey _myDayPrioritiesKey = GlobalKey();
+  final GlobalKey _myDayTimelineKey = GlobalKey();
+  final GlobalKey _myDayTomorrowKey = GlobalKey();
+  final GlobalKey _scanHelpKey = GlobalKey();
+  final GlobalKey _scanStartKey = GlobalKey();
+  final GlobalKey _scanHowKey = GlobalKey();
+  final GlobalKey _fitnessActionsKey = GlobalKey();
+  final GlobalKey _fitnessRingsKey = GlobalKey();
+  final GlobalKey _fitnessButtonsKey = GlobalKey();
+  final GlobalKey _fitnessWeekKey = GlobalKey();
+  final GlobalKey _fitnessRecentKey = GlobalKey();
+  final GlobalKey _fitnessBodyKey = GlobalKey();
+  final GlobalKey _metricsCustomizeKey = GlobalKey();
+  final GlobalKey _metricsPhysicalKey = GlobalKey();
+  final GlobalKey _metricsKeyMetricsKey = GlobalKey();
+  final GlobalKey _metricsInsightsKey = GlobalKey();
   Timer? _healthRefreshTimer;
   final List<Timer> _tabPreloadTimers = [];
   Future<void>? _circlePreload;
@@ -146,7 +182,213 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) => _openChat());
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _preloadTabs());
+    AppTour.replayRequested.addListener(_replayTour);
   }
+
+  Future<void> _replayTour() async {
+    if (!AppTour.replayRequested.value || !mounted) return;
+    AppTour.replayRequested.value = false;
+    _seenTours.clear();
+    unawaited(resetTours());
+    _contentNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+    await _closeChat();
+    // The route observer clears the detail flag after this frame.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    _selectTab(0);
+    _maybeStartTour('home');
+  }
+
+  /// Starts [screen]'s tour if it has one, hasn't been seen, and nothing
+  /// else needs the screen right now.
+  void _maybeStartTour(String screen) {
+    if (_tourScreen != null ||
+        _chatOpen ||
+        _detailRouteOpen ||
+        FitnessWorkoutTimerState.isRunning.value ||
+        !needsTour(_seenTours, screen) ||
+        !_tourScripts.containsKey(screen)) {
+      return;
+    }
+    setState(() => _tourScreen = screen);
+  }
+
+  void _finishTour() {
+    final screen = _tourScreen;
+    if (screen == null) return;
+    _seenTours[screen] = kTourVersion;
+    setState(() {
+      _tourScreen = null;
+      _tourShowsChat = false;
+    });
+    unawaited(markTourSeen(screen));
+  }
+
+  /// One short tour per screen, run the first time that screen is shown.
+  /// Steps spotlight widgets through keys passed into the screen.
+  late final Map<String, List<TourStep>> _tourScripts = {
+    'home': [
+      const TourStep(
+        "Hi, I'm Vivordo AI. Let me show you around Home. It takes about "
+        'thirty seconds.',
+      ),
+      TourStep(
+        'This is your stress right now. It updates whenever new information '
+        'comes in, and tapping it opens the full picture.',
+        target: _homeRightNowKey,
+      ),
+      TourStep(
+        "Last night's sleep, your latest heart rate and today's mood. Tap "
+        'any of them for more.',
+        target: _homeVitalsKey,
+      ),
+      TourStep(
+        'Circle is your friends. Share progress, cheer each other on and '
+        'take on challenges together.',
+        target: _homeCircleKey,
+      ),
+      TourStep(
+        'Your Day reads your calendar against your energy and shows where '
+        'the day will push you. Open My Day for the full plan.',
+        target: _homeYourDayKey,
+      ),
+      TourStep(
+        'Insights are the small things I notice in your sleep, heart rate '
+        'and schedule. They change as the day goes on.',
+        target: _homeInsightsKey,
+      ),
+      TourStep(
+        'Everything else lives down here: My Day, Scan, Fitness and Metrics.',
+        target: _navBarKey,
+      ),
+      TourStep(
+        "And I'm right here. I'll leave notes as I spot things, and you can "
+        'ask me anything.',
+        target: _chatLayerKey,
+        // The layer spans the screen; the button is its right end.
+        crop: (layer) =>
+            Rect.fromLTWH(layer.right - 64, layer.bottom - 64, 64, 64),
+        pose: RobotPose.celebrate,
+      ),
+    ],
+    // Order follows the page top to bottom: My Day is a lazy list, so a
+    // section scrolled far off screen has no widget to point at.
+    'my_day': [
+      const TourStep(
+        'This is My Day: your calendar and priorities, planned around your '
+        'energy.',
+      ),
+      TourStep(
+        'The book is your journal, and the calendar opens the month view.',
+        target: _myDayActionsKey,
+      ),
+      TourStep(
+        "Your daily brief: how today has gone, and tomorrow's Demand "
+        'against your Capacity.',
+        target: _myDayBriefKey,
+      ),
+      TourStep(
+        "Now is what's happening at the moment, and what's up next.",
+        target: _myDayNowKey,
+      ),
+      TourStep(
+        'Priorities are the few things you want done today. Add one and '
+        'plan it into a slot.',
+        target: _myDayPrioritiesKey,
+      ),
+      TourStep(
+        "Today's timeline lays out your events. The plus adds one straight "
+        'to your calendar.',
+        target: _myDayTimelineKey,
+      ),
+      TourStep(
+        "Tomorrow's preview shows what's already planned, so you can "
+        'lighten it the evening before.',
+        target: _myDayTomorrowKey,
+        pose: RobotPose.celebrate,
+      ),
+    ],
+    'scan': [
+      const TourStep(
+        'This is the Scan. Fifteen seconds with a fingertip on the camera '
+        'gives me your heart rate.',
+      ),
+      TourStep(
+        'The question mark replays the fingertip tutorial whenever you need '
+        'it.',
+        target: _scanHelpKey,
+      ),
+      TourStep(
+        'Tap Start Scan, cover the rear camera and flash with your '
+        "fingertip, and hold still until it's done.",
+        target: _scanStartKey,
+      ),
+      TourStep(
+        'How it works walks through the four steps, and the tips below help '
+        'you get a clean reading.',
+        target: _scanHowKey,
+        pose: RobotPose.celebrate,
+      ),
+    ],
+    'fitness': [
+      const TourStep(
+        'This is Fitness: your activity, workouts and body in one place.',
+      ),
+      TourStep(
+        'Your workout streak, and the target icon sets your activity and '
+        'strength goals.',
+        target: _fitnessActionsKey,
+      ),
+      TourStep(
+        "Today's rings: steps, calories and exercise minutes against your "
+        'goals. Tap them for the month.',
+        target: _fitnessRingsKey,
+      ),
+      TourStep(
+        "Start a workout with a live timer, or log something you've already "
+        'done.',
+        target: _fitnessButtonsKey,
+      ),
+      TourStep(
+        'This week counts your workouts and active days, alongside your '
+        'strength goals.',
+        target: _fitnessWeekKey,
+      ),
+      TourStep(
+        "Recent is everything you've logged. See all opens the full history.",
+        target: _fitnessRecentKey,
+      ),
+      TourStep(
+        'Body keeps your weight, BMI and body fat up to date.',
+        target: _fitnessBodyKey,
+        pose: RobotPose.celebrate,
+      ),
+    ],
+    'metrics': [
+      const TourStep(
+        'This is Metrics: every measurement I track, with a detail screen '
+        'behind each one.',
+      ),
+      TourStep(
+        'Customize picks which metrics show here and in what order.',
+        target: _metricsCustomizeKey,
+      ),
+      TourStep(
+        'Physical Health sums up the last four weeks of activity, strength, '
+        'cardio fitness and sleep. Tap it for the breakdown.',
+        target: _metricsPhysicalKey,
+      ),
+      TourStep(
+        'Key metrics are your trends at a glance. Tap any tile to go deeper.',
+        target: _metricsKeyMetricsKey,
+      ),
+      TourStep(
+        'Insights compare your steps and stress over the week.',
+        target: _metricsInsightsKey,
+        pose: RobotPose.celebrate,
+      ),
+    ],
+  };
 
   void _refreshTodayFromHealth() {
     if (FirebaseAuth.instance.currentUser == null) return;
@@ -174,6 +416,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       timer.cancel();
     }
     _chatRevealController.dispose();
+    AppTour.replayRequested.removeListener(_replayTour);
     FitnessWorkoutTimerState.isRunning.removeListener(_syncFitnessPulse);
     _fitnessPulseController.dispose();
     for (final activity in _tabActivity) {
@@ -197,6 +440,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             0 => ValueListenableBuilder<bool>(
               valueListenable: _homeStressReveal,
               builder: (context, revealStress, _) => HomeScreen(
+                rightNowKey: _homeRightNowKey,
+                vitalsKey: _homeVitalsKey,
+                circleKey: _homeCircleKey,
+                yourDayKey: _homeYourDayKey,
+                insightsKey: _homeInsightsKey,
                 isActive: isActive,
                 openMoodCheckIn: widget.openMoodCheckIn,
                 onScanTap: _openScan,
@@ -205,13 +453,38 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 revealStress: revealStress,
               ),
             ),
-            1 => const MyDayScreen(),
+            1 => MyDayScreen(
+              actionsKey: _myDayActionsKey,
+              briefKey: _myDayBriefKey,
+              nowKey: _myDayNowKey,
+              prioritiesKey: _myDayPrioritiesKey,
+              timelineKey: _myDayTimelineKey,
+              tomorrowKey: _myDayTomorrowKey,
+            ),
             2 => ScanScreen(
               isActive: isActive,
               onBackToHome: () => _selectTab(0),
+              helpKey: _scanHelpKey,
+              startKey: _scanStartKey,
+              howItWorksKey: _scanHowKey,
             ),
-            3 => FitnessScreen(isActive: isActive),
-            4 => DashboardScreen(isActive: isActive, onScanTap: _openScan),
+            3 => FitnessScreen(
+              isActive: isActive,
+              actionsKey: _fitnessActionsKey,
+              ringsKey: _fitnessRingsKey,
+              buttonsKey: _fitnessButtonsKey,
+              weekKey: _fitnessWeekKey,
+              recentKey: _fitnessRecentKey,
+              bodyKey: _fitnessBodyKey,
+            ),
+            4 => DashboardScreen(
+              isActive: isActive,
+              onScanTap: _openScan,
+              customizeKey: _metricsCustomizeKey,
+              physicalHealthKey: _metricsPhysicalKey,
+              keyMetricsKey: _metricsKeyMetricsKey,
+              insightsKey: _metricsInsightsKey,
+            ),
             _ => const SizedBox.shrink(),
           };
           return TickerMode(enabled: isActive, child: page);
@@ -246,6 +519,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _selectedIndex = index;
     });
     _insights.select(_contentNavigatorObserver.topRoute, _screenNames[index]);
+    if (!_startupSplashMounted) _maybeStartTour(_screenNames[index]);
   }
 
   void _preloadTabs() {
@@ -273,6 +547,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         if (mounted) {
           _homeStressReveal.value = true;
           setState(() => _startupSplashMounted = false);
+          _maybeStartTour(_screenNames[_selectedIndex]);
         }
       }),
     );
@@ -371,7 +646,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     // because the Scaffold already resizes for the keyboard.
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     // The assistant would otherwise sit on top of text fields' send buttons.
-    final hideAssistant = _chatOpen || keyboardOpen;
+    // During the tour the robot has left its button; it is back for the
+    // final step, which points at it.
+    final hideAssistant =
+        _chatOpen || keyboardOpen || (_tourScreen != null && !_tourShowsChat);
     final activePage = IndexedStack(
       index: _selectedIndex,
       children: List.generate(
@@ -428,6 +706,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
               left: 20,
               bottom: detailRouteVisible ? 30 : 116,
               child: IgnorePointer(
+                key: _chatLayerKey,
                 ignoring: hideAssistant,
                 child: AnimatedOpacity(
                   opacity: hideAssistant ? 0 : 1,
@@ -499,6 +778,21 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                   ),
                 ),
               ),
+            if (_tourScreen != null)
+              Positioned.fill(
+                child: AppTour(
+                  key: ValueKey('tour-$_tourScreen'),
+                  steps: _tourScripts[_tourScreen]!,
+                  onSelectTab: _selectTab,
+                  onFinished: _finishTour,
+                  onStepChanged: (step) => setState(
+                    () => _tourShowsChat =
+                        _tourScripts[_tourScreen]![step].target ==
+                        _chatLayerKey,
+                  ),
+                  home: _chatLayerKey,
+                ),
+              ),
             if (_startupSplashMounted)
               Positioned.fill(
                 child: AbsorbPointer(
@@ -565,6 +859,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final glassSettings = _cachedGlassSettings!;
 
     return RepaintBoundary(
+      key: _navBarKey,
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),

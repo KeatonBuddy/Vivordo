@@ -17,6 +17,7 @@ import 'package:vivordo_health/src/services/account_deletion_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'blocked_users_screen.dart';
+import '../widgets/app_tour.dart';
 import '../widgets/privacy_support_links.dart';
 import '../src/services/ai_consent.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1327,6 +1328,17 @@ class _SettingsScreenState extends State<SettingsScreen>
                             : _formatReminderTime(dayWrapUp),
                       ),
                       onTap: () => _chooseDayWrapUp(dayWrapUp),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.tour_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Take the tour again',
+                      subtitle: 'Vivordo AI shows you around the app',
+                      trailing: const _Chevron(),
+                      // Main navigation closes Settings and starts the tour.
+                      onTap: () => AppTour.replayRequested.value = true,
                     ),
                   ],
                 ),

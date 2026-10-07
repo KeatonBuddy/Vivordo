@@ -53,7 +53,23 @@ import '../widgets/day_fixes_card.dart';
 import '../widgets/energy_forecast_view.dart';
 
 class MyDayScreen extends StatefulWidget {
-  const MyDayScreen({super.key});
+  const MyDayScreen({
+    super.key,
+    this.actionsKey,
+    this.briefKey,
+    this.nowKey,
+    this.prioritiesKey,
+    this.timelineKey,
+    this.tomorrowKey,
+  });
+
+  /// Spotlight targets for the My Day tour.
+  final Key? actionsKey;
+  final Key? briefKey;
+  final Key? nowKey;
+  final Key? prioritiesKey;
+  final Key? timelineKey;
+  final Key? tomorrowKey;
 
   static const purple = Color(0xFF6B5CE7);
   static const background = Color(0xFFF2F2F7);
@@ -822,25 +838,31 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const JournalScreen(),
+                  Row(
+                    key: widget.actionsKey,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const JournalScreen(),
+                          ),
+                        ),
+                        tooltip: 'Journal',
+                        icon: const Icon(
+                          Icons.menu_book_rounded,
+                          color: MyDayScreen.purple,
+                        ),
                       ),
-                    ),
-                    tooltip: 'Journal',
-                    icon: const Icon(
-                      Icons.menu_book_rounded,
-                      color: MyDayScreen.purple,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: _openCalendar,
-                    tooltip: 'Calendar',
-                    icon: const Icon(
-                      Icons.calendar_month_rounded,
-                      color: MyDayScreen.purple,
-                    ),
+                      IconButton(
+                        onPressed: _openCalendar,
+                        tooltip: 'Calendar',
+                        icon: const Icon(
+                          Icons.calendar_month_rounded,
+                          color: MyDayScreen.purple,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -867,7 +889,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 ),
               ],
               const SizedBox(height: 18),
-              _buildDayOutlookCard(timedEvents: timedEvents),
+              KeyedSubtree(
+                key: widget.briefKey,
+                child: _buildDayOutlookCard(timedEvents: timedEvents),
+              ),
               ValueListenableBuilder<AsyncSnapshot<BurnoutView?>>(
                 valueListenable: _burnoutSnapshot,
                 builder: (context, snapshot, _) => snapshot.data == null
@@ -879,32 +904,54 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               ),
               _buildEnergyEvening(),
               const SizedBox(height: 24),
-              const _SectionLabel('NOW'),
-              const SizedBox(height: 10),
-              _SectionCard(child: _buildNowCard(timedEvents, watchItem)),
-              const SizedBox(height: 24),
-              _buildPriorities(),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  const Expanded(child: _SectionLabel("TODAY'S TIMELINE")),
-                  IconButton(
-                    onPressed: _isLoading ? null : _createGoogleEvent,
-                    tooltip: 'Add event',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(
-                      Icons.add_rounded,
-                      color: MyDayScreen.purple,
-                    ),
-                  ),
-                ],
+              KeyedSubtree(
+                key: widget.nowKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _SectionLabel('NOW'),
+                    const SizedBox(height: 10),
+                    _SectionCard(child: _buildNowCard(timedEvents, watchItem)),
+                  ],
+                ),
               ),
-              const SizedBox(height: 4),
-              _buildTimeline(),
+              const SizedBox(height: 24),
+              KeyedSubtree(
+                key: widget.prioritiesKey,
+                child: _buildPriorities(),
+              ),
+              const SizedBox(height: 24),
+              KeyedSubtree(
+                key: widget.timelineKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: _SectionLabel("TODAY'S TIMELINE"),
+                        ),
+                        IconButton(
+                          onPressed: _isLoading ? null : _createGoogleEvent,
+                          tooltip: 'Add event',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(
+                            Icons.add_rounded,
+                            color: MyDayScreen.purple,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    _buildTimeline(),
+                  ],
+                ),
+              ),
               const SizedBox(height: 24),
               ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
                 valueListenable: _tomorrowPrioritySnapshot,
                 builder: (context, snapshot, _) => TomorrowPreview(
+                  key: widget.tomorrowKey,
                   day: _tomorrow,
                   loading:
                       _isLoading ||

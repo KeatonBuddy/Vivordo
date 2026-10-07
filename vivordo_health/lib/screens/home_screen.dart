@@ -197,6 +197,13 @@ class HomeScreen extends StatefulWidget {
   final bool revealStress;
   final bool isActive;
   final bool openMoodCheckIn;
+
+  /// Spotlight targets for the Home tour.
+  final Key? rightNowKey;
+  final Key? vitalsKey;
+  final Key? circleKey;
+  final Key? yourDayKey;
+  final Key? insightsKey;
   const HomeScreen({
     super.key,
     this.onScanTap,
@@ -205,6 +212,11 @@ class HomeScreen extends StatefulWidget {
     this.revealStress = true,
     this.isActive = true,
     this.openMoodCheckIn = false,
+    this.rightNowKey,
+    this.vitalsKey,
+    this.circleKey,
+    this.yourDayKey,
+    this.insightsKey,
   });
 
   @override
@@ -1076,6 +1088,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _buildHeader(),
                 const SizedBox(height: 20),
                 GestureDetector(
+                  key: widget.rightNowKey,
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _push(const StressDetailScreen()),
                   child: HomeStressCard(
@@ -1094,12 +1107,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 _buildCheckIn(checkIn),
                 const SizedBox(height: 12),
-                _buildVitals(
-                  sleepHours: sleepHours,
-                  heartRate: latestHeartRate?.bpm,
-                  moodScore: moodScore,
-                  loading: metricsLoading,
-                  hrLoading: hrLoading,
+                KeyedSubtree(
+                  key: widget.vitalsKey,
+                  child: _buildVitals(
+                    sleepHours: sleepHours,
+                    heartRate: latestHeartRate?.bpm,
+                    moodScore: moodScore,
+                    loading: metricsLoading,
+                    hrLoading: hrLoading,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 _buildActivityCard(
@@ -1108,35 +1124,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   exerciseMinutes: exerciseMinutes,
                 ),
                 const SizedBox(height: 12),
-                _buildCircleCard(),
-                _buildSectionTitle(
-                  "YOUR DAY",
-                  trailing: [
-                    _infoButton(
-                      label: 'How Your Day works',
-                      onTap: _showReachableWindowsInfo,
-                    ),
-                    TextButton(
-                      onPressed: widget.onMyDayTap,
-                      style: TextButton.styleFrom(
-                        foregroundColor: accentPurple,
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        textStyle: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
+                KeyedSubtree(key: widget.circleKey, child: _buildCircleCard()),
+                KeyedSubtree(
+                  key: widget.yourDayKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionTitle(
+                        "YOUR DAY",
+                        trailing: [
+                          _infoButton(
+                            label: 'How Your Day works',
+                            onTap: _showReachableWindowsInfo,
+                          ),
+                          TextButton(
+                            onPressed: widget.onMyDayTap,
+                            style: TextButton.styleFrom(
+                              foregroundColor: accentPurple,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              minimumSize: const Size(0, 36),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              textStyle: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            child: const Text('Open My Day ›'),
+                          ),
+                        ],
                       ),
-                      child: const Text('Open My Day ›'),
-                    ),
-                  ],
+                      _buildDayLoad(sleepNights),
+                    ],
+                  ),
                 ),
-                _buildDayLoad(sleepNights),
-                _buildSectionTitle('INSIGHTS'),
-                _buildInsights(
-                  sleepHours: sleepHours,
-                  hasHeartRate: latestHeartRate != null,
+                KeyedSubtree(
+                  key: widget.insightsKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionTitle('INSIGHTS'),
+                      _buildInsights(
+                        sleepHours: sleepHours,
+                        hasHeartRate: latestHeartRate != null,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

@@ -564,7 +564,9 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         if (!dismissedLocally && seenRelease != _whatsNewReleaseId) {
           return WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid));
         }
-        return const MainNavigationScreen();
+        return MainNavigationScreen(
+          seenTours: data?['tours'] as Map<String, dynamic>?,
+        );
       },
     );
   }

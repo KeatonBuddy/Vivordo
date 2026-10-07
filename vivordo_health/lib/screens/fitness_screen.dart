@@ -98,9 +98,26 @@ class FitnessWorkoutTimerState {
 }
 
 class FitnessScreen extends StatefulWidget {
-  const FitnessScreen({super.key, this.isActive = true});
+  const FitnessScreen({
+    super.key,
+    this.isActive = true,
+    this.actionsKey,
+    this.ringsKey,
+    this.buttonsKey,
+    this.weekKey,
+    this.recentKey,
+    this.bodyKey,
+  });
 
   final bool isActive;
+
+  /// Spotlight targets for the Fitness tour.
+  final Key? actionsKey;
+  final Key? ringsKey;
+  final Key? buttonsKey;
+  final Key? weekKey;
+  final Key? recentKey;
+  final Key? bodyKey;
 
   @override
   State<FitnessScreen> createState() => _FitnessScreenState();
@@ -272,24 +289,34 @@ class _FitnessScreenState extends State<FitnessScreen> {
                       ],
                     ),
                   ),
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: _WorkoutStreakPill(),
-                  ),
-                  IconButton(
-                    onPressed: _openGoals,
-                    tooltip: 'Goals',
-                    icon: const Icon(
-                      Icons.track_changes_rounded,
-                      color: _purple,
-                    ),
+                  Row(
+                    key: widget.actionsKey,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: _WorkoutStreakPill(),
+                      ),
+                      IconButton(
+                        onPressed: _openGoals,
+                        tooltip: 'Goals',
+                        icon: const Icon(
+                          Icons.track_changes_rounded,
+                          color: _purple,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
               const SizedBox(height: 18),
-              _TodayActivityRings(onTap: _openMonthlyRings),
+              KeyedSubtree(
+                key: widget.ringsKey,
+                child: _TodayActivityRings(onTap: _openMonthlyRings),
+              ),
               const SizedBox(height: 12),
               ValueListenableBuilder<bool>(
+                key: widget.buttonsKey,
                 valueListenable: FitnessWorkoutTimerState.isRunning,
                 builder: (context, isWorkoutRunning, _) => Row(
                   children: [
@@ -343,11 +370,14 @@ class _FitnessScreenState extends State<FitnessScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              _ThisWeekCard(strengthGoals: _strengthGoals),
+              KeyedSubtree(
+                key: widget.weekKey,
+                child: _ThisWeekCard(strengthGoals: _strengthGoals),
+              ),
               const SizedBox(height: 24),
-              const _RecentFeed(),
+              KeyedSubtree(key: widget.recentKey, child: const _RecentFeed()),
               const SizedBox(height: 24),
-              _BodyCard(_recentDays),
+              KeyedSubtree(key: widget.bodyKey, child: _BodyCard(_recentDays)),
             ],
           ),
         ),

@@ -37,7 +37,21 @@ import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 class DashboardScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
   final bool isActive;
-  const DashboardScreen({super.key, this.onScanTap, this.isActive = true});
+
+  /// Spotlight targets for the Metrics tour.
+  final Key? customizeKey;
+  final Key? physicalHealthKey;
+  final Key? keyMetricsKey;
+  final Key? insightsKey;
+  const DashboardScreen({
+    super.key,
+    this.onScanTap,
+    this.isActive = true,
+    this.customizeKey,
+    this.physicalHealthKey,
+    this.keyMetricsKey,
+    this.insightsKey,
+  });
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -487,6 +501,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     TextButton.icon(
+                      key: widget.customizeKey,
                       onPressed: _isLoadingMetricOrder
                           ? null
                           : _showLayoutEditor,
@@ -540,44 +555,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         VisibleStreamBuilder<PhysicalHealthView?>(
+          key: widget.physicalHealthKey,
           stream: _physicalHealthStream,
           builder: (context, snapshot) =>
               _buildPhysicalHealthHero(snapshot.data),
         ),
         const SizedBox(height: 24),
-        const Text(
-          'Key metrics',
-          style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 12),
-        if (_enabledKeyMetrics.isEmpty)
-          _buildNoKeyMetricsCard()
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final tileWidth = (constraints.maxWidth - 12) / 2;
-              return Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: _keyMetricOrder
-                    .where(_enabledKeyMetrics.contains)
-                    .map(
-                      (metric) => SizedBox(
-                        width: tileWidth,
-                        child: _buildKeyMetricFor(metric, snap),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
+        KeyedSubtree(
+          key: widget.keyMetricsKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Key metrics',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 12),
+              if (_enabledKeyMetrics.isEmpty)
+                _buildNoKeyMetricsCard()
+              else
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final tileWidth = (constraints.maxWidth - 12) / 2;
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: _keyMetricOrder
+                          .where(_enabledKeyMetrics.contains)
+                          .map(
+                            (metric) => SizedBox(
+                              width: tileWidth,
+                              child: _buildKeyMetricFor(metric, snap),
+                            ),
+                          )
+                          .toList(),
+                    );
+                  },
+                ),
+            ],
           ),
-        const SizedBox(height: 28),
-        const Text(
-          'Insights',
-          style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
         ),
-        const SizedBox(height: 10),
-        _buildInsightsCard(steps: steps, stress: stress, labels: stepLabels),
+        const SizedBox(height: 28),
+        KeyedSubtree(
+          key: widget.insightsKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Insights',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 10),
+              _buildInsightsCard(
+                steps: steps,
+                stress: stress,
+                labels: stepLabels,
+              ),
+            ],
+          ),
+        ),
         if (snap == null || snap.docs.isEmpty) ...[
           const SizedBox(height: 18),
           _buildEmptyState(),
