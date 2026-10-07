@@ -60,7 +60,12 @@ class IosPullDownMenu<T> extends StatelessWidget {
       elevation: 14,
       shadowColor: Colors.black.withValues(alpha: dark ? .5 : .22),
       menuPadding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 250, maxWidth: 280),
+      // Wide enough for labels like "Wind-down reminder" at larger text
+      // sizes, never wider than the screen.
+      constraints: BoxConstraints(
+        minWidth: 250,
+        maxWidth: (MediaQuery.sizeOf(context).width - 32).clamp(250, 320),
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       clipBehavior: Clip.antiAlias,
       onSelected: onSelected,
@@ -70,9 +75,10 @@ class IosPullDownMenu<T> extends StatelessWidget {
             value: actions[i].value,
             padding: EdgeInsets.zero,
             height: 46,
+            // Rows grow rather than clip when a label wraps.
             child: Container(
-              height: 46,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              constraints: const BoxConstraints(minHeight: 46),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
               decoration: BoxDecoration(
                 border: i < actions.length - 1
                     ? Border(
@@ -107,7 +113,8 @@ class IosPullDownMenu<T> extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (actions[i].icon != null)
+                  if (actions[i].icon != null) ...[
+                    const SizedBox(width: 10),
                     Icon(
                       actions[i].icon,
                       size: 20,
@@ -115,6 +122,7 @@ class IosPullDownMenu<T> extends StatelessWidget {
                           ? _destructive
                           : colors.textPrimary,
                     ),
+                  ],
                 ],
               ),
             ),
