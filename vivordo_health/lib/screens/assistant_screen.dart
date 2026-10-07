@@ -99,7 +99,9 @@ class _AssistantScreenState extends State<AssistantScreen> {
   ScreenInsight? _screen;
   WorkoutOpening? _workoutOpening;
   // Messages already in the thread when the chat was opened from a screen;
-  // the sheet hides them.
+  // the sheet hides them. Opened before the thread loaded, the sheet hides
+  // every message until the server's copy arrives (a cached first snapshot
+  // can miss older messages) or the user sends.
   Set<String> _idsBeforeOpening = const {};
   bool _openedBeforeLoad = false;
 
@@ -160,7 +162,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
           if (!mounted) return;
           setState(() {
             _messages = snapshot.docs.reversed.toList();
-            if (_openedBeforeLoad) {
+            if (_openedBeforeLoad && !snapshot.metadata.isFromCache) {
               _openedBeforeLoad = false;
               _idsBeforeOpening = {for (final m in _messages) m.id};
             }
@@ -313,6 +315,14 @@ class _AssistantScreenState extends State<AssistantScreen> {
             'activity. Verify current goals and activity before quoting exact '
             'values. Do not infer workout history, recovery needs, or medical '
             'causes from this summary.',
+      'burnout' =>
+        'This is Vivordo\'s nightly burnout check: the last 2 weeks of '
+            'Capacity, Effort and Mood against the user\'s own normal (the 8 '
+            'weeks before). It is a wellness signal, not a diagnosis: never '
+            'say they have burnout or any condition. Be warm and brief. Ask '
+            'what has been going on before advising, then tie what is behind '
+            'it to one or two small, concrete changes, and offer calendar or '
+            'priority changes for them to approve. Go easy on numbers.',
       _ =>
         'Verify current data before quoting exact values. Do not infer '
             'medical causes.',
@@ -321,8 +331,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
     final message = opening != null && !opening.busy
         ? opening.text
         : screen.message;
+    // A workout's details go in their own context block.
+    final details = screen.screen == 'workout_summary' ? null : screen.context;
     return 'Opened from ${screen.screen} (${screen.title}). Shown at opening '
-        '(not live data): $message\n$guidance';
+        '(not live data): $message'
+        '${details == null ? '' : '\nDetails: $details'}\n$guidance';
   }
 
   Future<Map<String, String>> _turnContext() async {
@@ -365,6 +378,10 @@ class _AssistantScreenState extends State<AssistantScreen> {
     if (!mounted) return;
     _input.clear();
     setState(() {
+      if (_openedBeforeLoad) {
+        _openedBeforeLoad = false;
+        _idsBeforeOpening = {for (final m in _messages) m.id};
+      }
       _sending = true;
       _pendingText = text;
       _idsBeforeSend = {for (final m in _messages) m.id};
@@ -502,7 +519,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     final sheet = _asSheet && opening != null;
     return <_Row>[
       for (final m in _messages)
-        if (!sheet || !_idsBeforeOpening.contains(m.id))
+        if (!sheet || (!_openedBeforeLoad && !_idsBeforeOpening.contains(m.id)))
           (t: (m.data()?['t'] as num?)?.toInt() ?? 0, doc: m, local: null),
       for (final item in _local)
         if (!sheet || item.t >= opening.t) (t: item.t, doc: null, local: item),
@@ -843,6 +860,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
         'Review my goals',
       ],
       'my_day' => ['Help me prioritize', 'Find a break', 'Review my schedule'],
+      'burnout' => [
+        'What\'s behind this?',
+        'What should I change this week?',
+        'Help me lighten my week',
+      ],
       _ => ['What does this mean?', 'What can I do about it?'],
     };
     return _card(

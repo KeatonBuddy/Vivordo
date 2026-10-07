@@ -31,6 +31,10 @@ class ScreenInsightController extends ChangeNotifier {
   String screen = 'home';
   bool _disposed = false;
 
+  /// Opens Vivordo AI about an insight, as the insight bar does; set by the
+  /// main navigation.
+  void Function(ScreenInsight insight)? onAsk;
+
   ScreenInsight? get current {
     for (final entry in _sources.values.toList().reversed) {
       if (entry.$1 == route &&
@@ -87,6 +91,15 @@ class ScreenInsightScope extends InheritedWidget {
   bool updateShouldNotify(ScreenInsightScope oldWidget) =>
       controller != oldWidget.controller;
 }
+
+/// Opens Vivordo AI about an insight from a screen inside the main tabs; null
+/// where there's no chat to open. Look it up before pushing a root sheet:
+/// those sit outside the tabs.
+void Function(ScreenInsight insight)? vivordoAiAsker(BuildContext context) =>
+    context
+        .getInheritedWidgetOfExactType<ScreenInsightScope>()
+        ?.controller
+        .onAsk;
 
 extension ContextualInsightWidget on Widget {
   Widget withScreenInsight(ScreenInsight insight) =>

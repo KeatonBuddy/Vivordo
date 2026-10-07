@@ -49,6 +49,14 @@ class BurnoutView {
   /// but never warn.
   final bool early;
 
+  /// The check in words, for Vivordo AI when the user talks it through.
+  String get chatContext => [
+    'Level: $level${early ? ' (an early check, from the first few weeks)' : ''}.',
+    for (final a in areas) '${a.name}: ${a.word}.',
+    if (drivers.isNotEmpty) 'Behind it: ${drivers.join('; ')}.',
+    if (suggestions.isNotEmpty) 'The app suggested: ${suggestions.join('; ')}.',
+  ].join('\n');
+
   static BurnoutView? fromMap(Map<String, dynamic>? data, String evaluatedDay) {
     final level = data?['level'];
     if (data == null || level is! String) return null;

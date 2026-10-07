@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/burnout_view.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/burnout_card.dart';
+import 'package:vivordo_health/widgets/contextual_insight_bar.dart';
 
 void main() {
   Map<String, dynamic> area({bool elevated = false, num score = 0}) => {
@@ -73,6 +74,68 @@ void main() {
     expect(view.areas[2].word, 'Slightly lower');
     expect(view.drivers.first, 'Sleep 6h 12m a night (usual 7h 03m)');
     expect(view.suggestions, hasLength(3));
+  });
+
+  test('the check reads as plain text for Vivordo AI', () {
+    final view = BurnoutView.fromMap({
+      'level': 'watch',
+      'early': true,
+      'areas': {'effort': area(elevated: true, score: 1.4)},
+      'drivers': [
+        {'name': 'backToBack', 'recent': 5, 'usual': 2},
+      ],
+    }, '2026-10-01')!;
+    expect(
+      view.chatContext,
+      'Level: watch (an early check, from the first few weeks).\n'
+      'Capacity: Not enough data yet.\n'
+      'Effort: Heavier · 11 of 14 days.\n'
+      'Mood: Not enough data yet.\n'
+      'Behind it: 5.0 back-to-backs a day (usual 2.0).\n'
+      "The app suggested: Add 15-minute gaps between tomorrow's events; "
+      'Move one priority that can wait to next week; '
+      'Take a short walk between your busiest blocks.',
+    );
+  });
+
+  testWidgets('Watch and Warning can be talked through with Vivordo AI', (
+    tester,
+  ) async {
+    final asked = <ScreenInsight>[];
+    final controller = ScreenInsightController()..onAsk = asked.add;
+    addTearDown(controller.dispose);
+    Future<void> open(Map<String, dynamic> data) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: VivordoTheme.light,
+          home: ScreenInsightScope(
+            controller: controller,
+            child: Scaffold(
+              body: BurnoutCard(view: BurnoutView.fromMap(data, '2026-10-01')!),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(BurnoutCard));
+      await tester.pumpAndSettle();
+    }
+
+    await open({'level': 'steady', 'areas': {}});
+    expect(find.text('Talk it through with Vivordo AI'), findsNothing);
+    await tester.tapAt(const Offset(20, 20)); // closes the sheet
+    await tester.pumpAndSettle();
+
+    await open({
+      'level': 'watch',
+      'areas': {'capacity': area(elevated: true, score: 1.4)},
+    });
+    await tester.ensureVisible(find.text('Talk it through with Vivordo AI'));
+    await tester.tap(find.text('Talk it through with Vivordo AI'));
+    await tester.pumpAndSettle();
+    expect(find.text('Talk it through with Vivordo AI'), findsNothing);
+    expect(asked.single.screen, 'burnout');
+    expect(asked.single.message, startsWith('Your energy has been lower'));
+    expect(asked.single.context, contains('Capacity: Lower · 11 of 14 days.'));
   });
 
   test('no result yet shows nothing', () {

@@ -107,6 +107,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       sheet: _chatSheet,
       onExpand: () => setState(() => _chatSheet.value = false),
     );
+    _insights.onAsk = _askAbout;
     _pandaHasBeenOpened = widget.initialIndex == 5;
     _chatRevealController = AnimationController(
       vsync: this,
@@ -279,6 +280,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   /// Opens Panda chat, growing it out of [from] (the robot button that was
   /// tapped) or, when opened another way, out of the button's usual corner.
+  /// Vivordo AI as a sheet over the current screen, about [insight].
+  void _askAbout(ScreenInsight? insight) {
+    _contextPrompt.value = insight;
+    _openChat(sheet: true);
+  }
+
   void _openChat({BuildContext? from, bool sheet = false}) {
     if (_chatOpen) return;
     final bubbleBox = from?.findRenderObject() as RenderBox?;
@@ -436,10 +443,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                           hideAssistant ||
                           FitnessWorkoutTimerState.isRunning.value,
                       collapsed: _buildChatBubble(),
-                      onAsk: (prompt) {
-                        _contextPrompt.value = _insights.current;
-                        _openChat(sheet: true);
-                      },
+                      onAsk: (_) => _askAbout(_insights.current),
                     ),
                   ),
                 ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/utils/burnout_view.dart';
+import 'contextual_insight_bar.dart';
 
 const _teal = Color(0xFF1D9E75);
 const _amber = Color(0xFFEF9F27);
@@ -181,22 +182,41 @@ class BurnoutCard extends StatelessWidget {
   }
 }
 
-Future<void> showBurnoutDetails(BuildContext context, BurnoutView view) =>
-    showModalBottomSheet<void>(
-      context: context,
-      useRootNavigator: true,
-      isScrollControlled: true,
-      backgroundColor: context.vivordoColors.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-      ),
-      builder: (context) => _BurnoutDetails(view: view),
-    );
+Future<void> showBurnoutDetails(BuildContext context, BurnoutView view) {
+  // Looked up here: the sheet below sits outside the tabs.
+  final ask = vivordoAiAsker(context);
+  final alert = view.level == 'warning' || view.level == 'watch';
+  return showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    backgroundColor: context.vivordoColors.card,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+    ),
+    builder: (context) => _BurnoutDetails(
+      view: view,
+      onTalk: ask == null || !alert
+          ? null
+          : () => ask(
+              ScreenInsight(
+                'burnout',
+                'Burnout check',
+                '${view.title}. ${view.body}',
+                context: view.chatContext,
+              ),
+            ),
+    ),
+  );
+}
 
 class _BurnoutDetails extends StatelessWidget {
-  const _BurnoutDetails({required this.view});
+  const _BurnoutDetails({required this.view, this.onTalk});
 
   final BurnoutView view;
+
+  /// Opens Vivordo AI with this check loaded; Watch and Warning only.
+  final VoidCallback? onTalk;
 
   @override
   Widget build(BuildContext context) {
@@ -343,6 +363,29 @@ class _BurnoutDetails extends StatelessWidget {
                       child: Text('• $suggestion', style: secondary(14)),
                     ),
                 ],
+              ],
+              if (onTalk != null) ...[
+                const SizedBox(height: 22),
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    onTalk!();
+                  },
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                  label: const Text('Talk it through with Vivordo AI'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _purple.withValues(alpha: .14),
+                    foregroundColor: _purple,
+                    minimumSize: const Size.fromHeight(48),
+                    textStyle: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
               ],
               const SizedBox(height: 20),
               Text(
