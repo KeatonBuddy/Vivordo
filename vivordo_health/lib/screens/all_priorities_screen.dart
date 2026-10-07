@@ -4,10 +4,12 @@ import 'package:intl/intl.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/utils/priority_schedule.dart';
 import '../theme/vivordo_theme.dart';
+import '../widgets/add_priority_sheet.dart';
 import '../widgets/apple_ui.dart';
+import '../widgets/habit_chips.dart';
 import '../widgets/swipe_to_delete.dart';
 
-const _doneGreen = Color(0xFF54C75B);
+const _doneGreen = habitDoneGreen;
 const _overdueRed = Color(0xFFE5484D);
 
 /// One row per recurring schedule, represented by today's or its next occurrence.
@@ -32,14 +34,26 @@ class AllPrioritiesScreen extends StatefulWidget {
     required this.onAdd,
     required this.onEdit,
     this.onDelete,
+    this.onDeleteSchedule,
+    this.onEditHabit,
     this.priorities,
+    this.templates,
+    this.startOnRepeating = false,
   });
   final Future<void> Function(BuildContext) onAdd;
   final Future<void> Function(BuildContext, DailyPriority) onEdit;
 
   /// Defaults to [DailyPriorityService.delete].
   final Future<void> Function(DailyPriority)? onDelete;
+
+  /// Defaults to [DailyPriorityService.deleteSchedule].
+  final Future<void> Function(String templateId)? onDeleteSchedule;
+
+  /// Defaults to [showHabitEditor].
+  final Future<void> Function(BuildContext, PriorityTemplate)? onEditHabit;
   final Stream<List<DailyPriority>>? priorities;
+  final Stream<Map<String, PriorityTemplate>>? templates;
+  final bool startOnRepeating;
   @override
   State<AllPrioritiesScreen> createState() => _AllPrioritiesScreenState();
 }
@@ -49,9 +63,9 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
   late DateTime _day;
   late Stream<List<DailyPriority>> _stream;
   Timer? _timer;
-  StreamSubscription<Map<String, String>>? _labelsSubscription;
-  Map<String, String> _labels = const {};
-  _Tab _tab = _Tab.plan;
+  StreamSubscription<Map<String, PriorityTemplate>>? _templatesSubscription;
+  Map<String, PriorityTemplate> _templates = const {};
+  late _Tab _tab = widget.startOnRepeating ? _Tab.repeating : _Tab.plan;
   bool _showCompleted = false;
   final _busy = <String>{};
   @override
@@ -63,15 +77,20 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
         widget.priorities ??
         DailyPriorityService.watch(_day, includeUpcoming: true);
     _timer = Timer.periodic(const Duration(seconds: 30), (_) => _rollover());
+    final templates =
+        widget.templates ??
+        (widget.priorities == null
+            ? DailyPriorityService.watchTemplates()
+            : null);
+    _templatesSubscription = templates?.listen(
+      (value) {
+        if (mounted) setState(() => _templates = value);
+      },
+      onError: (Object error) {
+        /* Dates remain usable without schedule labels. */
+      },
+    );
     if (widget.priorities == null) {
-      _labelsSubscription = DailyPriorityService.watchRecurrenceLabels().listen(
-        (labels) {
-          if (mounted) setState(() => _labels = labels);
-        },
-        onError: (Object error) {
-          /* Dates remain usable without schedule labels. */
-        },
-      );
       DailyPriorityService.refreshReminders().catchError((Object error) {
         if (mounted) _message("Couldn't refresh repeating priorities.");
       });
@@ -97,7 +116,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
   @override
   void dispose() {
     _timer?.cancel();
-    _labelsSubscription?.cancel();
+    _templatesSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -125,7 +144,22 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     }
   }
 
+  Future<void> _deleteSchedule(String templateId) async {
+    try {
+      await (widget.onDeleteSchedule ?? DailyPriorityService.deleteSchedule)(
+        templateId,
+      );
+    } catch (_) {
+      if (mounted) _message("Couldn't delete it. Try again.");
+    }
+  }
+
   bool _recurring(DailyPriority p) => p.source == 'recurring_manual';
+
+  List<PriorityTemplate> get _habits =>
+      _templates.values.where((t) => t.habit && t.enabled).toList()..sort(
+        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -141,6 +175,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
             final distinct = distinctPriorities(all);
             final schedules = distinct.where(_recurring).toList();
             final plan = _PlanGroups.from(distinct, _day);
+            final repeating = schedules.length + _habits.length;
             return ListView(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 110),
               children: [
@@ -149,9 +184,9 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
                 AppSegmented<_Tab>(
                   segments: {
                     _Tab.plan: 'Plan',
-                    _Tab.repeating: schedules.isEmpty
+                    _Tab.repeating: repeating == 0
                         ? 'Repeating'
-                        : 'Repeating · ${schedules.length}',
+                        : 'Repeating · $repeating',
                   },
                   value: _tab,
                   onChanged: (tab) => setState(() => _tab = tab),
@@ -372,7 +407,9 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     child: _PriorityTile(
       priority: p,
       today: _day,
-      repeatLabel: _recurring(p) ? _labels[p.templateId] ?? 'Repeating' : null,
+      repeatLabel: _recurring(p)
+          ? _templates[p.templateId]?.label ?? 'Repeating'
+          : null,
       busy: _busy.contains(p.reference.path),
       onToggle: () => _toggle(p),
     ),
@@ -383,31 +420,137 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     List<DailyPriority> all,
   ) {
     final colors = context.vivordoColors;
-    if (schedules.isEmpty) {
+    final habits = _habits;
+    if (schedules.isEmpty && habits.isEmpty) {
       return [
         _note(
           'Nothing repeats yet. To repeat a priority, add it or edit it and '
-          'choose how often.',
+          'choose how often. Turn on Habit for small daily things like water '
+          'or a walk.',
         ),
       ];
     }
-    return [
-      const SizedBox(height: 12),
-      _card([
-        for (var i = 0; i < schedules.length; i++) ...[
-          if (i > 0) Divider(height: 1, indent: 60, color: colors.border),
-          _scheduleRow(schedules[i], all),
+    Widget section(String label, List<Widget> rows) => Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+          _card([
+            for (var i = 0; i < rows.length; i++) ...[
+              if (i > 0) Divider(height: 1, indent: 60, color: colors.border),
+              rows[i],
+            ],
+          ]),
         ],
-      ]),
+      ),
+    );
+    return [
+      if (habits.isNotEmpty)
+        section('HABITS', [for (final h in habits) _habitRow(h)]),
+      if (schedules.isNotEmpty)
+        section('REPEATING PRIORITIES', [
+          for (final s in schedules) _scheduleRow(s, all),
+        ]),
       Padding(
         padding: const EdgeInsets.fromLTRB(6, 12, 6, 0),
         child: Text(
-          "Tap a schedule to change when it repeats. Each day's copy is "
-          'ticked off in Plan.',
+          'Tap one to edit it, or swipe it to stop it repeating. Days you '
+          'already did are kept.',
           style: TextStyle(color: colors.textSecondary, fontSize: 12),
         ),
       ),
     ];
+  }
+
+  Widget _habitRow(PriorityTemplate habit) {
+    final colors = context.vivordoColors;
+    final icon = habitIcon(habit.title);
+    final streak = habit.streak(_day);
+    final reminder = habit.reminderTimeMinutes;
+    final details = [
+      habit.label,
+      if (habit.target > 1) '${habit.target} a day',
+      if (reminder != null)
+        TimeOfDay(hour: reminder ~/ 60, minute: reminder % 60).format(context),
+    ].join(' · ');
+    return SwipeToDelete(
+      key: ValueKey('habit-${habit.id}'),
+      onTap: () => (widget.onEditHabit ?? showHabitEditor)(context, habit),
+      onDelete: () => _deleteSchedule(habit.id),
+      confirmTitle: 'Delete habit?',
+      confirmMessage:
+          'Stop “${habit.title}” repeating? Days you already did are kept.',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: VivordoTheme.brand.withValues(alpha: .14),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon ?? Icons.loop_rounded,
+                color: VivordoTheme.brand,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    habit.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    details,
+                    style: TextStyle(color: colors.textSecondary, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            if (streak >= 1) ...[
+              const Icon(
+                Icons.local_fire_department_rounded,
+                color: Color(0xFFF5A524),
+                size: 16,
+              ),
+              const SizedBox(width: 2),
+              Text(
+                '$streak',
+                style: const TextStyle(
+                  color: Color(0xFFF5A524),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _scheduleRow(DailyPriority schedule, List<DailyPriority> all) {
@@ -435,14 +578,18 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     };
     final minutes = priorityMinutes(schedule);
     final details = [
-      _labels[schedule.templateId] ?? 'Repeating',
+      _templates[schedule.templateId]?.label ?? 'Repeating',
       if (schedule.sourceStart != null && !schedule.isAllDay)
         DateFormat.jm().format(schedule.sourceStart!),
       if (minutes != null) formatPriorityMinutes(minutes),
     ].join(' · ');
-    return InkWell(
+    return SwipeToDelete(
       key: ValueKey('schedule-${schedule.templateId}'),
       onTap: () => widget.onEdit(context, next ?? schedule),
+      onDelete: () => _deleteSchedule(schedule.templateId!),
+      confirmTitle: 'Stop repeating?',
+      confirmMessage:
+          'Remove “${schedule.title}” from today on? Earlier days are kept.',
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(

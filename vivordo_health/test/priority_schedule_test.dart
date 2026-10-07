@@ -73,4 +73,44 @@ void main() {
     expect(formatPriorityMinutes(120), '2h');
     expect(formatPriorityMinutes(15), '15 min');
   });
+
+  test('a habit streak counts scheduled days done in a row', () {
+    final weekdays = PriorityTemplate(
+      id: 't',
+      title: 'Stretch',
+      recurrence: 'weekly',
+      weekdays: const {1, 3, 5},
+      doneDays: const {'2026-10-05', '2026-10-02', '2026-09-30', '2026-09-25'},
+    );
+    // Today (Tue) isn't scheduled; Mon, Fri, Wed done; Mon Sep 28 missed.
+    expect(weekdays.streak(today), 3);
+    final daily = PriorityTemplate(
+      id: 'd',
+      title: 'Water',
+      recurrence: 'daily',
+      doneDays: const {'2026-10-05', '2026-10-04'},
+    );
+    // Today still open doesn't break it; doing it adds one.
+    expect(daily.streak(today), 2);
+    expect(
+      habitStreak({...daily.doneDays, '2026-10-06'}, daily.repeatsOn, today),
+      3,
+    );
+    expect(
+      PriorityTemplate(
+        id: 'n',
+        title: 'New',
+        recurrence: 'daily',
+        startDate: DateTime(2026, 10, 6),
+      ).streak(today),
+      0,
+    );
+  });
+
+  test('habit icons come from the title', () {
+    expect(habitIcon('Drink water'), isNotNull);
+    expect(habitIcon('Meditate'), habitIcon('Breathing'));
+    expect(habitIcon('Meditate'), isNot(habitIcon('Take meds')));
+    expect(habitIcon('Call mum'), isNull);
+  });
 }

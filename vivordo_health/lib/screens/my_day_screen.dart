@@ -31,6 +31,7 @@ import '../widgets/apple_ui.dart';
 import '../widgets/body_reaction_view.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/swipe_to_delete.dart';
+import '../widgets/habit_chips.dart';
 import '../src/utils/priority_schedule.dart';
 import '../widgets/plan_slot_sheet.dart';
 import 'journal_screen.dart';
@@ -216,6 +217,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   final _prioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
   final _tomorrowPrioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
+  final _habitSnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
+  final _templateSnapshot =
+      OwnedStreamSnapshot<Map<String, PriorityTemplate>>();
   DateTime get _tomorrow =>
       DateTime(_priorityDay.year, _priorityDay.month, _priorityDay.day + 1);
 
@@ -499,6 +503,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _tomorrowPrioritySnapshot.connectFactory(
       () => DailyPriorityService.watch(tomorrow),
     );
+    _habitSnapshot.connectFactory(
+      () => DailyPriorityService.watch(today, habits: true),
+    );
+    _templateSnapshot.connectFactory(DailyPriorityService.watchTemplates);
   }
 
   @override
@@ -510,6 +518,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _burnoutSnapshot.setActive(active);
     _prioritySnapshot.setActive(active);
     _tomorrowPrioritySnapshot.setActive(active);
+    _habitSnapshot.setActive(active);
+    _templateSnapshot.setActive(active);
     if (_screenActive == active) return;
     _screenActive = active;
     _clockTimer?.cancel();
@@ -583,6 +593,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _burnoutSnapshot.dispose();
     _prioritySnapshot.dispose();
     _tomorrowPrioritySnapshot.dispose();
+    _habitSnapshot.dispose();
+    _templateSnapshot.dispose();
     super.dispose();
   }
 
@@ -916,6 +928,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(height: 24),
+              _buildHabits(),
               KeyedSubtree(
                 key: widget.prioritiesKey,
                 child: _buildPriorities(),
@@ -2062,18 +2075,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     ),
                   ),
                   TextButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => AllPrioritiesScreen(
-                          onAdd: (sheetContext) =>
-                              _addManualPriority(sheetContext: sheetContext),
-                          onEdit: (sheetContext, priority) => _editPriority(
-                            priority,
-                            sheetContext: sheetContext,
-                          ),
-                        ),
-                      ),
-                    ),
+                    onPressed: _openAllPriorities,
                     child: const Text('View all'),
                   ),
                 ],
@@ -2096,6 +2098,64 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           );
         },
       );
+
+  Future<void> _openAllPriorities({bool repeating = false}) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AllPrioritiesScreen(
+            startOnRepeating: repeating,
+            onAdd: (sheetContext) =>
+                _addManualPriority(sheetContext: sheetContext),
+            onEdit: (sheetContext, priority) =>
+                _editPriority(priority, sheetContext: sheetContext),
+          ),
+        ),
+      );
+
+  /// Today's habits as chips; nothing until there are some.
+  Widget _buildHabits() => ListenableBuilder(
+    listenable: Listenable.merge([_habitSnapshot, _templateSnapshot]),
+    builder: (context, _) {
+      final habits = _habitSnapshot.value.data ?? const <DailyPriority>[];
+      if (habits.isEmpty) return const SizedBox.shrink();
+      final done = habits.where((h) => h.completed).length;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _SectionLabel('HABITS · $done OF ${habits.length}'),
+                ),
+                TextButton(
+                  onPressed: () => _openAllPriorities(repeating: true),
+                  child: const Text('Edit'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            HabitChips(
+              habits: habits,
+              templates: _templateSnapshot.value.data ?? const {},
+              today: _priorityDay,
+              onChanged: _setHabitCount,
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  Future<void> _setHabitCount(DailyPriority habit, int count) async {
+    try {
+      await DailyPriorityService.setHabitCount(habit, count);
+    } catch (error) {
+      debugPrint('Habit update failed: $error');
+      _showMessage("Couldn't update the habit. Try again.", error: true);
+    }
+  }
 
   Future<void> _togglePriority(DailyPriority priority) async {
     try {
@@ -2127,6 +2187,18 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     try {
       if (result.deleteRequested) {
         await DailyPriorityService.delete(priority);
+        return;
+      }
+      final templateId = priority.templateId;
+      if (result.habit && templateId != null) {
+        // Made a habit: that changes the whole schedule, not this day.
+        await DailyPriorityService.updateSchedule(
+          templateId,
+          title: result.title,
+          habit: true,
+          target: result.target,
+          reminderTimeMinutes: result.reminderTimeMinutes,
+        );
         return;
       }
       final destination = await DailyPriorityService.editPriority(

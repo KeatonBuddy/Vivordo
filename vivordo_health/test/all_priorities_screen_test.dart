@@ -123,4 +123,75 @@ void main() {
       },
     );
   }
+
+  testWidgets('habits get their own section and schedules swipe away', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    String? editedHabit, deletedSchedule;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.dark,
+        home: AllPrioritiesScreen(
+          startOnRepeating: true,
+          priorities: Stream.value([
+            priority('Submit update', 1, template: 'a'),
+          ]),
+          templates: Stream.value({
+            'a': const PriorityTemplate(
+              id: 'a',
+              title: 'Submit update',
+              recurrence: 'daily',
+            ),
+            'w': const PriorityTemplate(
+              id: 'w',
+              title: 'Water',
+              recurrence: 'daily',
+              habit: true,
+              target: 8,
+            ),
+            'old': const PriorityTemplate(
+              id: 'old',
+              title: 'Stopped',
+              recurrence: 'daily',
+              habit: true,
+              enabled: false,
+            ),
+          }),
+          onAdd: (_) async {},
+          onEdit: (_, _) async {},
+          onEditHabit: (_, habit) async => editedHabit = habit.id,
+          onDeleteSchedule: (id) async => deletedSchedule = id,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Repeating · 2'), findsOneWidget);
+    expect(find.text('HABITS'), findsOneWidget);
+    expect(find.text('Every day · 8 a day'), findsOneWidget);
+    expect(find.text('Stopped'), findsNothing);
+    await tester.tap(find.text('Water'));
+    await tester.pumpAndSettle();
+    expect(editedHabit, 'w');
+
+    await tester.drag(find.text('Submit update'), const Offset(-120, 0));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('Submit update'),
+          matching: find.byType(SwipeToDelete),
+        ),
+        matching: find.text('Delete'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete').last);
+    await tester.pumpAndSettle();
+    expect(deletedSchedule, 'a');
+  });
 }

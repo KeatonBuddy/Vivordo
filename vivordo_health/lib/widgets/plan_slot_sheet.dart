@@ -37,6 +37,8 @@ Future<String?> savePriorityDraft(PriorityDraft draft) async {
     recurrenceEnd: draft.repeatEnd,
     reminderMinutes: draft.reminderMinutes,
     reminderTimeMinutes: draft.reminderTimeMinutes,
+    habit: draft.habit,
+    target: draft.target,
   );
   if (!draft.addToCalendar || reference == null) return null;
   return addPriorityCalendarEvent(draft, reference: reference);
