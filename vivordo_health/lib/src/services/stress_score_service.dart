@@ -882,6 +882,20 @@ class StressScoreService {
             'algorithm_version': lean?['algorithm_version'],
             'justification': lean?['justification'],
             'top_drivers': lean?['top_drivers'],
+            // Every signal of the latest reading, measured or not, for the
+            // detail screen's "What's moving it" and "Signals today". The
+            // BaaS notes are left out: they are developer text (z-scores).
+            if ((result['breakdown'] as Map?)?['components'] case final List c)
+              'signals': [
+                for (final s in c)
+                  if (s is Map && s['name'] is String)
+                    {
+                      'name': s['name'],
+                      'weight': s['weight_pct'],
+                      'signal': s['signal'],
+                      'contribution': s['contribution'],
+                    },
+              ],
             // Keep each successful score so the detail screen can render a real
             // intraday trend. The service already coalesces nearby readings.
             'entries': FieldValue.arrayUnion([
