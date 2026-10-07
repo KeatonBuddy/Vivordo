@@ -27,6 +27,8 @@ import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/day_timeline.dart';
+import '../widgets/swipe_to_delete.dart';
+import '../src/utils/priority_schedule.dart';
 import '../widgets/plan_slot_sheet.dart';
 import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
@@ -2386,7 +2388,7 @@ Widget priorityRowForTesting({
   onEdit: onEdit,
 );
 
-class _PriorityRow extends StatefulWidget {
+class _PriorityRow extends StatelessWidget {
   const _PriorityRow({
     super.key,
     required this.priority,
@@ -2400,19 +2402,6 @@ class _PriorityRow extends StatefulWidget {
   final Future<void> Function() onDelete;
   final VoidCallback? onEdit;
 
-  @override
-  State<_PriorityRow> createState() => _PriorityRowState();
-}
-
-class _PriorityRowState extends State<_PriorityRow> {
-  static const _actionWidth = 88.0;
-  double _dragOffset = 0;
-  bool _dragging = false;
-  bool _deleting = false;
-  bool _confirmingDelete = false;
-
-  DailyPriority get priority => widget.priority;
-
   String? get _timeLabel {
     final start = priority.sourceStart;
     final end = priority.sourceEnd;
@@ -2425,193 +2414,93 @@ class _PriorityRowState extends State<_PriorityRow> {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    final timeLabel = _timeLabel;
-    return ClipRect(
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: SizedBox(
-                width: _actionWidth,
-                child: Material(
-                  color: const Color(0xFFE5484D),
-                  child: InkWell(
-                    onTap: _deleting ? null : _delete,
-                    child: Center(
-                      child: _deleting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.delete_outline_rounded,
-                                  color: Colors.white,
-                                  size: 22,
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  'Delete',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
+    final today = DateTime.now();
+    final overdue = overdueSince(priority, today);
+    // A carried-over priority says where it came from instead of its time.
+    final (pill, pillColor) = overdue != null
+        ? (overdueLabel(overdue, today), const Color(0xFFE5484D))
+        : (_timeLabel, MyDayScreen.purple);
+    return SwipeToDelete(
+      onTap: onEdit,
+      onDelete: onDelete,
+      confirmTitle: 'Delete priority?',
+      confirmMessage: priorityDeleteMessage(
+        priority.title,
+        manual: priority.source == 'manual',
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        child: Row(
+          children: [
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onToggle,
+                customBorder: const CircleBorder(),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: priority.completed
+                        ? const Color(0xFF54C75B)
+                        : Colors.transparent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: priority.completed
+                          ? const Color(0xFF54C75B)
+                          : MyDayScreen.muted,
+                      width: 2,
                     ),
                   ),
+                  child: priority.completed
+                      ? const Icon(
+                          Icons.check_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        )
+                      : null,
                 ),
               ),
             ),
-          ),
-          GestureDetector(
-            // Let taps in the revealed action area reach the Delete button.
-            behavior: HitTestBehavior.deferToChild,
-            onTap: widget.onEdit,
-            onHorizontalDragStart: (_) => setState(() => _dragging = true),
-            onHorizontalDragUpdate: (details) {
-              setState(() {
-                _dragOffset = (_dragOffset + details.delta.dx).clamp(
-                  -_actionWidth,
-                  0,
-                );
-              });
-            },
-            onHorizontalDragEnd: (_) {
-              setState(() {
-                _dragging = false;
-                _dragOffset = _dragOffset <= -_actionWidth * .35
-                    ? -_actionWidth
-                    : 0;
-              });
-            },
-            onHorizontalDragCancel: () {
-              setState(() {
-                _dragging = false;
-                _dragOffset = 0;
-              });
-            },
-            child: AnimatedContainer(
-              duration: _dragging
-                  ? Duration.zero
-                  : const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              transform: Matrix4.translationValues(_dragOffset, 0, 0),
-              color: colors.card,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              child: Row(
-                children: [
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: widget.onToggle,
-                      customBorder: const CircleBorder(),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: priority.completed
-                              ? const Color(0xFF54C75B)
-                              : Colors.transparent,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: priority.completed
-                                ? const Color(0xFF54C75B)
-                                : MyDayScreen.muted,
-                            width: 2,
-                          ),
-                        ),
-                        child: priority.completed
-                            ? const Icon(
-                                Icons.check_rounded,
-                                color: Colors.white,
-                                size: 18,
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      priority.title,
-                      style: TextStyle(
-                        color: priority.completed
-                            ? colors.textSecondary
-                            : colors.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        decoration: priority.completed
-                            ? TextDecoration.lineThrough
-                            : null,
-                      ),
-                    ),
-                  ),
-                  if (timeLabel != null) ...[
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: MyDayScreen.purple.withValues(alpha: .10),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        timeLabel,
-                        style: const TextStyle(
-                          color: MyDayScreen.purple,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                priority.title,
+                style: TextStyle(
+                  color: priority.completed
+                      ? colors.textSecondary
+                      : colors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  decoration: priority.completed
+                      ? TextDecoration.lineThrough
+                      : null,
+                ),
               ),
             ),
-          ),
-        ],
+            if (pill != null) ...[
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: pillColor.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  pill,
+                  style: TextStyle(
+                    color: pillColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
-  }
-
-  Future<void> _delete() async {
-    if (_deleting || _confirmingDelete) return;
-    _confirmingDelete = true;
-    try {
-      final confirmed = await confirmAction(
-        context,
-        title: 'Delete priority?',
-        message:
-            'Remove “${priority.title}” from your priorities?'
-            '${priority.source == 'manual' ? '' : '\n\nThis won\'t delete the original calendar event or recurring schedule.'}',
-        confirmLabel: 'Delete',
-      );
-      if (confirmed && mounted) {
-        setState(() => _deleting = true);
-        await widget.onDelete();
-      }
-    } finally {
-      _confirmingDelete = false;
-      if (mounted) {
-        setState(() {
-          _deleting = false;
-          _dragOffset = 0;
-        });
-      }
-    }
   }
 }
 
