@@ -1,0 +1,341 @@
+<!doctype html>
+<!--
+  Source of "Vivordo - How the scores work.pdf" (Desktop/Vivordo). Keep it in
+  step with docs/scores.md and update the "Accurate as of" date. To rebuild
+  the PDF (headless Chrome, no headers or footers):
+
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+    --disable-gpu --no-pdf-header-footer --user-data-dir=/tmp/scores-pdf-chrome \
+    --print-to-pdf="$HOME/Desktop/Vivordo/Vivordo - How the scores work.pdf" \
+    "file://$PWD/docs/how_the_scores_work.html"
+
+  Chrome can stay running after it writes the PDF; stop it with
+  pkill -f scores-pdf-chrome.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How Vivordo's scores work</title>
+<style>
+  @page { size: Letter; margin: 0.75in 0.8in 0.8in; }
+  :root { --brand: #6250E8; --ink: #1C1C1E; --muted: #5F5E6B; --line: #E3E1EC; --soft: #F4F2FE; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; color: var(--ink); font-size: 10pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 26pt; line-height: 1.15; margin: 0 0 6pt; letter-spacing: -0.3pt; }
+  h2 { font-size: 16pt; margin: 0 0 4pt; color: var(--brand); letter-spacing: -0.2pt; }
+  h3 { font-size: 11.5pt; margin: 14pt 0 4pt; }
+  p { margin: 0 0 7pt; }
+  ul { margin: 0 0 8pt; padding-left: 16pt; }
+  li { margin-bottom: 3pt; }
+  .kicker { font-size: 9pt; font-weight: 700; letter-spacing: 1.2pt; color: var(--brand); text-transform: uppercase; margin-bottom: 6pt; }
+  .lede { font-size: 12pt; color: var(--muted); margin-bottom: 14pt; }
+  .meta { font-size: 9pt; color: var(--muted); }
+  section { margin-top: 26pt; }
+  section.first { margin-top: 0; }
+  section.break { break-before: page; margin-top: 0; }
+  h2, h3, .kicker, .question, .facts { break-after: avoid; }
+  li, p { orphans: 3; widows: 3; }
+  .formula, .facts { break-inside: avoid; }
+  .question { font-size: 11.5pt; color: var(--muted); margin-bottom: 10pt; }
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 10pt; font-size: 9.5pt; page-break-inside: avoid; }
+  th { text-align: left; font-weight: 700; border-bottom: 1.5pt solid var(--ink); padding: 5pt 6pt 4pt 0; vertical-align: bottom; }
+  td { border-bottom: 0.75pt solid var(--line); padding: 5pt 6pt 5pt 0; vertical-align: top; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .facts { display: flex; gap: 8pt; margin: 2pt 0 12pt; }
+  .fact { flex: 1; background: var(--soft); border-radius: 6pt; padding: 7pt 9pt; }
+  .fact b { display: block; font-size: 8pt; letter-spacing: 0.8pt; text-transform: uppercase; color: var(--brand); margin-bottom: 2pt; }
+  .fact span { font-size: 9.5pt; }
+  .formula { font-family: "SF Mono", Menlo, monospace; font-size: 9.5pt; background: #F7F7FA; border: 0.75pt solid var(--line); border-radius: 5pt; padding: 7pt 9pt; margin: 4pt 0 10pt; white-space: pre-wrap; }
+  .example { border-left: 3pt solid var(--brand); padding: 2pt 0 2pt 10pt; margin: 8pt 0 10pt; page-break-inside: avoid; }
+  .example .kicker { margin-bottom: 3pt; }
+  .note { font-size: 9.5pt; color: var(--muted); }
+  .toc td { font-size: 10pt; }
+  .pill { display: inline-block; font-size: 8.5pt; font-weight: 600; padding: 1pt 6pt; border-radius: 8pt; background: var(--soft); color: #3C3489; }
+</style>
+</head>
+<body>
+
+<section class="first">
+  <div class="kicker">Vivordo · Internal reference</div>
+  <h1>How Vivordo's scores work</h1>
+  <p class="lede">What each score means, what goes into it, how it's calculated, and when it updates. Accurate as of the build of October 7, 2026.</p>
+
+  <table class="toc">
+    <tr><th>Score</th><th>The question it answers</th><th>Range</th><th>Where you see it</th><th>Updates</th></tr>
+    <tr><td><b>Stress</b></td><td>How stressed is my body and mind right now, compared with a typical day for me?</td><td>0–100</td><td>Home</td><td>Live, through the day</td></tr>
+    <tr><td><b>Capacity</b></td><td>How much energy do I have today?</td><td>0–100</td><td>My Day, Capacity widget</td><td>Each morning, until sleep syncs</td></tr>
+    <tr><td><b>Demand</b></td><td>How much is still ahead of me today?</td><td>Points</td><td>My Day, Home ("Your Day")</td><td>Live</td></tr>
+    <tr><td><b>Effort</b></td><td>What has today taken out of me?</td><td>Points</td><td>Home ("Your Day"), as words</td><td>Grows through the day</td></tr>
+    <tr><td><b>Physical Health</b></td><td>How are my fitness and physical habits trending?</td><td>0–100</td><td>Metrics</td><td>When activity, sleep or profile data changes</td></tr>
+    <tr><td><b>Heart insight</b></td><td>How was my heart rate over the past hour?</td><td>Words</td><td>Home, Insights</td><td>Every 5 minutes on Home</td></tr>
+    <tr><td><b>Event reactions</b></td><td>How did my body react during that event?</td><td>Words</td><td>My Day timeline</td><td>When an event ends</td></tr>
+    <tr><td><b>Burnout check</b></td><td>Am I sliding toward burnout?</td><td>Level</td><td>My Day card</td><td>Nightly</td></tr>
+  </table>
+
+  <h3>Principles every score follows</h3>
+  <ul>
+    <li><b>Compared with you, not with other people.</b> Almost every score measures you against your own normal (your own medians over the last 2–13 weeks). The exception is Physical Health's cardio fitness, which compares your VO₂ max with typical values for your age and sex.</li>
+    <li><b>Never guessed.</b> When there isn't enough data, a score shows as building or unavailable instead of inventing a number. Missing values are stored as empty, never as 0.</li>
+    <li><b>One odd reading never decides a score.</b> Outlier readings are ignored, and medians and robust spreads are used instead of averages.</li>
+    <li><b>Wellness signals, not medical measures.</b> None of these scores diagnose anything. They describe trends to help people notice and adjust.</li>
+    <li><b>Versioned.</b> Each stored score records its formula version, so trends and the burnout check only compare days calculated the same way. There are no backfills: history starts when each person is on the new build.</li>
+  </ul>
+
+  <h3>How they fit together</h3>
+  <p><b>Capacity</b> is what you have. <b>Demand</b> is what's ahead. <b>Effort</b> is what you've spent. My Day compares the morning's expected Demand with Capacity, and tomorrow's Capacity counts how heavy today's Effort was. A day far more active than your usual lowers Capacity for up to 3 days. <b>Stress</b> is the live read of how you're coping. The <b>burnout check</b> watches Capacity, Effort and mood over weeks. <b>Physical Health</b> is the long-term view, separate from the day.</p>
+  <p class="note">Wellness and Heart Health have been retired. Wellness's Metrics card is now Physical Health, and its widget is now the Capacity widget. Heart Health swung with ordinary day-to-day noise and repeated what Capacity already does with HRV and resting heart rate. The Heart screen now shows a resting heart rate trend instead. There is no separate sleep score: sleep is the biggest part of Capacity and part of Physical Health.</p>
+</section>
+
+<section>
+  <div class="kicker">Live</div>
+  <h2>Stress</h2>
+  <p class="question">How stressed is my body and mind right now, compared with a typical day for me?</p>
+  <div class="facts">
+    <div class="fact"><b>Range</b><span>0–100, where 50 is a typical day for you</span></div>
+    <div class="fact"><b>Calculated by</b><span>Vivordo's stress service (BAAS v2.2)</span></div>
+    <div class="fact"><b>Labels in the app</b><span>Low &lt;30 · Moderate 30–59 · Elevated 60–79 · High 80+</span></div>
+  </div>
+
+  <h3>How it works</h3>
+  <p>Each signal is compared with your own rolling baseline and turned into a deviation between −1 (better than your typical day) and +1 (worse). The score is a weighted average of those deviations, anchored at 50:</p>
+  <div class="formula">Stress = 50 + 50 × (Σ weight × deviation ÷ Σ weight of the signals present) × confidence shrink</div>
+  <ul>
+    <li><b>50 means a typical day for you.</b> A day with good sleep, high HRV and a good mood can pull it toward 20. A rough one pushes it toward 80+.</li>
+    <li><b>Missing data is neutral, not calming.</b> Only signals that are present count, so missing data pulls the score toward 50 and lowers its confidence rather than making you look relaxed.</li>
+  </ul>
+
+  <h3>Daily signals and their weights</h3>
+  <table>
+    <tr><th>Signal</th><th class="num">Weight</th><th>Signal</th><th class="num">Weight</th></tr>
+    <tr><td>How you say you feel (mood, self-reported stress)</td><td class="num">35</td><td>Sleep fragmentation</td><td class="num">8</td></tr>
+    <tr><td>Sleep duration</td><td class="num">14</td><td>Activity</td><td class="num">8</td></tr>
+    <tr><td>How you say you slept</td><td class="num">10</td><td>Overnight breathing rate</td><td class="num">4</td></tr>
+    <tr><td>Overnight HRV</td><td class="num">10</td><td>Mindfulness</td><td class="num">2</td></tr>
+    <tr><td>Overnight heart rate</td><td class="num">8</td><td>Blood-oxygen flag</td><td class="num">1</td></tr>
+  </table>
+  <p class="note">The hourly view uses a different mix: perceived stress 30, sleep carried over 20, HRV 12, heart rate 12, breathing rate 6, and sitting streaks, time of day, activity and mindfulness 5 each. Since October 4 the app no longer sends mindfulness data, so that signal is always absent and its weight is left out of the average.</p>
+
+  <h3>How it moves during the day</h3>
+  <ul>
+    <li><b>It builds.</b> Each morning the score starts at your usual level (a damped median of your last 3 weeks of daily scores). Readings above your usual push it up, and it drifts back toward your usual over time.</li>
+    <li><b>Opening the app doesn't change it.</b> Every change is scaled by the hours that passed, so opening the app 20 times gives the same score as opening it twice. Readings within 10 minutes of each other are merged.</li>
+    <li><b>It learns what matters for you.</b> Each day's mood check-in is compared with that day's signals, and your personal weights are nudged slightly toward the signals that actually predict how you say you feel. The nudges stay close to the evidence-based starting weights.</li>
+  </ul>
+  <p class="note">Confidence is high with at least 75% of signals present and medium with at least 50%. A persistently high score isn't a diagnosis. In a clinical setting it would prompt a validated questionnaire such as the PSS-10, GAD-7 or PHQ-9.</p>
+</section>
+
+<section>
+  <div class="kicker">Each morning</div>
+  <h2>Capacity</h2>
+  <p class="question">How much energy do I have today?</p>
+  <div class="facts">
+    <div class="fact"><b>Range</b><span>0–100</span></div>
+    <div class="fact"><b>Labels</b><span>High 80+ · Moderate 50–79 · Low under 50</span></div>
+    <div class="fact"><b>Compared with</b><span>Your own 90-day normal</span></div>
+  </div>
+
+  <h3>Ingredients</h3>
+  <table>
+    <tr><th>Ingredient</th><th class="num">Weight</th><th>How it's scored (0–100)</th></tr>
+    <tr><td><b>Sleep</b></td><td class="num">45</td><td>100 × hours slept ÷ your sleep need, up to 100. Under 5 hours, × 0.7. Minus 10 if bedtime was more than an hour from your usual (14-day median).</td></tr>
+    <tr><td><b>Overnight body</b></td><td class="num">35</td><td>The average of what's available. HRV: 70 + 100 × (HRV ÷ your usual HRV − 1). Resting heart rate: 70 − 6 for every bpm above your usual.</td></tr>
+    <tr><td><b>Recovery</b></td><td class="num">20</td><td>100 minus whichever costs more: yesterday's Effort above your usual Effort (from 7 days of Effort), or a big day in the last 3 (below). Down to 0.</td></tr>
+    <tr><td><b>Morning check-in</b> (optional)</td><td class="num">+15</td><td>The average of "How do you feel?" (Awful 10, Down 30, Okay 50, Good 75, Great 95) and "How did you sleep?" (Awful 0, Poor 25, Okay 50, Good 75, Great 100).</td></tr>
+  </table>
+  <div class="formula">Capacity = Σ (weight × sub-score) ÷ Σ (weights of the ingredients present)</div>
+  <p>Without a check-in the weights are exactly 45 / 35 / 20. With one, they work out to about 39 / 30 / 17 / 13.</p>
+  <p class="note">The morning check-in is one screen: how you slept, optional tags for the night before (alcohol, late caffeine, late meal, screens in bed, sick, travel), and how you feel. The tags are saved for each night but don't feed any score yet; later they'll show what each one does to your sleep and Capacity.</p>
+
+  <h3>Big days</h3>
+  <p>A day of much more activity than <b>your</b> usual lowers Capacity for the next 3 days (formula version 2).</p>
+  <ul>
+    <li><b>How a day's activity is measured.</b> With a watch: heart-rate load (TRIMP), the minutes at or above 40% of your heart-rate reserve (moderate effort), each weighted by how hard your heart was working. Reserve uses that day's resting heart rate and a maximum of 208 − 0.7 × age (190 without an age), raised to the highest reading seen. Without one: Effort's physical points without the 25-point cap (workouts × intensity, exercise minutes, or calories above your usual).</li>
+    <li><b>Never mixed.</b> Each measure has its own usual: the median on your active days in the last 90, once there are 14 of them. Each day uses heart-rate load if it was measured and minutes otherwise, so a day with the watch left off still counts.</li>
+    <li><b>What counts as big:</b> at least 2× your usual, and at least about an hour of moderate exercise. For someone who rarely exercises, an hour counts as 2×.</li>
+    <li><b>What it costs:</b> Recovery loses 40 at 2×, 70 at 3× and 90 from 4×: about 7, 12 and 15 Capacity points. The next day takes it all, the day after half, the third day a quarter; the strongest of the three counts.</li>
+    <li><b>Your body can say you've recovered.</b> If this morning's overnight body part is at your normal (65 or more), the cost is halved.</li>
+    <li><b>What you see.</b> That evening, the Tonight card says "Big day today, about 3× your usual activity. Keep tomorrow light". The next morning My Day's brief says "Big day yesterday. Go easy today." and Capacity is labelled "Recovering".</li>
+  </ul>
+  <p class="note">One big day is a peak, not a pattern: it never counts as overtraining. A separate training-load warning for weeks of much more activity than usual is planned.</p>
+
+  <h3>The rules that keep it honest</h3>
+  <ul>
+    <li><b>Your sleep need</b> is your 90-day median sleep, kept between 7 and 9 hours. It's 8 hours until there are 14 nights.</li>
+    <li><b>No wearable doesn't mean a higher score.</b> Missing overnight body data counts as a neutral 70, so people with and without a watch get comparable scores. The day is still marked as having no body data.</li>
+    <li><b>One reading never decides it.</b> A resting heart rate more than 12 bpm from your usual is treated as a bad reading and ignored. With no sleep and no check-in, the body part needs both HRV and resting heart rate, or the day is unavailable.</li>
+    <li><b>HRV is compared like with like.</b> WHOOP and Fitbit report overnight RMSSD and Apple Health reports SDNN, and these can't be mixed. Each day uses a single kind, preferring the wearable.</li>
+    <li><b>It's provisional until last night's sleep syncs,</b> then recalculates, and locks at local midnight. With no sleep, no body data and no check-in, Capacity is unavailable. With only a check-in, it shows as "Based on your check-in".</li>
+    <li><b>No morning stress.</b> The stress score is built from sleep, HRV and heart rate, so including it would count last night twice.</li>
+  </ul>
+
+  <div class="example">
+    <div class="kicker">Example</div>
+    <p>You slept 7 h against a need of 7.5 h (sleep 93). Your HRV was 48 against a usual 50 (66), and your resting heart rate was 52 against a usual 50 (58), so the body part is 62. Yesterday's Effort was 45 against a usual 40 (recovery 95). There was no check-in.</p>
+    <p><b>Capacity</b> = (45 × 93 + 35 × 62 + 20 × 95) ÷ 100 = <b>83, High.</b></p>
+    <p>If yesterday had been a big day, 3× your usual activity, it costs 70, which is more than Effort's 5, so Recovery is 30. The body part (62) isn't back at your normal, so it isn't halved.</p>
+    <p><b>Capacity</b> = (45 × 93 + 35 × 62 + 20 × 30) ÷ 100 = <b>70, Moderate.</b></p>
+  </div>
+</section>
+
+<section>
+  <div class="kicker">Shared by Demand and Effort</div>
+  <h2>Points: how a day is priced</h2>
+  <p class="question">Demand and Effort price every calendar event and priority the same way, so they always agree.</p>
+
+  <h3>Each event's demand per minute</h3>
+  <table>
+    <tr><th>Category</th><th class="num">Per minute</th><th>Examples</th></tr>
+    <tr><td>Routine</td><td class="num">15</td><td>Commute, errands, admin</td></tr>
+    <tr><td>Social</td><td class="num">20</td><td>Lunch with a friend, a team social</td></tr>
+    <tr><td>Collaboration</td><td class="num">40</td><td>Meetings, standups, classes</td></tr>
+    <tr><td>Focused work</td><td class="num">55</td><td>Deep work, study, writing</td></tr>
+    <tr><td>High-consequence</td><td class="num">75</td><td>Presentations, exams, interviews, reviews</td></tr>
+    <tr><td>Unknown</td><td class="num">30</td><td>"Busy", "Hold", private events (and the day's confidence drops)</td></tr>
+  </table>
+  <p>Priorities use the effort they were given: light 20, moderate 45, demanding 75 (moderate if not set). Priorities with no time get flat points instead: light 2, moderate 4, demanding 6.</p>
+
+  <h3>Extra cost</h3>
+  <ul>
+    <li><b>Overlaps:</b> +10 while events overlap. Overlapping demand isn't added up twice.</li>
+    <li><b>Long runs:</b> nothing for the first hour of continuous events, rising to +5 at two hours. Gaps under 15 minutes don't reset the run, so a chain of back-to-backs builds up like one long block.</li>
+    <li><b>Back-to-backs</b> (the next event starts under 15 minutes after one ends): a flat +0.5 points each, whatever the event's length.</li>
+    <li><b>After hours</b> (after your wrap-up time, 5 PM if not set): the item's points × 1.25.</li>
+  </ul>
+
+  <h3>Sorting events Vivordo doesn't recognise</h3>
+  <p>When the app's own rules can't place an event, and you've given Vivordo AI consent, the event's title, duration and attendee count (never its notes) are sent to Claude, which picks one of the five categories or answers "can't tell". Answers are saved on the phone so the same title isn't asked twice. If a priority is saved without an effort or a duration, Claude estimates only the blank fields from the title. Anything you enter yourself is never replaced.</p>
+
+  <h3>The scale</h3>
+  <p>Each hour's load (0–100) is added up over the day and divided by 10. One fully booked hour of collaboration is 4 points. An 8-hour workday of mostly meetings and focused work comes to about 40–50. 100 is an extremely heavy day. The scale is the same for everyone on purpose: someone who is always overloaded should see big numbers. Personal context comes from Capacity and the burnout check.</p>
+</section>
+
+<section>
+  <div class="kicker">Live</div>
+  <h2>Demand</h2>
+  <p class="question">How much is still ahead of me today?</p>
+  <p><b>Demand = the points of everything not yet finished:</b></p>
+  <ul>
+    <li>the remaining minutes of events in progress and later events;</li>
+    <li>timed priorities not done yet, and open priorities with no time;</li>
+    <li>workouts planned in the calendar (0.2 points per minute unless the title says otherwise).</li>
+  </ul>
+  <p>Demand falls through the day and reaches about 0 once the last item is behind you. In the evening (past your wrap-up time, with nothing timed left) it shows <b>tomorrow's</b> expected Demand. A workout you log during the day doesn't change Demand: it already happened, so it counts as Effort.</p>
+  <h3>The morning comparison on My Day</h3>
+  <table>
+    <tr><th>Expected Demand vs Capacity</th><th>What My Day says</th></tr>
+    <tr><td>Demand at least 15 below Capacity</td><td>Room to spare</td></tr>
+    <tr><td>Within 15 either way</td><td>A full day</td></tr>
+    <tr><td>Demand more than 15 above Capacity</td><td>More than you've got: protect a break</td></tr>
+  </table>
+  <p class="note">Demand is calculated on the phone with the same formulas as the server, kept in step by shared test cases. It isn't stored on the server yet.</p>
+
+  <div class="kicker" style="margin-top:18pt">Grows through the day</div>
+  <h2>Effort</h2>
+  <p class="question">What has today taken out of me?</p>
+  <div class="formula">Effort = mental points + physical points</div>
+  <ul>
+    <li><b>Mental:</b> the elapsed minutes of events (declined or cancelled events don't count), timed priorities completed, and priorities with no time completed today. Priorities left unfinished add nothing; the burnout check counts them separately.</li>
+    <li><b>Physical:</b> in-app workouts' minutes × intensity (light 0.1 for walks, yoga and stretching; vigorous 0.35 for runs, HIIT, cycling, rowing, swimming and boxing; moderate 0.2 for everything else), plus Health exercise minutes outside those workouts × 0.2. A 45-minute run is about 16 points. With no exercise, active calories above your 90-day median ÷ 50 count instead. Physical points are capped at 25 here; Capacity uses the uncapped load to spot big days.</li>
+  </ul>
+  <p>Because the phone's record of the day can arrive late, the server keeps recalculating a day's Effort for 2 days after it ends, then locks it.</p>
+  <h3>How it's shown</h3>
+  <p>Effort is never a headline number. Home's <b>Your Day</b> card shows hourly bars: solid for Effort so far, outlined for Demand ahead. A word compares "so far" with your usual Effort by this time of day (the median of your last 28 days): <span class="pill">Heavier than usual</span> <span class="pill">About usual</span> <span class="pill">Lighter than usual</span>. It says "Still learning your usual" until there are 14 days.</p>
+</section>
+
+<section>
+  <div class="kicker">Long term · Last 28 days</div>
+  <h2>Physical Health</h2>
+  <p class="question">How are my fitness and physical habits trending?</p>
+  <div class="facts">
+    <div class="fact"><b>Range</b><span>0–100</span></div>
+    <div class="fact"><b>Labels</b><span>Excellent 90+ · Good 70+ · Fair 50+ · Low under 50</span></div>
+    <div class="fact"><b>Starts after</b><span>14 days of data and 3 of the 5 ingredients</span></div>
+  </div>
+  <table>
+    <tr><th>Ingredient</th><th class="num">Weight</th><th>Target (= 100)</th></tr>
+    <tr><td>Active minutes</td><td class="num">30%</td><td>150 minutes a week (the WHO guideline)</td></tr>
+    <tr><td>Daily movement</td><td class="num">15%</td><td>8,000 steps a day</td></tr>
+    <tr><td>Strength</td><td class="num">20%</td><td>2 strength sessions a week, from in-app workouts</td></tr>
+    <tr><td>Cardio fitness</td><td class="num">20%</td><td>Your VO₂ max against the median for your age and sex</td></tr>
+    <tr><td>Sleep habits</td><td class="num">15%</td><td>7–9 hours, with a regular bedtime</td></tr>
+  </table>
+  <h3>Counting rules</h3>
+  <ul>
+    <li><b>Strength</b> only counts for people who logged an in-app workout in the last 90 days, so people who don't log workouts aren't marked down.</li>
+    <li><b>Sleep habits</b> are 70% duration and 30% the share of nights you went to bed within an hour of your usual time (needs 5 bedtimes). With no tracked sleep, the morning check-in's "How did you sleep?" is used instead (needs 7 answers).</li>
+    <li>Missing ingredients are left out and the rest are re-weighted, but the score needs at least 3 of the 5.</li>
+  </ul>
+  <h3>Cardio fitness (VO₂ max)</h3>
+  <ul>
+    <li><b>Measured first:</b> the latest value from the last 90 days, from Apple Watch or Fitbit.</li>
+    <li><b>Otherwise estimated:</b> the Jackson non-exercise formula (age, sex, BMI, weekly activity), averaged with the Uth formula (age and resting heart rate) when resting heart rate is known. Missing exercise data counts as inactive. WHOOP doesn't share VO₂ max, so WHOOP users get the estimate.</li>
+    <li><b>Scored against typical values</b> for your age decade and sex: 60 at the median, plus or minus 40 for every 20% above or below. "Prefer not to say" uses the average of the two.</li>
+    <li>It needs your age, and height and weight for the estimate. These come from onboarding and the profile button on Fitness → Body. Changing them recalculates the score straight away.</li>
+  </ul>
+  <div class="example">
+    <div class="kicker">Example</div>
+    <p>210 active minutes a week (100), 7,000 steps a day (87.5), 1.5 strength sessions a week (75), a VO₂ max of 41 against a median of 41 (60), and 7.5 hours of sleep at a regular time (100).</p>
+    <p><b>Physical Health</b> = 0.30 × 100 + 0.15 × 87.5 + 0.20 × 75 + 0.20 × 60 + 0.15 × 100 = <b>85, Good.</b></p>
+  </div>
+</section>
+
+<section>
+  <div class="kicker">Home · Every 5 minutes</div>
+  <h2>Heart insight</h2>
+  <p class="question">How was my heart rate over the past hour?</p>
+  <ul>
+    <li><b>Enough readings:</b> at least 6 in the past hour, spread over 3 of its 4 quarter-hours, with the newest no more than 20 minutes old. That matches an Apple Watch, which records about every 5 minutes and syncs in batches. Less than that shows "Limited readings".</li>
+    <li><b>Your usual range</b> comes from the same time of day (±2 hours) on at least 7 of the last 28 days, leaving out sleep and workouts. Until then it shows the hour's range and "still learning".</li>
+    <li><b>Messages:</b> "Steady" when 70% of readings sit in your usual range, and "Higher than usual" when 60% are above it. A brief rise is two high readings in a row, up to 7 minutes apart, well above your usual. Rises during a recorded workout are described as part of the workout.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="kicker">My Day timeline · After each event</div>
+  <h2>Event reactions</h2>
+  <p class="question">How did my body react during that event?</p>
+  <ul>
+    <li><b>Compared with you at that time of day.</b> Your heart rate during the event against the same time (±1 hour) on earlier days in the last 2 weeks. It needs at least 5 readings during the event, and 20 readings over 3 earlier days, so it needs a watch.</li>
+    <li><b>Robust:</b> the top tenth of earlier readings (mostly movement) is dropped, your usual is the middle half, and the event uses its median and 90th-percentile readings.</li>
+    <li><b>Labels:</b> <span class="pill">Calm</span> clearly below your usual and 4+ bpm down; <span class="pill">Heart rate up</span> clearly above it and 7+ bpm up; <span class="pill">Heart rate high</span> far above it and 15+ bpm up, or with a peak 25 above your usual range and 10+ bpm up. Steady events show nothing.</li>
+    <li><b>Left out:</b> all-day events, events still going, and events whose title sounds like exercise.</li>
+  </ul>
+  <p class="note">Each reaction is saved per event with no title (a coded key, its category, guests, length and start hour), so Vivordo can later learn which kinds of event you react to.</p>
+</section>
+
+<section>
+  <div class="kicker">Nightly</div>
+  <h2>Burnout check</h2>
+  <p class="question">Am I sliding toward burnout?</p>
+  <p>About an hour after each day ends in your time zone, right after that day's final Effort, the server compares your <b>last 2 weeks</b> with <b>your normal</b>: the 8 weeks that ended 2 weeks before that.</p>
+  <h3>Three areas decide it</h3>
+  <table>
+    <tr><th>Area</th><th>Worse when</th></tr>
+    <tr><td>Capacity</td><td>lower than your normal (a Capacity still waiting for sleep is left out)</td></tr>
+    <tr><td>Effort</td><td>heavier than your normal</td></tr>
+    <tr><td>Mood</td><td>lower than your normal</td></tr>
+  </table>
+  <p>An area is <b>strained</b> when, on at least 65% of the last 2 weeks' days, it's worse than your normal by at least 5 points, judged against how much that area usually varies for you.</p>
+  <h3>Levels</h3>
+  <table>
+    <tr><th>Level</th><th>When</th><th>What happens</th></tr>
+    <tr><td>Learning</td><td>No area has enough data yet (7 recent days and 14 in the normal, so about 6 weeks)</td><td>Nothing shown as a warning</td></tr>
+    <tr><td>Steady</td><td>No area strained</td><td>—</td></tr>
+    <tr><td>Watch</td><td>One area strained</td><td>Shown on My Day, no notification. A "Talk it through with Vivordo AI" button opens the chat with the check loaded.</td></tr>
+    <tr><td>Warning</td><td>Two areas strained for 7 nights, or one area far off plus another strained</td><td>One notification when it starts (no more than one a week), naming the areas, e.g. "Lower energy and heavier days than usual." My Day's headline softens, and the same Vivordo AI button is offered.</td></tr>
+  </table>
+  <p>A warning holds until 7 calm nights in a row. <b>Drivers explain it but don't decide it:</b> sleep, resting heart rate, HRV, back-to-back events and after-hours time are listed as possible reasons.</p>
+  <p class="note">Known limits: a day with no day record (the app not opened that day or the next) isn't evaluated, and strain lasting about 10 weeks or more becomes the new normal. It respects the notifications setting. Tapping the notification opens My Day.</p>
+
+  <h3 style="margin-top:20pt">Where each score is calculated and stored</h3>
+  <table>
+    <tr><th>Score</th><th>Calculated</th><th>Stored</th></tr>
+    <tr><td>Stress</td><td>Vivordo's stress service</td><td>Daily metrics</td></tr>
+    <tr><td>Capacity, Effort, Physical Health, burnout check, heart-rate load</td><td>Vivordo's servers (Cloud Functions)</td><td>scores_daily/{day}</td></tr>
+    <tr><td>Event reactions</td><td>On the phone</td><td>event_reactions/{day}, no titles</td></tr>
+    <tr><td>Demand, Your Day words, Heart insight</td><td>On the phone</td><td>Not stored</td></tr>
+  </table>
+</section>
+
+</body>
+</html>
