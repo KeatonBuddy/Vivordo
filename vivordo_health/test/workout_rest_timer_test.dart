@@ -40,8 +40,9 @@ void main() {
     await tester.tap(find.byIcon(Icons.play_arrow_rounded));
     now = now.add(const Duration(minutes: 2));
     await tester.pump(const Duration(milliseconds: 250));
-    expect(find.text('0:00'), findsOneWidget);
-    expect(find.text('Rest complete'), findsOneWidget);
+    // Finished rests go straight back to the chosen length for the next set.
+    expect(find.text('1:15'), findsOneWidget);
+    expect(find.text('Rest done'), findsOneWidget);
     await tester.tap(find.text('Reset'));
     expect(notifications.last, isNull);
     await tester.pump();
@@ -93,5 +94,37 @@ void main() {
     expect(reps.hasFocus, isFalse);
     await tester.pumpWidget(const SizedBox());
     reps.dispose();
+  });
+
+  testWidgets('starts from the saved length and saves idle changes', (
+    tester,
+  ) async {
+    final saved = <int>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Scaffold(
+          bottomNavigationBar: WorkoutRestTimer(
+            loadPreset: () async => 120,
+            onPresetChanged: saved.add,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('2:00'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Add 15 seconds'));
+    await tester.pump();
+    expect(find.text('2:15'), findsOneWidget);
+    expect(saved, [135]);
+
+    // Adjusting a running rest changes only that rest.
+    await tester.tap(find.byTooltip('Start rest timer'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Add 15 seconds'));
+    await tester.pump();
+    expect(saved, [135]);
+    await tester.pumpWidget(const SizedBox());
   });
 }

@@ -8,9 +8,18 @@ class WorkoutRestTimer extends StatefulWidget {
     super.key,
     this.now = DateTime.now,
     this.onDeadlineChanged,
+    this.loadPreset,
+    this.onPresetChanged,
   });
   final DateTime Function() now;
   final Future<void> Function(DateTime?)? onDeadlineChanged;
+
+  /// The rest length the user last chose, so every rest and every new
+  /// workout starts from it instead of the 1:15 default.
+  final Future<int?> Function()? loadPreset;
+
+  /// Called when the user changes the rest length while it isn't running.
+  final ValueChanged<int>? onPresetChanged;
 
   @override
   State<WorkoutRestTimer> createState() => _WorkoutRestTimerState();
@@ -24,6 +33,27 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
   int _remaining = 75;
   DateTime? _deadline;
   Timer? _ticker;
+  bool _complete = false;
+  bool _changedByUser = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final load = widget.loadPreset;
+    if (load != null) unawaited(_applySavedPreset(load));
+  }
+
+  Future<void> _applySavedPreset(Future<int?> Function() load) async {
+    final saved = await load().catchError((Object error) {
+      debugPrint('Could not load rest timer preset: $error');
+      return null;
+    });
+    // A tap before the saved value arrives wins over it.
+    if (saved == null || !mounted || _changedByUser || _deadline != null) {
+      return;
+    }
+    setState(() => _preset = _remaining = saved.clamp(15, 3600));
+  }
 
   int get _seconds => _deadline == null
       ? _remaining
@@ -35,14 +65,18 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
     if (_seconds == 0) {
       _ticker?.cancel();
       _deadline = null;
-      _remaining = 0;
+      // Ready for the next set at the user's chosen length.
+      _remaining = _preset;
+      _complete = true;
       unawaited(HapticFeedback.mediumImpact());
     }
     setState(() {});
   }
 
   void _toggle() {
+    _changedByUser = true;
     setState(() {
+      _complete = false;
       if (_deadline != null) {
         _remaining = _seconds;
         _deadline = null;
@@ -60,15 +94,19 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
   }
 
   void _adjust(int delta) {
+    _changedByUser = true;
+    final running = _deadline != null;
     setState(() {
-      final running = _deadline != null;
+      _complete = false;
       _remaining = (_seconds + delta).clamp(15, 3600);
       if (running) {
+        // Only this rest; the chosen length stays for the next one.
         _deadline = widget.now().add(Duration(seconds: _remaining));
       } else {
         _preset = _remaining;
       }
     });
+    if (!running) widget.onPresetChanged?.call(_preset);
     _updateNotification();
   }
 
@@ -76,6 +114,7 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
     _ticker?.cancel();
     setState(() {
       _deadline = null;
+      _complete = false;
       _remaining = _preset;
     });
     _updateNotification();
@@ -131,7 +170,10 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      seconds == 0 ? 'Rest complete' : 'Rest',
+                      _complete ? 'Rest done' : 'Rest',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.visible,
                       style: TextStyle(
                         fontSize: 12,
                         color: colors.textSecondary,

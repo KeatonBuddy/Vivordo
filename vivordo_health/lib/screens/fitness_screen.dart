@@ -2482,6 +2482,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         child: WorkoutRestTimer(
           onDeadlineChanged: (deadline) =>
               NotificationService().updateRestTimerNotification(deadline),
+          loadPreset: ActiveWorkoutStorage.readRestPreset,
+          onPresetChanged: (seconds) => unawaited(
+            ActiveWorkoutStorage.writeRestPreset(seconds).catchError(
+              (Object error) =>
+                  debugPrint('Could not save rest timer preset: $error'),
+            ),
+          ),
         ),
       ),
       body: ListView(
