@@ -172,14 +172,18 @@ Future<CalendarEventDraft?> showAddCalendarEventSheet(
 
 /// The add form for hosting in another sheet; [header] replaces the title.
 /// Saving pops a [CalendarEventDraft].
+/// [titleController], when given, is owned by the caller (so a title can
+/// carry over to another form).
 Widget addCalendarEventForm({
   required DateTime initialStart,
   required DateTime initialEnd,
   Widget? header,
+  TextEditingController? titleController,
 }) => _AddCalendarEventSheet(
   initialStart: initialStart,
   initialEnd: initialEnd,
   header: header,
+  titleController: titleController,
 );
 
 Future<CalendarEventEditResult?> showEditCalendarEventSheet(
@@ -268,9 +272,11 @@ class _AddCalendarEventSheet extends StatefulWidget {
     this.isEditing = false,
     this.repeating = false,
     this.header,
+    this.titleController,
   });
 
   final Widget? header;
+  final TextEditingController? titleController;
 
   /// Editing one occurrence of a repeating event.
   final bool repeating;
@@ -306,8 +312,10 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.initialTitle)
-      ..addListener(_titleChanged);
+    _titleController =
+        (widget.titleController ??
+              TextEditingController(text: widget.initialTitle))
+          ..addListener(_titleChanged);
     _date = DateUtils.dateOnly(widget.initialStart);
     _startTime = TimeOfDay.fromDateTime(widget.initialStart);
     _endTime = TimeOfDay.fromDateTime(widget.initialEnd);
@@ -318,9 +326,8 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
 
   @override
   void dispose() {
-    _titleController
-      ..removeListener(_titleChanged)
-      ..dispose();
+    _titleController.removeListener(_titleChanged);
+    if (widget.titleController == null) _titleController.dispose();
     super.dispose();
   }
 

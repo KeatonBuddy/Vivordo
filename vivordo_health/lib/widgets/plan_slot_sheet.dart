@@ -107,6 +107,15 @@ class _PlanSlotSheet extends StatefulWidget {
 class _PlanSlotSheetState extends State<_PlanSlotSheet> {
   bool _event = false;
 
+  /// Shared by both forms, so a title typed under one survives switching.
+  final _title = TextEditingController();
+
+  @override
+  void dispose() {
+    _title.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final toggle = PlanSlotToggle(
@@ -115,15 +124,18 @@ class _PlanSlotSheetState extends State<_PlanSlotSheet> {
     );
     final hour = widget.start.add(const Duration(hours: 1));
     final end = widget.end;
-    // ponytail: switching starts the other form fresh; carry the typed title
-    // across if people switch mid-entry.
     return _event
         ? addCalendarEventForm(
             initialStart: widget.start,
             initialEnd: end != null && end.isBefore(hour) ? end : hour,
             header: toggle,
+            titleController: _title,
           )
-        : addPriorityForm(at: widget.start, header: toggle);
+        : addPriorityForm(
+            at: widget.start,
+            header: toggle,
+            titleController: _title,
+          );
   }
 }
 

@@ -85,8 +85,14 @@ Future<PriorityDraft?> showAddPrioritySheet(BuildContext context) =>
 
 /// The add form for hosting in another sheet. [at] prefills the date and
 /// time; [header] replaces the title. Saving pops a [PriorityDraft].
-Widget addPriorityForm({DateTime? at, Widget? header}) =>
-    _AddPrioritySheet(at: at, header: header);
+/// [titleController], when given, is owned by the caller (so a title can
+/// carry over to another form).
+Widget addPriorityForm({
+  DateTime? at,
+  Widget? header,
+  TextEditingController? titleController,
+}) =>
+    _AddPrioritySheet(at: at, header: header, titleController: titleController);
 
 Future<PriorityDraft?> showPriorityEditor(
   BuildContext context,
@@ -109,10 +115,12 @@ class _AddPrioritySheet extends StatefulWidget {
     this.occurrenceOnly = false,
     this.at,
     this.header,
+    this.titleController,
   });
   final PriorityDraft? initial;
   final DateTime? at;
   final Widget? header;
+  final TextEditingController? titleController;
   final bool occurrenceOnly;
 
   @override
@@ -138,8 +146,9 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     super.initState();
     final initial = widget.initial;
     _planning = {...?initial?.planning};
-    _controller = TextEditingController(text: initial?.title)
-      ..addListener(_changed);
+    _controller =
+        (widget.titleController ?? TextEditingController(text: initial?.title))
+          ..addListener(_changed);
     final at = widget.at;
     _date = initial?.date ?? (at == null ? _date : DateUtils.dateOnly(at));
     _time = initial?.time ?? (at == null ? null : TimeOfDay.fromDateTime(at));
@@ -158,9 +167,8 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
 
   @override
   void dispose() {
-    _controller
-      ..removeListener(_changed)
-      ..dispose();
+    _controller.removeListener(_changed);
+    if (widget.titleController == null) _controller.dispose();
     super.dispose();
   }
 
