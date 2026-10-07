@@ -9,8 +9,20 @@ const {isDeepStrictEqual} = require("node:util");
 const {validDay} = require("./metrics_summary");
 const {hrvReadings, pickHrv} = require("./hrv");
 
-const VERSION = 1;
+const VERSION = 2; // 2: a big day lowers Recovery for 3 days
 const WEIGHTS = {sleep: 45, body: 35, recovery: 20, checkIn: 15};
+// A big day (docs/scores.md §4): a day's load at least 2× the person's
+// usual on active days and at least a minimum (about an hour of moderate
+// exercise), once there are 14 active days to know the usual. Load is
+// heart-rate TRIMP (activity_load.js) for people with 14 active days of it,
+// else Effort's uncapped physical points; the two are never mixed.
+const BIG_DAY_RATIO = 2;
+const BIG_DAY_MIN = {heart: 40, minutes: 12};
+const MIN_ACTIVE_DAYS = 14;
+const BIG_DAY_FADE = [1, 0.5, 0.25]; // yesterday, 2 days ago, 3 days ago
+// Body sub-score at about the person's normal: recovered, so a big day
+// costs half.
+const BODY_RECOVERED = 65;
 const NEUTRAL_BODY = 70; // a normal night
 const HISTORY_DAYS = 90;
 const MIN_BASELINE = 7; // HRV / resting HR readings needed for a normal
@@ -66,11 +78,61 @@ function sleepNeed(nights) {
 }
 
 /**
+ * Recovery points a big day costs, from its load against the usual: 2× →
+ * 40, 3× → 70, 4× or more → 90, straight lines between. Recovery is 20 of
+ * Capacity's 115 weight, so that's about 7, 12 and 15 Capacity points.
+ * @param {number} ratio The day's load / the usual.
+ * @return {number} Recovery points, 0 below 2×.
+ */
+function bigDayPenalty(ratio) {
+  if (ratio < BIG_DAY_RATIO) return 0;
+  if (ratio <= 3) return 40 + 30 * (ratio - 2);
+  return Math.min(90, 70 + 20 * (ratio - 3));
+}
+
+/**
+ * What counts as a big day for someone: the usual it's measured against
+ * (at least half the minimum, so for someone who rarely exercises an hour
+ * reads as 2×, not 10×) and the load that crosses it.
+ * @param {number} usual Median load on active days.
+ * @param {number} minimum The kind's minimum (BIG_DAY_MIN).
+ * @return {object} {base, threshold}.
+ */
+function bigDayScale(usual, minimum) {
+  const base = Math.max(usual, minimum / BIG_DAY_RATIO);
+  return {base, threshold: Math.max(BIG_DAY_RATIO * base, minimum)};
+}
+
+/**
+ * The strongest big day in the last 3, faded: full the next day, then half,
+ * then a quarter.
+ * @param {Array<number|null>} recent Loads for 1, 2 and 3 days ago.
+ * @param {number|null} usual Median load on active days, or null.
+ * @param {number} minimum The kind's minimum (BIG_DAY_MIN).
+ * @return {object|null} {daysAgo, ratio, penalty}, or null.
+ */
+function bigDayEffect(recent, usual, minimum = BIG_DAY_MIN.minutes) {
+  if (!finite(usual) || usual <= 0) return null;
+  const {base} = bigDayScale(usual, minimum);
+  let best = null;
+  recent.forEach((load, i) => {
+    if (!finite(load) || load < minimum) return;
+    const ratio = load / base;
+    const penalty = bigDayPenalty(ratio) * BIG_DAY_FADE[i];
+    if (penalty > 0 && (!best || penalty > best.penalty)) {
+      best = {daysAgo: i + 1, ratio, penalty};
+    }
+  });
+  return best;
+}
+
+/**
  * Capacity for one day.
  * @param {object} input
  * @param {object} input.today {sleepHours, bedtimeMin, hrv, hrvKind,
- *   restingHr, yesterdayEffort, usualEffort, checkInFeel, checkInSleep}; any
- *   may be null. bedtimeMin is minutes after midnight in a fixed clock (UTC
+ *   restingHr, yesterdayEffort, usualEffort, checkInFeel, checkInSleep,
+ *   bigDay ({day, ratio, penalty} from bigDayEffect), activityUsual};
+ *   any may be null. bedtimeMin is minutes after midnight in a fixed clock (UTC
  *   is fine: only gaps between bedtimes are used).
  * @param {object[]} input.history Earlier days in the last 90, any order:
  *   {sleepHours, bedtimeMin, hrv, restingHr}; hrv of today's kind only
@@ -129,9 +191,21 @@ function computeCapacity({today, history}) {
     bodyParts.reduce((a, b) => a + b) / bodyParts.length :
     sleep === null ? null : NEUTRAL_BODY;
 
-  const recovery = finite(today.yesterdayEffort) && finite(today.usualEffort) ?
-    clamp(100 - Math.max(0, today.yesterdayEffort - today.usualEffort)) :
-    null;
+  // Recovery: yesterday's Effort above the usual, or a big day in the last
+  // 3 (halved when the body is already back at its normal), whichever
+  // costs more, so one day is never counted twice.
+  const effortExcess = finite(today.yesterdayEffort) &&
+    finite(today.usualEffort) ?
+    Math.max(0, today.yesterdayEffort - today.usualEffort) : null;
+  let bigDay = null;
+  if (today.bigDay) {
+    const halved = bodyMeasured && body >= BODY_RECOVERED;
+    bigDay = {day: today.bigDay.day, ratio: today.bigDay.ratio,
+      penalty: today.bigDay.penalty * (halved ? 0.5 : 1), halved,
+      kind: today.bigDay.kind ?? "minutes"};
+  }
+  const recovery = effortExcess === null && bigDay === null ? null :
+    clamp(100 - Math.max(effortExcess ?? 0, bigDay?.penalty ?? 0));
 
   const parts = {sleep, body, recovery, checkIn};
   let total = 0;
@@ -160,6 +234,9 @@ function computeCapacity({today, history}) {
     restingHr: finite(today.restingHr) ? today.restingHr : null,
     restingHrNormal,
     restingHrIgnored,
+    bigDay: bigDay && {...bigDay, ratio: round1(bigDay.ratio),
+      penalty: round1(bigDay.penalty)},
+    activityUsual: today.activityUsual ?? null,
   };
 }
 
@@ -220,6 +297,106 @@ async function effortContext(user, start, day) {
 }
 
 /**
+ * Each earlier day's load and the usual on active days. Heart-rate load
+ * (scores_daily activityLoad, TRIMP) when there are 14 active days of it;
+ * otherwise Effort's physical points (effort.js physicalLoad) from
+ * workouts, Health exercise minutes and active calories, read directly so
+ * the usual exists from the start.
+ * @param {object} user User document reference.
+ * @param {object[]} metricsDocs The window's metrics_daily snapshots.
+ * @param {string} start First day key of the window.
+ * @param {string} day The Capacity day.
+ * @return {Promise<object>} {bigDay, activityUsual: {kind, usual, base,
+ *   threshold}}; activityUsual is null until there's a usual.
+ */
+async function physicalLoads(user, metricsDocs, start, day) {
+  const {FieldPath} = require("firebase-admin/firestore");
+  const {VERSION: LOAD_VERSION} = require("./activity_load");
+  const scores = await user.collection("scores_daily")
+      .where(FieldPath.documentId(), ">=", start)
+      .where(FieldPath.documentId(), "<", day)
+      .select("activityLoad")
+      .get();
+  const heartOn = new Map();
+  for (const doc of scores.docs) {
+    const load = doc.get("activityLoad");
+    if (load?.version === LOAD_VERSION && finite(load.trimp)) {
+      heartOn.set(doc.id, load.trimp);
+    }
+  }
+  const heartActive = [...heartOn.values()].filter((v) => v > 0);
+  if (heartActive.length >= MIN_ACTIVE_DAYS) {
+    return loadEffect("heart", heartOn, median(heartActive), day);
+  }
+
+  const {physicalLoad} = require("./effort");
+  const workouts = await user.collection("workouts")
+      .where("exerciseGoalDay", ">=", start)
+      .where("exerciseGoalDay", "<", day)
+      .select("activityName", "activityCategory", "exercises",
+          "durationMinutes", "exerciseGoalDay")
+      .get();
+  const byDay = new Map();
+  for (const doc of workouts.docs) {
+    const key = doc.get("exerciseGoalDay");
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push({
+      name: doc.get("activityName"),
+      category: doc.get("activityCategory"),
+      exerciseCategories: (doc.get("exercises") || [])
+          .map((e) => e?.category).filter(Boolean),
+      minutes: doc.get("durationMinutes"),
+    });
+  }
+  const earlier = metricsDocs.filter((d) => validDay(d.id) && d.id < day);
+  const calories = earlier.map((d) => d.get("active_calories")?.sum)
+      .filter((v) => finite(v) && v > 0);
+  const usualCalories = calories.length >= 7 ? median(calories) : null;
+  const loadOn = new Map();
+  for (const doc of earlier) {
+    loadOn.set(doc.id, physicalLoad({
+      workouts: byDay.get(doc.id) ?? [],
+      healthMinutes: doc.get("exercise_time")?.healthSum ?? null,
+      activeCalories: doc.get("active_calories")?.sum ?? null,
+      usualCalories,
+    }).points);
+  }
+  for (const [key, list] of byDay) {
+    if (!loadOn.has(key)) {
+      loadOn.set(key, physicalLoad({workouts: list}).points);
+    }
+  }
+  const active = [...loadOn.values()].filter((v) => v > 0);
+  return loadEffect("minutes", loadOn,
+      active.length >= MIN_ACTIVE_DAYS ? median(active) : null, day);
+}
+
+/**
+ * The big day (if any) in the 3 days before [day], and what the app needs
+ * to spot one today (docs/scores.md §4).
+ * @param {string} kind "heart" (TRIMP) or "minutes" (Effort points).
+ * @param {Map} loadOn Day key -> load.
+ * @param {number|null} usual Median load on active days.
+ * @param {string} day The Capacity day.
+ * @return {object} {bigDay, activityUsual}.
+ */
+function loadEffect(kind, loadOn, usual, day) {
+  const daysAgo = (k) => new Date(Date.parse(`${day}T00:00:00Z`) - k * DAY_MS)
+      .toISOString().slice(0, 10);
+  const minimum = BIG_DAY_MIN[kind];
+  const effect = bigDayEffect([1, 2, 3].map((k) => loadOn.get(daysAgo(k)) ??
+    null), usual, minimum);
+  const round1 = (value) => Math.round(value * 10) / 10;
+  const scale = finite(usual) ? bigDayScale(usual, minimum) : null;
+  return {
+    bigDay: effect && {day: daysAgo(effect.daysAgo), ratio: effect.ratio,
+      penalty: effect.penalty, kind},
+    activityUsual: scale && {kind, usual: round1(usual),
+      base: round1(scale.base), threshold: round1(scale.threshold)},
+  };
+}
+
+/**
  * Recalculates and saves a day's Capacity in users/{uid}/scores_daily/{day}.
  * A day is final once it is over in every time zone; final days are never
  * rewritten.
@@ -241,7 +418,7 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
       .where(FieldPath.documentId(), ">=", start)
       .where(FieldPath.documentId(), "<=", day)
       .select("sleep", "hrv", "hrv_rmssd", "resting_heart_rate",
-          "morning_check_in")
+          "morning_check_in", "exercise_time", "active_calories")
       .get();
   let todayData = null;
   const history = [];
@@ -253,13 +430,14 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
   history.sort((a, b) => a.day.localeCompare(b.day));
   let capacity = null;
   if (todayData) {
+    const loads = await physicalLoads(user, snapshot.docs, start, day);
     const today = capacityInputs(todayData);
     const hrv = pickHrv(today.hrvReadings,
         history.map((past) => past.hrvReadings), MIN_BASELINE);
     history.forEach((past, index) => past.hrv = hrv.history[index]);
     capacity = computeCapacity({
       today: {...today, hrv: hrv.value, hrvKind: hrv.kind,
-        ...await effortContext(user, start, day)},
+        ...await effortContext(user, start, day), ...loads},
       history,
     });
   }
@@ -299,6 +477,8 @@ function capacityInputsChanged(before, after) {
 }
 
 module.exports = {
-  VERSION, WEIGHTS, computeCapacity, capacityInputs, capacityInputsChanged,
-  refreshCapacity, sleepNeed, clockGap, usualClockTime,
+  VERSION, WEIGHTS, BIG_DAY_MIN, bigDayEffect, bigDayPenalty, bigDayScale,
+  computeCapacity,
+  capacityInputs, capacityInputsChanged, refreshCapacity, sleepNeed, clockGap,
+  usualClockTime,
 };

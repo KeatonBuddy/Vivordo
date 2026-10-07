@@ -68,7 +68,8 @@ exports.sendDayRecordPushes = onSchedule({
 });
 
 // Capacity (docs/scores.md §4): recalculated only when a day's sleep, HRV,
-// resting heart rate or check-in changes, Effort (§3) only when its
+// resting heart rate or check-in changes (and for the next 3 days when the
+// day's heart-rate load changes), Effort (§3) only when its
 // exercise minutes or active calories change, and Physical Health (§7) only
 // when its activity, sleep, VO₂ max or weight change, so other syncs cost
 // nothing.
@@ -87,6 +88,19 @@ exports.computeDailyCapacity = onDocumentWritten(
       }
       if (effortInputsChanged(before, after)) {
         await refreshEffort(admin.firestore(), uid, day, timestamp);
+      }
+      // Heart-rate load (docs/scores.md §4) from the heart rate this event
+      // already carries; a changed load moves the next 3 days' Recovery.
+      const {heartRateChanged, refreshActivityLoad} =
+        require("./activity_load");
+      if (heartRateChanged(before, after) &&
+          await refreshActivityLoad(admin.firestore(), uid, day, after,
+              timestamp) === "written") {
+        for (let k = 1; k <= 3; k++) {
+          const next = new Date(Date.parse(`${day}T00:00:00Z`) +
+            k * 86400000).toISOString().slice(0, 10);
+          await refreshCapacity(admin.firestore(), uid, next, timestamp);
+        }
       }
       // Physical Health (docs/scores.md §7): the 28 days ending on this day.
       const {physicalInputsChanged, refreshPhysicalHealth} =

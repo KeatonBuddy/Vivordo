@@ -165,6 +165,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a big day today says to keep tomorrow light', (tester) async {
+    final tonight = forecastEnergy(
+      day: day,
+      nights: nights(hours: 7),
+      sleepNeedHours: 7.5,
+    );
+    Future<void> show(double? ratio) => tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: EnergyEveningCard(
+              tonight: tonight,
+              tomorrow: tomorrowEnergyForecast(
+                tonight: tonight,
+                today: day,
+                nights: nights(hours: 7),
+              ),
+              bigDayRatio: ratio,
+            ),
+          ),
+        ),
+      ),
+    );
+    await show(null);
+    expect(find.textContaining('Big day today'), findsNothing);
+    await show(3.1);
+    expect(
+      find.textContaining('Big day today, about 3× your usual'),
+      findsOneWidget,
+    );
+  });
+
   test('wind-down reminders follow each night\'s forecast', () {
     String t(String time) => time.replaceAll(' ', '\u202f');
     // A Thursday; 11 PM–7 AM nights and an 8 h need.

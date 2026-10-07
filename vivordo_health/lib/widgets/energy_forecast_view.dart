@@ -395,9 +395,14 @@ class EnergyEveningCard extends StatelessWidget {
     this.firstEventTitle,
     this.firstEventStart,
     this.onTap,
+    this.bigDayRatio,
     this.reminder,
     this.onReminder,
   });
+
+  /// Today's activity against the usual when it's a big day (2× or more,
+  /// docs/scores.md §4); shows "Keep tomorrow light". Null otherwise.
+  final double? bigDayRatio;
 
   /// Today's forecast, with bed-by from tomorrow's first event.
   final EnergyForecast tonight;
@@ -499,6 +504,38 @@ class EnergyEveningCard extends StatelessWidget {
                 ].join(' '),
                 style: TextStyle(fontSize: 13, color: colors.textSecondary),
               ),
+              if (bigDayRatio case final ratio?) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: energyLow.withValues(alpha: .14),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.directions_run_rounded,
+                        size: 18,
+                        color: energyLow,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Big day today, about ${ratio.round()}× your usual '
+                          'activity. Keep tomorrow light: your body will feel '
+                          'it.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [

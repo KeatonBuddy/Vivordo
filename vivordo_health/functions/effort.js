@@ -143,6 +143,36 @@ function workoutIntensity(workout) {
 }
 
 /**
+ * A day's physical load in Effort points, uncapped: in-app workouts
+ * (minutes × intensity) plus Health exercise minutes (× 0.2), or, with
+ * neither, active calories above the usual (1 point per 50). Effort caps it
+ * at PHYSICAL_CAP; Capacity compares the uncapped load with the person's
+ * usual to spot a big day (docs/scores.md §4).
+ * @param {object} input
+ * @param {object[]} input.workouts {name, category, exerciseCategories,
+ *   minutes}.
+ * @param {number|null} input.healthMinutes Health exercise minutes outside
+ *   in-app workouts.
+ * @param {number|null} input.activeCalories The day's active calories.
+ * @param {number|null} input.usualCalories Usual active calories.
+ * @return {object} {points, source: "exercise" | "calories" | null}.
+ */
+function physicalLoad({workouts = [], healthMinutes = null,
+  activeCalories = null, usualCalories = null}) {
+  const workoutPoints = workouts.reduce((sum, w) =>
+    sum + (finite(w.minutes) ? w.minutes : 0) * workoutIntensity(w), 0);
+  const exercisePoints = (finite(healthMinutes) ? healthMinutes : 0) * 0.2;
+  if (workoutPoints + exercisePoints > 0) {
+    return {points: workoutPoints + exercisePoints, source: "exercise"};
+  }
+  if (finite(activeCalories) && finite(usualCalories)) {
+    return {points: Math.max(0, activeCalories - usualCalories) / 50,
+      source: "calories"};
+  }
+  return {points: 0, source: null};
+}
+
+/**
  * Effort for one day.
  * @param {object} input
  * @param {object} input.record The day record: {dayStart, dayEnd, wrapUpAt,
@@ -211,22 +241,16 @@ function computeEffort({record, workouts = [], healthMinutes = null,
   }
   const mental = scheduled + untimedPoints;
 
-  let physical = 0;
-  let physicalSource = null;
   const hourOf = (t) => Math.min(hours.length - 1,
       Math.max(0, Math.floor((t - dayStart) / HOUR)));
   const workoutAt = workouts.map((w) => [ms(w.startedAt) ?? dayEnd - 1,
     (finite(w.minutes) ? w.minutes : 0) * workoutIntensity(w)]);
   const workoutPoints = workoutAt.reduce((sum, [, points]) => sum + points, 0);
   const exercisePoints = (finite(healthMinutes) ? healthMinutes : 0) * 0.2;
-  if (workoutPoints + exercisePoints > 0) {
-    physical = workoutPoints + exercisePoints;
-    physicalSource = "exercise";
-  } else if (finite(activeCalories) && finite(usualCalories)) {
-    physical = Math.max(0, activeCalories - usualCalories) / 50;
-    physicalSource = "calories";
-  }
-  physical = Math.min(PHYSICAL_CAP, physical);
+  const load = physicalLoad({workouts, healthMinutes, activeCalories,
+    usualCalories});
+  const physicalSource = load.source;
+  const physical = Math.min(PHYSICAL_CAP, load.points);
 
   // Running total at the end of each hour of the day, for "usual by this
   // time of day" on Home. Workouts count at the hour they started (scaled
@@ -246,6 +270,8 @@ function computeEffort({record, workouts = [], healthMinutes = null,
     total: round1(mental + physical),
     mental: round1(mental),
     physical: round1(physical),
+    // Uncapped, for the evening's "big day" note (docs/scores.md §4).
+    physicalLoad: round1(load.points),
     physicalSource,
     version: VERSION,
     busyMinutes: Math.round(totals.busy),
@@ -260,7 +286,7 @@ function computeEffort({record, workouts = [], healthMinutes = null,
 
 /**
  * Recalculates and saves a day's Effort in users/{uid}/scores_daily/{day},
- * then the next day's Capacity (Recovery from yesterday reads it). Locked
+ * then the next 3 days' Capacity (Recovery reads their load). Locked
  * 2 days after the day ends, since day records can arrive late.
  * @param {object} db Admin Firestore instance.
  * @param {string} uid Account ID.
@@ -335,10 +361,13 @@ async function refreshEffort(db, uid, day, timestamp, now = new Date()) {
     return "written";
   });
   if (outcome === "written") {
+    // Recovery reads the last 3 days' load (a big day fades over three).
     const {refreshCapacity} = require("./capacity");
-    const next = new Date(Date.parse(`${day}T00:00:00Z`) + DAY)
-        .toISOString().slice(0, 10);
-    await refreshCapacity(db, uid, next, timestamp, now);
+    for (let k = 1; k <= 3; k++) {
+      const next = new Date(Date.parse(`${day}T00:00:00Z`) + k * DAY)
+          .toISOString().slice(0, 10);
+      await refreshCapacity(db, uid, next, timestamp, now);
+    }
   }
   return outcome;
 }
@@ -355,6 +384,6 @@ function effortInputsChanged(before, after) {
 }
 
 module.exports = {
-  VERSION, hourlyLoads, workoutIntensity, computeEffort, refreshEffort,
-  effortInputsChanged,
+  VERSION, hourlyLoads, workoutIntensity, physicalLoad, computeEffort,
+  refreshEffort, effortInputsChanged,
 };

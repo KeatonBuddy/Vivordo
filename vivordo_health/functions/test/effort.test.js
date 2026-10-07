@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const {hourlyLoads, computeEffort, effortInputsChanged} = require("../effort");
+const {hourlyLoads, computeEffort, effortInputsChanged, physicalLoad} = require("../effort");
 
 const MIN = 60000;
 const dayStart = Date.UTC(2026, 9, 1, 6); // midnight in Edmonton (MDT)
@@ -109,3 +109,10 @@ test("hourly loads match the phone's calculator (shared fixture)", () => {
 function round1(value) {
   return Math.round(value * 10) / 10;
 }
+
+test("physical load is Effort's physical points without the cap", () => {
+  assert.deepEqual(physicalLoad({workouts: [{name: "HIIT", minutes: 120}]}), {points: 42, source: "exercise"});
+  assert.deepEqual(physicalLoad({healthMinutes: 30}), {points: 6, source: "exercise"});
+  assert.deepEqual(physicalLoad({activeCalories: 900, usualCalories: 500}), {points: 8, source: "calories"});
+  assert.deepEqual(physicalLoad({}), {points: 0, source: null});
+});

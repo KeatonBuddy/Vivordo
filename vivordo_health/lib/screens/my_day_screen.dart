@@ -1056,6 +1056,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           firstEventTitle: first?.title,
           firstEventStart: first?.start,
           onTap: () => showEnergyForecastSheet(context, tonight),
+          bigDayRatio: _capacitySnapshot.value.data?.todayBigDayRatio,
           reminder: _windDownReminder,
           onReminder: (on) => _setWindDownReminder(on, first?.start),
         ),
@@ -1165,6 +1166,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 ready &&
                 tomorrowCapacity != null &&
                 demand > tomorrowCapacity + 15;
+            // A big day in the last 3 is lowering Capacity (docs/scores.md
+            // §4): say why, unless the body has already bounced back.
+            final bigDay = server?.bigDay;
+            final recovering = bigDay != null && !bigDay.halved;
             // Demand against Capacity, ±15 (docs/scores.md §2).
             final headline = evening
                 ? tomorrowHeavy
@@ -1172,6 +1177,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       : 'Today’s plan is done'
                 : _burnoutSnapshot.value.data?.level == 'warning'
                 ? 'Give yourself a little more room today'
+                : recovering
+                ? bigDayHeadline(bigDay, today)
                 : capacityScore == null || !ready
                 ? 'Make space for your day'
                 : demand <= capacityScore - 15
@@ -1208,6 +1215,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       : capacityScore,
                   capacityLabel: evening && usualCapacity != null
                       ? 'Your usual'
+                      : recovering
+                      ? 'Recovering'
                       : server != null
                       ? server.note
                       : capacity?.score == null
@@ -1258,7 +1267,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       AppleInfoItem(
                         'Capacity',
                         server != null
-                            ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. It\'s compared with your usual after 7 days.'
+                            ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.'
                             : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
                         icon: CupertinoIcons.battery_75_percent,
                       ),

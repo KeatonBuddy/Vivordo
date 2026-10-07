@@ -1,6 +1,6 @@
 # Vivordo Privacy Policy
 
-**Last updated: October 6, 2026**
+**Last updated: October 7, 2026**
 
 ## Introduction
 
@@ -111,7 +111,7 @@ We may collect device type, operating-system version, app version, language, tim
 
 Vivordo's servers calculate scores from the information described above and store them, with the ingredients behind them, in your account:
 
-- **Capacity**—the energy you have today—from sleep, overnight heart-rate variability, resting heart rate, your morning check-in, and how demanding your recent days were;
+- **Capacity**—the energy you have today—from sleep, overnight heart-rate variability, resting heart rate, your morning check-in, and how demanding and active your recent days were compared with your usual;
 - **Effort**—what your day took—from your daily records, in-app workouts (type and duration), exercise minutes, and active calories;
 - **Physical Health**—your longer-term fitness and habits—from active minutes, steps, strength workouts, cardio fitness (VO₂ max, measured or estimated from your age, sex, height, weight, activity, and resting heart rate), and sleep; and
 - **the burnout check**—a nightly comparison of your last two weeks of Capacity, Effort, and mood with your own usual levels, using sleep, resting heart rate, heart-rate variability, back-to-back events, and after-hours time to explain the result. When a warning starts, Vivordo may send you one notification.

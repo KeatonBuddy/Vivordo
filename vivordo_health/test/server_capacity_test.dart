@@ -92,4 +92,76 @@ void main() {
       isNull,
     );
   });
+
+  test('version 2 compares with version 1 days', () {
+    final c = serverCapacityFor({
+      ...week(80),
+      today: day(60, version: 2),
+    }, today)!;
+    expect(c.usual, 80);
+    expect(c.note, 'Below your usual');
+  });
+
+  test('a big day and today\'s load are read for My Day', () {
+    final c = serverCapacityFor({
+      today: {
+        'capacity': {
+          ...day(64, version: 2)['capacity'] as Map<String, dynamic>,
+          'bigDay': {
+            'day': '2026-09-30',
+            'ratio': 3,
+            'penalty': 70,
+            'halved': false,
+          },
+          'activityUsual': {
+            'kind': 'minutes',
+            'usual': 8,
+            'base': 8,
+            'threshold': 16,
+          },
+        },
+        'effort': {'physicalLoad': 26},
+        'activityLoad': {'trimp': 300},
+      },
+    }, today)!;
+    expect(c.bigDay!.day, DateTime(2026, 9, 30));
+    expect(c.bigDay!.ratio, 3);
+    expect(c.bigDay!.halved, isFalse);
+    expect(c.todayBigDayRatio, closeTo(3.25, 1e-9));
+    expect(
+      bigDayHeadline(c.bigDay!, DateTime(2026, 10, 1)),
+      'Big day yesterday. Go easy today.',
+    );
+    // 2026-09-30 is a Wednesday.
+    expect(
+      bigDayHeadline(c.bigDay!, DateTime(2026, 10, 2)),
+      'Still recovering from Wednesday’s big day',
+    );
+  });
+
+  test('today is a big day from the server\'s threshold', () {
+    expect(bigDayRatio(16, 8, 16), 2);
+    expect(bigDayRatio(15, 8, 16), isNull);
+    expect(bigDayRatio(30, null, null), isNull);
+  });
+
+  test('heart-rate Capacity compares today\'s heart-rate load', () {
+    final c = serverCapacityFor({
+      today: {
+        'capacity': {
+          ...day(70, version: 2)['capacity'] as Map<String, dynamic>,
+          'activityUsual': {
+            'kind': 'heart',
+            'usual': 50,
+            'base': 50,
+            'threshold': 100,
+          },
+        },
+        'effort': {'physicalLoad': 26},
+        'activityLoad': {'trimp': 160},
+      },
+    }, today)!;
+    expect(c.todayLoad, 160);
+    expect(c.todayBigDayRatio, closeTo(3.2, 1e-9));
+  });
 }

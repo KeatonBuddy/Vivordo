@@ -2,7 +2,7 @@
 /* eslint-disable max-len, require-jsdoc */
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {computeCapacity, capacityInputs, capacityInputsChanged, sleepNeed, clockGap, usualClockTime} = require("../capacity");
+const {BIG_DAY_MIN, bigDayEffect, bigDayPenalty, bigDayScale, computeCapacity, capacityInputs, capacityInputsChanged, sleepNeed, clockGap, usualClockTime} = require("../capacity");
 
 // 30 normal days: 7.5 h sleep, bed at 23:00, HRV 60, resting HR 55.
 const history = (overrides = {}) => Array.from({length: 30}, () => ({
@@ -113,4 +113,59 @@ test("an implausible resting HR is left out, never a 0 from one bad reading", ()
   const elevated = computeCapacity({history: normal49, today: {sleepHours: 7.5, restingHr: 56}});
   assert.equal(elevated.restingHrIgnored, false);
   assert.equal(elevated.parts.body, 28);
+});
+
+test("a big day costs Recovery by how far above the usual it was", () => {
+  assert.equal(bigDayPenalty(1.9), 0);
+  assert.equal(bigDayPenalty(2), 40);
+  assert.equal(bigDayPenalty(2.5), 55);
+  assert.equal(bigDayPenalty(3), 70);
+  assert.equal(bigDayPenalty(4), 90);
+  assert.equal(bigDayPenalty(9), 90);
+});
+
+test("the strongest of the last 3 days counts, fading over them", () => {
+  // Usual 20 a day: 60 yesterday is 3× → 70; 80 two days ago is 4× → 90 × ½.
+  assert.deepEqual(bigDayEffect([60, null, null], 20), {daysAgo: 1, ratio: 3, penalty: 70});
+  assert.deepEqual(bigDayEffect([20, 80, null], 20), {daysAgo: 2, ratio: 4, penalty: 45});
+  assert.deepEqual(bigDayEffect([20, 20, 80], 20), {daysAgo: 3, ratio: 4, penalty: 22.5});
+  // A normal week, or no usual yet: nothing.
+  assert.equal(bigDayEffect([30, 25, 20], 20), null);
+  assert.equal(bigDayEffect([80, null, null], null), null);
+  // Rarely exercises (usual 2): an hour (12 points) is 2× of the 6-point
+  // floor, not 6×; under 12 points is never a big day.
+  assert.deepEqual(bigDayEffect([12, null, null], 2), {daysAgo: 1, ratio: 2, penalty: 40});
+  assert.equal(bigDayEffect([10, null, null], 2), null);
+});
+
+test("a big day lowers Capacity, less when the body has recovered", () => {
+  const base = {sleepHours: 7.5, bedtimeMin: 23 * 60, yesterdayEffort: 40, usualEffort: 40};
+  const bigDay = {day: "2026-10-06", ratio: 3, penalty: 70};
+  const calm = computeCapacity({history: history(), today: {...base, hrv: 60, restingHr: 55}});
+  // Body at its normal (70): recovered, so half of 70.
+  const recovered = computeCapacity({history: history(), today: {...base, hrv: 60, restingHr: 55, bigDay}});
+  assert.equal(recovered.parts.recovery, 65);
+  assert.deepEqual(recovered.bigDay, {day: "2026-10-06", ratio: 3, penalty: 35, halved: true, kind: "minutes"});
+  // Body strained (HRV down, resting HR up): the full 70.
+  const strained = computeCapacity({history: history(), today: {...base, hrv: 51, restingHr: 59, bigDay}});
+  assert.equal(strained.parts.recovery, 30);
+  assert.equal(strained.bigDay.halved, false);
+  assert.ok(recovered.score < calm.score, `${recovered.score} < ${calm.score}`);
+  // Yesterday's Effort and the big day are the same day: the larger counts.
+  const both = computeCapacity({history: history(), today: {...base, hrv: 51, restingHr: 59, yesterdayEffort: 120, bigDay}});
+  assert.equal(both.parts.recovery, 20, "Effort 80 over the usual beats 70");
+  // With no Effort history the big day still sets Recovery.
+  const activityUsual = {kind: "minutes", usual: 20, base: 20, threshold: 40};
+  const noEffort = computeCapacity({history: history(), today: {sleepHours: 7.5, bedtimeMin: 23 * 60, hrv: 51, restingHr: 59, bigDay, activityUsual}});
+  assert.equal(noEffort.parts.recovery, 30);
+  assert.deepEqual(noEffort.activityUsual, activityUsual);
+});
+
+test("heart-rate load has its own minimum, and the app gets the threshold", () => {
+  // TRIMP: a usual of 30 counts as at least 20; big from 60.
+  assert.deepEqual(bigDayScale(30, BIG_DAY_MIN.heart), {base: 30, threshold: 60});
+  assert.deepEqual(bigDayScale(10, BIG_DAY_MIN.heart), {base: 20, threshold: 40});
+  assert.deepEqual(bigDayScale(8, BIG_DAY_MIN.minutes), {base: 8, threshold: 16});
+  assert.equal(bigDayEffect([35, null, null], 10, BIG_DAY_MIN.heart), null, "under 40");
+  assert.deepEqual(bigDayEffect([60, null, null], 20, BIG_DAY_MIN.heart), {daysAgo: 1, ratio: 3, penalty: 70});
 });
