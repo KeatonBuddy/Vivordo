@@ -26,6 +26,7 @@ import 'package:vivordo_health/src/utils/day_effort.dart';
 import 'package:vivordo_health/src/utils/day_wrap_up.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/widgets/morning_check_in_card.dart';
+import 'package:vivordo_health/src/services/daily_tags_service.dart';
 import 'package:vivordo_health/src/utils/home_day_load.dart';
 import 'package:vivordo_health/src/utils/owned_stream_snapshot.dart';
 import 'package:vivordo_health/widgets/add_calendar_event_sheet.dart';
@@ -350,6 +351,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _sleepHoursLive.dispose();
     CalendarService.eventsChanged.removeListener(_refreshHomeCalendarCards);
     _sleepRefreshTimer?.cancel();
     _prioritySnapshot.dispose();
@@ -463,10 +465,84 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// The day the check-in pop-up was last considered, so it's tried once.
   String? _checkInPopupDay;
 
+  /// Last night's sleep as Home last saw it, so the pop-up's "recorded"
+  /// hint appears if the sleep syncs while it's open.
+  final _sleepHoursLive = ValueNotifier<double?>(null);
+
+  /// Last night's tags (DailyTagsService) for the check-in, and the night
+  /// they belong to; loaded once a day while the check-in is due.
+  Set<String> _lastNightTags = const {};
+  String? _lastNightTagsDay;
+
+  DateTime get _lastNight {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day - 1);
+  }
+
+  Future<Set<String>> _loadLastNightTags() async {
+    final night = _lastNight;
+    final key = localDayKey(night);
+    if (_lastNightTagsDay == key) return _lastNightTags;
+    _lastNightTagsDay = key;
+    try {
+      final tags = await DailyTagsService.load(night);
+      if (mounted && _lastNightTagsDay == key) {
+        setState(() => _lastNightTags = tags);
+      }
+    } catch (_) {
+      // The chips start empty; a tap still saves.
+    }
+    return _lastNightTags;
+  }
+
+  void _saveLastNightTags(Set<String> tags) {
+    if (mounted) setState(() => _lastNightTags = tags);
+    unawaited(
+      DailyTagsService.save(
+        _lastNight,
+        tags,
+      ).catchError((Object e) => debugPrint('Save tags failed: $e')),
+    );
+  }
+
+  /// Rating sleep with the tags in view also records "nothing last night"
+  /// when none are tagged, which the comparisons need.
+  void _answerSleep(String label) {
+    _saveCheckIn({'sleep': sleepCheckInScores[label]!});
+    _saveLastNightTags(_lastNightTags);
+  }
+
+  /// The check-in sheet with today's answers so far and last night's tags:
+  /// true when both got answered, false for "Not today", null when swiped
+  /// away.
+  Future<bool?> _openCheckIn(Map checkIn) async {
+    final tags = await _loadLastNightTags();
+    if (!mounted) return null;
+    final feel = checkIn['feel'];
+    final sleep = checkIn['sleep'];
+    return showMorningCheckInSheet(
+      context,
+      feel: feel is num ? MetricsService.moodLabelForScore(feel) : null,
+      sleep: sleep is num
+          ? sleepCheckInScores.entries
+                .where((e) => e.value == sleep)
+                .firstOrNull
+                ?.key
+          : null,
+      sleepHours: _sleepHoursLive,
+      tags: tags,
+      onFeel: (label) => _saveCheckIn({
+        'feel': MetricsService.moodScoreForLabel(label),
+      }, mood: label),
+      onSleep: _answerSleep,
+      onTags: _saveLastNightTags,
+    );
+  }
+
   /// The check-in as a sheet on the first morning open (checkInPopupDue).
   /// Only over Home itself: not when another screen, sheet or dialog (an
   /// achievement, a notification's destination) is showing. Answers save
-  /// as they're tapped; the card stays for anything left unanswered.
+  /// as they're tapped; the row stays for anything left unanswered.
   void _maybeShowCheckInPopup(Map? checkIn, double? sleepHours) {
     final now = DateTime.now();
     final day = localDayKey(now);
@@ -503,23 +579,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       // Once a day, wherever it's answered.
       unawaited(_saveCheckIn({'prompted': true}));
-      final feel = checkIn!['feel'];
-      final sleep = checkIn['sleep'];
-      final answered = await showMorningCheckInSheet(
-        context,
-        feel: feel is num ? MetricsService.moodLabelForScore(feel) : null,
-        sleep: sleep is num
-            ? sleepCheckInScores.entries
-                  .where((e) => e.value == sleep)
-                  .firstOrNull
-                  ?.key
-            : null,
-        sleepHours: sleepHours,
-        onFeel: (label) => _saveCheckIn({
-          'feel': MetricsService.moodScoreForLabel(label),
-        }, mood: label),
-        onSleep: (label) => _saveCheckIn({'sleep': sleepCheckInScores[label]!}),
-      );
+      final answered = await _openCheckIn(checkIn!) == true;
       try {
         await user.set({
           'preferences': {
@@ -626,13 +686,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  }
-
   String _getFirstName() {
     final user = FirebaseAuth.instance.currentUser;
     final displayName = user?.displayName ?? 'Alex';
@@ -722,6 +775,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
         final sleepHours = (sleepMap?['avg'] as num?)?.toDouble();
         if (!loading) _maybeShowCheckInPopup(checkIn, sleepHours);
+        if (_sleepHoursLive.value != sleepHours) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => mounted ? _sleepHoursLive.value = sleepHours : null,
+          );
+        }
 
         final steps = (stepsMap?['sum'] as num?)?.toInt();
         final activeCalories =
@@ -1034,7 +1092,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         sleepIsWhoop || latestHeartRate?.source == 'whoop_ble',
                   ),
                 ),
-                _buildCheckIn(checkIn, sleepHours),
+                _buildCheckIn(checkIn),
                 const SizedBox(height: 12),
                 _buildVitals(
                   sleepHours: sleepHours,
@@ -1088,29 +1146,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// The daily check-in (docs/scores.md §4), from 5 AM until both questions
-  /// are answered or it's dismissed. "How do you feel?" also counts as
-  /// today's mood check-in. [checkIn] is null until today's metrics load.
-  Widget _buildCheckIn(Map? checkIn, double? sleepHours) {
+  /// The daily check-in (docs/scores.md §4) as a one-line row, from 5 AM
+  /// until both questions are answered or it's put off with "Not today".
+  /// It opens the same sheet as the morning pop-up. [checkIn] is null until
+  /// today's metrics load.
+  Widget _buildCheckIn(Map? checkIn) {
     if (!checkInDue(checkIn, DateTime.now())) return const SizedBox.shrink();
-    final feel = checkIn!['feel'];
-    final sleep = checkIn['sleep'];
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: MorningCheckInCard(
-        feel: feel is num ? MetricsService.moodLabelForScore(feel) : null,
-        sleep: sleep is num
-            ? sleepCheckInScores.entries
-                  .where((e) => e.value == sleep)
-                  .firstOrNull
-                  ?.key
-            : null,
-        sleepHours: sleepHours,
-        onFeel: (label) => _saveCheckIn({
-          'feel': MetricsService.moodScoreForLabel(label),
-        }, mood: label),
-        onSleep: (label) => _saveCheckIn({'sleep': sleepCheckInScores[label]!}),
-        onDismiss: () => _saveCheckIn({'dismissed': true}),
+      child: CheckInRow(
+        left: [
+          checkIn!['feel'],
+          checkIn['sleep'],
+        ].where((a) => a is! num).length,
+        onTap: () async {
+          if (await _openCheckIn(checkIn) == false) {
+            unawaited(_saveCheckIn({'dismissed': true}));
+          }
+        },
       ),
     );
   }
@@ -1175,7 +1228,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children: [
               Text(
                 '${DateFormat('EEE, MMM d').format(DateTime.now())} · '
-                '${_getGreeting()}',
+                '${timeOfDayGreeting(DateTime.now())}',
                 style: TextStyle(
                   color: colors.textSecondary,
                   fontSize: 13,

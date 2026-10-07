@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/daily_tags.dart';
 import 'package:vivordo_health/widgets/morning_check_in_card.dart';
 
 void main() {
@@ -55,52 +56,99 @@ void main() {
     return context;
   }
 
-  testWidgets('the sheet asks sleep, then feel, then closes itself', (
+  testWidgets('one screen: sleep, tags and feel, then it closes itself', (
     tester,
   ) async {
     final context = await pumpApp(tester);
     final saved = <String>[];
+    final hours = ValueNotifier<double?>(null);
+    addTearDown(hours.dispose);
     final result = showMorningCheckInSheet(
       context,
       feel: null,
       sleep: null,
-      sleepHours: 6.8,
+      sleepHours: hours,
+      tags: const {},
       onFeel: (l) => saved.add('feel:$l'),
       onSleep: (l) => saved.add('sleep:$l'),
+      onTags: (t) => saved.add('tags:${t.join(',')}'),
     );
     await tester.pumpAndSettle();
     expect(find.text('How did you sleep?'), findsOneWidget);
-    expect(find.text('6 h 48 m recorded'), findsOneWidget);
-    await tester.tap(find.text('Okay'));
-    await tester.pumpAndSettle();
+    expect(find.textContaining('Anything from last night?'), findsOneWidget);
     expect(find.text('How do you feel?'), findsOneWidget);
-    expect(find.text('Slept okay'), findsOneWidget);
-    await tester.tap(find.text('Good'));
+    // Sleep that syncs while it's open shows up.
+    expect(find.textContaining('recorded'), findsNothing);
+    hours.value = 6.8;
+    await tester.pump();
+    expect(find.textContaining('6 h 48 m recorded'), findsOneWidget);
+
+    // Feel first, then sleep: whichever comes second starts the wait.
+    await tester.tap(find.text('Good').last);
+    await tester.tap(find.text('Okay').first);
+    await tester.pump(const Duration(milliseconds: 1000));
+    // A tag in the pause restarts it, so it lands.
+    await tester.tap(find.text('Alcohol'));
+    await tester.pump(const Duration(milliseconds: 1000));
+    expect(find.text("You're set for today"), findsNothing);
+    await tester.pump(const Duration(milliseconds: 600));
     await tester.pumpAndSettle();
     expect(find.text("You're set for today"), findsOneWidget);
+    expect(find.text('Tagged alcohol'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
     expect(await result, isTrue);
-    expect(saved, ['sleep:Okay', 'feel:Good']);
+    expect(saved, ['feel:Good', 'sleep:Okay', 'tags:alcohol']);
   });
 
-  testWidgets(
-    'a question answered on the card is skipped; Not today dismisses',
-    (tester) async {
-      final context = await pumpApp(tester);
-      final result = showMorningCheckInSheet(
-        context,
-        feel: null,
-        sleep: 'Good',
-        sleepHours: null,
-        onFeel: (_) {},
-        onSleep: (_) {},
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('How do you feel?'), findsOneWidget);
-      await tester.tap(find.text('Not today'));
-      await tester.pumpAndSettle();
-      expect(await result, isFalse);
-    },
-  );
+  testWidgets('earlier answers show selected; Not today dismisses', (
+    tester,
+  ) async {
+    final context = await pumpApp(tester);
+    final result = showMorningCheckInSheet(
+      context,
+      feel: null,
+      sleep: 'Good',
+      sleepHours: ValueNotifier(null),
+      tags: const {'late_meal'},
+      onFeel: (_) {},
+      onSleep: (_) {},
+      onTags: (_) {},
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('How do you feel?'), findsOneWidget);
+    await tester.tap(find.text('Not today'));
+    await tester.pumpAndSettle();
+    expect(await result, isFalse);
+  });
+
+  testWidgets('Home shows a one-line row that says what is left', (
+    tester,
+  ) async {
+    var taps = 0;
+    Future<void> show(int left) => tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Scaffold(
+          body: CheckInRow(left: left, onTap: () => taps++),
+        ),
+      ),
+    );
+    await show(2);
+    expect(find.text('Daily check-in'), findsOneWidget);
+    expect(find.text('2 taps'), findsOneWidget);
+    await show(1);
+    expect(find.text('1 left'), findsOneWidget);
+    await tester.tap(find.byType(CheckInRow));
+    expect(taps, 1);
+  });
+
+  test('tags read as a phrase in the offered order', () {
+    expect(
+      dailyTagsPhrase(const {'late_meal', 'alcohol'}),
+      'alcohol and late meal',
+    );
+    expect(dailyTagsPhrase(const {'sick'}), 'sick');
+    expect(dailyTagsPhrase(const {}), '');
+  });
 }

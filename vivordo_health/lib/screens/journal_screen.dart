@@ -13,6 +13,7 @@ import '../src/services/metrics_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/journal_summary.dart';
 import '../widgets/apple_ui.dart';
+import '../widgets/daily_tags.dart';
 import '../widgets/journal_entry_sheet.dart';
 
 const _purple = Color(0xFF5B4CF4);
@@ -145,6 +146,8 @@ class _JournalScreenState extends State<JournalScreen> {
                         _buildMonth(items),
                         const SizedBox(height: 14),
                         _buildPromptCard(),
+                        const SizedBox(height: 14),
+                        ?_buildNightTags(),
                         const SizedBox(height: 24),
                       ],
                       if (snapshot.hasError)
@@ -164,6 +167,24 @@ class _JournalScreenState extends State<JournalScreen> {
                 },
               ),
       ),
+    );
+  }
+
+  /// Tags for last night, or for the selected day's night, to add or fix
+  /// what the morning check-in asks (DailyTagsService).
+  Widget? _buildNightTags() {
+    final today = _today;
+    final night =
+        _selectedDay ?? DateTime(today.year, today.month, today.day - 1);
+    if (night.isAfter(today)) return null;
+    final days = today.difference(DateUtils.dateOnly(night)).inDays;
+    return NightTagsCard(
+      night: night,
+      title: switch (days) {
+        0 => 'TONIGHT',
+        1 => 'LAST NIGHT',
+        _ => 'THE NIGHT OF ${DateFormat('MMM d').format(night).toUpperCase()}',
+      },
     );
   }
 

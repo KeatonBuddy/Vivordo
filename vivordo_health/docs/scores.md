@@ -248,32 +248,49 @@ twice (and, without a wearable, it adds little beyond sleep and mood).
 Stress stays its own live number. The check-in replaces it as the one
 signal sensors can't measure. It is left out on days it isn't answered.
 
-**The daily check-in card** sits on Home under the stress card from 5 AM
-(local; not before 5 AM, when most people haven't slept yet) until both
-questions are answered or it's dismissed; unanswered, it goes at midnight
-and comes back at 5 AM. "How do you feel?" uses the mood labels
-(Awful 10, Down 30, Okay 50, Good 75, Great 95) and is also saved as the
-day's mood check-in. "How did you sleep?" is asked even when sleep was
-recorded, with the recorded duration shown beside it. Answers are saved to
-`metrics_daily/{day}.morning_check_in` as `{feel, sleep, dismissed}`
-(scores), which the Capacity trigger reads. Once both are answered the card
-disappears; an answer given late in the day still counts for that day's
-Capacity. An opt-in reminder (Settings → Morning check-in reminder,
-`preferences.checkInMorningReminder`, `lib/src/services/check_in_reminder.dart`)
-fires at 10 AM on days the check-in is still open; the next 7 mornings are
-scheduled whenever Home loads the calendar, and today's is dropped as soon
-as the check-in is answered or dismissed.
+**The daily check-in** is a one-line row on Home under the stress card
+("Daily check-in · 2 taps ›", `CheckInRow`) from 5 AM (local; not before
+5 AM, when most people haven't slept yet) until both questions are answered
+or it's put off with "Not today"; unanswered, it goes at midnight and comes
+back at 5 AM. Tapping it opens the check-in sheet (below). "How do you
+feel?" uses the mood labels (Awful 10, Down 30, Okay 50, Good 75, Great 95)
+and is also saved as the day's mood check-in. "How did you sleep?" is asked
+even when sleep was recorded, with the recorded duration shown beside it.
+Answers are saved to `metrics_daily/{day}.morning_check_in` as
+`{feel, sleep, dismissed}` (scores), which the Capacity trigger reads. Once
+both are answered the row disappears; an answer given late in the day still
+counts for that day's Capacity. An opt-in reminder (Settings → Morning
+check-in reminder, `preferences.checkInMorningReminder`,
+`lib/src/services/check_in_reminder.dart`) fires at 10 AM on days the
+check-in is still open; the next 7 mornings are scheduled whenever Home
+loads the calendar, and today's is dropped as soon as the check-in is
+answered or dismissed.
+
+**The check-in sheet** asks everything on one screen: sleep, "Anything from
+last night?" tags, then feel (answers already given show as selected). Once
+both questions are answered it waits 1.5 s (any tap restarts the wait, so a
+last tag still lands), shows "You're set for today" and closes itself. The
+recorded-sleep hint is live, so it appears if the sleep syncs while the
+sheet is open. Opened from the row, "Not today" sets `dismissed` and hides
+the row for the day; a swipe down just closes it.
 
 **The check-in pop-up.** On the first Home open between 5 AM and noon,
-while the check-in is still open, the same questions come up as a sheet:
-sleep first, then feel (an answer already given on the card is skipped),
-then "You're set for today" before it closes itself. It shows once a day
-(`morning_check_in.prompted`), only over Home itself (not over another
+while the check-in is still open, the sheet opens by itself. It shows once a
+day (`morning_check_in.prompted`), only over Home itself (not over another
 screen, sheet or dialog, and not when the app opened to the mood check-in),
 so the 10 AM reminder, which opens Home, brings it up. "Not today" or a
-swipe down closes it without dismissing the card. After 3 dismissals in a
-row (`preferences.checkInPopupDismissals`, reset when both get answered in
-it) it stops popping up and the card stays as the way in.
+swipe down closes it without hiding the row. After 3 dismissals in a row
+(`preferences.checkInPopupDismissals`, reset when both get answered in it)
+it stops popping up and the row stays as the way in.
+
+**Night tags.** Alcohol, late caffeine, late meal, screens in bed, sick and
+travel, on the check-in sheet and in Journal for any night. Saved in
+`users/{uid}/daily_tags/{day}` (`tags`, sorted ids) under the date the
+evening belongs to, outside metrics_daily so a tap doesn't resend the large
+day documents to their listeners. Rating sleep with the tags in view saves
+the current set, so an empty list means "nothing that night": the
+comparisons (planned: next-day Capacity, sleep, resting HR and HRV on tagged
+vs untagged nights, shown once a tag has 5 of each) need those days.
 
 - **Your sleep need** is your 90-day median sleep, kept between 7 and 9 h.
   With fewer than 14 nights it is 8 h.

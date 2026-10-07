@@ -1,7 +1,11 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import 'apple_ui.dart';
+import 'daily_tags.dart';
 
 /// "How did you sleep?" answers and their Capacity sub-scores
 /// (docs/scores.md §4).
@@ -44,6 +48,14 @@ bool checkInPopupDue(Map? checkIn, DateTime now, int dismissedInARow) =>
 
 const feelCheckInLabels = ['Awful', 'Down', 'Okay', 'Good', 'Great'];
 
+/// "Good morning", "Good afternoon" or "Good evening": Home's header and the
+/// check-in sheet, which can be opened from the row at any time of day.
+String timeOfDayGreeting(DateTime now) => now.hour < 12
+    ? 'Good morning'
+    : now.hour < 17
+    ? 'Good afternoon'
+    : 'Good evening';
+
 const _feelIcons = [
   Icons.sentiment_very_dissatisfied_rounded,
   Icons.sentiment_dissatisfied_rounded,
@@ -60,126 +72,132 @@ const _sleepIcons = [
   Icons.bedtime_rounded,
 ];
 
-/// The optional daily check-in on Home, under the stress card. Shown from
-/// 5 AM until both questions are answered or it's dismissed.
-class MorningCheckInCard extends StatelessWidget {
-  const MorningCheckInCard({
-    super.key,
+/// The daily check-in on Home as one line, under the stress card: shown
+/// from 5 AM until both questions are answered or it's put off for the day.
+/// Tapping opens the check-in sheet.
+class CheckInRow extends StatelessWidget {
+  const CheckInRow({super.key, required this.left, required this.onTap});
+
+  /// Questions still unanswered: 1 or 2.
+  final int left;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return Material(
+      color: colors.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.black.withValues(alpha: .07)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 9,
+                height: 9,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF7F77DD),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Daily check-in',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Text(
+                left > 1 ? '2 taps' : '1 left',
+                style: TextStyle(fontSize: 13, color: colors.textSecondary),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: colors.textSecondary,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Sleep, last night's tags and feel: the check-in sheet's questions.
+class _CheckInQuestions extends StatelessWidget {
+  const _CheckInQuestions({
     required this.feel,
     required this.sleep,
     required this.sleepHours,
+    required this.tags,
     required this.onFeel,
     required this.onSleep,
-    required this.onDismiss,
+    required this.onTags,
   });
 
-  /// Saved answers (labels), or null when unanswered.
   final String? feel, sleep;
-
-  /// Last night's recorded sleep, shown next to the sleep question.
   final double? sleepHours;
+  final Set<String> tags;
   final ValueChanged<String> onFeel, onSleep;
-  final VoidCallback onDismiss;
+  final ValueChanged<Set<String>> onTags;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final minutes = ((sleepHours ?? 0) * 60).round();
-    final recorded = minutes <= 0
-        ? ''
-        : ' · ${minutes ~/ 60}h ${minutes % 60}m recorded';
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
-      decoration: BoxDecoration(
-        color: colors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.black.withValues(alpha: .07)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'DAILY CHECK-IN',
-                      style: TextStyle(
-                        color: colors.textSecondary,
-                        fontSize: 11,
-                        letterSpacing: .7,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'Two quick questions',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+    Widget label(String text, [String? aside]) => Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 8),
+      child: Text.rich(
+        TextSpan(
+          text: text,
+          children: [
+            if (aside != null)
+              TextSpan(
+                text: ' · $aside',
+                style: TextStyle(
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
-              IconButton(
-                tooltip: 'Dismiss',
-                visualDensity: VisualDensity.compact,
-                onPressed: onDismiss,
-                icon: Icon(Icons.close_rounded, color: colors.textSecondary),
-              ),
-            ],
-          ),
-          _question(
-            context,
-            'How do you feel?',
-            feelCheckInLabels,
-            _feelIcons,
-            feel,
-            onFeel,
-          ),
-          _question(
-            context,
-            'How did you sleep?$recorded',
-            sleepCheckInScores.keys.toList(),
-            _sleepIcons,
-            sleep,
-            onSleep,
-          ),
-        ],
+          ],
+        ),
+        style: TextStyle(
+          color: colors.textPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
-  }
-
-  Widget _question(
-    BuildContext context,
-    String title,
-    List<String> labels,
-    List<IconData> icons,
-    String? selected,
-    ValueChanged<String> onSelect,
-  ) {
-    final colors = context.vivordoColors;
-    return Padding(
-      padding: const EdgeInsets.only(top: 12, right: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(color: colors.textSecondary, fontSize: 13),
-          ),
-          const SizedBox(height: 8),
-          _CheckInOptions(
-            labels: labels,
-            icons: icons,
-            selected: selected,
-            onSelect: onSelect,
-          ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        label(
+          'How did you sleep?',
+          minutes > 0 ? '${minutes ~/ 60} h ${minutes % 60} m recorded' : null,
+        ),
+        _CheckInOptions(
+          labels: sleepCheckInScores.keys.toList(),
+          icons: _sleepIcons,
+          selected: sleep,
+          onSelect: onSleep,
+        ),
+        label('Anything from last night?', 'optional'),
+        DailyTagChips(selected: tags, onChanged: onTags),
+        label('How do you feel?'),
+        _CheckInOptions(
+          labels: feelCheckInLabels,
+          icons: _feelIcons,
+          selected: feel,
+          onSelect: onFeel,
+        ),
+      ],
     );
   }
 }
@@ -253,42 +271,51 @@ class _CheckInOptions extends StatelessWidget {
   }
 }
 
-/// The check-in as a sheet on the first morning open: sleep, then feel,
-/// then a moment of "You're set" before it closes. Answers are saved as
-/// they're tapped ([onSleep], [onFeel]); already-answered questions are
-/// skipped. True when both got answered, false when dismissed.
-Future<bool> showMorningCheckInSheet(
+/// The check-in as a sheet on the first morning open: sleep, last night's
+/// tags and feel on one screen. Once both questions are answered it waits a
+/// moment (any tap restarts the wait, so a last tag still lands), shows
+/// "You're set" and closes. Answers and tags are saved as they're tapped.
+/// [sleepHours] is live, so the recorded sleep appears if it syncs while the
+/// sheet is open. True when both got answered, false for "Not today", null
+/// when swiped away.
+Future<bool?> showMorningCheckInSheet(
   BuildContext context, {
   required String? feel,
   required String? sleep,
-  required double? sleepHours,
+  required ValueListenable<double?> sleepHours,
+  required Set<String> tags,
   required ValueChanged<String> onFeel,
   required ValueChanged<String> onSleep,
-}) async =>
-    await showAppleSheet<bool>(
-      context,
-      builder: (_) => _CheckInSheet(
-        feel: feel,
-        sleep: sleep,
-        sleepHours: sleepHours,
-        onFeel: onFeel,
-        onSleep: onSleep,
-      ),
-    ) ??
-    false;
+  required ValueChanged<Set<String>> onTags,
+}) => showAppleSheet<bool>(
+  context,
+  builder: (_) => _CheckInSheet(
+    feel: feel,
+    sleep: sleep,
+    sleepHours: sleepHours,
+    tags: tags,
+    onFeel: onFeel,
+    onSleep: onSleep,
+    onTags: onTags,
+  ),
+);
 
 class _CheckInSheet extends StatefulWidget {
   const _CheckInSheet({
     required this.feel,
     required this.sleep,
     required this.sleepHours,
+    required this.tags,
     required this.onFeel,
     required this.onSleep,
+    required this.onTags,
   });
 
   final String? feel, sleep;
-  final double? sleepHours;
+  final ValueListenable<double?> sleepHours;
+  final Set<String> tags;
   final ValueChanged<String> onFeel, onSleep;
+  final ValueChanged<Set<String>> onTags;
 
   @override
   State<_CheckInSheet> createState() => _CheckInSheetState();
@@ -297,35 +324,33 @@ class _CheckInSheet extends StatefulWidget {
 class _CheckInSheetState extends State<_CheckInSheet> {
   late String? _feel = widget.feel;
   late String? _sleep = widget.sleep;
+  late Set<String> _tags = widget.tags;
+  bool _closing = false;
+  Timer? _settle;
 
-  bool get _done => _feel != null && _sleep != null;
-
-  void _answerSleep(String label) {
-    widget.onSleep(label);
-    setState(() => _sleep = label);
-    _finishIfDone();
+  /// Starts (or restarts) the pause before closing, once both are answered.
+  void _touched() {
+    _settle?.cancel();
+    if (_feel == null || _sleep == null) return;
+    _settle = Timer(const Duration(milliseconds: 1500), () async {
+      if (!mounted) return;
+      setState(() => _closing = true);
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+      if (mounted) Navigator.pop(context, true);
+    });
   }
 
-  void _answerFeel(String label) {
-    widget.onFeel(label);
-    setState(() => _feel = label);
-    _finishIfDone();
-  }
-
-  Future<void> _finishIfDone() async {
-    if (!_done) return;
-    await Future<void>.delayed(const Duration(milliseconds: 1400));
-    if (mounted) Navigator.pop(context, true);
+  @override
+  void dispose() {
+    _settle?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    const purple = Color(0xFF534AB7);
-    final minutes = ((widget.sleepHours ?? 0) * 60).round();
-    final askSleep = _sleep == null;
-    Widget body;
-    if (_done) {
+    final Widget body;
+    if (_closing) {
       body = Column(
         key: const ValueKey('done'),
         children: [
@@ -353,70 +378,56 @@ class _CheckInSheetState extends State<_CheckInSheet> {
             'Slept ${_sleep!.toLowerCase()} · feeling ${_feel!.toLowerCase()}',
             style: TextStyle(color: colors.textSecondary),
           ),
+          if (_tags.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              'Tagged ${dailyTagsPhrase(_tags)}',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.textSecondary),
+            ),
+          ],
           const SizedBox(height: 20),
         ],
       );
     } else {
       body = Column(
-        key: ValueKey(askSleep),
+        key: const ValueKey('questions'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!askSleep && widget.sleep == null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE1F5EE),
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: Text(
-                'Slept ${_sleep!.toLowerCase()}',
-                style: const TextStyle(fontSize: 12, color: Color(0xFF085041)),
-              ),
-            ),
           Text(
-            askSleep ? 'How did you sleep?' : 'How do you feel?',
+            timeOfDayGreeting(DateTime.now()),
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
           Text(
-            askSleep
-                ? "Two taps. It sharpens today's Capacity."
-                : "Counts as today's mood check-in.",
+            "Two taps. It sharpens today's Capacity.",
             style: TextStyle(color: colors.textSecondary),
           ),
-          if (askSleep && minutes > 0) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colors.card,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.bedtime_rounded, color: purple, size: 20),
-                  const SizedBox(width: 10),
-                  Text('${minutes ~/ 60} h ${minutes % 60} m recorded'),
-                ],
-              ),
+          ValueListenableBuilder<double?>(
+            valueListenable: widget.sleepHours,
+            builder: (context, hours, _) => _CheckInQuestions(
+              feel: _feel,
+              sleep: _sleep,
+              sleepHours: hours,
+              tags: _tags,
+              onSleep: (label) {
+                widget.onSleep(label);
+                setState(() => _sleep = label);
+                _touched();
+              },
+              onFeel: (label) {
+                widget.onFeel(label);
+                setState(() => _feel = label);
+                _touched();
+              },
+              onTags: (tags) {
+                widget.onTags(tags);
+                setState(() => _tags = tags);
+                _touched();
+              },
             ),
-          ],
-          const SizedBox(height: 16),
-          askSleep
-              ? _CheckInOptions(
-                  labels: sleepCheckInScores.keys.toList(),
-                  icons: _sleepIcons,
-                  selected: null,
-                  onSelect: _answerSleep,
-                )
-              : _CheckInOptions(
-                  labels: feelCheckInLabels,
-                  icons: _feelIcons,
-                  selected: null,
-                  onSelect: _answerFeel,
-                ),
-          const SizedBox(height: 12),
+          ),
+          const SizedBox(height: 14),
           Text(
             'Swipe down to finish later on Home.',
             style: TextStyle(fontSize: 12, color: colors.textSecondary),
@@ -443,28 +454,14 @@ class _CheckInSheetState extends State<_CheckInSheet> {
                 ),
               ),
             ),
-            Row(
-              children: [
-                // Which of the two questions this is.
-                if (!_done)
-                  for (final on in [askSleep, !askSleep])
-                    Container(
-                      width: on ? 14 : 6,
-                      height: 6,
-                      margin: const EdgeInsets.only(right: 4),
-                      decoration: BoxDecoration(
-                        color: on ? purple : colors.border,
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                const Spacer(),
-                if (!_done)
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Not today'),
-                  ),
-              ],
-            ),
+            if (!_closing)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Not today'),
+                ),
+              ),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 220),
               child: body,

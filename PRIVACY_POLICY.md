@@ -67,6 +67,8 @@ We collect information you choose to provide in check-ins, questionnaires, goals
 
 The optional daily check-in, shown on Home from 5 AM until you answer it, asks how you feel and how you slept. Vivordo stores your answers with that day's information, saves your "how do you feel" answer as a mood check-in, and uses both answers in the Capacity and Physical Health scores.
 
+The check-in also lets you tag anything from the night before: alcohol, late caffeine, a late meal, screens in bed, being sick, or travel. You can add or change a night's tags in Journal. Vivordo stores them for that night in your account, and rating your sleep without choosing any is saved as none that night, so it can later show how they relate to your sleep, heart rate, and Capacity. Tags are not sent to AI providers.
+
 Onboarding asks when you usually finish your main work or classes for the day. Vivordo stores this time and uses it to tell after-hours activity apart from your working day. Earlier versions of onboarding asked a set of work and stress questions; Vivordo no longer asks them, and answers you gave before are kept until you delete them or your account.
 
 Onboarding and the Sleep screen also ask when you usually go to bed and wake up, with separate weekend times if you choose. If you've connected Apple Health or Health Connect, Vivordo can fill these in from your last two weeks of sleep, read on your device. Your usual sleep times are stored in your account and used to forecast your energy through the day and to time the optional wind-down reminder. They are never counted as sleep in your scores.
