@@ -8,6 +8,7 @@ const crypto = require("node:crypto");
 const {isDeepStrictEqual} = require("node:util");
 const {validDay} = require("./metrics_summary");
 const {hrvReadings, pickHrv} = require("./hrv");
+const {trainingLoadFor} = require("./training_load");
 
 const VERSION = 2; // 2: a big day lowers Recovery for 3 days
 const WEIGHTS = {sleep: 45, body: 35, recovery: 20, checkIn: 15};
@@ -328,10 +329,16 @@ async function physicalLoads(user, metricsDocs, start, day) {
   const scores = await user.collection("scores_daily")
       .where(FieldPath.documentId(), ">=", start)
       .where(FieldPath.documentId(), "<", day)
-      .select("activityLoad")
+      .select("activityLoad", "trainingLoad")
       .get();
   const heartOn = new Map();
+  let previousTrainingState = null;
+  const yesterday = new Date(Date.parse(`${day}T00:00:00Z`) - DAY_MS)
+      .toISOString().slice(0, 10);
   for (const doc of scores.docs) {
+    if (doc.id === yesterday) {
+      previousTrainingState = doc.get("trainingLoad")?.state ?? null;
+    }
     const load = doc.get("activityLoad");
     if (load?.version === LOAD_VERSION && finite(load.trimp)) {
       heartOn.set(doc.id, load.trimp);
@@ -403,10 +410,16 @@ async function physicalLoads(user, metricsDocs, start, day) {
   };
   const heart = scale(heartUsual, "heart");
   const minutes = scale(minutesUsual, "minutes");
+  const base = (usual, kind) => usual === null ? null :
+    bigDayScale(usual, BIG_DAY_MIN[kind]).base;
   return {
     bigDay: effect && {day: daysAgo(effect.daysAgo), ratio: effect.ratio,
       penalty: effect.penalty, kind: effect.kind},
     activityUsual: heart || minutes ? {heart, minutes} : null,
+    // For the training load (training_load.js).
+    loads: {heartOn, heartBase: base(heartUsual, "heart"), minutesOn: loadOn,
+      minutesBase: base(minutesUsual, "minutes")},
+    previousTrainingState,
   };
 }
 
@@ -443,16 +456,34 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
   }
   history.sort((a, b) => a.day.localeCompare(b.day));
   let capacity = null;
+  let trainingLoad = null;
   if (todayData) {
-    const loads = await physicalLoads(user, snapshot.docs, start, day);
+    const {loads, previousTrainingState, ...activity} =
+      await physicalLoads(user, snapshot.docs, start, day);
     const today = capacityInputs(todayData);
     const hrv = pickHrv(today.hrvReadings,
         history.map((past) => past.hrvReadings), MIN_BASELINE);
     history.forEach((past, index) => past.hrv = hrv.history[index]);
     capacity = computeCapacity({
       today: {...today, hrv: hrv.value, hrvKind: hrv.kind,
-        ...await effortContext(user, start, day), ...loads},
+        ...await effortContext(user, start, day), ...activity},
       history,
+    });
+    // Training load (docs/scores.md §4): this week against the usual week,
+    // with the last 3 mornings' HRV and resting HR as the body's say.
+    const normal = (key) => {
+      const values = history.map((d) => d[key]).filter(finite);
+      return values.length >= MIN_BASELINE ? median(values) : null;
+    };
+    const past = (k) => history.find((d) => d.day === new Date(
+        Date.parse(`${day}T00:00:00Z`) - k * DAY_MS).toISOString()
+        .slice(0, 10));
+    trainingLoad = trainingLoadFor({
+      day, loads, previousState: previousTrainingState,
+      mornings: [{hrv: hrv.value, restingHr: today.restingHr}, past(1),
+        past(2)].map((m) => ({hrv: m?.hrv ?? null,
+        restingHr: m?.restingHr ?? null})),
+      hrvNormal: normal("hrv"), restingHrNormal: normal("restingHr"),
     });
   }
 
@@ -472,12 +503,15 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
     const next = capacity && {...capacity, final};
     const oldContent = old ? {...old} : null;
     if (oldContent) delete oldContent.computedAt;
-    if (isDeepStrictEqual(next, oldContent)) return "unchanged";
-    // Replaces the whole capacity map (a deep merge would keep keys a newer
+    const oldLoad = existing.data()?.trainingLoad ?? null;
+    if (isDeepStrictEqual(next, oldContent) &&
+        isDeepStrictEqual(trainingLoad, oldLoad)) return "unchanged";
+    // Replaces both maps whole (a deep merge would keep keys a newer
     // version dropped); the document's other fields stay.
     tx.set(target, {
       capacity: next ? {...next, computedAt: timestamp()} : null,
-    }, {mergeFields: ["capacity"]});
+      trainingLoad,
+    }, {mergeFields: ["capacity", "trainingLoad"]});
     return "written";
   });
 }

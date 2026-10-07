@@ -44,6 +44,8 @@ import '../src/utils/server_capacity.dart';
 import '../src/services/metrics_repository.dart';
 import '../src/utils/day_key.dart';
 import '../widgets/burnout_card.dart';
+import '../widgets/training_load_card.dart';
+import '../src/utils/training_load_view.dart';
 import '../src/utils/burnout_view.dart';
 import '../src/utils/day_fixes.dart';
 import '../src/utils/energy_fit.dart';
@@ -124,6 +126,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   final _briefSnapshot = OwnedStreamSnapshot<DailyBriefMetricsSummary>();
   final _capacitySnapshot = OwnedStreamSnapshot<ServerCapacity?>();
   final _burnoutSnapshot = OwnedStreamSnapshot<BurnoutView?>();
+  final _trainingLoadSnapshot = OwnedStreamSnapshot<TrainingLoadView?>();
 
   /// The latest nightly burnout check: it's saved on the day that just
   /// ended, so look back a few days.
@@ -185,6 +188,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _briefMetrics = null;
     _capacitySnapshot.connect(_capacityStreamFor(day));
     _burnoutSnapshot.connect(_burnoutStreamFor(day));
+    _trainingLoadSnapshot.connect(watchTrainingLoad(day));
     final stream = _metricsStreamFor(day);
     _briefSnapshot.connect(
       (stream ?? const Stream<MetricWindow>.empty()).map((snapshot) {
@@ -516,6 +520,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _briefSnapshot.setActive(active);
     _capacitySnapshot.setActive(active);
     _burnoutSnapshot.setActive(active);
+    _trainingLoadSnapshot.setActive(active);
     _prioritySnapshot.setActive(active);
     _tomorrowPrioritySnapshot.setActive(active);
     _habitSnapshot.setActive(active);
@@ -591,6 +596,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _briefSnapshot.dispose();
     _capacitySnapshot.dispose();
     _burnoutSnapshot.dispose();
+    _trainingLoadSnapshot.dispose();
     _prioritySnapshot.dispose();
     _tomorrowPrioritySnapshot.dispose();
     _habitSnapshot.dispose();
@@ -912,6 +918,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     : Padding(
                         padding: const EdgeInsets.only(top: 12),
                         child: BurnoutCard(view: snapshot.data!),
+                      ),
+              ),
+              // High or Strained only; Fitness shows every state.
+              ValueListenableBuilder<AsyncSnapshot<TrainingLoadView?>>(
+                valueListenable: _trainingLoadSnapshot,
+                builder: (context, snapshot, _) => snapshot.data?.alert != true
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: TrainingLoadAlert(view: snapshot.data!),
                       ),
               ),
               _buildEnergyEvening(),

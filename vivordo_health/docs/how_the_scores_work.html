@@ -156,7 +156,23 @@
     <li><b>Your body can say you've recovered.</b> If this morning's overnight body part is at your normal (65 or more), the cost is halved.</li>
     <li><b>What you see.</b> That evening, the Tonight card says "Big day today, about 3× your usual activity. Keep tomorrow light". The next morning My Day's brief says "Big day yesterday. Go easy today." and Capacity is labelled "Recovering".</li>
   </ul>
-  <p class="note">One big day is a peak, not a pattern: it never counts as overtraining. A separate training-load warning for weeks of much more activity than usual is planned.</p>
+  <p class="note">One big day is a peak, not a pattern: it never counts as overtraining. Weeks of much more activity than usual are training load's job (below).</p>
+
+  <h3>Training load</h3>
+  <p>Each morning, alongside Capacity, Vivordo compares <b>your last 7 days</b> of activity with <b>your usual week</b>: the 4 weeks before that, averaged. It doesn't change Capacity; it's its own warning.</p>
+  <ul>
+    <li><b>Each day against an ordinary day for you.</b> Using the same measure as big days (heart-rate load when your watch was worn, minutes otherwise), each day becomes a multiple of your usual active day, so measures are never mixed. A <b>hard day</b> is 1.5× or more.</li>
+    <li><b>It needs a usual first:</b> 21 of those 28 days with activity on record, and at least one ordinary active day a week. Until then it's hidden.</li>
+  </ul>
+  <table>
+    <tr><th>State</th><th>This week vs your usual week</th><th>Shown</th></tr>
+    <tr><td>Lighter</td><td>under 80%</td><td>Fitness</td></tr>
+    <tr><td>Steady</td><td>80% to 130%</td><td>Fitness</td></tr>
+    <tr><td>Building</td><td>130% or more</td><td>Fitness</td></tr>
+    <tr><td>High</td><td>150% or more, with 3 or more hard days</td><td>Fitness and My Day</td></tr>
+    <tr><td>Strained</td><td>High, and your HRV is more than 5% under its normal or your resting heart rate is 3+ bpm over it, on 2 of the last 3 mornings</td><td>Fitness and My Day</td></tr>
+  </table>
+  <p>High and Strained stay on until the week drops back under 130%, so one rest day doesn't switch them off. On My Day, "Plan an easier week" opens Vivordo AI with the week loaded; the burnout check also lists training load as a possible reason.</p>
 
   <h3>The rules that keep it honest</h3>
   <ul>
@@ -324,14 +340,14 @@
     <tr><td>Watch</td><td>One area strained</td><td>Shown on My Day, no notification. A "Talk it through with Vivordo AI" button opens the chat with the check loaded.</td></tr>
     <tr><td>Warning</td><td>Two areas strained for 7 nights, or one area far off plus another strained</td><td>One notification when it starts (no more than one a week), naming the areas, e.g. "Lower energy and heavier days than usual." My Day's headline softens, and the same Vivordo AI button is offered.</td></tr>
   </table>
-  <p>A warning holds until 7 calm nights in a row. <b>Drivers explain it but don't decide it:</b> sleep, resting heart rate, HRV, back-to-back events and after-hours time are listed as possible reasons.</p>
+  <p>A warning holds until 7 calm nights in a row. <b>Drivers explain it but don't decide it:</b> sleep, resting heart rate, HRV, back-to-back events, after-hours time and training load are listed as possible reasons.</p>
   <p class="note">Known limits: a day with no day record (the app not opened that day or the next) isn't evaluated, and strain lasting about 10 weeks or more becomes the new normal. It respects the notifications setting. Tapping the notification opens My Day.</p>
 
   <h3 style="margin-top:20pt">Where each score is calculated and stored</h3>
   <table>
     <tr><th>Score</th><th>Calculated</th><th>Stored</th></tr>
     <tr><td>Stress</td><td>Vivordo's stress service</td><td>Daily metrics</td></tr>
-    <tr><td>Capacity, Effort, Physical Health, burnout check, heart-rate load</td><td>Vivordo's servers (Cloud Functions)</td><td>scores_daily/{day}</td></tr>
+    <tr><td>Capacity, Effort, Physical Health, burnout check, heart-rate load, training load</td><td>Vivordo's servers (Cloud Functions)</td><td>scores_daily/{day}</td></tr>
     <tr><td>Event reactions</td><td>On the phone</td><td>event_reactions/{day}, no titles</td></tr>
     <tr><td>Demand, Your Day words, Heart insight</td><td>On the phone</td><td>Not stored</td></tr>
   </table>

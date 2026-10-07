@@ -3,6 +3,8 @@ import '../widgets/visible_stream_builder.dart';
 import '../widgets/contextual_insight_bar.dart';
 import '../src/services/active_workout_navigation.dart';
 import '../widgets/workout_rest_timer.dart';
+import '../widgets/training_load_card.dart';
+import '../src/utils/training_load_view.dart';
 import '../widgets/ios_pull_down_menu.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/vivordo_time_picker.dart';
@@ -374,6 +376,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
                 key: widget.weekKey,
                 child: _ThisWeekCard(strengthGoals: _strengthGoals),
               ),
+              const _TrainingLoadSection(),
               const SizedBox(height: 24),
               KeyedSubtree(key: widget.recentKey, child: const _RecentFeed()),
               const SizedBox(height: 24),
@@ -1076,6 +1079,43 @@ class _ThisWeekCardState extends State<_ThisWeekCard> {
         );
       },
     ),
+  );
+}
+
+/// This week against the usual one; hidden while it's still learning.
+class _TrainingLoadSection extends StatefulWidget {
+  const _TrainingLoadSection();
+
+  @override
+  State<_TrainingLoadSection> createState() => _TrainingLoadSectionState();
+}
+
+class _TrainingLoadSectionState extends State<_TrainingLoadSection> {
+  late final Stream<TrainingLoadView?> _load = watchTrainingLoad(
+    DateTime.now(),
+  );
+
+  @override
+  Widget build(BuildContext context) => VisibleStreamBuilder<TrainingLoadView?>(
+    stream: _load,
+    builder: (context, snapshot) {
+      final view = snapshot.data;
+      if (view == null) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _SectionHeader('TRAINING LOAD'),
+            const SizedBox(height: 6),
+            TrainingLoadCard(
+              view: view,
+              onTap: () => showTrainingLoadDetails(context, view),
+            ),
+          ],
+        ),
+      );
+    },
   );
 }
 

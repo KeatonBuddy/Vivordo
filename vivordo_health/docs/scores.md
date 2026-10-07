@@ -274,6 +274,41 @@ otherwise.
 A changed Effort or heart-rate load recalculates the next 3 days' Capacity.
 One big day never feeds the training-load warning (a pattern, not a peak).
 
+**Training load** (`functions/training_load.js`, version 1): this week's
+activity against the person's usual week, calculated with Capacity each
+morning (even when Capacity itself can't be) and saved as
+`scores_daily/{day}.trainingLoad`.
+
+- Each day is relative to its own measure's usual, as for a big day:
+  heart-rate load ÷ its base when measured, minutes ÷ the minutes base
+  otherwise, so 1.0 is an ordinary active day; a rest day is 0.
+- **This week** is the sum of the last 7 complete days; **the usual week**
+  is the sum of days 8–35 ÷ 4, so this week never raises its own bar. The
+  ratio is this week ÷ the usual week. A **hard day** is 1.5× or more.
+- **Learning** (hidden) until 21 of those 28 days have a load and the usual
+  week is at least 1 (an ordinary active day a week).
+- **States:** Lighter under 0.8; Steady 0.8–1.3; Building 1.3 or more;
+  **High** 1.5 or more with at least 3 hard days; **Strained** is High
+  while the body agrees: HRV more than 5% under its 90-day median or
+  resting heart rate at least 3 bpm over it, on 2 of the last 3 mornings.
+  High and Strained hold until the ratio drops under 1.3.
+- Saved: `{version, state, ratio, thisWeek, usualWeek, hardDays, kind
+  (heart, minutes or mixed), days: [{day, value, kind}] oldest first,
+  body: {mornings, hrvLow, restingHigh, restingHrChange, agrees}}`, or
+  `{version, state: "learning", coveredDays}`.
+- **Burnout** reads the daily ratio as a driver in the Effort group
+  ("Training load about 60% above your usual"; suggestion "Take an easier
+  week: swap one hard session for a walk").
+- **App** (`lib/widgets/training_load_card.dart`, words from
+  `lib/src/utils/training_load_view.dart`): a Training Load card on Fitness
+  after This week in every state but Learning (the 7 days as bars, hard
+  days in coral, the usual week's average day as a line); a coral card on
+  My Day under the brief only at High or Strained, with "Plan an easier
+  week" (Vivordo AI, screen `training_load`) and "Details" (the card and
+  how it works in a sheet). Both read the latest of the last 3 days.
+- Thresholds are estimates from sports-science norms (acute:chronic
+  workload around 1.3–1.5) until there's real data.
+
 Without a check-in the weights are exactly 45 / 35 / 20. With one, they
 work out to about 39 / 30 / 17 / 13. Each sub-score is clamped to 0–100.
 
@@ -420,8 +455,8 @@ zone, right after that day's final Effort.
   Capacity still waiting for sleep is left out), **Effort** (heavier is
   worse) and **Mood** (lower is worse).
 - **Drivers** explain it but don't decide it: sleep, resting HR (unless
-  ignored as a bad reading), HRV (one kind only), back-to-backs and
-  after-hours minutes.
+  ignored as a bad reading), HRV (one kind only), back-to-backs,
+  after-hours minutes and training load (§4).
 - An area is **strained** when its last 2 weeks are off by at least the
   minimum meaningful change (Capacity/Effort/Mood: 5 points) on at least
   65% of days, scored against the normal's spread.

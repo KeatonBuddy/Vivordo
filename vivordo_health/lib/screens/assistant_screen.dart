@@ -323,6 +323,16 @@ class _AssistantScreenState extends State<AssistantScreen> {
             'what has been going on before advising, then tie what is behind '
             'it to one or two small, concrete changes, and offer calendar or '
             'priority changes for them to approve. Go easy on numbers.',
+      'training_load' =>
+        'This is Vivordo\'s training load: the last 7 days of activity '
+            'against the user\'s usual week (the 4 weeks before), with hard '
+            'days and, when Strained, HRV or resting heart rate agreeing. It '
+            'is a wellness signal, not a diagnosis: do not claim injury, '
+            'overtraining syndrome or any condition. Help them plan an easier '
+            'few days: ask what they have coming up, then suggest swapping a '
+            'hard session for an easy one or a rest day, and offer calendar '
+            'or priority changes for them to approve. If something hurts, '
+            'suggest rest and a professional. Be brief.',
       _ =>
         'Verify current data before quoting exact values. Do not infer '
             'medical causes.',
@@ -864,6 +874,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
         'What\'s behind this?',
         'What should I change this week?',
         'Help me lighten my week',
+      ],
+      'training_load' => [
+        'Plan an easier week',
+        'Which session should I swap?',
+        'What counts as a hard day?',
       ],
       _ => ['What does this mean?', 'What can I do about it?'],
     };

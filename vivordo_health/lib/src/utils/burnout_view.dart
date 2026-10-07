@@ -195,6 +195,9 @@ String? _driverText(Map d) {
     'restingHeartRate' =>
       'Resting heart rate ${recent.round()} bpm (usual ${usual.round()})',
     'hrv' => 'HRV ${recent.round()} ms (usual ${usual.round()})',
+    // The daily ratio of this week to the usual one.
+    'trainingLoad' when usual > 0 =>
+      'Training load about ${((recent / usual - 1) * 100).round()}% above your usual',
     'backToBack' =>
       '${recent.toStringAsFixed(1)} back-to-backs a day (usual ${usual.toStringAsFixed(1)})',
     'afterHoursMinutes' =>
@@ -205,6 +208,8 @@ String? _driverText(Map d) {
 
 List<String> _suggestions(Set<Object?> drivers, Set<String> strained) {
   final picks = [
+    if (drivers.contains('trainingLoad'))
+      'Take an easier week: swap one hard session for a walk',
     if (drivers.contains('afterHoursMinutes'))
       'Protect one evening this week from after-hours work',
     if (drivers.contains('backToBack'))

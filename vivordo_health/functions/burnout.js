@@ -11,6 +11,7 @@
 
 const {HRV_KINDS} = require("./hrv");
 const {VERSION: EFFORT_VERSION} = require("./effort");
+const {VERSION: TRAINING_VERSION} = require("./training_load");
 
 const DAY_MS = 86400000;
 const RECENT_DAYS = 14;
@@ -56,6 +57,9 @@ const SIGNALS = {
     label: "Back-to-backs", unit: " a day"},
   afterHoursMinutes: {group: "effort", direction: 1, minChange: 20,
     label: "After-hours time", unit: " min a day"},
+  // This week's activity ÷ the usual week (training_load.js), each day.
+  trainingLoad: {group: "effort", direction: 1, minChange: 0.3,
+    label: "Training load"},
 };
 
 /**
@@ -84,6 +88,8 @@ function dailySignals(scores, metrics) {
       {[capacity.hrvKind]: capacity.hrv} : null,
     backToBack: num(effort?.backToBack),
     afterHoursMinutes: num(effort?.afterHoursMinutes),
+    trainingLoad: scores?.trainingLoad?.version === TRAINING_VERSION ?
+      num(scores.trainingLoad.ratio) : null,
   };
 }
 
@@ -197,6 +203,7 @@ function reasons(signals, early = false) {
       const minutes = Math.round((value - hours) * 60);
       return `${hours}h ${String(minutes).padStart(2, "0")}m`;
     }
+    if (name === "trainingLoad") return `${value.toFixed(1)}× a week`;
     return `${Math.round(value)}${config.unit ?? ""}`;
   };
   return Object.entries(signals)
@@ -354,7 +361,7 @@ async function refreshBurnout(db, messaging, uid, day, timestamp) {
       .where(FieldPath.documentId(), "<=", day)
       .select(...fields).get();
   const [scores, metrics] = await Promise.all([
-    range("scores_daily", "capacity", "effort", "burnout"),
+    range("scores_daily", "capacity", "effort", "burnout", "trainingLoad"),
     range("metrics_daily", "mood"),
   ]);
   const scoresByDay = new Map(scores.docs.map((d) => [d.id, d.data()]));
