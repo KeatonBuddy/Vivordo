@@ -22,7 +22,11 @@ Color physicalHealthColor(BuildContext context, double? value) => value == null
     : _red;
 
 /// Physical Health over the last [days] days (scores_daily, newest last).
-Stream<PhysicalHealthView?> physicalHealthStream(int days) {
+Stream<PhysicalHealthView?> physicalHealthStream(int days) =>
+    scoresDailyStream(days).map(PhysicalHealthView.fromDays);
+
+/// The last [days] days of `scores_daily` documents, keyed by day.
+Stream<Map<String, Map<String, dynamic>>> scoresDailyStream(int days) {
   final uid = FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return const Stream.empty();
   final today = DateTime.now();
@@ -38,11 +42,7 @@ Stream<PhysicalHealthView?> physicalHealthStream(int days) {
       )
       .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(today))
       .snapshots()
-      .map(
-        (snapshot) => PhysicalHealthView.fromDays({
-          for (final doc in snapshot.docs) doc.id: doc.data(),
-        }),
-      );
+      .map((snapshot) => {for (final doc in snapshot.docs) doc.id: doc.data()});
 }
 
 /// Replaces the Wellness screen: Physical Health, the ingredients that make

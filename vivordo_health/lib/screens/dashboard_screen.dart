@@ -19,6 +19,7 @@ import 'mood_detail_screen.dart';
 import 'sleep_detail_screen.dart';
 import 'steps_detail_screen.dart';
 import 'physical_health_screen.dart';
+import '../src/utils/metrics_insights.dart';
 import '../src/utils/physical_health_view.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
@@ -58,8 +59,11 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  // 5 weeks, so the card can compare with 4 weeks ago.
-  final _physicalHealthStream = physicalHealthStream(35);
+  // 5 weeks: Physical Health compares with 4 weeks ago, and the insights
+  // compare this week with the 4 before it.
+  final _scoresStream = scoresDailyStream(35);
+  // The latest scores, for a listener that joins the broadcast stream late.
+  Map<String, Map<String, dynamic>>? _scores;
   static const Color accentPurple = VivordoTheme.brand;
   static const Color greenColor = Color(0xFF34C759);
   static const Color textGrey = Color(0xFF8E8E93);
@@ -321,19 +325,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return null;
   }
 
-  List<String> _dayLabels(
-    QuerySnapshot<Map<String, dynamic>>? snap,
-    String metricType,
-  ) {
-    if (snap == null) return [];
-    return snap.docs.where((d) => d.data().containsKey(metricType)).map((d) {
-      final dt = DateTime.tryParse(d.id);
-      if (dt == null) return '';
-      const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return names[dt.weekday - 1];
-    }).toList();
-  }
-
   /// Month view: only label Mondays to avoid x-axis crowding.
   // ── Daily mood helpers ─────────────────────────────────────────────────────
   List<Map<String, dynamic>> _dailyMoodPoints(
@@ -547,18 +538,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    final steps = _vals(_docsFor(snap, 'steps'), 'steps', 'sum');
-    final stress = _vals(_docsFor(snap, 'stress'), 'stress', 'avg');
-    final stepLabels = _dayLabels(snap, 'steps');
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        VisibleStreamBuilder<PhysicalHealthView?>(
+        VisibleStreamBuilder<Map<String, Map<String, dynamic>>>(
           key: widget.physicalHealthKey,
-          stream: _physicalHealthStream,
-          builder: (context, snapshot) =>
-              _buildPhysicalHealthHero(snapshot.data),
+          stream: _scoresStream,
+          builder: (context, snapshot) {
+            final scores = _scores = snapshot.data ?? _scores;
+            return _buildPhysicalHealthHero(
+              scores == null ? null : PhysicalHealthView.fromDays(scores),
+            );
+          },
         ),
         const SizedBox(height: 24),
         KeyedSubtree(
@@ -606,10 +597,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 10),
-              _buildInsightsCard(
-                steps: steps,
-                stress: stress,
-                labels: stepLabels,
+              VisibleStreamBuilder<Map<String, Map<String, dynamic>>>(
+                stream: _scoresStream,
+                builder: (context, snapshot) {
+                  final scores = snapshot.data ?? _scores;
+                  return _buildInsightsCard(
+                    scores == null
+                        ? null
+                        : metricsInsights(scores, DateTime.now()),
+                  );
+                },
               ),
             ],
           ),
@@ -988,32 +985,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildInsightsCard({
-    required List<double> steps,
-    required List<double> stress,
-    required List<String> labels,
-  }) {
-    String activityInsight;
-    if (steps.isEmpty) {
-      activityInsight = 'Sync steps to reveal your activity pattern';
-    } else {
-      var peak = 0;
-      for (var i = 1; i < steps.length; i++) {
-        if (steps[i] > steps[peak]) peak = i;
-      }
-      final day = labels.length == steps.length ? labels[peak] : 'recently';
-      activityInsight = 'Activity peaked on $day';
-    }
-
-    String recoveryInsight;
-    if (stress.length >= 3 &&
-        stress.last > stress[stress.length - 2] &&
-        stress[stress.length - 2] > stress[stress.length - 3]) {
-      recoveryInsight = 'Stress has increased for 3 days';
-    } else {
-      recoveryInsight = 'Your recent stress trend is stable';
-    }
-
+  /// [insights] is null while the scores load (metrics_insights.dart).
+  Widget _buildInsightsCard(List<MetricsInsight>? insights) {
+    if (insights == null) return const SizedBox(height: 70);
+    final rows = insights.isEmpty
+        ? [
+            _insightRow(
+              icon: Icons.insights_rounded,
+              color: accentPurple,
+              text:
+                  'Insights appear after about a week of sleep and activity '
+                  'data.',
+            ),
+          ]
+        : [
+            for (final insight in insights)
+              _insightRow(
+                icon: switch (insight.kind) {
+                  MetricsInsightKind.sleep => Icons.bedtime_rounded,
+                  MetricsInsightKind.energy => Icons.bolt_rounded,
+                  MetricsInsightKind.effort => Icons.event_note_rounded,
+                  MetricsInsightKind.afterHours => Icons.nights_stay_rounded,
+                  MetricsInsightKind.physical => Icons.directions_run_rounded,
+                },
+                color: switch (insight.tone) {
+                  MetricsInsightTone.concern => const Color(0xFFE08600),
+                  MetricsInsightTone.good => const Color(0xFF16B877),
+                  MetricsInsightTone.neutral => accentPurple,
+                },
+                text: insight.text,
+              ),
+          ];
     return Container(
       decoration: BoxDecoration(
         color: context.vivordoColors.card,
@@ -1022,17 +1024,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Column(
         children: [
-          _insightRow(
-            icon: Icons.trending_up_rounded,
-            color: const Color(0xFF16B877),
-            text: activityInsight,
-          ),
-          Divider(height: 1, indent: 68, color: context.vivordoColors.border),
-          _insightRow(
-            icon: Icons.psychology_rounded,
-            color: accentPurple,
-            text: recoveryInsight,
-          ),
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0)
+              Divider(
+                height: 1,
+                indent: 68,
+                color: context.vivordoColors.border,
+              ),
+            rows[i],
+          ],
         ],
       ),
     );
