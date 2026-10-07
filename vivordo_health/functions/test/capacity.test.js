@@ -2,7 +2,7 @@
 /* eslint-disable max-len, require-jsdoc */
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {BIG_DAY_MIN, bigDayEffect, bigDayPenalty, bigDayScale, computeCapacity, capacityInputs, capacityInputsChanged, sleepNeed, clockGap, usualClockTime} = require("../capacity");
+const {BIG_DAY_MIN, bigDayEffect, bigDayPenalty, bigDayScale, strongestBigDay, computeCapacity, capacityInputs, capacityInputsChanged, sleepNeed, clockGap, usualClockTime} = require("../capacity");
 
 // 30 normal days: 7.5 h sleep, bed at 23:00, HRV 60, resting HR 55.
 const history = (overrides = {}) => Array.from({length: 30}, () => ({
@@ -168,4 +168,18 @@ test("heart-rate load has its own minimum, and the app gets the threshold", () =
   assert.deepEqual(bigDayScale(8, BIG_DAY_MIN.minutes), {base: 8, threshold: 16});
   assert.equal(bigDayEffect([35, null, null], 10, BIG_DAY_MIN.heart), null, "under 40");
   assert.deepEqual(bigDayEffect([60, null, null], 20, BIG_DAY_MIN.heart), {daysAgo: 1, ratio: 3, penalty: 70});
+});
+
+test("a day without heart rate is judged by minutes, each against its own usual", () => {
+  const heart = (load) => ({load, usual: 50, minimum: BIG_DAY_MIN.heart, kind: "heart"});
+  const minutes = (load) => ({load, usual: 8, minimum: BIG_DAY_MIN.minutes, kind: "minutes"});
+  // Yesterday the watch was off: 24 points of exercise minutes is 3× the
+  // minutes usual, even though no heart-rate load exists for it.
+  assert.deepEqual(strongestBigDay([minutes(24), heart(50), heart(40)]),
+      {daysAgo: 1, ratio: 3, penalty: 70, kind: "minutes"});
+  // A measured day uses heart rate: 150 TRIMP is 3× the heart-rate usual.
+  assert.deepEqual(strongestBigDay([heart(150), minutes(8), null]),
+      {daysAgo: 1, ratio: 3, penalty: 70, kind: "heart"});
+  // Nothing to judge by: no big day.
+  assert.equal(strongestBigDay([null, null, null]), null);
 });

@@ -37,8 +37,9 @@ class ServerCapacity {
   final BigDay? bigDay;
 
   /// From `capacity.activityUsual`: the usual load a big day is measured
-  /// against, and the load that makes one. Heart-rate TRIMP or Effort
-  /// points, whichever Capacity used (docs/scores.md §4).
+  /// against, and the load that makes one, in today's kind: heart-rate
+  /// TRIMP once today's heart rate is measured, else Effort points
+  /// (docs/scores.md §4).
   final double? activityBase, activityThreshold;
 
   /// Today's load so far, in the same kind: `activityLoad.trimp` or
@@ -117,10 +118,25 @@ ServerCapacity? serverCapacityFor(
       ? 'Below your usual'
       : 'Above your usual';
   final bigDay = today['bigDay'];
+  // `activityUsual`: {heart, minutes}, each {usual, base, threshold} or null
+  // (docs/scores.md §4); records from before the per-day fallback have one
+  // scale with a `kind`.
   final activity = today['activityUsual'];
-  final heart = activity is Map && activity['kind'] == 'heart';
+  Map? scaleOf(String kind) => activity is! Map
+      ? null
+      : activity[kind] is Map
+      ? activity[kind] as Map
+      : activity['kind'] == kind
+      ? activity
+      : null;
+  // Today by heart rate once it's measured, minutes otherwise (a watch left
+  // off), each against its own usual.
   final todayDoc = days[dayKey];
-  final todayLoad = todayDoc?[heart ? 'activityLoad' : 'effort'];
+  final todayHeart = (todayDoc?['activityLoad'] as Map?)?['trimp'];
+  final useHeart = scaleOf('heart') != null && todayHeart is num;
+  final scale = scaleOf(useHeart ? 'heart' : 'minutes');
+  final todayMinutes = (todayDoc?['effort'] as Map?)?['physicalLoad'];
+  final todayLoad = useHeart ? todayHeart : todayMinutes;
   return ServerCapacity(
     bigDay: bigDay is Map && DateTime.tryParse('${bigDay['day']}') != null
         ? BigDay(
@@ -129,15 +145,9 @@ ServerCapacity? serverCapacityFor(
             halved: bigDay['halved'] == true,
           )
         : null,
-    activityBase: activity is Map
-        ? (activity['base'] as num?)?.toDouble()
-        : null,
-    activityThreshold: activity is Map
-        ? (activity['threshold'] as num?)?.toDouble()
-        : null,
-    todayLoad: todayLoad is Map
-        ? (todayLoad[heart ? 'trimp' : 'physicalLoad'] as num?)?.toDouble()
-        : null,
+    activityBase: (scale?['base'] as num?)?.toDouble(),
+    activityThreshold: (scale?['threshold'] as num?)?.toDouble(),
+    todayLoad: todayLoad is num ? todayLoad.toDouble() : null,
     score: score,
     label: today['label'] is String ? today['label'] as String : 'moderate',
     provisional: provisional,

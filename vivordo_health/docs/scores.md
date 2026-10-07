@@ -231,11 +231,12 @@ Note the two meanings of "100": an Effort of 100 is an extremely heavy
 day, but a Recovery-from-yesterday sub-score of 100 means yesterday was no
 heavier than usual.
 
-**A big day** (version 2, `bigDayEffect` in `functions/capacity.js`). A
-day's load is measured one of two ways, never mixed for one person:
+**A big day** (version 2, `strongestBigDay` in `functions/capacity.js`).
+A day's load is measured two ways, each with its own usual, and the two are
+never compared with each other:
 
-- **Heart-rate load** (`functions/activity_load.js`), once there are 14
-  active days of it in the last 90: Banister's TRIMP over minutes at or
+- **Heart-rate load** (`functions/activity_load.js`), counted once there
+  are 14 active days of it in the last 90: Banister's TRIMP over minutes at or
   above 40% of heart-rate reserve (ACSM's moderate), each minute weighted
   by reserve × 0.64e^(1.92 × reserve) (men; women 0.86e^(1.67 × reserve);
   the average when sex isn't given). Reserve uses the day's resting heart
@@ -249,12 +250,15 @@ day's load is measured one of two ways, never mixed for one person:
   so Capacity never reads the heart-rate arrays. Roughly: an hour at 150
   bpm for a 30-year-old is about 115; harder short sessions outweigh long
   easy ones.
-- **Otherwise, minutes:** Effort's physical points without the 25-point
-  cap (`physicalLoad` in `functions/effort.js`: in-app workouts × intensity
+- **Minutes:** Effort's physical points without the 25-point cap
+  (`physicalLoad` in `functions/effort.js`: in-app workouts × intensity
   plus Health exercise minutes × 0.2, or active calories above the usual ÷
   50), read straight from workouts and metrics.
 
-Your usual is the median load on active days in the last 90. A big day is
+Each recent day uses heart-rate load if it was measured (and the person has
+a heart-rate usual), otherwise minutes against the minutes usual, so a day
+with the watch left off still counts. Each usual is the median load on
+active days in the last 90. A big day is
 at least 2× your usual and at least a minimum (40 TRIMP or 12 points, about
 an hour of moderate exercise); the usual counts as at least half the
 minimum, so an hour reads as 2× for someone who rarely exercises. It costs
@@ -263,8 +267,10 @@ Recovery 40 at 2×, 70 at 3× and 90 from 4× (straight lines between), about
 then a quarter); the strongest of the three counts. Halved when this
 morning's overnight body sub-score is at your normal (65 or more). Saved as
 `capacity.bigDay` ({day, ratio, penalty, halved, kind}) and
-`capacity.activityUsual` ({kind, usual, base, threshold}: today is big from
-`threshold`, as `base` × ratio), which the app uses for the evening note.
+`capacity.activityUsual` ({heart, minutes}, each {usual, base, threshold}
+or null: a day is big from `threshold`, its ratio is load ÷ `base`). The
+app's evening note uses heart rate once today's is measured, minutes
+otherwise.
 A changed Effort or heart-rate load recalculates the next 3 days' Capacity.
 One big day never feeds the training-load warning (a pattern, not a peak).
 

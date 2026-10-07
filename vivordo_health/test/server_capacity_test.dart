@@ -145,6 +145,37 @@ void main() {
     expect(bigDayRatio(30, null, null), isNull);
   });
 
+  test('today falls back to minutes when the watch is off', () {
+    Map<String, Map<String, dynamic>> withLoads(Map<String, dynamic> extra) => {
+      today: {
+        'capacity': {
+          ...day(70, version: 2)['capacity'] as Map<String, dynamic>,
+          'activityUsual': {
+            'heart': {'usual': 50, 'base': 50, 'threshold': 100},
+            'minutes': {'usual': 8, 'base': 8, 'threshold': 16},
+          },
+        },
+        ...extra,
+      },
+    };
+    final measured = serverCapacityFor(
+      withLoads({
+        'effort': {'physicalLoad': 26},
+        'activityLoad': {'trimp': 160},
+      }),
+      today,
+    )!;
+    expect(measured.todayBigDayRatio, closeTo(3.2, 1e-9), reason: 'heart');
+    final watchOff = serverCapacityFor(
+      withLoads({
+        'effort': {'physicalLoad': 26},
+        'activityLoad': null,
+      }),
+      today,
+    )!;
+    expect(watchOff.todayBigDayRatio, closeTo(3.25, 1e-9), reason: 'minutes');
+  });
+
   test('heart-rate Capacity compares today\'s heart-rate load', () {
     final c = serverCapacityFor({
       today: {

@@ -105,25 +105,35 @@ function bigDayScale(usual, minimum) {
 
 /**
  * The strongest big day in the last 3, faded: full the next day, then half,
- * then a quarter.
+ * then a quarter. Each day is judged against the usual of its own kind
+ * (heart-rate load on a measured day, minutes otherwise), never mixed.
+ * @param {Array<object|null>} days For 1, 2 and 3 days ago: {load, usual,
+ *   minimum, kind}, or null when there's nothing to judge it by.
+ * @return {object|null} {daysAgo, ratio, penalty, kind}, or null.
+ */
+function strongestBigDay(days) {
+  let best = null;
+  days.forEach((d, i) => {
+    if (!d || !finite(d.usual) || d.usual <= 0 || !finite(d.load) ||
+        d.load < d.minimum) return;
+    const ratio = d.load / bigDayScale(d.usual, d.minimum).base;
+    const penalty = bigDayPenalty(ratio) * BIG_DAY_FADE[i];
+    if (penalty > 0 && (!best || penalty > best.penalty)) {
+      best = {daysAgo: i + 1, ratio, penalty, ...(d.kind && {kind: d.kind})};
+    }
+  });
+  return best;
+}
+
+/**
+ * [strongestBigDay] when every day is the same kind.
  * @param {Array<number|null>} recent Loads for 1, 2 and 3 days ago.
  * @param {number|null} usual Median load on active days, or null.
  * @param {number} minimum The kind's minimum (BIG_DAY_MIN).
  * @return {object|null} {daysAgo, ratio, penalty}, or null.
  */
 function bigDayEffect(recent, usual, minimum = BIG_DAY_MIN.minutes) {
-  if (!finite(usual) || usual <= 0) return null;
-  const {base} = bigDayScale(usual, minimum);
-  let best = null;
-  recent.forEach((load, i) => {
-    if (!finite(load) || load < minimum) return;
-    const ratio = load / base;
-    const penalty = bigDayPenalty(ratio) * BIG_DAY_FADE[i];
-    if (penalty > 0 && (!best || penalty > best.penalty)) {
-      best = {daysAgo: i + 1, ratio, penalty};
-    }
-  });
-  return best;
+  return strongestBigDay(recent.map((load) => ({load, usual, minimum})));
 }
 
 /**
@@ -297,17 +307,20 @@ async function effortContext(user, start, day) {
 }
 
 /**
- * Each earlier day's load and the usual on active days. Heart-rate load
- * (scores_daily activityLoad, TRIMP) when there are 14 active days of it;
- * otherwise Effort's physical points (effort.js physicalLoad) from
- * workouts, Health exercise minutes and active calories, read directly so
- * the usual exists from the start.
+ * Each earlier day's load in both kinds and their usuals on active days:
+ * heart-rate load (scores_daily activityLoad, TRIMP), counted once there
+ * are 14 active days of it, and Effort's physical points (effort.js
+ * physicalLoad) from workouts, Health exercise minutes and active calories,
+ * read directly so the usual exists from the start. A recent day uses
+ * heart-rate load when it was measured, minutes otherwise (a watch left
+ * off), each against its own usual.
  * @param {object} user User document reference.
  * @param {object[]} metricsDocs The window's metrics_daily snapshots.
  * @param {string} start First day key of the window.
  * @param {string} day The Capacity day.
- * @return {Promise<object>} {bigDay, activityUsual: {kind, usual, base,
- *   threshold}}; activityUsual is null until there's a usual.
+ * @return {Promise<object>} {bigDay, activityUsual: {heart, minutes}, each
+ *   {usual, base, threshold} or null}; activityUsual is null without
+ *   either.
  */
 async function physicalLoads(user, metricsDocs, start, day) {
   const {FieldPath} = require("firebase-admin/firestore");
@@ -325,9 +338,8 @@ async function physicalLoads(user, metricsDocs, start, day) {
     }
   }
   const heartActive = [...heartOn.values()].filter((v) => v > 0);
-  if (heartActive.length >= MIN_ACTIVE_DAYS) {
-    return loadEffect("heart", heartOn, median(heartActive), day);
-  }
+  const heartUsual = heartActive.length >= MIN_ACTIVE_DAYS ?
+    median(heartActive) : null;
 
   const {physicalLoad} = require("./effort");
   const workouts = await user.collection("workouts")
@@ -367,32 +379,34 @@ async function physicalLoads(user, metricsDocs, start, day) {
     }
   }
   const active = [...loadOn.values()].filter((v) => v > 0);
-  return loadEffect("minutes", loadOn,
-      active.length >= MIN_ACTIVE_DAYS ? median(active) : null, day);
-}
+  const minutesUsual = active.length >= MIN_ACTIVE_DAYS ?
+    median(active) : null;
 
-/**
- * The big day (if any) in the 3 days before [day], and what the app needs
- * to spot one today (docs/scores.md §4).
- * @param {string} kind "heart" (TRIMP) or "minutes" (Effort points).
- * @param {Map} loadOn Day key -> load.
- * @param {number|null} usual Median load on active days.
- * @param {string} day The Capacity day.
- * @return {object} {bigDay, activityUsual}.
- */
-function loadEffect(kind, loadOn, usual, day) {
   const daysAgo = (k) => new Date(Date.parse(`${day}T00:00:00Z`) - k * DAY_MS)
       .toISOString().slice(0, 10);
-  const minimum = BIG_DAY_MIN[kind];
-  const effect = bigDayEffect([1, 2, 3].map((k) => loadOn.get(daysAgo(k)) ??
-    null), usual, minimum);
+  const effect = strongestBigDay([1, 2, 3].map((k) => {
+    const key = daysAgo(k);
+    if (heartUsual !== null && heartOn.has(key)) {
+      return {load: heartOn.get(key), usual: heartUsual,
+        minimum: BIG_DAY_MIN.heart, kind: "heart"};
+    }
+    return minutesUsual === null ? null :
+      {load: loadOn.get(key) ?? null, usual: minutesUsual,
+        minimum: BIG_DAY_MIN.minutes, kind: "minutes"};
+  }));
   const round1 = (value) => Math.round(value * 10) / 10;
-  const scale = finite(usual) ? bigDayScale(usual, minimum) : null;
+  const scale = (usual, kind) => {
+    if (usual === null) return null;
+    const {base, threshold} = bigDayScale(usual, BIG_DAY_MIN[kind]);
+    return {usual: round1(usual), base: round1(base),
+      threshold: round1(threshold)};
+  };
+  const heart = scale(heartUsual, "heart");
+  const minutes = scale(minutesUsual, "minutes");
   return {
     bigDay: effect && {day: daysAgo(effect.daysAgo), ratio: effect.ratio,
-      penalty: effect.penalty, kind},
-    activityUsual: scale && {kind, usual: round1(usual),
-      base: round1(scale.base), threshold: round1(scale.threshold)},
+      penalty: effect.penalty, kind: effect.kind},
+    activityUsual: heart || minutes ? {heart, minutes} : null,
   };
 }
 
@@ -459,9 +473,11 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
     const oldContent = old ? {...old} : null;
     if (oldContent) delete oldContent.computedAt;
     if (isDeepStrictEqual(next, oldContent)) return "unchanged";
+    // Replaces the whole capacity map (a deep merge would keep keys a newer
+    // version dropped); the document's other fields stay.
     tx.set(target, {
       capacity: next ? {...next, computedAt: timestamp()} : null,
-    }, {merge: true});
+    }, {mergeFields: ["capacity"]});
     return "written";
   });
 }
@@ -478,7 +494,7 @@ function capacityInputsChanged(before, after) {
 
 module.exports = {
   VERSION, WEIGHTS, BIG_DAY_MIN, bigDayEffect, bigDayPenalty, bigDayScale,
-  computeCapacity,
+  strongestBigDay, computeCapacity,
   capacityInputs, capacityInputsChanged, refreshCapacity, sleepNeed, clockGap,
   usualClockTime,
 };
