@@ -179,7 +179,7 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
               const SizedBox(height: 14),
               Text(
                 'Targets follow WHO activity guidelines. VO₂ max comes from '
-                'Apple Watch or Fitbit when available, otherwise it is '
+                'a supported wearable when available, otherwise it is '
                 'estimated from your age, sex, height, weight and activity. '
                 'A wellness estimate, not a medical assessment.',
                 style: TextStyle(fontSize: 12, color: colors.textSecondary),
