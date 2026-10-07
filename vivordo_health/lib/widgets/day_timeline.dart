@@ -111,6 +111,7 @@ class TimelineRow extends StatelessWidget {
     this.energyNote,
     this.energyAction,
     this.onEnergyAction,
+    this.footer,
   });
 
   final DateTime start;
@@ -131,6 +132,9 @@ class TimelineRow extends StatelessWidget {
   /// tapping it does.
   final String? energyAction;
   final VoidCallback? onEnergyAction;
+
+  /// Shown under everything else, e.g. how your body reacted to a past event.
+  final Widget? footer;
 
   /// Null when the row is a plain event with no linked priority.
   final bool? completed;
@@ -259,6 +263,7 @@ class TimelineRow extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          ?footer,
                         ],
                       ),
                     ),

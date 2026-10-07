@@ -15,17 +15,20 @@ import '../src/services/daily_priority_service.dart';
 import '../src/services/day_record_service.dart';
 import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
+import '../src/utils/body_reaction.dart';
 import '../src/utils/daily_brief_metrics.dart';
 import '../src/utils/daily_brief_analysis.dart';
 import '../src/utils/day_agenda.dart';
 import '../src/utils/day_effort.dart';
 import '../src/utils/day_wrap_up.dart';
+import '../src/utils/heart_rate_history.dart';
 import '../src/utils/home_day_load.dart';
 import '../src/utils/my_day_planning_insight.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/apple_ui.dart';
+import '../widgets/body_reaction_view.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/swipe_to_delete.dart';
 import '../src/utils/priority_schedule.dart';
@@ -279,7 +282,147 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         for (var i = 0; i < inputs.length; i++) inputs[i].id: scores[i],
       },
     );
+    if (_heartHistoryDay != null) _updateReactions();
   }
+
+  /// Heart rate for how your body reacted to today's past events: today's
+  /// readings (refetched with the schedule, and every 15 minutes) and the two
+  /// weeks before (once a day). One-shot reads rather than listeners: these
+  /// day documents carry large heart-rate arrays.
+  List<HeartRateHistoryReading> _heartToday = const [];
+  List<HeartRateHistoryReading> _heartHistory = const [];
+  String? _heartHistoryDay;
+  DateTime? _heartLoadedAt;
+
+  /// Today's past events with enough heart rate to judge, by sourceEventKey.
+  Map<String, BodyReaction> _reactions = const {};
+
+  /// What each reaction was last saved with (readings and category), so it's
+  /// saved again only when late-syncing samples or the event's rating change.
+  final _reactionsSaved = <String, String>{};
+
+  Future<void> _loadHeart() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final day = _priorityDay;
+    final key = localDayKey(day);
+    _heartLoadedAt = DateTime.now();
+    final days = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('metrics_daily');
+    List<HeartRateHistoryReading> readings(
+      String id,
+      Map<String, dynamic>? data,
+    ) => data == null
+        ? const []
+        : mergedHeartRateHistory(
+            data,
+            fallbackDate: DateTime.parse(id),
+            includeDailyFallback: false,
+          );
+    try {
+      var history = _heartHistory;
+      if (_heartHistoryDay != key) {
+        final docs = await days
+            .orderBy(FieldPath.documentId)
+            .startAt([localDayKey(DateTime(day.year, day.month, day.day - 14))])
+            .endBefore([key])
+            .get();
+        history = [
+          for (final doc in docs.docs) ...readings(doc.id, doc.data()),
+        ];
+      }
+      final today = await days.doc(key).get();
+      if (!mounted || !DateUtils.isSameDay(day, _priorityDay)) return;
+      _heartHistory = history;
+      _heartHistoryDay = key;
+      _heartToday = readings(key, today.data());
+      _updateReactions();
+    } catch (error) {
+      debugPrint('Could not load heart rate for event reactions: $error');
+    }
+  }
+
+  void _updateReactions() {
+    final now = DateTime.now();
+    final reactions = <String, BodyReaction>{};
+    for (final e in _events) {
+      // Exercise isn't judged: a raised heart rate there is the point.
+      if (e.isAllDay ||
+          e.end.isAfter(now) ||
+          !DateUtils.isSameDay(e.start, now) ||
+          looksLikeExercise(e.title)) {
+        continue;
+      }
+      final reaction = bodyReactionFor(
+        start: e.start,
+        end: e.end,
+        today: _heartToday,
+        history: _heartHistory,
+      );
+      if (reaction == null) continue;
+      reactions[e.sourceEventKey] = reaction;
+      final category = _categoryOf(e);
+      final saved = '${reaction.readings}:$category';
+      if (_reactionsSaved[e.sourceEventKey] != saved) {
+        _reactionsSaved[e.sourceEventKey] = saved;
+        unawaited(_saveReaction(e, reaction, category));
+      }
+    }
+    setState(() => _reactions = reactions);
+  }
+
+  /// Per-event history with no titles or calendar IDs (hashed keys only),
+  /// for learning which kinds of event you react to. Privacy policy item 18.
+  String _categoryOf(_CalendarEvent e) =>
+      (_eventScores[e.sourceEventKey] ??
+              CalendarCognitiveLoadService.scoreLocally(_cognitiveInput(e)))
+          .category;
+
+  Future<void> _saveReaction(
+    _CalendarEvent e,
+    BodyReaction r,
+    String category,
+  ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final series = e.googleEvent?.recurringEventId;
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('event_reactions')
+          .doc(localDayKey(e.start))
+          .set({
+            reactionKey(e.sourceEventKey): {
+              if (series != null) 'series': reactionKey('google:$series'),
+              'category': category,
+              'guests': e.attendeeCount,
+              'minutes': e.end.difference(e.start).inMinutes,
+              'startHour': e.start.hour,
+              'level': r.level.name,
+              'median': r.median.round(),
+              'peak': r.peak.round(),
+              'usual': r.usualMedian.round(),
+              'readings': r.readings,
+              'savedAt': FieldValue.serverTimestamp(),
+              'v': 1,
+            },
+          }, SetOptions(merge: true));
+    } catch (error) {
+      debugPrint('Could not save event reaction: $error');
+    }
+  }
+
+  void _showReaction(_CalendarEvent e, BodyReaction reaction) =>
+      showBodyReactionSheet(
+        context,
+        title: e.title,
+        start: e.start,
+        end: e.end,
+        reaction: reaction,
+      );
 
   /// Rated items for Demand: [events] and the timed priorities on [day]
   /// that aren't linked to one of them.
@@ -364,6 +507,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       if (!_handleDayRollover()) {
         _refreshBriefClock();
         setState(() {});
+        final loaded = _heartLoadedAt;
+        if (loaded != null &&
+            DateTime.now().difference(loaded) > const Duration(minutes: 15)) {
+          unawaited(_loadHeart());
+        }
       }
     });
   }
@@ -489,6 +637,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       _calendarLoadError = null;
       _isLoading = false;
     });
+    unawaited(_loadHeart());
     try {
       await DailyPriorityService.materializeRecurring(dayStart);
       await DailyPriorityService.seedFromCalendar(
@@ -518,7 +667,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _EventSummarySheet(event: event),
+      builder: (context) => _EventSummarySheet(
+        event: event,
+        reaction: _reactions[event.sourceEventKey],
+        onReaction: _showReaction,
+      ),
     );
     if (googleEvent == null || !mounted) return;
     switch (action) {
@@ -2152,6 +2305,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   'priority:${priority!.reference.path}'];
         final phase = past ? null : energy?.phaseAt(entry.start);
         final suggested = fit?.suggestedStart;
+        final reaction = past && event != null
+            ? _reactions[event.sourceEventKey]
+            : null;
         // A clash Vivordo can move: one tap opens the confirm sheet.
         final canMove =
             fit != null &&
@@ -2196,6 +2352,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   _events,
                   snapshot.data ?? const <DailyPriority>[],
                   day: DateUtils.dateOnly(DateTime.now()),
+                ),
+          footer: reaction == null
+              ? null
+              : BodyReactionChip(
+                  reaction: reaction,
+                  onTap: () => _showReaction(event!, reaction),
                 ),
           color: priority != null ? timelineDoneGreen : event!.color,
           past: past,
@@ -2507,9 +2669,15 @@ class _PriorityRow extends StatelessWidget {
 enum _EventSummaryAction { edit, delete }
 
 class _EventSummarySheet extends StatelessWidget {
-  const _EventSummarySheet({required this.event});
+  const _EventSummarySheet({
+    required this.event,
+    this.reaction,
+    required this.onReaction,
+  });
 
   final _CalendarEvent event;
+  final BodyReaction? reaction;
+  final void Function(_CalendarEvent, BodyReaction) onReaction;
 
   (String, Color) get _status {
     final now = DateTime.now();
@@ -2669,6 +2837,28 @@ class _EventSummarySheet extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (reaction case final reaction?) ...[
+                      const SizedBox(height: 24),
+                      const _SummarySectionLabel('HOW YOUR BODY REACTED'),
+                      const SizedBox(height: 10),
+                      _SummarySurface(
+                        children: [
+                          _SummaryDetailRow(
+                            icon: Icons.monitor_heart_outlined,
+                            label: 'Heart rate',
+                            value:
+                                '${switch (reaction.level) {
+                                  BodyReactionLevel.calm => 'Calm',
+                                  BodyReactionLevel.steady => 'Steady',
+                                  BodyReactionLevel.up => 'Up',
+                                  BodyReactionLevel.high => 'High',
+                                }} · ${reaction.median.round()} bpm avg',
+                            showDivider: false,
+                            onTap: () => onReaction(event, reaction),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     const _SummarySectionLabel('CALENDAR'),
                     const SizedBox(height: 10),
@@ -2796,6 +2986,7 @@ class _SummaryDetailRow extends StatelessWidget {
     required this.value,
     this.valueDotColor,
     this.showDivider = true,
+    this.onTap,
   });
 
   final IconData icon;
@@ -2803,58 +2994,70 @@ class _SummaryDetailRow extends StatelessWidget {
   final String value;
   final Color? valueDotColor;
   final bool showDivider;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Row(
-            children: [
-              Icon(icon, color: MyDayScreen.purple, size: 23),
-              const SizedBox(width: 14),
-              SizedBox(
-                width: 92,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  style: TextStyle(color: colors.textPrimary, fontSize: 15),
+        InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Row(
+              children: [
+                Icon(icon, color: MyDayScreen.purple, size: 23),
+                const SizedBox(width: 14),
+                SizedBox(
+                  width: 92,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: TextStyle(color: colors.textPrimary, fontSize: 15),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (valueDotColor != null) ...[
-                      Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: valueDotColor,
-                          shape: BoxShape.circle,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      if (valueDotColor != null) ...[
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: valueDotColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Flexible(
+                        child: Text(
+                          value,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.end,
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
                     ],
-                    Flexible(
-                      child: Text(
-                        value,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
-                        style: TextStyle(
-                          color: colors.textSecondary,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+                if (onTap != null) ...[
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: colors.textSecondary,
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
         if (showDivider) Divider(height: 1, color: colors.border),

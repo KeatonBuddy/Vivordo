@@ -1,6 +1,6 @@
 # Vivordo Privacy Policy
 
-**Last updated: October 4, 2026**
+**Last updated: October 6, 2026**
 
 ## Introduction
 
@@ -82,6 +82,8 @@ To calculate how demanding your day is (Demand) and what it took (Effort), the a
 To keep these records complete, Vivordo stores your device's notification token together with the hour that is 11 PM in your device's time zone. Each night, Vivordo sends a silent notification at that hour, which you do not see, so the app can update the day's record in the background.
 
 When your day looks more demanding than your energy, My Day may suggest up to three ways to lighten it, such as moving one of your priorities to another day, adding a short buffer before an event, moving demanding work to a better time of day, or adding a break to your calendar. A suggestion changes your calendar or priorities only after you confirm it, and you can undo it. So it can learn which suggestions you find useful, Vivordo saves for each day which kinds of suggestion were shown, used, or undone, whether you hid them, and the kind of item involved (its category and number of guests). It never saves the item's title.
+
+If your Apple Watch or another wearable records your heart rate through the day, My Day shows how your body reacted during each event that has ended: whether your heart rate was calm, up, or high compared with your usual at that time of day over the previous two weeks. Events that look like exercise aren't judged. So Vivordo can learn which kinds of event you react to, it saves, for each event, how your heart rate compared (the result, your average and peak heart rate during it, your usual, and the number of readings) and the kind of event (its category, number of guests, length, and start hour), with a short code derived from the event's calendar identifier so repeat events can be recognised. It never saves the event's title. This is a wellness estimate, not a diagnosis.
 
 ### AI interaction and insight information
 
@@ -182,7 +184,7 @@ If we discover a security incident, we will investigate and provide notices to a
 
 We retain account information and user content while your account is active and as reasonably necessary to provide Vivordo. Imported WHOOP, Fitbit/Google Health, Apple Health, Bluetooth wearable, and other health information is generally retained until you delete the applicable information, delete your account, or ask us to delete it. OAuth credentials are retained only while the relevant connection remains authorized and are deleted when you disconnect it.
 
-You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; daily records and suggestion history; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, comments, likes, activity, and challenge participation; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
+You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; daily records, suggestion history, and event reactions; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, comments, likes, activity, and challenge participation; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
 
 After a verified deletion request, we delete or de-identify information under our control within the period required by applicable law, except information we must retain for legal compliance, fraud prevention, dispute resolution, security, or enforcement. Information may remain temporarily in encrypted backups until those backups are overwritten through their ordinary lifecycle. We do not use backup copies for ordinary product purposes.
 

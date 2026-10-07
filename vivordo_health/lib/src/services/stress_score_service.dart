@@ -889,6 +889,10 @@ class StressScoreService {
                 'score': current,
                 'timestamp': Timestamp.now(),
                 'label': result['band'] ?? lean?['band'],
+                // This hour against your normal (0–100), before the slow
+                // build-up: what a single event's reaction shows up in.
+                if (result['strain'] case final num strain)
+                  'strain': strain.toDouble(),
               },
             ]),
             'source': 'baas_api',
