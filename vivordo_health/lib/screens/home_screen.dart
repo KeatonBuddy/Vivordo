@@ -2,6 +2,9 @@ import 'dart:async';
 import '../widgets/visible_stream_builder.dart';
 import '../src/services/metrics_repository.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
+import '../widgets/meeting_patterns_view.dart';
+import '../src/services/meeting_patterns_service.dart';
+import '../src/utils/meeting_patterns.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1156,6 +1159,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ],
                       ),
                       _buildDayLoad(sleepNights),
+                      _buildMeetingPatterns(),
                     ],
                   ),
                 ),
@@ -1820,6 +1824,46 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             );
           },
         ),
+      ),
+    );
+  }
+
+  /// Today's repeating meetings that usually raise or lower your heart rate;
+  /// nothing on days without one. Both futures are cached, so rebuilds don't
+  /// refetch.
+  Widget _buildMeetingPatterns() {
+    final now = DateTime.now();
+    return FutureBuilder(
+      future: MeetingPatternsService.load(),
+      builder: (context, patterns) => FutureBuilder<List<gcal.Event>>(
+        future: _getReachableWindowEventsFuture(DateUtils.dateOnly(now)),
+        builder: (context, events) {
+          final loaded = patterns.data?.patterns;
+          if (loaded == null || events.data == null) {
+            return const SizedBox.shrink();
+          }
+          MeetingPatternsService.rememberNames(events.data!);
+          return MeetingPatternsRow(
+            patterns: loaded,
+            now: now,
+            today: todaysPatternMeetings(
+              patterns: loaded,
+              now: now,
+              events: [
+                for (final e in events.data!)
+                  if (e.status != 'cancelled')
+                    if (e.start?.dateTime?.toLocal() case final start?)
+                      (
+                        series: seriesKeyFor(e.recurringEventId),
+                        title: e.summary?.trim().isNotEmpty == true
+                            ? e.summary!.trim()
+                            : 'A meeting',
+                        start: start,
+                      ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

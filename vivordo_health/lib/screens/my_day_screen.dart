@@ -45,6 +45,9 @@ import '../src/services/metrics_repository.dart';
 import '../src/utils/day_key.dart';
 import '../widgets/burnout_card.dart';
 import '../widgets/training_load_card.dart';
+import '../widgets/meeting_patterns_view.dart';
+import '../src/services/meeting_patterns_service.dart';
+import '../src/utils/meeting_patterns.dart';
 import '../src/utils/training_load_view.dart';
 import '../src/utils/burnout_view.dart';
 import '../src/utils/day_fixes.dart';
@@ -321,6 +324,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// Today's past events with enough heart rate to judge, by sourceEventKey.
   Map<String, BodyReaction> _reactions = const {};
 
+  /// Repeating meetings' patterns, for the tags on upcoming events.
+  MeetingPatterns _patterns = MeetingPatterns.empty;
+
+  Future<void> _loadPatterns() async {
+    final loaded = await MeetingPatternsService.load();
+    if (mounted) setState(() => _patterns = loaded.patterns);
+  }
+
   /// What each reaction was last saved with (readings and category), so it's
   /// saved again only when late-syncing samples or the event's rating change.
   final _reactionsSaved = <String, String>{};
@@ -363,8 +374,75 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       _heartHistoryDay = key;
       _heartToday = readings(key, today.data());
       _updateReactions();
+      if (DateUtils.isSameDay(day, DateTime.now())) {
+        unawaited(_catchUpYesterday(day));
+      }
     } catch (error) {
       debugPrint('Could not load heart rate for event reactions: $error');
+    }
+  }
+
+  /// The day whose yesterday was last caught up, once per app day.
+  static String? _caughtUpFor;
+
+  /// Saves reactions for yesterday's events that ended after My Day was
+  /// last open (they're only worked out while it's on screen), so meeting
+  /// patterns don't miss a meeting late in the day. Yesterday's readings
+  /// are in [_heartHistory] already.
+  Future<void> _catchUpYesterday(DateTime today) async {
+    final key = localDayKey(today);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || _caughtUpFor == '$uid:$key') return;
+    _caughtUpFor = '$uid:$key';
+    final from = DateTime(today.year, today.month, today.day - 1);
+    final until = DateTime(today.year, today.month, today.day);
+    try {
+      final results = await Future.wait([
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('event_reactions')
+            .doc(localDayKey(from))
+            .get(),
+        CalendarService.getEventsBetween(from, until),
+        OutlookCalendarService.getEventsBetween(from, until),
+      ]).timeout(const Duration(seconds: 15));
+      final saved =
+          (results[0] as DocumentSnapshot<Map<String, dynamic>>).data() ??
+          const {};
+      final events = [
+        ...(results[1] as List<gcal.Event>)
+            .map(_CalendarEvent.fromGoogle)
+            .whereType<_CalendarEvent>(),
+        ...(results[2] as List<OutlookEvent>).map(_CalendarEvent.fromOutlook),
+      ];
+      var added = false;
+      for (final e in events) {
+        if (e.isAllDay ||
+            !DateUtils.isSameDay(e.start, from) ||
+            looksLikeExercise(e.title) ||
+            saved.containsKey(reactionKey(e.sourceEventKey))) {
+          continue;
+        }
+        final reaction = bodyReactionFor(
+          start: e.start,
+          end: e.end,
+          today: _heartHistory,
+          history: _heartHistory,
+        );
+        if (reaction == null) continue;
+        await _saveReaction(
+          e,
+          reaction,
+          CalendarCognitiveLoadService.scoreLocally(
+            _cognitiveInput(e),
+          ).category,
+        );
+        added = true;
+      }
+      if (added) MeetingPatternsService.invalidate();
+    } catch (error) {
+      debugPrint('Could not catch up yesterday\'s event reactions: $error');
     }
   }
 
@@ -643,6 +721,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
     final googleEvents = results[0] as List<gcal.Event>;
     final outlookEvents = results[1] as List<OutlookEvent>;
+    MeetingPatternsService.rememberNames(googleEvents);
     final allEvents = <_CalendarEvent>[
       ...googleEvents
           .map(_CalendarEvent.fromGoogle)
@@ -672,6 +751,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       _isLoading = false;
     });
     unawaited(_loadHeart());
+    unawaited(_loadPatterns());
     try {
       await DailyPriorityService.materializeRecurring(dayStart);
       await DailyPriorityService.seedFromCalendar(
@@ -2452,6 +2532,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         final reaction = past && event != null
             ? _reactions[event.sourceEventKey]
             : null;
+        // Upcoming repeating meetings that usually raise or lower your heart rate.
+        final pattern = past || event == null
+            ? null
+            : _patterns.bySeries[seriesKeyFor(
+                event.googleEvent?.recurringEventId,
+              )];
         // A clash Vivordo can move: one tap opens the confirm sheet.
         final canMove =
             fit != null &&
@@ -2497,12 +2583,21 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   snapshot.data ?? const <DailyPriority>[],
                   day: DateUtils.dateOnly(DateTime.now()),
                 ),
-          footer: reaction == null
-              ? null
-              : BodyReactionChip(
+          footer: reaction != null
+              ? BodyReactionChip(
                   reaction: reaction,
                   onTap: () => _showReaction(event!, reaction),
-                ),
+                )
+              : pattern != null
+              ? MeetingPatternTag(
+                  pattern: pattern,
+                  onTap: () => showMeetingPatternSheet(
+                    context,
+                    title: event!.title,
+                    pattern: pattern,
+                  ),
+                )
+              : null,
           color: priority != null ? timelineDoneGreen : event!.color,
           past: past,
           completed: priority?.completed,
