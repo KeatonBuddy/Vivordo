@@ -13,7 +13,6 @@ import '../src/services/calendar_service.dart';
 import '../src/services/fitbit_service.dart';
 import '../src/services/health_service.dart';
 import '../src/services/notification_service.dart';
-import '../src/services/outlook_calendar_service.dart';
 import '../src/services/personal_profile_service.dart';
 import '../src/services/user_service.dart';
 import '../src/services/whoop_service.dart';
@@ -109,7 +108,6 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   late bool _whoop = widget.userDoc?['whoopConnected'] == true;
   late bool _fitbit = widget.userDoc?['fitbitConnected'] == true;
   bool _google = false;
-  bool _outlook = false;
   bool _aiOn = false;
 
   Map<String, dynamic> get _preferences =>
@@ -153,14 +151,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   Future<void> _loadConnections() async {
     final results = await Future.wait([
       CalendarService.hasCalendarAccess(),
-      OutlookCalendarService.isSignedIn(),
       AiConsent.granted(_uid),
     ]);
     if (!mounted) return;
     setState(() {
       _google = results[0];
-      _outlook = results[1];
-      _aiOn = results[2];
+      _aiOn = results[1];
     });
   }
 
@@ -579,22 +575,6 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                               CalendarService.connectionNotifier.value,
                         );
                       }
-                    }),
-            ),
-            const Divider(height: 1, color: _line),
-            _Row(
-              label: 'Outlook',
-              value: _outlook ? 'Connected' : null,
-              placeholder: 'Connect',
-              onTap: _outlook
-                  ? null
-                  : () => _connect(() async {
-                      await OutlookCalendarService.connectAndGetWeekEvents(
-                        _weekStart,
-                      );
-                      final signedIn =
-                          await OutlookCalendarService.isSignedIn();
-                      if (mounted) setState(() => _outlook = signedIn);
                     }),
             ),
           ],
