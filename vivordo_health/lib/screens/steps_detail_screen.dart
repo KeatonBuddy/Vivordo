@@ -91,6 +91,16 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
         ?DateTime.tryParse(doc.id): v.toDouble(),
   };
 
+  /// Each day's steps per hour, for "usual for this time of day".
+  DayHours _dayHours(QuerySnapshot<Map<String, dynamic>>? snapshot) => {
+    for (final doc in snapshot?.docs ?? const [])
+      if ((doc.data()['steps'] as Map?)?['byHour'] case final List hours
+          when hours.length == 24)
+        ?DateTime.tryParse(doc.id): [
+          for (final h in hours) h is num ? h.toDouble() : 0.0,
+        ],
+  };
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -129,6 +139,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
                 usualValues,
                 dailyGoal,
                 _dayValues(snapshot.data),
+                _dayHours(snapshot.data),
               );
             },
           );
@@ -142,6 +153,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     List<int> usualValues,
     int dailyGoal,
     DayValues values,
+    DayHours hours,
   ) {
     final total = data.fold<int>(0, (total, day) => total + day.steps);
     final totalDistance = data.fold<double>(
@@ -210,6 +222,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
               today: DateTime.now(),
               rangeDays: _rangeDays,
               goal: dailyGoal.toDouble(),
+              hours: hours,
               unit: 'steps',
               fewer: 'fewer',
             ),

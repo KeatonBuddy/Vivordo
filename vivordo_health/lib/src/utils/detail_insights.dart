@@ -28,6 +28,26 @@ class DetailInsight {
 /// Day-keyed values (date only). Days with no data are left out, never 0.
 typedef DayValues = Map<DateTime, double>;
 
+/// Day-keyed totals per local hour (24 values), from `byHour`.
+typedef DayHours = Map<DateTime, List<double>>;
+
+/// Days of hourly history before "usual for this time of day" shows.
+const usualByNowMinDays = 7;
+
+/// The median of the 28 days before [now] of the total reached by the same
+/// time of day. Null with fewer than [usualByNowMinDays] days.
+double? usualByNow(DayHours hours, DateTime now) {
+  final day = insightDay(now);
+  final totals = [
+    for (var i = 1; i < 29; i++)
+      if (hours[DateTime(day.year, day.month, day.day - i)] case final h?
+          when h.length == 24)
+        h.take(now.hour).fold<double>(0, (a, b) => a + b) +
+            h[now.hour] * now.minute / 60,
+  ];
+  return totals.length >= usualByNowMinDays ? _median(totals) : null;
+}
+
 DateTime insightDay(DateTime d) => DateTime(d.year, d.month, d.day);
 
 // ── Steps and active calories ────────────────────────────────────────────────
@@ -41,10 +61,30 @@ DetailInsight countInsight({
   required double goal,
   required String unit,
   String fewer = 'fewer',
+  DayHours hours = const {},
 }) {
   final day = insightDay(today);
   if (rangeDays == 1) {
     final now = values[day] ?? 0;
+    final byNow = usualByNow(hours, today);
+    if (byNow != null && byNow > 0) {
+      final difference = now - byNow;
+      final pace = (difference / byNow).abs() < .1
+          ? 'about your usual for this time of day'
+          : '${formatCount(difference.abs())} ${difference > 0 ? 'above' : 'below'} '
+                'your usual for this time of day';
+      final goalPart = goal <= 0
+          ? ''
+          : now >= goal
+          ? ' You\'ve reached your ${formatCount(goal)} goal.'
+          : ' ${formatCount(goal - now)} to go for your ${formatCount(goal)} goal.';
+      return DetailInsight(
+        '${formatCount(now)} $unit so far, $pace.$goalPart',
+        goal > 0 && now >= goal || difference / byNow >= .1
+            ? InsightTone.good
+            : InsightTone.neutral,
+      );
+    }
     final usual = _median(_window(values, day, 1, 29).where((v) => v > 0));
     if (now <= 0) {
       return DetailInsight(

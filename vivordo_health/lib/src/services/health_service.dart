@@ -409,11 +409,17 @@ class HealthService {
       }
 
       if (_usesDailyTotals(def.type)) {
+        // Active calories come in hourly totals so each day also keeps
+        // byHour (the detail screen's "usual for this time of day"). The
+        // day's sum is the same either way.
+        final hourly = def.type == HealthDataType.ACTIVE_ENERGY_BURNED;
         final dataPoints = await _health.getHealthIntervalDataFromTypes(
           startDate: start,
           endDate: now,
           types: [def.type],
-          interval: const Duration(days: 1).inSeconds,
+          interval: hourly
+              ? const Duration(hours: 1).inSeconds
+              : const Duration(days: 1).inSeconds,
         );
 
         if (dataPoints.isEmpty) {
@@ -1028,6 +1034,10 @@ class HealthService {
     final batch = _db.batch();
     final daysWithData = <String>{};
     var daysWritten = 0;
+    final hours = await _hourlyStepTotals(
+      today.subtract(Duration(days: daysBack - 1)),
+      now,
+    );
 
     for (var i = 0; i < daysBack; i++) {
       final day = today.subtract(Duration(days: i));
@@ -1058,6 +1068,7 @@ class HealthService {
           .doc(uid)
           .collection('metrics_daily')
           .doc(dayKey);
+      final dayHours = hours[dayKey];
       batch.set(ref, {
         'steps': {
           'sum': total,
@@ -1065,6 +1076,10 @@ class HealthService {
           'unit': 'steps',
           'dimension': 'activity',
           'source': 'apple_health',
+          // Only when the hours account for the day (a raw-sample fallback
+          // total has no hourly split).
+          if (dayHours != null && dayHours.fold<int>(0, (a, b) => a + b) > 0)
+            'byHour': dayHours,
           'syncedAt': FieldValue.serverTimestamp(),
         },
         'date': dayKey,
@@ -1085,6 +1100,33 @@ class HealthService {
     debugPrint(
       'HealthService.syncMetric(steps): wrote Apple Health step totals for $daysWritten day(s).',
     );
+  }
+
+  /// Steps per local hour for each day from [start] to [end], for the
+  /// detail screen's "usual for this time of day". Empty if unavailable.
+  Future<Map<String, List<int>>> _hourlyStepTotals(
+    DateTime start,
+    DateTime end,
+  ) async {
+    try {
+      final points = await _health.getHealthIntervalDataFromTypes(
+        startDate: start,
+        endDate: end,
+        types: [HealthDataType.STEPS],
+        interval: const Duration(hours: 1).inSeconds,
+      );
+      final days = <String, List<int>>{};
+      for (final point in points) {
+        if (point.value is! NumericHealthValue) continue;
+        final at = point.dateFrom.toLocal();
+        days.putIfAbsent(localDayKey(at), () => List.filled(24, 0))[at.hour] +=
+            (point.value as NumericHealthValue).numericValue.round();
+      }
+      return days;
+    } catch (e) {
+      debugPrint('HealthService.syncMetric(steps): hourly totals failed: $e');
+      return const {};
+    }
   }
 
   Future<double?> _readRawStepTotal(DateTime start, DateTime end) async {
@@ -1201,11 +1243,18 @@ class HealthService {
     final Map<String, List<Map<String, dynamic>>> heartRateEntriesByDay = {};
     final Map<String, List<Map<String, dynamic>>> sleepEntriesByDay = {};
     final Map<String, List<ExerciseSample>> exerciseSamplesByDay = {};
+    final Map<String, List<double>> hoursByDay = {};
     for (final point in dataPoints) {
       if (point.value is! NumericHealthValue) continue;
       final day = localDayKey(point.dateFrom);
       final val = (point.value as NumericHealthValue).numericValue.toDouble();
       byDay.putIfAbsent(day, () => []).add(val);
+      if (def.type == HealthDataType.ACTIVE_ENERGY_BURNED) {
+        hoursByDay.putIfAbsent(
+          day,
+          () => List.filled(24, 0.0),
+        )[point.dateFrom.toLocal().hour] += val;
+      }
       if (def.type == HealthDataType.HEART_RATE) {
         heartRateEntriesByDay.putIfAbsent(day, () => []).add({
           'bpm': val,
@@ -1249,6 +1298,10 @@ class HealthService {
           .doc(day);
       final existingSnapshot = await ref.get();
       final payload = _buildValueMap(def.type, vals);
+      if (hoursByDay[day] case final hours?) {
+        payload['avg'] = payload['sum'];
+        payload['byHour'] = [for (final h in hours) h.round()];
+      }
       if (def.type == HealthDataType.EXERCISE_TIME) {
         final existingExerciseTime =
             existingSnapshot.data()?['exercise_time'] as Map<String, dynamic>?;

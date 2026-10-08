@@ -94,6 +94,16 @@ class _ActiveCaloriesDetailScreenState
         ?DateTime.tryParse(doc.id): v.toDouble(),
   };
 
+  /// Each day's active_calories per hour, for "usual for this time of day".
+  DayHours _dayHours(QuerySnapshot<Map<String, dynamic>>? snapshot) => {
+    for (final doc in snapshot?.docs ?? const [])
+      if ((doc.data()['active_calories'] as Map?)?['byHour']
+          case final List hours when hours.length == 24)
+        ?DateTime.tryParse(doc.id): [
+          for (final h in hours) h is num ? h.toDouble() : 0.0,
+        ],
+  };
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -133,6 +143,7 @@ class _ActiveCaloriesDetailScreenState
                 usualValues,
                 dailyGoal,
                 _dayValues(snapshot.data),
+                _dayHours(snapshot.data),
               );
             },
           );
@@ -146,6 +157,7 @@ class _ActiveCaloriesDetailScreenState
     List<int> usualValues,
     int dailyGoal,
     DayValues values,
+    DayHours hours,
   ) {
     final total = data.fold<int>(0, (total, day) => total + day.activeCalories);
     final average = data.isEmpty ? 0 : (total / data.length).round();
@@ -208,6 +220,7 @@ class _ActiveCaloriesDetailScreenState
               today: DateTime.now(),
               rangeDays: _rangeDays,
               goal: dailyGoal.toDouble(),
+              hours: hours,
               unit: 'kcal',
               fewer: 'less',
             ),

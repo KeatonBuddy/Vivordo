@@ -82,6 +82,56 @@ void main() {
     });
   });
 
+  group('usual for this time of day', () {
+    // 500 steps every hour from 8 AM to 8 PM on each earlier day.
+    final day = [for (var h = 0; h < 24; h++) h >= 8 && h < 20 ? 500.0 : 0.0];
+    DayHours history(int days) => {
+      for (var i = 1; i <= days; i++) back(i): day,
+    };
+
+    test('the usual is the median total by the same minute', () {
+      // By 3:30 PM: 7 full hours (3,500) plus half of the 3 PM hour.
+      expect(usualByNow(history(7), DateTime(2026, 10, 8, 15, 30)), 3750);
+      expect(usualByNow(history(6), DateTime(2026, 10, 8, 15, 30)), isNull);
+    });
+
+    test('Day: above, below or about the usual, plus the goal', () {
+      String text(double now) => countInsight(
+        values: {back(0): now},
+        today: today,
+        rangeDays: 1,
+        goal: 10000,
+        unit: 'steps',
+        hours: history(10),
+      ).text;
+      // At 3 PM the usual is 3,500.
+      expect(
+        text(4600),
+        '4,600 steps so far, 1,100 above your usual for this time of day. '
+        '5,400 to go for your 10,000 goal.',
+      );
+      expect(
+        text(2500),
+        contains('1,000 below your usual for this time of day'),
+      );
+      expect(text(3600), contains('about your usual for this time of day'));
+    });
+
+    test('without a week of hours it falls back to the day total', () {
+      expect(
+        countInsight(
+          values: {back(0): 4600},
+          today: today,
+          rangeDays: 1,
+          goal: 10000,
+          unit: 'steps',
+          hours: history(3),
+        ).text,
+        '4,600 steps so far. 5,400 to go for your 10,000 goal.',
+      );
+    });
+  });
+
   group('mood', () {
     test('Day: today\'s check-in against the usual', () {
       final insight = moodInsight(
