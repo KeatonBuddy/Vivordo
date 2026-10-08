@@ -658,6 +658,10 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(20),
+    ),
+    // On top, so rows (which paint their own background) don't hide it.
+    foregroundDecoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: context.vivordoColors.border),
     ),
     child: Column(children: children),
