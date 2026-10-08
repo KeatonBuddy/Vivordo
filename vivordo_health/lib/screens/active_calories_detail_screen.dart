@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -77,13 +78,21 @@ class _ActiveCaloriesDetailScreenState
           return date != null && date.isBefore(cutoff);
         })
         .map(
-          (doc) =>
-              ((doc.data()['active_calories'] as Map?)?['sum'] as num?)
-                  ?.round() ??
-              0,
+          (doc) => ((doc.data()['active_calories'] as Map?)?['sum'] as num?)
+              ?.round(),
         )
+        .whereType<int>()
         .toList();
   }
+
+  /// Each day's active_calories by date, for the insight. Days without data are left
+  /// out, never counted as 0.
+  DayValues _dayValues(QuerySnapshot<Map<String, dynamic>>? snapshot) => {
+    for (final doc in snapshot?.docs ?? const [])
+      if (((doc.data()['active_calories'] as Map?)?['sum'] as num?)
+          case final v?)
+        ?DateTime.tryParse(doc.id): v.toDouble(),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -119,7 +128,12 @@ class _ActiveCaloriesDetailScreenState
               final dailyGoal =
                   goalSnapshot.data?.activeCalories ??
                   const ActivityGoals().activeCalories;
-              return _buildContent(data, usualValues, dailyGoal);
+              return _buildContent(
+                data,
+                usualValues,
+                dailyGoal,
+                _dayValues(snapshot.data),
+              );
             },
           );
         },
@@ -131,6 +145,7 @@ class _ActiveCaloriesDetailScreenState
     List<_CalorieDay> data,
     List<int> usualValues,
     int dailyGoal,
+    DayValues values,
   ) {
     final total = data.fold<int>(0, (total, day) => total + day.activeCalories);
     final average = data.isEmpty ? 0 : (total / data.length).round();
@@ -187,7 +202,16 @@ class _ActiveCaloriesDetailScreenState
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
-          _insightCard(best),
+          _insightCard(
+            countInsight(
+              values: values,
+              today: DateTime.now(),
+              rangeDays: _rangeDays,
+              goal: dailyGoal.toDouble(),
+              unit: 'kcal',
+              fewer: 'less',
+            ),
+          ),
         ],
       ),
     );
@@ -403,17 +427,17 @@ class _ActiveCaloriesDetailScreenState
     );
   }
 
-  Widget _insightCard(_CalorieDay? best) {
-    final text = best == null || best.activeCalories == 0
-        ? 'Keep moving to begin building your active-calorie trend.'
-        : 'Your activity was highest on ${DateFormat('EEEE').format(best.date)}.';
+  Widget _insightCard(DetailInsight insight) {
+    final (icon, color) = insightStyle(insight.tone);
     return _card(
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          _iconBubble(Icons.trending_up_rounded, const Color(0xFF20B26B)),
+          _iconBubble(icon, color),
           const SizedBox(width: 14),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 16))),
+          Expanded(
+            child: Text(insight.text, style: const TextStyle(fontSize: 16)),
+          ),
         ],
       ),
     );

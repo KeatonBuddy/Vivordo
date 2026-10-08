@@ -44,7 +44,7 @@ void main() {
     expect(view.ingredients[3].detail, 'VO₂ max 41 · Average for your age');
     expect(view.ingredients[4].detail, '7h 05m avg · 5 of 7 nights on time');
     // Biggest weighted gaps first: cardio (45 × 20), then strength.
-    expect(view.insights.first, startsWith('Two runs or brisk walks'));
+    expect(view.insights.first, startsWith('Brisk walks or runs of 20+'));
     expect(view.insights[1], startsWith('Strength is an easy win'));
   });
 
@@ -55,6 +55,47 @@ void main() {
     expect(view.score, isNull);
     expect(view.status, 'Building');
     expect(view.note, 'Based on 9 of 14 days so far');
+    expect(view.insights, [
+      'Your Physical Health score appears after 2 weeks of activity and '
+          'sleep data (9 of 14 days so far).',
+    ]);
+  });
+
+  test('building after 2 weeks names what is missing, not fake gaps', () {
+    // The server writes parts but no details while building.
+    final view = PhysicalHealthView.fromDays({
+      '2026-10-01': {
+        'physical': {
+          'score': null,
+          'label': 'building',
+          'daysOfData': 20,
+          'parts': {
+            'activeMinutes': 40.0,
+            'movement': 60.0,
+            'strength': null,
+            'cardio': null,
+            'sleep': null,
+          },
+        },
+      },
+    })!;
+    expect(view.note, '2 of the 3 ingredients it needs so far');
+    expect(view.insights, [
+      'Your score starts once 3 of the 5 ingredients have data. Still '
+          'missing: strength, cardio fitness and sleep habits.',
+    ]);
+  });
+
+  test('the active-minutes tip scales with the gap', () {
+    final short = record(60);
+    final p = short['physical'] as Map;
+    p['parts'] = {'activeMinutes': 20.0, 'movement': 100.0, 'sleep': 100.0};
+    (p['details'] as Map)['weeklyActiveMinutes'] = 30;
+    expect(
+      PhysicalHealthView.fromDays({'2026-10-01': short})!.insights.first,
+      'Active minutes are 120 short a week: about 25 more minutes on '
+      'weekdays closes the gap.',
+    );
   });
 
   test('missing cardio fitness explains what to add', () {

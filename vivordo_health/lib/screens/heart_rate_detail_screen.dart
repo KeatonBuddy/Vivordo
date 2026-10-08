@@ -10,7 +10,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
 import 'package:vivordo_health/src/utils/hrv.dart';
-import 'package:vivordo_health/src/utils/heart_rate_insight.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -181,6 +181,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                 currentDays(all),
                 previousDays(all),
                 hasConnectedWearable: hasConnectedWearable,
+                restingNormal: restingNormal({
+                  for (final day in all) day.date: ?day.resting,
+                }, DateTime.now()),
               );
             },
           );
@@ -193,20 +196,13 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     List<_HeartDay> days,
     List<_HeartDay> previous, {
     required bool hasConnectedWearable,
+    double? restingNormal,
   }) {
     final storedEntries = days.expand((day) => day.readings).toList();
     final hasWhoopHistoricalData = storedEntries.any(
       (reading) => reading.source == 'whoop_ble',
     );
     final storedReadings = storedEntries.map((entry) => entry.bpm).toList();
-    final insightReadings = storedEntries
-        .map(
-          (entry) => HeartRateInsightReading(
-            bpm: entry.bpm,
-            timestamp: entry.timestamp,
-          ),
-        )
-        .toList();
     final chartDays = days;
     final chartEntries = chartDays.expand((day) => day.readings).toList();
     final resting = days.map((day) => day.resting).whereType<double>().toList();
@@ -219,9 +215,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final avg = average(storedReadings);
     final restingAvg = average(resting);
     final priorAvg = average(prior);
-    final change = restingAvg == null || priorAvg == null
-        ? null
-        : (restingAvg - priorAvg).round();
     final low = storedReadings.isEmpty
         ? null
         : storedReadings.reduce(math.min).round();
@@ -301,11 +294,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           ],
           section('Insight'),
           insight(
-            buildHeartRateInsight(
+            heartInsight(
               isDay: rangeIndex == 0,
-              readings: insightReadings,
-              restingAverage: restingAvg,
-              restingChange: change,
+              rangeDays: rangeDays,
+              todayResting: days.last.resting,
+              restingNormal: restingNormal,
+              todayReadings: storedReadings,
+              rangeResting: restingAvg,
+              priorResting: priorAvg,
             ),
           ),
         ],
@@ -971,14 +967,17 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     );
   }
 
-  Widget insight(String text) {
+  Widget insight(DetailInsight insight) {
+    final (icon, color) = insightStyle(insight.tone);
     return card(
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          bubble(Icons.monitor_heart_outlined, const Color(0xFF20B26B)),
+          bubble(icon, color),
           const SizedBox(width: 14),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 16))),
+          Expanded(
+            child: Text(insight.text, style: const TextStyle(fontSize: 16)),
+          ),
         ],
       ),
     );

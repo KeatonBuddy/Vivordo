@@ -67,7 +67,7 @@ class PhysicalHealthView {
       final counted = parts.values.where((v) => v != null).length;
       note = daysOfData < 14
           ? 'Based on $daysOfData of 14 days so far'
-          : 'Needs $counted of 3 ingredients to start';
+          : '$counted of the 3 ingredients it needs so far';
     } else {
       final latestDay = DateTime.parse(latestKey);
       final then = trend
@@ -155,28 +155,46 @@ class PhysicalHealthView {
             (100 - a.progress!) * a.weight,
           ),
         );
+    // While building there are no details yet, so name what's missing
+    // instead of quoting gaps against empty data.
+    final daysOfData = (latest['daysOfData'] as num? ?? 0).toInt();
+    final missing = [
+      for (final i in ingredients)
+        if (i.progress == null) i.name.toLowerCase(),
+    ];
     final insights = [
-      for (final i in gaps.take(2))
-        switch (i.name) {
-          'Active minutes' =>
-            'Active minutes are ${150 - (weekly ?? 0)} short a week: a brisk '
-                '10-minute walk after lunch on weekdays closes most of the gap.',
-          'Daily movement' =>
-            'Steps are ${_thousands(8000 - (steps ?? 0))} a day under target: '
-                'short walks between meetings add up fast.',
-          'Strength' =>
-            'Strength is an easy win: one more session a week '
-                '${(strength ?? 0) < 1 ? 'starts it' : 'takes it to 100'}.',
-          'Cardio fitness' =>
-            'Two runs or brisk walks of 20+ minutes a week usually raise '
-                'VO₂ max within a couple of months.',
-          _ => 'A regular bedtime and 7–9 hours most nights lift sleep habits.',
-        },
+      if (score == null && daysOfData < 14)
+        'Your Physical Health score appears after 2 weeks of activity and '
+            'sleep data ($daysOfData of 14 days so far).',
+      if (score == null && daysOfData >= 14)
+        'Your score starts once 3 of the 5 ingredients have data. Still '
+            'missing: ${_list(missing)}.',
+      if (score != null)
+        for (final i in gaps.take(2))
+          switch (i.name) {
+            'Active minutes' => _activeTip(150 - (weekly ?? 0)),
+            'Daily movement' =>
+              'Steps are ${_thousands(8000 - (steps ?? 0))} a day under '
+                  'target: a 10-minute walk adds about 1,000.',
+            'Strength' =>
+              'Strength is an easy win: one more session a week '
+                  '${(strength ?? 0) < 1 ? 'starts it' : 'takes it to 100'}.',
+            'Cardio fitness' =>
+              details['vo2Source'] == 'estimate'
+                  ? 'Cardio fitness is estimated from your profile. Brisk '
+                        'walks or runs with your watch on give Vivordo a '
+                        'measured VO₂ max.'
+                  : 'Brisk walks or runs of 20+ minutes, twice a week, '
+                        'build cardio fitness.',
+            _ =>
+              details['sleepSource'] == 'checkIn'
+                  ? 'Sleep habits come from your morning check-ins. A '
+                        'regular bedtime and 7–9 hours most nights lift them.'
+                  : 'A regular bedtime and 7–9 hours most nights lift '
+                        'sleep habits.',
+          },
       if (gaps.isEmpty && score != null)
         'You\'re meeting your targets. Keep it up.',
-      if (score == null)
-        'Your Physical Health score appears after 2 weeks of activity and '
-            'sleep data.',
     ];
 
     return PhysicalHealthView(
@@ -196,6 +214,18 @@ class PhysicalHealthView {
     );
   }
 }
+
+/// The weekly shortfall as minutes on weekdays, rounded up to 5.
+String _activeTip(int gap) {
+  final perDay = ((gap / 5) / 5).ceil() * 5;
+  return 'Active minutes are $gap short a week: about $perDay more minutes '
+      'on weekdays closes the gap.';
+}
+
+/// "a", "a and b", "a, b and c".
+String _list(List<String> items) => items.length <= 1
+    ? items.join()
+    : '${items.sublist(0, items.length - 1).join(', ')} and ${items.last}';
 
 String _thousands(int n) =>
     n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');

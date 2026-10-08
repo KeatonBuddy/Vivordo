@@ -15,6 +15,7 @@ import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/sleep_nights.dart';
 import 'package:vivordo_health/src/utils/sleep_schedule.dart';
@@ -125,6 +126,12 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     1 => 7,
     _ => 30,
   };
+  String _previousName() => switch (_rangeIndex) {
+    0 => 'the night before',
+    1 => 'the week before',
+    _ => 'the month before',
+  };
+
   String get _rangeName => switch (_rangeIndex) {
     0 => 'Daily',
     1 => 'Weekly',
@@ -333,7 +340,8 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     final previousAverage = previous.isEmpty
         ? null
         : previous.reduce((a, b) => a + b) / previous.length;
-    final changeMinutes = previousAverage == null
+    // Nothing to compare until this period has a night.
+    final changeMinutes = previousAverage == null || recorded.isEmpty
         ? null
         : ((average - previousAverage) * 60).round();
     final latest = recorded.isEmpty ? null : recorded.last.value;
@@ -422,7 +430,19 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
               ],
             ),
             const SizedBox(height: 10),
-            _insightCard(recorded, average),
+            _insightCard(
+              sleepInsight(
+                nights: {
+                  for (final MapEntry(:key, :value) in byDay.entries)
+                    ?DateTime.tryParse(key): SleepNight(
+                      value.hours,
+                      value.bedtime,
+                    ),
+                },
+                today: DateTime.now(),
+                rangeDays: _rangeDays,
+              ),
+            ),
           ],
         ),
       ),
@@ -573,9 +593,13 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                     if (changeMinutes != null) ...[
                       const SizedBox(height: 8),
                       Text(
-                        '${changeMinutes >= 0 ? '↑' : '↓'} ${changeMinutes.abs()} min vs previous $_rangeName',
+                        changeMinutes == 0
+                            ? 'Same as ${_previousName()}'
+                            : '${changeMinutes > 0 ? '↑' : '↓'} ${changeMinutes.abs()} min vs ${_previousName()}',
                         style: TextStyle(
-                          color: changeMinutes >= 0
+                          color: changeMinutes == 0
+                              ? context.vivordoColors.textSecondary
+                              : changeMinutes > 0
                               ? const Color(0xFF20B26B)
                               : Colors.red,
                           fontWeight: FontWeight.w700,
@@ -958,25 +982,17 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     );
   }
 
-  Widget _insightCard(List<_SleepDay> recorded, double average) {
-    String text;
-    if (recorded.isEmpty) {
-      text = 'Sync sleep from your health source to reveal sleep trends.';
-    } else if (average >= 8) {
-      text = 'You averaged at least eight hours of sleep in this period.';
-    } else if (average >= 7) {
-      text =
-          'Your average sleep is within the recommended range for many adults.';
-    } else {
-      text = 'Your average sleep was below seven hours in this period.';
-    }
+  Widget _insightCard(DetailInsight insight) {
+    final (icon, color) = insightStyle(insight.tone);
     return _card(
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          _iconBubble(Icons.trending_up_rounded, const Color(0xFF20B26B)),
+          _iconBubble(icon, color),
           const SizedBox(width: 14),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 16))),
+          Expanded(
+            child: Text(insight.text, style: const TextStyle(fontSize: 16)),
+          ),
         ],
       ),
     );
