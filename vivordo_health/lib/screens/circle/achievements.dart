@@ -130,7 +130,22 @@ List<_Achievement> _profileAchievementsFromDocuments(
       'assets/achievements/day_planner.png',
     ),
   ];
-  final result = <_Achievement>[];
+  final result = <_Achievement>[
+    // Founder is only ever held, never worked towards, so it appears only
+    // for accounts that have it.
+    if (byId['founder']?['completed'] == true)
+      _Achievement(
+        id: 'founder',
+        name: byId['founder']?['name'] as String? ?? 'Founder',
+        requirement:
+            byId['founder']?['requirement'] as String? ??
+            'Joined Vivordo during the beta',
+        goalBadgeAsset: 'assets/achievements/founder.png',
+        earned: true,
+        progress: 1,
+        earnedAt: (byId['founder']?['earnedAt'] as Timestamp?)?.toDate(),
+      ),
+  ];
   for (final definition in oneTime) {
     final data = byId[definition.$1];
     final earned =

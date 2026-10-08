@@ -2444,6 +2444,7 @@ async function deleteVivordoAccountData(uid) {
     db.recursiveDelete(db.collection("challenge_medal_awards").doc(uid)),
     db.recursiveDelete(db.collection("baas_state").doc(uid)),
     db.recursiveDelete(db.collection("baas_weights").doc(uid)),
+    db.collection("founders").doc(uid).delete(),
     db.collection("ai_usage").doc(uid).delete(),
     db.collection("ai_usage").doc(`${uid}_planning`).delete(),
   ]);

@@ -311,6 +311,10 @@ class AchievementService {
     final savedById = {
       for (final document in savedAchievements.docs) document.id: document,
     };
+    final founder =
+        savedById['founder']?.data()['completed'] == true ||
+        await _isFounder(session);
+    if (!session.current) return const [];
 
     final heartRateScanCount = inputs.scans;
     final moodCheckInCount = inputs.moods;
@@ -368,6 +372,14 @@ class AchievementService {
     );
 
     final checks = <AchievementProgress>[
+      // Only beta accounts can ever hold Founder, so nobody else sees it.
+      if (founder)
+        _singleAchievement(
+          id: 'founder',
+          name: 'Founder',
+          requirement: 'Joined Vivordo during the beta',
+          unlocked: true,
+        ),
       _singleAchievement(
         id: 'in_motion',
         name: 'In Motion',
@@ -532,6 +544,24 @@ class AchievementService {
     return resolved;
   }
 
+  /// Whether a backend record marks this account as a beta user. Read once
+  /// per session; a failed read is retried on the next reconciliation.
+  static Future<bool> _isFounder(_AchievementSession session) async {
+    final cached = session.founder;
+    if (cached != null) return cached;
+    try {
+      final record = await _firestore
+          .collection('founders')
+          .doc(session.uid)
+          .get()
+          .timeout(_sourceTimeout);
+      return session.founder = record.exists;
+    } catch (error) {
+      debugPrint('AchievementService: founder check failed: $error');
+      return false;
+    }
+  }
+
   static Future<void> reconcileStoryKeeper() async {
     await reconcileAll();
   }
@@ -690,6 +720,7 @@ class _AchievementSession {
   final String uid;
   final AchievementInputsRepository inputs;
   CircleProfile? nextProfile;
+  bool? founder;
   int monitors = 0;
   late final AchievementReconciliationQueue<List<AchievementProgress>> queue;
   bool get current =>

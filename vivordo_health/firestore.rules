@@ -13,6 +13,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Beta users ("founders"), granted once by
+    // functions/scripts/grant_founders.js. The owner reads their own record to
+    // unlock the Founder achievement; no client can create or change one.
+    match /founders/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
     // ── User document + ALL subcollections ───────────────────────────────────
     // Subcollections covered: metrics_daily, preferences, questionnaire_responses,
     // insights, weekly_trends, insight_summaries, analytics_events,
