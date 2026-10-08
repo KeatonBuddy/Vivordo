@@ -23,6 +23,8 @@ const MIN_USUAL_WEEK = 1;
 const HRV_DROP = 0.05;
 const RESTING_RISE = 3;
 const DAY_MS = 86400000;
+// One push when Strained starts, never within a week of the last.
+const NOTIFY_GAP_DAYS = 7;
 
 const finite = (value) => typeof value === "number" && Number.isFinite(value);
 const round = (value, places) => {
@@ -119,4 +121,55 @@ function trainingLoadFor({day, loads, mornings = [], hrvNormal = null,
   };
 }
 
-module.exports = {VERSION, HARD_DAY, relativeDay, trainingLoadFor};
+/**
+ * Whether a newly calculated record should send the Strained push: it's
+ * Strained, yesterday wasn't, and the last push was a week or more ago.
+ * @param {object|null} record Today's trainingLoadFor result.
+ * @param {string|null} previousState Yesterday's state.
+ * @param {string|null} lastNotified Day key of the last push.
+ * @param {string} day Today's key.
+ * @return {boolean} True to send it.
+ */
+function shouldNotify(record, previousState, lastNotified, day) {
+  if (record?.state !== "strained" || previousState === "strained") {
+    return false;
+  }
+  return !lastNotified || (Date.parse(`${day}T00:00:00Z`) -
+    Date.parse(`${lastNotified}T00:00:00Z`)) / DAY_MS >= NOTIFY_GAP_DAYS;
+}
+
+/**
+ * "Your last 7 days were about 2.4× your usual week, and your HRV is down."
+ * @param {object} record A Strained trainingLoadFor result.
+ * @return {string} Notification body.
+ */
+function strainedBody(record) {
+  const amount = record.ratio >= 2 ? `${record.ratio.toFixed(1)}× your usual` :
+    `${Math.round((record.ratio - 1) * 100)}% above your usual`;
+  const body = record.body?.hrvLow >= record.body?.restingHigh ?
+    "your HRV is down" : "your resting heart rate is up";
+  return `Your last 7 days were about ${amount} week, and ${body}. ` +
+    "An easier few days will help.";
+}
+
+/**
+ * The Strained push (Settings → Training load). Opens My Day.
+ * @param {object} user User document reference.
+ * @param {object} messaging Admin Messaging instance.
+ * @param {object} record The Strained record.
+ */
+async function notifyStrained(user, messaging, record) {
+  const {pushToUser} = require("./push");
+  await pushToUser(user, messaging, "trainingLoadNotificationsEnabled", {
+    notification: {
+      title: "You've trained a lot more than usual",
+      body: strainedBody(record),
+    },
+    data: {screen: "calendar", type: "training_load"},
+  });
+}
+
+module.exports = {
+  VERSION, HARD_DAY, relativeDay, trainingLoadFor, shouldNotify,
+  strainedBody, notifyStrained,
+};

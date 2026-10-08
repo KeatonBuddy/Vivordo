@@ -420,29 +420,15 @@ function warningBody(areas) {
  * @param {object} areas The night's areas, to say which ones drifted.
  */
 async function notifyWarning(user, messaging, areas) {
-  const [profile, tokens] = await Promise.all([
-    user.get(), user.collection("notification_tokens").get(),
-  ]);
-  const preferences = profile.data()?.preferences;
-  // Settings → Burnout check (on unless switched off).
-  if (preferences?.notificationsEnabled === false ||
-      preferences?.burnoutNotificationsEnabled === false) return;
-  const valid = tokens.docs.filter((d) =>
-    typeof d.get("token") === "string" && d.get("token"));
-  if (!valid.length) return;
-  const response = await messaging.sendEachForMulticast({
-    tokens: valid.map((d) => d.get("token")),
+  const {pushToUser} = require("./push");
+  // Settings → Burnout check.
+  await pushToUser(user, messaging, "burnoutNotificationsEnabled", {
     notification: {
       title: "Your last two weeks look like a slide",
       body: warningBody(areas),
     },
     data: {screen: "calendar", type: "burnout_warning"}, // opens My Day
-    apns: {payload: {aps: {sound: "default"}}},
   });
-  await Promise.all(response.responses.map((result, i) =>
-    !result.success && ["messaging/registration-token-not-registered",
-      "messaging/invalid-registration-token"].includes(result.error?.code) ?
-      valid[i].ref.delete() : null));
 }
 
 module.exports = {

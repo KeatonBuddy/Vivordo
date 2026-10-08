@@ -114,7 +114,7 @@ Vivordo's servers calculate scores from the information described above and stor
 - **Capacity**—the energy you have today—from sleep, overnight heart-rate variability, resting heart rate, your morning check-in, and how demanding and active your recent days were compared with your usual;
 - **Effort**—what your day took—from your daily records, in-app workouts (type and duration), exercise minutes, and active calories;
 - **Physical Health**—your longer-term fitness and habits—from active minutes, steps, strength workouts, cardio fitness (VO₂ max, measured or estimated from your age, sex, height, weight, activity, and resting heart rate), and sleep;
-- **training load**—how your last week of activity compares with your usual month—from heart-rate-based activity load or exercise minutes on each day, alongside your overnight heart-rate variability and resting heart rate. If you ask Vivordo AI to plan an easier week, this summary is sent with your message; and
+- **training load**—how your last week of activity compares with your usual month—from heart-rate-based activity load or exercise minutes on each day, alongside your overnight heart-rate variability and resting heart rate. When it turns strained, Vivordo may send you one notification. If you ask Vivordo AI to plan an easier week, this summary is sent with your message; and
 - **the burnout check**—a nightly comparison of your last two weeks of Capacity, Effort, and mood with your own usual levels, using sleep, resting heart rate, heart-rate variability, back-to-back events, after-hours time, and training load to explain the result. When a warning starts, Vivordo may send you one notification.
 
 Vivordo also forecasts your energy through the day—when you're likely to be at your sharpest or in a dip—on your device, from your sleep, usual sleep times, and sleep need, and compares it with your calendar and priorities. The forecast isn't stored. If you turn on the wind-down reminder, Vivordo schedules notifications on your device for the hour before your suggested bedtime and saves only that the reminder is on.
@@ -130,7 +130,7 @@ We use personal information to:
 - display health, fitness, sleep, calendar, journal, and activity information;
 - calculate and explain Vivordo stress, Capacity, Demand, Effort, Physical Health, heart-health, activity, and related scores, and run the burnout check;
 - personalize insights, recommendations, reminders, and AI-assisted responses;
-- send notifications you've allowed, such as check-in reminders, wind-down reminders, and burnout warnings, and silent notifications that keep your daily records up to date;
+- send notifications you've allowed, such as check-in reminders, wind-down reminders, burnout warnings, and training-load alerts, and silent notifications that keep your daily records up to date;
 - support social or sharing features you intentionally use;
 - respond to support, privacy, and security requests;
 - diagnose errors, monitor performance, prevent abuse, and protect Vivordo and its users;

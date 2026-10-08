@@ -8,7 +8,8 @@ const crypto = require("node:crypto");
 const {isDeepStrictEqual} = require("node:util");
 const {validDay} = require("./metrics_summary");
 const {hrvReadings, pickHrv} = require("./hrv");
-const {trainingLoadFor} = require("./training_load");
+const {trainingLoadFor, shouldNotify, notifyStrained} =
+  require("./training_load");
 
 const VERSION = 2; // 2: a big day lowers Recovery for 3 days
 const WEIGHTS = {sleep: 45, body: 35, recovery: 20, checkIn: 15};
@@ -332,12 +333,12 @@ async function physicalLoads(user, metricsDocs, start, day) {
       .select("activityLoad", "trainingLoad")
       .get();
   const heartOn = new Map();
-  let previousTrainingState = null;
+  let previousTraining = null;
   const yesterday = new Date(Date.parse(`${day}T00:00:00Z`) - DAY_MS)
       .toISOString().slice(0, 10);
   for (const doc of scores.docs) {
     if (doc.id === yesterday) {
-      previousTrainingState = doc.get("trainingLoad")?.state ?? null;
+      previousTraining = doc.get("trainingLoad") ?? null;
     }
     const load = doc.get("activityLoad");
     if (load?.version === LOAD_VERSION && finite(load.trimp)) {
@@ -419,22 +420,25 @@ async function physicalLoads(user, metricsDocs, start, day) {
     // For the training load (training_load.js).
     loads: {heartOn, heartBase: base(heartUsual, "heart"), minutesOn: loadOn,
       minutesBase: base(minutesUsual, "minutes")},
-    previousTrainingState,
+    previousTraining,
   };
 }
 
 /**
- * Recalculates and saves a day's Capacity in users/{uid}/scores_daily/{day}.
- * A day is final once it is over in every time zone; final days are never
- * rewritten.
+ * Recalculates and saves a day's Capacity and training load in
+ * users/{uid}/scores_daily/{day}, and sends the Strained push when it
+ * starts. A day is final once it is over in every time zone; final days
+ * are never rewritten.
  * @param {object} db Admin Firestore instance.
  * @param {string} uid Account ID.
  * @param {string} day Day key.
  * @param {Function} timestamp Server timestamp factory.
  * @param {Date} now Current time.
+ * @param {object|null} messaging Admin Messaging (default: the app's).
  * @return {Promise<string>} Outcome.
  */
-async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
+async function refreshCapacity(db, uid, day, timestamp, now = new Date(),
+    messaging = null) {
   if (!validDay(day)) return "ignored";
   const user = db.doc(`users/${uid}`);
   const start = new Date(Date.parse(`${day}T00:00:00Z`) -
@@ -457,8 +461,9 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
   history.sort((a, b) => a.day.localeCompare(b.day));
   let capacity = null;
   let trainingLoad = null;
+  let previousTraining = null;
   if (todayData) {
-    const {loads, previousTrainingState, ...activity} =
+    const {loads, previousTraining: previous, ...activity} =
       await physicalLoads(user, snapshot.docs, start, day);
     const today = capacityInputs(todayData);
     const hrv = pickHrv(today.hrvReadings,
@@ -478,8 +483,9 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
     const past = (k) => history.find((d) => d.day === new Date(
         Date.parse(`${day}T00:00:00Z`) - k * DAY_MS).toISOString()
         .slice(0, 10));
+    previousTraining = previous;
     trainingLoad = trainingLoadFor({
-      day, loads, previousState: previousTrainingState,
+      day, loads, previousState: previous?.state ?? null,
       mornings: [{hrv: hrv.value, restingHr: today.restingHr}, past(1),
         past(2)].map((m) => ({hrv: m?.hrv ?? null,
         restingHr: m?.restingHr ?? null})),
@@ -493,7 +499,8 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
   // The day is over everywhere 14 h after it ends in UTC (UTC+14).
   const final = Date.parse(`${day}T00:00:00Z`) + DAY_MS + 14 * 3600000 <
     now.getTime();
-  return db.runTransaction(async (tx) => {
+  let notify = false;
+  const outcome = await db.runTransaction(async (tx) => {
     const [owner, tombstone, existing] = await Promise.all([
       tx.get(user), tx.get(deletion), tx.get(target),
     ]);
@@ -504,16 +511,30 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date()) {
     const oldContent = old ? {...old} : null;
     if (oldContent) delete oldContent.computedAt;
     const oldLoad = existing.data()?.trainingLoad ?? null;
+    // The Strained push: only for a day still under way, and carried on
+    // the record so a recalculation never sends it twice.
+    const lastNotified = oldLoad?.lastNotified ??
+      previousTraining?.lastNotified ?? null;
+    notify = !final && shouldNotify(trainingLoad,
+        previousTraining?.state ?? null, lastNotified, day);
+    const stamp = notify ? day : lastNotified;
+    const record = trainingLoad && stamp ?
+      {...trainingLoad, lastNotified: stamp} : trainingLoad;
     if (isDeepStrictEqual(next, oldContent) &&
-        isDeepStrictEqual(trainingLoad, oldLoad)) return "unchanged";
+        isDeepStrictEqual(record, oldLoad)) return "unchanged";
     // Replaces both maps whole (a deep merge would keep keys a newer
     // version dropped); the document's other fields stay.
     tx.set(target, {
       capacity: next ? {...next, computedAt: timestamp()} : null,
-      trainingLoad,
+      trainingLoad: record,
     }, {mergeFields: ["capacity", "trainingLoad"]});
     return "written";
   });
+  if (outcome === "written" && notify) {
+    await notifyStrained(user,
+        messaging ?? require("firebase-admin").messaging(), trainingLoad);
+  }
+  return outcome;
 }
 
 /**

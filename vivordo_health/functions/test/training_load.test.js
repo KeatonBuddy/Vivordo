@@ -2,7 +2,8 @@
 /* eslint-disable max-len, require-jsdoc */
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {trainingLoadFor, relativeDay} = require("../training_load");
+const {trainingLoadFor, relativeDay, shouldNotify, strainedBody} = require("../training_load");
+const {pushToUser} = require("../push");
 
 const DAY = "2026-10-08";
 const key = (k) => new Date(Date.parse(`${DAY}T00:00:00Z`) - k * 86400000).toISOString().slice(0, 10);
@@ -63,4 +64,43 @@ test("too little history, or almost no usual activity, is learning", () => {
   const sparse = {minutesOn: new Map([[key(9), 10], [key(1), 30]]), minutesBase: 10};
   assert.deepEqual(trainingLoadFor({day: DAY, loads: sparse}), {version: 1, state: "learning", coveredDays: 1});
   assert.equal(run([0, 0, 0, 0, 0, 0, 0], {usual: 1}).state, "learning");
+});
+
+test("the Strained push sends when it starts, at most once a week", () => {
+  const strained = {state: "strained"};
+  assert.equal(shouldNotify(strained, "high", null, DAY), true);
+  assert.equal(shouldNotify(strained, null, "2026-10-01", DAY), true); // 7 days
+  assert.equal(shouldNotify(strained, "high", "2026-10-02", DAY), false); // 6 days
+  assert.equal(shouldNotify(strained, "strained", null, DAY), false); // already on
+  assert.equal(shouldNotify({state: "high"}, "steady", null, DAY), false);
+  assert.equal(shouldNotify(null, null, null, DAY), false);
+});
+
+test("the Strained push names the week and the body", () => {
+  assert.equal(strainedBody({ratio: 2.4, body: {hrvLow: 3, restingHigh: 0}}),
+      "Your last 7 days were about 2.4× your usual week, and your HRV is down. An easier few days will help.");
+  assert.equal(strainedBody({ratio: 1.6, body: {hrvLow: 1, restingHigh: 2}}),
+      "Your last 7 days were about 60% above your usual week, and your resting heart rate is up. An easier few days will help.");
+});
+
+test("pushes respect the settings and drop dead tokens", async () => {
+  const deleted = [];
+  const sent = [];
+  const token = (id) => ({get: () => id, ref: {delete: () => deleted.push(id)}});
+  const user = (preferences) => ({
+    get: async () => ({data: () => ({preferences})}),
+    collection: () => ({get: async () => ({docs: [token("a"), token("b")]})}),
+  });
+  const messaging = {sendEachForMulticast: async (m) => {
+    sent.push(m);
+    return {responses: [{success: true}, {success: false, error: {code: "messaging/registration-token-not-registered"}}]};
+  }};
+  const message = {notification: {title: "t", body: "b"}, data: {type: "x"}};
+  await pushToUser(user({trainingLoadNotificationsEnabled: false}), messaging, "trainingLoadNotificationsEnabled", message);
+  await pushToUser(user({notificationsEnabled: false}), messaging, "trainingLoadNotificationsEnabled", message);
+  assert.equal(sent.length, 0);
+  await pushToUser(user({}), messaging, "trainingLoadNotificationsEnabled", message);
+  assert.deepEqual(sent[0].tokens, ["a", "b"]);
+  assert.equal(sent[0].notification.title, "t");
+  assert.deepEqual(deleted, ["b"]);
 });

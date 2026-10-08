@@ -1049,6 +1049,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         // Server pushes: on unless switched off.
         final burnoutNotificationsEnabled =
             preferences['burnoutNotificationsEnabled'] != false;
+        final trainingLoadNotificationsEnabled =
+            preferences['trainingLoadNotificationsEnabled'] != false;
         final achievementNotificationsEnabled =
             preferences['achievementNotificationsEnabled'] != false;
         final circleNotificationsEnabled =
@@ -1251,6 +1253,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                         onChanged: (value) => _setPreferenceWith(
                           () => _setPreference(
                             'burnoutNotificationsEnabled',
+                            value,
+                          ),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.directions_run_rounded,
+                        Color(0xFFE24B4A),
+                      ),
+                      title: 'Training load',
+                      subtitle: 'Only when it turns Strained',
+                      trailing: AppSwitch(
+                        value: trainingLoadNotificationsEnabled,
+                        onChanged: (value) => _setPreferenceWith(
+                          () => _setPreference(
+                            'trainingLoadNotificationsEnabled',
                             value,
                           ),
                         ),

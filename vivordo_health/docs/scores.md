@@ -296,6 +296,14 @@ morning (even when Capacity itself can't be) and saved as
   (heart, minutes or mixed), days: [{day, value, kind}] oldest first,
   body: {mornings, hrvLow, restingHigh, restingHrChange, agrees}}`, or
   `{version, state: "learning", coveredDays}`.
+- **One push when Strained starts** (yesterday wasn't Strained, and none
+  in the last 7 days; only for a day still under way): "You've trained a
+  lot more than usual", naming the multiple and HRV or resting HR. Sent
+  from `refreshCapacity`, recorded as `trainingLoad.lastNotified` (carried
+  from yesterday's record) so recalculations never repeat it. Off with
+  Settings → Training load (`preferences.trainingLoadNotificationsEnabled`,
+  on unless false) or `preferences.notificationsEnabled`; opens My Day.
+  Sent through `functions/push.js`, shared with the burnout warning.
 - **Burnout** reads the daily ratio as a driver in the Effort group
   ("Training load about 60% above your usual"; suggestion "Take an easier
   week: swap one hard session for a walk").
