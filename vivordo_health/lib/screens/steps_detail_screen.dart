@@ -164,7 +164,14 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     final usual = usualValues.isEmpty
         ? null
         : usualValues.reduce((a, b) => a + b) / usualValues.length;
-    final change = usual == null || usual == 0
+    // Day compares with the usual by this time of day (like the insight),
+    // not with whole earlier days; hidden until a week of hours exists.
+    final byNow = _rangeIndex == 0 ? usualByNow(hours, DateTime.now()) : null;
+    final change = _rangeIndex == 0
+        ? (byNow == null || byNow == 0
+              ? null
+              : ((average - byNow) / byNow * 100).round())
+        : usual == null || usual == 0
         ? null
         : ((average - usual) / usual * 100).round();
     final goal = dailyGoal * _rangeDays;
@@ -319,9 +326,15 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
                     if (change != null) ...[
                       const SizedBox(height: 10),
                       Text(
-                        '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs your usual',
+                        _rangeIndex == 0 && change.abs() < 10
+                            ? 'About usual for this time'
+                            : '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs '
+                                  '${_rangeIndex == 0 ? 'usual for this time' : 'your usual'}',
                         style: TextStyle(
-                          color: change >= 0
+                          // Below usual by now isn't flagged on Day.
+                          color: _rangeIndex == 0 && change < 10
+                              ? context.vivordoColors.textSecondary
+                              : change >= 0
                               ? const Color(0xFF20B26B)
                               : Colors.red,
                           fontSize: 16,
