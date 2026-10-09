@@ -1,6 +1,6 @@
 # Vivordo Privacy Policy
 
-**Last updated: October 7, 2026**
+**Last updated: October 8, 2026**
 
 ## Introduction
 
@@ -120,6 +120,12 @@ Vivordo's servers calculate scores from the information described above and stor
 Vivordo also forecasts your energy through the day—when you're likely to be at your sharpest or in a dip—on your device, from your sleep, usual sleep times, and sleep need, and compares it with your calendar and priorities. The forecast isn't stored. If you turn on the wind-down reminder, Vivordo schedules notifications on your device for the hour before your suggested bedtime and saves only that the reminder is on.
 
 These are wellness signals, not medical assessments or diagnoses.
+
+### Widgets and Siri
+
+To show your home-screen widgets and answer Siri, Vivordo keeps a small summary on your device, in storage shared only between the app and its widgets: today's stress, Capacity, and training load, last night's sleep, your latest heart rate and today's activity, the week's calendar events (titles and times), today's priorities, and which of today's meetings usually raise or lower your heart rate. The summary stays on your device, isn't sent to Vivordo's servers or to AI providers, and is cleared when you sign out.
+
+When you ask Siri about Vivordo (for example, "What's my capacity in Vivordo?"), Siri reads that summary, and only after your iPhone is unlocked. Apple handles your spoken request under Apple's privacy policy.
 
 ## How We Use Information
 
