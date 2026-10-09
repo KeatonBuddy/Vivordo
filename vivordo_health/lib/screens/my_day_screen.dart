@@ -418,7 +418,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       ];
       var added = false;
       for (final e in events) {
-        if (e.isAllDay ||
+        // Declined, free and all-day events: not time you spent in them.
+        if (!_cognitiveInput(e).contributesToSchedule ||
             !DateUtils.isSameDay(e.start, from) ||
             looksLikeExercise(e.title) ||
             saved.containsKey(reactionKey(e.sourceEventKey))) {
@@ -451,7 +452,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final reactions = <String, BodyReaction>{};
     for (final e in _events) {
       // Exercise isn't judged: a raised heart rate there is the point.
-      if (e.isAllDay ||
+      // Declined, free and all-day events aren't time you spent in them.
+      if (!_cognitiveInput(e).contributesToSchedule ||
           e.end.isAfter(now) ||
           !DateUtils.isSameDay(e.start, now) ||
           looksLikeExercise(e.title)) {
@@ -2533,7 +2535,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             ? _reactions[event.sourceEventKey]
             : null;
         // Upcoming repeating meetings that usually raise or lower your heart rate.
-        final pattern = past || event == null
+        final pattern =
+            past ||
+                event == null ||
+                !_cognitiveInput(event).contributesToSchedule
             ? null
             : _patterns.bySeries[seriesKeyFor(
                 event.googleEvent?.recurringEventId,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 
 import '../screens/meeting_patterns_screen.dart';
@@ -290,6 +291,28 @@ class MeetingPatternsRow extends StatelessWidget {
     );
   }
 }
+
+/// Timed Google events you'll actually be in, for [todaysPatternMeetings]:
+/// cancelled, declined and "free" events are left out, as in Demand.
+List<({String? series, String title, DateTime start})> patternEventsFrom(
+  Iterable<gcal.Event> events,
+) => [
+  for (final e in events)
+    if (e.status != 'cancelled' &&
+        e.transparency != 'transparent' &&
+        e.attendees?.any(
+              (a) => a.self == true && a.responseStatus == 'declined',
+            ) !=
+            true)
+      if (e.start?.dateTime?.toLocal() case final start?)
+        (
+          series: seriesKeyFor(e.recurringEventId),
+          title: e.summary?.trim().isNotEmpty == true
+              ? e.summary!.trim()
+              : 'A meeting',
+          start: start,
+        ),
+];
 
 /// Today's events (Google) whose repeating series has a pattern, still to
 /// come, earliest first.

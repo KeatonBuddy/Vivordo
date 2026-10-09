@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:vivordo_health/src/utils/heavy_days.dart';
 import 'package:vivordo_health/src/utils/meeting_patterns.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -128,6 +129,39 @@ void main() {
     expect(result.sleepMinutes, -45);
     expect(result.capacity, -8);
     expect(heavyDaysFrom(const {}).ready, isFalse);
+  });
+
+  test('declined, free and cancelled events get no tag', () {
+    gcal.Event event(
+      String id, {
+      String? status,
+      String? transparency,
+      String? response,
+    }) => gcal.Event(
+      id: id,
+      recurringEventId: 'series',
+      summary: 'Team sync',
+      status: status,
+      transparency: transparency,
+      start: gcal.EventDateTime(dateTime: DateTime(2026, 10, 8, 15)),
+      attendees: [
+        if (response != null)
+          gcal.EventAttendee(self: true, responseStatus: response),
+      ],
+    );
+    final kept = patternEventsFrom([
+      event('a'),
+      event('b', response: 'accepted'),
+      event('c', response: 'declined'),
+      event('d', transparency: 'transparent'),
+      event('e', status: 'cancelled'),
+      gcal.Event(
+        id: 'f',
+        start: gcal.EventDateTime(date: DateTime(2026, 10, 8)),
+      ),
+    ]);
+    expect(kept, hasLength(2));
+    expect(kept.first.series, seriesKeyFor('series'));
   });
 
   group('Home row', () {
