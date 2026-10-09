@@ -22,4 +22,24 @@ void main() {
     expect(notificationRouteStack('unknown'), ['/home']);
     expect(notificationRouteStack(null), ['/home']);
   });
+
+  test('challenge and achievement pushes open Circle at Challenges', () {
+    for (final type in [
+      'challenge_invite',
+      'challenge_started',
+      'challenge_completed',
+      'achievement_unlocked',
+    ]) {
+      expect(notificationRouteStack('circle', type: type), [
+        '/home',
+        '/circle/challenges',
+      ], reason: type);
+    }
+    // Likes, comments and friend requests land on the feed, where requests
+    // are listed first.
+    expect(notificationRouteStack('circle', type: 'circle_friend_request'), [
+      '/home',
+      '/circle',
+    ]);
+  });
 }

@@ -1,8 +1,17 @@
+import 'energy_forecast.dart';
 import 'heart_rate_history.dart';
 import 'latest_heart_rate.dart';
+import 'screen_metric_projection.dart';
+import 'sleep_nights.dart';
+import 'performance_trace.dart';
 
 /// Number of calendar days of metric history Home keeps live, counting today.
 const int kHomeMetricsWindowDays = 90;
+
+/// The part of that history that syncs rewrite constantly: today plus the
+/// seven days the stress average covers. Kept as its own window so a write to
+/// today does not re-send all 90 days.
+const int kHomeRecentWindowDays = 8;
 
 /// One `metrics_daily` document reduced to what Home derives values from.
 class MetricDayEntry {
@@ -19,6 +28,7 @@ class HomeMetricsSummary {
     this.latestHeartRate,
     this.stressAnchor,
     this.sevenDayStressAverage,
+    this.sleepNights = const [],
   });
 
   /// Newest heart-rate reading in the window, or null when the window holds
@@ -32,6 +42,9 @@ class HomeMetricsSummary {
   /// Mean stress across the seven days before today, or null when none of
   /// those days carry a stress value.
   final double? sevenDayStressAverage;
+
+  /// Recorded nights in the window, for the energy forecast.
+  final List<SleepPeriod> sleepNights;
 }
 
 /// How long until the next local day begins, plus a second of slack so a
@@ -51,7 +64,10 @@ Duration durationUntilNextLocalDay(
 
 /// Inclusive lower bound for Home's metrics-history query: the day key
 /// [kHomeMetricsWindowDays] calendar days back, counting [now] as day one.
-String homeMetricsWindowStartKey(DateTime now, {int days = kHomeMetricsWindowDays}) {
+String homeMetricsWindowStartKey(
+  DateTime now, {
+  int days = kHomeMetricsWindowDays,
+}) {
   // Calendar arithmetic rather than Duration subtraction: a fixed number of
   // 24h spans lands on the previous day when the window crosses a daylight
   // saving change, which would silently shift the query bound.
@@ -72,12 +88,12 @@ HomeMetricsSummary summarizeHomeMetrics({
   required List<MetricDayEntry> days,
   required DateTime now,
 }) {
-  final newestFirst = [...days]
-    ..sort((a, b) => b.dayKey.compareTo(a.dayKey));
+  final newestFirst = [...days]..sort((a, b) => b.dayKey.compareTo(a.dayKey));
   return HomeMetricsSummary(
     latestHeartRate: _latestHeartRate(newestFirst, now),
     stressAnchor: _latestStressAnchor(newestFirst),
     sevenDayStressAverage: _sevenDayStressAverage(newestFirst, now),
+    sleepNights: sleepNights(newestFirst.take(15).map((d) => d.data)),
   );
 }
 
@@ -97,6 +113,12 @@ LatestHeartRateReading? _latestHeartRate(
   DateTime now,
 ) {
   for (final entry in newestFirst) {
+    final prepared = entry.data[preparedHeartKey];
+    if (prepared is PreparedHeartRate) {
+      final reading = prepared.at(now);
+      if (reading != null) return reading;
+      continue;
+    }
     final readings = mergedHeartRateHistory(
       entry.data,
       fallbackDate: DateTime.tryParse(entry.dayKey) ?? now,
@@ -172,6 +194,8 @@ class HomeMetricsSummaryCache {
   String? _dayKey;
   String? _uid;
   HomeMetricsSummary? _summary;
+  DateTime? _computedAt;
+  DateTime? _liveReadingExpiresAt;
 
   /// Number of times a summary was actually derived. Test-only signal.
   int get computeCount => _computeCount;
@@ -188,16 +212,34 @@ class HomeMetricsSummaryCache {
     if (cached != null &&
         identical(_snapshotKey, snapshotKey) &&
         _dayKey == dayKey &&
-        _uid == uid) {
+        _uid == uid &&
+        !now.isBefore(_computedAt!) &&
+        (_liveReadingExpiresAt == null ||
+            !now.isAfter(_liveReadingExpiresAt!))) {
       return cached;
     }
 
     _computeCount++;
-    final summary = summarizeHomeMetrics(days: days(), now: now);
+    final summary = PerformanceTrace.measure(
+      'metrics.summary.homeHistory',
+      () => summarizeHomeMetrics(days: days(), now: now),
+    );
     _snapshotKey = snapshotKey;
     _dayKey = dayKey;
     _uid = uid;
     _summary = summary;
+    _computedAt = now;
+    // Replaying unchanged repository data after a hidden interval must not
+    // keep an expired BLE reading ahead of a newer Apple Health reading.
+    final reading = summary.latestHeartRate;
+    final expiresAt = reading?.timestamp?.add(const Duration(minutes: 5));
+    _liveReadingExpiresAt =
+        reading != null &&
+            expiresAt != null &&
+            _isLiveBleSource(reading.source) &&
+            !now.isAfter(expiresAt)
+        ? expiresAt
+        : null;
     return summary;
   }
 }

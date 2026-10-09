@@ -2,6 +2,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:flutter/foundation.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:vivordo_health/src/utils/event_repeat.dart';
 import 'package:vivordo_health/src/utils/request_coalescer.dart';
 
 class WritableCalendar {
@@ -29,7 +31,14 @@ class CalendarService {
       RequestCoalescer<List<gcal.Event>>(ttl: _eventCacheTtl);
 
   /// Drops cached ranges after a local edit, deletion or account change.
-  static void invalidateEventCache() => _eventRequests.invalidateAll();
+  static void invalidateEventCache() {
+    _eventRequests.invalidateAll();
+    eventsChanged.value++;
+  }
+
+  /// Bumped whenever the events may have changed, from any screen or Vivordo
+  /// AI, so open screens can reload their schedule.
+  static final ValueNotifier<int> eventsChanged = ValueNotifier<int>(0);
 
   /// Silent, all-or-nothing fetch for scoring. Null means unavailable, while
   /// an empty list means a successful fetch with no events.
@@ -120,9 +129,20 @@ class CalendarService {
     return gcal.CalendarApi(authorization.authClient(scopes: scopes));
   }
 
-  static Future<void> deleteEvent(gcal.Event event) async {
+  /// Deletes [event]. For one occurrence of a repeating event, [scope] can
+  /// widen that to the occurrences after it or to the whole series.
+  static Future<void> deleteEvent(
+    gcal.Event event, {
+    EventScope scope = EventScope.thisEvent,
+  }) async {
+    if (scope == EventScope.thisAndFollowing &&
+        event.recurringEventId != null) {
+      return _endSeriesBefore(event);
+    }
     final calendarId = _calendarIdFor(event);
-    final eventId = event.id;
+    final eventId = scope == EventScope.allEvents
+        ? event.recurringEventId ?? event.id
+        : event.id;
     if (calendarId == null || eventId == null) {
       throw StateError(
         'This event cannot be removed because its calendar is unknown.',
@@ -165,6 +185,39 @@ class CalendarService {
     return calendars;
   }
 
+  /// Google recurrence lines for [recurrence]: an `RRULE:` line from the
+  /// event form, or the older 'daily' / 'weekly' / 'monthly' /
+  /// 'weekly:MO,WE' names, optionally ending ';until=yyyyMMdd', that
+  /// priorities and Panda use. Anything else does not repeat.
+  static List<String> recurrenceRules(String recurrence) {
+    if (recurrence.startsWith('RRULE:')) return [recurrence];
+    final parts = recurrence.split(';until=');
+    final base = parts.first;
+    final until = parts.length > 1 ? ';UNTIL=${parts[1]}T235959Z' : '';
+    final weeklyDays = base.startsWith('weekly:')
+        ? base.substring('weekly:'.length)
+        : '';
+    return switch (base) {
+      'daily' => ['RRULE:FREQ=DAILY$until'],
+      'weekly' => ['RRULE:FREQ=WEEKLY$until'],
+      'monthly' => ['RRULE:FREQ=MONTHLY$until'],
+      _ when weeklyDays.isNotEmpty => [
+        'RRULE:FREQ=WEEKLY;BYDAY=$weeklyDays$until',
+      ],
+      _ => <String>[],
+    };
+  }
+
+  /// The device's IANA zone. Google rejects repeating timed events whose
+  /// start has no zone, and uses it to expand repeats across DST.
+  static Future<String?> _deviceTimeZone() async {
+    try {
+      return (await FlutterTimezone.getLocalTimezone()).identifier;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<gcal.Event> createEvent({
     required String title,
     required DateTime start,
@@ -173,39 +226,30 @@ class CalendarService {
     bool isAllDay = false,
     String calendarId = 'primary',
     bool isPriority = false,
+    String? priorityReference,
   }) async {
     if (!end.isAfter(start)) {
       throw ArgumentError('The end time must be after the start time.');
     }
 
-    final recurrenceParts = recurrence.split(';until=');
-    final recurrenceBase = recurrenceParts.first;
-    final untilSuffix = recurrenceParts.length > 1
-        ? ';UNTIL=${recurrenceParts[1]}T235959Z'
-        : '';
-    final weeklyDays = recurrenceBase.startsWith('weekly:')
-        ? recurrenceBase.substring('weekly:'.length)
-        : '';
+    final zone = isAllDay ? null : await _deviceTimeZone();
     final event = gcal.Event()
       ..summary = title
       ..start = (gcal.EventDateTime()
         ..dateTime = isAllDay ? null : start.toUtc()
-        ..date = isAllDay ? DateTime(start.year, start.month, start.day) : null)
+        ..date = isAllDay ? DateTime(start.year, start.month, start.day) : null
+        ..timeZone = zone)
       ..end = (gcal.EventDateTime()
         ..dateTime = isAllDay ? null : end.toUtc()
-        ..date = isAllDay ? DateTime(end.year, end.month, end.day) : null)
-      ..recurrence = switch (recurrenceBase) {
-        'daily' => <String>['RRULE:FREQ=DAILY$untilSuffix'],
-        'weekly' => <String>['RRULE:FREQ=WEEKLY$untilSuffix'],
-        'monthly' => <String>['RRULE:FREQ=MONTHLY$untilSuffix'],
-        _ when weeklyDays.isNotEmpty => <String>[
-          'RRULE:FREQ=WEEKLY;BYDAY=$weeklyDays$untilSuffix',
-        ],
-        _ => <String>[],
-      }
+        ..date = isAllDay ? DateTime(end.year, end.month, end.day) : null
+        ..timeZone = zone)
+      ..recurrence = recurrenceRules(recurrence)
       ..extendedProperties = isPriority
           ? (gcal.EventExtendedProperties()
-              ..private = const {'vivordoPriority': 'true'})
+              ..private = {
+                'vivordoPriority': 'true',
+                'vivordoPriorityReference': ?priorityReference,
+              })
           : null;
 
     final calendarApi = await _authorizedCalendarApi();
@@ -232,19 +276,15 @@ class CalendarService {
       throw ArgumentError('The end time must be after the start time.');
     }
 
+    final zone = event.start?.timeZone ?? await _deviceTimeZone();
     final updated = gcal.Event()
       ..start = (gcal.EventDateTime()
         ..dateTime = start.toUtc()
-        ..timeZone = event.start?.timeZone)
+        ..timeZone = zone)
       ..end = (gcal.EventDateTime()
         ..dateTime = end.toUtc()
-        ..timeZone = event.end?.timeZone)
-      ..recurrence = switch (recurrence) {
-        'daily' => <String>['RRULE:FREQ=DAILY'],
-        'weekly' => <String>['RRULE:FREQ=WEEKLY'],
-        'monthly' => <String>['RRULE:FREQ=MONTHLY'],
-        _ => <String>[],
-      };
+        ..timeZone = event.end?.timeZone ?? zone)
+      ..recurrence = recurrenceRules(recurrence);
 
     final calendarApi = await _authorizedCalendarApi();
     final result = await calendarApi.events.patch(updated, calendarId, eventId);
@@ -253,7 +293,79 @@ class CalendarService {
     return result;
   }
 
+  /// Ends [occurrence]'s series just before it, keeping earlier occurrences.
+  /// From the first occurrence nothing would remain, so the series goes.
+  static Future<void> _endSeriesBefore(gcal.Event occurrence) async {
+    final series = await seriesFor(occurrence);
+    final seriesStart = _startOf(series);
+    final occurrenceStart = _occurrenceStart(occurrence);
+    final calendarId = _calendarIdFor(occurrence);
+    if (series?.id == null || seriesStart == null || occurrenceStart == null) {
+      throw StateError('The repeating series for this event was not found.');
+    }
+    if (!occurrenceStart.isAfter(seriesStart)) {
+      return deleteEvent(occurrence, scope: EventScope.allEvents);
+    }
+    final allDay = series!.start?.dateTime == null;
+    final updated = gcal.Event()
+      ..recurrence = [
+        for (final line in series.recurrence ?? const <String>[])
+          line.toUpperCase().startsWith('RRULE:')
+              ? endRuleBefore(line, occurrenceStart, allDay: allDay)
+              : line,
+      ];
+    if (!allDay && series.start?.timeZone == null) {
+      // Google rejects a repeating timed event without a zone.
+      final zone = await _deviceTimeZone();
+      updated
+        ..start = (gcal.EventDateTime()
+          ..dateTime = series.start?.dateTime
+          ..timeZone = zone)
+        ..end = (gcal.EventDateTime()
+          ..dateTime = series.end?.dateTime
+          ..timeZone = zone);
+    }
+    final api = await _authorizedCalendarApi();
+    await api.events.patch(updated, calendarId!, series.id!);
+    invalidateEventCache();
+  }
+
+  static DateTime? _startOf(gcal.Event? event) =>
+      event?.start?.dateTime?.toLocal() ?? event?.start?.date?.toLocal();
+
+  /// Where [occurrence] sat in its series, even if it was moved since.
+  static DateTime? _occurrenceStart(gcal.Event occurrence) =>
+      occurrence.originalStartTime?.dateTime?.toLocal() ??
+      occurrence.originalStartTime?.date?.toLocal() ??
+      _startOf(occurrence);
+
+  /// The repeating series [event] is one occurrence of, or null when it is
+  /// not an occurrence. Occurrences do not carry the series' RRULE.
+  static Future<gcal.Event?> seriesFor(gcal.Event event) async {
+    final seriesId = event.recurringEventId;
+    final calendarId = _calendarIdFor(event);
+    if (seriesId == null || calendarId == null) return null;
+    final api = await _authorizedCalendarApi();
+    final series = await api.events.get(calendarId, seriesId);
+    _eventCalendarIds[seriesId] = calendarId;
+    return series;
+  }
+
+  /// Where the series starts and ends after one occurrence moves from
+  /// [occurrenceStart] to [start]..[end]: every occurrence shifts by the same
+  /// amount and takes the new length.
+  static (DateTime, DateTime) shiftSeries({
+    required DateTime seriesStart,
+    required DateTime occurrenceStart,
+    required DateTime start,
+    required DateTime end,
+  }) {
+    final shifted = seriesStart.add(start.difference(occurrenceStart));
+    return (shifted, shifted.add(end.difference(start)));
+  }
+
   /// Updates the fields Panda is allowed to propose. Null fields are preserved.
+  /// With [allEvents], an occurrence's changes go to its whole series.
   static Future<gcal.Event> updateEvent(
     gcal.Event event, {
     String? title,
@@ -262,7 +374,33 @@ class CalendarService {
     String? recurrence,
     String? calendarId,
     bool? isAllDay,
+    bool allEvents = false,
   }) async {
+    if (allEvents && event.recurringEventId != null) {
+      final series = await seriesFor(event);
+      final seriesStart = _startOf(series);
+      final occurrenceStart = _occurrenceStart(event);
+      if (series == null || seriesStart == null || occurrenceStart == null) {
+        throw StateError('The repeating series for this event was not found.');
+      }
+      final times = start == null || end == null
+          ? null
+          : shiftSeries(
+              seriesStart: seriesStart,
+              occurrenceStart: occurrenceStart,
+              start: start,
+              end: end,
+            );
+      return updateEvent(
+        series,
+        title: title,
+        start: times?.$1,
+        end: times?.$2,
+        recurrence: recurrence,
+        calendarId: calendarId,
+        isAllDay: isAllDay,
+      );
+    }
     final sourceCalendarId = _calendarIdFor(event);
     final eventId = event.id;
     if (sourceCalendarId == null || eventId == null) {
@@ -291,28 +429,16 @@ class CalendarService {
         ..end = (gcal.EventDateTime()
           ..date = DateTime(nextEnd.year, nextEnd.month, nextEnd.day));
     } else {
+      final zone = event.start?.timeZone ?? await _deviceTimeZone();
       updated
         ..start = (gcal.EventDateTime()
           ..dateTime = nextStart.toUtc()
-          ..timeZone = event.start?.timeZone)
+          ..timeZone = zone)
         ..end = (gcal.EventDateTime()
           ..dateTime = nextEnd.toUtc()
-          ..timeZone = event.end?.timeZone);
+          ..timeZone = event.end?.timeZone ?? zone);
     }
-    if (recurrence != null) {
-      final weeklyDays = recurrence.startsWith('weekly:')
-          ? recurrence.substring('weekly:'.length)
-          : '';
-      updated.recurrence = switch (recurrence) {
-        'daily' => <String>['RRULE:FREQ=DAILY'],
-        'weekly' => <String>['RRULE:FREQ=WEEKLY'],
-        'monthly' => <String>['RRULE:FREQ=MONTHLY'],
-        _ when weeklyDays.isNotEmpty => <String>[
-          'RRULE:FREQ=WEEKLY;BYDAY=$weeklyDays',
-        ],
-        _ => <String>[],
-      };
-    }
+    if (recurrence != null) updated.recurrence = recurrenceRules(recurrence);
     final api = await _authorizedCalendarApi();
     var result = await api.events.patch(updated, sourceCalendarId, eventId);
     final destinationCalendarId = calendarId;
@@ -610,3 +736,6 @@ class CalendarService {
     return events;
   }
 }
+
+/// Which part of a repeating event a change applies to.
+enum EventScope { thisEvent, thisAndFollowing, allEvents }

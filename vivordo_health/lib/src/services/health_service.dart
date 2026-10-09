@@ -1,16 +1,17 @@
-import 'dart:math' as math;
+import '../utils/performance_trace.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:health/health.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
-import 'activity_goals_service.dart';
+import 'package:vivordo_health/src/utils/exercise_minutes.dart';
 import 'stress_score_service.dart';
-import '../utils/activity_score.dart';
-import '../utils/heart_health_score.dart';
 import '../utils/metric_cleanup.dart';
+import '../utils/step_totals.dart';
 import '../utils/sleep_stage_aggregation.dart';
+import '../utils/foreground_transaction.dart';
 
 // ─── Metric definitions ──────────────────────────────────────────────────────
 
@@ -408,11 +409,17 @@ class HealthService {
       }
 
       if (_usesDailyTotals(def.type)) {
+        // Active calories come in hourly totals so each day also keeps
+        // byHour (the detail screen's "usual for this time of day"). The
+        // day's sum is the same either way.
+        final hourly = def.type == HealthDataType.ACTIVE_ENERGY_BURNED;
         final dataPoints = await _health.getHealthIntervalDataFromTypes(
           startDate: start,
           endDate: now,
           types: [def.type],
-          interval: const Duration(days: 1).inSeconds,
+          interval: hourly
+              ? const Duration(hours: 1).inSeconds
+              : const Duration(days: 1).inSeconds,
         );
 
         if (dataPoints.isEmpty) {
@@ -482,25 +489,46 @@ class HealthService {
     }
   }
 
-  Future<void> _syncSleep(
-    String uid, {
-    required DateTime start,
-    required DateTime end,
-  }) async {
+  Future<List<SleepInterval>> _sleepIntervals(
+    DateTime start,
+    DateTime end,
+  ) async {
     final points = await _health.getHealthDataFromTypes(
       startTime: start.subtract(const Duration(hours: 12)),
       endTime: end,
       types: [HealthDataType.SLEEP_ASLEEP, ...kSleepStageTypes],
     );
-    final unique = _health.removeDuplicates(points);
-    final intervals = <SleepInterval>[];
-    for (final point in unique) {
-      final stage = _sleepStageForType(point.type);
-      if (stage == null || !point.dateTo.isAfter(point.dateFrom)) continue;
-      intervals.add(
-        SleepInterval(stage: stage, start: point.dateFrom, end: point.dateTo),
-      );
-    }
+    return [
+      for (final point in _health.removeDuplicates(points))
+        if (_sleepStageForType(point.type) case final stage?
+            when point.dateTo.isAfter(point.dateFrom))
+          SleepInterval(stage: stage, start: point.dateFrom, end: point.dateTo),
+    ];
+  }
+
+  /// The last [days] nights (bed to wake) straight from Apple Health or
+  /// Health Connect, for prefilling the usual sleep schedule in onboarding,
+  /// before the first sync has reached Firestore.
+  Future<List<({DateTime start, DateTime end})>> recentSleepNights({
+    int days = 14,
+  }) async {
+    final end = DateTime.now();
+    final intervals = await _sleepIntervals(
+      end.subtract(Duration(days: days)),
+      end,
+    );
+    return [
+      for (final summary in summarizeSleepByWakeDay(intervals))
+        (start: summary.bedtime, end: summary.wakeTime),
+    ];
+  }
+
+  Future<void> _syncSleep(
+    String uid, {
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final intervals = await _sleepIntervals(start, end);
 
     final summaries = summarizeSleepByWakeDay(intervals).where((summary) {
       return !summary.date.isBefore(
@@ -609,7 +637,16 @@ class HealthService {
     }
   }
 
-  Future<void> _performSync({required int daysBack}) async {
+  Future<void> _performSync({required int daysBack}) => PerformanceTrace.async(
+    'health.sync',
+    () => _performSyncMeasured(daysBack: daysBack),
+  );
+
+  Future<void> _performSyncMeasured({required int daysBack}) async {
+    // Someone who hasn't connected Health yet (onboarding asks) isn't shown
+    // the permission sheet by a background sync.
+    final consent = await getConsent();
+    if (!consent.containsValue(true)) return;
     final authorized = await ensureHealthAuthorization();
     if (!authorized) {
       debugPrint(
@@ -620,30 +657,22 @@ class HealthService {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) await _refreshWearableConnections(uid);
-    final consent = await getConsent();
     for (final m in kHealthMetrics) {
       if (consent[m.key] == true) {
         try {
-          await _syncMetric(
-            m.key,
-            daysBack: daysBack,
-            refreshWearableConnections: false,
+          await PerformanceTrace.async(
+            'health.metric.${m.key}',
+            () => _syncMetric(
+              m.key,
+              daysBack: daysBack,
+              refreshWearableConnections: false,
+            ),
           );
         } catch (e) {
           // One metric failing (e.g. permissions) shouldn't stop the others.
           debugPrint('HealthService.syncToFirestore — skipped ${m.key}: $e');
         }
       }
-    }
-
-    // Compute and write wellness score for each day in the window
-    try {
-      await _computeAndWriteWellness(
-        uid: FirebaseAuth.instance.currentUser?.uid,
-        daysBack: daysBack,
-      );
-    } catch (e) {
-      debugPrint('HealthService.syncToFirestore — wellness compute failed: $e');
     }
 
     if (uid != null) {
@@ -665,6 +694,31 @@ class HealthService {
   }
 
   Future<void> syncToday() => syncToFirestore(daysBack: 1);
+
+  static const _sleepObserverChannel = MethodChannel(
+    'com.vivordo.health/sleep_observer',
+  );
+
+  /// Syncs today's sleep whenever new sleep reaches the iPhone's Health
+  /// store, even with Vivordo in the background, so last night shows up
+  /// without opening Apple Health. HealthKit wakes the app for it
+  /// (ios/Runner/AppDelegate.swift, SleepObserver), which waits for the
+  /// reply, so this always returns.
+  static void listenForNewSleep() {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return;
+    _sleepObserverChannel.setMethodCallHandler((call) async {
+      if (call.method != 'sleepChanged') return;
+      if (FirebaseAuth.instance.currentUser == null) return;
+      try {
+        if ((await _instance.getConsent())['sleep'] != true) return;
+        debugPrint('[HealthService] New sleep in Health; syncing.');
+        await _instance.syncMetric('sleep', daysBack: 1);
+      } catch (e) {
+        debugPrint('[HealthService] Sleep observer sync failed: $e');
+      }
+    });
+    _sleepObserverChannel.invokeMethod<void>('ready').catchError((_) {});
+  }
 
   /// Returns walking/running distance recorded by HealthKit in the supplied
   /// interval. HealthKit reports these samples in metres, so the public value
@@ -700,15 +754,6 @@ class HealthService {
     }
   }
 
-  /// Rebuilds the computed wellness score from data already stored in
-  /// Firestore. A camera scan contributes to the personalized Heart Health
-  /// trend when enough prior scan days exist.
-  Future<void> recomputeWellness({int daysBack = 1}) =>
-      _computeAndWriteWellness(
-        uid: FirebaseAuth.instance.currentUser?.uid,
-        daysBack: daysBack,
-      );
-
   // ─── Raw intraday samples for the BaaS ─────────────────────────────────────
 
   /// Metrics the BaaS actually reads, with the unit string its loader expects.
@@ -720,7 +765,6 @@ class HealthService {
     'respiratory_rate': 'brpm',
     'blood_oxygen': '%',
     'steps': 'steps',
-    'mindfulness': 'min',
     'exercise_time': 'min',
     'sleep': 'hours',
   };
@@ -737,7 +781,6 @@ class HealthService {
   /// signal, so those get thinned instead.
   static const _cumulativeMetrics = {
     'steps',
-    'mindfulness',
     'exercise_time',
     'active_calories',
   };
@@ -991,15 +1034,23 @@ class HealthService {
     final batch = _db.batch();
     final daysWithData = <String>{};
     var daysWritten = 0;
+    final hours = await _hourlyStepTotals(
+      today.subtract(Duration(days: daysBack - 1)),
+      now,
+    );
 
     for (var i = 0; i < daysBack; i++) {
       final day = today.subtract(Duration(days: i));
       final end = i == 0 ? now : day.add(const Duration(days: 1));
       var total = (await _health.getTotalStepsInInterval(day, end))?.toDouble();
 
-      if (total == null) {
+      // The plugin reports "no statistics" as 0, not null, and on this device
+      // it returned 0 for days Apple Health shows steps for. Writing that 0
+      // overwrote saved totals, so a 0 must be confirmed by raw samples; a
+      // day with no samples is skipped rather than zeroed.
+      if (total == null || total == 0) {
         debugPrint(
-          'HealthService.syncMetric(steps): total API returned null for ${localDayKey(day)}. Trying raw step samples.',
+          'HealthService.syncMetric(steps): total API returned $total for ${localDayKey(day)}. Trying raw step samples.',
         );
         total = await _readRawStepTotal(day, end);
         if (total == null) {
@@ -1017,6 +1068,7 @@ class HealthService {
           .doc(uid)
           .collection('metrics_daily')
           .doc(dayKey);
+      final dayHours = hours[dayKey];
       batch.set(ref, {
         'steps': {
           'sum': total,
@@ -1024,6 +1076,10 @@ class HealthService {
           'unit': 'steps',
           'dimension': 'activity',
           'source': 'apple_health',
+          // Only when the hours account for the day (a raw-sample fallback
+          // total has no hourly split).
+          if (dayHours != null && dayHours.fold<int>(0, (a, b) => a + b) > 0)
+            'byHour': dayHours,
           'syncedAt': FieldValue.serverTimestamp(),
         },
         'date': dayKey,
@@ -1046,6 +1102,33 @@ class HealthService {
     );
   }
 
+  /// Steps per local hour for each day from [start] to [end], for the
+  /// detail screen's "usual for this time of day". Empty if unavailable.
+  Future<Map<String, List<int>>> _hourlyStepTotals(
+    DateTime start,
+    DateTime end,
+  ) async {
+    try {
+      final points = await _health.getHealthIntervalDataFromTypes(
+        startDate: start,
+        endDate: end,
+        types: [HealthDataType.STEPS],
+        interval: const Duration(hours: 1).inSeconds,
+      );
+      final days = <String, List<int>>{};
+      for (final point in points) {
+        if (point.value is! NumericHealthValue) continue;
+        final at = point.dateFrom.toLocal();
+        days.putIfAbsent(localDayKey(at), () => List.filled(24, 0))[at.hour] +=
+            (point.value as NumericHealthValue).numericValue.round();
+      }
+      return days;
+    } catch (e) {
+      debugPrint('HealthService.syncMetric(steps): hourly totals failed: $e');
+      return const {};
+    }
+  }
+
   Future<double?> _readRawStepTotal(DateTime start, DateTime end) async {
     final points = await _health.getHealthDataFromTypes(
       startTime: start,
@@ -1053,13 +1136,14 @@ class HealthService {
       types: [HealthDataType.STEPS],
     );
 
-    var total = 0.0;
-    for (final point in points) {
-      if (point.value is! NumericHealthValue) continue;
-      total += (point.value as NumericHealthValue).numericValue.toDouble();
-    }
-
-    return points.isEmpty ? null : total;
+    return largestSourceStepTotal([
+      for (final point in points)
+        if (point.value is NumericHealthValue)
+          (
+            source: point.sourceId,
+            steps: (point.value as NumericHealthValue).numericValue.toDouble(),
+          ),
+    ]);
   }
 
   Future<void> _deleteMetricForMissingDays(
@@ -1071,7 +1155,12 @@ class HealthService {
   }) async {
     // Applies per day: every day the read did not produce data is protected,
     // including when other days in the same query did produce some.
-    if (!emptyReadMayClearSavedMetric(metricKey)) return;
+    if (!readMayClearMissingDays(
+      metricKey: metricKey,
+      readCoveredAnyDay: daysWithData.isNotEmpty,
+    )) {
+      return;
+    }
 
     final startDay = DateTime(start.year, start.month, start.day);
     final endDay = DateTime(end.year, end.month, end.day);
@@ -1153,16 +1242,32 @@ class HealthService {
     final Map<String, List<double>> byDay = {};
     final Map<String, List<Map<String, dynamic>>> heartRateEntriesByDay = {};
     final Map<String, List<Map<String, dynamic>>> sleepEntriesByDay = {};
+    final Map<String, List<ExerciseSample>> exerciseSamplesByDay = {};
+    final Map<String, List<double>> hoursByDay = {};
     for (final point in dataPoints) {
       if (point.value is! NumericHealthValue) continue;
       final day = localDayKey(point.dateFrom);
       final val = (point.value as NumericHealthValue).numericValue.toDouble();
       byDay.putIfAbsent(day, () => []).add(val);
+      if (def.type == HealthDataType.ACTIVE_ENERGY_BURNED) {
+        hoursByDay.putIfAbsent(
+          day,
+          () => List.filled(24, 0.0),
+        )[point.dateFrom.toLocal().hour] += val;
+      }
       if (def.type == HealthDataType.HEART_RATE) {
         heartRateEntriesByDay.putIfAbsent(day, () => []).add({
           'bpm': val,
           'timestamp': Timestamp.fromDate(point.dateFrom),
         });
+      }
+      if (def.type == HealthDataType.EXERCISE_TIME) {
+        exerciseSamplesByDay.putIfAbsent(day, () => []).add((
+          source: point.sourceId,
+          from: point.dateFrom,
+          to: point.dateTo,
+          minutes: val,
+        ));
       }
       if (def.type == HealthDataType.SLEEP_ASLEEP) {
         sleepEntriesByDay.putIfAbsent(day, () => []).add({
@@ -1174,6 +1279,10 @@ class HealthService {
     }
 
     if (byDay.isEmpty) return {};
+
+    final workoutWindows = def.type == HealthDataType.EXERCISE_TIME
+        ? await _workoutWindows(uid, dataPoints)
+        : const <WorkoutWindow>[];
 
     final batch = _db.batch();
     final daysWithData = <String>{};
@@ -1189,10 +1298,17 @@ class HealthService {
           .doc(day);
       final existingSnapshot = await ref.get();
       final payload = _buildValueMap(def.type, vals);
+      if (hoursByDay[day] case final hours?) {
+        payload['avg'] = payload['sum'];
+        payload['byHour'] = [for (final h in hours) h.round()];
+      }
       if (def.type == HealthDataType.EXERCISE_TIME) {
         final existingExerciseTime =
             existingSnapshot.data()?['exercise_time'] as Map<String, dynamic>?;
-        final healthMinutes = (payload['sum'] as num?)?.toDouble() ?? 0;
+        final healthMinutes = healthExerciseMinutes(
+          exerciseSamplesByDay[day] ?? const [],
+          workoutWindows,
+        );
         final workoutMinutes =
             (existingExerciseTime?['workoutMinutes'] as num?)?.toDouble() ?? 0;
         payload['healthSum'] = healthMinutes;
@@ -1257,9 +1373,7 @@ class HealthService {
 
     try {
       await batch.commit();
-      for (final entry in appleHeartRatePayloads.entries) {
-        await _promoteAppleHeartRateIfBleStale(uid, entry.key, entry.value);
-      }
+      await _promoteAppleHeartRateIfBleStale(uid, appleHeartRatePayloads);
       debugPrint(
         'DEBUG: Firestore batch commit succeeded for ${def.key}. Days written: ${byDay.length}',
       );
@@ -1271,38 +1385,84 @@ class HealthService {
     }
   }
 
+  /// Start and end of every in-app workout that could overlap [points], so
+  /// Health exercise minutes recorded during them are not counted twice.
+  /// A failed read keeps the old additive total rather than dropping the sync.
+  Future<List<WorkoutWindow>> _workoutWindows(
+    String uid,
+    List<HealthDataPoint> points,
+  ) async {
+    if (points.isEmpty) return const [];
+    final earliest = points
+        .map((point) => point.dateFrom)
+        .reduce((a, b) => a.isBefore(b) ? a : b);
+    try {
+      final snapshot = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('workouts')
+          .where(
+            'completedAt',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(earliest),
+          )
+          .get();
+      return [
+        for (final doc in snapshot.docs)
+          if (doc.data()['startedAt'] case final Timestamp start)
+            if (doc.data()['completedAt'] case final Timestamp end)
+              (start: start.toDate(), end: end.toDate()),
+      ];
+    } catch (error) {
+      debugPrint('HealthService: could not read workouts for overlap: $error');
+      return const [];
+    }
+  }
+
+  /// Makes Apple Health the displayed heart rate for each synced day unless a
+  /// WHOOP strap reported within the last five minutes.
+  ///
+  /// One transaction for every day, not one per day: each commit makes every
+  /// live metrics window re-send its documents, and a 30-day sync used to
+  /// commit up to 30 times here. Sync windows are at most 30 days, well under
+  /// the per-transaction write limit.
   Future<void> _promoteAppleHeartRateIfBleStale(
     String uid,
-    String day,
-    Map<String, dynamic> payload,
+    Map<String, Map<String, dynamic>> payloadsByDay,
   ) async {
-    final reference = _db
-        .collection('users')
-        .doc(uid)
-        .collection('metrics_daily')
-        .doc(day);
+    if (payloadsByDay.isEmpty || !canRunForegroundTransaction) return;
+    final days = payloadsByDay.keys.toList(growable: false);
+    final references = [
+      for (final day in days)
+        _db.collection('users').doc(uid).collection('metrics_daily').doc(day),
+    ];
     await _db.runTransaction((transaction) async {
-      final snapshot = await transaction.get(reference);
-      final sources = snapshot.data()?['heart_rate_sources'] as Map?;
-      final whoopBle = sources?['whoop_ble'] as Map?;
-      final rawLastReading = whoopBle?['lastReadingAt'];
-      final lastReadingAt = rawLastReading is Timestamp
-          ? rawLastReading.toDate()
-          : null;
-      final bluetoothIsFresh =
-          lastReadingAt != null &&
-          DateTime.now().difference(lastReadingAt) <=
-              const Duration(minutes: 5);
-      if (bluetoothIsFresh) return;
-      transaction.set(reference, {
-        'heart_rate': {
-          ...payload,
-          'source': 'apple_health',
-          'syncedAt': FieldValue.serverTimestamp(),
-        },
-        'date': day,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      requireForegroundTransaction();
+      // Firestore transactions must finish every read before any write.
+      final snapshots = [
+        for (final reference in references) await transaction.get(reference),
+      ];
+      for (var i = 0; i < days.length; i++) {
+        final sources = snapshots[i].data()?['heart_rate_sources'] as Map?;
+        final whoopBle = sources?['whoop_ble'] as Map?;
+        final rawLastReading = whoopBle?['lastReadingAt'];
+        final lastReadingAt = rawLastReading is Timestamp
+            ? rawLastReading.toDate()
+            : null;
+        final bluetoothIsFresh =
+            lastReadingAt != null &&
+            DateTime.now().difference(lastReadingAt) <=
+                const Duration(minutes: 5);
+        if (bluetoothIsFresh) continue;
+        transaction.set(references[i], {
+          'heart_rate': {
+            ...payloadsByDay[days[i]]!,
+            'source': 'apple_health',
+            'syncedAt': FieldValue.serverTimestamp(),
+          },
+          'date': days[i],
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
     });
   }
 
@@ -1412,181 +1572,5 @@ class HealthService {
       default:
         return {'avg': avg(), 'unit': '', 'dimension': 'other'};
     }
-  }
-
-  double? _metricAverage(Map<String, dynamic>? data, String key) {
-    final value = ((data?[key] as Map?)?['avg'] as num?)?.toDouble();
-    return value != null && value.isFinite && value > 0 ? value : null;
-  }
-
-  double? _quietHeartRate(Map<String, dynamic>? data) {
-    final scan = _metricAverage(data, 'heart_rate_scan');
-    if (scan != null) return scan;
-
-    final heartRate = data?['heart_rate'] as Map?;
-    if (heartRate?['source'] == 'camera_ppg') return null;
-    final values = <double>[];
-    final entries = heartRate?['entries'];
-    if (entries is List) {
-      for (final entry in entries) {
-        if (entry is! Map || entry['bpm'] is! num) continue;
-        final bpm = (entry['bpm'] as num).toDouble();
-        if (bpm.isFinite && bpm >= 30 && bpm <= 220) values.add(bpm);
-      }
-    }
-    if (values.length >= 5) {
-      values.sort();
-      final quietCount = math.max(1, (values.length * .20).ceil());
-      final quietValues = values.take(quietCount);
-      return quietValues.reduce((a, b) => a + b) / quietCount;
-    }
-
-    final minimum = (heartRate?['min'] as num?)?.toDouble();
-    return minimum != null &&
-            minimum.isFinite &&
-            minimum >= 30 &&
-            minimum <= 220
-        ? minimum
-        : null;
-  }
-
-  HeartHealthSignals _heartHealthSignals(Map<String, dynamic>? data) =>
-      HeartHealthSignals(
-        restingHeartRate: _metricAverage(data, 'resting_heart_rate'),
-        hrvSdnn: _metricAverage(data, 'hrv'),
-        quietHeartRate: _quietHeartRate(data),
-      );
-
-  Future<void> _computeAndWriteWellness({
-    String? uid,
-    int daysBack = 30,
-  }) async {
-    if (uid == null) return;
-    final now = DateTime.now();
-    final batch = _db.batch();
-    final userSnapshot = await _db.collection('users').doc(uid).get();
-    final activityGoals = ActivityGoals.fromUserData(userSnapshot.data());
-    final firstBaselineDay = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).subtract(Duration(days: daysBack + heartHealthBaselineWindowDays));
-    final metricsSnapshot = await _db
-        .collection('users')
-        .doc(uid)
-        .collection('metrics_daily')
-        .where(
-          FieldPath.documentId,
-          isGreaterThanOrEqualTo: localDayKey(firstBaselineDay),
-        )
-        .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(now))
-        .orderBy(FieldPath.documentId)
-        .get();
-    final storedDays = {
-      for (final document in metricsSnapshot.docs) document.id: document.data(),
-    };
-
-    for (int i = 0; i < daysBack; i++) {
-      final day = now.subtract(Duration(days: i));
-      final period = localDayKey(day);
-      final data = storedDays[period];
-      if (data == null) continue;
-
-      final stress = (data['stress']?['avg'] as num?)?.toDouble();
-      final sleep = (data['sleep']?['avg'] as num?)?.toDouble();
-      final steps = (data['steps']?['sum'] as num?)?.toDouble();
-      final exerciseMinutes = (data['exercise_time']?['sum'] as num?)
-          ?.toDouble();
-      final activeCalories = (data['active_calories']?['sum'] as num?)
-          ?.toDouble();
-      final activity = calculateActivityScore(
-        steps: steps,
-        exerciseMinutes: exerciseMinutes,
-        activeCalories: activeCalories,
-        stepsGoal: activityGoals.steps.toDouble(),
-        exerciseMinutesGoal: activityGoals.exerciseMinutes.toDouble(),
-        activeCaloriesGoal: activityGoals.activeCalories.toDouble(),
-      );
-      final heartHealth = calculateHeartHealthScore(
-        current: _heartHealthSignals(data),
-        history: List.generate(heartHealthBaselineWindowDays, (index) {
-          final historicalDay = day.subtract(Duration(days: index + 1));
-          return _heartHealthSignals(storedDays[localDayKey(historicalDay)]);
-        }),
-      );
-
-      if (stress == null &&
-          sleep == null &&
-          activity == null &&
-          heartHealth.availableSignals == 0) {
-        continue;
-      }
-
-      double wellness = 0;
-      int weight = 0;
-
-      if (stress != null) {
-        wellness += (100 - stress) * 0.35;
-        weight += 35;
-      }
-      if (sleep != null) {
-        final sleepScore = ((sleep / 8.0) * 100).clamp(0.0, 100.0);
-        wellness += sleepScore * 0.30;
-        weight += 30;
-      }
-      if (activity != null) {
-        wellness += activity.score * 0.20;
-        weight += 20;
-      }
-      if (heartHealth.score != null) {
-        wellness += heartHealth.score! * 0.15;
-        weight += 15;
-      }
-
-      final finalWellness = weight > 0
-          ? (wellness / weight * 100).clamp(0.0, 100.0)
-          : null;
-
-      final ref = _db
-          .collection('users')
-          .doc(uid)
-          .collection('metrics_daily')
-          .doc(period);
-      final payload = <String, dynamic>{
-        'heart_health': {
-          'avg': heartHealth.score,
-          'unit': 'score',
-          'source': 'computed_personal_baseline',
-          'status': heartHealth.isBuildingBaseline
-              ? 'building_baseline'
-              : heartHealth.score == null
-              ? 'unavailable'
-              : 'ready',
-          'confidence': heartHealth.confidence.name,
-          'availableSignals': heartHealth.availableSignals,
-          'scoredSignals': heartHealth.scoredSignals,
-          'baselineDays': heartHealth.baselineDays,
-          'components': {
-            'restingHeartRate': heartHealth.restingHeartRateScore,
-            'hrv': heartHealth.hrvScore,
-            'quietHeartRate': heartHealth.quietHeartRateScore,
-          },
-          'computedAt': FieldValue.serverTimestamp(),
-        },
-        'date': period,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-      if (finalWellness != null) {
-        payload['wellness'] = {
-          'avg': finalWellness,
-          'unit': 'score',
-          'source': 'computed',
-          'computedAt': FieldValue.serverTimestamp(),
-        };
-      }
-      batch.set(ref, payload, SetOptions(merge: true));
-    }
-
-    await batch.commit();
   }
 }

@@ -8,6 +8,9 @@ import 'package:intl/intl.dart';
 
 import '../src/services/personal_profile_service.dart';
 import '../src/utils/smooth_chart_path.dart';
+import '../widgets/apple_ui.dart';
+import '../widgets/birth_year_picker.dart';
+import '../widgets/vivordo_time_picker.dart';
 
 const _purple = Color(0xFF6250E8);
 const _muted = Color(0xFF85859B);
@@ -38,6 +41,34 @@ enum _ProfileRange {
   final String label;
 }
 
+enum _ProfileMetric {
+  weight('Weight', ' lbs', _purple),
+  bmi('BMI', '', Color(0xFF1478FF)),
+  bodyFat('Body fat', '%', Color(0xFFFF7417));
+
+  const _ProfileMetric(this.label, this.suffix, this.color);
+  final String label;
+  final String suffix;
+  final Color color;
+}
+
+String _rangePhrase(_ProfileRange range) => switch (range) {
+  _ProfileRange.month => 'the past month',
+  _ProfileRange.threeMonths => 'the past 3 months',
+  _ProfileRange.sixMonths => 'the past 6 months',
+  _ProfileRange.year => 'the past year',
+  _ProfileRange.all => 'all time',
+};
+
+String _measurementDay(DateTime date) {
+  final local = date.toLocal();
+  final now = DateTime.now();
+  if (DateUtils.isSameDay(local, now)) return 'Today';
+  return DateFormat(
+    local.year == now.year ? 'MMM d' : 'MMM d, y',
+  ).format(local);
+}
+
 class PersonalProfileScreen extends StatefulWidget {
   const PersonalProfileScreen({super.key});
 
@@ -47,6 +78,11 @@ class PersonalProfileScreen extends StatefulWidget {
 
 class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
   _ProfileRange selectedRange = _ProfileRange.sixMonths;
+  _ProfileMetric selectedMetric = _ProfileMetric.weight;
+
+  // ponytail: history shows the newest 12 measurements; add "Show all" if
+  // anyone records more and wants to scroll back further.
+  static const _historyLimit = 12;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -63,6 +99,13 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
         'Personal Profile',
         style: TextStyle(fontWeight: FontWeight.w800),
       ),
+      actions: [
+        IconButton(
+          tooltip: 'Your profile',
+          icon: const Icon(Icons.account_circle_outlined),
+          onPressed: () => _openProfile(context),
+        ),
+      ],
     ),
     body: StreamBuilder<PersonalProfile>(
       stream: PersonalProfileService.watch(),
@@ -85,84 +128,93 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
               final bmi = _bmi(height, weight);
               final updatedAt = profile.updatedAt ?? latest?.date;
 
+              final weightSeries = _series(visible, (point) {
+                final kilograms = point.weight;
+                return kilograms == null ? null : _kilogramsToPounds(kilograms);
+              });
+              final metricSeries = switch (selectedMetric) {
+                _ProfileMetric.weight => weightSeries,
+                _ProfileMetric.bmi => _series(visible, (point) => point.bmi),
+                _ProfileMetric.bodyFat => _series(
+                  visible,
+                  (point) => point.bodyFat,
+                ),
+              };
+              final history = points.reversed
+                  .take(_historyLimit)
+                  .toList(growable: false);
+
               return ListView(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 34),
+                // Leaves room to scroll the last row clear of the assistant
+                // bubble in the bottom-right corner.
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 110),
                 children: [
-                  _SummaryCard(
+                  _ProfileHero(
                     height: height,
                     weight: weight,
                     bmi: bmi,
                     bodyFat: bodyFat,
                     updatedAt: updatedAt,
-                  ),
-                  const SizedBox(height: 14),
-                  _RangeSelector(
-                    selected: selectedRange,
-                    onChanged: (range) => setState(() => selectedRange = range),
-                  ),
-                  const SizedBox(height: 14),
-                  _TrendCard(
-                    title: 'Weight',
-                    value: weight == null ? null : _kilogramsToPounds(weight),
-                    suffix: ' lbs',
-                    minimumY: 0,
-                    maximumY: 300,
+                    weightSeries: weightSeries,
                     range: selectedRange,
-                    points: _series(visible, (point) {
-                      final kilograms = point.weight;
-                      return kilograms == null
-                          ? null
-                          : _kilogramsToPounds(kilograms);
-                    }),
-                    color: _purple,
                   ),
-                  const SizedBox(height: 14),
-                  _TrendCard(
-                    title: 'BMI',
-                    value: bmi,
-                    subtitle: 'Calculated from height and weight',
-                    range: selectedRange,
-                    points: _series(visible, (point) => point.bmi),
-                    color: const Color(0xFF1478FF),
-                  ),
-                  const SizedBox(height: 14),
-                  _TrendCard(
-                    title: 'Body Fat',
-                    value: bodyFat,
-                    suffix: '%',
-                    subtitle:
-                        '${_series(points, (point) => point.bodyFat).length} measurements',
-                    range: selectedRange,
-                    points: _series(visible, (point) => point.bodyFat),
-                    color: const Color(0xFFFF7417),
-                  ),
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: () => _openMeasurementEditor(
-                      context,
-                      profile: PersonalProfile(
-                        heightCm: height,
-                        weightKg: weight,
-                        bodyFatPercent: bodyFat,
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 52,
+                    child: FilledButton.icon(
+                      onPressed: () => _openMeasurementEditor(
+                        context,
+                        profile: PersonalProfile(
+                          heightCm: height,
+                          weightKg: weight,
+                          bodyFatPercent: bodyFat,
+                        ),
+                        title: 'Add Measurement',
                       ),
-                      title: 'Add Measurement',
-                    ),
-                    icon: const Icon(Icons.add_circle_outline_rounded),
-                    label: const Text('Add Measurement'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _purple,
-                      side: const BorderSide(color: _purple, width: 1.4),
-                      minimumSize: const Size.fromHeight(54),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text(
+                        'Add measurement',
+                        style: TextStyle(fontWeight: FontWeight.w800),
                       ),
-                      textStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _purple,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                     ),
                   ),
+                  const SizedBox(height: 24),
+                  const _SectionLabel('TRENDS'),
+                  const SizedBox(height: 10),
+                  _TrendCard(
+                    metric: selectedMetric,
+                    range: selectedRange,
+                    points: metricSeries,
+                    onMetricChanged: (metric) =>
+                        setState(() => selectedMetric = metric),
+                    onRangeChanged: (range) =>
+                        setState(() => selectedRange = range),
+                  ),
+                  if (history.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    const _SectionLabel('HISTORY'),
+                    const SizedBox(height: 10),
+                    _Panel(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < history.length; i++)
+                            _HistoryRow(
+                              point: history[i],
+                              divider: i < history.length - 1,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               );
             },
@@ -254,6 +306,48 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
       if (value(point) case final metric?) _ChartPoint(point.date, metric),
   ];
 
+  /// Height, weight, age and sex: what Physical Health compares against.
+  Future<void> _openProfile(BuildContext context) => showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    backgroundColor: context.vivordoColors.page,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (_) => SafeArea(
+      child: Padding(
+        // Bottom room keeps the note clear of the assistant bubble.
+        padding: const EdgeInsets.fromLTRB(18, 22, 18, 84),
+        child: StreamBuilder<PersonalProfile>(
+          stream: PersonalProfileService.watch(),
+          builder: (sheetContext, snapshot) {
+            final profile = snapshot.data ?? const PersonalProfile();
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your profile',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 14),
+                _AboutYou(
+                  profile: profile,
+                  onEditBody: () => _openMeasurementEditor(
+                    sheetContext,
+                    profile: profile,
+                    title: 'Update Measurement',
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    ),
+  );
+
   Future<void> _openMeasurementEditor(
     BuildContext context, {
     required PersonalProfile profile,
@@ -262,6 +356,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
     final result =
         await showModalBottomSheet<(double, double, double?, DateTime)>(
           context: context,
+          useRootNavigator: true,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
           builder: (_) =>
@@ -276,9 +371,12 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
         recordedAt: result.$4,
       );
     } catch (error) {
+      debugPrint('Could not save measurement: $error');
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save measurement: $error')),
+      showToast(
+        context,
+        "Couldn't save the measurement. Try again.",
+        kind: ToastKind.error,
       );
     }
   }
@@ -303,83 +401,125 @@ double? _bmi(double? height, double? weight) =>
     ? weight / math.pow(height / 100, 2)
     : null;
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
-    this.height,
-    this.weight,
-    this.bmi,
-    this.bodyFat,
-    this.updatedAt,
+class _ProfileHero extends StatelessWidget {
+  const _ProfileHero({
+    required this.height,
+    required this.weight,
+    required this.bmi,
+    required this.bodyFat,
+    required this.updatedAt,
+    required this.weightSeries,
+    required this.range,
   });
-  final double? height;
-  final double? weight;
-  final double? bmi;
-  final double? bodyFat;
-  final DateTime? updatedAt;
 
-  String _value(double? value, String suffix) => value == null
+  final double? height, weight, bmi, bodyFat;
+  final DateTime? updatedAt;
+  final List<_ChartPoint> weightSeries;
+  final _ProfileRange range;
+
+  static String _value(double? value, String suffix) => value == null
       ? '--'
       : '${value.toStringAsFixed(value % 1 == 0 ? 0 : 1)}$suffix';
 
   @override
-  Widget build(BuildContext context) => _Panel(
-    child: Column(
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: _purple.withValues(alpha: .09),
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: const Icon(Icons.person_outline_rounded, color: _purple),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Your measurements',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+  Widget build(BuildContext context) {
+    final change = weightSeries.length > 1
+        ? weightSeries.last.value - weightSeries.first.value
+        : null;
+    final changeText = weight == null
+        ? 'Add your first measurement to start tracking.'
+        : change == null
+        ? 'Add another measurement to see your trend.'
+        : change.abs() < .05
+        ? 'No change over ${_rangePhrase(range)}'
+        : '${change < 0 ? '↓' : '↑'} ${change.abs().toStringAsFixed(1)} lbs over ${_rangePhrase(range)}';
+    const subtle = Color(0xFFE8E0FF);
+    final divider = Container(
+      width: 1,
+      height: 34,
+      color: Colors.white.withValues(alpha: .15),
+    );
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFAA91FF).withValues(alpha: .6),
+        ),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF5844ED), Color(0xFF3529AD)],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'CURRENT WEIGHT',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.3,
+                    color: subtle,
+                  ),
                 ),
+              ),
+              if (updatedAt != null)
                 Text(
-                  updatedAt == null
-                      ? 'No measurements yet'
-                      : DateUtils.isSameDay(updatedAt, DateTime.now())
+                  DateUtils.isSameDay(updatedAt, DateTime.now())
                       ? 'Updated today'
                       : 'Updated ${DateFormat('MMM d, y').format(updatedAt!)}',
-                  style: const TextStyle(color: _muted),
+                  style: const TextStyle(fontSize: 12, color: subtle),
                 ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: weight == null
+                      ? '--'
+                      : _kilogramsToPounds(weight!).toStringAsFixed(1),
+                ),
+                if (weight != null)
+                  const TextSpan(text: ' lbs', style: TextStyle(fontSize: 16)),
               ],
             ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            _SummaryMetric(label: 'HEIGHT', value: _imperialHeight(height)),
-            const _VerticalDivider(),
-            _SummaryMetric(
-              label: 'WEIGHT',
-              value: weight == null
-                  ? '--'
-                  : _value(_kilogramsToPounds(weight!), ' lbs'),
+            style: const TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
             ),
-            const _VerticalDivider(),
-            _SummaryMetric(label: 'BMI', value: _value(bmi, '')),
-            const _VerticalDivider(),
-            _SummaryMetric(label: 'BODY FAT', value: _value(bodyFat, '%')),
-          ],
-        ),
-      ],
-    ),
-  );
+          ),
+          Text(
+            changeText,
+            style: const TextStyle(fontSize: 13, color: Color(0xFFF1ECFF)),
+          ),
+          const SizedBox(height: 14),
+          Container(height: 1, color: Colors.white.withValues(alpha: .15)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _HeroMetric(label: 'height', value: _imperialHeight(height)),
+              divider,
+              _HeroMetric(label: 'BMI', value: _value(bmi, '')),
+              divider,
+              _HeroMetric(label: 'body fat', value: _value(bodyFat, '%')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _SummaryMetric extends StatelessWidget {
-  const _SummaryMetric({required this.label, required this.value});
+class _HeroMetric extends StatelessWidget {
+  const _HeroMetric({required this.label, required this.value});
   final String label;
   final String value;
   @override
@@ -387,70 +527,182 @@ class _SummaryMetric extends StatelessWidget {
     child: Column(
       children: [
         Text(
-          label,
+          value,
           style: const TextStyle(
-            fontSize: 10,
-            color: _muted,
-            fontWeight: FontWeight.w700,
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
           ),
         ),
-        const SizedBox(height: 8),
-        FittedBox(
-          child: Text(
-            value,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-          ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: Color(0xFFE8E0FF)),
         ),
       ],
     ),
   );
 }
 
-class _VerticalDivider extends StatelessWidget {
-  const _VerticalDivider();
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 1,
-    height: 42,
-    color: Colors.black.withValues(alpha: .08),
-  );
-}
+/// Height, weight, age and sex: the inputs to Physical Health's fitness
+/// norms and VO₂ max estimate. Age and sex are also asked in onboarding.
+class _AboutYou extends StatelessWidget {
+  const _AboutYou({required this.profile, required this.onEditBody});
 
-class _RangeSelector extends StatelessWidget {
-  const _RangeSelector({required this.selected, required this.onChanged});
-  final _ProfileRange selected;
-  final ValueChanged<_ProfileRange> onChanged;
+  final PersonalProfile profile;
+  final VoidCallback onEditBody;
+
+  Future<void> _save(
+    BuildContext context, {
+    int? birthYear,
+    String? sex,
+  }) async {
+    try {
+      await PersonalProfileService.saveAbout(birthYear: birthYear, sex: sex);
+    } catch (_) {
+      if (context.mounted) {
+        showToast(context, "Couldn't save. Try again.", kind: ToastKind.error);
+      }
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => _Panel(
-    padding: const EdgeInsets.all(8),
-    child: Row(
-      children: [
-        for (final range in _ProfileRange.values)
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(22),
-              onTap: () => onChanged(range),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: selected == range ? _purple : Colors.transparent,
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: Text(
-                  range.label,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: selected == range ? Colors.white : _muted,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final weight = profile.weightKg;
+    Widget row(String label, String? value, VoidCallback onTap) => InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ),
+            Text(
+              value ?? 'Add',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: value == null ? _purple : null,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+          ],
+        ),
+      ),
+    );
+    final divider = Divider(height: 24, color: colors.border);
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          row(
+            'Height',
+            profile.heightCm == null ? null : _imperialHeight(profile.heightCm),
+            onEditBody,
           ),
-      ],
+          divider,
+          row(
+            'Weight',
+            weight == null
+                ? null
+                : '${_kilogramsToPounds(weight).toStringAsFixed(1)} lbs',
+            onEditBody,
+          ),
+          divider,
+          row('Age', profile.age?.toString(), () async {
+            final year = await showBirthYearPicker(
+              context,
+              initial: profile.birthYear,
+            );
+            if (year != null && context.mounted) {
+              await _save(context, birthYear: year);
+            }
+          }),
+          divider,
+          const Text('Sex', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 10),
+          AppSegmented<String>(
+            segments: {
+              for (final sex in profileSexes) sex: profileSexLabels[sex]!,
+            },
+            value: profile.sex,
+            onChanged: (value) => _save(context, sex: value),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Physical Health uses these to compare your fitness with '
+            'people like you.',
+            style: TextStyle(fontSize: 12, color: colors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.3,
+      color: context.vivordoColors.textSecondary,
     ),
   );
+}
+
+class _HistoryRow extends StatelessWidget {
+  const _HistoryRow({required this.point, required this.divider});
+  final _ProfilePoint point;
+  final bool divider;
+
+  @override
+  Widget build(BuildContext context) {
+    final weight = point.weight;
+    final bodyFat = point.bodyFat;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      decoration: BoxDecoration(
+        border: divider
+            ? Border(bottom: BorderSide(color: context.vivordoColors.border))
+            : null,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _measurementDay(point.date),
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          Text(
+            weight == null
+                ? '--'
+                : '${_kilogramsToPounds(weight).toStringAsFixed(1)} lbs',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          SizedBox(
+            width: 64,
+            child: Text(
+              bodyFat == null ? '--' : '${bodyFat.toStringAsFixed(1)}%',
+              textAlign: TextAlign.right,
+              style: const TextStyle(color: _muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ChartPoint {
@@ -461,97 +713,71 @@ class _ChartPoint {
 
 class _TrendCard extends StatelessWidget {
   const _TrendCard({
-    required this.title,
-    required this.value,
+    required this.metric,
     required this.range,
     required this.points,
-    required this.color,
-    this.suffix = '',
-    this.subtitle,
-    this.minimumY,
-    this.maximumY,
+    required this.onMetricChanged,
+    required this.onRangeChanged,
   });
-  final String title;
-  final double? value;
-  final String suffix;
-  final String? subtitle;
-  final double? minimumY;
-  final double? maximumY;
+  final _ProfileMetric metric;
   final _ProfileRange range;
   final List<_ChartPoint> points;
-  final Color color;
+  final ValueChanged<_ProfileMetric> onMetricChanged;
+  final ValueChanged<_ProfileRange> onRangeChanged;
 
   @override
   Widget build(BuildContext context) {
-    final change = points.length > 1
+    final delta = points.length > 1
         ? points.last.value - points.first.value
         : null;
+    final change = delta == null || delta.abs() < .05 ? null : delta;
     final favorable = change != null && change <= 0;
+    final changeColor = favorable
+        ? const Color(0xFF24B879)
+        : const Color(0xFFFF625E);
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          AppSegmented<_ProfileMetric>(
+            segments: {for (final m in _ProfileMetric.values) m: m.label},
+            value: metric,
+            onChanged: onMetricChanged,
+          ),
+          const SizedBox(height: 14),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      value == null
-                          ? '--'
-                          : '${value!.toStringAsFixed(1)}$suffix',
-                      style: const TextStyle(
-                        fontSize: 29,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle ?? _rangeLabel(range),
-                      style: const TextStyle(fontSize: 13, color: _muted),
-                    ),
-                  ],
+                child: Text(
+                  metric == _ProfileMetric.bmi
+                      ? 'Calculated from height and weight'
+                      : '${points.length} ${points.length == 1 ? 'measurement' : 'measurements'} in ${_rangePhrase(range)}',
+                  style: const TextStyle(fontSize: 13, color: _muted),
                 ),
               ),
               if (change != null)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 11,
-                    vertical: 8,
+                    horizontal: 10,
+                    vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color:
-                        (favorable
-                                ? const Color(0xFF24B879)
-                                : const Color(0xFFFF625E))
-                            .withValues(alpha: .10),
-                    borderRadius: BorderRadius.circular(14),
+                    color: changeColor.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '${change <= 0 ? '↓' : '↑'} ${change.abs().toStringAsFixed(1)}$suffix',
+                    '${change <= 0 ? '↓' : '↑'} ${change.abs().toStringAsFixed(1)}${metric.suffix}',
                     style: TextStyle(
-                      color: favorable
-                          ? const Color(0xFF24B879)
-                          : const Color(0xFFFF625E),
+                      color: changeColor,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           SizedBox(
-            height: 150,
+            height: 170,
             child: points.isEmpty
                 ? const Center(
                     child: Text(
@@ -561,24 +787,20 @@ class _TrendCard extends StatelessWidget {
                   )
                 : _InteractiveTrendChart(
                     points: points,
-                    color: color,
-                    suffix: suffix,
-                    minimumY: minimumY,
-                    maximumY: maximumY,
+                    color: metric.color,
+                    suffix: metric.suffix,
                   ),
+          ),
+          const SizedBox(height: 12),
+          AppSegmented<_ProfileRange>(
+            segments: {for (final r in _ProfileRange.values) r: r.label},
+            value: range,
+            onChanged: onRangeChanged,
           ),
         ],
       ),
     );
   }
-
-  static String _rangeLabel(_ProfileRange range) => switch (range) {
-    _ProfileRange.month => 'Past month',
-    _ProfileRange.threeMonths => 'Past 3 months',
-    _ProfileRange.sixMonths => 'Past 6 months',
-    _ProfileRange.year => 'Past year',
-    _ProfileRange.all => 'All measurements',
-  };
 }
 
 class _InteractiveTrendChart extends StatefulWidget {
@@ -586,15 +808,11 @@ class _InteractiveTrendChart extends StatefulWidget {
     required this.points,
     required this.color,
     required this.suffix,
-    this.minimumY,
-    this.maximumY,
   });
 
   final List<_ChartPoint> points;
   final Color color;
   final String suffix;
-  final double? minimumY;
-  final double? maximumY;
 
   @override
   State<_InteractiveTrendChart> createState() => _InteractiveTrendChartState();
@@ -645,8 +863,6 @@ class _InteractiveTrendChartState extends State<_InteractiveTrendChart> {
           points: widget.points,
           color: widget.color,
           suffix: widget.suffix,
-          minimumY: widget.minimumY,
-          maximumY: widget.maximumY,
           selectedIndex: selectedIndex,
           dark: Theme.of(context).brightness == Brightness.dark,
         ),
@@ -661,16 +877,12 @@ class _TrendPainter extends CustomPainter {
     required this.points,
     required this.color,
     required this.suffix,
-    this.minimumY,
-    this.maximumY,
     this.selectedIndex,
     required this.dark,
   });
   final List<_ChartPoint> points;
   final Color color;
   final String suffix;
-  final double? minimumY;
-  final double? maximumY;
   final int? selectedIndex;
   final bool dark;
 
@@ -693,8 +905,8 @@ class _TrendPainter extends CustomPainter {
         : .8;
     final computedRange = math.max(dataRange * 1.3, minimumRange);
     final midpoint = (dataMin + dataMax) / 2;
-    final minValue = minimumY ?? midpoint - computedRange / 2;
-    final maxValue = maximumY ?? midpoint + computedRange / 2;
+    final minValue = midpoint - computedRange / 2;
+    final maxValue = midpoint + computedRange / 2;
     final displayedRange = maxValue - minValue;
     final axisDecimals = displayedRange < 10 ? 1 : 0;
     final gridPaint = Paint()
@@ -843,8 +1055,6 @@ class _TrendPainter extends CustomPainter {
       !listEquals(oldDelegate.points, points) ||
       oldDelegate.color != color ||
       oldDelegate.suffix != suffix ||
-      oldDelegate.minimumY != minimumY ||
-      oldDelegate.maximumY != maximumY ||
       oldDelegate.selectedIndex != selectedIndex ||
       oldDelegate.dark != dark;
 }
@@ -966,7 +1176,7 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
 
   Future<void> _pickDate() async {
     FocusScope.of(context).unfocus();
-    final date = await showDatePicker(
+    final date = await showVivordoDatePicker(
       context: context,
       initialDate: selectedDate,
       firstDate: DateTime(1900),

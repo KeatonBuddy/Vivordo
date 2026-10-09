@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/widgets/report_post_sheet.dart';
@@ -35,13 +36,15 @@ void main() {
       reason = value;
     });
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester
+          .widget<CupertinoButton>(find.widgetWithText(CupertinoButton, 'Send'))
+          .onPressed,
       isNull,
     );
     await tester.tap(find.text('Spam or scams'));
     await tester.pump();
-    await tester.ensureVisible(find.text('Submit report'));
-    await tester.tap(find.text('Submit report'));
+    await tester.ensureVisible(find.text('Send'));
+    await tester.tap(find.text('Send'));
     await tester.pumpAndSettle();
     expect(reason, 'spam');
     expect(find.text('Report post'), findsNothing);
@@ -54,17 +57,17 @@ void main() {
     });
     await tester.tap(find.text('Other'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Submit report'));
-    await tester.tap(find.text('Submit report'));
+    await tester.ensureVisible(find.text('Send'));
+    await tester.tap(find.text('Send'));
     await tester.pump();
     expect(sent, isNull);
     expect(
-      find.text('Please describe why you are reporting this post.'),
+      find.text("Describe why you're reporting this post."),
       findsOneWidget,
     );
     await tester.enterText(find.byType(TextField), '  An issue  ');
-    await tester.ensureVisible(find.text('Submit report'));
-    await tester.tap(find.text('Submit report'));
+    await tester.ensureVisible(find.text('Send'));
+    await tester.tap(find.text('Send'));
     await tester.pumpAndSettle();
     expect(sent, 'An issue');
   });
@@ -75,15 +78,14 @@ void main() {
     });
     await tester.tap(find.text('Privacy concern'));
     await tester.pump();
-    await tester.ensureVisible(find.text('Submit report'));
-    await tester.tap(find.text('Submit report'));
+    await tester.ensureVisible(find.text('Send'));
+    await tester.tap(find.text('Send'));
     await tester.pumpAndSettle();
+    expect(find.text("Couldn't send your report. Try again."), findsOneWidget);
     expect(
-      find.text('Could not send your report. Please try again.'),
-      findsOneWidget,
-    );
-    expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester
+          .widget<CupertinoButton>(find.widgetWithText(CupertinoButton, 'Send'))
+          .onPressed,
       isNotNull,
     );
   });

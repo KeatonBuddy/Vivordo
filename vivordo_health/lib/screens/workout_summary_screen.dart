@@ -1,4 +1,8 @@
 import 'dart:math' as math;
+import '../widgets/apple_ui.dart';
+import '../widgets/ios_pull_down_menu.dart';
+import '../widgets/workout_ai_insight.dart';
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -7,8 +11,21 @@ import 'package:vivordo_health/src/utils/personal_best.dart';
 import 'package:vivordo_health/src/utils/workout_activity_visual.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
-const _summaryPurple = Color(0xFF8B5CF6);
-const _summaryPink = Color(0xFFD582F4);
+const _summaryPurple = Color(0xFF6B5CE7);
+
+/// Status text colours: the bright shade reads on dark cards, the deep one
+/// keeps readable contrast on light cards.
+Color _statusColor(BuildContext context, Color dark, Color light) =>
+    Theme.of(context).brightness == Brightness.dark ? dark : light;
+
+Color _personalBestColor(BuildContext context) =>
+    _statusColor(context, const Color(0xFFF59E0B), const Color(0xFFB45309));
+
+Color _improvedColor(BuildContext context) =>
+    _statusColor(context, const Color(0xFF32C878), const Color(0xFF15803D));
+
+Color _declinedColor(BuildContext context) =>
+    _statusColor(context, const Color(0xFFF08A5D), const Color(0xFFC2410C));
 
 class WorkoutSummaryScreen extends StatelessWidget {
   const WorkoutSummaryScreen({super.key, required this.workout});
@@ -26,152 +43,152 @@ class WorkoutSummaryScreen extends StatelessWidget {
     );
     final overview = _WorkoutOverview.fromWorkout(workout);
 
-    return Scaffold(
-      backgroundColor: colors.page,
-      appBar: AppBar(
+    return WorkoutAiInsight(
+      key: ValueKey(workout),
+      workout: workout,
+      child: Scaffold(
         backgroundColor: colors.page,
-        surfaceTintColor: Colors.transparent,
-        centerTitle: true,
-        title: Text(
-          'Workout Summary',
-          style: TextStyle(color: primaryText, fontWeight: FontWeight.w800),
-        ),
-        actions: [
-          PopupMenuButton<_WorkoutSummaryAction>(
-            tooltip: 'Workout actions',
-            icon: Icon(Icons.more_horiz_rounded, color: primaryText),
-            onSelected: (action) {
-              if (action == _WorkoutSummaryAction.delete) {
-                _deleteWorkout(context);
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: _WorkoutSummaryAction.delete,
-                child: Row(
-                  children: [
-                    Icon(Icons.delete_outline_rounded, color: Colors.red),
-                    SizedBox(width: 10),
-                    Text('Delete workout'),
-                  ],
-                ),
-              ),
-            ],
+        appBar: AppBar(
+          backgroundColor: colors.page,
+          surfaceTintColor: Colors.transparent,
+          centerTitle: true,
+          title: Text(
+            'Workout Summary',
+            style: TextStyle(color: primaryText, fontWeight: FontWeight.w800),
           ),
-          const SizedBox(width: 6),
-        ],
-      ),
-      body: Stack(
-        children: [
-          Positioned(
-            top: -90,
-            right: -80,
-            child: IgnorePointer(
-              child: Container(
-                width: 230,
-                height: 230,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      _summaryPurple.withValues(alpha: isDark ? .16 : .10),
-                      Colors.transparent,
-                    ],
+          actions: [
+            IosPullDownMenu<_WorkoutSummaryAction>(
+              tooltip: 'Workout actions',
+              onSelected: (action) {
+                if (action == _WorkoutSummaryAction.delete) {
+                  _deleteWorkout(context);
+                }
+              },
+              actions: const [
+                IosMenuAction(
+                  value: _WorkoutSummaryAction.delete,
+                  label: 'Delete workout',
+                  icon: CupertinoIcons.trash,
+                  destructive: true,
+                ),
+              ],
+            ),
+            const SizedBox(width: 6),
+          ],
+        ),
+        body: Stack(
+          children: [
+            Positioned(
+              top: -90,
+              right: -80,
+              child: IgnorePointer(
+                child: Container(
+                  width: 230,
+                  height: 230,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        _summaryPurple.withValues(alpha: isDark ? .16 : .10),
+                        Colors.transparent,
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-            children: [
-              _WorkoutHeader(
-                title: overview.title,
-                subtitle: _workoutDateLabel(workout.completedAt),
-                visual: visual,
-              ),
-              const SizedBox(height: 24),
-              _HeroStats(workout: workout),
-              const SizedBox(height: 14),
-              _SummaryCard(overview: overview),
-              const SizedBox(height: 28),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'EXERCISES',
-                      style: TextStyle(
-                        color: _summaryPink,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.4,
+            ListView(
+              // Leaves room to scroll the last set clear of the assistant
+              // bubble in the bottom-right corner.
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 110),
+              children: [
+                _WorkoutHeader(
+                  title: overview.title,
+                  subtitle: _workoutDateLabel(workout.completedAt),
+                  visual: visual,
+                ),
+                const SizedBox(height: 20),
+                _HeroStats(workout: workout, overview: overview),
+                const SizedBox(height: 14),
+                _SummaryCard(overview: overview),
+                const SizedBox(height: 28),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'EXERCISES',
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.3,
+                        ),
                       ),
                     ),
+                    Text(
+                      '${workout.exerciseCount} ${workout.exerciseCount == 1 ? 'exercise' : 'exercises'}',
+                      style: TextStyle(color: colors.textSecondary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                for (
+                  var index = 0;
+                  index < workout.exercises.length;
+                  index++
+                ) ...[
+                  _ExerciseSummaryCard(
+                    number: index + 1,
+                    exercise: workout.exercises[index],
                   ),
-                  Text(
-                    '${workout.exerciseCount} ${workout.exerciseCount == 1 ? 'exercise' : 'exercises'}',
-                    style: TextStyle(color: colors.textSecondary),
-                  ),
+                  if (index < workout.exercises.length - 1)
+                    const SizedBox(height: 12),
                 ],
-              ),
-              const SizedBox(height: 10),
-              for (
-                var index = 0;
-                index < workout.exercises.length;
-                index++
-              ) ...[
-                _ExerciseSummaryCard(
-                  number: index + 1,
-                  exercise: workout.exercises[index],
-                ),
-                if (index < workout.exercises.length - 1)
-                  const SizedBox(height: 12),
-              ],
-              if (workout.exercises.isEmpty)
-                _SurfaceCard(
-                  child: Text(
-                    'No exercise details were saved for this workout.',
-                    style: TextStyle(color: colors.textSecondary),
+                if (workout.exercises.isEmpty)
+                  _SurfaceCard(
+                    child: Text(
+                      'No exercise details were saved for this workout.',
+                      style: TextStyle(color: colors.textSecondary),
+                    ),
                   ),
-                ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Future<void> _deleteWorkout(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete workout?'),
-        content: const Text(
+    final confirmed = await confirmAction(
+      context,
+      title: 'Delete workout?',
+      message:
           'This workout and all of its exercise data will be permanently deleted.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Keep Workout'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      cancelLabel: 'Keep workout',
+      confirmLabel: 'Delete',
     );
-    if (confirmed != true || !context.mounted) return;
+    if (!confirmed || !context.mounted) return;
 
     try {
-      await WorkoutService.delete(workout.id);
-      if (context.mounted) Navigator.pop(context, true);
-    } catch (error) {
+      final synced = await WorkoutService.delete(workout.id);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete workout: $error')),
+      if (!synced) {
+        showToast(
+          context,
+          "Workout deleted. It'll sync when you're online.",
+          kind: ToastKind.offline,
+        );
+      }
+      Navigator.pop(context, true);
+    } catch (error) {
+      debugPrint('Could not delete workout: $error');
+      if (!context.mounted) return;
+      showToast(
+        context,
+        "Couldn't delete the workout. Try again.",
+        kind: ToastKind.error,
       );
     }
   }
@@ -197,13 +214,13 @@ class _WorkoutHeader extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 58,
-          height: 58,
+          width: 52,
+          height: 52,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: visual.color.withValues(alpha: .20),
+            borderRadius: BorderRadius.circular(16),
+            color: visual.color.withValues(alpha: .14),
           ),
-          child: Icon(visual.icon, color: _summaryPink, size: 28),
+          child: Icon(visual.icon, color: visual.color, size: 26),
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -225,134 +242,102 @@ class _WorkoutHeader extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(width: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          decoration: BoxDecoration(
-            color: _summaryPurple.withValues(alpha: .10),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _summaryPurple.withValues(alpha: .28)),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.check_rounded, color: _summaryPink, size: 18),
-              SizedBox(width: 4),
-              Text(
-                'Completed',
-                style: TextStyle(
-                  color: _summaryPink,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }
 }
 
 class _HeroStats extends StatelessWidget {
-  const _HeroStats({required this.workout});
+  const _HeroStats({required this.workout, required this.overview});
 
   final SavedWorkout workout;
+  final _WorkoutOverview overview;
 
   @override
   Widget build(BuildContext context) {
-    final showWorkingSets = _hasStrengthExercise(workout);
+    // The exercise count is already in the Exercises header, so the third
+    // stat shows reps, then distance, and only falls back to exercises.
+    final stats = [
+      (_durationMinutes(workout.durationSeconds), 'min', 'duration'),
+      if (_hasStrengthExercise(workout))
+        ('${workout.setCount}', null, 'working sets'),
+      if (overview.totalReps > 0)
+        ('${overview.totalReps}', null, 'reps')
+      else if (overview.totalDistance > 0)
+        (_formatNumber(overview.totalDistance), 'km', 'distance')
+      else
+        ('${workout.exerciseCount}', null, 'exercises'),
+    ];
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 26),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF8B2FC9), Color(0xFF4A2FB6), Color(0xFF2529A7)],
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFAA91FF).withValues(alpha: .6),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: _summaryPurple.withValues(alpha: .24),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF5844ED), Color(0xFF3529AD)],
+        ),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _HeroStat(
-              value: _durationMinutes(workout.durationSeconds),
-              suffix: 'min',
-              label: 'duration',
-              emphasized: true,
-            ),
-          ),
-          if (showWorkingSets)
-            Expanded(
-              child: _HeroStat(
-                icon: Icons.layers_outlined,
-                value: '${workout.setCount}',
-                label: 'working sets',
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            for (var i = 0; i < stats.length; i++) ...[
+              if (i > 0)
+                VerticalDivider(
+                  width: 1,
+                  color: Colors.white.withValues(alpha: .15),
+                ),
+              Expanded(
+                child: _HeroStat(
+                  value: stats[i].$1,
+                  suffix: stats[i].$2,
+                  label: stats[i].$3,
+                ),
               ),
-            ),
-          Expanded(
-            child: _HeroStat(
-              icon: Icons.fitness_center_rounded,
-              value: '${workout.exerciseCount}',
-              label: 'exercises',
-            ),
-          ),
-        ],
+            ],
+          ],
+        ),
       ),
     );
   }
 }
 
 class _HeroStat extends StatelessWidget {
-  const _HeroStat({
-    required this.value,
-    required this.label,
-    this.icon,
-    this.suffix,
-    this.emphasized = false,
-  });
+  const _HeroStat({required this.value, required this.label, this.suffix});
 
   final String value;
   final String label;
-  final IconData? icon;
   final String? suffix;
-  final bool emphasized;
 
   @override
   Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      if (icon != null) ...[
-        Icon(icon, size: 22, color: _summaryPink),
-        const SizedBox(height: 4),
-      ],
       FittedBox(
         fit: BoxFit.scaleDown,
-        child: RichText(
-          text: TextSpan(
-            style: TextStyle(
-              color: Colors.white,
-              fontFamily: 'DMSans',
-              fontSize: emphasized ? 52 : 34,
-              fontWeight: FontWeight.w800,
-            ),
+        child: Text.rich(
+          TextSpan(
             children: [
               TextSpan(text: value),
               if (suffix != null)
                 TextSpan(
                   text: ' $suffix',
-                  style: const TextStyle(fontSize: 16),
+                  style: const TextStyle(fontSize: 15),
                 ),
             ],
+          ),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 32,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),
       const SizedBox(height: 2),
-      Text(label, style: TextStyle(color: Colors.white.withValues(alpha: .68))),
+      Text(label, style: const TextStyle(color: Color(0xFFE8E0FF))),
     ],
   );
 }
@@ -377,7 +362,7 @@ class _SummaryCard extends StatelessWidget {
               Text(
                 'VIVORDO SUMMARY',
                 style: TextStyle(
-                  color: _summaryPink,
+                  color: _summaryPurple,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1.1,
                 ),
@@ -408,28 +393,32 @@ class _SummaryCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: overview.chips
-                  .map(
-                    (chip) => Container(
+                  .map((chip) {
+                    final color = switch (chip[0]) {
+                      '★' => _personalBestColor(context),
+                      '↑' => _improvedColor(context),
+                      '↓' => _declinedColor(context),
+                      _ => _summaryPurple,
+                    };
+                    return Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
-                        vertical: 9,
+                        vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: _summaryPurple.withValues(alpha: .08),
+                        color: color.withValues(alpha: .10),
                         borderRadius: BorderRadius.circular(15),
-                        border: Border.all(
-                          color: _summaryPurple.withValues(alpha: .20),
-                        ),
+                        border: Border.all(color: color.withValues(alpha: .25)),
                       ),
                       child: Text(
                         chip,
-                        style: const TextStyle(
-                          color: _summaryPink,
+                        style: TextStyle(
+                          color: color,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                    ),
-                  )
+                    );
+                  })
                   .toList(growable: false),
             ),
           ],
@@ -542,10 +531,11 @@ class _ExerciseSummaryCard extends StatelessWidget {
             ),
           ] else if (exercise.sets.isEmpty) ...[
             const SizedBox(height: 14),
-            Text(
-              'No set details saved',
-              style: TextStyle(color: colors.textSecondary),
-            ),
+            Text(switch (exercise.category) {
+              'Cardio' => 'No distance recorded',
+              'Sports' => 'Time tracked by the workout timer',
+              _ => 'No set details saved',
+            }, style: TextStyle(color: colors.textSecondary)),
           ] else ...[
             const SizedBox(height: 12),
             _SetRow(set: 'SET', weight: 'WEIGHT', reps: 'REPS', header: true),
@@ -554,6 +544,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
               Divider(color: colors.border, height: 1),
               const SizedBox(height: 8),
               _SetRow(
+                highlight: index == _personalBestSetIndex(exercise),
                 set: '${index + 1}',
                 weight: exercise.sets[index].weightLbs > 0
                     ? '${_formatNumber(exercise.sets[index].weightLbs)} lb'
@@ -592,13 +583,17 @@ class _ProgressiveOverloadRecommendation extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.trending_up_rounded, color: _summaryPink, size: 20),
+          const Icon(
+            Icons.trending_up_rounded,
+            color: _summaryPurple,
+            size: 20,
+          ),
           const SizedBox(width: 9),
           Expanded(
             child: Text(
               'You completed $repIncrease more ${repIncrease == 1 ? 'rep' : 'reps'} at $weight lb. Consider increasing the weight by the smallest available increment next session.',
               style: const TextStyle(
-                color: _summaryPink,
+                color: _summaryPurple,
                 fontSize: 13,
                 height: 1.35,
                 fontWeight: FontWeight.w700,
@@ -615,29 +610,32 @@ class _PersonalBestBadge extends StatelessWidget {
   const _PersonalBestBadge();
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-    decoration: BoxDecoration(
-      color: _summaryPurple.withValues(alpha: .12),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: _summaryPurple.withValues(alpha: .28)),
-    ),
-    child: const Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.star_rounded, color: _summaryPink, size: 16),
-        SizedBox(width: 4),
-        Text(
-          'Personal best',
-          style: TextStyle(
-            color: _summaryPink,
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
+  Widget build(BuildContext context) {
+    final color = _personalBestColor(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: .28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.star_rounded, color: color, size: 16),
+          const SizedBox(width: 4),
+          Text(
+            'Personal best',
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 class _ExerciseComparisonBadge extends StatelessWidget {
@@ -653,12 +651,12 @@ class _ExerciseComparisonBadge extends StatelessWidget {
       ExerciseAttemptTrend.improved => (
         Icons.trending_up_rounded,
         differenceLabel,
-        const Color(0xFF32C878),
+        _improvedColor(context),
       ),
       ExerciseAttemptTrend.declined => (
         Icons.trending_down_rounded,
         differenceLabel,
-        const Color(0xFFF08A5D),
+        _declinedColor(context),
       ),
       ExerciseAttemptTrend.maintained => (
         Icons.drag_handle_rounded,
@@ -698,6 +696,7 @@ class _SetRow extends StatelessWidget {
     required this.weight,
     required this.reps,
     this.header = false,
+    this.highlight = false,
   });
 
   final String set;
@@ -705,14 +704,19 @@ class _SetRow extends StatelessWidget {
   final String reps;
   final bool header;
 
+  /// Marks the set that produced this exercise's personal best.
+  final bool highlight;
+
   @override
   Widget build(BuildContext context) {
     final style = TextStyle(
       color: header
           ? context.vivordoColors.textSecondary
+          : highlight
+          ? _personalBestColor(context)
           : Theme.of(context).colorScheme.onSurface,
       fontSize: header ? 12 : 15,
-      fontWeight: header ? FontWeight.w800 : FontWeight.w600,
+      fontWeight: header || highlight ? FontWeight.w800 : FontWeight.w600,
       letterSpacing: header ? .7 : 0,
     );
     return Row(
@@ -765,12 +769,16 @@ class _WorkoutOverview {
     required this.headline,
     required this.summary,
     required this.chips,
+    required this.totalReps,
+    required this.totalDistance,
   });
 
   final String title;
   final String headline;
   final String summary;
   final List<String> chips;
+  final int totalReps;
+  final double totalDistance;
 
   factory _WorkoutOverview.fromWorkout(SavedWorkout workout) {
     final categories = workout.exercises
@@ -841,8 +849,9 @@ class _WorkoutOverview {
         ? ' Rehydrate and keep your next recovery period easy.'
         : ' Balance your next session with comfortable recovery.';
     final chips = <String>[
-      if (totalReps > 0) '$totalReps total reps',
-      if (totalDistance > 0) '${_formatNumber(totalDistance)} km',
+      // Reps, or distance when there are no reps, lead the hero card.
+      if (totalReps > 0 && totalDistance > 0)
+        '${_formatNumber(totalDistance)} km',
       if (workout.personalBestCount > 0)
         '★ ${workout.personalBestCount} personal ${workout.personalBestCount == 1 ? 'best' : 'bests'}',
       if (improved.isNotEmpty)
@@ -855,8 +864,20 @@ class _WorkoutOverview {
       headline: headline,
       summary: '$base$detail$comparison$advice',
       chips: chips,
+      totalReps: totalReps,
+      totalDistance: totalDistance,
     );
   }
+}
+
+int? _personalBestSetIndex(WorkoutExerciseRecord exercise) {
+  final weight = exercise.personalBestWeightLbs;
+  final reps = exercise.personalBestReps;
+  if (!exercise.personalBest || weight == null || reps == null) return null;
+  final index = exercise.sets.indexWhere(
+    (set) => set.weightLbs == weight && set.reps == reps,
+  );
+  return index < 0 ? null : index;
 }
 
 bool _hasStrengthExercise(SavedWorkout workout) => workout.exercises.any(

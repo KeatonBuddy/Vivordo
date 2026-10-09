@@ -153,6 +153,34 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "notification_tokens",
+      "fieldPath": "nightlyPushUtcHour",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION",
+          "order": "ASCENDING"
+        },
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "effort_inputs",
+      "fieldPath": "dayEnd",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION",
+          "order": "ASCENDING"
+        },
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ]
 }

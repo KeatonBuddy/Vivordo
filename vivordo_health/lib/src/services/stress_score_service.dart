@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../utils/performance_trace.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -39,14 +40,15 @@ import 'calendar_baas_context.dart';
 /// NOTE ON DATA QUALITY
 /// ────────────────────
 /// The BaaS preprocessor computes hour-matched rolling z-scores over 14 days
-/// of INTRADAY samples. Until the app ships raw per-minute HealthKit readings,
-/// this service reconstructs synthetic intraday samples from daily aggregates
-/// stored in metrics_daily. This yields confidence="low/medium" from the BaaS
-/// because baselines can only be estimated, not computed from per-hour windows.
+/// of INTRADAY samples. The payload is hybrid (see [kRawSampleDays]): the last
+/// 3 days carry real HealthKit samples with their timestamps
+/// (HealthService.getRawSamplesForBaas), and older days are reconstructed as
+/// one point per metric per day from metrics_daily, only to seed the
+/// baselines.
 ///
-/// To improve: add a getRawSamplesForBaas() method on HealthService that reads
-/// raw HealthKit data points directly and passes them here instead of the
-/// synthetic samples built from Firestore aggregates.
+/// Known limits: hour-of-day baselines come from those daily points, and
+/// metrics whose canonical source is WHOOP or Fitbit drop the Apple samples
+/// and fall back to the daily point, since those sources are stored daily.
 class StressScoreService {
   static const kApiUrl = 'https://vivordo-baas.onrender.com/baas/score';
 
@@ -169,15 +171,17 @@ class StressScoreService {
 
     try {
       final today = localDayKey(DateTime.now());
+      final earliest = localDayKey(
+        DateTime.now().subtract(Duration(days: lookbackDays)),
+      );
+      // Only the lookback window, not every day on record: this runs at launch.
       final snap = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .collection('metrics_daily')
+          .where(FieldPath.documentId, isGreaterThanOrEqualTo: earliest)
+          .where(FieldPath.documentId, isLessThan: today)
           .get();
-
-      final earliest = localDayKey(
-        DateTime.now().subtract(Duration(days: lookbackDays)),
-      );
 
       final pending = <String>[];
       for (final doc in snap.docs) {
@@ -441,7 +445,13 @@ class StressScoreService {
   /// connection, against a free-tier container that cold-starts.
   static const kRawSampleDays = 3;
 
-  static Future<Map<String, dynamic>> _buildPayload(
+  static Future<Map<String, dynamic>> _buildPayload(String uid, String today) =>
+      PerformanceTrace.async(
+        'stress.payload',
+        () => _buildPayloadMeasured(uid, today),
+      );
+
+  static Future<Map<String, dynamic>> _buildPayloadMeasured(
     String uid,
     String today,
   ) async {
@@ -629,7 +639,11 @@ class StressScoreService {
       if (!covered(date, 'sleep') && sleepHours != null && sleepHours > 0) {
         samples.add({
           'metric_type': 'sleep',
-          'timestamp': '${date}T23:00:00+00:00',
+          // Sleep is filed under the wake day, so the night began the
+          // evening before.
+          'timestamp': DateTime.parse(
+            '${date}T23:00:00Z',
+          ).subtract(const Duration(days: 1)).toIso8601String(),
           'value': sleepHours,
           'unit': 'hours',
           'source': sleepMap?['source'] ?? 'apple_health',
@@ -868,6 +882,20 @@ class StressScoreService {
             'algorithm_version': lean?['algorithm_version'],
             'justification': lean?['justification'],
             'top_drivers': lean?['top_drivers'],
+            // Every signal of the latest reading, measured or not, for the
+            // detail screen's "What's moving it" and "Signals today". The
+            // BaaS notes are left out: they are developer text (z-scores).
+            if ((result['breakdown'] as Map?)?['components'] case final List c)
+              'signals': [
+                for (final s in c)
+                  if (s is Map && s['name'] is String)
+                    {
+                      'name': s['name'],
+                      'weight': s['weight_pct'],
+                      'signal': s['signal'],
+                      'contribution': s['contribution'],
+                    },
+              ],
             // Keep each successful score so the detail screen can render a real
             // intraday trend. The service already coalesces nearby readings.
             'entries': FieldValue.arrayUnion([
@@ -875,6 +903,10 @@ class StressScoreService {
                 'score': current,
                 'timestamp': Timestamp.now(),
                 'label': result['band'] ?? lean?['band'],
+                // This hour against your normal (0–100), before the slow
+                // build-up: what a single event's reaction shows up in.
+                if (result['strain'] case final num strain)
+                  'strain': strain.toDouble(),
               },
             ]),
             'source': 'baas_api',

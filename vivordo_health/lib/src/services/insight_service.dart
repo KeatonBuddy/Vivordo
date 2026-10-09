@@ -34,9 +34,6 @@ class InsightService {
   CollectionReference<Map<String, dynamic>> _col(String userId) =>
       _db.collection('users').doc(userId).collection('insights');
 
-  DocumentReference<Map<String, dynamic>> _doc(String userId, String id) =>
-      _col(userId).doc(id);
-
   // ===========================================================================
   // saveSessionInsight
   //
@@ -148,7 +145,7 @@ class InsightService {
               'frequency': FieldValue.increment(1),
               'updatedAt': FieldValue.serverTimestamp(),
               'sessionDate': Timestamp.fromDate(sessionDate),
-              if (chatSessionId != null) 'chatSessionId': chatSessionId,
+              'chatSessionId': ?chatSessionId,
               'title': insight.title,
               'body': insight.body,
               'severity': insight.severity,
@@ -182,36 +179,6 @@ class InsightService {
     return insight;
   }
 
-  /// Refreshes an already-persisted Panda session before a new chat starts.
-  /// Only the compact recap and structured details are archived; the raw
-  /// transcript is deliberately removed.
-  Future<void> updateSessionArchive({
-    required String userId,
-    required String insightId,
-    required DateTime sessionDate,
-    required Map<String, String> sessionSlots,
-    required Map<String, String> labeledAnswers,
-    String? summary,
-    List<String>? importantPoints,
-  }) async {
-    final update = <String, dynamic>{
-      'sessionDate': Timestamp.fromDate(sessionDate),
-      'pandaLabeledAnswers': labeledAnswers,
-      'conversation': FieldValue.delete(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      if (sessionSlots.isNotEmpty) 'pandaSlots': sessionSlots,
-      if (summary != null && summary.trim().isNotEmpty)
-        'summary': summary.trim(),
-      if (importantPoints != null)
-        'importantPoints': importantPoints
-            .map((point) => point.trim())
-            .where((point) => point.isNotEmpty)
-            .take(6)
-            .toList(),
-    };
-    await _doc(userId, insightId).set(update, SetOptions(merge: true));
-  }
-
   /// Fire-and-forget lightweight summary on the parent users/{userId} doc so the
   /// HomeScreen and recommendation engine can read recent stressors cheaply.
   void _touchUserHistory(
@@ -233,152 +200,6 @@ class InsightService {
           ]),
       }, SetOptions(merge: true)),
     );
-  }
-
-  // ===========================================================================
-  // correctAnswer
-  //
-  // Called when the user edits a labeled answer from the History tab — works
-  // for both spike answers (keys like "q_1") and chat-finding answers (keys
-  // like a category label or "You shared", which may contain spaces/emojis).
-  // Read-modify-writes the whole answers map so any key is handled safely
-  // (Firestore dot-path strings can't address keys with spaces/special chars).
-  // ===========================================================================
-
-  Future<Insights> correctAnswer({
-    required String userId,
-    required String insightId,
-    required String questionId,
-    required String oldAnswer,
-    required String newAnswer,
-  }) async {
-    final correction = PandaCorrection(
-      questionId: questionId,
-      oldAnswer: oldAnswer,
-      newAnswer: newAnswer,
-      correctedAt: Timestamp.now(),
-    );
-
-    final ref = _doc(userId, insightId);
-    final snap = await ref.get();
-    final answers = <String, String>{
-      ...?(snap.data()?['pandaLabeledAnswers'] as Map?)?.map(
-        (k, v) => MapEntry(k.toString(), v.toString()),
-      ),
-    };
-    answers[questionId] = newAnswer;
-
-    await ref.update({
-      'pandaLabeledAnswers': answers,
-      'pandaCorrections': FieldValue.arrayUnion([correction.toMap()]),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-
-    final updated = await ref.get();
-    return Insights.fromDoc(updated);
-  }
-
-  // ===========================================================================
-  // updateSummary
-  //
-  // Overwrites the continuity note on an insight — used after an answer is
-  // edited from the History tab so the LLM-fed-back summary reflects the
-  // correction.
-  // ===========================================================================
-
-  Future<void> updateSummary(
-    String userId,
-    String insightId,
-    String summary, {
-    List<String>? importantPoints,
-  }) async {
-    await _doc(userId, insightId).update({
-      'summary': summary,
-      if (importantPoints != null) 'importantPoints': importantPoints,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // ===========================================================================
-  // findBySessionDate
-  //
-  // Used when only a DateTime is known (older History records saved before
-  // _currentInsightId was stored). Queries with a +-1 minute window.
-  // ===========================================================================
-
-  Future<Insights?> findBySessionDate(
-    String userId,
-    DateTime sessionDate,
-  ) async {
-    final lo = Timestamp.fromDate(
-      sessionDate.subtract(const Duration(minutes: 1)),
-    );
-    final hi = Timestamp.fromDate(sessionDate.add(const Duration(minutes: 1)));
-
-    final snap = await _col(userId)
-        .where('source', isEqualTo: 'panda')
-        .where('sessionDate', isGreaterThanOrEqualTo: lo)
-        .where('sessionDate', isLessThanOrEqualTo: hi)
-        .limit(1)
-        .get();
-
-    if (snap.docs.isEmpty) return null;
-    return Insights.fromDoc(snap.docs.first);
-  }
-
-  // ===========================================================================
-  // streamPandaInsights — real-time stream of Panda insights, newest first.
-  // ===========================================================================
-
-  Stream<List<Insights>> streamPandaInsights(String userId, {int limit = 50}) {
-    return _col(userId)
-        .where('source', isEqualTo: 'panda')
-        .orderBy('sessionDate', descending: true)
-        .limit(limit)
-        .snapshots()
-        .map((snap) => snap.docs.map(Insights.fromDoc).toList());
-  }
-
-  // ===========================================================================
-  // streamAllInsights — unified feed across all insight sources.
-  // ===========================================================================
-
-  Stream<List<Insights>> streamAllInsights(String userId, {int limit = 100}) {
-    return _col(userId)
-        .orderBy('createdAt', descending: true)
-        .limit(limit)
-        .snapshots()
-        .map((snap) => snap.docs.map(Insights.fromDoc).toList());
-  }
-
-  // ===========================================================================
-  // getInsight — fetch a single document by its Firestore ID.
-  // ===========================================================================
-
-  Future<Insights?> getInsight(String userId, String insightId) async {
-    final snap = await _doc(userId, insightId).get();
-    if (!snap.exists) return null;
-    return Insights.fromDoc(snap);
-  }
-
-  // ===========================================================================
-  // acknowledgeInsight — mark an insight as read by the user.
-  // ===========================================================================
-
-  Future<void> acknowledgeInsight(String userId, String insightId) async {
-    await _doc(userId, insightId).update({
-      'acknowledged': true,
-      'acknowledgedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // ===========================================================================
-  // deleteInsight — permanent deletion for GDPR / user-requested removal.
-  // ===========================================================================
-
-  Future<void> deleteInsight(String userId, String insightId) async {
-    await _doc(userId, insightId).delete();
   }
 
   // ===========================================================================
@@ -487,7 +308,9 @@ class InsightService {
       var key = e.key;
       if (merged.containsKey(key)) {
         var i = 2;
-        while (merged.containsKey('$key ($i)')) i++;
+        while (merged.containsKey('$key ($i)')) {
+          i++;
+        }
         key = '$key ($i)';
       }
       merged[key] = e.value;

@@ -6,13 +6,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
-import 'package:vivordo_health/src/utils/heart_rate_insight.dart';
+import 'package:vivordo_health/src/utils/hrv.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 class HeartRateDetailScreen extends StatefulWidget {
@@ -28,10 +31,27 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   int rangeIndex = 0;
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _heartDataStream;
 
+  static const _storage = FlutterSecureStorage();
+  static const _wearableCollapsedKey = 'heart_wearable_card_collapsed';
+  // Kept for the app session so reopening the screen doesn't wait on storage.
+  static bool? _savedWearableCollapsed;
+  bool? _wearableCollapsed = _savedWearableCollapsed;
+
   @override
   void initState() {
     super.initState();
     _heartDataStream = _heartDataSnapshots();
+    if (_wearableCollapsed == null) {
+      _storage
+          .read(key: _wearableCollapsedKey)
+          .catchError((Object _) => null)
+          .then((value) {
+            _savedWearableCollapsed = value == 'true';
+            if (mounted) {
+              setState(() => _wearableCollapsed = _savedWearableCollapsed);
+            }
+          });
+    }
     unawaited(
       WhoopBleHeartRateService.instance.startIfPaired().catchError(
         (Object _) {},
@@ -90,16 +110,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           .toList();
       final resting = ((data['resting_heart_rate'] as Map?)?['avg'] as num?)
           ?.toDouble();
-      final heartHealth = data['heart_health'] as Map?;
-      final heartHealthScore = (heartHealth?['avg'] as num?)?.toDouble();
-      final heartHealthStatus = heartHealth?['status'] as String?;
-      return _HeartDay(
-        date,
-        readings,
-        resting,
-        heartHealthScore,
-        heartHealthStatus,
-      );
+      return _HeartDay(date, readings, resting, hrvReadings(data));
     }).toList();
   }
 
@@ -108,14 +119,16 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     return List.generate(rangeDays, (index) {
       final date = today.subtract(Duration(days: rangeDays - index - 1));
-      return byKey[keyFor(date)] ?? _HeartDay(date, const [], null, null, null);
+      return byKey[keyFor(date)] ?? _HeartDay(date, const [], null, const {});
     });
   }
 
   List<_HeartDay> previousDays(List<_HeartDay> all) {
+    // The first day of the current range (exclusive end): the previous
+    // period ends the day before it, with no gap.
     final end = DateUtils.dateOnly(
       DateTime.now(),
-    ).subtract(Duration(days: rangeDays));
+    ).subtract(Duration(days: rangeDays - 1));
     final start = end.subtract(Duration(days: rangeDays));
     return all
         .where((day) => !day.date.isBefore(start) && day.date.isBefore(end))
@@ -168,6 +181,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                 currentDays(all),
                 previousDays(all),
                 hasConnectedWearable: hasConnectedWearable,
+                restingNormal: restingNormal({
+                  for (final day in all) day.date: ?day.resting,
+                }, DateTime.now()),
               );
             },
           );
@@ -180,20 +196,13 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     List<_HeartDay> days,
     List<_HeartDay> previous, {
     required bool hasConnectedWearable,
+    double? restingNormal,
   }) {
     final storedEntries = days.expand((day) => day.readings).toList();
     final hasWhoopHistoricalData = storedEntries.any(
       (reading) => reading.source == 'whoop_ble',
     );
     final storedReadings = storedEntries.map((entry) => entry.bpm).toList();
-    final insightReadings = storedEntries
-        .map(
-          (entry) => HeartRateInsightReading(
-            bpm: entry.bpm,
-            timestamp: entry.timestamp,
-          ),
-        )
-        .toList();
     final chartDays = days;
     final chartEntries = chartDays.expand((day) => day.readings).toList();
     final resting = days.map((day) => day.resting).whereType<double>().toList();
@@ -206,23 +215,20 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final avg = average(storedReadings);
     final restingAvg = average(resting);
     final priorAvg = average(prior);
-    final change = restingAvg == null || priorAvg == null
-        ? null
-        : (restingAvg - priorAvg).round();
     final low = storedReadings.isEmpty
         ? null
         : storedReadings.reduce(math.min).round();
     final high = storedReadings.isEmpty
         ? null
         : storedReadings.reduce(math.max).round();
-    final latestDay = days.isEmpty ? null : days.last;
-    final heartHealthScores = days
-        .map((day) => day.heartHealthScore)
-        .whereType<double>()
-        .toList();
-    final displayedHeartHealth = rangeIndex == 0
-        ? latestDay?.heartHealthScore
-        : average(heartHealthScores);
+    // One HRV kind only: devices measure it differently (see hrvKinds).
+    final hrvKind = hrvKinds
+        .where((kind) => days.any((day) => day.hrv.containsKey(kind)))
+        .firstOrNull;
+    double? hrvAverage(List<_HeartDay> range) =>
+        average(range.map((day) => day.hrv[hrvKind]).whereType<double>());
+    final hrvAvg = hrvKind == null ? null : hrvAverage(days);
+    final hrvPrior = hrvKind == null ? null : hrvAverage(previous);
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -267,37 +273,35 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           const SizedBox(height: 18),
           rangeSelector(),
           const SizedBox(height: 18),
-          if (hasConnectedWearable) ...[
+          // Hidden until the saved collapsed state loads, so it doesn't jump.
+          if (hasConnectedWearable && _wearableCollapsed != null) ...[
             ValueListenableBuilder<WhoopBleState>(
               valueListenable: WhoopBleHeartRateService.instance.state,
               builder: (context, bleState, _) => wearableLiveCard(bleState),
             ),
             const SizedBox(height: 18),
           ],
-          summary(
-            avg,
-            low,
-            high,
-            heartHealthScore: displayedHeartHealth,
-            heartHealthStatus: rangeIndex == 0
-                ? latestDay?.heartHealthStatus
-                : heartHealthScores.isEmpty
-                ? 'unavailable'
-                : 'ready',
-            heartHealthScoreCount: heartHealthScores.length,
+          summary(avg, low, high),
+          section(
+            rangeIndex == 0 ? '$rangeName trend' : 'Resting heart rate trend',
           ),
-          section('$rangeName trend'),
           chart(chartDays, chartEntries, restingAvg),
           section('Heart rate zones'),
           zones(storedReadings),
+          if (hrvKind != null && hrvAvg != null) ...[
+            section('Heart rate variability'),
+            hrvCard(hrvKind, hrvAvg, hrvPrior),
+          ],
           section('Insight'),
           insight(
-            buildHeartRateInsight(
+            heartInsight(
               isDay: rangeIndex == 0,
-              readings: insightReadings,
-              heartHealthScore: displayedHeartHealth,
-              restingAverage: restingAvg,
-              restingChange: change,
+              rangeDays: rangeDays,
+              todayResting: days.last.resting,
+              restingNormal: restingNormal,
+              todayReadings: storedReadings,
+              rangeResting: restingAvg,
+              priorResting: priorAvg,
             ),
           ),
         ],
@@ -310,60 +314,57 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
       final devices = await WhoopBleHeartRateService.instance.scanForDevices();
       if (!mounted) return;
       if (devices.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No heart-rate broadcast found. Enable heart-rate sharing or broadcasting on your wearable and try again.',
-            ),
-          ),
+        showToast(
+          context,
+          'No heart-rate broadcast found. Turn on heart-rate sharing or broadcasting on your wearable and try again.',
+          kind: ToastKind.error,
         );
         return;
       }
       final selected = devices.length == 1
           ? devices.first
-          : await showModalBottomSheet<WhoopBleDevice>(
-              context: context,
-              builder: (context) => SafeArea(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    const ListTile(
-                      title: Text(
-                        'Choose your wearable',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      subtitle: Text('Nearby heart-rate broadcasters'),
-                    ),
-                    ...devices.map(
-                      (device) => ListTile(
-                        leading: const Icon(Icons.bluetooth_rounded),
-                        title: Text(device.name),
-                        subtitle: Text('Signal ${device.rssi} dBm'),
-                        onTap: () => Navigator.pop(context, device),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          : await showAppleActionSheet<WhoopBleDevice>(
+              context,
+              title: 'Choose your wearable',
+              message: 'Nearby heart-rate broadcasters',
+              actions: [
+                for (final device in devices)
+                  AppleSheetAction(
+                    '${device.name} · ${_signalLabel(device.rssi)}',
+                    device,
+                  ),
+              ],
             );
       if (selected == null) return;
       await WhoopBleHeartRateService.instance.pairAndStart(selected);
     } catch (error) {
+      debugPrint('Could not pair wearable: $error');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Bad state: ', '')),
-        ),
+      // The service's StateErrors carry our own plain-language messages.
+      showToast(
+        context,
+        error is StateError
+            ? error.message
+            : "Couldn't connect to your wearable. Try again.",
+        kind: ToastKind.error,
       );
     }
   }
 
-  Future<void> _toggleWearableLive(WhoopBleState bleState) async {
-    if (bleState.isConnected) {
-      await WhoopBleHeartRateService.instance.stop();
-    } else {
-      await WhoopBleHeartRateService.instance.startIfPaired();
-    }
+  static String _signalLabel(int rssi) => rssi >= -60
+      ? 'Strong signal'
+      : rssi >= -75
+      ? 'Fair signal'
+      : 'Weak signal';
+
+  void _toggleWearableCollapsed() {
+    final collapsed = !(_wearableCollapsed ?? false);
+    setState(() => _wearableCollapsed = _savedWearableCollapsed = collapsed);
+    unawaited(
+      _storage
+          .write(key: _wearableCollapsedKey, value: '$collapsed')
+          .catchError((Object _) {}),
+    );
   }
 
   Future<void> _forgetWearable() =>
@@ -374,6 +375,10 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         bleState.status == WhoopBleStatus.scanning ||
         bleState.status == WhoopBleStatus.connecting;
     final hasReading = bleState.isConnected && bleState.bpm != null;
+    // Stop works while connecting too, so a band that isn't nearby can be
+    // left alone instead of retried.
+    final live = bleState.isPaired && (bleState.isConnected || busy);
+    final collapsed = _wearableCollapsed ?? false;
     final statusLabel = switch (bleState.status) {
       WhoopBleStatus.unpaired => 'NOT PAIRED',
       WhoopBleStatus.scanning => 'SCANNING',
@@ -405,223 +410,248 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         bleState.message ?? 'Wearable Bluetooth is unavailable.',
     };
     return card(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: purple.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.bluetooth_rounded,
-                  color: purple,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'LIVE WEARABLE HEART RATE',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(99),
-                ),
+      padding: EdgeInsets.fromLTRB(20, 18, 20, collapsed ? 18 : 16),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 200),
+        alignment: Alignment.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              button: true,
+              expanded: !collapsed,
+              label: 'Live wearable heart rate',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _toggleWearableCollapsed,
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (hasReading) ...[
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: statusColor,
-                          shape: BoxShape.circle,
-                        ),
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: purple.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(width: 6),
-                    ],
-                    Text(
-                      statusLabel,
-                      style: TextStyle(
-                        color: statusColor,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: .5,
+                      child: const Icon(
+                        Icons.bluetooth_rounded,
+                        color: purple,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'LIVE WEARABLE HEART RATE',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (hasReading) ...[
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: statusColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Text(
+                            statusLabel,
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    AnimatedRotation(
+                      turns: collapsed ? 0 : .5,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.expand_more_rounded,
+                        color: context.vivordoColors.textSecondary,
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            child: hasReading
-                ? Row(
-                    key: ValueKey(bleState.bpm),
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 7),
-                        child: Icon(
-                          Icons.favorite_rounded,
-                          color: red,
-                          size: 28,
-                        ),
-                      ),
-                      const SizedBox(width: 11),
-                      Text(
-                        '${bleState.bpm}',
-                        style: const TextStyle(
-                          color: red,
-                          fontSize: 58,
-                          height: .9,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -2,
-                        ),
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.only(left: 7, bottom: 5),
-                        child: Text(
-                          'bpm',
-                          style: TextStyle(
-                            color: red,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
+            ),
+            if (!collapsed) ...[
+              const SizedBox(height: 20),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: hasReading
+                    ? Row(
+                        key: ValueKey(bleState.bpm),
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 7),
+                            child: Icon(
+                              Icons.favorite_rounded,
+                              color: red,
+                              size: 28,
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 11),
+                          Text(
+                            '${bleState.bpm}',
+                            style: const TextStyle(
+                              color: red,
+                              fontSize: 58,
+                              height: .9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -2,
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.only(left: 7, bottom: 5),
+                            child: Text(
+                              'bpm',
+                              style: TextStyle(
+                                color: red,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        key: ValueKey(bleState.status),
+                        children: [
+                          if (busy)
+                            const SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(strokeWidth: 3),
+                            )
+                          else
+                            Icon(
+                              Icons.monitor_heart_outlined,
+                              color: statusColor,
+                              size: 36,
+                            ),
+                          const SizedBox(width: 12),
+                          Text(
+                            bleState.isConnected ? '-- bpm' : 'Live heart rate',
+                            style: TextStyle(
+                              color: context.vivordoColors.textPrimary,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  )
-                : Row(
-                    key: ValueKey(bleState.status),
-                    children: [
-                      if (busy)
-                        const SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(strokeWidth: 3),
-                        )
-                      else
-                        Icon(
-                          Icons.monitor_heart_outlined,
-                          color: statusColor,
-                          size: 36,
-                        ),
-                      const SizedBox(width: 12),
-                      Text(
-                        bleState.isConnected ? '-- bpm' : 'Live heart rate',
-                        style: TextStyle(
-                          color: context.vivordoColors.textPrimary,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-          if (detailText != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              detailText,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.vivordoColors.textSecondary,
-                fontSize: 14,
               ),
-            ),
-          ],
-          if (bleState.deviceName != null) ...[
-            const SizedBox(height: 5),
-            Text(
-              bleState.deviceName!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.vivordoColors.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          const SizedBox(height: 16),
-          Divider(height: 1, color: context.vivordoColors.border),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: busy
-                      ? null
-                      : bleState.isPaired
-                      ? () => _toggleWearableLive(bleState)
-                      : _pairWearable,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: bleState.isConnected
-                        ? context.vivordoColors.cardMuted
-                        : purple,
-                    foregroundColor: bleState.isConnected
-                        ? context.vivordoColors.textPrimary
-                        : Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                  ),
-                  icon: Icon(
-                    bleState.isConnected
-                        ? Icons.stop_rounded
-                        : Icons.play_arrow_rounded,
-                    size: 19,
-                  ),
-                  label: Text(
-                    bleState.isConnected
-                        ? 'Stop live'
-                        : bleState.isPaired
-                        ? 'Start live'
-                        : 'Pair wearable',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
-              if (bleState.isPaired) ...[
-                const SizedBox(width: 10),
-                TextButton(
-                  onPressed: busy ? null : _forgetWearable,
-                  child: Text(
-                    'Forget',
-                    style: TextStyle(
-                      color: context.vivordoColors.textSecondary,
-                      fontWeight: FontWeight.w700,
-                    ),
+              if (detailText != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  detailText,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.vivordoColors.textSecondary,
+                    fontSize: 14,
                   ),
                 ),
               ],
+              if (bleState.deviceName != null) ...[
+                const SizedBox(height: 5),
+                Text(
+                  bleState.deviceName!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.vivordoColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Divider(height: 1, color: context.vivordoColors.border),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: !bleState.isPaired
+                          ? (busy ? null : _pairWearable)
+                          : live
+                          ? WhoopBleHeartRateService.instance.pause
+                          : WhoopBleHeartRateService.instance.resume,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: live
+                            ? context.vivordoColors.cardMuted
+                            : purple,
+                        foregroundColor: live
+                            ? context.vivordoColors.textPrimary
+                            : Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                      ),
+                      icon: Icon(
+                        live ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                        size: 19,
+                      ),
+                      label: Text(
+                        live
+                            ? 'Stop live'
+                            : bleState.isPaired
+                            ? 'Start live'
+                            : 'Pair wearable',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                  if (bleState.isPaired) ...[
+                    const SizedBox(width: 10),
+                    TextButton(
+                      onPressed: busy ? null : _forgetWearable,
+                      child: Text(
+                        'Forget',
+                        style: TextStyle(
+                          color: context.vivordoColors.textSecondary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -675,152 +705,18 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     );
   }
 
-  Widget summary(
-    double? avg,
-    int? low,
-    int? high, {
-    double? heartHealthScore,
-    String? heartHealthStatus,
-    required int heartHealthScoreCount,
-  }) {
-    final avgText = avg?.round().toString() ?? '--';
-    final isDay = rangeIndex == 0;
-    final heartHealthText = heartHealthScore?.round().toString() ?? '--';
-    final heartHealthDescription = isDay
-        ? switch (heartHealthStatus) {
-            'building_baseline' => 'Building your personal baseline',
-            'unavailable' => 'Not enough data to calculate',
-            _ when heartHealthScore != null =>
-              'Personalized cardiovascular score',
-            _ => 'No Heart Health score available',
-          }
-        : heartHealthScore == null
-        ? 'No Heart Health scores available for this period'
-        : 'Average across $heartHealthScoreCount '
-              '${heartHealthScoreCount == 1 ? 'day' : 'days'} with available scores';
-    final heartHealthColor = heartHealthScore == null
-        ? context.vivordoColors.textSecondary
-        : heartHealthScore >= 75
-        ? const Color(0xFF20B26B)
-        : heartHealthScore >= 50
-        ? const Color(0xFFFF9500)
-        : red;
-    return card(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            isDay
-                                ? 'HEART HEALTH SCORE'
-                                : 'AVERAGE HEART HEALTH',
-                            style: TextStyle(
-                              color: context.vivordoColors.textSecondary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'How Heart Health works',
-                          onPressed: _showHeartHealthInfo,
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.all(4),
-                          constraints: const BoxConstraints(
-                            minWidth: 32,
-                            minHeight: 32,
-                          ),
-                          icon: const Icon(
-                            Icons.info_outline_rounded,
-                            color: purple,
-                            size: 20,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      heartHealthDescription,
-                      style: TextStyle(
-                        color: context.vivordoColors.textSecondary,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-              SizedBox(
-                width: 112,
-                height: 112,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox.expand(
-                      child: CircularProgressIndicator(
-                        value: ((heartHealthScore ?? 0) / 100)
-                            .clamp(0.0, 1.0)
-                            .toDouble(),
-                        strokeWidth: 11,
-                        strokeCap: StrokeCap.round,
-                        color: heartHealthColor,
-                        backgroundColor: context.vivordoColors.cardMuted,
-                      ),
-                    ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.favorite_border_rounded,
-                          color: red,
-                          size: 23,
-                        ),
-                        Text(
-                          heartHealthText,
-                          style: const TextStyle(
-                            fontSize: 29,
-                            height: 1,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        Text(
-                          '/100',
-                          style: TextStyle(
-                            color: context.vivordoColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              stat('Low', low?.toString() ?? '--', unit: 'bpm'),
-              divider(),
-              stat('Average', avgText, unit: 'bpm'),
-              divider(),
-              stat('High', high?.toString() ?? '--', unit: 'bpm'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  Widget summary(double? avg, int? low, int? high) => card(
+    padding: const EdgeInsets.all(20),
+    child: Row(
+      children: [
+        stat('Low', low?.toString() ?? '--', unit: 'bpm'),
+        divider(),
+        stat('Average', avg?.round().toString() ?? '--', unit: 'bpm'),
+        divider(),
+        stat('High', high?.toString() ?? '--', unit: 'bpm'),
+      ],
+    ),
+  );
 
   Widget stat(String label, String value, {String? unit}) => Expanded(
     child: Column(
@@ -861,65 +757,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   Widget divider() =>
       Container(width: 1, height: 44, color: context.vivordoColors.border);
 
-  Future<void> _showHeartHealthInfo() => showDialog<void>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      backgroundColor: dialogContext.vivordoColors.card,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-      titlePadding: const EdgeInsets.fromLTRB(24, 22, 16, 0),
-      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: red.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.favorite_border_rounded,
-              color: red,
-              size: 23,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'How Heart Health works',
-              style: TextStyle(
-                color: dialogContext.vivordoColors.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
-      content: SingleChildScrollView(
-        child: Text(
-          'Vivordo creates your Heart Health score from available signals such as resting heart rate, heart rate variability (HRV), and your heart rate during quiet periods. It compares today’s readings with your own recent baseline and combines the available signals into a score from 0 to 100.\n\nAt least seven previous days are needed to begin scoring. Higher scores mean today’s heart signals are trending favorably compared with your usual pattern. Heart Health is a wellness estimate and is not a medical diagnosis.',
-          style: TextStyle(
-            color: dialogContext.vivordoColors.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-      ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          style: FilledButton.styleFrom(
-            backgroundColor: purple,
-            foregroundColor: Colors.white,
-          ),
-          child: const Text('Got it'),
-        ),
-      ],
-    ),
-  );
-
   Widget chart(
     List<_HeartDay> days,
     List<_HeartReading> entries,
@@ -928,13 +765,13 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final isDay = rangeIndex == 0;
     final scoredDays = isDay
         ? const <_HeartDay>[]
-        : days.where((day) => day.heartHealthScore != null).toList();
+        : days.where((day) => day.resting != null).toList();
     final buckets = isDay
         ? _bucketDayReadings(entries)
         : const <_HeartBucket>[];
     final values = isDay
         ? buckets.map((bucket) => bucket.average).toList()
-        : scoredDays.map((day) => day.heartHealthScore!).toList();
+        : scoredDays.map((day) => day.resting!).toList();
     final dates = isDay
         ? buckets.map((bucket) => bucket.timestamp).toList()
         : scoredDays.map((day) => day.date).toList();
@@ -965,7 +802,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           highs: highs,
           resting: isDay ? resting : null,
           showTime: isDay,
-          showHeartHealthScore: !isDay,
         ),
       ),
     );
@@ -1061,14 +897,87 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     ),
   );
 
-  Widget insight(String text) {
+  Widget hrvCard(String kind, double avg, double? prior) {
+    final device = switch (kind) {
+      'rmssd:whoop' => 'WHOOP',
+      'rmssd:fitbit' => 'Fitbit',
+      _ => 'Apple Watch',
+    };
+    final when = kind == 'sdnn' ? 'daytime readings' : 'overnight';
+    final change = prior == null ? null : (avg - prior).round();
+    final period = switch (rangeIndex) {
+      0 => 'yesterday',
+      1 => 'the previous week',
+      _ => 'the previous month',
+    };
+    final comparison = change == null
+        ? null
+        : change == 0
+        ? 'Same as $period'
+        : '${change.abs()} ms ${change > 0 ? 'higher' : 'lower'} than $period';
     return card(
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          bubble(Icons.monitor_heart_outlined, const Color(0xFF20B26B)),
+          bubble(Icons.show_chart_rounded, const Color(0xFF20B26B)),
           const SizedBox(width: 14),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 16))),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: avg.round().toString(),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const TextSpan(
+                        text: ' ms',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$device · $when${comparison == null ? '' : ' · $comparison'}',
+                  style: TextStyle(color: context.vivordoColors.textSecondary),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Devices measure HRV differently, so Vivordo only compares '
+                  'this with your other $device readings.',
+                  style: TextStyle(
+                    color: context.vivordoColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget insight(DetailInsight insight) {
+    final (icon, color) = insightStyle(insight.tone);
+    return card(
+      padding: const EdgeInsets.all(18),
+      child: Row(
+        children: [
+          bubble(icon, color),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(insight.text, style: const TextStyle(fontSize: 16)),
+          ),
         ],
       ),
     );
@@ -1098,18 +1007,11 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
 }
 
 class _HeartDay {
-  const _HeartDay(
-    this.date,
-    this.readings,
-    this.resting,
-    this.heartHealthScore,
-    this.heartHealthStatus,
-  );
+  const _HeartDay(this.date, this.readings, this.resting, this.hrv);
   final DateTime date;
   final List<_HeartReading> readings;
   final double? resting;
-  final double? heartHealthScore;
-  final String? heartHealthStatus;
+  final Map<String, double> hrv; // keyed by kind, see hrvReadings
 }
 
 class _HeartReading {
@@ -1136,7 +1038,6 @@ class _HeartChart extends StatefulWidget {
     required this.highs,
     required this.resting,
     required this.showTime,
-    required this.showHeartHealthScore,
   });
   final List<double> values;
   final List<String> labels;
@@ -1145,7 +1046,6 @@ class _HeartChart extends StatefulWidget {
   final List<double> highs;
   final double? resting;
   final bool showTime;
-  final bool showHeartHealthScore;
 
   @override
   State<_HeartChart> createState() => _HeartChartState();
@@ -1172,8 +1072,7 @@ class _HeartChartState extends State<_HeartChart> {
   void didUpdateWidget(covariant _HeartChart oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!listEquals(widget.values, oldWidget.values) ||
-        !listEquals(widget.dates, oldWidget.dates) ||
-        widget.showHeartHealthScore != oldWidget.showHeartHealthScore) {
+        !listEquals(widget.dates, oldWidget.dates)) {
       selected = null;
     }
   }
@@ -1196,7 +1095,6 @@ class _HeartChartState extends State<_HeartChart> {
           highs: widget.highs,
           resting: widget.resting,
           showTime: widget.showTime,
-          showHeartHealthScore: widget.showHeartHealthScore,
           selected: selected,
           dark: Theme.of(context).brightness == Brightness.dark,
         ),
@@ -1214,7 +1112,6 @@ class _HeartChartPainter extends CustomPainter {
     required this.highs,
     required this.resting,
     required this.showTime,
-    required this.showHeartHealthScore,
     required this.selected,
     required this.dark,
   });
@@ -1225,7 +1122,6 @@ class _HeartChartPainter extends CustomPainter {
   final List<double> highs;
   final double? resting;
   final bool showTime;
-  final bool showHeartHealthScore;
   final int? selected;
   final bool dark;
 
@@ -1238,17 +1134,12 @@ class _HeartChartPainter extends CustomPainter {
     final width = size.width - left - right;
     final rightEdge = left + width;
     var minimum = 0.0;
-    var maximum = showHeartHealthScore
-        ? 100.0
-        : math.max(
-            120.0,
-            values.isEmpty ? 0.0 : values.reduce(math.max) * 1.15,
-          );
+    var maximum = 120.0;
     final hasRanges =
         lows.length == values.length &&
         highs.length == values.length &&
         values.isNotEmpty;
-    if (showTime && values.isNotEmpty) {
+    if (values.isNotEmpty) {
       final rawMinimum = hasRanges
           ? lows.reduce(math.min)
           : values.reduce(math.min);
@@ -1270,7 +1161,7 @@ class _HeartChartPainter extends CustomPainter {
     final grid = Paint()
       ..color = (dark ? Colors.white : Colors.black).withValues(alpha: .08)
       ..strokeWidth = 1;
-    final gridDivisions = showTime ? 2 : 4;
+    final gridDivisions = showTime ? 2 : 3;
     for (var i = 0; i <= gridDivisions; i++) {
       final y = height * i / gridDivisions;
       canvas.drawLine(Offset(left, y), Offset(rightEdge, y), grid);
@@ -1304,6 +1195,12 @@ class _HeartChartPainter extends CustomPainter {
 
     if (showTime) {
       _drawDayLine(canvas, points);
+    } else if (points.length == 1) {
+      canvas.drawCircle(
+        points.first,
+        5,
+        Paint()..color = const Color(0xFFFF3B4E),
+      );
     } else {
       final path = smoothChartPath(points);
       final fill = Path.from(path)
@@ -1378,7 +1275,7 @@ class _HeartChartPainter extends CustomPainter {
           ? '${values[index].round()} bpm\n'
                 '${DateFormat('h:mm a').format(dates[index])}'
           : '${DateFormat('MMM d').format(dates[index])}\n'
-                '${values[index].round()} / 100';
+                '${values[index].round()} bpm';
       final painter = TextPainter(
         text: TextSpan(
           text: label,
@@ -1539,6 +1436,5 @@ class _HeartChartPainter extends CustomPainter {
       selected != oldDelegate.selected ||
       resting != oldDelegate.resting ||
       showTime != oldDelegate.showTime ||
-      showHeartHealthScore != oldDelegate.showHeartHealthScore ||
       dark != oldDelegate.dark;
 }

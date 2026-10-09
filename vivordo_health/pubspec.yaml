@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.1.0+52
 
 environment:
   sdk: ^3.9.2
@@ -31,6 +31,7 @@ dependencies:
   flutter:
     sdk: flutter
   provider: ^6.0.0 # Simple solution for state management
+  collection: ^1.19.1
   http: ^1.1.0
   url_launcher: ^6.2.0
   flutter_svg: ^2.0.10
@@ -52,13 +53,11 @@ dependencies:
   firebase_auth: ^6.1.2
   google_sign_in: ^7.2.0
   cloud_firestore: ^6.1.0
-  firebase_ai: ^3.6.1
   firebase_messaging: ^16.1.0
   flutter_local_notifications: ^18.0.1
   flutter_timezone: ^5.1.0
   timezone: ^0.9.4
   health: ^12.2.0           # Apple HealthKit + Google Health Connect bridge
-  permission_handler: ^11.3.1 # Runtime permission requests
   flutter_reactive_ble: ^5.5.0 # WHOOP standard BLE heart-rate broadcast
   intl: ^0.20.1             # Date formatting (DateFormat)
   camera: ^0.10.5+9          # For accessing the device camera
@@ -104,7 +103,6 @@ flutter:
     - assets/whoop_puck_black.svg
     - assets/whoop_puck_white.svg
     - assets/achievements/
-    - assets/recommendations.json
     - assets/vivordo_robot.svg
 
 
@@ -150,6 +148,10 @@ flutter:
         - asset: assets/fonts/DMSans-Bold.ttf
           weight: 700
 
+
+dependency_overrides:
+  cloud_firestore:
+    path: vendor/cloud_firestore
 
 flutter_launcher_icons:
   ios: true

@@ -78,9 +78,33 @@ function shouldDeleteWhoopSleep(existingSleep, returnedForDay) {
   return returnedForDay !== true && existingSleep?.source === "whoop";
 }
 
+/**
+ * Whether a completed WHOOP fetch may clear the nights it did not return.
+ *
+ * A response carrying no sleep at all is ambiguous: it looks identical
+ * whether the member truly logged no sleep in the window or the fetch could
+ * not see it — an upstream incident answering 200 with an empty page, or a
+ * token that is still valid but no longer scoped for sleep. Reconciling
+ * against that deletes every WHOOP night in the window, which for a manual
+ * refresh is the full requested history rather than the two days a scheduled
+ * sync looks at.
+ *
+ * A response containing at least one night is trusted: sleep is readable, so
+ * a night absent from it really was removed on WHOOP's side.
+ *
+ * A failed fetch never reaches here — it throws before reconciliation.
+ *
+ * @param {Set<string>} presentDays Wake days the fetch returned.
+ * @return {boolean}
+ */
+function whoopFetchMayClearSleep(presentDays) {
+  return (presentDays?.size ?? 0) > 0;
+}
+
 module.exports = {
   shouldDeleteWhoopSleep,
   whoopDateKey,
+  whoopFetchMayClearSleep,
   whoopPresentSleepDays,
   whoopReconciliationDays,
 };

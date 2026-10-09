@@ -67,19 +67,16 @@ List<HomeStressDriver> homeStressDrivers(Object? raw, {int limit = 2}) {
   return drivers;
 }
 
-String homeStressRangeMessage(double? score, double? sevenDayAverage) {
-  if (score == null) return 'Your stress score will appear as data comes in.';
-  if (sevenDayAverage != null) {
-    final difference = score - sevenDayAverage;
-    if (difference <= -2) return 'Your stress is below your usual range.';
-    if (difference >= 2) return 'Your stress is above your usual range.';
-    return 'Your stress is within your usual range.';
-  }
-  if (score < 30) return 'Your current stress is low.';
-  if (score < 60) return 'Your current stress is manageable.';
-  if (score < 80) return 'Your current stress is elevated.';
-  return 'Your current stress is high.';
-}
+/// One word for where [score] sits. Null until there is a score.
+String? homeStressLevel(double? score) => score == null
+    ? null
+    : score < 30
+    ? 'Low'
+    : score < 60
+    ? 'Moderate'
+    : score < 80
+    ? 'Elevated'
+    : 'High';
 
 String homeStressComparison(double? score, double? sevenDayAverage) {
   if (score == null || sevenDayAverage == null) {

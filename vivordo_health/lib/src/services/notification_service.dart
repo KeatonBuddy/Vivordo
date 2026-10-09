@@ -3,9 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz;
@@ -16,14 +19,27 @@ import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/fitness_goal_notifications.dart';
 import 'package:vivordo_health/src/utils/notification_navigation.dart';
+import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
+import 'package:vivordo_health/src/services/day_record_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import '../utils/foreground_transaction.dart';
 import 'package:vivordo_health/src/utils/priority_reminder.dart';
 
 /// Function to handle background messages
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print('Handling background message: ${message.messageId}');
+  // The nightly silent push (functions/day_record_push.js): record today and
+  // yesterday for Effort while the app is in the background.
+  if (message.data['type'] != 'day_record_sync') return;
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
+  // A fresh background isolate restores the signed-in user asynchronously.
+  await FirebaseAuth.instance.authStateChanges().first;
+  await DayRecordService.sync(days: 2);
 }
 
 /// Notification Service - Singleton pattern for managing FCM notifications
@@ -37,6 +53,14 @@ class NotificationService {
   static const int _activeCalorieGoalNotificationId = 1202;
   static const int _exerciseGoalNotificationId = 1203;
   static const int _fitnessRingNotificationId = 1204;
+
+  /// Tonight's and the next six nights' wind-down reminders.
+  static const int _windDownReminderBaseId = 1401;
+  static const int _maxWindDownReminders = 7;
+
+  /// The morning check-in reminder, today and the next six days.
+  static const int _checkInReminderBaseId = 1501;
+  static const int _maxCheckInReminders = 7;
 
   factory NotificationService() {
     return _instance;
@@ -58,30 +82,35 @@ class NotificationService {
       if (kIsWeb) return;
       await _localNotificationsPlugin.cancel(_restTimerNotificationId);
       if (deadline == null || !deadline.isAfter(DateTime.now())) return;
-      await _localNotificationsPlugin.zonedSchedule(
-        _restTimerNotificationId,
-        'Rest timer finished',
-        'Your rest is over. Ready for your next set?',
-        tz.TZDateTime.from(deadline, tz.local),
-        const NotificationDetails(
-          iOS: DarwinNotificationDetails(
-            presentAlert: true,
-            presentSound: true,
-            presentBanner: true,
-            presentList: true,
+      try {
+        await _localNotificationsPlugin.zonedSchedule(
+          _restTimerNotificationId,
+          'Rest timer finished',
+          'Your rest is over. Ready for your next set?',
+          tz.TZDateTime.from(deadline, tz.local),
+          const NotificationDetails(
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentSound: true,
+              presentBanner: true,
+              presentList: true,
+            ),
+            android: AndroidNotificationDetails(
+              'workout_rest',
+              'Workout rest timer',
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
           ),
-          android: AndroidNotificationDetails(
-            'workout_rest',
-            'Workout rest timer',
-            importance: Importance.high,
-            priority: Priority.high,
-          ),
-        ),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        payload: '{"screen":"active_workout","type":"rest_timer"}',
-      );
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          payload: '{"screen":"active_workout","type":"rest_timer"}',
+        );
+      } on PlatformException catch (error) {
+        // iOS refuses to schedule while notifications are denied.
+        debugPrint('Rest timer notification not scheduled: $error');
+      }
     });
     _restTimerOperations = operation.catchError((Object error) {
       debugPrint('Rest notification failed: $error');
@@ -94,6 +123,14 @@ class NotificationService {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _fitnessGoalSubscription;
   String? _configuredUid;
+  bool _evaluatingFitnessGoals = false;
+  QueryDocumentSnapshot<Map<String, dynamic>>? _queuedFitnessDocument;
+
+  Future<void> resumeFitnessGoals() async {
+    final uid = _configuredUid;
+    if (uid != null) await _evaluateLatestFitnessGoals(uid);
+  }
+
   DateTime? _lastCalendarEventEnd;
   List<int> _scanReminderMinutes = [9 * 60, 17 * 60];
 
@@ -249,7 +286,7 @@ class NotificationService {
             unawaited(_evaluateFitnessGoals(uid, snapshot.docs.first));
           },
           onError: (Object error) {
-            print('NotificationService: Fitness goal listener failed: $error');
+            debugPrint('NotificationService: Fitness goal listener failed: $error');
           },
         );
   }
@@ -270,11 +307,18 @@ class NotificationService {
     String uid,
     QueryDocumentSnapshot<Map<String, dynamic>> dailyDocument,
   ) async {
-    if (_configuredUid != uid ||
+    if (_configuredUid == uid && _evaluatingFitnessGoals) {
+      _queuedFitnessDocument = dailyDocument;
+      return;
+    }
+    if (!canRunForegroundTransaction ||
+        _evaluatingFitnessGoals ||
+        _configuredUid != uid ||
         dailyDocument.id != localDayKey(DateTime.now())) {
       return;
     }
 
+    _evaluatingFitnessGoals = true;
     try {
       final dayKey = dailyDocument.id;
       final userReference = FirebaseFirestore.instance
@@ -284,6 +328,7 @@ class NotificationService {
           .runTransaction<List<FitnessGoalNotificationType>>((
             transaction,
           ) async {
+            requireForegroundTransaction();
             final userSnapshot = await transaction.get(userReference);
             final userData = userSnapshot.data();
             final preferences = userData?['preferences'] as Map?;
@@ -321,7 +366,16 @@ class NotificationService {
         await _showFitnessGoalNotification(type, goals);
       }
     } catch (error) {
-      print('NotificationService: Could not evaluate fitness goals: $error');
+      debugPrint('NotificationService: Could not evaluate fitness goals: $error');
+    } finally {
+      _evaluatingFitnessGoals = false;
+      final queued = _queuedFitnessDocument;
+      _queuedFitnessDocument = null;
+      if (queued != null &&
+          _configuredUid == uid &&
+          canRunForegroundTransaction) {
+        unawaited(_evaluateFitnessGoals(uid, queued));
+      }
     }
   }
 
@@ -370,13 +424,26 @@ class NotificationService {
     (_) => ',',
   );
 
+  /// Asks iOS for notification permission (onboarding's last step; iOS only
+  /// ever shows the prompt once). Returns whether notifications can show.
+  Future<bool> requestPermission() async {
+    if (kIsWeb || !Platform.isIOS) return true;
+    final settings = await _firebaseMessaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    return settings.authorizationStatus == AuthorizationStatus.authorized ||
+        settings.authorizationStatus == AuthorizationStatus.provisional;
+  }
+
   /// Initialize the notification service
   /// Should be called once in main() after Firebase.initializeApp()
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     if (kIsWeb) {
-      print(
+      debugPrint(
         'NotificationService: Web platform detected, skipping initialization',
       );
       _isInitialized = true;
@@ -387,42 +454,17 @@ class NotificationService {
       tz.initializeTimeZones();
       final deviceTimeZone = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(deviceTimeZone.identifier));
-      print(
+      debugPrint(
         'NotificationService: Local timezone set to ${deviceTimeZone.identifier}',
       );
 
-      // Request IOS permissions
-      if (Platform.isIOS) {
-        NotificationSettings settings = await _firebaseMessaging
-            .requestPermission(
-              alert: true,
-              badge: true,
-              sound: true,
-              provisional: false,
-            );
-
-        print(
-          'NotificationService: Permission status: ${settings.authorizationStatus}',
-        );
-
-        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-          print('NotificationService: User granted permission');
-        } else if (settings.authorizationStatus ==
-            AuthorizationStatus.provisional) {
-          print('NotificationService: User granted provisional permission');
-        } else {
-          print(
-            'NotificationService: User declined or has not accepted permission',
-          );
-        }
-      }
-
-      // Initialize Local Notifications Plugin
+      // The iOS permission prompt waits for onboarding's last step
+      // (requestPermission), so it's asked with context, not at launch.
       const DarwinInitializationSettings initializationSettingsIOS =
           DarwinInitializationSettings(
-            requestSoundPermission: true,
-            requestBadgePermission: true,
-            requestAlertPermission: true,
+            requestSoundPermission: false,
+            requestBadgePermission: false,
+            requestAlertPermission: false,
           );
 
       const InitializationSettings initializationSettings =
@@ -446,11 +488,11 @@ class NotificationService {
 
       // Listen for token refresh
       _firebaseMessaging.onTokenRefresh.listen((newToken) async {
-        print('NotificationService: FCM Token refreshed: $newToken');
+        debugPrint('NotificationService: FCM Token refreshed: $newToken');
         try {
           await _persistFcmToken(newToken);
         } catch (error) {
-          print('NotificationService: Could not store refreshed token: $error');
+          debugPrint('NotificationService: Could not store refreshed token: $error');
         }
       });
 
@@ -463,32 +505,32 @@ class NotificationService {
             apnsToken = await _firebaseMessaging.getAPNSToken();
 
             if (apnsToken != null) {
-              print('NotificationService: APNs Token received: $apnsToken');
+              debugPrint('NotificationService: APNs Token received: $apnsToken');
               break;
             }
 
-            print(
+            debugPrint(
               'NotificationService: APNs token not available yet, retrying ($attempt/10)',
             );
             await Future.delayed(const Duration(seconds: 1));
           }
 
           if (apnsToken == null) {
-            print(
+            debugPrint(
               'NotificationService: Warning - APNs token still unavailable; skipping FCM token for now',
             );
           } else {
             final token = await _firebaseMessaging.getToken();
-            print('NotificationService: FCM Token: $token');
+            debugPrint('NotificationService: FCM Token: $token');
             await _persistFcmToken(token);
           }
         } else {
           final token = await _firebaseMessaging.getToken();
-          print('NotificationService: FCM Token: $token');
+          debugPrint('NotificationService: FCM Token: $token');
           await _persistFcmToken(token);
         }
       } catch (e) {
-        print('NotificationService: Warning - Could not get FCM token: $e');
+        debugPrint('NotificationService: Warning - Could not get FCM token: $e');
       }
 
       // Handle foreground messages
@@ -510,15 +552,15 @@ class NotificationService {
       }
 
       _isInitialized = true;
-      print('NotificationService: Initialization complete');
+      debugPrint('NotificationService: Initialization complete');
     } catch (e) {
-      print('NotificationService: Error during initialization: $e');
+      debugPrint('NotificationService: Error during initialization: $e');
     }
   }
 
   /// Handle foreground messages by showing local notification
   void _handleForegroundMessage(RemoteMessage message) {
-    print(
+    debugPrint(
       'NotificationService: Foreground message received: ${message.messageId}',
     );
 
@@ -533,7 +575,7 @@ class NotificationService {
 
   /// Handle notification tap
   void _handleNotificationTap(RemoteMessage message) {
-    print('NotificationService: Notification tapped, data: ${message.data}');
+    debugPrint('NotificationService: Notification tapped, data: ${message.data}');
     final screen = message.data['screen'] as String?;
     AnalyticsService().logNotificationTap(
       notificationType: message.data['type'] as String? ?? 'remote',
@@ -543,12 +585,15 @@ class NotificationService {
       unawaited(openActiveWorkoutFromExternal());
       return;
     }
-    _navigateToNotificationScreen(screen);
+    _navigateToNotificationScreen(
+      screen,
+      type: message.data['type'] as String?,
+    );
   }
 
   /// Handle local notification tap
   void _onNotificationTapped(NotificationResponse response) {
-    print(
+    debugPrint(
       'NotificationService: Local notification tapped, payload: ${response.payload}',
     );
 
@@ -561,7 +606,7 @@ class NotificationService {
         screen = data['screen'] as String?;
         type = data['type'] as String?;
       } catch (e) {
-        print('NotificationService: Invalid notification payload: $e');
+        debugPrint('NotificationService: Invalid notification payload: $e');
       }
     }
 
@@ -573,14 +618,17 @@ class NotificationService {
       unawaited(openActiveWorkoutFromExternal());
       return;
     }
-    _navigateToNotificationScreen(screen);
+    _navigateToNotificationScreen(screen, type: type);
   }
 
-  void _navigateToNotificationScreen(String? screen) {
-    unawaited(_openNotificationRouteStack(screen));
+  void _navigateToNotificationScreen(String? screen, {String? type}) {
+    unawaited(_openNotificationRouteStack(screen, type: type));
   }
 
-  Future<void> _openNotificationRouteStack(String? screen) async {
+  Future<void> _openNotificationRouteStack(
+    String? screen, {
+    String? type,
+  }) async {
     if (screen == 'active_workout') {
       await openActiveWorkoutFromExternal();
       return;
@@ -594,7 +642,7 @@ class NotificationService {
     }
     if (navigator == null) return;
 
-    final routes = notificationRouteStack(screen);
+    final routes = notificationRouteStack(screen, type: type);
     navigator.pushNamedAndRemoveUntil(routes.first, (_) => false);
     if (routes.length == 1) return;
 
@@ -608,7 +656,7 @@ class NotificationService {
     try {
       await _persistFcmToken(await _firebaseMessaging.getToken());
     } catch (error) {
-      print('NotificationService: Could not refresh stored FCM token: $error');
+      debugPrint('NotificationService: Could not refresh stored FCM token: $error');
     }
   }
 
@@ -625,6 +673,9 @@ class NotificationService {
         .set({
           'token': token,
           'platform': Platform.operatingSystem,
+          // The UTC hour of this device's local 11 PM, when the server sends
+          // the nightly silent push that records the day.
+          'nightlyPushUtcHour': nightlyPushUtcHour(DateTime.now()),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
   }
@@ -643,26 +694,8 @@ class NotificationService {
           .doc(tokenId)
           .delete();
     } catch (error) {
-      print('NotificationService: Could not remove signed-out token: $error');
+      debugPrint('NotificationService: Could not remove signed-out token: $error');
     }
-  }
-
-  /// Show a local notification for testing purposes
-  Future<void> showTestNotification() async {
-    await showLocalNotification(
-      title: 'Test Notification',
-      body: 'This is a test notification from Vivordo Health',
-      payload: '{"screen": "home"}',
-    );
-  }
-
-  /// Show a notification when a new goal is created
-  Future<void> showGoalCreatedNotification(String goalTitle) async {
-    await showLocalNotification(
-      title: 'Goal Created! 🎯',
-      body: 'Successfully added: "$goalTitle". Let\'s get to work!',
-      payload: '{"screen": "goals"}',
-    );
   }
 
   /// Show a local notification
@@ -674,7 +707,7 @@ class NotificationService {
     String? payload,
   }) async {
     if (kIsWeb) {
-      print('NotificationService: Cannot show local notification on web');
+      debugPrint('NotificationService: Cannot show local notification on web');
       return;
     }
 
@@ -716,7 +749,7 @@ class NotificationService {
       screen: shownScreen,
     );
 
-    print('NotificationService: Local notification shown - $title');
+    debugPrint('NotificationService: Local notification shown - $title');
   }
 
   /// Schedule a daily scan reminder notification.
@@ -726,7 +759,7 @@ class NotificationService {
     int notificationId = _dailyScanReminderBaseId,
   }) async {
     if (kIsWeb) {
-      print('NotificationService: Cannot schedule daily scan reminder on web');
+      debugPrint('NotificationService: Cannot schedule daily scan reminder on web');
       return;
     }
     if (!_dailyScanRemindersEnabled) return;
@@ -757,23 +790,123 @@ class NotificationService {
       iOS: iOSDetails,
     );
 
-    await _localNotificationsPlugin.zonedSchedule(
-      notificationId,
-      'Time for your daily scan',
-      'Take a quick heart rate scan to keep your stress insights updated',
-      scheduledTime,
-      notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
-      payload: '{"screen": "scan", "type": "daily_scan_reminder"}',
-    );
+    try {
+      await _localNotificationsPlugin.zonedSchedule(
+        notificationId,
+        'Time for your daily scan',
+        'Take a quick heart rate scan to keep your stress insights updated',
+        scheduledTime,
+        notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+        payload: '{"screen": "scan", "type": "daily_scan_reminder"}',
+      );
+    } on PlatformException catch (error) {
+      // iOS refuses to schedule while notifications are denied.
+      debugPrint('Daily scan reminder not scheduled: $error');
+      return;
+    }
 
-    print(
+    debugPrint(
       'NotificationService: Daily scan reminder $notificationId scheduled for '
       '$scheduledTime',
     );
+  }
+
+  /// Replaces the scheduled wind-down reminders with [reminders] (the first
+  /// [_maxWindDownReminders]); any already past are skipped.
+  Future<void> scheduleWindDownReminders(
+    List<({DateTime at, String body})> reminders,
+  ) async {
+    if (kIsWeb) return;
+    await cancelWindDownReminders();
+    final now = DateTime.now();
+    for (final (index, reminder)
+        in reminders.take(_maxWindDownReminders).indexed) {
+      if (!reminder.at.isAfter(now)) continue;
+      try {
+        await _localNotificationsPlugin.zonedSchedule(
+          _windDownReminderBaseId + index,
+          'Time to wind down',
+          reminder.body,
+          tz.TZDateTime.from(reminder.at, tz.local),
+          const NotificationDetails(
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentSound: true,
+              presentBanner: true,
+              presentList: true,
+            ),
+            android: AndroidNotificationDetails(
+              'wind_down_reminders',
+              'Wind-down reminders',
+            ),
+          ),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          payload: '{"screen": "calendar", "type": "wind_down"}',
+        );
+      } on PlatformException catch (error) {
+        // iOS refuses to schedule while notifications are denied.
+        debugPrint('Wind-down reminder not scheduled: $error');
+        return;
+      }
+    }
+  }
+
+  /// Replaces the scheduled check-in reminders with one at each of [times]
+  /// (the first [_maxCheckInReminders]); any already past are skipped.
+  Future<void> scheduleCheckInReminders(List<DateTime> times) async {
+    if (kIsWeb) return;
+    await cancelCheckInReminders();
+    final now = DateTime.now();
+    for (final (index, at) in times.take(_maxCheckInReminders).indexed) {
+      if (!at.isAfter(now)) continue;
+      try {
+        await _localNotificationsPlugin.zonedSchedule(
+          _checkInReminderBaseId + index,
+          'How did you sleep?',
+          "Two quick questions for today's Capacity.",
+          tz.TZDateTime.from(at, tz.local),
+          const NotificationDetails(
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentSound: true,
+              presentBanner: true,
+              presentList: true,
+            ),
+            android: AndroidNotificationDetails(
+              'check_in_reminders',
+              'Check-in reminders',
+            ),
+          ),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          payload: '{"screen": "home", "type": "check_in_reminder"}',
+        );
+      } on PlatformException catch (error) {
+        debugPrint('Check-in reminder not scheduled: $error');
+        return;
+      }
+    }
+  }
+
+  Future<void> cancelCheckInReminders() async {
+    if (kIsWeb) return;
+    for (var index = 0; index < _maxCheckInReminders; index++) {
+      await _localNotificationsPlugin.cancel(_checkInReminderBaseId + index);
+    }
+  }
+
+  Future<void> cancelWindDownReminders() async {
+    if (kIsWeb) return;
+    for (var index = 0; index < _maxWindDownReminders; index++) {
+      await _localNotificationsPlugin.cancel(_windDownReminderBaseId + index);
+    }
   }
 
   /// Cancel the daily scan reminder notification.
@@ -783,7 +916,7 @@ class NotificationService {
     for (var index = 0; index < _maxDailyScanReminders; index++) {
       await _localNotificationsPlugin.cancel(_dailyScanReminderBaseId + index);
     }
-    print('NotificationService: Daily scan reminder canceled');
+    debugPrint('NotificationService: Daily scan reminder canceled');
   }
 
   /// Schedule a check-in when today's final calendar event ends.
@@ -800,7 +933,7 @@ class NotificationService {
 
     final scheduledTime = tz.TZDateTime.from(eventEnd, tz.local);
     if (!scheduledTime.isAfter(tz.TZDateTime.now(tz.local))) {
-      print('NotificationService: Final calendar event has already ended');
+      debugPrint('NotificationService: Final calendar event has already ended');
       return;
     }
 
@@ -814,19 +947,25 @@ class NotificationService {
       ),
     );
 
-    await _localNotificationsPlugin.zonedSchedule(
-      _calendarCheckInReminderId,
-      'Time for your daily check-in',
-      'Your calendar is clear. Check in with Vivordo about your day.',
-      scheduledTime,
-      notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      payload: '{"screen": "ai_chat", "type": "calendar_check_in"}',
-    );
+    try {
+      await _localNotificationsPlugin.zonedSchedule(
+        _calendarCheckInReminderId,
+        'Time for your daily check-in',
+        'Your calendar is clear. Check in with Vivordo about your day.',
+        scheduledTime,
+        notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: '{"screen": "ai_chat", "type": "calendar_check_in"}',
+      );
+    } on PlatformException catch (error) {
+      // iOS refuses to schedule while notifications are denied.
+      debugPrint('Calendar check-in not scheduled: $error');
+      return;
+    }
 
-    print(
+    debugPrint(
       'NotificationService: Calendar check-in scheduled for $scheduledTime',
     );
   }
@@ -886,29 +1025,37 @@ class NotificationService {
       if (scheduledAt(pending.first) <= time.millisecondsSinceEpoch) return;
       await _localNotificationsPlugin.cancel(pending.first.id);
     }
-    await _localNotificationsPlugin.zonedSchedule(
-      id,
-      'Priority reminder',
-      title,
-      tz.TZDateTime.from(time, tz.local),
-      const NotificationDetails(
-        iOS: DarwinNotificationDetails(presentAlert: true, presentSound: true),
-        android: AndroidNotificationDetails(
-          'priority_reminders',
-          'Priority reminders',
-          importance: Importance.high,
-          priority: Priority.high,
+    try {
+      await _localNotificationsPlugin.zonedSchedule(
+        id,
+        'Priority reminder',
+        title,
+        tz.TZDateTime.from(time, tz.local),
+        const NotificationDetails(
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentSound: true,
+          ),
+          android: AndroidNotificationDetails(
+            'priority_reminders',
+            'Priority reminders',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
         ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      payload: jsonEncode({
-        'screen': 'calendar',
-        'type': 'priority_reminder',
-        'scheduledAt': time.millisecondsSinceEpoch,
-      }),
-    );
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: jsonEncode({
+          'screen': 'calendar',
+          'type': 'priority_reminder',
+          'scheduledAt': time.millisecondsSinceEpoch,
+        }),
+      );
+    } on PlatformException catch (error) {
+      // iOS refuses to schedule while notifications are denied.
+      debugPrint('Priority reminder not scheduled: $error');
+    }
   }
 
   /// Get the current FCM token
@@ -921,13 +1068,13 @@ class NotificationService {
   Future<void> subscribeToTopic(String topic) async {
     if (kIsWeb) return;
     await _firebaseMessaging.subscribeToTopic(topic);
-    print('NotificationService: Subscribed to topic: $topic');
+    debugPrint('NotificationService: Subscribed to topic: $topic');
   }
 
   /// Unsubscribe from a topic
   Future<void> unsubscribeFromTopic(String topic) async {
     if (kIsWeb) return;
     await _firebaseMessaging.unsubscribeFromTopic(topic);
-    print('NotificationService: Unsubscribed from topic: $topic');
+    debugPrint('NotificationService: Unsubscribed from topic: $topic');
   }
 }

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
@@ -23,12 +24,12 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/achievement_unlocked_dialog.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
-import 'screens/onboarding_screen.dart';
+import 'screens/onboarding_flow_screen.dart';
 import 'screens/email_verification_screen.dart';
 import 'screens/force_update_screen.dart';
 import 'screens/circle_screen.dart';
 import 'screens/fitness_screen.dart';
-import 'screens/wellness_detail_screen.dart';
+import 'screens/physical_health_screen.dart';
 import 'screens/stress_detail_screen.dart';
 import 'screens/sleep_detail_screen.dart';
 import 'screens/heart_rate_detail_screen.dart';
@@ -44,14 +45,20 @@ const _whatsNewReleaseId = 'my_day_refresh_2026_08';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 bool _openingExternalWorkout = false;
 
-Future<void> openActiveWorkoutFromExternal() async {
+Future<void> openActiveWorkoutFromExternal({
+  bool createIfMissing = false,
+}) async {
   if (FirebaseAuth.instance.currentUser == null) return;
   if (ActiveWorkoutNavigation.focusExisting() || _openingExternalWorkout) {
     return;
   }
   _openingExternalWorkout = true;
   try {
-    if (!await prepareActiveWorkoutForLaunch()) return;
+    if (!await prepareActiveWorkoutForLaunch(
+      createIfMissing: createIfMissing,
+    )) {
+      return;
+    }
     NavigatorState? navigator;
     for (var attempt = 0; attempt < 20 && navigator == null; attempt++) {
       navigator = navigatorKey.currentState;
@@ -74,6 +81,7 @@ void main() async {
   FirebaseAuth.instance.authStateChanges().listen((user) {
     if (user == null) unawaited(HomeWidgetService.clearAccountSnapshot());
   });
+  HealthService.listenForNewSleep();
 
   // Uncomment to route Cloud Function calls to the local emulator instead of
   // the deployed function. Requires `firebase emulators:start --only functions`.
@@ -151,15 +159,23 @@ class _VersionGateState extends State<VersionGate> {
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const MaterialApp(
+          return MaterialApp(
             debugShowCheckedModeBanner: false,
-            home: Scaffold(body: Center(child: CircularProgressIndicator())),
+            theme: VivordoTheme.light,
+            darkTheme: VivordoTheme.dark,
+            themeMode: ThemeMode.system,
+            home: const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            ),
           );
         }
         final result = snapshot.data;
         if (result != null && result.updateRequired) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
+            theme: VivordoTheme.light,
+            darkTheme: VivordoTheme.dark,
+            themeMode: ThemeMode.system,
             home: ForceUpdateScreen(updateUrl: result.updateUrl),
           );
         }
@@ -244,9 +260,12 @@ class _MyAppState extends State<MyApp> {
     if (_openingWidget) return false;
     if (!const {
       'home',
-      'wellness',
+      'capacity',
       'fitness',
       'calendar',
+      'myday',
+      'mood',
+      'workout',
       'stress',
       'sleep',
       'heartrate',
@@ -277,6 +296,25 @@ class _MyAppState extends State<MyApp> {
       }
       if (navigator == null || !mounted) return false;
 
+      if (destination == 'workout') {
+        await openActiveWorkoutFromExternal(createIfMissing: true);
+        return true;
+      }
+      if (destination == 'mood') {
+        navigator.pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => const MainNavigationScreen(openMoodCheckIn: true),
+          ),
+          (_) => false,
+        );
+        return true;
+      }
+      // The Capacity widget opens My Day, where Capacity lives.
+      if (destination == 'myday' || destination == 'capacity') {
+        navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
+        return true;
+      }
+
       if (destination == 'fitness') {
         navigator.pushNamedAndRemoveUntil('/fitness', (_) => false);
         return true;
@@ -293,7 +331,6 @@ class _MyAppState extends State<MyApp> {
 
       navigator.pushNamedAndRemoveUntil('/home', (_) => false);
       final detailRoute = switch (destination) {
-        'wellness' => '/wellness',
         'stress' => '/stress',
         'sleep' => '/sleep',
         'heartrate' => '/heart-rate',
@@ -353,7 +390,7 @@ class _MyAppState extends State<MyApp> {
         '/calendar': (context) => const MainNavigationScreen(initialIndex: 1),
         '/full-calendar': (context) => const MonthCalendarScreen(),
         '/fitness': (context) => const MainNavigationScreen(initialIndex: 3),
-        '/wellness': (context) => const WellnessDetailScreen(),
+        '/wellness': (context) => const PhysicalHealthScreen(),
         '/stress': (context) => const StressDetailScreen(),
         '/sleep': (context) => const SleepDetailScreen(),
         '/heart-rate': (context) => const HeartRateDetailScreen(),
@@ -361,6 +398,7 @@ class _MyAppState extends State<MyApp> {
         '/scan': (context) => const MainNavigationScreen(initialIndex: 2),
         '/ai-chat': (context) => const MainNavigationScreen(initialIndex: 5),
         '/circle': (context) => const CircleScreen(),
+        '/circle/challenges': (context) => const CircleScreen(initialTab: 1),
         '/active-workout': (context) => const ActiveWorkoutScreen(),
       },
     );
@@ -443,6 +481,9 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(
+        NotificationService().resumeFitnessGoals().catchError((Object _) {}),
+      );
       if (FirebaseAuth.instance.currentUser != null) {
         unawaited(WhoopBleHeartRateService.instance.startIfPaired());
         HealthService().syncToday().whenComplete(() async {
@@ -536,43 +577,35 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
 
         final data = snapshot.data?.data() as Map<String, dynamic>?;
         final preferences = data?['preferences'] as Map<String, dynamic>?;
-        final onboardingSeen = preferences?['onboardingSeen'] == true;
-        final onboardingCompleted = data?['onboardingCompleted'] == true;
 
-        // The signup questionnaire records `onboardingCompleted`, while the
-        // lightweight introductory carousel records `onboardingSeen`. Either
-        // means the user has already completed an onboarding path.
-        if (onboardingSeen || onboardingCompleted) {
-          final seenRelease = preferences?['whatsNewSeenRelease'] as String?;
-          final dismissedLocally = _locallyDismissedWhatsNewUid == user.uid;
-          if (!dismissedLocally && seenRelease != _whatsNewReleaseId) {
-            return WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid));
-          }
-          return const MainNavigationScreen();
+        // Everyone, new or existing, signing in by email, Apple or Google,
+        // completes the current onboarding once.
+        if (needsOnboarding(data)) {
+          return OnboardingFlowScreen(
+            userDoc: data,
+            onFinished: () async {
+              // Onboarding covers what's new, so skip this release's recap.
+              await _persistWhatsNewSeen(user.uid);
+              if (!mounted) return;
+              // Onboarding forces a dark status bar; hand back the app's.
+              SystemChrome.setSystemUIOverlayStyle(
+                Theme.of(this.context).brightness == Brightness.dark
+                    ? SystemUiOverlayStyle.light
+                    : SystemUiOverlayStyle.dark,
+              );
+              // Re-reads the user document, which now passes the check.
+              setState(() => _userDocUid = null);
+            },
+          );
         }
 
-        return OnboardingScreen(
-          onFinished: () async {
-            await FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .set({
-                  'preferences.onboardingSeen': true,
-                  'onboardingCompleted': true,
-                  'onboardingCompletedAt': FieldValue.serverTimestamp(),
-                  'updatedAt': FieldValue.serverTimestamp(),
-                }, SetOptions(merge: true));
-
-            // New users have just seen onboarding for this release, so do not
-            // immediately follow it with an update recap on their next launch.
-            await _persistWhatsNewSeen(user.uid);
-
-            if (!context.mounted) return;
-
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
-            );
-          },
+        final seenRelease = preferences?['whatsNewSeenRelease'] as String?;
+        final dismissedLocally = _locallyDismissedWhatsNewUid == user.uid;
+        if (!dismissedLocally && seenRelease != _whatsNewReleaseId) {
+          return WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid));
+        }
+        return MainNavigationScreen(
+          seenTours: data?['tours'] as Map<String, dynamic>?,
         );
       },
     );

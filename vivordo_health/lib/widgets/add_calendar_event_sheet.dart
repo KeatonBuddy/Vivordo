@@ -1,9 +1,14 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
+import 'package:vivordo_health/src/utils/event_repeat.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
+
+import 'apple_ui.dart';
+import 'ios_pull_down_menu.dart';
 
 const _purple = Color(0xFF6254F4);
 
@@ -54,15 +59,32 @@ class CalendarEventDraft {
   }
 }
 
+int _minutesOf(TimeOfDay t) => t.hour * 60 + t.minute;
+
+/// The end time after the start moves from [oldStart] to [newStart], keeping
+/// the event's length. An end at or before its start means the next day, so
+/// 10 PM – 1 AM keeps its 3 hours.
+TimeOfDay keepEventLength({
+  required TimeOfDay oldStart,
+  required TimeOfDay oldEnd,
+  required TimeOfDay newStart,
+}) {
+  var length = (_minutesOf(oldEnd) - _minutesOf(oldStart)) % 1440;
+  if (length == 0) length = 60;
+  final end = (_minutesOf(newStart) + length) % 1440;
+  return TimeOfDay(hour: end ~/ 60, minute: end % 60);
+}
+
 enum CalendarEventEditAction { save, delete }
 
 class CalendarEventEditResult {
   const CalendarEventEditResult.save(
     this.draft, {
     required this.recurrenceChanged,
+    this.scope = EventScope.thisEvent,
   }) : action = CalendarEventEditAction.save;
 
-  const CalendarEventEditResult.delete()
+  const CalendarEventEditResult.delete({this.scope = EventScope.thisEvent})
     : action = CalendarEventEditAction.delete,
       draft = null,
       recurrenceChanged = false;
@@ -70,6 +92,65 @@ class CalendarEventEditResult {
   final CalendarEventEditAction action;
   final CalendarEventDraft? draft;
   final bool recurrenceChanged;
+  final EventScope scope;
+}
+
+const _scopeLabels = {
+  EventScope.thisEvent: 'This event',
+  EventScope.thisAndFollowing: 'This and following events',
+  EventScope.allEvents: 'All events',
+};
+
+/// Asks which part of a repeating event a change to one occurrence applies
+/// to, offering [scopes]. Null means cancel.
+Future<EventScope?> askEventScope(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required List<EventScope> scopes,
+  bool destructive = false,
+}) {
+  const cancel = AppleAlertAction<EventScope?>('Cancel', null, bold: true);
+  final choices = [
+    for (final scope in scopes)
+      AppleAlertAction<EventScope?>(
+        _scopeLabels[scope]!,
+        scope,
+        destructive: destructive,
+      ),
+  ];
+  return showAppleAlert<EventScope?>(
+    context,
+    title: title,
+    message: message,
+    // Side by side (one choice) iOS puts Cancel first; stacked, last.
+    actions: choices.length == 1 ? [cancel, ...choices] : [...choices, cancel],
+  );
+}
+
+/// Confirms deleting [title]. A [repeating] occurrence asks which part of
+/// the series to delete. Null means cancel.
+Future<EventScope?> confirmEventDelete(
+  BuildContext context, {
+  required String title,
+  required bool repeating,
+}) async {
+  if (repeating) {
+    return askEventScope(
+      context,
+      title: 'Delete repeating event?',
+      message: 'Which “$title” events do you want to delete?',
+      scopes: EventScope.values,
+      destructive: true,
+    );
+  }
+  final confirmed = await confirmAction(
+    context,
+    title: 'Delete event?',
+    message: 'This deletes “$title” from Google Calendar.',
+    confirmLabel: 'Delete',
+  );
+  return confirmed ? EventScope.thisEvent : null;
 }
 
 Future<CalendarEventDraft?> showAddCalendarEventSheet(
@@ -78,6 +159,7 @@ Future<CalendarEventDraft?> showAddCalendarEventSheet(
   DateTime? initialEnd,
 }) => showModalBottomSheet<CalendarEventDraft>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   useSafeArea: true,
   backgroundColor: Colors.transparent,
@@ -88,26 +170,44 @@ Future<CalendarEventDraft?> showAddCalendarEventSheet(
   ),
 );
 
+/// The add form for hosting in another sheet; [header] replaces the title.
+/// Saving pops a [CalendarEventDraft].
+/// [titleController], when given, is owned by the caller (so a title can
+/// carry over to another form).
+Widget addCalendarEventForm({
+  required DateTime initialStart,
+  required DateTime initialEnd,
+  Widget? header,
+  TextEditingController? titleController,
+}) => _AddCalendarEventSheet(
+  initialStart: initialStart,
+  initialEnd: initialEnd,
+  header: header,
+  titleController: titleController,
+);
+
 Future<CalendarEventEditResult?> showEditCalendarEventSheet(
   BuildContext context, {
   required gcal.Event event,
-}) {
+}) async {
   final start =
       event.start?.dateTime?.toLocal() ?? event.start?.date?.toLocal();
   final end = event.end?.dateTime?.toLocal() ?? event.end?.date?.toLocal();
-  if (start == null || end == null) return Future.value(null);
-
-  final recurrenceRule = event.recurrence?.join(' ').toUpperCase() ?? '';
-  var recurrence = 'none';
-  if (recurrenceRule.contains('FREQ=DAILY')) {
-    recurrence = 'daily';
-  } else if (recurrenceRule.contains('FREQ=WEEKLY')) {
-    final match = RegExp(r'BYDAY=([A-Z,]+)').firstMatch(recurrenceRule);
-    recurrence = match == null ? 'weekly' : 'weekly:${match.group(1)}';
+  if (start == null || end == null) return null;
+  final repeating = event.recurringEventId != null;
+  gcal.Event? series;
+  if (repeating) {
+    try {
+      series = await CalendarService.seriesFor(event);
+    } catch (_) {
+      // Without the series the form still edits this occurrence.
+    }
+    if (!context.mounted) return null;
   }
 
   return showModalBottomSheet<CalendarEventEditResult>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
@@ -117,14 +217,49 @@ Future<CalendarEventEditResult?> showEditCalendarEventSheet(
       initialEnd: end,
       initialTitle: event.summary ?? '',
       initialIsAllDay: event.start?.dateTime == null,
-      initialRecurrence: recurrence,
+      initialRepeat: EventRepeat.parse(series?.recurrence ?? event.recurrence),
+      repeating: repeating,
       initialCalendarId: CalendarService.calendarIdForEvent(event),
       isEditing: true,
     ),
   );
 }
 
-enum _RepeatChoice { once, daily, selectedDays }
+enum _RepeatOption {
+  none,
+  daily,
+  weekly,
+  monthly,
+  yearly,
+  selectedDays,
+  custom,
+}
+
+const _repeatOptions = [
+  (_RepeatOption.none, 'Does not repeat'),
+  (_RepeatOption.daily, 'Every day'),
+  (_RepeatOption.weekly, 'Every week'),
+  (_RepeatOption.monthly, 'Every month'),
+  (_RepeatOption.yearly, 'Every year'),
+  (_RepeatOption.selectedDays, 'Selected days'),
+  (_RepeatOption.custom, 'Custom…'),
+];
+
+/// Which menu entry [repeat] is: anything beyond a plain preset is Custom.
+_RepeatOption _optionFor(EventRepeat repeat) {
+  final unit = repeat.unit;
+  if (unit == null) return _RepeatOption.none;
+  if (repeat.interval != 1 || repeat.until != null) return _RepeatOption.custom;
+  if (unit == RepeatUnit.week && repeat.weekdays.isNotEmpty) {
+    return _RepeatOption.selectedDays;
+  }
+  return switch (unit) {
+    RepeatUnit.day => _RepeatOption.daily,
+    RepeatUnit.week => _RepeatOption.weekly,
+    RepeatUnit.month => _RepeatOption.monthly,
+    RepeatUnit.year => _RepeatOption.yearly,
+  };
+}
 
 class _AddCalendarEventSheet extends StatefulWidget {
   const _AddCalendarEventSheet({
@@ -132,16 +267,24 @@ class _AddCalendarEventSheet extends StatefulWidget {
     required this.initialEnd,
     this.initialTitle = '',
     this.initialIsAllDay = false,
-    this.initialRecurrence = 'none',
+    this.initialRepeat = const EventRepeat(),
     this.initialCalendarId,
     this.isEditing = false,
+    this.repeating = false,
+    this.header,
+    this.titleController,
   });
 
+  final Widget? header;
+  final TextEditingController? titleController;
+
+  /// Editing one occurrence of a repeating event.
+  final bool repeating;
   final DateTime initialStart;
   final DateTime initialEnd;
   final String initialTitle;
   final bool initialIsAllDay;
-  final String initialRecurrence;
+  final EventRepeat initialRepeat;
   final String? initialCalendarId;
   final bool isEditing;
 
@@ -155,8 +298,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
   bool _isAllDay = false;
-  _RepeatChoice _repeat = _RepeatChoice.once;
-  late Set<int> _selectedWeekdays;
+  late EventRepeat _repeat;
   List<WritableCalendar> _calendars = const [];
   WritableCalendar _selectedCalendar = const WritableCalendar(
     id: 'primary',
@@ -170,44 +312,22 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.initialTitle)
-      ..addListener(_titleChanged);
+    _titleController =
+        (widget.titleController ??
+              TextEditingController(text: widget.initialTitle))
+          ..addListener(_titleChanged);
     _date = DateUtils.dateOnly(widget.initialStart);
     _startTime = TimeOfDay.fromDateTime(widget.initialStart);
     _endTime = TimeOfDay.fromDateTime(widget.initialEnd);
     _isAllDay = widget.initialIsAllDay;
-    final weekdayCodes = <String, int>{
-      'MO': 1,
-      'TU': 2,
-      'WE': 3,
-      'TH': 4,
-      'FR': 5,
-      'SA': 6,
-      'SU': 7,
-    };
-    final selectedCodes = widget.initialRecurrence.startsWith('weekly:')
-        ? widget.initialRecurrence.substring('weekly:'.length).split(',')
-        : const <String>[];
-    _selectedWeekdays = selectedCodes
-        .map((code) => weekdayCodes[code])
-        .whereType<int>()
-        .toSet();
-    if (_selectedWeekdays.isEmpty) _selectedWeekdays = {_date.weekday};
-    _repeat = switch (widget.initialRecurrence) {
-      'daily' => _RepeatChoice.daily,
-      'weekly' => _RepeatChoice.selectedDays,
-      _ when widget.initialRecurrence.startsWith('weekly:') =>
-        _RepeatChoice.selectedDays,
-      _ => _RepeatChoice.once,
-    };
+    _repeat = widget.initialRepeat;
     _loadCalendars();
   }
 
   @override
   void dispose() {
-    _titleController
-      ..removeListener(_titleChanged)
-      ..dispose();
+    _titleController.removeListener(_titleChanged);
+    if (widget.titleController == null) _titleController.dispose();
     super.dispose();
   }
 
@@ -241,61 +361,76 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
       setState(() => _loadingCalendars = true);
       await _loadCalendars();
       if (!mounted || _calendars.isNotEmpty) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not load writable calendars.')),
+      showToast(
+        context,
+        "Couldn't load your calendars. Try again.",
+        kind: ToastKind.error,
       );
       return;
     }
 
-    final selected = await showModalBottomSheet<WritableCalendar>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(sheetContext).height * .62,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
-                child: Text(
-                  'Choose calendar',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+    final selected = await showAppleSheet<WritableCalendar>(
+      context,
+      builder: (sheetContext) {
+        final colors = sheetContext.vivordoColors;
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * .62,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _Grabber(),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                  child: Text(
+                    'Choose calendar',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: colors.textPrimary,
+                    ),
+                  ),
                 ),
-              ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _calendars.length,
-                  itemBuilder: (context, index) {
-                    final calendar = _calendars[index];
-                    final isSelected = calendar.id == _selectedCalendar.id;
-                    return ListTile(
-                      leading: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: _calendarColor(calendar.colorHex),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const SizedBox(width: 14, height: 14),
-                      ),
-                      title: Text(calendar.name),
-                      subtitle: calendar.isPrimary
-                          ? const Text('Primary calendar')
-                          : null,
-                      trailing: isSelected
-                          ? const Icon(Icons.check_rounded, color: _purple)
-                          : null,
-                      onTap: () => Navigator.pop(sheetContext, calendar),
-                    );
-                  },
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: AppleFormGroup(
+                      children: [
+                        for (final calendar in _calendars)
+                          AppleFormRow(
+                            label: calendar.name,
+                            value: calendar.isPrimary ? 'Primary' : null,
+                            leading: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: _calendarColor(calendar.colorHex),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const SizedBox(width: 12, height: 12),
+                            ),
+                            trailing: SizedBox(
+                              width: 20,
+                              child: calendar.id == _selectedCalendar.id
+                                  ? const Icon(
+                                      CupertinoIcons.checkmark_alt,
+                                      size: 20,
+                                      color: _purple,
+                                    )
+                                  : null,
+                            ),
+                            onTap: () => Navigator.pop(sheetContext, calendar),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
     if (selected != null && mounted) {
       setState(() => _selectedCalendar = selected);
@@ -303,7 +438,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   }
 
   Future<void> _pickDate() async {
-    final value = await showDatePicker(
+    final value = await showVivordoDatePicker(
       context: context,
       initialDate: _date,
       firstDate: DateTime(2000),
@@ -321,6 +456,11 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
     if (value == null) return;
     setState(() {
       if (start) {
+        _endTime = keepEventLength(
+          oldStart: _startTime,
+          oldEnd: _endTime,
+          newStart: value,
+        );
         _startTime = value;
       } else {
         _endTime = value;
@@ -328,23 +468,36 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
     });
   }
 
-  String get _recurrence {
-    if (_repeat == _RepeatChoice.daily) return 'daily';
-    if (_repeat == _RepeatChoice.once) return 'none';
-    const codes = {
-      1: 'MO',
-      2: 'TU',
-      3: 'WE',
-      4: 'TH',
-      5: 'FR',
-      6: 'SA',
-      7: 'SU',
+  Future<void> _chooseRepeat(_RepeatOption option) async {
+    final weekly = _repeat.unit == RepeatUnit.week;
+    final next = switch (option) {
+      _RepeatOption.none => const EventRepeat(),
+      _RepeatOption.daily => const EventRepeat(unit: RepeatUnit.day),
+      _RepeatOption.weekly => const EventRepeat(unit: RepeatUnit.week),
+      _RepeatOption.monthly => const EventRepeat(unit: RepeatUnit.month),
+      _RepeatOption.yearly => const EventRepeat(unit: RepeatUnit.year),
+      _RepeatOption.selectedDays => EventRepeat(
+        unit: RepeatUnit.week,
+        weekdays: weekly && _repeat.weekdays.isNotEmpty
+            ? _repeat.weekdays
+            : {_date.weekday},
+      ),
+      _RepeatOption.custom => await _showCustomRepeatSheet(
+        context,
+        initial: _repeat.repeats
+            ? _repeat
+            : const EventRepeat(unit: RepeatUnit.week),
+        start: _date,
+      ),
     };
-    final days = _selectedWeekdays.toList()..sort();
-    return 'weekly:${days.map((day) => codes[day]).join(',')}';
+    if (next == null || !mounted) return;
+    setState(() {
+      _repeat = next;
+      _recurrenceChanged = true;
+    });
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final title = _titleController.text.trim();
     if (title.isEmpty) return;
     final draft = CalendarEventDraft(
@@ -353,43 +506,46 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
       startTime: _startTime,
       endTime: _endTime,
       isAllDay: _isAllDay,
-      recurrence: _recurrence,
+      recurrence: _repeat.recurrence(allDay: _isAllDay),
       calendarId: _selectedCalendar.id,
     );
+    if (!widget.isEditing) {
+      Navigator.pop(context, draft);
+      return;
+    }
+    final scope = widget.repeating
+        ? await askEventScope(
+            context,
+            title: 'Edit repeating event',
+            message: _recurrenceChanged
+                ? 'A new repeat rule applies to every event in the series.'
+                : 'Apply your changes to only this event, or to every event in the series?',
+            scopes: [
+              if (!_recurrenceChanged) EventScope.thisEvent,
+              EventScope.allEvents,
+            ],
+          )
+        : EventScope.thisEvent;
+    if (scope == null || !mounted) return;
     Navigator.pop(
       context,
-      widget.isEditing
-          ? CalendarEventEditResult.save(
-              draft,
-              recurrenceChanged: _recurrenceChanged,
-            )
-          : draft,
+      CalendarEventEditResult.save(
+        draft,
+        recurrenceChanged: _recurrenceChanged,
+        scope: scope,
+      ),
     );
   }
 
   Future<void> _delete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete event?'),
-        content: Text(
-          'This will delete “${_titleController.text.trim().isEmpty ? 'Untitled event' : _titleController.text.trim()}” from Google Calendar.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final title = _titleController.text.trim();
+    final scope = await confirmEventDelete(
+      context,
+      title: title.isEmpty ? 'Untitled event' : title,
+      repeating: widget.repeating,
     );
-    if (confirmed == true && mounted) {
-      Navigator.pop(context, const CalendarEventEditResult.delete());
+    if (scope != null && mounted) {
+      Navigator.pop(context, CalendarEventEditResult.delete(scope: scope));
     }
   }
 
@@ -433,15 +589,17 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                 children: [
                   const SizedBox(width: 42),
                   Expanded(
-                    child: Text(
-                      widget.isEditing ? 'Edit Event' : 'Add Event',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: colors.textPrimary,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+                    child:
+                        widget.header ??
+                        Text(
+                          widget.isEditing ? 'Edit Event' : 'Add Event',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                   ),
                   IconButton.filledTonal(
                     onPressed: () => Navigator.pop(context),
@@ -507,7 +665,11 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                         _PickerRow(
                           icon: Icons.schedule_rounded,
                           label: 'End time',
-                          value: _endTime.format(context),
+                          // Matches CalendarEventDraft.end, which rolls an
+                          // end at or before the start into the next day.
+                          value: _minutesOf(_endTime) <= _minutesOf(_startTime)
+                              ? '${_endTime.format(context)} (next day)'
+                              : _endTime.format(context),
                           enabled: !_isAllDay,
                           onTap: () => _pickTime(start: false),
                         ),
@@ -527,10 +689,8 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                                   ),
                                 ),
                               ),
-                              Switch(
+                              AppSwitch(
                                 value: _isAllDay,
-                                activeThumbColor: Colors.white,
-                                activeTrackColor: _purple,
                                 onChanged: (value) =>
                                     setState(() => _isAllDay = value),
                               ),
@@ -542,19 +702,54 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                     const SizedBox(height: 26),
                     const _SheetLabel('REPEAT'),
                     const SizedBox(height: 10),
-                    _RepeatSelector(
-                      value: _repeat,
-                      onChanged: (value) => setState(() {
-                        _repeat = value;
-                        _recurrenceChanged = true;
-                      }),
+                    _SheetCard(
+                      children: [
+                        IosPullDownMenu<_RepeatOption>(
+                          tooltip: 'Repeat',
+                          onSelected: _chooseRepeat,
+                          actions: [
+                            for (final (option, label) in _repeatOptions)
+                              IosMenuAction(
+                                value: option,
+                                label: label,
+                                checked: option == _optionFor(_repeat),
+                              ),
+                          ],
+                          // No onTap: the tap belongs to the menu button.
+                          child: _PickerRow(
+                            icon: Icons.repeat_rounded,
+                            label: 'Repeat',
+                            trailingIcon:
+                                CupertinoIcons.chevron_up_chevron_down,
+                            value: switch (_optionFor(_repeat)) {
+                              _RepeatOption.custom => 'Custom',
+                              _RepeatOption.selectedDays => 'Selected days',
+                              _ => _repeat.describe(),
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                    if (_repeat == _RepeatChoice.selectedDays) ...[
+                    // Long rules would be cut off in the row, so spell them out.
+                    if (_optionFor(_repeat) == _RepeatOption.custom) ...[
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          _repeat.describe(),
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (_optionFor(_repeat) == _RepeatOption.selectedDays) ...[
                       const SizedBox(height: 12),
                       _WeekdaySelector(
-                        selected: _selectedWeekdays,
+                        selected: _repeat.weekdays,
                         onChanged: (days) => setState(() {
-                          _selectedWeekdays = days;
+                          _repeat = _repeat.copyWith(weekdays: days);
                           _recurrenceChanged = true;
                         }),
                       ),
@@ -683,14 +878,16 @@ class _PickerRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
-    required this.onTap,
+    this.onTap,
     this.enabled = true,
     this.calendarColor,
+    this.trailingIcon = Icons.chevron_right_rounded,
   });
   final IconData icon;
+  final IconData trailingIcon;
   final String label;
   final String value;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool enabled;
   final Color? calendarColor;
 
@@ -747,9 +944,9 @@ class _PickerRow extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Icon(
-                Icons.chevron_right_rounded,
+                trailingIcon,
                 color: colors.textSecondary,
-                size: 22,
+                size: trailingIcon == Icons.chevron_right_rounded ? 22 : 17,
               ),
             ],
           ),
@@ -759,19 +956,19 @@ class _PickerRow extends StatelessWidget {
   }
 }
 
-class _RepeatSelector extends StatelessWidget {
-  const _RepeatSelector({required this.value, required this.onChanged});
-  final _RepeatChoice value;
-  final ValueChanged<_RepeatChoice> onChanged;
+class _Segmented<T> extends StatelessWidget {
+  const _Segmented({
+    required this.value,
+    required this.choices,
+    required this.onChanged,
+  });
+  final T value;
+  final List<(T, String)> choices;
+  final ValueChanged<T> onChanged;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    const choices = [
-      (_RepeatChoice.once, 'Once'),
-      (_RepeatChoice.daily, 'Every day'),
-      (_RepeatChoice.selectedDays, 'Selected days'),
-    ];
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
@@ -869,6 +1066,169 @@ class _WeekdaySelector extends StatelessWidget {
               ),
             ),
           ),
+      ],
+    );
+  }
+}
+
+Future<EventRepeat?> _showCustomRepeatSheet(
+  BuildContext context, {
+  required EventRepeat initial,
+  required DateTime start,
+}) => showAppleSheet<EventRepeat>(
+  context,
+  builder: (_) => _CustomRepeatSheet(initial: initial, start: start),
+);
+
+class _Grabber extends StatelessWidget {
+  const _Grabber();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 36,
+    height: 5,
+    margin: const EdgeInsets.only(top: 6, bottom: 4),
+    decoration: BoxDecoration(
+      color: context.vivordoColors.textSecondary.withValues(alpha: .35),
+      borderRadius: BorderRadius.circular(3),
+    ),
+  );
+}
+
+class _CustomRepeatSheet extends StatefulWidget {
+  const _CustomRepeatSheet({required this.initial, required this.start});
+  final EventRepeat initial;
+  final DateTime start;
+
+  @override
+  State<_CustomRepeatSheet> createState() => _CustomRepeatSheetState();
+}
+
+class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
+  late EventRepeat _repeat =
+      widget.initial.unit == RepeatUnit.week && widget.initial.weekdays.isEmpty
+      ? widget.initial.copyWith(weekdays: {widget.start.weekday})
+      : widget.initial;
+
+  void _setUnit(RepeatUnit unit) => setState(() {
+    _repeat = EventRepeat(
+      unit: unit,
+      interval: _repeat.interval,
+      weekdays: unit == RepeatUnit.week ? {widget.start.weekday} : const {},
+      until: _repeat.until,
+    );
+  });
+
+  Future<void> _pickUntil() async {
+    final value = await showVivordoDatePicker(
+      context: context,
+      initialDate: _repeat.until ?? widget.start.add(const Duration(days: 30)),
+      firstDate: widget.start,
+      lastDate: DateTime(2100),
+      title: 'Ends on',
+    );
+    if (value != null) setState(() => _repeat = _repeat.copyWith(until: value));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final interval = _repeat.interval;
+    return AppleFormSheet(
+      title: 'Custom repeat',
+      onDone: () => Navigator.pop(context, _repeat),
+      children: [
+        const SizedBox(height: 8),
+        const _SheetLabel('EVERY'),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            IconButton.filledTonal(
+              tooltip: 'Fewer',
+              onPressed: interval > 1
+                  ? () => setState(
+                      () => _repeat = _repeat.copyWith(interval: interval - 1),
+                    )
+                  : null,
+              icon: const Icon(Icons.remove_rounded),
+            ),
+            SizedBox(
+              width: 44,
+              child: Text(
+                '$interval',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            IconButton.filledTonal(
+              tooltip: 'More',
+              onPressed: interval < 99
+                  ? () => setState(
+                      () => _repeat = _repeat.copyWith(interval: interval + 1),
+                    )
+                  : null,
+              icon: const Icon(Icons.add_rounded),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _Segmented(
+          value: _repeat.unit!,
+          choices: [
+            for (final unit in RepeatUnit.values)
+              (
+                unit,
+                '${unit.name[0].toUpperCase()}${unit.name.substring(1)}${interval == 1 ? '' : 's'}',
+              ),
+          ],
+          onChanged: _setUnit,
+        ),
+        if (_repeat.unit == RepeatUnit.week) ...[
+          const SizedBox(height: 20),
+          const _SheetLabel('ON'),
+          const SizedBox(height: 10),
+          _WeekdaySelector(
+            selected: _repeat.weekdays,
+            onChanged: (days) =>
+                setState(() => _repeat = _repeat.copyWith(weekdays: days)),
+          ),
+        ],
+        const SizedBox(height: 20),
+        const _SheetLabel('ENDS'),
+        const SizedBox(height: 10),
+        _Segmented(
+          value: _repeat.until != null,
+          choices: const [(false, 'Never'), (true, 'On date')],
+          onChanged: (onDate) {
+            if (onDate) {
+              _pickUntil();
+            } else {
+              setState(() => _repeat = _repeat.copyWith(clearUntil: true));
+            }
+          },
+        ),
+        if (_repeat.until != null) ...[
+          const SizedBox(height: 10),
+          _SheetCard(
+            children: [
+              _PickerRow(
+                icon: Icons.event_busy_rounded,
+                label: 'End date',
+                value: DateFormat('MMM d, y').format(_repeat.until!),
+                onTap: _pickUntil,
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 18),
+        Text(
+          _repeat.describe(),
+          style: TextStyle(color: colors.textSecondary, fontSize: 14),
+        ),
       ],
     );
   }

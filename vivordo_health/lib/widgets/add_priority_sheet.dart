@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
+import 'apple_ui.dart';
 import 'priority_reminder_picker.dart';
+import 'priority_duration_picker.dart';
 
 const _purple = Color(0xFF6254F4);
 
@@ -22,8 +25,12 @@ class PriorityDraft {
     this.reminderTimeMinutes,
     this.completed = false,
     this.deleteRequested = false,
+    this.planning = const {},
+    this.habit = false,
+    this.target = 1,
   });
 
+  final Map<String, dynamic> planning;
   final String title;
   final DateTime date;
   final TimeOfDay? time;
@@ -35,6 +42,10 @@ class PriorityDraft {
   final int? reminderTimeMinutes;
   final bool completed;
   final bool deleteRequested;
+
+  /// A daily habit, done [target] times a day.
+  final bool habit;
+  final int target;
 
   DateTime? get scheduledAt => time == null
       ? null
@@ -70,6 +81,7 @@ class PriorityDraft {
 Future<PriorityDraft?> showAddPrioritySheet(BuildContext context) =>
     showModalBottomSheet<PriorityDraft>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
@@ -77,23 +89,56 @@ Future<PriorityDraft?> showAddPrioritySheet(BuildContext context) =>
       builder: (_) => const _AddPrioritySheet(),
     );
 
+/// The add form for hosting in another sheet. [at] prefills the date and
+/// time; [header] replaces the title. Saving pops a [PriorityDraft].
+/// [titleController], when given, is owned by the caller (so a title can
+/// carry over to another form).
+Widget addPriorityForm({
+  DateTime? at,
+  Widget? header,
+  TextEditingController? titleController,
+}) =>
+    _AddPrioritySheet(at: at, header: header, titleController: titleController);
+
+/// [habitSwitch] offers to make it a habit; [forSchedule] edits a whole
+/// repeating schedule rather than one day's copy.
 Future<PriorityDraft?> showPriorityEditor(
   BuildContext context,
   PriorityDraft initial, {
   bool occurrenceOnly = false,
+  bool habitSwitch = false,
+  bool forSchedule = false,
 }) => showModalBottomSheet<PriorityDraft>(
   context: context,
+  useRootNavigator: true,
   isScrollControlled: true,
   useSafeArea: true,
   backgroundColor: Colors.transparent,
   barrierColor: Colors.black.withValues(alpha: .68),
-  builder: (_) =>
-      _AddPrioritySheet(initial: initial, occurrenceOnly: occurrenceOnly),
+  builder: (_) => _AddPrioritySheet(
+    initial: initial,
+    occurrenceOnly: occurrenceOnly,
+    habitSwitch: habitSwitch,
+    forSchedule: forSchedule,
+  ),
 );
 
 class _AddPrioritySheet extends StatefulWidget {
-  const _AddPrioritySheet({this.initial, this.occurrenceOnly = false});
+  const _AddPrioritySheet({
+    this.initial,
+    this.occurrenceOnly = false,
+    this.at,
+    this.header,
+    this.titleController,
+    this.habitSwitch = true,
+    this.forSchedule = false,
+  });
   final PriorityDraft? initial;
+  final bool habitSwitch;
+  final bool forSchedule;
+  final DateTime? at;
+  final Widget? header;
+  final TextEditingController? titleController;
   final bool occurrenceOnly;
 
   @override
@@ -111,19 +156,27 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   int _reminderMinutes = 60;
   TimeOfDay? _reminderTime;
   bool _completed = false;
+  late Map<String, dynamic> _planning;
+  bool _habit = false;
+  int _target = 1;
   bool get _editing => widget.initial != null;
 
   @override
   void initState() {
     super.initState();
     final initial = widget.initial;
-    _controller = TextEditingController(text: initial?.title)
-      ..addListener(_changed);
-    _date = initial?.date ?? _date;
-    _time = initial?.time;
+    _planning = {...?initial?.planning};
+    _controller =
+        (widget.titleController ?? TextEditingController(text: initial?.title))
+          ..addListener(_changed);
+    final at = widget.at;
+    _date = initial?.date ?? (at == null ? _date : DateUtils.dateOnly(at));
+    _time = initial?.time ?? (at == null ? null : TimeOfDay.fromDateTime(at));
     _repeat = initial?.repeat ?? PriorityRepeat.once;
     _repeatEnd = initial?.repeatEnd;
     _completed = initial?.completed ?? false;
+    _habit = initial?.habit ?? false;
+    _target = initial?.target ?? 1;
     _reminderMinutes = initial?.reminderMinutes ?? 60;
     final reminder = initial?.reminderTimeMinutes;
     _reminderTime = reminder == null
@@ -136,16 +189,15 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
 
   @override
   void dispose() {
-    _controller
-      ..removeListener(_changed)
-      ..dispose();
+    _controller.removeListener(_changed);
+    if (widget.titleController == null) _controller.dispose();
     super.dispose();
   }
 
   void _changed() => setState(() {});
 
   Future<void> _pickDate() async {
-    final value = await showDatePicker(
+    final value = await showVivordoDatePicker(
       context: context,
       initialDate: _date,
       firstDate: _date.isBefore(DateUtils.dateOnly(DateTime.now()))
@@ -165,36 +217,13 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   }
 
   Future<void> _pickRepeatEnd() async {
-    final choice = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              title: Text(
-                'Repeat ends',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.all_inclusive_rounded),
-              title: const Text('Never'),
-              trailing: _repeatEnd == null
-                  ? const Icon(Icons.check_rounded, color: _purple)
-                  : null,
-              onTap: () => Navigator.pop(context, false),
-            ),
-            ListTile(
-              leading: const Icon(Icons.event_rounded),
-              title: const Text('On a date'),
-              onTap: () => Navigator.pop(context, true),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+    final choice = await showAppleActionSheet<bool>(
+      context,
+      title: 'Repeat ends',
+      actions: [
+        AppleSheetAction('Never', false, selected: _repeatEnd == null),
+        AppleSheetAction('On a date', true, selected: _repeatEnd != null),
+      ],
     );
     if (choice == null) return;
     if (!choice) {
@@ -202,25 +231,64 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
       return;
     }
     if (!mounted) return;
-    final value = await showDatePicker(
+    final value = await showVivordoDatePicker(
       context: context,
       initialDate: _repeatEnd ?? _date.add(const Duration(days: 30)),
       firstDate: _date,
       lastDate: DateTime(2100),
+      title: 'Repeat ends',
     );
     if (value != null) setState(() => _repeatEnd = value);
+  }
+
+  Future<void> _pickReminderTime() async {
+    final value = await showVivordoTimePicker(
+      context: context,
+      initialTime: _reminderTime ?? TimeOfDay.now(),
+    );
+    if (value != null && mounted) setState(() => _reminderTime = value);
+  }
+
+  /// Whether [field] holds Vivordo AI's estimate rather than the user's
+  /// own value (DailyPriorityService.estimateBlanks).
+  bool _isEstimate(String field) =>
+      (_planning['estimated'] as List?)?.contains(field) == true;
+
+  /// Sets a workload value the user chose, so it's no longer an estimate.
+  void _setPlanning(String field, Object? value) {
+    _planning[field] = value;
+    final estimated = [...?(_planning['estimated'] as List?)]..remove(field);
+    if (estimated.isEmpty) {
+      _planning.remove('estimated');
+    } else {
+      _planning['estimated'] = estimated;
+    }
   }
 
   void _submit({bool deleteRequested = false}) {
     final title = _controller.text.trim();
     if (!deleteRequested && title.isEmpty) return;
+    if (!deleteRequested &&
+        !_habit &&
+        _addToCalendar &&
+        _time != null &&
+        _planning['minutes'] == null) {
+      showToast(
+        context,
+        'Add an estimated duration before creating a timed calendar event.',
+      );
+      return;
+    }
     Navigator.pop(
       context,
       PriorityDraft(
         title: title,
-        date: _date,
-        time: _time,
-        addToCalendar: _addToCalendar,
+        planning: _habit ? const {} : _planning,
+        date: _habit && !_editing ? DateUtils.dateOnly(DateTime.now()) : _date,
+        time: _habit ? null : _time,
+        addToCalendar: !_habit && _addToCalendar,
+        habit: _habit,
+        target: _habit ? _target : 1,
         repeat: _repeat,
         selectedWeekdays: _selectedWeekdays,
         repeatEnd: _repeatEnd,
@@ -287,15 +355,18 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                 children: [
                   const SizedBox(width: 42),
                   Expanded(
-                    child: Text(
-                      _editing ? 'Edit Priority' : 'Add Priority',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: colors.textPrimary,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+                    child:
+                        widget.header ??
+                        Text(
+                          '${_editing ? 'Edit' : 'Add'} '
+                          '${_habit ? 'Habit' : 'Priority'}',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                   ),
                   IconButton.filledTonal(
                     onPressed: () => Navigator.pop(context),
@@ -310,14 +381,16 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _Label('PRIORITY'),
+                    _Label(_habit ? 'HABIT' : 'PRIORITY'),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _controller,
                       autofocus: !_editing,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
-                        hintText: 'What do you want to accomplish?',
+                        hintText: _habit
+                            ? 'Drink water, take meds, go for a walk'
+                            : 'What do you want to accomplish?',
                         filled: true,
                         fillColor: colors.textPrimary.withValues(alpha: .04),
                         contentPadding: const EdgeInsets.symmetric(
@@ -329,159 +402,317 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 26),
-                    const _Label('SCHEDULE'),
-                    const SizedBox(height: 10),
-                    _Card(
-                      children: [
-                        _Row(
-                          icon: Icons.calendar_month_rounded,
-                          label: 'Date',
-                          value: _dateLabel,
-                          onTap: _pickDate,
-                        ),
-                        _Row(
-                          icon: Icons.schedule_rounded,
-                          label: 'Time',
-                          value: _time?.format(context) ?? 'Add time',
-                          onTap: _pickTime,
-                        ),
-                        _Row(
-                          icon: Icons.notifications_outlined,
-                          label: 'Reminder',
-                          value: _time == null
-                              ? (_reminderTime?.format(context) ??
-                                    'Choose reminder time')
-                              : priorityReminderLabel(_reminderMinutes),
-                          onTap: () async {
-                            if (_time == null) {
-                              final value = await showVivordoTimePicker(
-                                context: context,
-                                initialTime: _reminderTime ?? TimeOfDay.now(),
-                              );
-                              if (value != null && mounted) {
-                                setState(() => _reminderTime = value);
-                              }
-                              return;
-                            }
-                            final value = await showPriorityReminderPicker(
-                              context,
-                              _reminderMinutes,
-                            );
-                            if (value != null && mounted) {
-                              setState(() => _reminderMinutes = value);
-                            }
-                          },
-                        ),
-                        if (_time != null)
-                          TextButton(
-                            onPressed: () => setState(() => _time = null),
-                            child: const Text('Remove time'),
-                          ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.event_available_rounded,
-                                color: _purple,
-                                size: 23,
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Add to calendar',
-                                      style: TextStyle(
-                                        color: colors.textPrimary,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Create an event in your calendar',
-                                      style: TextStyle(
-                                        color: colors.textSecondary,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Switch(
-                                value: _addToCalendar,
-                                activeThumbColor: Colors.white,
-                                activeTrackColor: _purple,
-                                onChanged: (value) =>
-                                    setState(() => _addToCalendar = value),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 26),
-                    _Label(
-                      widget.occurrenceOnly ? 'THIS OCCURRENCE' : 'REPEAT',
-                    ),
-                    const SizedBox(height: 10),
-                    if (widget.occurrenceOnly)
-                      const Text(
-                        'Changes apply to this priority only, not the original calendar event or recurring schedule.',
-                      )
-                    else
-                      _RepeatSelector(
-                        value: _repeat,
-                        onChanged: (value) => setState(() => _repeat = value),
-                      ),
-                    if (_repeat == PriorityRepeat.selectedDays) ...[
-                      const SizedBox(height: 16),
-                      _Weekdays(
-                        selected: _selectedWeekdays,
-                        onChanged: (value) =>
-                            setState(() => _selectedWeekdays = value),
-                      ),
-                      const SizedBox(height: 12),
-                      Center(
-                        child: Text(
-                          _repeatSummary,
-                          style: TextStyle(
-                            color: colors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (_repeat != PriorityRepeat.once) ...[
+                    if (widget.habitSwitch) ...[
                       const SizedBox(height: 14),
                       _Card(
                         children: [
-                          _Row(
-                            icon: null,
-                            label: 'Ends',
-                            value: _repeatEnd == null
-                                ? 'Never'
-                                : DateFormat('MMM d, y').format(_repeatEnd!),
-                            onTap: _pickRepeatEnd,
+                          _SwitchRow(
+                            icon: Icons.loop_rounded,
+                            label: 'Habit',
+                            detail: 'A small thing you do most days',
+                            value: _habit,
+                            onChanged: (value) => setState(() {
+                              _habit = value;
+                              // A habit always repeats.
+                              if (value && _repeat == PriorityRepeat.once) {
+                                _repeat = PriorityRepeat.daily;
+                              }
+                            }),
                           ),
                         ],
                       ),
                     ],
-                    const SizedBox(height: 28),
-                    if (_editing) ...[
+                    if (_habit) ...[
+                      const SizedBox(height: 26),
+                      const _Label('GOAL'),
+                      const SizedBox(height: 10),
                       _Card(
                         children: [
-                          CheckboxListTile(
-                            value: _completed,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.flag_outlined,
+                                  color: _purple,
+                                  size: 23,
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Text(
+                                    'Times a day',
+                                    style: TextStyle(
+                                      color: colors.textPrimary,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Fewer',
+                                  onPressed: _target > 1
+                                      ? () => setState(() => _target--)
+                                      : null,
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                ),
+                                SizedBox(
+                                  width: 28,
+                                  child: Text(
+                                    '$_target',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: colors.textPrimary,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'More',
+                                  color: _purple,
+                                  onPressed: _target < 20
+                                      ? () => setState(() => _target++)
+                                      : null,
+                                  icon: const Icon(Icons.add_circle_outline),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _Row(
+                            icon: Icons.notifications_outlined,
+                            label: 'Reminder',
+                            value: _reminderTime?.format(context) ?? 'Off',
+                            onTap: _pickReminderTime,
+                          ),
+                          if (_reminderTime != null)
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => _reminderTime = null),
+                              child: const Text('Remove reminder'),
+                            ),
+                        ],
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 26),
+                      const _Label('WORKLOAD ESTIMATE'),
+                      const SizedBox(height: 10),
+                      _Card(
+                        children: [
+                          _Row(
+                            icon: Icons.timer_outlined,
+                            label: 'Estimated duration',
+                            value: _planning['minutes'] == null
+                                ? 'Not set'
+                                : '${_isEstimate('minutes') ? '≈ ' : ''}'
+                                      '${(_planning['minutes'] as num).toInt() ~/ 60} hr ${(_planning['minutes'] as num).toInt() % 60} min',
+                            onTap: () async {
+                              FocusScope.of(context).unfocus();
+                              final minutes = await showPriorityDurationPicker(
+                                context,
+                                initialMinutes: (_planning['minutes'] as num?)
+                                    ?.toInt(),
+                              );
+                              if (minutes != null && mounted) {
+                                setState(
+                                  () => _setPlanning(
+                                    'minutes',
+                                    minutes == 0 ? null : minutes,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                          _Row(
+                            icon: Icons.bar_chart_rounded,
+                            label: 'Effort (optional)',
+                            value:
+                                (_planning['effort'] != null &&
+                                        _isEstimate('effort')
+                                    ? '≈ '
+                                    : '') +
+                                switch (_planning['effort']) {
+                                  'light' => 'Light',
+                                  'moderate' => 'Moderate',
+                                  'demanding' => 'Demanding',
+                                  _ => 'Not set',
+                                },
+                            onTap: () async {
+                              FocusScope.of(context).unfocus();
+                              final selected =
+                                  await showCupertinoModalPopup<String>(
+                                    context: context,
+                                    builder: (sheetContext) => CupertinoTheme(
+                                      data: CupertinoThemeData(
+                                        brightness: Theme.of(
+                                          context,
+                                        ).brightness,
+                                        primaryColor: _purple,
+                                      ),
+                                      child: CupertinoActionSheet(
+                                        title: const Text('Effort'),
+                                        message: const Text(
+                                          'How demanding will this priority feel?',
+                                        ),
+                                        actions: [
+                                          for (final choice in const [
+                                            ('light', 'Light'),
+                                            ('moderate', 'Moderate'),
+                                            ('demanding', 'Demanding'),
+                                            ('clear', 'Not set'),
+                                          ])
+                                            CupertinoActionSheetAction(
+                                              isDefaultAction:
+                                                  (_planning['effort'] ??
+                                                      'clear') ==
+                                                  choice.$1,
+                                              onPressed: () => Navigator.pop(
+                                                sheetContext,
+                                                choice.$1,
+                                              ),
+                                              child: Text(choice.$2),
+                                            ),
+                                        ],
+                                        cancelButton:
+                                            CupertinoActionSheetAction(
+                                              onPressed: () =>
+                                                  Navigator.pop(sheetContext),
+                                              child: const Text('Cancel'),
+                                            ),
+                                      ),
+                                    ),
+                                  );
+                              if (selected != null && mounted) {
+                                setState(
+                                  () => _setPlanning(
+                                    'effort',
+                                    selected == 'clear' ? null : selected,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 26),
+                      const _Label('SCHEDULE'),
+                      const SizedBox(height: 10),
+                      _Card(
+                        children: [
+                          _Row(
+                            icon: Icons.calendar_month_rounded,
+                            label: 'Date',
+                            value: _dateLabel,
+                            onTap: _pickDate,
+                          ),
+                          _Row(
+                            icon: Icons.schedule_rounded,
+                            label: 'Time',
+                            value: _time?.format(context) ?? 'Add time',
+                            onTap: _pickTime,
+                          ),
+                          _Row(
+                            icon: Icons.notifications_outlined,
+                            label: 'Reminder',
+                            value: _time == null
+                                ? (_reminderTime?.format(context) ??
+                                      'Choose reminder time')
+                                : priorityReminderLabel(_reminderMinutes),
+                            onTap: () async {
+                              if (_time == null) return _pickReminderTime();
+                              final value = await showPriorityReminderPicker(
+                                context,
+                                _reminderMinutes,
+                              );
+                              if (value != null && mounted) {
+                                setState(() => _reminderMinutes = value);
+                              }
+                            },
+                          ),
+                          if (_time == null && _reminderTime != null)
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => _reminderTime = null),
+                              child: const Text('Remove reminder time'),
+                            ),
+                          if (_time != null)
+                            TextButton(
+                              onPressed: () => setState(() => _time = null),
+                              child: const Text('Remove time'),
+                            ),
+                          _SwitchRow(
+                            icon: Icons.event_available_rounded,
+                            label: 'Add to calendar',
+                            detail: 'Create an event in your calendar',
+                            value: _addToCalendar,
                             onChanged: (value) =>
-                                setState(() => _completed = value ?? false),
-                            activeColor: _purple,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            title: const Text('Mark as completed'),
+                                setState(() => _addToCalendar = value),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 26),
+                    if (_habit && _editing)
+                      Text(
+                        'Changes apply to every day it repeats.',
+                        style: TextStyle(color: colors.textSecondary),
+                      )
+                    else ...[
+                      _Label(
+                        widget.occurrenceOnly ? 'THIS OCCURRENCE' : 'REPEAT',
+                      ),
+                      const SizedBox(height: 10),
+                      if (widget.occurrenceOnly)
+                        const Text(
+                          'Changes apply to this priority only, not the original calendar event or recurring schedule.',
+                        )
+                      else
+                        _RepeatSelector(
+                          value: _repeat,
+                          allowOnce: !_habit,
+                          onChanged: (value) => setState(() => _repeat = value),
+                        ),
+                      if (_repeat == PriorityRepeat.selectedDays) ...[
+                        const SizedBox(height: 16),
+                        _Weekdays(
+                          selected: _selectedWeekdays,
+                          onChanged: (value) =>
+                              setState(() => _selectedWeekdays = value),
+                        ),
+                        const SizedBox(height: 12),
+                        Center(
+                          child: Text(
+                            _repeatSummary,
+                            style: TextStyle(
+                              color: colors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (_repeat != PriorityRepeat.once) ...[
+                        const SizedBox(height: 14),
+                        _Card(
+                          children: [
+                            _Row(
+                              icon: null,
+                              label: 'Ends',
+                              value: _repeatEnd == null
+                                  ? 'Never'
+                                  : DateFormat('MMM d, y').format(_repeatEnd!),
+                              onTap: _pickRepeatEnd,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                    const SizedBox(height: 28),
+                    if (_editing && !_habit) ...[
+                      _Card(
+                        children: [
+                          AppleFormRow(
+                            label: 'Mark as completed',
+                            leading: AppCheckCircle(checked: _completed),
+                            onTap: () =>
+                                setState(() => _completed = !_completed),
                           ),
                         ],
                       ),
@@ -514,7 +745,11 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             shadowColor: Colors.transparent,
                           ),
                           child: Text(
-                            _editing ? 'Save Changes' : 'Add Priority',
+                            _editing
+                                ? 'Save Changes'
+                                : _habit
+                                ? 'Add Habit'
+                                : 'Add Priority',
                             style: const TextStyle(fontSize: 17),
                           ),
                         ),
@@ -528,30 +763,23 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             foregroundColor: Colors.redAccent,
                           ),
                           icon: const Icon(Icons.delete_outline),
-                          label: const Text('Delete Priority'),
+                          label: Text(
+                            widget.forSchedule
+                                ? 'Delete Habit'
+                                : 'Delete Priority',
+                          ),
                           onPressed: () async {
-                            final confirmed = await showDialog<bool>(
-                              context: context,
-                              builder: (dialogContext) => AlertDialog(
-                                title: const Text('Delete priority?'),
-                                content: const Text(
-                                  'Remove this priority? This will not delete the original calendar event or recurring schedule.',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, false),
-                                    child: const Text('Cancel'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, true),
-                                    child: const Text('Delete'),
-                                  ),
-                                ],
-                              ),
+                            final confirmed = await confirmAction(
+                              context,
+                              title: widget.forSchedule
+                                  ? 'Delete habit?'
+                                  : 'Delete priority?',
+                              message: widget.forSchedule
+                                  ? 'It stops repeating. Days you already did are kept.'
+                                  : "This won't delete the original calendar event or recurring schedule.",
+                              confirmLabel: 'Delete',
                             );
-                            if (confirmed == true && mounted) {
+                            if (confirmed && mounted) {
                               _submit(deleteRequested: true);
                             }
                           },
@@ -663,15 +891,64 @@ class _Row extends StatelessWidget {
   }
 }
 
-class _RepeatSelector extends StatelessWidget {
-  const _RepeatSelector({required this.value, required this.onChanged});
-  final PriorityRepeat value;
-  final ValueChanged<PriorityRepeat> onChanged;
+class _SwitchRow extends StatelessWidget {
+  const _SwitchRow({
+    required this.icon,
+    required this.label,
+    required this.detail,
+    required this.value,
+    required this.onChanged,
+  });
+  final IconData icon;
+  final String label;
+  final String detail;
+  final bool value;
+  final ValueChanged<bool> onChanged;
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    const choices = [
-      (PriorityRepeat.once, 'Once'),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Icon(icon, color: _purple, size: 23),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(color: colors.textPrimary, fontSize: 16),
+                ),
+                Text(
+                  detail,
+                  style: TextStyle(color: colors.textSecondary, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          AppSwitch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _RepeatSelector extends StatelessWidget {
+  const _RepeatSelector({
+    required this.value,
+    required this.onChanged,
+    this.allowOnce = true,
+  });
+  final PriorityRepeat value;
+  final ValueChanged<PriorityRepeat> onChanged;
+  final bool allowOnce;
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final choices = [
+      if (allowOnce) (PriorityRepeat.once, 'Once'),
       (PriorityRepeat.daily, 'Every day'),
       (PriorityRepeat.selectedDays, 'Selected days'),
     ];
@@ -790,6 +1067,17 @@ Future<PriorityDraft?> showEditPrioritySheet(
     context,
     PriorityDraft(
       title: priority.title,
+      planning: {
+        ...priority.planning,
+        if (priority.planning['minutes'] == null &&
+            !priority.isAllDay &&
+            priority.sourceStart != null &&
+            priority.sourceEnd != null &&
+            priority.sourceEnd!.isAfter(priority.sourceStart!))
+          'minutes': priority.sourceEnd!
+              .difference(priority.sourceStart!)
+              .inMinutes,
+      },
       date: DateUtils.dateOnly(date),
       time: start == null || priority.isAllDay
           ? null
@@ -803,5 +1091,55 @@ Future<PriorityDraft?> showEditPrioritySheet(
       completed: priority.completed,
     ),
     occurrenceOnly: priority.source != 'manual',
+    habitSwitch: priority.source == 'recurring_manual',
   );
+}
+
+/// Edits a habit's schedule, applying the change to every day from today.
+Future<void> showHabitEditor(
+  BuildContext context,
+  PriorityTemplate habit,
+) async {
+  final reminder = habit.reminderTimeMinutes;
+  final result = await showPriorityEditor(
+    context,
+    PriorityDraft(
+      title: habit.title,
+      date: DateUtils.dateOnly(DateTime.now()),
+      time: null,
+      addToCalendar: false,
+      repeat: habit.recurrence == 'daily'
+          ? PriorityRepeat.daily
+          : PriorityRepeat.selectedDays,
+      selectedWeekdays: habit.weekdays,
+      repeatEnd: habit.endDate,
+      reminderTimeMinutes: reminder,
+      habit: true,
+      target: habit.target,
+    ),
+    habitSwitch: true,
+    forSchedule: true,
+  );
+  if (result == null) return;
+  try {
+    if (result.deleteRequested) {
+      await DailyPriorityService.deleteSchedule(habit.id);
+    } else {
+      await DailyPriorityService.updateSchedule(
+        habit.id,
+        title: result.title,
+        habit: result.habit,
+        target: result.target,
+        reminderTimeMinutes: result.reminderTimeMinutes,
+      );
+    }
+  } catch (_) {
+    if (context.mounted) {
+      showToast(
+        context,
+        "Couldn't update the habit. Try again.",
+        kind: ToastKind.error,
+      );
+    }
+  }
 }

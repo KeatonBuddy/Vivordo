@@ -9,8 +9,11 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+
+import '../widgets/apple_ui.dart';
 
 class ExerciseDetailScreen extends StatefulWidget {
   const ExerciseDetailScreen({super.key});
@@ -134,9 +137,10 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     }).toList();
     final total = days.fold<int>(0, (total, day) => total + day.minutes);
     final average = days.isEmpty ? 0 : (total / days.length).round();
+    // Both ranges count days without data as no exercise.
     final previousAverage = previous.isEmpty
         ? null
-        : previous.reduce((a, b) => a + b) / previous.length;
+        : previous.reduce((a, b) => a + b) / _rangeDays;
     final changeMinutes = previousAverage == null
         ? null
         : average - previousAverage.round();
@@ -203,7 +207,17 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
-          _insights(changeMinutes, selected, points),
+          _insights(
+            exerciseInsight(
+              minutes: {
+                for (final MapEntry(:key, :value) in minutes.entries)
+                  ?DateTime.tryParse(key): value.toDouble(),
+              },
+              today: DateTime.now(),
+              rangeDays: _rangeDays,
+              goal: goals.exerciseMinutes.toDouble(),
+            ),
+          ),
         ],
       ),
     );
@@ -446,11 +460,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   );
 
   Future<void> _showExercisePicker(List<String> names, String? selected) async {
-    final selection = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
+    final selection = await showAppleSheet<String>(
+      context,
       builder: (context) =>
           _ExercisePickerSheet(exercises: names, selectedExercise: selected),
     );
@@ -488,9 +499,15 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
           ),
           Text(
-            '${change >= 0 ? '↑' : '↓'} ${_number(change.abs())} lb across ${visible.length} sessions',
+            change == 0
+                ? 'Same weight across ${visible.length} sessions'
+                : '${change > 0 ? '↑' : '↓'} ${_number(change.abs())} lb across ${visible.length} sessions',
             style: TextStyle(
-              color: change >= 0 ? const Color(0xFF20B26B) : Colors.red,
+              color: change == 0
+                  ? context.vivordoColors.textSecondary
+                  : change > 0
+                  ? const Color(0xFF20B26B)
+                  : Colors.red,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -510,36 +527,15 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
-  Widget _insights(int? change, String? exercise, List<_WeightPoint> points) {
-    final rows = <String>[
-      if (change != null)
-        'Your daily exercise time ${change >= 0 ? 'increased' : 'decreased'} by ${change.abs()} minutes.',
-      if (exercise != null && points.length > 1)
-        '$exercise changed by ${_number((points.last.weight - points.first.weight).abs())} lb across your recorded sessions.',
-      if (change == null && (exercise == null || points.length < 2))
-        'Keep recording exercise to unlock personalized trends.',
-    ];
+  Widget _insights(DetailInsight insight) {
+    final (icon, color) = insightStyle(insight.tone);
     return _card(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Column(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      child: Row(
         children: [
-          for (var i = 0; i < rows.length; i++) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 15),
-              child: Row(
-                children: [
-                  _iconBubble(
-                    Icons.trending_up_rounded,
-                    const Color(0xFF20B26B),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(rows[i])),
-                ],
-              ),
-            ),
-            if (i != rows.length - 1)
-              Divider(height: 1, color: context.vivordoColors.border),
-          ],
+          _iconBubble(icon, color),
+          const SizedBox(width: 12),
+          Expanded(child: Text(insight.text)),
         ],
       ),
     );
@@ -649,8 +645,20 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Grabber, matching the app's other sheets.
+          Center(
+            child: Container(
+              width: 36,
+              height: 5,
+              margin: const EdgeInsets.only(top: 6, bottom: 4),
+              decoration: BoxDecoration(
+                color: colors.textSecondary.withValues(alpha: .35),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
             child: Text(
               'Select exercise',
               style: Theme.of(

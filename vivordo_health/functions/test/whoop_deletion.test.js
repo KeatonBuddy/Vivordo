@@ -72,3 +72,19 @@ test("cleanup planning is idempotent", () => {
   assert.deepEqual(plan.deletePaths, []);
   assert.deepEqual(plan.setFields, {});
 });
+
+test("deletes WHOOP vitals while retaining Apple SDNN and Fitbit", () => {
+  const plan = whoopDeletionPlan({
+    resting_heart_rate: {avg: 58, source: "whoop"},
+    hrv_rmssd: {avg: 44, source: "whoop", method: "rmssd"},
+    respiratory_rate: {avg: 14, source: "whoop"},
+    hrv: {avg: 65, source: "apple_health"},
+    blood_oxygen: {avg: 97, source: "fitbit"},
+    heart_health: {avg: 80}, stress: {avg: 40}, wellness: {avg: 70},
+  });
+  assert.equal(plan.changed, true);
+  assert.deepEqual(plan.deletePaths.sort(), [
+    "heart_health", "hrv_rmssd", "respiratory_rate", "resting_heart_rate",
+    "stress", "wellness",
+  ]);
+});

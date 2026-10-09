@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/replay_latest.dart';
 
 const Map<String, int> kDefaultStrengthGoals = {
   'Chest': 10,
@@ -54,24 +55,29 @@ class ActivityGoalsService {
 
   static Stream<ActivityGoals> watch() {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return Stream.value(const ActivityGoals());
+    if (user == null) {
+      _watchedUid = null;
+      _goalsStream = null;
+      return Stream.value(const ActivityGoals());
+    }
     if (_watchedUid == user.uid && _goalsStream != null) return _goalsStream!;
     _watchedUid = user.uid;
-    _goalsStream = FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .snapshots()
-        .asyncMap((snapshot) async {
-          final data = snapshot.data();
-          final preferences = data?['preferences'] as Map?;
-          if (preferences?['activityGoals'] is! Map) {
-            const defaults = ActivityGoals();
-            await save(defaults);
-            return defaults;
-          }
-          return ActivityGoals.fromUserData(data);
-        })
-        .asBroadcastStream();
+    _goalsStream = replayLatest(
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .snapshots()
+          .asyncMap((snapshot) async {
+            final data = snapshot.data();
+            final preferences = data?['preferences'] as Map?;
+            if (preferences?['activityGoals'] is! Map) {
+              const defaults = ActivityGoals();
+              await save(defaults);
+              return defaults;
+            }
+            return ActivityGoals.fromUserData(data);
+          }),
+    );
     return _goalsStream!;
   }
 

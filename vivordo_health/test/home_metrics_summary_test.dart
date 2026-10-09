@@ -11,10 +11,7 @@ Map<String, dynamic> stressDay(Map<String, dynamic> stress) => {
 void main() {
   group('homeMetricsWindowStartKey', () {
     test('counts today as the first of the ninety days', () {
-      expect(
-        homeMetricsWindowStartKey(DateTime(2026, 9, 18)),
-        '2026-06-21',
-      );
+      expect(homeMetricsWindowStartKey(DateTime(2026, 9, 18)), '2026-06-21');
       expect(
         DateTime(2026, 9, 18).difference(DateTime(2026, 6, 21)).inDays,
         89,
@@ -121,7 +118,11 @@ void main() {
     test('is null rather than zero when no day in range has stress', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
-        days: [day('2026-09-17', {'steps': {'sum': 900}})],
+        days: [
+          day('2026-09-17', {
+            'steps': {'sum': 900},
+          }),
+        ],
       );
       expect(summary.sevenDayStressAverage, isNull);
     });
@@ -152,14 +153,18 @@ void main() {
       expect(
         summarizeHomeMetrics(
           now: DateTime(2026, 9, 18),
-          days: [day('2026-09-18', stressDay({'current': 70}))],
+          days: [
+            day('2026-09-18', stressDay({'current': 70})),
+          ],
         ).stressAnchor,
         70,
       );
       expect(
         summarizeHomeMetrics(
           now: DateTime(2026, 9, 18),
-          days: [day('2026-09-18', stressDay({'avg': 55}))],
+          days: [
+            day('2026-09-18', stressDay({'avg': 55})),
+          ],
         ).stressAnchor,
         55,
       );
@@ -169,7 +174,9 @@ void main() {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
         days: [
-          day('2026-09-18', {'steps': {'sum': 10}}),
+          day('2026-09-18', {
+            'steps': {'sum': 10},
+          }),
           day('2026-09-17', stressDay({'note': 'nothing numeric'})),
           day('2026-09-16', stressDay({'anchor': 33})),
         ],
@@ -180,7 +187,11 @@ void main() {
     test('is null rather than zero when the window holds no stress', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
-        days: [day('2026-09-18', {'steps': {'sum': 10}})],
+        days: [
+          day('2026-09-18', {
+            'steps': {'sum': 10},
+          }),
+        ],
       );
       expect(summary.stressAnchor, isNull);
     });
@@ -216,7 +227,11 @@ void main() {
     test('is null rather than zero when the window holds no reading', () {
       final summary = summarizeHomeMetrics(
         now: DateTime(2026, 9, 18),
-        days: [day('2026-09-18', {'steps': {'sum': 10}})],
+        days: [
+          day('2026-09-18', {
+            'steps': {'sum': 10},
+          }),
+        ],
       );
       expect(summary.latestHeartRate, isNull);
     });
@@ -307,8 +322,47 @@ void main() {
   });
 
   group('HomeMetricsSummaryCache', () {
-    final rows = [day('2026-09-17', stressDay({'anchor': 20}))];
+    final rows = [
+      day('2026-09-17', stressDay({'anchor': 20})),
+    ];
     List<MetricDayEntry> build() => rows;
+
+    test('cached replay rechecks expired live Bluetooth precedence', () {
+      final cache = HomeMetricsSummaryCache();
+      final snapshot = Object();
+      final rows = [
+        day('2026-09-24', {
+          'heart_rate_sources': {
+            'whoop_ble': {
+              'source': 'whoop_ble',
+              'entries': [
+                {'bpm': 80, 'timestamp': '2026-09-24T14:00:00Z'},
+              ],
+            },
+            'apple_health': {
+              'source': 'apple_health',
+              'entries': [
+                {'bpm': 70, 'timestamp': '2026-09-24T14:01:00Z'},
+              ],
+            },
+          },
+        }),
+      ];
+      HomeMetricsSummary summarize(int minute) => cache.summarize(
+        snapshotKey: snapshot,
+        dayKey: '2026-09-24',
+        uid: 'user-a',
+        now: DateTime.utc(2026, 9, 24, 14, minute),
+        days: () => rows,
+      );
+      expect(summarize(2).latestHeartRate?.bpm, 80);
+      expect(summarize(4).latestHeartRate?.bpm, 80);
+      expect(cache.computeCount, 1);
+      expect(summarize(6).latestHeartRate?.bpm, 70);
+      expect(cache.computeCount, 2);
+      expect(summarize(20).latestHeartRate?.bpm, 70);
+      expect(cache.computeCount, 2);
+    });
 
     test('reuses the summary for an unchanged snapshot, day and account', () {
       final cache = HomeMetricsSummaryCache();

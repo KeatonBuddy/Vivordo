@@ -1,6 +1,30 @@
 "use strict";
 
 const RECENT_AUTH_WINDOW_SECONDS = 10 * 60;
+const crypto = require("crypto");
+
+/**
+ * Saves delayed results only while the account has no deletion tombstone.
+ * The transactional read serializes this write against deletion starting.
+ * @param {object} db Firestore instance.
+ * @param {string} uid Account ID.
+ * @param {object} reference Destination document.
+ * @param {object} data Result fields.
+ * @param {boolean} updateOnly Require an existing destination.
+ * @return {Promise<boolean>} Whether the result was saved.
+ */
+async function writeUnlessDeleting(
+    db, uid, reference, data, updateOnly = false,
+) {
+  const id = crypto.createHash("sha256").update(uid).digest("hex");
+  const marker = db.collection("account_deletion_jobs").doc(id);
+  return db.runTransaction(async (transaction) => {
+    if ((await transaction.get(marker)).exists) return false;
+    if (updateOnly) transaction.update(reference, data);
+    else transaction.set(reference, data, {merge: true});
+    return true;
+  });
+}
 
 /**
  * Returns whether a callable authentication token is recent enough for an
@@ -112,6 +136,7 @@ function challengeDeletionPlan(challenge = {}, uid, participantProgress = 0) {
 }
 
 module.exports = {
+  writeUnlessDeleting,
   RECENT_AUTH_WINDOW_SECONDS,
   challengeDeletionPlan,
   hasRecentAuthentication,

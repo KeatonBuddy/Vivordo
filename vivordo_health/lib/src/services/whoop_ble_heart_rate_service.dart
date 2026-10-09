@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -8,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import '../utils/foreground_transaction.dart';
 
 enum WhoopBleStatus {
   unpaired,
@@ -75,6 +77,7 @@ class WhoopBleHeartRateService {
   static const _deviceIdKey = 'whoop_ble_device_id';
   static const _deviceNameKey = 'whoop_ble_device_name';
   static const _ownerUidKey = 'whoop_ble_owner_uid';
+  static const _pausedKey = 'whoop_ble_paused';
   static final Uuid _heartRateService = Uuid.parse(
     '0000180d-0000-1000-8000-00805f9b34fb',
   );
@@ -90,6 +93,51 @@ class WhoopBleHeartRateService {
   );
   final Map<DateTime, _MinuteBucket> _pendingBuckets = {};
   final Map<DateTime, _MinuteBucket> _sessionBuckets = {};
+  final Map<DateTime, _MinuteBucket> _inFlightBuckets = {};
+  String? _restoredQueueUid;
+  Future<void> _queueWrites = Future<void>.value();
+
+  Future<void> _persistPending() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return Future<void>.value();
+    final encoded = jsonEncode({
+      for (final entry in {..._inFlightBuckets, ..._pendingBuckets}.entries)
+        entry.key.toIso8601String(): {
+          'sum': (_sessionBuckets[entry.key] ?? entry.value).sum,
+          'count': (_sessionBuckets[entry.key] ?? entry.value).count,
+          'min': (_sessionBuckets[entry.key] ?? entry.value).minimum,
+          'max': (_sessionBuckets[entry.key] ?? entry.value).maximum,
+        },
+    });
+    final write = _queueWrites
+        .catchError((Object _) {})
+        .then((_) => _storage.write(key: 'ble_pending_$uid', value: encoded));
+    _queueWrites = write;
+    return write;
+  }
+
+  Future<void> _restorePending() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid == _restoredQueueUid) return;
+    await _queueWrites.catchError((Object _) {});
+    final raw = await _storage.read(key: 'ble_pending_$uid');
+    if (FirebaseAuth.instance.currentUser?.uid != uid) return;
+    if (raw != null) {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        final minute = DateTime.parse(entry.key);
+        final values = entry.value as Map<String, dynamic>;
+        final bucket = _MinuteBucket()
+          ..sum = values['sum'] as int
+          ..count = values['count'] as int
+          ..minimum = values['min'] as int
+          ..maximum = values['max'] as int;
+        _pendingBuckets.putIfAbsent(minute, () => bucket.copy());
+        _sessionBuckets.putIfAbsent(minute, () => bucket.copy());
+      }
+    }
+    _restoredQueueUid = uid;
+  }
 
   StreamSubscription<DiscoveredDevice>? _scanSubscription;
   StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
@@ -102,6 +150,10 @@ class WhoopBleHeartRateService {
   String? _deviceId;
   String? _deviceName;
   bool _shouldMonitor = false;
+
+  /// Set by [pause]; keeps launches, resumes and screens from reconnecting
+  /// until [resume].
+  bool _paused = false;
   bool _isFlushing = false;
   int _connectionGeneration = 0;
   DateTime? _lastFlushAt;
@@ -112,10 +164,12 @@ class WhoopBleHeartRateService {
         _storage.read(key: _deviceIdKey),
         _storage.read(key: _deviceNameKey),
         _storage.read(key: _ownerUidKey),
+        _storage.read(key: _pausedKey),
       ]);
       if (values[2] != FirebaseAuth.instance.currentUser?.uid) return;
       _deviceId = values[0];
       _deviceName = values[1];
+      _paused = values[3] == 'true';
       if (_deviceId != null) {
         state.value = WhoopBleState(
           status: WhoopBleStatus.disconnected,
@@ -189,11 +243,29 @@ class WhoopBleHeartRateService {
     }
     _deviceId = device.id;
     _deviceName = device.name;
+    _paused = false;
     await Future.wait([
       _storage.write(key: _deviceIdKey, value: device.id),
       _storage.write(key: _deviceNameKey, value: device.name),
       _storage.write(key: _ownerUidKey, value: uid),
+      _storage.delete(key: _pausedKey),
     ]);
+    await startIfPaired();
+  }
+
+  /// Stops live monitoring, including a connection still being attempted,
+  /// and keeps it stopped across launches until [resume].
+  Future<void> pause() async {
+    await _loadPairing();
+    _paused = true;
+    await _storage.write(key: _pausedKey, value: 'true');
+    await stop();
+  }
+
+  Future<void> resume() async {
+    await _loadPairing();
+    _paused = false;
+    await _storage.delete(key: _pausedKey);
     await startIfPaired();
   }
 
@@ -219,7 +291,11 @@ class WhoopBleHeartRateService {
     final startGeneration = _connectionGeneration;
     await _loadPairing();
     if (startGeneration != _connectionGeneration) return;
-    if (_deviceId == null || _connectionSubscription != null) return;
+    await _restorePending();
+    await flush().catchError((Object _) {});
+    if (_paused || _deviceId == null || _connectionSubscription != null) {
+      return;
+    }
     try {
       _ensurePlatformSupport();
     } catch (error) {
@@ -380,10 +456,18 @@ class WhoopBleHeartRateService {
   }
 
   void _startFlushTimer() {
-    _flushTimer ??= Timer.periodic(_flushInterval, (_) => unawaited(flush()));
+    _flushTimer ??= Timer.periodic(
+      _flushInterval,
+      (_) => unawaited(flush().catchError((Object _) {})),
+    );
   }
 
   Future<void> flush() async {
+    if (!canRunForegroundTransaction) {
+      await _persistPending();
+      _lastFlushAt = DateTime.now();
+      return;
+    }
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (_isFlushing || uid == null || _pendingBuckets.isEmpty) return;
     _isFlushing = true;
@@ -393,24 +477,33 @@ class WhoopBleHeartRateService {
         entry.key: (_sessionBuckets[entry.key] ?? entry.value).copy(),
     };
     _pendingBuckets.clear();
+    _inFlightBuckets.addAll(pending);
     try {
+      await _persistPending();
       final grouped = <String, Map<DateTime, _MinuteBucket>>{};
       for (final entry in pending.entries) {
         grouped.putIfAbsent(localDayKey(entry.key), () => {})[entry.key] =
             entry.value;
       }
       for (final entry in grouped.entries) {
+        if (FirebaseAuth.instance.currentUser?.uid != uid) return;
         await _writeDay(uid, entry.key, entry.value);
       }
     } catch (_) {
-      for (final entry in pending.entries) {
+      for (final entry in pending.entries.where(
+        (_) => FirebaseAuth.instance.currentUser?.uid == uid,
+      )) {
         _pendingBuckets
             .putIfAbsent(entry.key, _MinuteBucket.new)
             .merge(entry.value);
       }
       rethrow;
     } finally {
+      _inFlightBuckets.clear();
       _isFlushing = false;
+      if (FirebaseAuth.instance.currentUser?.uid == uid) {
+        await _persistPending();
+      }
     }
   }
 
@@ -425,6 +518,7 @@ class WhoopBleHeartRateService {
         .collection('metrics_daily')
         .doc(day);
     await _db.runTransaction((transaction) async {
+      requireForegroundTransaction();
       final snapshot = await transaction.get(reference);
       final data = snapshot.data();
       final sources = data?['heart_rate_sources'] as Map?;
@@ -582,13 +676,18 @@ class WhoopBleHeartRateService {
     _connectionSubscription = null;
     if (connection != null) await connection.cancel();
     if (clearPairing) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      await _queueWrites.catchError((Object _) {});
+      if (uid != null) await _storage.delete(key: 'ble_pending_$uid');
       await Future.wait([
         _storage.delete(key: _deviceIdKey),
         _storage.delete(key: _deviceNameKey),
         _storage.delete(key: _ownerUidKey),
+        _storage.delete(key: _pausedKey),
       ]);
       _deviceId = null;
       _deviceName = null;
+      _paused = false;
       _pendingBuckets.clear();
       _sessionBuckets.clear();
       state.value = const WhoopBleState(status: WhoopBleStatus.unpaired);
@@ -603,11 +702,14 @@ class WhoopBleHeartRateService {
   }
 
   Future<void> handleSignedOut() async {
+    _restoredQueueUid = null;
+    _inFlightBuckets.clear();
     _pendingBuckets.clear();
     _sessionBuckets.clear();
     await stop();
     _deviceId = null;
     _deviceName = null;
+    _paused = false;
     _loadPairingFuture = null;
     state.value = const WhoopBleState(status: WhoopBleStatus.unpaired);
   }

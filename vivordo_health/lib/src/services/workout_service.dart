@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/personal_best.dart';
 
@@ -242,6 +245,75 @@ class SavedWorkout {
       activityName: data['activityName'] as String?,
       activityCategory: data['activityCategory'] as String?,
     );
+  }
+}
+
+/// A day's `exercise_time` with [deltaMinutes] of app-recorded time (workouts
+/// and logged activities) added to `workoutMinutes`. Health-synced minutes
+/// live in `healthSum`, so a later sync replaces them without wiping these.
+Map<String, dynamic> exerciseTimeWithAppMinutes(
+  Map<String, dynamic>? exerciseTime,
+  num deltaMinutes,
+) {
+  final current = exerciseTime ?? const <String, dynamic>{};
+  final appMinutes = (current['workoutMinutes'] as num?)?.toDouble() ?? 0;
+  final healthMinutes =
+      (current['healthSum'] as num?)?.toDouble() ??
+      (((current['sum'] as num?)?.toDouble() ?? 0) - appMinutes).clamp(
+        0,
+        double.infinity,
+      );
+  final updatedAppMinutes = (appMinutes + deltaMinutes).clamp(
+    0,
+    double.infinity,
+  );
+  return {
+    ...current,
+    'healthSum': healthMinutes,
+    'workoutMinutes': updatedAppMinutes,
+    'sum': healthMinutes + updatedAppMinutes,
+    'unit': 'min',
+    'dimension': 'activity',
+  };
+}
+
+/// [exerciseTimeWithAppMinutes] as increments: no read first, so it works
+/// offline. The next Health sync recalculates healthSum and sum anyway.
+Map<String, dynamic> exerciseTimeIncrement(num deltaMinutes) => {
+  'healthSum': FieldValue.increment(0),
+  'workoutMinutes': FieldValue.increment(deltaMinutes),
+  'sum': FieldValue.increment(deltaMinutes),
+  'unit': 'min',
+  'dimension': 'activity',
+};
+
+/// Waits briefly for [commit] to reach the server. Offline, Firestore keeps
+/// the write on the phone (across restarts) and sends it when back online, so
+/// a timeout means saved but not yet synced (false), not failed.
+Future<bool> syncedOrQueued(Future<void> commit) async {
+  try {
+    await commit.timeout(const Duration(seconds: 4));
+    return true;
+  } on TimeoutException {
+    unawaited(
+      commit.then(
+        (_) {},
+        onError: (Object error) => debugPrint('Queued write failed: $error'),
+      ),
+    );
+    return false;
+  }
+}
+
+/// [reference] from the server, or the phone's copy when offline. Null when
+/// neither has it: unknown, which is not the same as missing.
+Future<DocumentSnapshot<Map<String, dynamic>>?> _readOrNull(
+  DocumentReference<Map<String, dynamic>> reference,
+) async {
+  try {
+    return await reference.get();
+  } catch (_) {
+    return null;
   }
 }
 
@@ -499,17 +571,6 @@ class WorkoutService {
             .collection('metrics_daily')
             .doc(goalDay);
         final dailySnapshot = await transaction.get(dailyReference);
-        final exerciseTime =
-            dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>? ??
-            const <String, dynamic>{};
-        final currentWorkoutMinutes =
-            (exerciseTime['workoutMinutes'] as num?)?.toDouble() ?? 0;
-        final healthMinutes =
-            (exerciseTime['healthSum'] as num?)?.toDouble() ??
-            (((exerciseTime['sum'] as num?)?.toDouble() ?? 0) -
-                    currentWorkoutMinutes)
-                .clamp(0, double.infinity);
-        final updatedWorkoutMinutes = currentWorkoutMinutes + goalMinutes;
 
         transaction.update(workout.reference, {
           'exerciseGoalDay': goalDay,
@@ -517,14 +578,10 @@ class WorkoutService {
           'exerciseMinutesBackfilledAt': FieldValue.serverTimestamp(),
         });
         transaction.set(dailyReference, {
-          'exercise_time': {
-            ...exerciseTime,
-            'healthSum': healthMinutes,
-            'workoutMinutes': updatedWorkoutMinutes,
-            'sum': healthMinutes + updatedWorkoutMinutes,
-            'unit': 'min',
-            'dimension': 'activity',
-          },
+          'exercise_time': exerciseTimeWithAppMinutes(
+            dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>?,
+            goalMinutes,
+          ),
           'date': goalDay,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
@@ -611,15 +668,18 @@ class WorkoutService {
         .doc(user.uid)
         .collection('workout_templates')
         .doc();
-    await document.set({
-      'name': cleanName,
-      'exerciseCount': exercises.length,
-      'exercises': exercises
-          .map((exercise) => exercise.toMap())
-          .toList(growable: false),
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    // Offline this returns after a few seconds and syncs later.
+    await syncedOrQueued(
+      document.set({
+        'name': cleanName,
+        'exerciseCount': exercises.length,
+        'exercises': exercises
+            .map((exercise) => exercise.toMap())
+            .toList(growable: false),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+    );
     return document.id;
   }
 
@@ -780,7 +840,8 @@ class WorkoutService {
     return latest;
   }
 
-  static Future<void> delete(String workoutId) async {
+  /// False when deleted on the phone but still waiting to sync.
+  static Future<bool> delete(String workoutId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in before deleting a workout.');
     if (workoutId.trim().isEmpty) {
@@ -797,52 +858,37 @@ class WorkoutService {
         .doc(user.uid)
         .collection('circle_activity')
         .doc(workoutId);
-    await db.runTransaction((transaction) async {
-      final workoutSnapshot = await transaction.get(workoutReference);
-      final workoutData = workoutSnapshot.data();
-      final goalDay = workoutData?['exerciseGoalDay'] as String?;
-      final goalMinutes =
-          (workoutData?['exerciseGoalMinutes'] as num?)?.toInt() ?? 0;
-
-      if (goalDay != null && goalMinutes > 0) {
-        final dailyReference = db
+    // A batch, not a transaction, so it works offline; the workout is read
+    // from the phone's copy (it was just on screen) to undo its minutes.
+    final workoutData = (await _readOrNull(workoutReference))?.data();
+    final goalDay = workoutData?['exerciseGoalDay'] as String?;
+    final goalMinutes =
+        (workoutData?['exerciseGoalMinutes'] as num?)?.toInt() ?? 0;
+    final batch = db.batch()
+      ..delete(workoutReference)
+      ..delete(circleActivityReference);
+    if (goalDay != null && goalMinutes > 0) {
+      batch.set(
+        db
             .collection('users')
             .doc(user.uid)
             .collection('metrics_daily')
-            .doc(goalDay);
-        final dailySnapshot = await transaction.get(dailyReference);
-        final exerciseTime =
-            dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>? ??
-            const <String, dynamic>{};
-        final currentWorkoutMinutes =
-            (exerciseTime['workoutMinutes'] as num?)?.toDouble() ?? 0;
-        final healthMinutes =
-            (exerciseTime['healthSum'] as num?)?.toDouble() ??
-            (((exerciseTime['sum'] as num?)?.toDouble() ?? 0) -
-                    currentWorkoutMinutes)
-                .clamp(0, double.infinity);
-        final updatedWorkoutMinutes = (currentWorkoutMinutes - goalMinutes)
-            .clamp(0, double.infinity);
-        transaction.set(dailyReference, {
-          'exercise_time': {
-            ...exerciseTime,
-            'healthSum': healthMinutes,
-            'workoutMinutes': updatedWorkoutMinutes,
-            'sum': healthMinutes + updatedWorkoutMinutes,
-            'unit': 'min',
-            'dimension': 'activity',
-          },
+            .doc(goalDay),
+        {
+          'exercise_time': exerciseTimeIncrement(-goalMinutes),
           'date': goalDay,
           'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-
-      transaction.delete(workoutReference);
-      transaction.delete(circleActivityReference);
-    });
+        },
+        SetOptions(merge: true),
+      );
+    }
+    return syncedOrQueued(batch.commit());
   }
 
-  static Future<String> save({
+  /// Saves without a transaction so it works offline: personal bests are
+  /// compared with the phone's copy and the write syncs later. `synced` is
+  /// false when it is still waiting for a connection.
+  static Future<({String id, bool synced})> save({
     required DateTime startedAt,
     required int durationSeconds,
     required List<WorkoutExerciseRecord> exercises,
@@ -850,7 +896,12 @@ class WorkoutService {
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in before saving a workout.');
-    await backfillPersonalBestsOnce();
+    try {
+      // A one-time migration that needs the server; never let it block a save.
+      await backfillPersonalBestsOnce().timeout(const Duration(seconds: 5));
+    } catch (error) {
+      debugPrint('Personal best backfill skipped: $error');
+    }
 
     final completedAt = DateTime.now();
     final goalMinutes = durationSeconds <= 0
@@ -914,131 +965,114 @@ class WorkoutService {
             .collection('exercise_latest_attempts')
             .doc(Uri.encodeComponent(normalizedName)),
     };
-    await db.runTransaction((transaction) async {
-      final dailySnapshot = await transaction.get(dailyReference);
-      final personalBestSnapshots =
-          <String, DocumentSnapshot<Map<String, dynamic>>>{};
-      for (final entry in personalBestReferences.entries) {
-        personalBestSnapshots[entry.key] = await transaction.get(entry.value);
-      }
-      final latestAttemptSnapshots =
-          <String, DocumentSnapshot<Map<String, dynamic>>>{};
-      for (final entry in latestAttemptReferences.entries) {
-        latestAttemptSnapshots[entry.key] = await transaction.get(entry.value);
-      }
-      final exerciseTime =
-          dailySnapshot.data()?['exercise_time'] as Map<String, dynamic>? ??
-          const <String, dynamic>{};
-      final currentWorkoutMinutes =
-          (exerciseTime['workoutMinutes'] as num?)?.toDouble() ?? 0;
-      final healthMinutes =
-          (exerciseTime['healthSum'] as num?)?.toDouble() ??
-          (((exerciseTime['sum'] as num?)?.toDouble() ?? 0) -
-                  currentWorkoutMinutes)
-              .clamp(0, double.infinity);
-      final updatedWorkoutMinutes = currentWorkoutMinutes + goalMinutes;
-      final exerciseMaps = exercises
-          .map((exercise) => _withoutPersonalBestMetadata(exercise.toMap()))
-          .toList(growable: false);
-      var personalBestCount = 0;
+    final [personalBestSnapshots, latestAttemptSnapshots] = await Future.wait([
+      for (final references in [
+        personalBestReferences,
+        latestAttemptReferences,
+      ])
+        Future.wait(
+          references.values.map(_readOrNull),
+        ).then((snapshots) => Map.fromIterables(references.keys, snapshots)),
+    ]);
+    final batch = db.batch();
+    final exerciseMaps = exercises
+        .map((exercise) => _withoutPersonalBestMetadata(exercise.toMap()))
+        .toList(growable: false);
+    var personalBestCount = 0;
 
-      for (final entry in personalBestCandidates.entries) {
-        final candidate = entry.value;
-        final previousAttemptData = latestAttemptSnapshots[entry.key]?.data();
-        final previousAttemptEstimate =
-            (previousAttemptData?['estimatedOneRepMax'] as num?)?.toDouble();
-        final exerciseMap = exerciseMaps[candidate.exerciseIndex];
-        _addExerciseAttemptMetadata(
-          exerciseMap,
-          candidate.performance,
-          previousPerformance: previousAttemptEstimate == null
-              ? null
-              : PersonalBestPerformance(
-                  weightLbs:
-                      (previousAttemptData?['weightLbs'] as num?)?.toDouble() ??
-                      0,
-                  reps: (previousAttemptData?['reps'] as num?)?.toInt() ?? 0,
-                  estimatedOneRepMax: previousAttemptEstimate,
-                ),
-        );
-        transaction.set(latestAttemptReferences[entry.key]!, {
-          'exerciseName': candidate.exerciseName,
-          'normalizedName': entry.key,
-          'estimatedOneRepMax': candidate.performance.estimatedOneRepMax,
-          'weightLbs': candidate.performance.weightLbs,
-          'reps': candidate.performance.reps,
-          'workoutId': document.id,
-          'completedAt': Timestamp.fromDate(completedAt),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-        final previousData = personalBestSnapshots[entry.key]?.data();
-        final previousEstimate = (previousData?['estimatedOneRepMax'] as num?)
-            ?.toDouble();
-        final isPersonalBest = isNewPersonalBest(
-          candidateEstimatedOneRepMax: candidate.performance.estimatedOneRepMax,
-          previousEstimatedOneRepMax: previousEstimate,
-        );
-        if (!isPersonalBest) continue;
-        personalBestCount++;
-        exerciseMap['personalBest'] = true;
-        _addPersonalBestMetadata(
-          exerciseMap,
-          candidate.performance,
-          previousEstimatedOneRepMax: previousEstimate,
-        );
-        transaction.set(personalBestReferences[entry.key]!, {
-          'exerciseName': candidate.exerciseName,
-          'normalizedName': entry.key,
-          'estimatedOneRepMax': candidate.performance.estimatedOneRepMax,
-          'weightLbs': candidate.performance.weightLbs,
-          'reps': candidate.performance.reps,
-          'workoutId': document.id,
-          'achievedAt': Timestamp.fromDate(completedAt),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-
-      transaction.set(document, {
-        'startedAt': Timestamp.fromDate(startedAt),
+    for (final entry in personalBestCandidates.entries) {
+      final candidate = entry.value;
+      final previousAttemptData = latestAttemptSnapshots[entry.key]?.data();
+      final previousAttemptEstimate =
+          (previousAttemptData?['estimatedOneRepMax'] as num?)?.toDouble();
+      final exerciseMap = exerciseMaps[candidate.exerciseIndex];
+      _addExerciseAttemptMetadata(
+        exerciseMap,
+        candidate.performance,
+        previousPerformance: previousAttemptEstimate == null
+            ? null
+            : PersonalBestPerformance(
+                weightLbs:
+                    (previousAttemptData?['weightLbs'] as num?)?.toDouble() ??
+                    0,
+                reps: (previousAttemptData?['reps'] as num?)?.toInt() ?? 0,
+                estimatedOneRepMax: previousAttemptEstimate,
+              ),
+      );
+      batch.set(latestAttemptReferences[entry.key]!, {
+        'exerciseName': candidate.exerciseName,
+        'normalizedName': entry.key,
+        'estimatedOneRepMax': candidate.performance.estimatedOneRepMax,
+        'weightLbs': candidate.performance.weightLbs,
+        'reps': candidate.performance.reps,
+        'workoutId': document.id,
         'completedAt': Timestamp.fromDate(completedAt),
-        'durationSeconds': durationSeconds,
-        'durationMinutes': durationSeconds / 60,
-        'exerciseGoalDay': goalDay,
-        'exerciseGoalMinutes': goalMinutes,
-        'shareToCircle': shareToCircle,
-        ...activityFields,
-        'exerciseCount': exercises.length,
-        'setCount': setCount,
-        'exercises': exerciseMaps,
-        'personalBestCount': personalBestCount,
-        'personalBestVersion': 3,
-        'exerciseComparisonVersion': 2,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      if (shareToCircle) {
-        transaction.set(circleDocument, {
-          ...circleActivityFields,
-          'minutes': goalMinutes,
-          'day': Timestamp.fromDate(completedAt),
-          'sets': setCount,
-          'kind': 'workout',
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-      transaction.set(dailyReference, {
-        'exercise_time': {
-          ...exerciseTime,
-          'healthSum': healthMinutes,
-          'workoutMinutes': updatedWorkoutMinutes,
-          'sum': healthMinutes + updatedWorkoutMinutes,
-          'unit': 'min',
-          'dimension': 'activity',
-        },
-        'date': goalDay,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      final previousSnapshot = personalBestSnapshots[entry.key];
+      // Offline with no copy of the old best: don't claim one, or a weaker
+      // lift could overwrite it.
+      if (previousSnapshot == null) continue;
+      final previousData = previousSnapshot.data();
+      final previousEstimate = (previousData?['estimatedOneRepMax'] as num?)
+          ?.toDouble();
+      final isPersonalBest = isNewPersonalBest(
+        candidateEstimatedOneRepMax: candidate.performance.estimatedOneRepMax,
+        previousEstimatedOneRepMax: previousEstimate,
+      );
+      if (!isPersonalBest) continue;
+      personalBestCount++;
+      exerciseMap['personalBest'] = true;
+      _addPersonalBestMetadata(
+        exerciseMap,
+        candidate.performance,
+        previousEstimatedOneRepMax: previousEstimate,
+      );
+      batch.set(personalBestReferences[entry.key]!, {
+        'exerciseName': candidate.exerciseName,
+        'normalizedName': entry.key,
+        'estimatedOneRepMax': candidate.performance.estimatedOneRepMax,
+        'weightLbs': candidate.performance.weightLbs,
+        'reps': candidate.performance.reps,
+        'workoutId': document.id,
+        'achievedAt': Timestamp.fromDate(completedAt),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+
+    batch.set(document, {
+      'startedAt': Timestamp.fromDate(startedAt),
+      'completedAt': Timestamp.fromDate(completedAt),
+      'durationSeconds': durationSeconds,
+      'durationMinutes': durationSeconds / 60,
+      'exerciseGoalDay': goalDay,
+      'exerciseGoalMinutes': goalMinutes,
+      'shareToCircle': shareToCircle,
+      ...activityFields,
+      'exerciseCount': exercises.length,
+      'setCount': setCount,
+      'exercises': exerciseMaps,
+      'personalBestCount': personalBestCount,
+      'personalBestVersion': 3,
+      'exerciseComparisonVersion': 2,
+      'createdAt': FieldValue.serverTimestamp(),
     });
-    return document.id;
+    if (shareToCircle) {
+      batch.set(circleDocument, {
+        ...circleActivityFields,
+        'minutes': goalMinutes,
+        'day': Timestamp.fromDate(completedAt),
+        'sets': setCount,
+        'kind': 'workout',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+    batch.set(dailyReference, {
+      'exercise_time': exerciseTimeIncrement(goalMinutes),
+      'date': goalDay,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    return (id: document.id, synced: await syncedOrQueued(batch.commit()));
   }
 }
 

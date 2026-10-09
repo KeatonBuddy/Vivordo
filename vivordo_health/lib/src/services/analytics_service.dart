@@ -2,7 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 
 import '../models/analytics_event.dart';
 
@@ -44,7 +44,7 @@ class AnalyticsService {
           .add(event.toMap());
     } catch (e) {
       // Never let telemetry surface to the user.
-      print('AnalyticsService: failed to log ${event.type}: $e');
+      debugPrint('AnalyticsService: failed to log ${event.type}: $e');
     }
   }
 

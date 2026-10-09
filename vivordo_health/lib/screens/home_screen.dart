@@ -1,14 +1,19 @@
 import 'dart:async';
+import '../widgets/visible_stream_builder.dart';
+import '../src/services/metrics_repository.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
+import '../widgets/meeting_patterns_view.dart';
+import '../src/services/meeting_patterns_service.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
-import 'package:flutter/foundation.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
+import 'package:vivordo_health/src/services/check_in_reminder.dart';
+import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
@@ -17,114 +22,104 @@ import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
+import 'package:vivordo_health/src/services/daily_priority_service.dart';
+import 'package:vivordo_health/src/utils/day_agenda.dart';
+import 'package:vivordo_health/src/utils/day_effort.dart';
+import 'package:vivordo_health/src/utils/day_wrap_up.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/widgets/morning_check_in_card.dart';
+import 'package:vivordo_health/src/services/daily_tags_service.dart';
+import 'package:vivordo_health/src/utils/home_day_load.dart';
+import 'package:vivordo_health/src/utils/owned_stream_snapshot.dart';
+import 'package:vivordo_health/widgets/add_calendar_event_sheet.dart';
+import 'package:vivordo_health/widgets/add_priority_sheet.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/plan_slot_sheet.dart';
+import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
+import 'package:vivordo_health/src/utils/energy_fit.dart';
+import 'package:vivordo_health/src/utils/energy_forecast.dart';
+import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/src/utils/home_metrics_summary.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
+import 'package:vivordo_health/widgets/energy_forecast_view.dart';
 import 'package:vivordo_health/widgets/hourly_heart_insight_card.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
-import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
-import 'package:vivordo_health/src/services/hourly_calendar_load.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
+import 'sleep_detail_screen.dart';
 import 'steps_detail_screen.dart';
 import 'stress_detail_screen.dart';
 
-class _CircleAvatarCluster extends StatelessWidget {
-  const _CircleAvatarCluster({required this.initial, this.photoUrl});
+/// Up to three overlapping avatars. An entry without an initial is an
+/// invite placeholder.
+class _AvatarStack extends StatelessWidget {
+  const _AvatarStack(this.people);
 
-  final String initial;
-  final String? photoUrl;
+  final List<({String? initial, String? photoUrl})> people;
+
+  static const _size = 32.0;
+  static const _step = 22.0;
+  static const _tints = [
+    (Color(0xFFE4E0FF), Color(0xFF6B5CE7)),
+    (Color(0xFFDCF7EB), Color(0xFF16A874)),
+    (Color(0xFFFFE7CE), Color(0xFFF28A18)),
+  ];
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 72,
-    height: 66,
+    width: _size + (people.length - 1) * _step,
+    height: _size,
     child: Stack(
-      clipBehavior: Clip.none,
       children: [
-        Positioned(
-          left: 17,
-          top: 0,
-          child: _circle(
-            text: initial,
-            photoUrl: photoUrl,
-            background: const Color(0xFFE4E0FF),
-            foreground: const Color(0xFF6B5CE7),
-          ),
-        ),
-        Positioned(
-          left: 3,
-          bottom: 0,
-          child: _circle(
-            icon: Icons.person_add_alt_1_rounded,
-            background: const Color(0xFFDCF7EB),
-            foreground: const Color(0xFF16A874),
-          ),
-        ),
-        Positioned(
-          right: 3,
-          bottom: 0,
-          child: _circle(
-            icon: Icons.person_add_alt_1_rounded,
-            background: const Color(0xFFFFE7CE),
-            foreground: const Color(0xFFF28A18),
-          ),
-        ),
+        for (var i = 0; i < people.length; i++)
+          Positioned(left: i * _step, child: _avatar(context, i)),
       ],
     ),
   );
 
-  Widget _circle({
-    String? text,
-    String? photoUrl,
-    IconData? icon,
-    required Color background,
-    required Color foreground,
-  }) => Container(
-    width: 42,
-    height: 42,
-    decoration: BoxDecoration(
-      color: background,
-      shape: BoxShape.circle,
-      border: Border.all(color: Colors.white.withValues(alpha: .82), width: 2),
-    ),
-    alignment: Alignment.center,
-    child: photoUrl?.isNotEmpty == true
-        ? ClipOval(
-            child: Image.network(
-              photoUrl!,
-              width: 42,
-              height: 42,
-              fit: BoxFit.cover,
-              cacheWidth: 126,
-              cacheHeight: 126,
-              errorBuilder: (_, _, _) => _initialOrIcon(
-                text: text,
-                icon: icon,
-                foreground: foreground,
-              ),
+  Widget _avatar(BuildContext context, int index) {
+    final person = people[index];
+    final (background, foreground) = _tints[index % _tints.length];
+    final initial = person.initial;
+    final fallback = initial != null
+        ? Text(
+            initial,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
             ),
           )
-        : _initialOrIcon(text: text, icon: icon, foreground: foreground),
-  );
-
-  Widget _initialOrIcon({
-    String? text,
-    IconData? icon,
-    required Color foreground,
-  }) => text != null
-      ? Text(
-          text,
-          style: TextStyle(
-            color: foreground,
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-          ),
-        )
-      : Icon(icon, color: foreground, size: 17);
+        : Icon(Icons.person_add_alt_1_rounded, color: foreground, size: 15);
+    final photoUrl = person.photoUrl;
+    return Container(
+      width: _size,
+      height: _size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: background,
+        shape: BoxShape.circle,
+        border: Border.all(color: context.vivordoColors.card, width: 2),
+      ),
+      child: photoUrl?.isNotEmpty == true
+          ? ClipOval(
+              child: Image.network(
+                photoUrl!,
+                width: _size,
+                height: _size,
+                fit: BoxFit.cover,
+                cacheWidth: 96,
+                cacheHeight: 96,
+                errorBuilder: (_, _, _) => fallback,
+              ),
+            )
+          : fallback,
+    );
+  }
 }
 
 class _HomeCircleProfileButton extends StatelessWidget {
@@ -200,14 +195,30 @@ class _HomeCircleProfileButton extends StatelessWidget {
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
   final VoidCallback? onFitnessTap;
+  final VoidCallback? onMyDayTap;
   final bool revealStress;
   final bool isActive;
+  final bool openMoodCheckIn;
+
+  /// Spotlight targets for the Home tour.
+  final Key? rightNowKey;
+  final Key? vitalsKey;
+  final Key? circleKey;
+  final Key? yourDayKey;
+  final Key? insightsKey;
   const HomeScreen({
     super.key,
     this.onScanTap,
     this.onFitnessTap,
+    this.onMyDayTap,
     this.revealStress = true,
     this.isActive = true,
+    this.openMoodCheckIn = false,
+    this.rightNowKey,
+    this.vitalsKey,
+    this.circleKey,
+    this.yourDayKey,
+    this.insightsKey,
   });
 
   @override
@@ -217,7 +228,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeWidgetSnapshot {
   const _HomeWidgetSnapshot({
     required this.stressScore,
-    required this.wellnessScore,
     required this.steps,
     required this.activeCalories,
     required this.exerciseMinutes,
@@ -234,7 +244,6 @@ class _HomeWidgetSnapshot {
   });
 
   final double? stressScore;
-  final double? wellnessScore;
   final int steps;
   final int activeCalories;
   final int exerciseMinutes;
@@ -251,7 +260,6 @@ class _HomeWidgetSnapshot {
 
   String get signature => <Object?>[
     stressScore?.round(),
-    wellnessScore?.round(),
     steps,
     activeCalories,
     exerciseMinutes,
@@ -281,10 +289,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // _messageCopied removed — smart message card replaced with calendar
 
   // Single stream for today's unified metrics doc
-  late Stream<DocumentSnapshot<Map<String, dynamic>>> _todayStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _latestScanStream;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStreamCached;
+  late Stream<MetricWindow> _todayStream;
+  late Stream<MetricWindow> _latestScanStream;
   late final Stream<CircleProfile?> _circleProfileStream;
+  // Friends is a single-listen stream, so these reconnect from a factory.
+  final _friendsSnapshot = OwnedStreamSnapshot<List<CircleProfile>>();
+  final _engagementSnapshot = OwnedStreamSnapshot<CircleDailyEngagement>();
+  final _prioritySnapshot = OwnedStreamSnapshot<List<DailyPriority>>();
 
   /// Local day and account the metric listeners above were built for.
   String? _streamsDayKey;
@@ -295,8 +306,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   DateTime? _reachableWindowEventsDate;
   Future<List<_ScoredReachableEvent>>? _reachableWindowScoresFuture;
   DateTime? _reachableWindowScoresDate;
-  Future<_ScheduleInsight?>? _scheduleInsightFuture;
-  DateTime? _scheduleInsightDate;
+  Future<List<_ScheduleEvent>?>? _scheduleEventsFuture;
+  DateTime? _scheduleEventsDate;
+  Future<_EffortContext>? _effortContextFuture;
+  DateTime? _effortContextDate;
+  Future<({int minutes, DateTime? first})?>? _tomorrowPlanFuture;
+  DateTime? _tomorrowPlanDate;
   ActivityGoals _activityGoals = const ActivityGoals();
   StreamSubscription<ActivityGoals>? _activityGoalsSubscription;
   _HomeWidgetSnapshot? _latestHomeWidgetSnapshot;
@@ -307,10 +322,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _homeWidgetPublishInProgress = false;
 
   static const Color accentPurple = VivordoTheme.brand;
-  static const Color textDark = Color(0xFF1C1C1E);
   static const Color textGrey = Color(0xFF8E8E93);
   static const Color greenColor = Color(0xFF34C759);
   static const Color orangeColor = Color(0xFFFF9500);
+  static const _heartRed = Color(0xFFFF3B30);
+  static const _moodOrange = Color(0xFFF97316);
+  static const _calorieOrange = Color(0xFFFB923C);
+  static const _exerciseGreen = Color(0xFF34D399);
 
   @override
   void initState() {
@@ -324,17 +342,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     StressScoreService.submitPendingFeedback().catchError((_) {});
     WidgetsBinding.instance.addObserver(this);
     _connectMetricStreams();
+    // Events added or moved anywhere (My Day, Vivordo AI) reload Your Day.
+    CalendarService.eventsChanged.addListener(_refreshHomeCalendarCards);
+    if (widget.openMoodCheckIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_showMoodCheck());
+      });
+    }
     _circleProfileStream = CircleProfileService.watchCurrentProfile();
-    _goalsStreamCached = _goalsStream();
+    _friendsSnapshot.connectFactory(CircleProfileService.watchFriends);
     _activityGoalsSubscription = ActivityGoalsService.watch().listen(
       (goals) {
-        _activityGoals = goals;
+        if (mounted) setState(() => _activityGoals = goals);
         final snapshot = _latestHomeWidgetSnapshot;
         if (snapshot == null) return;
         _queueHomeWidgetPublish(
           _HomeWidgetSnapshot(
             stressScore: snapshot.stressScore,
-            wellnessScore: snapshot.wellnessScore,
             steps: snapshot.steps,
             activeCalories: snapshot.activeCalories,
             exerciseMinutes: snapshot.exerciseMinutes,
@@ -367,8 +391,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final active = TickerMode.valuesOf(context).enabled;
+    _prioritySnapshot.setActive(active);
+    _friendsSnapshot.setActive(active);
+    _engagementSnapshot.setActive(active);
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _sleepHoursLive.dispose();
+    CalendarService.eventsChanged.removeListener(_refreshHomeCalendarCards);
+    _sleepRefreshTimer?.cancel();
+    _prioritySnapshot.dispose();
+    _friendsSnapshot.dispose();
+    _engagementSnapshot.dispose();
     _dayRolloverTimer?.cancel();
     _activityGoalsSubscription?.cancel();
     super.dispose();
@@ -409,12 +448,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// than every day the account has recorded, bounded by a range on the
   /// `YYYY-MM-DD` document ids.
   ///
-  /// Ordering newest-first needs the descending `__name__` index on
-  /// metrics_daily, which Firestore does not create automatically. Without it
-  /// the query is rejected, and since this listener is the only source for
-  /// heart rate, that shows up as "No data" on an otherwise working screen —
-  /// which is exactly how it shipped once before. The index is declared in
-  /// firestore.indexes.json; the builder logs if the query fails anyway.
+  /// The repository uses ascending document IDs; derived values explicitly
+  /// choose the latest measurement instead of depending on query order.
   void _connectMetricStreams() {
     final today = _todayPeriod();
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -422,46 +457,215 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _streamsUid = uid;
     _metricsSummaryCache = HomeMetricsSummaryCache();
     _scheduleDayRollover();
+    final day = DateTime.now();
+    _prioritySnapshot.connectFactory(() => DailyPriorityService.watch(day));
+    // Today's engagement window is fixed when the query is built.
+    _engagementSnapshot.connectFactory(
+      CircleProfileService.watchTodayEngagement,
+    );
     _todayStream = uid != null
-        ? FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('metrics_daily')
-              .doc(today)
-              .snapshots()
+        ? MetricsRepository.instance.watch(
+            uid: uid,
+            startDay: today,
+            endDay: today,
+            projection: MetricsProjection.homeToday,
+          )
         : const Stream.empty();
+    final now = DateTime.now();
     _latestScanStream = uid != null
-        ? FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('metrics_daily')
-              .where(
-                FieldPath.documentId,
-                isGreaterThanOrEqualTo: homeMetricsWindowStartKey(
-                  DateTime.now(),
-                ),
-                isLessThanOrEqualTo: today,
-              )
-              .orderBy(FieldPath.documentId, descending: true)
-              .snapshots()
+        ? combineMetricWindows(
+            MetricsRepository.instance.watch(
+              uid: uid,
+              startDay: homeMetricsWindowStartKey(
+                now,
+                days: kHomeRecentWindowDays,
+              ),
+              endDay: today,
+              projection: MetricsProjection.homeHistory,
+            ),
+            MetricsRepository.instance.watch(
+              uid: uid,
+              startDay: homeMetricsWindowStartKey(now),
+              endDay: homeMetricsWindowStartKey(
+                now,
+                days: kHomeRecentWindowDays + 1,
+              ),
+              projection: MetricsProjection.homeHistory,
+            ),
+          )
         : const Stream.empty();
   }
 
   /// Derived Home values for [snapshot], reused across rebuilds that did not
   /// change the data, the local day, or the signed-in account.
-  HomeMetricsSummary _metricsSummaryFor(
-    QuerySnapshot<Map<String, dynamic>>? snapshot,
-  ) {
+  HomeMetricsSummary _metricsSummaryFor(MetricWindow? snapshot) {
     final now = DateTime.now();
     return _metricsSummaryCache.summarize(
-      snapshotKey: snapshot,
+      snapshotKey: snapshot?.days,
       dayKey: _todayPeriod(),
       uid: FirebaseAuth.instance.currentUser?.uid,
       now: now,
-      days: () => (snapshot?.docs ?? const [])
-          .map((doc) => MetricDayEntry(dayKey: doc.id, data: doc.data()))
-          .toList(growable: false),
+      days: () =>
+          (snapshot?.days.entries ??
+                  const <MapEntry<String, Map<String, dynamic>>>[])
+              .map((doc) => MetricDayEntry(dayKey: doc.key, data: doc.value))
+              .toList(growable: false),
     );
+  }
+
+  /// The day the check-in pop-up was last considered, so it's tried once.
+  String? _checkInPopupDay;
+
+  /// Last night's sleep as Home last saw it, so the pop-up's "recorded"
+  /// hint appears if the sleep syncs while it's open.
+  final _sleepHoursLive = ValueNotifier<double?>(null);
+
+  /// Last night's tags (DailyTagsService) for the check-in, and the night
+  /// they belong to; loaded once a day while the check-in is due.
+  Set<String> _lastNightTags = const {};
+  String? _lastNightTagsDay;
+
+  DateTime get _lastNight {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day - 1);
+  }
+
+  Future<Set<String>> _loadLastNightTags() async {
+    final night = _lastNight;
+    final key = localDayKey(night);
+    if (_lastNightTagsDay == key) return _lastNightTags;
+    _lastNightTagsDay = key;
+    try {
+      final tags = await DailyTagsService.load(night);
+      if (mounted && _lastNightTagsDay == key) {
+        setState(() => _lastNightTags = tags);
+      }
+    } catch (_) {
+      // The chips start empty; a tap still saves.
+    }
+    return _lastNightTags;
+  }
+
+  void _saveLastNightTags(Set<String> tags) {
+    if (mounted) setState(() => _lastNightTags = tags);
+    unawaited(
+      DailyTagsService.save(
+        _lastNight,
+        tags,
+      ).catchError((Object e) => debugPrint('Save tags failed: $e')),
+    );
+  }
+
+  /// Rating sleep with the tags in view also records "nothing last night"
+  /// when none are tagged, which the comparisons need.
+  void _answerSleep(String label) {
+    _saveCheckIn({'sleep': sleepCheckInScores[label]!});
+    _saveLastNightTags(_lastNightTags);
+  }
+
+  /// The check-in sheet with today's answers so far and last night's tags:
+  /// true when both got answered, false for "Not today", null when swiped
+  /// away.
+  Future<bool?> _openCheckIn(Map checkIn) async {
+    final tags = await _loadLastNightTags();
+    if (!mounted) return null;
+    final feel = checkIn['feel'];
+    final sleep = checkIn['sleep'];
+    return showMorningCheckInSheet(
+      context,
+      feel: feel is num ? MetricsService.moodLabelForScore(feel) : null,
+      sleep: sleep is num
+          ? sleepCheckInScores.entries
+                .where((e) => e.value == sleep)
+                .firstOrNull
+                ?.key
+          : null,
+      sleepHours: _sleepHoursLive,
+      tags: tags,
+      onFeel: (label) => _saveCheckIn({
+        'feel': MetricsService.moodScoreForLabel(label),
+      }, mood: label),
+      onSleep: _answerSleep,
+      onTags: _saveLastNightTags,
+    );
+  }
+
+  /// The check-in as a sheet on the first morning open (checkInPopupDue).
+  /// Only over Home itself: not when another screen, sheet or dialog (an
+  /// achievement, a notification's destination) is showing. Answers save
+  /// as they're tapped; the row stays for anything left unanswered.
+  void _maybeShowCheckInPopup(Map? checkIn, double? sleepHours) {
+    final now = DateTime.now();
+    final day = localDayKey(now);
+    if (_checkInPopupDay == day ||
+        widget.openMoodCheckIn ||
+        !widget.isActive ||
+        !checkInPopupDue(checkIn, now, 0)) {
+      return;
+    }
+    _checkInPopupDay = day;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Let start-up pop-ups (achievements, What's New) go first.
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (!mounted || uid == null || !widget.isActive) return;
+      final onTop =
+          (ModalRoute.of(context)?.isCurrent ?? true) &&
+          !Navigator.of(context, rootNavigator: true).canPop();
+      if (!onTop) return;
+      final user = FirebaseFirestore.instance.collection('users').doc(uid);
+      int dismissed;
+      try {
+        dismissed =
+            (((await user.get()).data()?['preferences']
+                        as Map?)?['checkInPopupDismissals']
+                    as num?)
+                ?.toInt() ??
+            0;
+      } catch (_) {
+        return;
+      }
+      if (!mounted || !checkInPopupDue(checkIn, DateTime.now(), dismissed)) {
+        return;
+      }
+      // Once a day, wherever it's answered.
+      unawaited(_saveCheckIn({'prompted': true}));
+      final answered = await _openCheckIn(checkIn!) == true;
+      try {
+        await user.set({
+          'preferences': {
+            'checkInPopupDismissals': answered ? 0 : FieldValue.increment(1),
+          },
+        }, SetOptions(merge: true));
+      } catch (_) {
+        // The count is only a courtesy; the pop-up still shows once a day.
+      }
+    });
+  }
+
+  /// Today's wake time as last seen, so new sleep can refresh Your Day.
+  Object? _seenWakeTime;
+  Timer? _sleepRefreshTimer;
+
+  /// The forecast's sleep times arrive with the metrics stream, but its sleep
+  /// need comes from Capacity, which the server recalculates once the sleep
+  /// lands. Refetch it shortly after today's sleep changes.
+  void _refreshForNewSleep(Object? wakeTime) {
+    final key = (_streamsDayKey, wakeTime);
+    if (_seenWakeTime == null) {
+      _seenWakeTime = key;
+      return;
+    }
+    if (_seenWakeTime == key) return;
+    _seenWakeTime = key;
+    _sleepRefreshTimer?.cancel();
+    _sleepRefreshTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      setState(() {
+        _effortContextFuture = null;
+        _effortContextDate = null;
+      });
+    });
   }
 
   void _syncMoodAfterBuild(String savedMood, double savedMoodScore) {
@@ -519,7 +723,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _homeWidgetPublishInProgressSignature = snapshot.signature;
         await HomeWidgetService.publish(
           stressScore: snapshot.stressScore,
-          wellnessScore: snapshot.wellnessScore,
           steps: snapshot.steps,
           activeCalories: snapshot.activeCalories,
           exerciseMinutes: snapshot.exerciseMinutes,
@@ -542,13 +745,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _homeWidgetPublishInProgressSignature = null;
       _homeWidgetPublishInProgress = false;
     }
-  }
-
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
   }
 
   String _getFirstName() {
@@ -597,34 +793,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _showStressScoreExplanation() {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Your stress score'),
-        content: const Text(
+    showInfoSheet(
+      context,
+      icon: CupertinoIcons.waveform_path_ecg,
+      title: 'Your stress score',
+      summary:
           'Vivordo combines signals such as heart rate, HRV, sleep, activity, '
           'and mood with your personal baseline. Lower scores generally mean '
           'your body is showing fewer signs of stress.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
     );
-  }
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> _goalsStream() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return const Stream.empty();
-    return FirebaseFirestore.instance
-        .collection('goals')
-        .where('userId', isEqualTo: user.uid)
-        .where('status', isEqualTo: 'active')
-        .limit(1)
-        .snapshots();
   }
 
   @override
@@ -636,42 +813,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         sevenDayStressAverage: null,
         stressDrivers: const [],
         stressLoading: false,
-        sleepVal: '--',
+        sleepHours: null,
         sleepIsWhoop: false,
-        sleepLoading: false,
-        stepsVal: '--',
         steps: 0,
         activeCalories: 0,
         exerciseMinutes: 0,
-        stepsLoading: false,
-        hrVal: '--',
+        metricsLoading: false,
         latestHeartRate: null,
         hrLoading: false,
-        moodVal: '--',
-        moodLoading: false,
-        wellnessVal: '--',
-        goalTitle: 'No goal set',
-        goalProgress: 0,
+        moodScore: null,
       );
     }
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    return VisibleStreamBuilder<MetricWindow>(
+      key: ValueKey((_streamsUid, _streamsDayKey)),
       stream: _todayStream,
       builder: (context, todaySnap) {
         final bool loading =
             !todaySnap.hasData &&
             todaySnap.connectionState == ConnectionState.waiting;
-        final data = todaySnap.data?.data();
+        final data = todaySnap.data?.days[_streamsDayKey];
 
         final stressMap = data?['stress'] as Map?;
         final hrvMap = data?['hrv'] as Map?;
         final sleepMap = data?['sleep'] as Map?;
         final sleepIsWhoop = sleepMap?['source'] == 'whoop';
+        if (!loading) _refreshForNewSleep(sleepMap?['wakeTime']);
         final stepsMap = data?['steps'] as Map?;
         final activeCaloriesMap = data?['active_calories'] as Map?;
         final exerciseTimeMap = data?['exercise_time'] as Map?;
         final moodMap = data?['mood'] as Map?;
-        final wellnessMap = data?['wellness'] as Map?;
+        final checkIn = data?['morning_check_in'] as Map?;
 
         // Stress: prefer the LIVE accumulating BaaS value, then the day's
         // mean, then the HRV-derived fallback.
@@ -688,19 +860,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             (stressMap?['avg'] as num?)?.toDouble() ??
             (hrvMap?['stressScore'] as num?)?.toDouble();
 
-        final sleepVal = sleepMap != null
-            ? '${(sleepMap['avg'] as num?)?.toStringAsFixed(1) ?? '--'}h'
-            : '--';
+        final sleepHours = (sleepMap?['avg'] as num?)?.toDouble();
+        if (!loading) _maybeShowCheckInPopup(checkIn, sleepHours);
+        if (_sleepHoursLive.value != sleepHours) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => mounted ? _sleepHoursLive.value = sleepHours : null,
+          );
+        }
 
         final steps = (stepsMap?['sum'] as num?)?.toInt();
         final activeCalories =
             (activeCaloriesMap?['sum'] as num?)?.round() ?? 0;
         final exerciseMinutes = (exerciseTimeMap?['sum'] as num?)?.round() ?? 0;
-        final stepsVal = steps != null
-            ? (steps >= 1000
-                  ? '${(steps / 1000).toStringAsFixed(1)}k'
-                  : steps.toString())
-            : '--';
 
         final savedMoodLabel = moodMap?['label'] as String?;
         final savedMoodScore =
@@ -716,30 +887,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (savedMood != null && savedMoodScore != null && !_isSavingMood) {
           _syncMoodAfterBuild(savedMood, savedMoodScore);
         }
-        final moodVal = savedMoodScore?.round().toString() ?? '--';
 
-        final wellnessVal = wellnessMap != null
-            ? '${(wellnessMap['avg'] as num?)?.round() ?? '--'}'
-            : '--';
-
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        return VisibleStreamBuilder<MetricWindow>(
           stream: _latestScanStream,
           builder: (context, scanSnap) {
-            if (scanSnap.hasError) {
-              // Heart rate is the only value this listener feeds, so a failure
-              // here reads as "No data" on an otherwise working screen. Say so
-              // rather than letting it pass as an empty result.
+            if (scanSnap.hasError || scanSnap.data?.error != null) {
+              // Keep a transport failure distinguishable from missing readings;
+              // the repository retains the last successfully received window.
               debugPrint(
-                'HomeScreen: metrics history listener failed, heart rate will '
-                'show no data: ${scanSnap.error}',
+                'HomeScreen: metrics history listener failed, heart rate '
+                'may be cached: ${scanSnap.error ?? scanSnap.data?.error}',
               );
             }
             final metricsSummary = _metricsSummaryFor(scanSnap.data);
             final latestHeartRate = metricsSummary.latestHeartRate;
-            final latestHeartRateBpm = latestHeartRate?.bpm;
-            final hrVal = latestHeartRateBpm == null
-                ? '--'
-                : '$latestHeartRateBpm bpm';
             final displayedStressScore =
                 stressScore ?? metricsSummary.stressAnchor;
             final sevenDayStressAverage = metricsSummary.sevenDayStressAverage;
@@ -750,93 +911,58 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     scanSnap.connectionState == ConnectionState.waiting &&
                     !scanSnap.hasData);
 
-            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _goalsStreamCached,
-              builder: (context, goalSnap) {
-                final goalDocs = goalSnap.data?.docs ?? [];
-                final goalData = goalDocs.isNotEmpty
-                    ? goalDocs.first.data()
-                    : null;
-                final goalTitle =
-                    goalData?['title'] as String? ?? 'No active goal';
-                final rawPercent =
-                    (goalData?['progress']?['completionPercent'] as num?)
-                        ?.toDouble() ??
-                    0;
-                final goalProgress = (rawPercent / 100).clamp(0.0, 1.0);
+            if (data != null) {
+              _queueHomeWidgetPublish(
+                _HomeWidgetSnapshot(
+                  stressScore: displayedStressScore,
+                  steps: steps ?? 0,
+                  activeCalories: activeCalories,
+                  exerciseMinutes: exerciseMinutes,
+                  goals: _activityGoals,
+                  latestHeartRate: latestHeartRate,
+                  averageHeartRate: _metricNumber(data, 'heart_rate', 'avg'),
+                  minimumHeartRate: _metricNumber(data, 'heart_rate', 'min'),
+                  maximumHeartRate: _metricNumber(data, 'heart_rate', 'max'),
+                  sleepHours: (sleepMap?['avg'] as num?)?.toDouble(),
+                  sleepUpdatedAt: _metricUpdatedAt(sleepMap),
+                  sleepStages: _sleepStageNames(sleepMap),
+                  stressUpdatedAt: _stressUpdatedAt(stressMap),
+                  stressDrivers: stressDrivers
+                      .map((driver) => driver.label)
+                      .toList(growable: false),
+                ),
+              );
+            }
 
-                if (data != null) {
-                  _queueHomeWidgetPublish(
-                    _HomeWidgetSnapshot(
-                      stressScore: displayedStressScore,
-                      wellnessScore: (wellnessMap?['avg'] as num?)?.toDouble(),
-                      steps: steps ?? 0,
-                      activeCalories: activeCalories,
-                      exerciseMinutes: exerciseMinutes,
-                      goals: _activityGoals,
-                      latestHeartRate: latestHeartRate,
-                      averageHeartRate: _metricNumber(
-                        data,
-                        'heart_rate',
-                        'avg',
-                      ),
-                      minimumHeartRate: _metricNumber(
-                        data,
-                        'heart_rate',
-                        'min',
-                      ),
-                      maximumHeartRate: _metricNumber(
-                        data,
-                        'heart_rate',
-                        'max',
-                      ),
-                      sleepHours: (sleepMap?['avg'] as num?)?.toDouble(),
-                      sleepUpdatedAt: _metricUpdatedAt(sleepMap),
-                      sleepStages: _sleepStageNames(sleepMap),
-                      stressUpdatedAt: _stressUpdatedAt(stressMap),
-                      stressDrivers: stressDrivers
-                          .map((driver) => driver.label)
-                          .toList(growable: false),
-                    ),
-                  );
-                }
-
-                // isComputing reflects a computeAndSave() network round trip
-                // actually in flight — separate from stressStillLoading
-                // (which is about the Firestore listener) — so the UI can
-                // show a small "Updating…" hint over displayedStressScore
-                // (today's, or the anchor fallback) while a fresh one is
-                // being fetched, same as any other syncing tracked metric.
-                return ValueListenableBuilder<bool>(
-                  valueListenable: StressScoreService.isComputing,
-                  builder: (context, computingStress, _) => _buildScaffold(
-                    stressScore: displayedStressScore,
-                    stressUpdatedAt: _stressUpdatedAt(stressMap),
-                    sevenDayStressAverage: sevenDayStressAverage,
-                    stressDrivers: stressDrivers,
-                    stressUpdating: computingStress,
-                    stressLoading: stressStillLoading,
-                    sleepVal: sleepVal,
-                    sleepIsWhoop: sleepIsWhoop,
-                    sleepLoading: loading,
-                    stepsVal: stepsVal,
-                    steps: steps ?? 0,
-                    activeCalories: activeCalories,
-                    exerciseMinutes: exerciseMinutes,
-                    stepsLoading: loading,
-                    hrVal: hrVal,
-                    latestHeartRate: latestHeartRate,
-                    hrLoading:
-                        scanSnap.connectionState == ConnectionState.waiting &&
-                        !scanSnap.hasData,
-                    moodVal: moodVal,
-                    moodLoading: loading,
-                    wellnessVal: wellnessVal,
-                    goalTitle: goalTitle,
-                    goalProgress: goalProgress,
-                  ),
-                );
-              },
+            // isComputing reflects a computeAndSave() network round trip
+            // actually in flight — separate from stressStillLoading
+            // (which is about the Firestore listener) — so the UI can
+            // show a small "Updating…" hint over displayedStressScore
+            // (today's, or the anchor fallback) while a fresh one is
+            // being fetched, same as any other syncing tracked metric.
+            return ValueListenableBuilder<bool>(
+              valueListenable: StressScoreService.isComputing,
+              builder: (context, computingStress, _) => _buildScaffold(
+                stressScore: displayedStressScore,
+                stressUpdatedAt: _stressUpdatedAt(stressMap),
+                sevenDayStressAverage: sevenDayStressAverage,
+                stressDrivers: stressDrivers,
+                stressUpdating: computingStress,
+                stressLoading: stressStillLoading,
+                sleepHours: sleepHours,
+                sleepIsWhoop: sleepIsWhoop,
+                steps: steps ?? 0,
+                activeCalories: activeCalories,
+                exerciseMinutes: exerciseMinutes,
+                metricsLoading: loading,
+                latestHeartRate: latestHeartRate,
+                hrLoading:
+                    scanSnap.connectionState == ConnectionState.waiting &&
+                    !scanSnap.hasData,
+                moodScore: savedMoodScore,
+                sleepNights: metricsSummary.sleepNights,
+                checkIn: loading ? null : checkIn ?? const {},
+              ),
             );
           },
         );
@@ -851,6 +977,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final events = await CalendarService.getWeekEvents(
         todayStart,
       ).timeout(const Duration(seconds: 15), onTimeout: () => <gcal.Event>[]);
+      // ponytail: Google events only; add Outlook's here if it's unbenched
+      // (OutlookCalendarService.enabled), or tonight's reminder can miss an
+      // early Outlook start until My Day reschedules it.
+      // Keeps the next week of morning check-in reminders scheduled.
+      unawaited(CheckInReminders.sync());
+      unawaited(
+        WindDownReminders.sync(
+          tomorrowFirstEvent: _firstTimedStart(
+            events,
+            todayStart.add(const Duration(days: 1)),
+          ),
+        ),
+      );
       final signedIn = await CalendarService.isSignedIn();
       if (!signedIn) {
         await NotificationService().cancelCalendarCheckIn();
@@ -863,6 +1002,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       debugPrint('Reachable windows calendar load failed: $e');
       return [];
     }
+  }
+
+  /// The first timed, uncancelled event starting on [day].
+  DateTime? _firstTimedStart(List<gcal.Event> events, DateTime day) {
+    final next = day.add(const Duration(days: 1));
+    return (events
+            .where((event) => event.status != 'cancelled')
+            .map((event) => event.start?.dateTime?.toLocal())
+            .whereType<DateTime>()
+            .where((start) => !start.isBefore(day) && start.isBefore(next))
+            .toList()
+          ..sort())
+        .firstOrNull;
   }
 
   Future<void> _scheduleFinalEventCheckIn(
@@ -964,7 +1116,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     }
 
-    final scores = await CalendarCognitiveLoadService.scoreEvents(inputs);
+    // Claude sorts what the local rules can't, with the user's AI consent,
+    // so the chart matches the server's Effort.
+    final scores = await CalendarCognitiveLoadService.scoreEvents(
+      inputs,
+      allowAi: true,
+    );
     return List.generate(
       timedEvents.length,
       (index) => _ScoredReachableEvent(
@@ -986,50 +1143,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required List<HomeStressDriver> stressDrivers,
     bool stressUpdating = false,
     required bool stressLoading,
-    required String sleepVal,
+    required double? sleepHours,
     required bool sleepIsWhoop,
-    required bool sleepLoading,
-    required String stepsVal,
     required int steps,
     required int activeCalories,
     required int exerciseMinutes,
-    required bool stepsLoading,
-    required String hrVal,
+    required bool metricsLoading,
     required LatestHeartRateReading? latestHeartRate,
     required bool hrLoading,
-    required String moodVal,
-    required bool moodLoading,
-    required String wellnessVal,
-    required String goalTitle,
-    required double goalProgress,
+    required double? moodScore,
+    List<SleepPeriod> sleepNights = const [],
+    Map? checkIn,
   }) {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
+            _refreshHomeCalendarCards();
             await _hourlyHeartKey.currentState?.refresh(force: true);
           },
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(
               parent: AlwaysScrollableScrollPhysics(),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 160),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildHeader(
-                  hasWhoopData:
-                      sleepIsWhoop || latestHeartRate?.source == 'whoop_ble',
-                ),
-                const SizedBox(height: 24),
+                _buildHeader(),
+                const SizedBox(height: 20),
                 GestureDetector(
+                  key: widget.rightNowKey,
                   behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const StressDetailScreen(),
-                    ),
-                  ),
+                  onTap: () => _push(const StressDetailScreen()),
                   child: HomeStressCard(
                     score: stressScore,
                     updatedAt: stressUpdatedAt,
@@ -1040,102 +1187,78 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     updating: stressUpdating,
                     revealScore: widget.revealStress,
                     onInfoTap: _showStressScoreExplanation,
+                    showWhoopBadge:
+                        sleepIsWhoop || latestHeartRate?.source == 'whoop_ble',
                   ),
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildMetricTile(
-                        'Sleep',
-                        sleepVal,
-                        Icons.bedtime_rounded,
-                        accentPurple,
-                        loading: sleepLoading,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildMetricTile(
-                        'Steps',
-                        stepsVal,
-                        Icons.directions_walk_rounded,
-                        greenColor,
-                        loading: stepsLoading,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const StepsDetailScreen(),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildMetricTile(
-                        'Heart Rate',
-                        hrVal,
-                        Icons.favorite_rounded,
-                        const Color(0xFFFF3B30),
-                        loading: hrLoading,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const HeartRateDetailScreen(),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildMetricTile(
-                        'Mood',
-                        moodVal,
-                        Icons.mood_rounded,
-                        const Color(0xFFF97316),
-                        loading: moodLoading,
-                        onTap: _showMoodCheck,
-                      ),
-                    ),
-                  ],
+                _buildCheckIn(checkIn),
+                const SizedBox(height: 12),
+                KeyedSubtree(
+                  key: widget.vitalsKey,
+                  child: _buildVitals(
+                    sleepHours: sleepHours,
+                    heartRate: latestHeartRate?.bpm,
+                    moodScore: moodScore,
+                    loading: metricsLoading,
+                    hrLoading: hrLoading,
+                  ),
                 ),
-                const SizedBox(height: 16),
-                _buildFitnessSummaryCard(
+                const SizedBox(height: 12),
+                _buildActivityCard(
                   steps: steps,
                   activeCalories: activeCalories,
                   exerciseMinutes: exerciseMinutes,
                 ),
-                const SizedBox(height: 14),
-                _buildCircleCard(),
-                const SizedBox(height: 28),
-                _buildSectionTitle("TODAY'S INSIGHTS"),
                 const SizedBox(height: 12),
-                _buildScheduleInsightCard(),
-                if (sleepVal != '--')
-                  _buildInsightCard(
-                    icon: Icons.nightlight_round,
-                    iconColor: accentPurple,
-                    iconBg: const Color(0x1F7B6EF6),
-                    title: _getSleepInsightTitle(sleepVal),
-                    subtitle: _getSleepInsightSubtitle(sleepVal, hrVal),
+                KeyedSubtree(key: widget.circleKey, child: _buildCircleCard()),
+                KeyedSubtree(
+                  key: widget.yourDayKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionTitle(
+                        "YOUR DAY",
+                        trailing: [
+                          _infoButton(
+                            label: 'How Your Day works',
+                            onTap: _showReachableWindowsInfo,
+                          ),
+                          TextButton(
+                            onPressed: widget.onMyDayTap,
+                            style: TextButton.styleFrom(
+                              foregroundColor: accentPurple,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              minimumSize: const Size(0, 36),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              textStyle: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            child: const Text('Open My Day ›'),
+                          ),
+                        ],
+                      ),
+                      _buildDayLoad(sleepNights),
+                      _buildMeetingPatterns(),
+                    ],
                   ),
-                if (sleepVal != '--') const SizedBox(height: 10),
-                HourlyHeartInsightCard(
-                  key: _hourlyHeartKey,
-                  isActive: widget.isActive,
                 ),
-                if (sleepVal == '--' && hrVal == '--')
-                  _buildInsightCard(
-                    icon: Icons.info_outline_rounded,
-                    iconColor: textGrey,
-                    iconBg: const Color(0x1F8E8E93),
-                    title: 'No insights yet',
-                    subtitle:
-                        'Connect Apple Health or complete a scan to see your daily insights.',
+                KeyedSubtree(
+                  key: widget.insightsKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionTitle('INSIGHTS'),
+                      _buildInsights(
+                        sleepHours: sleepHours,
+                        hasHeartRate: latestHeartRate != null,
+                      ),
+                    ],
                   ),
-                const SizedBox(height: 28),
-                _buildReachableWindowsTitle(),
-                const SizedBox(height: 12),
-                _buildReachableWindows(),
-                const SizedBox(height: 160),
+                ),
               ],
             ),
           ),
@@ -1144,61 +1267,107 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildHeader({required bool hasWhoopData}) {
+  /// The daily check-in (docs/scores.md §4) as a one-line row, from 5 AM
+  /// until both questions are answered or it's put off with "Not today".
+  /// It opens the same sheet as the morning pop-up. [checkIn] is null until
+  /// today's metrics load.
+  Widget _buildCheckIn(Map? checkIn) {
+    if (!checkInDue(checkIn, DateTime.now())) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: CheckInRow(
+        left: [
+          checkIn!['feel'],
+          checkIn['sleep'],
+        ].where((a) => a is! num).length,
+        onTap: () async {
+          if (await _openCheckIn(checkIn) == false) {
+            unawaited(_saveCheckIn({'dismissed': true}));
+          }
+        },
+      ),
+    );
+  }
+
+  /// Saves answers to today's `metrics_daily.morning_check_in`, which the
+  /// server's Capacity reads. [mood] is also saved as the mood check-in.
+  Future<void> _saveCheckIn(Map<String, Object> fields, {String? mood}) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await Future.wait([
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('metrics_daily')
+            .doc(localDayKey(DateTime.now()))
+            .set({'morning_check_in': fields}, SetOptions(merge: true)),
+        if (mood != null) MetricsService.saveMoodCheckIn(mood),
+      ]);
+      // Answered or dismissed: today's 10 AM reminder isn't needed.
+      unawaited(CheckInReminders.sync());
+    } catch (error) {
+      debugPrint('Save morning check-in failed: $error');
+      if (mounted) {
+        showToast(
+          context,
+          "Couldn't save your check-in. Try again.",
+          kind: ToastKind.error,
+        );
+      }
+    }
+  }
+
+  void _push(Widget screen) => Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => screen));
+
+  /// The card every Home section sits on, in My Day's style.
+  Widget _card({required Widget child, VoidCallback? onTap}) => Material(
+    color: context.vivordoColors.card,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(20),
+      side: BorderSide(color: Colors.black.withValues(alpha: .07)),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: onTap == null ? child : InkWell(onTap: onTap, child: child),
+  );
+
+  Widget _divider() => VerticalDivider(
+    width: 1,
+    thickness: 1,
+    color: context.vivordoColors.border,
+  );
+
+  Widget _buildHeader() {
+    final colors = context.vivordoColors;
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${_getGreeting()},',
-                style: const TextStyle(
-                  color: textGrey,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w400,
+                '${DateFormat('EEE, MMM d').format(DateTime.now())} · '
+                '${timeOfDayGreeting(DateTime.now())}',
+                style: TextStyle(
+                  color: colors.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 2),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Flexible(
-                    child: Text(
-                      _getFirstName(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: context.vivordoColors.textPrimary,
-                        fontSize: 30,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Text('👋', style: TextStyle(fontSize: 26)),
-                ],
-              ),
-              if (hasWhoopData) ...[
-                const SizedBox(height: 6),
-                const Row(
-                  children: [
-                    Text(
-                      'Synced · Data includes',
-                      style: TextStyle(
-                        color: textGrey,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(width: 7),
-                    WhoopSourceBadge(compact: true),
-                  ],
+              Text(
+                _getFirstName(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
                 ),
-              ],
+              ),
             ],
           ),
         ),
@@ -1206,7 +1375,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            StreamBuilder<CircleProfile?>(
+            VisibleStreamBuilder<CircleProfile?>(
               stream: _circleProfileStream,
               builder: (context, snapshot) {
                 final profile = snapshot.data;
@@ -1262,250 +1431,311 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildFitnessSummaryCard({
+  Widget _buildVitals({
+    required double? sleepHours,
+    required int? heartRate,
+    required double? moodScore,
+    required bool loading,
+    required bool hrLoading,
+  }) => _card(
+    child: IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _vital(
+              icon: Icons.bedtime_rounded,
+              color: accentPurple,
+              value: sleepHours == null ? null : _sleepLabel(sleepHours),
+              label: 'Sleep',
+              loading: loading,
+              onTap: () => _push(const SleepDetailScreen()),
+            ),
+          ),
+          _divider(),
+          Expanded(
+            child: _vital(
+              icon: Icons.favorite_rounded,
+              color: _heartRed,
+              value: heartRate?.toString(),
+              label: heartRate == null ? 'Heart rate' : 'bpm',
+              loading: hrLoading,
+              onTap: () => _push(const HeartRateDetailScreen()),
+            ),
+          ),
+          _divider(),
+          Expanded(
+            child: _vital(
+              icon: Icons.mood_rounded,
+              color: _moodOrange,
+              value: moodScore?.round().toString(),
+              label: 'Mood',
+              loading: loading,
+              emptyAction: 'Check in',
+              onTap: _showMoodCheck,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _vital({
+    required IconData icon,
+    required Color color,
+    required String? value,
+    required String label,
+    required bool loading,
+    required VoidCallback onTap,
+    String? emptyAction,
+  }) {
+    final colors = context.vivordoColors;
+    final shown = value ?? emptyAction ?? 'No data';
+    return Semantics(
+      button: true,
+      label: loading ? '$label, loading' : '$label, $shown',
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .13),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 17),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (loading)
+                      Container(
+                        width: 34,
+                        height: 15,
+                        margin: const EdgeInsets.only(bottom: 3),
+                        decoration: BoxDecoration(
+                          color: colors.cardMuted,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      )
+                    else
+                      Text(
+                        shown,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: value == null ? 13 : 15.5,
+                          fontWeight: FontWeight.w800,
+                          color: value != null
+                              ? colors.textPrimary
+                              : emptyAction != null
+                              ? accentPurple
+                              : colors.textSecondary,
+                        ),
+                      ),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _sleepLabel(double hours) {
+    final minutes = (hours * 60).round();
+    return minutes % 60 == 0
+        ? '${minutes ~/ 60}h'
+        : '${minutes ~/ 60}h ${minutes % 60}m';
+  }
+
+  Widget _buildActivityCard({
     required int steps,
     required int activeCalories,
     required int exerciseMinutes,
   }) {
-    return StreamBuilder<ActivityGoals>(
-      stream: ActivityGoalsService.watch(),
-      initialData: const ActivityGoals(),
-      builder: (context, snapshot) {
-        final goals = snapshot.data ?? const ActivityGoals();
-        final stepsProgress = (steps / goals.steps).clamp(0.0, 1.0);
-        final caloriesProgress = (activeCalories / goals.activeCalories).clamp(
-          0.0,
-          1.0,
-        );
-        final exerciseProgress = (exerciseMinutes / goals.exerciseMinutes)
-            .clamp(0.0, 1.0);
-        final overallPercent =
-            ((stepsProgress + caloriesProgress + exerciseProgress) / 3 * 100)
-                .round();
-
-        return InkWell(
-          onTap: widget.onFitnessTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: context.vivordoColors.card,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
-            ),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 70,
-                  height: 70,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      SizedBox(
-                        width: 70,
-                        height: 70,
-                        child: CircularProgressIndicator(
-                          value: stepsProgress,
-                          strokeWidth: 7,
-                          color: accentPurple,
-                          backgroundColor: Color(0xFFECECF3),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 50,
-                        height: 50,
-                        child: CircularProgressIndicator(
-                          value: caloriesProgress,
-                          strokeWidth: 7,
-                          color: Color(0xFFFB923C),
-                          backgroundColor: Color(0xFFECECF3),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 30,
-                        height: 30,
-                        child: CircularProgressIndicator(
-                          value: exerciseProgress,
-                          strokeWidth: 6,
-                          color: Color(0xFF34D399),
-                          backgroundColor: Color(0xFFECECF3),
-                        ),
-                      ),
-                      Text(
-                        '$overallPercent%',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          color: context.vivordoColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Today’s Activity',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: context.vivordoColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Steps $steps/${goals.steps}',
-                        style: const TextStyle(fontSize: 10, color: textGrey),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Active calories $activeCalories/${goals.activeCalories}',
-                        style: const TextStyle(fontSize: 10, color: textGrey),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Exercise $exerciseMinutes/${goals.exerciseMinutes} minutes',
-                        style: const TextStyle(fontSize: 10, color: textGrey),
-                      ),
-                    ],
-                  ),
-                ),
-                const _HomeWorkoutStreakBadge(),
-                const SizedBox(width: 4),
-                const Icon(Icons.chevron_right_rounded, color: textGrey),
-              ],
-            ),
+    final colors = context.vivordoColors;
+    final goals = _activityGoals;
+    double progress(int value, int goal) =>
+        goal <= 0 ? 0 : (value / goal).clamp(0.0, 1.0);
+    Widget ring(double size, double value, Color color, double stroke) =>
+        SizedBox(
+          width: size,
+          height: size,
+          child: CircularProgressIndicator(
+            value: value,
+            strokeWidth: stroke,
+            color: color,
+            backgroundColor: colors.cardMuted,
           ),
         );
-      },
-    );
-  }
-
-  Widget _buildMetricTile(
-    String label,
-    String value,
-    IconData icon,
-    Color color, {
-    bool loading = false,
-    VoidCallback? onTap,
-  }) {
-    final bool isEmpty = value == '--';
-    final noData = isEmpty && !loading;
-    final displayValue = noData ? 'No data' : value;
-    return Semantics(
-      button: onTap != null,
-      label: onTap == null
-          ? null
-          : '$label, $displayValue. Tap to view details.',
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0F000000),
-              blurRadius: 10,
-              offset: Offset(0, 3),
+    return _card(
+      onTap: widget.onFitnessTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+        child: Row(
+          children: [
+            Semantics(
+              label:
+                  'Activity: steps $steps of ${goals.steps}, '
+                  '$activeCalories of ${goals.activeCalories} calories, '
+                  '$exerciseMinutes of ${goals.exerciseMinutes} exercise minutes',
+              child: SizedBox(
+                width: 52,
+                height: 52,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    ring(52, progress(steps, goals.steps), accentPurple, 6),
+                    ring(
+                      36,
+                      progress(activeCalories, goals.activeCalories),
+                      _calorieOrange,
+                      6,
+                    ),
+                    ring(
+                      20,
+                      progress(exerciseMinutes, goals.exerciseMinutes),
+                      _exerciseGreen,
+                      5,
+                    ),
+                  ],
+                ),
+              ),
             ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: _activityNumber(
+                        NumberFormat.decimalPattern().format(steps),
+                        'steps',
+                        first: true,
+                        onTap: () => _push(const StepsDetailScreen()),
+                      ),
+                    ),
+                    _divider(),
+                    Expanded(child: _activityNumber('$activeCalories', 'cal')),
+                    _divider(),
+                    Expanded(
+                      child: _activityNumber('${exerciseMinutes}m', 'exercise'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const _HomeWorkoutStreakBadge(),
+            Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
           ],
         ),
-        child: Material(
-          color: noData
-              ? (Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF242428)
-                    : const Color(0xFFEEEEF0))
-              : context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(16),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-              child: Column(
-                children: [
-                  Icon(
-                    icon,
-                    color: isEmpty ? const Color(0xFF8E8E93) : color,
-                    size: 20,
-                  ),
-                  const SizedBox(height: 6),
-                  loading
-                      ? Container(
-                          width: 36,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE5E5EA),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        )
-                      : Text(
-                          displayValue,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: isEmpty
-                                ? context.vivordoColors.textSecondary
-                                : context.vivordoColors.textPrimary,
-                          ),
-                        ),
-                  const SizedBox(height: 2),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: noData
-                          ? context.vivordoColors.textSecondary
-                          : context.vivordoColors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        color: textGrey,
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1.0,
+  Widget _activityNumber(
+    String value,
+    String label, {
+    bool first = false,
+    VoidCallback? onTap,
+  }) {
+    final colors = context.vivordoColors;
+    final number = Padding(
+      padding: EdgeInsets.only(left: first ? 0 : 10, top: 2, bottom: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: colors.textPrimary,
+              ),
+            ),
+          ),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11.5, color: colors.textSecondary),
+          ),
+        ],
+      ),
+    );
+    if (onTap == null) return number;
+    return Semantics(
+      button: true,
+      label: '$value $label. Opens step details.',
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: number,
       ),
     );
   }
 
-  Widget _buildReachableWindowsTitle() => Row(
-    children: [
-      Expanded(child: _buildSectionTitle('TODAY\'S REACHABLE WINDOWS')),
-      Semantics(
-        button: true,
-        label: 'How reachable windows work',
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkWell(
-            onTap: _showReachableWindowsInfo,
-            customBorder: const CircleBorder(),
-            child: const Padding(
-              padding: EdgeInsets.all(6),
-              child: Icon(
-                Icons.info_outline_rounded,
-                size: 20,
-                color: textGrey,
+  Widget _buildSectionTitle(String title, {List<Widget> trailing = const []}) =>
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 24, 0, 8),
+        child: SizedBox(
+          height: 36,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.3,
+                    color: context.vivordoColors.textSecondary,
+                  ),
+                ),
               ),
-            ),
+              ...trailing,
+            ],
           ),
         ),
-      ),
-    ],
-  );
+      );
+
+  Widget _infoButton({required String label, required VoidCallback onTap}) =>
+      IconButton(
+        tooltip: label,
+        onPressed: onTap,
+        visualDensity: VisualDensity.compact,
+        icon: Icon(
+          Icons.info_outline_rounded,
+          size: 19,
+          color: context.vivordoColors.textSecondary,
+        ),
+      );
 
   Future<void> _showReachableWindowsInfo() => showDialog<void>(
     context: context,
@@ -1533,7 +1763,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'How reachable windows work',
+              'How Your Day works',
               style: TextStyle(
                 color: dialogContext.vivordoColors.textPrimary,
                 fontSize: 20,
@@ -1545,7 +1775,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       content: SingleChildScrollView(
         child: Text(
-          'Vivordo scores your calendar events based on how mentally demanding they may be, helping highlight periods that could require more focus and open times when your schedule is lighter.\n\nUse these windows to plan demanding tasks, take a break, or make the most of your available time. Scores are estimates based on your calendar details.',
+          'Each bar is one hour of your day, 7 AM to 10 PM, stretched to fit anything earlier or later. Solid bars are what the day has taken so far (Effort); outlined bars are what\'s still planned (Demand). Taller, warmer bars are busier hours.\n\n'
+          '• Calendar events are rated by how demanding they look. Ones that can\'t be rated count as moderate.\n'
+          '• Priorities count once you tick them off, in their time slot, or as a small mark at the hour you finished them.\n'
+          '• Workouts are shown in teal.\n\n'
+          'Longer items, overlaps and back-to-back runs make an hour busier, and so does anything after your end-of-day time.\n\n'
+          'So far compares today with your usual by this time of day, once there are 14 days to compare with.\n\n'
+          'Below the bars is your next free stretch of 30+ minutes. Tap Plan it to fill it, or tap a bar to see its busiest event.\n\n'
+          'Effort and ratings are estimates.',
           style: TextStyle(
             color: dialogContext.vivordoColors.textSecondary,
             fontSize: 14,
@@ -1567,261 +1804,1074 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   );
 
   Widget _buildCircleCard() {
-    final user = FirebaseAuth.instance.currentUser;
-    final displayName = user?.displayName?.trim();
-    final initial = displayName?.isNotEmpty == true
-        ? displayName![0].toUpperCase()
-        : 'Y';
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 14,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute<void>(builder: (_) => const CircleScreen())),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-            child: Row(
+    final colors = context.vivordoColors;
+    return _card(
+      onTap: () => _push(const CircleScreen()),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
+        child: ListenableBuilder(
+          listenable: Listenable.merge([_friendsSnapshot, _engagementSnapshot]),
+          builder: (context, _) {
+            final friends =
+                _friendsSnapshot.value.data ?? const <CircleProfile>[];
+            final engagement =
+                _engagementSnapshot.value.data ??
+                const CircleDailyEngagement(likes: 0, comments: 0);
+            final comments = engagement.comments;
+            return Row(
               children: [
-                StreamBuilder<CircleProfile?>(
-                  stream: _circleProfileStream,
-                  builder: (context, snapshot) {
-                    final profile = snapshot.data;
-                    final profileInitial = profile?.username.isNotEmpty == true
-                        ? profile!.username[0].toUpperCase()
-                        : initial;
-                    return _CircleAvatarCluster(
-                      initial: profileInitial,
-                      photoUrl: profile?.photoUrl,
-                    );
-                  },
-                ),
-                const SizedBox(width: 14),
-                StreamBuilder<CircleDailyEngagement>(
-                  stream: CircleProfileService.watchTodayEngagement(),
-                  initialData: const CircleDailyEngagement(
-                    likes: 0,
-                    comments: 0,
-                  ),
-                  builder: (context, engagementSnapshot) {
-                    final engagement = engagementSnapshot.data!;
-                    return Expanded(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Circle',
-                                  style: TextStyle(
-                                    color: context.vivordoColors.textPrimary,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                StreamBuilder<List<CircleProfile>>(
-                                  stream: CircleProfileService.watchFriends(),
-                                  builder: (context, snapshot) {
-                                    final friendCount =
-                                        snapshot.data?.length ?? 0;
-                                    final comments = engagement.comments;
-                                    return Text(
-                                      '$friendCount ${friendCount == 1 ? 'friend' : 'friends'} · '
-                                      '$comments ${comments == 1 ? 'update' : 'updates'}',
-                                      style: const TextStyle(
-                                        color: textGrey,
-                                        fontSize: 13,
-                                      ),
-                                    );
-                                  },
-                                ),
-                                const SizedBox(height: 3),
-                                const Text(
-                                  'No active challenges',
-                                  style: TextStyle(
-                                    color: textGrey,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 9,
-                            ),
-                            decoration: BoxDecoration(
-                              color: accentPurple.withValues(alpha: .08),
-                              borderRadius: BorderRadius.circular(13),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.favorite_border_rounded,
-                                  color: accentPurple,
-                                  size: 17,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  '${engagement.likes} new',
-                                  style: const TextStyle(
-                                    color: accentPurple,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                if (friends.isEmpty)
+                  VisibleStreamBuilder<CircleProfile?>(
+                    stream: _circleProfileStream,
+                    builder: (context, snapshot) {
+                      final profile = snapshot.data;
+                      final name = profile?.username.trim() ?? '';
+                      return _AvatarStack([
+                        (
+                          initial: name.isEmpty ? 'Y' : name[0].toUpperCase(),
+                          photoUrl: profile?.photoUrl,
+                        ),
+                        // No friends yet: invite someone.
+                        (initial: null, photoUrl: null),
+                      ]);
+                    },
+                  )
+                else
+                  _AvatarStack([
+                    for (final friend in friends.take(3))
+                      (
+                        initial: friend.username.trim().isEmpty
+                            ? '?'
+                            : friend.username.trim()[0].toUpperCase(),
+                        photoUrl: friend.photoUrl,
                       ),
-                    );
-                  },
+                  ]),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Circle',
+                        style: TextStyle(
+                          color: colors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${friends.length} '
+                        '${friends.length == 1 ? 'friend' : 'friends'} · '
+                        '$comments ${comments == 1 ? 'update' : 'updates'}',
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 5),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: textGrey,
-                  size: 24,
-                ),
+                if (engagement.likes > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accentPurple.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.favorite_border_rounded,
+                          color: accentPurple,
+                          size: 15,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${engagement.likes} new',
+                          style: const TextStyle(
+                            color: accentPurple,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
               ],
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildInsightCard({
-    required IconData icon,
-    required Color iconColor,
-    required Color iconBg,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 15,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: iconColor, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: context.vivordoColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
+  /// Today's repeating meetings that usually raise or lower your heart rate;
+  /// nothing on days without one. Both futures are cached, so rebuilds don't
+  /// refetch.
+  Widget _buildMeetingPatterns() {
+    final now = DateTime.now();
+    return FutureBuilder(
+      future: MeetingPatternsService.load(),
+      builder: (context, patterns) => FutureBuilder<List<gcal.Event>>(
+        future: _getReachableWindowEventsFuture(DateUtils.dateOnly(now)),
+        builder: (context, events) {
+          final loaded = patterns.data?.patterns;
+          if (loaded == null || events.data == null) {
+            return const SizedBox.shrink();
+          }
+          MeetingPatternsService.rememberNames(events.data!);
+          final today = todaysPatternMeetings(
+            patterns: loaded,
+            now: now,
+            events: patternEventsFrom(events.data!),
+          );
+          unawaited(
+            publishSiriMeetings([
+              for (final m in today)
+                (
+                  title: m.title,
+                  start: m.start,
+                  high: m.pattern.high,
+                  lift: m.pattern.liftLabel,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: textGrey,
-                    fontSize: 12,
-                    height: 1.45,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+            ]),
+          );
+          return MeetingPatternsRow(patterns: loaded, now: now, today: today);
+        },
       ),
     );
   }
 
-  Widget _buildScheduleInsightCard() {
+  Widget _buildDayLoad(List<SleepPeriod> sleepNights) {
     final now = DateTime.now();
-    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayStart = DateUtils.dateOnly(now);
+    final loading = _card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: accentPurple,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                'Reviewing today’s calendar…',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: context.vivordoColors.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return FutureBuilder<List<_ScoredReachableEvent>>(
+      future: _getReachableWindowScoresFuture(todayStart),
+      builder: (context, scoresSnapshot) =>
+          FutureBuilder<List<_ScheduleEvent>?>(
+            future: _getScheduleEventsFuture(todayStart),
+            builder: (context, eventsSnapshot) {
+              if (scoresSnapshot.connectionState == ConnectionState.waiting ||
+                  eventsSnapshot.connectionState == ConnectionState.waiting) {
+                return loading;
+              }
+              return FutureBuilder<_EffortContext>(
+                future: _getEffortContextFuture(todayStart),
+                builder: (context, contextSnapshot) =>
+                    ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+                      valueListenable: _prioritySnapshot,
+                      builder: (context, prioritySnapshot, _) => _dayLoadCard(
+                        now: now,
+                        sleepNights: sleepNights,
+                        scored: scoresSnapshot.data ?? const [],
+                        events: eventsSnapshot.data,
+                        priorities: prioritySnapshot.data ?? const [],
+                        effortContext:
+                            contextSnapshot.data ?? const _EffortContext(),
+                      ),
+                    ),
+              );
+            },
+          ),
+    );
+  }
 
-    return FutureBuilder<_ScheduleInsight?>(
-      future: _getScheduleInsightFuture(todayStart),
+  Widget _dayLoadCard({
+    required DateTime now,
+    required List<SleepPeriod> sleepNights,
+    required List<_ScoredReachableEvent> scored,
+    required List<_ScheduleEvent>? events,
+    required List<DailyPriority> priorities,
+    required _EffortContext effortContext,
+  }) {
+    final colors = context.vivordoColors;
+    final today = DateUtils.dateOnly(now);
+    final eventKeys = {for (final event in events ?? const []) event.key};
+    // Timed priorities today. A priority linked to a calendar event is
+    // already counted by that event, as on My Day's timeline.
+    final timed = [
+      for (final priority in priorities)
+        if (!priority.isAllDay &&
+            priority.sourceStart != null &&
+            DateUtils.isSameDay(priority.sourceStart, now) &&
+            !eventKeys.contains(priority.sourceEventKey))
+          priority,
+    ];
+    // Untimed priorities (and timed ones from other days) ticked off today.
+    final untimedDone = [
+      for (final priority in priorities)
+        if (priority.completed &&
+            !timed.contains(priority) &&
+            !eventKeys.contains(priority.sourceEventKey) &&
+            priority.completedAt != null &&
+            DateUtils.isSameDay(priority.completedAt, now))
+          (doneAt: priority.completedAt!, effort: priority.planning['effort']),
+    ];
+    final (:from, :until) = dayLoadRange(now, [
+      for (final event in events ?? const <_ScheduleEvent>[])
+        (start: event.start, end: event.end),
+      for (final priority in timed)
+        (start: priority.sourceStart!, end: priority.timelineEnd!),
+    ]);
+    // Outlook events have no rating here, so they count as unknown (30), as
+    // in the server's Effort.
+    final outlook = [
+      for (final (i, event) in (events ?? const <_ScheduleEvent>[]).indexed)
+        if (event.key == null)
+          (
+            event: CalendarCognitiveEvent(
+              id: 'outlook:$i',
+              title: event.title,
+              start: event.start,
+              end: event.end,
+            ),
+            score: CognitiveLoadScore(
+              eventId: 'outlook:$i',
+              score: 0,
+              category: 'unknown',
+              reason: 'Outlook event',
+              usedAi: false,
+            ),
+          ),
+    ];
+    final items = <EffortItem>[
+      for (final e in scored)
+        (event: e.input, score: e.score, done: false, open: false),
+      for (final e in outlook)
+        (event: e.event, score: e.score, done: false, open: false),
+      for (final priority in timed)
+        if (priorityLoadInput(
+              id: 'priority:${priority.reference.path}',
+              title: priority.title,
+              start: priority.sourceStart!,
+              end: priority.timelineEnd!,
+              effort: priority.planning['effort'],
+            )
+            case final input)
+          (
+            event: input.event,
+            score: input.score,
+            done: priority.completed,
+            open: !priority.completed,
+          ),
+    ];
+    final effort = buildDayEffort(
+      now: now,
+      from: from,
+      until: until,
+      wrapUp: today.add(Duration(minutes: effortContext.wrapUpMinutes)),
+      items: items,
+      untimedDone: untimedDone,
+      workouts: effortContext.workouts,
+    );
+    // The energy forecast (docs/scores.md §8), once any night is recorded
+    // or your usual sleep times are set. Tomorrow's first event sets bed-by.
+    final tomorrow = DateTime(today.year, today.month, today.day + 1);
+    final energy = sleepNights.isEmpty && effortContext.sleepSchedule == null
+        ? null
+        : forecastEnergy(
+            day: today,
+            nights: sleepNights,
+            sleepNeedHours: effortContext.sleepNeedHours,
+            schedule: effortContext.sleepSchedule,
+            tomorrowFirstEvent: ([
+              for (final event in events ?? const <_ScheduleEvent>[])
+                if (!event.start.isBefore(tomorrow) &&
+                    event.start.isBefore(tomorrow.add(const Duration(days: 1))))
+                  event.start,
+            ]..sort()).firstOrNull,
+          );
+    final fits = energy == null
+        ? const <EnergyFit>[]
+        : fitDayToEnergy(forecast: energy, items: items, now: now);
+    final clash = fits.where((f) => f.kind == EnergyFitKind.clash).firstOrNull;
+    if (energy != null) {
+      final evening = !now.isBefore(
+        today.add(Duration(minutes: effortContext.wrapUpMinutes)),
+      );
+      latestEnergy = (
+        text: energyContext(
+          today: energy,
+          fits: fits,
+          tomorrow: evening
+              ? tomorrowEnergyForecast(
+                  tonight: energy,
+                  today: today,
+                  nights: sleepNights,
+                  schedule: effortContext.sleepSchedule,
+                )
+              : null,
+        ),
+        at: now,
+      );
+    }
+    final opening = nextDayOpening(now, [
+      for (final event in events ?? const <_ScheduleEvent>[])
+        AgendaItem(event.title, event.start, event.end),
+      for (final priority in timed)
+        if (!priority.completed)
+          AgendaItem(
+            priority.title,
+            priority.sourceStart!,
+            priority.timelineEnd!,
+          ),
+    ]);
+    final nowFraction =
+        now.difference(from).inMinutes / until.difference(from).inMinutes;
+    final soFar = effortSoFarWord(
+      soFar: effort.soFar,
+      now: now,
+      pastByHour: effortContext.pastByHour,
+    );
+
+    return _card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _effortStat('SO FAR', soFar, null)),
+                  VerticalDivider(width: 24, color: colors.border),
+                  Expanded(
+                    child: effort.aheadMinutes > 0
+                        ? _effortStat(
+                            'STILL AHEAD',
+                            '${_durationLabel(Duration(minutes: effort.aheadMinutes))} planned',
+                            [
+                              switch (effort.aheadLevel) {
+                                DayLoadLevel.heavy => 'Mostly heavy',
+                                DayLoadLevel.focused => 'Mostly focused',
+                                _ => 'Mostly light',
+                              },
+                              if (effort.nextStart case final next?)
+                                'next ${DateFormat.jm().format(next).replaceAll(':00', '')}',
+                            ].join(' · '),
+                          )
+                        : FutureBuilder<({int minutes, DateTime? first})?>(
+                            future: _getTomorrowPlanFuture(today),
+                            builder: (context, snapshot) {
+                              final plan = snapshot.data;
+                              return _effortStat(
+                                'TOMORROW',
+                                plan == null
+                                    ? '…'
+                                    : plan.minutes == 0
+                                    ? 'Nothing planned yet'
+                                    : '${_durationLabel(Duration(minutes: plan.minutes))} planned',
+                                plan?.first == null
+                                    ? null
+                                    : 'First at ${DateFormat.jm().format(plan!.first!)}',
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 60,
+              child: LayoutBuilder(
+                builder: (context, constraints) => Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        for (var i = 0; i < effort.hours.length; i++) ...[
+                          if (i > 0) const SizedBox(width: 5),
+                          Expanded(
+                            child: _effortBar(
+                              hour: effort.hours[i],
+                              scored: scored,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (energy != null)
+                      Positioned.fill(
+                        child: EnergyCurve(
+                          forecast: energy,
+                          from: from,
+                          until: until,
+                        ),
+                      ),
+                    if (nowFraction >= 0 && nowFraction <= 1)
+                      Positioned(
+                        left: constraints.maxWidth * nowFraction - 1,
+                        top: -4,
+                        bottom: -4,
+                        child: IgnorePointer(
+                          child: Container(
+                            width: 2,
+                            decoration: BoxDecoration(
+                              color: colors.textPrimary.withValues(alpha: .8),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                for (var i = 0; i < effort.hours.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      i % 3 == 0
+                          ? _shortHour(from.add(Duration(hours: i)).hour)
+                          : '',
+                      maxLines: 1,
+                      overflow: TextOverflow.visible,
+                      softWrap: false,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                for (final (label, color, outlined) in [
+                  ('Light', _loadColor(DayLoadLevel.light), false),
+                  ('Focused', _loadColor(DayLoadLevel.focused), false),
+                  ('Heavy', _loadColor(DayLoadLevel.heavy), false),
+                  ('Workout', _workoutTeal, false),
+                  ('Ahead', accentPurple, true),
+                ])
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: outlined ? null : color,
+                          border: outlined
+                              ? Border.all(color: color, width: 1.5)
+                              : null,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            if (energy != null) ...[
+              const SizedBox(height: 12),
+              EnergyChips(
+                forecast: energy,
+                onTap: () => showEnergyForecastSheet(context, energy),
+              ),
+              if (clash != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  energyClashText(
+                    title: clash.item.event.title,
+                    start: clash.item.event.start,
+                    phase: clash.phase,
+                  ),
+                  style: TextStyle(fontSize: 12, color: colors.textSecondary),
+                ),
+              ],
+            ],
+            if (events == null) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Connect a calendar in My Day to include your events.',
+                style: TextStyle(fontSize: 12, color: colors.textSecondary),
+              ),
+            ],
+            Divider(height: 28, color: colors.border),
+            _openingRow(opening),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static const _workoutTeal = Color(0xFF5DCAA5);
+
+  Widget _effortStat(String label, String value, String? detail) {
+    final colors = context.vivordoColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            letterSpacing: .6,
+            color: colors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: colors.textPrimary,
+          ),
+        ),
+        if (detail != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            detail,
+            style: TextStyle(fontSize: 12, color: colors.textSecondary),
+          ),
+        ],
+      ],
+    );
+  }
+
+  static String _shortHour(int hour) =>
+      '${hour % 12 == 0 ? 12 : hour % 12}${hour < 12 ? 'a' : 'p'}';
+
+  Color _loadColor(DayLoadLevel level) => switch (level) {
+    DayLoadLevel.none => context.vivordoColors.cardMuted,
+    DayLoadLevel.light => _exerciseGreen.withValues(alpha: .55),
+    DayLoadLevel.focused => accentPurple.withValues(alpha: .55),
+    DayLoadLevel.heavy => const Color(0xFFF97316),
+  };
+
+  /// One hour's bar: workouts (teal) and what happened (solid, by level)
+  /// at the bottom, what's still planned (outlined) on top, and a dot for
+  /// each untimed priority ticked off. Tapping opens the hour's heaviest
+  /// calendar event.
+  Widget _effortBar({
+    required EffortHour hour,
+    required List<_ScoredReachableEvent> scored,
+  }) {
+    final colors = context.vivordoColors;
+    final hourEnd = hour.start.add(const Duration(hours: 1));
+    final top =
+        (scored
+                .where(
+                  (e) =>
+                      e.input.start.isBefore(hourEnd) &&
+                      e.input.end.isAfter(hour.start),
+                )
+                .toList()
+              ..sort((a, b) => b.score.score.compareTo(a.score.score)))
+            .firstOrNull;
+    final total = hour.workout + hour.done + hour.ahead;
+    // Scale down when the parts add up to more than a full bar.
+    final scale = total > 100 ? 100 / total : 1.0;
+    final doneLevel = dayLoadLevel(hour.done);
+    final label = [
+      if (hour.done > 0) '${doneLevel.name} so far',
+      if (hour.workout > 0) 'workout',
+      if (hour.ahead > 0) '${dayLoadLevel(hour.ahead).name} still planned',
+      if (hour.ticks > 0) '${hour.ticks} priority done',
+    ];
+    Widget part(double value, {Color? fill, Color? outline}) => Flexible(
+      flex: (value * scale * 10).round().clamp(1, 1000),
+      child: Container(
+        decoration: BoxDecoration(
+          color: fill,
+          border: outline == null
+              ? null
+              : Border.all(color: outline, width: 1.5),
+          borderRadius: BorderRadius.circular(5),
+        ),
+      ),
+    );
+    return Semantics(
+      label:
+          '${DateFormat.j().format(hour.start)}, ${label.isEmpty ? 'open' : label.join(', ')}',
+      button: top != null,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: top == null ? null : () => _showReachableEventSummary(top.event),
+        child: Column(
+          children: [
+            Expanded(
+              child: total <= 0
+                  ? Align(
+                      alignment: Alignment.bottomCenter,
+                      child: FractionallySizedBox(
+                        heightFactor: .08,
+                        widthFactor: 1,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: _loadColor(DayLoadLevel.none),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                      ),
+                    )
+                  : Align(
+                      alignment: Alignment.bottomCenter,
+                      child: FractionallySizedBox(
+                        heightFactor: (total * scale / 100).clamp(.18, 1.0),
+                        widthFactor: 1,
+                        child: Column(
+                          verticalDirection: VerticalDirection.up,
+                          children: [
+                            if (hour.workout > 0)
+                              part(hour.workout, fill: _workoutTeal),
+                            if (hour.done > 0)
+                              part(hour.done, fill: _loadColor(doneLevel)),
+                            if (hour.ahead > 0)
+                              part(
+                                hour.ahead,
+                                outline: accentPurple.withValues(alpha: .75),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+            ),
+            if (hour.ticks > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Icon(
+                  Icons.check_circle_rounded,
+                  size: 9,
+                  color: colors.textSecondary,
+                ),
+              )
+            else
+              const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<_EffortContext> _getEffortContextFuture(DateTime day) {
+    if (_effortContextFuture != null &&
+        DateUtils.isSameDay(_effortContextDate, day)) {
+      return _effortContextFuture!;
+    }
+    _effortContextDate = day;
+    return _effortContextFuture = _loadEffortContext(day);
+  }
+
+  /// Today's in-app workouts, the user's end-of-day time, and earlier days'
+  /// hour-by-hour Effort (scores_daily, last 28 days) for "So far".
+  Future<_EffortContext> _loadEffortContext(DateTime day) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const _EffortContext();
+    final user = FirebaseFirestore.instance.collection('users').doc(uid);
+    final dayStart = DateUtils.dateOnly(day);
+    try {
+      final [workouts, scores, profile, todayScores] = await Future.wait([
+        user
+            .collection('workouts')
+            .where(
+              'startedAt',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(dayStart),
+            )
+            .where(
+              'startedAt',
+              isLessThan: Timestamp.fromDate(
+                dayStart.add(const Duration(days: 1)),
+              ),
+            )
+            .get(),
+        user
+            .collection('scores_daily')
+            .where(
+              FieldPath.documentId,
+              isGreaterThanOrEqualTo: localDayKey(
+                DateTime(day.year, day.month, day.day - 28),
+              ),
+            )
+            .where(FieldPath.documentId, isLessThan: localDayKey(day))
+            .get(),
+        user.get(),
+        user.collection('scores_daily').doc(localDayKey(day)).get(),
+      ]);
+      final preferences =
+          (profile as DocumentSnapshot<Map<String, dynamic>>)
+                  .data()?['preferences']
+              as Map?;
+      final wrapUp = preferences?['dayWrapUpMinutes'];
+      return _EffortContext(
+        sleepSchedule: SleepSchedule.fromPreferences(preferences),
+        sleepNeedHours:
+            (((todayScores as DocumentSnapshot<Map<String, dynamic>>)
+                            .data()?['capacity']
+                        as Map?)?['sleepNeed']
+                    as num?)
+                ?.toDouble(),
+        wrapUpMinutes: wrapUp is int ? wrapUp : kDefaultDayWrapUpMinutes,
+        workouts: [
+          for (final doc
+              in (workouts as QuerySnapshot<Map<String, dynamic>>).docs)
+            if (doc.data()['startedAt'] case final Timestamp start)
+              (
+                start: start.toDate(),
+                end:
+                    (doc.data()['completedAt'] as Timestamp?)?.toDate() ??
+                    start.toDate().add(
+                      Duration(
+                        seconds:
+                            (((doc.data()['durationMinutes'] as num?) ?? 0) *
+                                    60)
+                                .round(),
+                      ),
+                    ),
+                intensity: workoutIntensity(
+                  [
+                    doc.data()['activityName'],
+                    doc.data()['activityCategory'],
+                    for (final e
+                        in (doc.data()['exercises'] as List? ?? const []))
+                      if (e is Map) e['category'],
+                  ].whereType<String>().join(' '),
+                ),
+              ),
+        ],
+        pastByHour: [
+          for (final doc
+              in (scores as QuerySnapshot<Map<String, dynamic>>).docs)
+            if (doc.data()['effort'] case {
+              'version': 1,
+              'byHour': final List byHour,
+            })
+              byHour.whereType<num>().toList(),
+        ],
+      );
+    } catch (error) {
+      debugPrint('Home Effort context failed: $error');
+      return const _EffortContext();
+    }
+  }
+
+  Future<({int minutes, DateTime? first})?> _getTomorrowPlanFuture(
+    DateTime today,
+  ) {
+    if (_tomorrowPlanFuture != null &&
+        DateUtils.isSameDay(_tomorrowPlanDate, today)) {
+      return _tomorrowPlanFuture!;
+    }
+    _tomorrowPlanDate = today;
+    return _tomorrowPlanFuture = _loadTomorrowPlan(today);
+  }
+
+  /// Tomorrow's planned time (calendar events and timed priorities, overlaps
+  /// counted once) and its first start, for the evening's "Tomorrow".
+  Future<({int minutes, DateTime? first})?> _loadTomorrowPlan(
+    DateTime today,
+  ) async {
+    final start = DateTime(today.year, today.month, today.day + 1);
+    final end = DateTime(today.year, today.month, today.day + 2);
+    final intervals = <(DateTime, DateTime)>[];
+    try {
+      if (await CalendarService.isSignedIn()) {
+        for (final event in await CalendarService.getEventsBetween(
+          start,
+          end,
+        )) {
+          final s = event.start?.dateTime?.toLocal();
+          final e = event.end?.dateTime?.toLocal();
+          if (s == null ||
+              e == null ||
+              event.status == 'cancelled' ||
+              event.transparency == 'transparent' ||
+              (event.attendees?.any(
+                    (a) => a.self == true && a.responseStatus == 'declined',
+                  ) ??
+                  false)) {
+            continue;
+          }
+          intervals.add((s, e));
+        }
+      }
+      if (await OutlookCalendarService.isSignedIn()) {
+        for (final event in await OutlookCalendarService.getEventsBetween(
+          start,
+          end,
+        )) {
+          if (!event.isAllDay) {
+            intervals.add((event.start.toLocal(), event.end.toLocal()));
+          }
+        }
+      }
+      for (final priority in await DailyPriorityService.forDay(
+        start,
+        includeCompleted: false,
+        source: Source.serverAndCache,
+      )) {
+        if (!priority.isAllDay &&
+            priority.sourceStart != null &&
+            DateUtils.isSameDay(priority.sourceStart, start)) {
+          intervals.add((priority.sourceStart!, priority.timelineEnd!));
+        }
+      }
+    } catch (error) {
+      debugPrint('Home tomorrow plan failed: $error');
+      return null;
+    }
+    final clipped = [
+      for (final (s, e) in intervals)
+        if (e.isAfter(start) && s.isBefore(end))
+          (s.isBefore(start) ? start : s, e.isAfter(end) ? end : e),
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    var minutes = 0;
+    DateTime? coveredUntil;
+    for (final (s, e) in clipped) {
+      final from = coveredUntil != null && coveredUntil.isAfter(s)
+          ? coveredUntil
+          : s;
+      if (e.isAfter(from)) minutes += e.difference(from).inMinutes;
+      if (coveredUntil == null || e.isAfter(coveredUntil)) coveredUntil = e;
+    }
+    return (minutes: minutes, first: clipped.firstOrNull?.$1);
+  }
+
+  Widget _openingRow(({DateTime start, DateTime? end, String? next})? opening) {
+    final colors = context.vivordoColors;
+    final time = DateFormat.jm();
+    final String title;
+    final String detail;
+    if (opening == null) {
+      title = 'No openings left today';
+      detail = 'Nothing free for 30 minutes or more.';
+    } else if (opening.end == null) {
+      title = 'Open from ${time.format(opening.start)}';
+      detail = 'Free for the rest of today';
+    } else {
+      final end = opening.end!;
+      title = 'Open ${time.format(opening.start)} – ${time.format(end)}';
+      final span = _durationLabel(end.difference(opening.start));
+      detail = opening.next == null ? span : '$span · then ${opening.next}';
+    }
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: opening == null ? colors.border : _exerciseGreen,
+            shape: BoxShape.circle,
+            boxShadow: [
+              if (opening != null)
+                BoxShadow(
+                  color: _exerciseGreen.withValues(alpha: .18),
+                  spreadRadius: 5,
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: colors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                detail,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12.5, color: colors.textSecondary),
+              ),
+            ],
+          ),
+        ),
+        if (opening != null) ...[
+          const SizedBox(width: 10),
+          FilledButton(
+            onPressed: () => _planOpening(opening.start, opening.end),
+            style: FilledButton.styleFrom(
+              backgroundColor: accentPurple,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              minimumSize: const Size(0, 38),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            child: const Text('Plan it'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Same Priority / Event sheet and saving as My Day's openings.
+  Future<void> _planOpening(DateTime start, DateTime? end) async {
+    final result = await showPlanSlotSheet(context, start: start, end: end);
+    if (!mounted) return;
+    try {
+      switch (result) {
+        case PriorityDraft draft:
+          final warning = await savePriorityDraft(draft);
+          _showHomeCalendarMessage(warning ?? 'Priority added.');
+          if (draft.addToCalendar) _refreshHomeCalendarCards();
+        case CalendarEventDraft draft:
+          await saveEventDraft(draft);
+          _refreshHomeCalendarCards();
+          _showHomeCalendarMessage('Event added to Google Calendar.');
+      }
+    } catch (error) {
+      debugPrint('Plan opening save failed: $error');
+      _showHomeCalendarMessage(
+        result is PriorityDraft
+            ? "Couldn't add the priority. Try again."
+            : "Couldn't add the event. Try again.",
+        error: true,
+      );
+    }
+  }
+
+  Widget _buildInsights({
+    required double? sleepHours,
+    required bool hasHeartRate,
+  }) {
+    final todayStart = DateUtils.dateOnly(DateTime.now());
+    final divider = Divider(height: 1, color: context.vivordoColors.border);
+    final schedule = FutureBuilder<List<_ScheduleEvent>?>(
+      future: _getScheduleEventsFuture(todayStart),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _buildInsightCard(
-              icon: Icons.calendar_today_rounded,
-              iconColor: const Color(0xFF007AFF),
-              iconBg: const Color(0x1F007AFF),
-              title: 'Reviewing your schedule',
-              subtitle:
-                  'Checking today’s calendar load for useful timing insights.',
-            ),
+          return Column(
+            children: [
+              const HomeInsightRow(
+                icon: Icons.calendar_today_rounded,
+                color: Color(0xFF007AFF),
+                title: 'Reviewing your schedule',
+                subtitle: 'Checking today’s calendar load for useful timing.',
+              ),
+              divider,
+            ],
           );
         }
-
-        final insight = snapshot.data;
-        if (insight == null) return const SizedBox.shrink();
-
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _buildInsightCard(
-            icon: insight.icon,
-            iconColor: insight.color,
-            iconBg: insight.color.withValues(alpha: 0.12),
-            title: insight.title,
-            subtitle: insight.subtitle,
-          ),
+        final events = snapshot.data;
+        if (events == null) return const SizedBox.shrink();
+        final insight = _buildScheduleInsight(events, todayStart);
+        return Column(
+          children: [
+            HomeInsightRow(
+              icon: insight.icon,
+              color: insight.color,
+              title: insight.title,
+              subtitle: insight.subtitle,
+            ),
+            divider,
+          ],
         );
       },
     );
+    final rows = <Widget>[
+      if (sleepHours != null)
+        HomeInsightRow(
+          icon: Icons.nightlight_round,
+          color: accentPurple,
+          title: _getSleepInsightTitle(sleepHours),
+          subtitle: '${_sleepLabel(sleepHours)} of sleep recorded',
+        ),
+      HourlyHeartInsightCard(key: _hourlyHeartKey, isActive: widget.isActive),
+      if (sleepHours == null && !hasHeartRate)
+        const HomeInsightRow(
+          icon: Icons.info_outline_rounded,
+          color: textGrey,
+          title: 'No insights yet',
+          subtitle:
+              'Connect Apple Health or complete a scan to see your daily insights.',
+        ),
+    ];
+    return _card(
+      child: Column(
+        children: [
+          schedule,
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) divider,
+            rows[i],
+          ],
+        ],
+      ),
+    );
   }
 
-  Future<_ScheduleInsight?> _getScheduleInsightFuture(DateTime todayStart) {
-    if (_scheduleInsightFuture != null &&
-        _scheduleInsightDate != null &&
-        _scheduleInsightDate!.year == todayStart.year &&
-        _scheduleInsightDate!.month == todayStart.month &&
-        _scheduleInsightDate!.day == todayStart.day) {
-      return _scheduleInsightFuture!;
+  /// Today's timed Google and Outlook events, or null when no calendar is
+  /// connected.
+  Future<List<_ScheduleEvent>?> _getScheduleEventsFuture(DateTime todayStart) {
+    if (_scheduleEventsFuture != null &&
+        DateUtils.isSameDay(_scheduleEventsDate, todayStart)) {
+      return _scheduleEventsFuture!;
     }
 
-    _scheduleInsightDate = todayStart;
-    _scheduleInsightFuture = _loadScheduleInsight(todayStart);
-    return _scheduleInsightFuture!;
+    _scheduleEventsDate = todayStart;
+    _scheduleEventsFuture = _loadScheduleEvents(todayStart);
+    return _scheduleEventsFuture!;
   }
 
-  Future<_ScheduleInsight?> _loadScheduleInsight(DateTime todayStart) async {
+  Future<List<_ScheduleEvent>?> _loadScheduleEvents(DateTime todayStart) async {
     final todayEnd = todayStart.add(const Duration(days: 1));
     final events = <_ScheduleEvent>[];
 
@@ -1864,6 +2914,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   : 'Calendar event',
               start: start,
               end: end,
+              key: 'google:${event.id}',
             );
           }).whereType<_ScheduleEvent>(),
         );
@@ -1899,7 +2950,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return event.start.isBefore(todayEnd) && event.end.isAfter(todayStart);
     }).toList()..sort((a, b) => a.start.compareTo(b.start));
 
-    return _buildScheduleInsight(todayEvents, todayStart);
+    return todayEvents;
   }
 
   _ScheduleInsight _buildScheduleInsight(
@@ -2043,33 +3094,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await _editReachableEvent(event);
       return;
     }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete event?'),
-        content: Text(
-          'This will delete “${event.summary ?? 'Untitled event'}” from Google Calendar.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final scope = await confirmEventDelete(
+      context,
+      title: event.summary ?? 'Untitled event',
+      repeating: event.recurringEventId != null,
     );
-    if (confirmed != true || !mounted) return;
+    if (scope == null || !mounted) return;
     try {
-      await CalendarService.deleteEvent(event);
+      await CalendarService.deleteEvent(event, scope: scope);
       if (!mounted) return;
       _refreshHomeCalendarCards();
       _showHomeCalendarMessage('Event deleted.');
     } catch (error) {
-      if (mounted) _showHomeCalendarMessage('Could not delete event: $error');
+      debugPrint('Delete calendar event failed: $error');
+      if (mounted) {
+        _showHomeCalendarMessage(
+          "Couldn't delete the event. Try again.",
+          error: true,
+        );
+      }
     }
   }
 
@@ -2077,56 +3120,54 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final originalStart = event.start?.dateTime?.toLocal();
     final originalEnd = event.end?.dateTime?.toLocal();
     if (originalStart == null || originalEnd == null) {
-      _showHomeCalendarMessage('All-day events cannot be edited here yet.');
+      _showHomeCalendarMessage("All-day events can't be edited here yet.");
       return;
     }
 
-    var title = event.summary ?? '';
+    final titleController = TextEditingController(text: event.summary ?? '');
     var date = DateUtils.dateOnly(originalStart);
     var startTime = TimeOfDay.fromDateTime(originalStart);
     var endTime = TimeOfDay.fromDateTime(originalEnd);
-    final shouldSave = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text('Edit event'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+    final shouldSave = await showAppleSheet<bool>(
+      context,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => AppleFormSheet(
+          title: 'Edit event',
+          doneLabel: 'Save',
+          onDone: titleController.text.trim().isEmpty
+              ? null
+              : () => Navigator.pop(sheetContext, true),
+          children: [
+            AppleFormGroup(
               children: [
-                TextFormField(
-                  initialValue: title,
+                AppleFormTextRow(
+                  controller: titleController,
+                  placeholder: 'Event title',
                   autofocus: true,
                   textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    labelText: 'Event title',
-                    prefixIcon: Icon(Icons.event_rounded),
-                  ),
-                  onChanged: (value) => title = value,
+                  onChanged: (_) => setSheetState(() {}),
                 ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.calendar_today_rounded),
-                  title: const Text('Date'),
-                  subtitle: Text(_formatCalendarDate(date)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            AppleFormGroup(
+              children: [
+                AppleFormRow(
+                  label: 'Date',
+                  trailing: AppleValuePill(_formatCalendarDate(date)),
                   onTap: () async {
-                    final picked = await showDatePicker(
+                    final picked = await showVivordoDatePicker(
                       context: context,
                       initialDate: date,
                       firstDate: DateTime(2000),
                       lastDate: DateTime(2100),
                     );
-                    if (picked != null) setDialogState(() => date = picked);
+                    if (picked != null) setSheetState(() => date = picked);
                   },
                 ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.schedule_rounded),
-                  title: const Text('Start time'),
-                  trailing: Text(startTime.format(context)),
+                AppleFormRow(
+                  label: 'Starts',
+                  trailing: AppleValuePill(startTime.format(context)),
                   onTap: () async {
                     final picked = await showVivordoTimePicker(
                       context: context,
@@ -2134,42 +3175,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       title: 'Start Time',
                     );
                     if (picked != null) {
-                      setDialogState(() => startTime = picked);
+                      setSheetState(() => startTime = picked);
                     }
                   },
                 ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.schedule_outlined),
-                  title: const Text('End time'),
-                  trailing: Text(endTime.format(context)),
+                AppleFormRow(
+                  label: 'Ends',
+                  trailing: AppleValuePill(endTime.format(context)),
                   onTap: () async {
                     final picked = await showVivordoTimePicker(
                       context: context,
                       initialTime: endTime,
                       title: 'End Time',
                     );
-                    if (picked != null) setDialogState(() => endTime = picked);
+                    if (picked != null) setSheetState(() => endTime = picked);
                   },
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Save'),
             ),
           ],
         ),
       ),
     );
+    // Not disposed: the sheet's field still uses it while closing.
+    final title = titleController.text.trim();
     if (shouldSave != true || !mounted) return;
-    title = title.trim();
     if (title.isEmpty) {
       _showHomeCalendarMessage('Enter an event title.');
       return;
@@ -2201,45 +3231,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _refreshHomeCalendarCards();
       _showHomeCalendarMessage('Event updated.');
     } catch (error) {
-      _showHomeCalendarMessage('Could not update event: $error');
-    }
-  }
-
-  Future<void> _createReachableEvent(DateTime start, DateTime end) async {
-    final draft = await showDialog<_CalendarEventDraft>(
-      context: context,
-      builder: (_) =>
-          _CreateCalendarEventDialog(initialStart: start, initialEnd: end),
-    );
-    if (draft == null || !mounted) return;
-    final eventStart = DateTime(
-      draft.date.year,
-      draft.date.month,
-      draft.date.day,
-      draft.startTime.hour,
-      draft.startTime.minute,
-    );
-    var eventEnd = DateTime(
-      draft.date.year,
-      draft.date.month,
-      draft.date.day,
-      draft.endTime.hour,
-      draft.endTime.minute,
-    );
-    if (!eventEnd.isAfter(eventStart)) {
-      eventEnd = eventEnd.add(const Duration(days: 1));
-    }
-    try {
-      await CalendarService.createEvent(
-        title: draft.title,
-        start: eventStart,
-        end: eventEnd,
-        recurrence: draft.recurrence,
+      debugPrint('Update calendar event failed: $error');
+      _showHomeCalendarMessage(
+        "Couldn't update the event. Try again.",
+        error: true,
       );
-      _refreshHomeCalendarCards();
-      _showHomeCalendarMessage('Event created.');
-    } catch (error) {
-      _showHomeCalendarMessage('Could not create event: $error');
     }
   }
 
@@ -2250,356 +3246,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _reachableWindowEventsDate = null;
       _reachableWindowScoresFuture = null;
       _reachableWindowScoresDate = null;
-      _scheduleInsightFuture = null;
-      _scheduleInsightDate = null;
+      _scheduleEventsFuture = null;
+      _scheduleEventsDate = null;
+      _effortContextFuture = null;
+      _effortContextDate = null;
+      _tomorrowPlanFuture = null;
+      _tomorrowPlanDate = null;
     });
   }
 
-  void _showHomeCalendarMessage(String message) {
+  void _showHomeCalendarMessage(String message, {bool error = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showToast(context, message, kind: error ? ToastKind.error : ToastKind.info);
   }
 
-  Widget _buildReachableWindows() {
-    final now = DateTime.now();
-    final todayStart = DateTime(now.year, now.month, now.day);
-
-    return FutureBuilder<List<_ScoredReachableEvent>>(
-      future: _getReachableWindowScoresFuture(todayStart),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: context.vivordoColors.card,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: context.vivordoColors.border),
-            ),
-            child: Row(
-              children: [
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.4,
-                    color: accentPurple,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    'Analyzing your calendar for cognitive load windows…',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: context.vivordoColors.textPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final scoredEvents =
-            (snapshot.data ?? const <_ScoredReachableEvent>[]).where((item) {
-              final event = item.event;
-              final start = event.start?.dateTime?.toLocal();
-              final end = event.end?.dateTime?.toLocal();
-              return start != null &&
-                  end != null &&
-                  start.isBefore(DateTime(now.year, now.month, now.day + 1)) &&
-                  end.isAfter(todayStart);
-            }).toList()..sort((a, b) {
-              final aStart = a.event.start?.dateTime?.toLocal() ?? todayStart;
-              final bStart = b.event.start?.dateTime?.toLocal() ?? todayStart;
-              return aStart.compareTo(bStart);
-            });
-        final events = scoredEvents.map((item) => item.event).toList();
-
-        final workStart = DateTime(now.year, now.month, now.day, 9);
-        final workEnd = DateTime(now.year, now.month, now.day, 17);
-
-        DateTime clampStart(DateTime value) =>
-            value.isBefore(workStart) ? workStart : value;
-        DateTime clampEnd(DateTime value) =>
-            value.isAfter(workEnd) ? workEnd : value;
-
-        String formatTime(DateTime value) {
-          final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
-          final minute = value.minute.toString().padLeft(2, '0');
-          final suffix = value.hour >= 12 ? 'PM' : 'AM';
-          return '$hour:$minute $suffix';
-        }
-
-        String formatRange(DateTime start, DateTime end) =>
-            '${formatTime(start)} - ${formatTime(end)}';
-
-        String durationLabel(Duration duration) {
-          final minutes = duration.inMinutes;
-          if (minutes >= 60) {
-            final hours = minutes ~/ 60;
-            final remainder = minutes % 60;
-            return remainder == 0 ? '${hours}h' : '${hours}h ${remainder}m';
-          }
-          return '${minutes}m';
-        }
-
-        // This section is a schedule forecast. Live BaaS callers must pass
-        // asOf to the calculator to exclude time that has not elapsed.
-        final hourly = HourlyCalendarLoadCalculator.calculate(
-          events: scoredEvents.map((e) => e.input).toList(),
-          scores: scoredEvents.map((e) => e.score).toList(),
-          from: workStart,
-          until: workEnd,
-        );
-        final highLoadWindows = <Map<String, dynamic>>[];
-        for (final hour in hourly.where((h) => (h.score ?? 0) >= 60)) {
-          final contributors =
-              scoredEvents
-                  .where(
-                    (e) =>
-                        e.input.start.isBefore(hour.end) &&
-                        e.input.end.isAfter(hour.start),
-                  )
-                  .toList()
-                ..sort((a, b) => b.score.score.compareTo(a.score.score));
-          highLoadWindows.add({
-            'time': formatRange(hour.start, hour.end),
-            'label':
-                '${hour.score!.round()}/100 calendar load · ${contributors.length} event${contributors.length == 1 ? '' : 's'}',
-            'duration': hour.end.difference(hour.start),
-            'event': contributors.first.event,
-            'score': hour.score!.round(),
-          });
-        }
-
-        final lowLoadWindows = <Map<String, dynamic>>[];
-        var cursor = workStart;
-
-        for (final event in events) {
-          final start = event.start?.dateTime?.toLocal();
-          final end = event.end?.dateTime?.toLocal();
-          if (start == null || end == null) continue;
-
-          final clippedStart = clampStart(start);
-          final clippedEnd = clampEnd(end);
-
-          if (clippedStart.isAfter(cursor)) {
-            final gap = clippedStart.difference(cursor);
-            if (gap.inMinutes >= 30) {
-              lowLoadWindows.add({
-                'time': formatRange(cursor, clippedStart),
-                'label': '${durationLabel(gap)} open',
-                'duration': gap,
-                'start': cursor,
-                'end': clippedStart,
-              });
-            }
-          }
-
-          if (clippedEnd.isAfter(cursor)) {
-            cursor = clippedEnd;
-          }
-        }
-
-        if (cursor.isBefore(workEnd)) {
-          final gap = workEnd.difference(cursor);
-          if (gap.inMinutes >= 30) {
-            lowLoadWindows.add({
-              'time': formatRange(cursor, workEnd),
-              'label': '${durationLabel(gap)} open',
-              'duration': gap,
-              'start': cursor,
-              'end': workEnd,
-            });
-          }
-        }
-
-        highLoadWindows.sort((a, b) {
-          final scoreComparison = (b['score'] as int).compareTo(
-            a['score'] as int,
-          );
-          if (scoreComparison != 0) return scoreComparison;
-          return (b['duration'] as Duration).compareTo(
-            a['duration'] as Duration,
-          );
-        });
-        lowLoadWindows.sort(
-          (a, b) =>
-              (b['duration'] as Duration).compareTo(a['duration'] as Duration),
-        );
-
-        return Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: context.vivordoColors.card,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: context.vivordoColors.border),
-            boxShadow: [
-              BoxShadow(
-                color: context.vivordoColors.shadow,
-                blurRadius: 10,
-                offset: Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildCognitiveLoadSection(
-                title: 'Expected high calendar load',
-                icon: Icons.psychology_alt_rounded,
-                color: orangeColor,
-                emptyText:
-                    'No high-load hours identified from classified events.',
-                windows: highLoadWindows.take(2).toList(),
-              ),
-              const SizedBox(height: 18),
-              _buildCognitiveLoadSection(
-                title: 'Open recovery windows',
-                icon: Icons.self_improvement_rounded,
-                color: greenColor,
-                emptyText: 'No open 30+ minute windows found today.',
-                windows: lowLoadWindows.take(2).toList(),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildCognitiveLoadSection({
-    required String title,
-    required IconData icon,
-    required Color color,
-    required String emptyText,
-    required List<Map<String, dynamic>> windows,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, size: 18, color: color),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: context.vivordoColors.textPrimary,
-                  height: 1.25,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        if (windows.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: context.vivordoColors.cardMuted,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              emptyText,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: context.vivordoColors.textSecondary,
-              ),
-            ),
-          )
-        else
-          ...windows.map((window) {
-            final event = window['event'] as gcal.Event?;
-            final openStart = window['start'] as DateTime?;
-            final openEnd = window['end'] as DateTime?;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Material(
-                color: context.vivordoColors.cardMuted,
-                borderRadius: BorderRadius.circular(16),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: event == null
-                      ? openStart == null || openEnd == null
-                            ? null
-                            : () => _createReachableEvent(openStart, openEnd)
-                      : () => _showReachableEventSummary(event),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                window['time'] as String,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: context.vivordoColors.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                window['label'] as String,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: context.vivordoColors.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (event != null ||
-                            (openStart != null && openEnd != null))
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            color: color,
-                            size: 20,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
-      ],
-    );
-  }
-
-  String _getSleepInsightTitle(String sleepVal) {
-    final hours = double.tryParse(sleepVal.replaceAll('h', '')) ?? 0;
+  String _getSleepInsightTitle(double hours) {
     if (hours >= 8) return 'Excellent sleep last night';
     if (hours >= 7) return 'Good sleep last night';
     if (hours >= 6) return 'Moderate sleep last night';
     return 'Low sleep last night';
-  }
-
-  String _getSleepInsightSubtitle(String sleepVal, String hrVal) {
-    return '$sleepVal of sleep recorded';
   }
 
   String _formatCalendarDate(DateTime dt) {
@@ -2627,212 +3292,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'Dec',
     ];
     return '${days[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day}';
-  }
-
-  String _formatHour(int hour) {
-    if (hour == 12) return '12 PM';
-    if (hour > 12) return '${hour - 12} PM';
-    return '$hour AM';
-  }
-
-  List<Map<String, dynamic>> _getTodayEvents(DateTime now) {
-    // Seed events based on day of week so they feel consistent
-    final day = now.weekday;
-    final events = <Map<String, dynamic>>[];
-
-    // Monday
-    if (day == 1) {
-      events.addAll([
-        {
-          'hour': 9,
-          'title': 'Team Standup',
-          'subtitle': '15 min · Google Meet',
-          'color': accentPurple,
-          'icon': Icons.groups_rounded,
-        },
-        {
-          'hour': 11,
-          'title': 'Product Review',
-          'subtitle': '1 hr · Conference Room A',
-          'color': const Color(0xFF007AFF),
-          'icon': Icons.slideshow_rounded,
-        },
-        {
-          'hour': 13,
-          'title': 'Lunch with Sarah',
-          'subtitle': 'The Kitchen, Floor 2',
-          'color': greenColor,
-          'icon': Icons.restaurant_rounded,
-        },
-        {
-          'hour': 15,
-          'title': 'Sprint Planning',
-          'subtitle': '2 hrs · Zoom',
-          'color': const Color(0xFFFF9500),
-          'icon': Icons.task_rounded,
-        },
-      ]);
-    }
-    // Tuesday
-    else if (day == 2) {
-      events.addAll([
-        {
-          'hour': 9,
-          'title': '1:1 with Manager',
-          'subtitle': '30 min · Office',
-          'color': accentPurple,
-          'icon': Icons.person_rounded,
-        },
-        {
-          'hour': 10,
-          'title': 'Design Review',
-          'subtitle': '1 hr · Figma call',
-          'color': const Color(0xFFFF3B30),
-          'icon': Icons.design_services_rounded,
-        },
-        {
-          'hour': 14,
-          'title': 'Client Call — Acme',
-          'subtitle': '45 min · Zoom',
-          'color': const Color(0xFF007AFF),
-          'icon': Icons.business_rounded,
-        },
-        {
-          'hour': 16,
-          'title': 'Focus Time',
-          'subtitle': 'Blocked — deep work',
-          'color': greenColor,
-          'icon': Icons.do_not_disturb_on_rounded,
-        },
-      ]);
-    }
-    // Wednesday
-    else if (day == 3) {
-      events.addAll([
-        {
-          'hour': 9,
-          'title': 'All Hands Meeting',
-          'subtitle': '1 hr · Main Hall',
-          'color': const Color(0xFFFF9500),
-          'icon': Icons.groups_rounded,
-        },
-        {
-          'hour': 11,
-          'title': '🎂 Alex\'s Birthday',
-          'subtitle': 'Team celebration at 3PM',
-          'color': const Color(0xFFFF3B30),
-          'icon': Icons.cake_rounded,
-        },
-        {
-          'hour': 13,
-          'title': 'Lunch & Learn',
-          'subtitle': 'AI in Healthcare — Cafeteria',
-          'color': accentPurple,
-          'icon': Icons.school_rounded,
-        },
-        {
-          'hour': 15,
-          'title': 'Code Review',
-          'subtitle': '1 hr · PR #142',
-          'color': greenColor,
-          'icon': Icons.code_rounded,
-        },
-      ]);
-    }
-    // Thursday
-    else if (day == 4) {
-      events.addAll([
-        {
-          'hour': 9,
-          'title': 'Team Standup',
-          'subtitle': '15 min · Google Meet',
-          'color': accentPurple,
-          'icon': Icons.groups_rounded,
-        },
-        {
-          'hour': 10,
-          'title': 'Investor Update',
-          'subtitle': '1 hr · Board Room',
-          'color': const Color(0xFF007AFF),
-          'icon': Icons.trending_up_rounded,
-        },
-        {
-          'hour': 12,
-          'title': 'Working Lunch',
-          'subtitle': 'Q3 roadmap discussion',
-          'color': greenColor,
-          'icon': Icons.restaurant_rounded,
-        },
-        {
-          'hour': 14,
-          'title': 'User Research',
-          'subtitle': '2 hrs · User interviews',
-          'color': const Color(0xFFFF9500),
-          'icon': Icons.people_rounded,
-        },
-        {
-          'hour': 16,
-          'title': 'Retrospective',
-          'subtitle': '1 hr · Zoom',
-          'color': const Color(0xFFFF3B30),
-          'icon': Icons.refresh_rounded,
-        },
-      ]);
-    }
-    // Friday
-    else if (day == 5) {
-      events.addAll([
-        {
-          'hour': 9,
-          'title': 'Team Standup',
-          'subtitle': '15 min · Google Meet',
-          'color': accentPurple,
-          'icon': Icons.groups_rounded,
-        },
-        {
-          'hour': 11,
-          'title': 'Demo Day',
-          'subtitle': '2 hrs · All teams',
-          'color': const Color(0xFFFF9500),
-          'icon': Icons.slideshow_rounded,
-        },
-        {
-          'hour': 14,
-          'title': 'Friday Wind Down',
-          'subtitle': 'Optional — team social',
-          'color': greenColor,
-          'icon': Icons.celebration_rounded,
-        },
-      ]);
-    }
-    // Weekend
-    else {
-      events.addAll([
-        {
-          'hour': 10,
-          'title': 'Morning Run',
-          'subtitle': '5km · Riverside Trail',
-          'color': greenColor,
-          'icon': Icons.directions_run_rounded,
-        },
-        {
-          'hour': 12,
-          'title': 'Brunch with Family',
-          'subtitle': 'Home',
-          'color': const Color(0xFFFF9500),
-          'icon': Icons.home_rounded,
-        },
-        {
-          'hour': 15,
-          'title': 'Personal Project',
-          'subtitle': 'Focus time',
-          'color': accentPurple,
-          'icon': Icons.lightbulb_rounded,
-        },
-      ]);
-    }
-
-    return events;
   }
 
   Future<void> _showMoodCheck() async {
@@ -3108,39 +3567,67 @@ class _HomeWorkoutStreakBadgeState extends State<_HomeWorkoutStreakBadge> {
   }
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<SavedWorkout>>(
-    stream: _workoutsStream,
-    builder: (context, snapshot) {
-      final streak = WorkoutService.calculateCurrentStreak(
-        snapshot.data ?? const [],
-      );
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF1E7),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.local_fire_department_rounded,
-              size: 16,
-              color: Colors.orange,
-            ),
-            const SizedBox(width: 3),
-            Text(
-              '$streak-day',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: Colors.orange,
+  Widget build(BuildContext context) =>
+      VisibleStreamBuilder<List<SavedWorkout>>(
+        stream: _workoutsStream,
+        builder: (context, snapshot) {
+          final streak = WorkoutService.calculateCurrentStreak(
+            snapshot.data ?? const [],
+          );
+          if (streak == 0) return const SizedBox.shrink();
+          return Semantics(
+            label: '$streak-day workout streak',
+            excludeSemantics: true,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: .14),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.local_fire_department_rounded,
+                    size: 15,
+                    color: Colors.orange,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '$streak',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.orange,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          );
+        },
       );
-    },
-  );
+}
+
+/// What Home's Effort card needs besides the calendar and priorities.
+class _EffortContext {
+  const _EffortContext({
+    this.wrapUpMinutes = kDefaultDayWrapUpMinutes,
+    this.workouts = const [],
+    this.pastByHour = const [],
+    this.sleepNeedHours,
+    this.sleepSchedule,
+  });
+
+  final int wrapUpMinutes;
+
+  /// Your usual sleep times, for the forecast when no sleep is tracked.
+  final SleepSchedule? sleepSchedule;
+
+  /// Today's sleep need from the server's Capacity, for the energy forecast.
+  final double? sleepNeedHours;
+  final List<({DateTime start, DateTime end, double intensity})> workouts;
+  final List<List<num>> pastByHour;
 }
 
 class _ScheduleEvent {
@@ -3148,11 +3635,15 @@ class _ScheduleEvent {
     required this.title,
     required this.start,
     required this.end,
+    this.key,
   });
 
   final String title;
   final DateTime start;
   final DateTime end;
+
+  /// The Google key a linked priority stores as its `sourceEventKey`.
+  final String? key;
 
   Duration get duration => end.difference(start);
 }
@@ -3181,1732 +3672,4 @@ class _ScheduleInsight {
   final Color color;
   final String title;
   final String subtitle;
-}
-
-class WeeklyCalendar extends StatefulWidget {
-  const WeeklyCalendar({super.key});
-  @override
-  State<WeeklyCalendar> createState() => _WeeklyCalendarState();
-}
-
-class _WeeklyCalendarState extends State<WeeklyCalendar> {
-  int _weekOffset = 0;
-  final ScrollController _scrollController = ScrollController();
-  List<gcal.Event> _googleEvents = [];
-  List<OutlookEvent> _outlookEvents = [];
-  bool _isGoogleConnected = false;
-  bool _isOutlookConnected = false;
-  bool _isLoading = false;
-  DateTime? _lastGoogleCalendarAttempt;
-  DateTime? _lastGoogleCalendarFailure;
-  int? _lastGoogleCalendarWeekOffset;
-  bool get _hasConnectedCalendar =>
-      _isGoogleConnected ||
-      (OutlookCalendarService.enabled && _isOutlookConnected);
-
-  static const double _cellH = 52;
-  static const double _timeColW = 52;
-  static const Color _accentPurple = VivordoTheme.brand;
-  static const Color _textDark = Color(0xFF1C1C1E);
-  static const Color _textGrey = Color(0xFF8E8E93);
-  static const Color _border = Color(0xFFE5E5EA);
-
-  static const _days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  static const _months = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  static const _hours = [
-    0,
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15,
-    16,
-    17,
-    18,
-    19,
-    20,
-    21,
-    22,
-    23,
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    CalendarService.connectionNotifier.addListener(
-      _handleGoogleCalendarConnectionChange,
-    );
-    _loadExistingGoogleCalendar();
-    if (OutlookCalendarService.enabled) {
-      _loadExistingOutlookCalendar();
-    }
-  }
-
-  void _scrollToFirstTodayEvent() {
-    if (_weekOffset != 0) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-
-      final now = DateTime.now();
-      final starts =
-          <DateTime>[
-              ..._googleEvents
-                  .map((event) => event.start?.dateTime?.toLocal())
-                  .whereType<DateTime>(),
-              ..._outlookEvents.map((event) => event.start.toLocal()),
-            ].where((start) {
-              return start.year == now.year &&
-                  start.month == now.month &&
-                  start.day == now.day;
-            }).toList()
-            ..sort();
-
-      final firstStart = starts.isEmpty ? now : starts.first;
-      final eventHour = firstStart.hour + (firstStart.minute / 60);
-      final scrollTo = (eventHour * _cellH) - _cellH;
-      _scrollController.animateTo(
-        scrollTo.clamp(0.0, _scrollController.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-      );
-    });
-  }
-
-  Future<void> _loadExistingGoogleCalendar({bool force = false}) async {
-    if (_isLoading) return;
-
-    final now = DateTime.now();
-
-    if (!force &&
-        _lastGoogleCalendarAttempt != null &&
-        _lastGoogleCalendarWeekOffset == _weekOffset &&
-        now.difference(_lastGoogleCalendarAttempt!) <
-            const Duration(seconds: 30)) {
-      debugPrint('Google Calendar load skipped: cooldown active');
-      return;
-    }
-
-    if (!force &&
-        _lastGoogleCalendarFailure != null &&
-        now.difference(_lastGoogleCalendarFailure!) <
-            const Duration(minutes: 2)) {
-      debugPrint(
-        'Google Calendar load skipped: recent failure cooldown active',
-      );
-      return;
-    }
-
-    _lastGoogleCalendarAttempt = now;
-    _lastGoogleCalendarWeekOffset = _weekOffset;
-
-    setState(() => _isLoading = true);
-    try {
-      final signedIn = await CalendarService.isSignedIn().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => false,
-      );
-      if (!signedIn) {
-        if (!mounted) return;
-        setState(() {
-          _isGoogleConnected = false;
-          _isLoading = false;
-        });
-        _publishCalendarWidgetSnapshot();
-        return;
-      }
-
-      final dates = _getWeekDates();
-      final weekStart = dates.first;
-      final events = await CalendarService.getWeekEvents(
-        weekStart,
-      ).timeout(const Duration(seconds: 8), onTimeout: () => <gcal.Event>[]);
-
-      if (!mounted) return;
-      setState(() {
-        _googleEvents = events;
-        _isGoogleConnected = CalendarService.connectionNotifier.value;
-        _isLoading = false;
-      });
-      _publishCalendarWidgetSnapshot();
-      _scrollToFirstTodayEvent();
-    } catch (e) {
-      debugPrint('Calendar silent load error: $e');
-      _lastGoogleCalendarFailure = DateTime.now();
-      if (!mounted) return;
-      setState(() {
-        _isGoogleConnected = false;
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _loadExistingOutlookCalendar() async {
-    try {
-      final signedIn = await OutlookCalendarService.isSignedIn().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => false,
-      );
-
-      if (!signedIn) {
-        if (!mounted) return;
-        setState(() {
-          _outlookEvents = [];
-          _isOutlookConnected = false;
-        });
-        _publishCalendarWidgetSnapshot();
-        return;
-      }
-
-      final dates = _getWeekDates();
-      final weekStart = dates.first;
-      final events = await OutlookCalendarService.getWeekEvents(
-        weekStart,
-      ).timeout(const Duration(seconds: 8), onTimeout: () => <OutlookEvent>[]);
-
-      if (!mounted) return;
-      setState(() {
-        _outlookEvents = events;
-        _isOutlookConnected = true;
-      });
-      _publishCalendarWidgetSnapshot();
-      _scrollToFirstTodayEvent();
-    } catch (e) {
-      debugPrint('Existing Outlook calendar load failed: $e');
-      if (!mounted) return;
-      setState(() {
-        _outlookEvents = [];
-        _isOutlookConnected = false;
-      });
-      _publishCalendarWidgetSnapshot();
-    }
-  }
-
-  @override
-  void dispose() {
-    CalendarService.connectionNotifier.removeListener(
-      _handleGoogleCalendarConnectionChange,
-    );
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _handleGoogleCalendarConnectionChange() {
-    if (!mounted) return;
-    if (CalendarService.connectionNotifier.value) {
-      _lastGoogleCalendarAttempt = null;
-      _lastGoogleCalendarFailure = null;
-      _lastGoogleCalendarWeekOffset = null;
-      if (!_isLoading) {
-        _loadExistingGoogleCalendar(force: true);
-      }
-      return;
-    }
-    setState(() {
-      _googleEvents = [];
-      _isGoogleConnected = false;
-      _isLoading = false;
-      _lastGoogleCalendarAttempt = null;
-      _lastGoogleCalendarFailure = null;
-      _lastGoogleCalendarWeekOffset = null;
-    });
-    _publishCalendarWidgetSnapshot();
-  }
-
-  void _publishCalendarWidgetSnapshot() {
-    unawaited(
-      HomeWidgetService.publishCalendarEvents(
-        googleEvents: _googleEvents,
-        outlookEvents: _outlookEvents,
-      ),
-    );
-  }
-
-  Future<void> _connectGoogle() async {
-    setState(() => _isLoading = true);
-    try {
-      final dates = _getWeekDates();
-      final weekStart = dates.first;
-      _lastGoogleCalendarAttempt = null;
-      _lastGoogleCalendarFailure = null;
-      _lastGoogleCalendarWeekOffset = null;
-
-      final events = await CalendarService.connectAndGetWeekEvents(weekStart);
-      if (!mounted) return;
-      setState(() {
-        _googleEvents = events;
-        _isGoogleConnected = true;
-      });
-      _publishCalendarWidgetSnapshot();
-      _scrollToFirstTodayEvent();
-    } catch (e) {
-      debugPrint('Calendar error: $e');
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _connectOutlook() async {
-    setState(() => _isLoading = true);
-    try {
-      final dates = _getWeekDates();
-      final weekStart = dates.first;
-      final events = await OutlookCalendarService.connectAndGetWeekEvents(
-        weekStart,
-      );
-      if (!mounted) return;
-      setState(() {
-        _outlookEvents = events;
-        _isOutlookConnected = true;
-      });
-      _publishCalendarWidgetSnapshot();
-      _scrollToFirstTodayEvent();
-    } catch (e) {
-      debugPrint('Outlook calendar connect error: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  List<DateTime> _getWeekDates() {
-    final now = DateTime.now();
-    final monday = now
-        .subtract(Duration(days: now.weekday - 1))
-        .add(Duration(days: _weekOffset * 7));
-    return List.generate(
-      7,
-      (i) => DateTime(monday.year, monday.month, monday.day + i),
-    );
-  }
-
-  String _fmt12(int h) {
-    if (h == 0) return '12 AM';
-    if (h == 12) return '12 PM';
-    if (h > 12) return '${h - 12} PM';
-    return '$h AM';
-  }
-
-  String _monthLabel(List<DateTime> dates) {
-    final start = dates.first;
-    final end = dates.last;
-    if (start.month == end.month) {
-      return '${_months[start.month - 1]} ${start.year}';
-    }
-    return '${_months[start.month - 1]} – ${_months[end.month - 1]} ${start.year}';
-  }
-
-  String _formatEventDateTime(DateTime? dateTime) {
-    if (dateTime == null) return 'Unknown time';
-    final local = dateTime.toLocal();
-    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
-    final minute = local.minute.toString().padLeft(2, '0');
-    final suffix = local.hour >= 12 ? 'PM' : 'AM';
-    return '${_days[local.weekday % 7]}, ${_months[local.month - 1]} ${local.day} at $hour:$minute $suffix';
-  }
-
-  String _formatEventTimeRange(gcal.Event event) {
-    final start = event.start?.dateTime?.toLocal();
-    final end = event.end?.dateTime?.toLocal();
-    if (start == null) return 'Unknown time';
-
-    final startHour = start.hour % 12 == 0 ? 12 : start.hour % 12;
-    final startMinute = start.minute.toString().padLeft(2, '0');
-    final startSuffix = start.hour >= 12 ? 'PM' : 'AM';
-
-    if (end == null) {
-      return '${_formatEventDateTime(start)}';
-    }
-
-    final endHour = end.hour % 12 == 0 ? 12 : end.hour % 12;
-    final endMinute = end.minute.toString().padLeft(2, '0');
-    final endSuffix = end.hour >= 12 ? 'PM' : 'AM';
-
-    return '${_days[start.weekday % 7]}, ${_months[start.month - 1]} ${start.day}, '
-        '$startHour:$startMinute $startSuffix – $endHour:$endMinute $endSuffix';
-  }
-
-  DateTime _withTime(DateTime date, TimeOfDay time) =>
-      DateTime(date.year, date.month, date.day, time.hour, time.minute);
-
-  String _eventRecurrence(gcal.Event event) {
-    final rule = event.recurrence?.join(' ').toUpperCase() ?? '';
-    if (rule.contains('FREQ=DAILY')) return 'daily';
-    if (rule.contains('FREQ=MONTHLY')) return 'monthly';
-    if (rule.contains('FREQ=WEEKLY') || event.recurringEventId != null) {
-      return 'weekly';
-    }
-    return 'none';
-  }
-
-  void showCreateEvent(DateTime initialStart, DateTime initialEnd) {
-    _createEvent(initialStart, initialEnd: initialEnd);
-  }
-
-  Future<void> _createEvent(
-    DateTime initialStart, {
-    DateTime? initialEnd,
-  }) async {
-    final draft = await showDialog<_CalendarEventDraft>(
-      context: context,
-      builder: (_) => _CreateCalendarEventDialog(
-        initialStart: initialStart,
-        initialEnd: initialEnd,
-      ),
-    );
-    if (!context.mounted || draft == null) return;
-
-    final start = _withTime(draft.date, draft.startTime);
-    var end = _withTime(draft.date, draft.endTime);
-    if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
-    setState(() => _isLoading = true);
-    try {
-      await CalendarService.createEvent(
-        title: draft.title,
-        start: start,
-        end: end,
-        recurrence: draft.recurrence,
-      );
-      if (!context.mounted) return;
-      setState(() => _isLoading = false);
-      await _loadExistingGoogleCalendar(force: true);
-      if (!context.mounted) return;
-      _showCalendarMessage('Event created.');
-    } catch (e) {
-      _showCalendarMessage('Could not create event: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _editEvent(gcal.Event event) async {
-    final originalStart = event.start?.dateTime?.toLocal();
-    final originalEnd = event.end?.dateTime?.toLocal();
-    if (originalStart == null || originalEnd == null) {
-      _showCalendarMessage('All-day events cannot be edited here yet.');
-      return;
-    }
-
-    var date = DateTime(
-      originalStart.year,
-      originalStart.month,
-      originalStart.day,
-    );
-    var startTime = TimeOfDay.fromDateTime(originalStart);
-    var endTime = TimeOfDay.fromDateTime(originalEnd);
-    var recurrence = _eventRecurrence(event);
-
-    final shouldSave = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text('Edit event'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.calendar_today_rounded),
-                title: const Text('Date'),
-                subtitle: Text(
-                  '${_months[date.month - 1]} ${date.day}, ${date.year}',
-                ),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: date,
-                    firstDate: DateTime(2000),
-                    lastDate: DateTime(2100),
-                  );
-                  if (picked != null) setDialogState(() => date = picked);
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.schedule_rounded),
-                title: const Text('Start time'),
-                trailing: Text(startTime.format(context)),
-                onTap: () async {
-                  final picked = await showVivordoTimePicker(
-                    context: context,
-                    initialTime: startTime,
-                    title: 'Start Time',
-                  );
-                  if (picked != null) setDialogState(() => startTime = picked);
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.schedule_outlined),
-                title: const Text('End time'),
-                trailing: Text(endTime.format(context)),
-                onTap: () async {
-                  final picked = await showVivordoTimePicker(
-                    context: context,
-                    initialTime: endTime,
-                    title: 'End Time',
-                  );
-                  if (picked != null) setDialogState(() => endTime = picked);
-                },
-              ),
-              DropdownButtonFormField<String>(
-                initialValue: recurrence,
-                decoration: const InputDecoration(
-                  labelText: 'Repeats',
-                  prefixIcon: Icon(Icons.repeat_rounded),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'none',
-                    child: Text('Does not repeat'),
-                  ),
-                  DropdownMenuItem(value: 'daily', child: Text('Daily')),
-                  DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
-                  DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
-                ],
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => recurrence = value);
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (shouldSave != true || !mounted) return;
-
-    final start = _withTime(date, startTime);
-    var end = _withTime(date, endTime);
-    if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
-    setState(() => _isLoading = true);
-    try {
-      await CalendarService.updateEventTimeAndRecurrence(
-        event,
-        start: start,
-        end: end,
-        recurrence: recurrence,
-      );
-      if (mounted) setState(() => _isLoading = false);
-      await _loadExistingGoogleCalendar(force: true);
-      _showCalendarMessage('Event updated.');
-    } catch (e) {
-      _showCalendarMessage('Could not update event: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _removeEvent(gcal.Event event) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove event?'),
-        content: Text(
-          'This will remove “${event.summary ?? 'Untitled event'}” from Google Calendar.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    setState(() => _isLoading = true);
-    try {
-      await CalendarService.deleteEvent(event);
-      if (mounted) setState(() => _isLoading = false);
-      await _loadExistingGoogleCalendar(force: true);
-      _showCalendarMessage('Event removed.');
-    } catch (e) {
-      _showCalendarMessage('Could not remove event: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _showCalendarMessage(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _openMaps(String location) async {
-    final googleWebUri = Uri.https('www.google.com', '/maps/search/', {
-      'api': '1',
-      'query': location,
-    });
-
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      final googleAppUri = Uri.parse(
-        'comgooglemaps://?q=${Uri.encodeQueryComponent(location)}',
-      );
-      if (await canLaunchUrl(googleAppUri)) {
-        await launchUrl(googleAppUri, mode: LaunchMode.externalApplication);
-        return;
-      }
-
-      final appleMapsUri = Uri.https('maps.apple.com', '/', {'q': location});
-      if (await launchUrl(appleMapsUri, mode: LaunchMode.externalApplication)) {
-        return;
-      }
-    } else if (await launchUrl(
-      googleWebUri,
-      mode: LaunchMode.externalApplication,
-    )) {
-      return;
-    }
-
-    _showCalendarMessage('Could not open a maps app.');
-  }
-
-  void showEventDetails(gcal.Event event) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        final title = event.summary ?? 'Untitled event';
-        final location = event.location;
-        final description = event.description;
-        final attendees = event.attendees ?? const <gcal.EventAttendee>[];
-
-        return Container(
-          margin: const EdgeInsets.all(12),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x26000000),
-                blurRadius: 24,
-                offset: Offset(0, 10),
-              ),
-            ],
-          ),
-          child: SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 44,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE5E5EA),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8F0FE),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Icon(
-                          Icons.event_rounded,
-                          color: Color(0xFF1A73E8),
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: context.vivordoColors.textPrimary,
-                                height: 1.2,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _formatEventTimeRange(event),
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: _textGrey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (location != null && location.trim().isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    _EventDetailRow(
-                      icon: Icons.place_rounded,
-                      label: 'Location',
-                      value: location,
-                      onTap: () => _openMaps(location),
-                    ),
-                  ],
-                  if (description != null && description.trim().isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _EventDetailRow(
-                      icon: Icons.notes_rounded,
-                      label: 'Description',
-                      value: description,
-                      maxValueHeight: 140,
-                    ),
-                  ],
-                  if (attendees.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _EventDetailRow(
-                      icon: Icons.people_rounded,
-                      label: 'Attendees',
-                      value: attendees
-                          .map(
-                            (attendee) =>
-                                attendee.displayName ??
-                                attendee.email ??
-                                'Guest',
-                          )
-                          .take(6)
-                          .join(', '),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            _removeEvent(event);
-                          },
-                          icon: const Icon(Icons.delete_outline_rounded),
-                          label: const Text('Remove'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            _editEvent(event);
-                          },
-                          icon: const Icon(Icons.edit_rounded),
-                          label: const Text('Edit'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _accentPurple,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final dates = _getWeekDates();
-    final now = DateTime.now();
-
-    return Container(
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0x0F000000),
-            blurRadius: 15,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Column(
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: context.vivordoColors.border,
-                    width: 0.5,
-                  ),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.calendar_today_rounded,
-                        size: 16,
-                        color: _accentPurple,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _monthLabel(dates),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: context.vivordoColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(width: 8),
-                        if (!_isGoogleConnected)
-                          GestureDetector(
-                            onTap: _isLoading ? null : _connectGoogle,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1a73e8),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      width: 12,
-                                      height: 12,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Connect Google',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        if (OutlookCalendarService.enabled &&
-                            !_isOutlookConnected) ...[
-                          const SizedBox(width: 4),
-                          GestureDetector(
-                            onTap: _isLoading ? null : _connectOutlook,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0078D4),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      width: 12,
-                                      height: 12,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Connect Outlook',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(width: 4),
-                        _navBtn(Icons.chevron_left_rounded, () {
-                          setState(() => _weekOffset--);
-                          if (_isGoogleConnected) _loadExistingGoogleCalendar();
-                          if (_isOutlookConnected)
-                            _loadExistingOutlookCalendar();
-                        }),
-                        const SizedBox(width: 4),
-                        GestureDetector(
-                          onTap: () => setState(() => _weekOffset = 0),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: context.vivordoColors.border,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'Today',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: context.vivordoColors.textPrimary,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        _navBtn(Icons.chevron_right_rounded, () {
-                          setState(() => _weekOffset++);
-                          if (_isGoogleConnected) _loadExistingGoogleCalendar();
-                          if (_isOutlookConnected)
-                            _loadExistingOutlookCalendar();
-                        }),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Day headers
-            Row(
-              children: [
-                SizedBox(width: _timeColW),
-                ...dates.map((d) {
-                  final isToday =
-                      _weekOffset == 0 &&
-                      d.day == now.day &&
-                      d.month == now.month &&
-                      d.year == now.year;
-                  return Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: context.vivordoColors.border,
-                            width: 0.5,
-                          ),
-                          right: BorderSide(
-                            color: context.vivordoColors.border,
-                            width: 0.5,
-                          ),
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            _days[d.weekday % 7],
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: _textGrey,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Container(
-                            width: 30,
-                            height: 30,
-                            decoration: BoxDecoration(
-                              color: isToday
-                                  ? const Color(0xFF1a73e8)
-                                  : Colors.transparent,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Text(
-                                '${d.day}',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                  color: isToday
-                                      ? Colors.white
-                                      : context.vivordoColors.textPrimary,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            ),
-
-            // Body
-            if (!_hasConnectedCalendar)
-              Container(
-                height: 220,
-                alignment: Alignment.center,
-                child: SingleChildScrollView(
-                  physics: const NeverScrollableScrollPhysics(),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.calendar_month_rounded,
-                        size: 48,
-                        color: context.vivordoColors.textSecondary,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No calendar connected',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: context.vivordoColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Connect Google Calendar above\nto see your events here.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _textGrey,
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      GestureDetector(
-                        onTap: _isLoading ? null : _connectGoogle,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1a73e8),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.calendar_month_rounded,
-                                      size: 14,
-                                      color: Colors.white,
-                                    ),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'Connect Google Calendar',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ),
-                      if (OutlookCalendarService.enabled) ...[
-                        const SizedBox(height: 10),
-                        GestureDetector(
-                          onTap: _isLoading ? null : _connectOutlook,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0078D4),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.calendar_month_rounded,
-                                        size: 14,
-                                        color: Colors.white,
-                                      ),
-                                      SizedBox(width: 6),
-                                      Text(
-                                        'Connect Outlook Calendar',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              )
-            else
-              SizedBox(
-                height: 400,
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Time column
-                      SizedBox(
-                        width: _timeColW,
-                        child: Column(
-                          children: _hours
-                              .map(
-                                (h) => SizedBox(
-                                  height: _cellH,
-                                  child: Align(
-                                    alignment: Alignment.topRight,
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(
-                                        right: 8,
-                                        top: 4,
-                                      ),
-                                      child: Text(
-                                        _fmt12(h),
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          color: _textGrey,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      ),
-
-                      // Day columns
-                      ...dates.map((d) {
-                        final dow = d.weekday % 7;
-                        final isToday =
-                            _weekOffset == 0 &&
-                            d.day == now.day &&
-                            d.month == now.month &&
-                            d.year == now.year;
-                        const dayEvents = <_CalEvent>[];
-                        final googleDayEvents = _isGoogleConnected
-                            ? _googleEvents.where((e) {
-                                final start = e.start?.dateTime?.toLocal();
-                                return start != null &&
-                                    start.day == d.day &&
-                                    start.month == d.month;
-                              }).toList()
-                            : <gcal.Event>[];
-                        final outlookDayEvents = _isOutlookConnected
-                            ? _outlookEvents.where((e) {
-                                final start = e.start.toLocal();
-                                return start.day == d.day &&
-                                    start.month == d.month &&
-                                    start.year == d.year;
-                              }).toList()
-                            : <OutlookEvent>[];
-
-                        return Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              border: Border(
-                                right: BorderSide(
-                                  color: context.vivordoColors.border,
-                                  width: 0.5,
-                                ),
-                              ),
-                            ),
-                            child: Stack(
-                              children: [
-                                // Hour cells
-                                Column(
-                                  children: _hours
-                                      .map(
-                                        (h) => InkWell(
-                                          onTap: _isGoogleConnected
-                                              ? () => _createEvent(
-                                                  DateTime(
-                                                    d.year,
-                                                    d.month,
-                                                    d.day,
-                                                    h,
-                                                  ),
-                                                )
-                                              : null,
-                                          child: Container(
-                                            height: _cellH,
-                                            decoration: BoxDecoration(
-                                              border: Border(
-                                                bottom: BorderSide(
-                                                  color: context
-                                                      .vivordoColors
-                                                      .border,
-                                                  width: 0.5,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                ),
-
-                                // Google Calendar events
-                                ...googleDayEvents.map((ev) {
-                                  final start = ev.start?.dateTime?.toLocal();
-                                  final end = ev.end?.dateTime?.toLocal();
-                                  if (start == null)
-                                    return const SizedBox.shrink();
-                                  final startH =
-                                      start.hour + start.minute / 60.0;
-                                  final endH = end != null
-                                      ? end.hour + end.minute / 60.0
-                                      : startH + 1;
-                                  final top = startH * _cellH;
-                                  final height = ((endH - startH) * _cellH - 2)
-                                      .clamp(18.0, double.infinity);
-                                  return Positioned(
-                                    top: top,
-                                    left: 2,
-                                    right: 2,
-                                    height: height,
-                                    child: Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(4),
-                                        onTap: () => showEventDetails(ev),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 5,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                Theme.of(context).brightness ==
-                                                    Brightness.dark
-                                                ? context
-                                                      .vivordoColors
-                                                      .cardMuted
-                                                : const Color(0xFFe8f0fe),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                            border: const Border(
-                                              left: BorderSide(
-                                                color: Color(0xFF1a73e8),
-                                                width: 3,
-                                              ),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            ev.summary ?? 'Event',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
-                                              color:
-                                                  Theme.of(
-                                                        context,
-                                                      ).brightness ==
-                                                      Brightness.dark
-                                                  ? context
-                                                        .vivordoColors
-                                                        .textPrimary
-                                                  : const Color(0xFF1557b0),
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }),
-                                // Outlook Calendar events
-                                ...outlookDayEvents.map((ev) {
-                                  final start = ev.start.toLocal();
-                                  final end = ev.end.toLocal();
-                                  final startH =
-                                      start.hour + start.minute / 60.0;
-                                  final endH = end.hour + end.minute / 60.0;
-                                  final top = startH * _cellH;
-                                  final height = ((endH - startH) * _cellH - 2)
-                                      .clamp(18.0, double.infinity);
-                                  return Positioned(
-                                    top: top,
-                                    left: 4,
-                                    right: 0,
-                                    height: height,
-                                    child: Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(4),
-                                        onTap: () {},
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 5,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                Theme.of(context).brightness ==
-                                                    Brightness.dark
-                                                ? context
-                                                      .vivordoColors
-                                                      .cardMuted
-                                                : const Color(0xFFE6F2FB),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                            border: const Border(
-                                              left: BorderSide(
-                                                color: Color(0xFF0078D4),
-                                                width: 3,
-                                              ),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            ev.subject,
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
-                                              color:
-                                                  Theme.of(
-                                                        context,
-                                                      ).brightness ==
-                                                      Brightness.dark
-                                                  ? context
-                                                        .vivordoColors
-                                                        .textPrimary
-                                                  : const Color(0xFF005A9E),
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }),
-
-                                // Now line
-                                if (isToday)
-                                  Positioned(
-                                    top: (now.hour + now.minute / 60) * _cellH,
-                                    left: 0,
-                                    right: 0,
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 8,
-                                          height: 8,
-                                          decoration: const BoxDecoration(
-                                            color: Color(0xFFea4335),
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Container(
-                                            height: 2,
-                                            color: const Color(0xFFea4335),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _navBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          border: Border.all(color: context.vivordoColors.border),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(icon, size: 15, color: context.vivordoColors.textPrimary),
-      ),
-    );
-  }
-}
-
-class _CalendarEventDraft {
-  const _CalendarEventDraft({
-    required this.title,
-    required this.date,
-    required this.startTime,
-    required this.endTime,
-    required this.recurrence,
-  });
-
-  final String title;
-  final DateTime date;
-  final TimeOfDay startTime;
-  final TimeOfDay endTime;
-  final String recurrence;
-}
-
-class _CreateCalendarEventDialog extends StatefulWidget {
-  const _CreateCalendarEventDialog({
-    required this.initialStart,
-    this.initialEnd,
-  });
-
-  final DateTime initialStart;
-  final DateTime? initialEnd;
-
-  @override
-  State<_CreateCalendarEventDialog> createState() =>
-      _CreateCalendarEventDialogState();
-}
-
-class _CreateCalendarEventDialogState
-    extends State<_CreateCalendarEventDialog> {
-  late final TextEditingController _titleController;
-  late DateTime _date;
-  late TimeOfDay _startTime;
-  late TimeOfDay _endTime;
-  String _recurrence = 'none';
-  String? _titleError;
-
-  @override
-  void initState() {
-    super.initState();
-    _titleController = TextEditingController();
-    _date = DateUtils.dateOnly(widget.initialStart);
-    _startTime = TimeOfDay.fromDateTime(widget.initialStart);
-    _endTime = TimeOfDay.fromDateTime(
-      widget.initialEnd ?? widget.initialStart.add(const Duration(hours: 1)),
-    );
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (!context.mounted || picked == null) return;
-    setState(() => _date = picked);
-  }
-
-  Future<void> _pickStartTime() async {
-    final picked = await showVivordoTimePicker(
-      context: context,
-      initialTime: _startTime,
-      title: 'Start Time',
-    );
-    if (!context.mounted || picked == null) return;
-    setState(() => _startTime = picked);
-  }
-
-  Future<void> _pickEndTime() async {
-    final picked = await showVivordoTimePicker(
-      context: context,
-      initialTime: _endTime,
-      title: 'End Time',
-    );
-    if (!context.mounted || picked == null) return;
-    setState(() => _endTime = picked);
-  }
-
-  void _submit() {
-    final title = _titleController.text.trim();
-    if (title.isEmpty) {
-      setState(() => _titleError = 'Enter an event title');
-      return;
-    }
-    Navigator.pop(
-      context,
-      _CalendarEventDraft(
-        title: title,
-        date: _date,
-        startTime: _startTime,
-        endTime: _endTime,
-        recurrence: _recurrence,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      title: const Text('Create event'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _titleController,
-              autofocus: true,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                labelText: 'Event title',
-                prefixIcon: const Icon(Icons.event_rounded),
-                errorText: _titleError,
-              ),
-              onChanged: (_) {
-                if (_titleError != null) setState(() => _titleError = null);
-              },
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.calendar_today_rounded),
-              title: const Text('Date'),
-              subtitle: Text(
-                MaterialLocalizations.of(context).formatFullDate(_date),
-              ),
-              onTap: _pickDate,
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.schedule_rounded),
-              title: const Text('Start time'),
-              trailing: Text(_startTime.format(context)),
-              onTap: _pickStartTime,
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.schedule_outlined),
-              title: const Text('End time'),
-              trailing: Text(_endTime.format(context)),
-              onTap: _pickEndTime,
-            ),
-            DropdownButtonFormField<String>(
-              initialValue: _recurrence,
-              decoration: const InputDecoration(
-                labelText: 'Repeats',
-                prefixIcon: Icon(Icons.repeat_rounded),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'none', child: Text('Does not repeat')),
-                DropdownMenuItem(value: 'daily', child: Text('Daily')),
-                DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
-                DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
-              ],
-              onChanged: (value) {
-                if (value != null) setState(() => _recurrence = value);
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _submit, child: const Text('Create')),
-      ],
-    );
-  }
-}
-
-class _CalEvent {
-  final int dow;
-  final int h;
-  final int m;
-  final double dur;
-  final String title;
-  final String sub;
-  final Color color;
-  final Color bg;
-  const _CalEvent({
-    required this.dow,
-    required this.h,
-    required this.m,
-    required this.dur,
-    required this.title,
-    required this.sub,
-    required this.color,
-    required this.bg,
-  });
-}
-
-class _EventDetailRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final double? maxValueHeight;
-  final VoidCallback? onTap;
-
-  const _EventDetailRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.maxValueHeight,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: onTap == null ? 0 : 6),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, size: 18, color: const Color(0xFF8E8E93)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF8E8E93),
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: maxValueHeight ?? double.infinity,
-                      ),
-                      child: SingleChildScrollView(
-                        physics: maxValueHeight == null
-                            ? const NeverScrollableScrollPhysics()
-                            : const BouncingScrollPhysics(),
-                        child: Text(
-                          value,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: context.vivordoColors.textPrimary,
-                            height: 1.35,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (onTap != null) ...[
-                const SizedBox(width: 8),
-                const Icon(
-                  Icons.open_in_new_rounded,
-                  size: 16,
-                  color: Color(0xFF1A73E8),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

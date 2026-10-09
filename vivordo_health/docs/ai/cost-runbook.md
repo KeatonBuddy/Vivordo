@@ -27,12 +27,14 @@ Cloud Function invocations and durations are in **Firebase Console → Functions
 
 ### Reading cache efficiency (VIV-307)
 
-In Cloud Function logs (`firebase functions:log --only pandaClaude`), each call emits:
+In Cloud Function logs (`firebase functions:log --only assistant`), each chat turn emits one entry per model call:
 
 ```
-[pandaClaude] usage {"input":540,"output":87,"cache_create":512,"cache_read":0}
-[pandaClaude] usage {"input":28,"output":91,"cache_create":0,"cache_read":512}
+[assistant] usage [{"input":540,"output":87,"cache_create":512,"cache_read":0}] ...
+[assistant] usage [{"input":28,"output":91,"cache_create":0,"cache_read":512}] ...
 ```
+
+One-shot tasks log `[aiTask] <task> {"model":…,"input":…,"output":…}`.
 
 Turn 1: `cache_create > 0`, `cache_read == 0` — cache written.  
 Turn 2+: `cache_read ≈ input turn-1` — cache hit; effective cost ≈ 10% of a full-input call.  
@@ -69,7 +71,7 @@ Both `GeminiService.processTurn` and `ClaudeService.processTurn` estimate input 
 ### Step 1 — identify the source
 
 ```bash
-firebase functions:log --only pandaClaude | grep '"input"' | sort -t: -k2 -n -r | head -20
+firebase functions:log --only assistant,aiTask | grep '"input"' | sort -t: -k2 -n -r | head -20
 ```
 
 High `cache_create` with no `cache_read` → caching is broken (most common cause).  
@@ -96,17 +98,9 @@ Lower `kMaxOutputTokensChat` to 150 or `kMaxInputTokens` to 1500. Ship a hotfix 
 
 Follow these rules. Violating any one of them will break the cost projections.
 
-### Rule 1 — always proxy through `pandaClaude`
+### Rule 1 — keep prompts and the key on the server
 
-The Anthropic API key must never leave the server (VIV-309). All new real-time AI features must go through the `pandaClaude` Cloud Function. Pass `maxTokens` explicitly:
-
-```dart
-await _fn.call<dynamic>({
-  'system': [_cacheBlock(mySystemPrompt)],
-  'user':   [{'type': 'text', 'text': myUserPrompt}],
-  'maxTokens': kMaxOutputTokensChat,   // or your own capped constant
-});
-```
+The Anthropic API key must never leave the server (VIV-309). Chat goes through the `assistant` Cloud Function (prompt and tool loop in `functions/assistant.js`); one-shot features go through `aiTask` (prompts in `functions/ai_tasks.js`). The app sends data, never prompts. Both spend the shared daily budget in `functions/ai_limits.js`.
 
 ### Rule 2 — batch non-real-time work
 

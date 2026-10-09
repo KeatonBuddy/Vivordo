@@ -1,6 +1,14 @@
 import 'dart:async';
+import '../widgets/visible_stream_builder.dart';
+import '../widgets/contextual_insight_bar.dart';
 import '../src/services/active_workout_navigation.dart';
 import '../widgets/workout_rest_timer.dart';
+import '../widgets/training_load_card.dart';
+import '../src/utils/training_load_view.dart';
+import '../widgets/ios_pull_down_menu.dart';
+import '../widgets/apple_ui.dart';
+import '../widgets/vivordo_time_picker.dart';
+import 'package:flutter/cupertino.dart' show CupertinoIcons, CupertinoSwitch;
 import '../src/services/notification_service.dart';
 import 'dart:math' as math;
 
@@ -19,6 +27,10 @@ import '../src/services/workout_service.dart';
 import '../src/services/personal_profile_service.dart';
 import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
+import '../src/utils/day_key.dart';
+import '../src/utils/home_metrics_summary.dart' show durationUntilNextLocalDay;
+import '../src/utils/fitness_goal_insight.dart';
+import '../src/services/metrics_repository.dart';
 import 'exercise_detail_screen.dart';
 import 'personal_profile_screen.dart';
 import 'workout_summary_screen.dart';
@@ -88,25 +100,55 @@ class FitnessWorkoutTimerState {
 }
 
 class FitnessScreen extends StatefulWidget {
-  const FitnessScreen({super.key, this.isActive = true});
+  const FitnessScreen({
+    super.key,
+    this.isActive = true,
+    this.actionsKey,
+    this.ringsKey,
+    this.buttonsKey,
+    this.weekKey,
+    this.recentKey,
+    this.bodyKey,
+  });
 
   final bool isActive;
+
+  /// Spotlight targets for the Fitness tour.
+  final Key? actionsKey;
+  final Key? ringsKey;
+  final Key? buttonsKey;
+  final Key? weekKey;
+  final Key? recentKey;
+  final Key? bodyKey;
 
   @override
   State<FitnessScreen> createState() => _FitnessScreenState();
 }
 
 class _FitnessScreenState extends State<FitnessScreen> {
-  bool _allActivity = false;
-  bool _recommendationsExpanded = true;
   bool _deferredInitializationStarted = false;
   bool _deferredInitializationScheduled = false;
   Timer? _deferredInitializationTimer;
   final Map<String, int> _strengthGoals = Map.of(kDefaultStrengthGoals);
 
+  /// The last 30 full days, read by the body card for the latest heart scan
+  /// and synced weight/body fat. Created once so rebuilds of this screen
+  /// don't reopen the Firestore listener.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _recentDays;
+
   @override
   void initState() {
     super.initState();
+    final user = FirebaseAuth.instance.currentUser;
+    _recentDays = user == null
+        ? const Stream.empty()
+        : FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .collection('metrics_daily')
+              .orderBy(FieldPath.documentId, descending: true)
+              .limit(30)
+              .snapshots();
     _startDeferredInitializationIfActive();
   }
 
@@ -216,109 +258,129 @@ class _FitnessScreenState extends State<FitnessScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
     return Scaffold(
-      backgroundColor: context.vivordoColors.page,
+      backgroundColor: colors.page,
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 150),
+          padding: const EdgeInsets.fromLTRB(18, 22, 18, 150),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Text(
-                      'Fitness',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: context.vivordoColors.textPrimary,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Fitness',
+                          style: TextStyle(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('EEEE, MMMM d').format(DateTime.now()),
+                          style: TextStyle(color: colors.textSecondary),
+                        ),
+                      ],
                     ),
                   ),
-                  _PillButton(
-                    icon: Icons.track_changes_rounded,
-                    label: 'Goals',
-                    onTap: _openGoals,
+                  Row(
+                    key: widget.actionsKey,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: _WorkoutStreakPill(),
+                      ),
+                      IconButton(
+                        onPressed: _openGoals,
+                        tooltip: 'Goals',
+                        icon: const Icon(
+                          Icons.track_changes_rounded,
+                          color: _purple,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  const _WorkoutStreakPill(),
                 ],
               ),
-              const SizedBox(height: 16),
-              _TodayActivityRings(onTap: _openMonthlyRings),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  const Expanded(child: _TodayStepsMetricCard()),
-                  const SizedBox(width: 10),
-                  const Expanded(child: _LatestHeartScanCard()),
-                ],
+              const SizedBox(height: 18),
+              KeyedSubtree(
+                key: widget.ringsKey,
+                child: _TodayActivityRings(onTap: _openMonthlyRings),
               ),
               const SizedBox(height: 12),
-              const _PersonalProfileCard(),
-              const SizedBox(height: 22),
-              _SectionTitle(
-                icon: Icons.auto_awesome_rounded,
-                title: 'DAILY RECOMMENDATIONS',
-                expanded: _recommendationsExpanded,
-                onTap: () => setState(
-                  () => _recommendationsExpanded = !_recommendationsExpanded,
-                ),
-              ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeInOut,
-                alignment: Alignment.topCenter,
-                child: _recommendationsExpanded
-                    ? const Column(
-                        children: [
-                          SizedBox(height: 10),
-                          _DailyStepRecommendation(),
-                        ],
-                      )
-                    : const SizedBox.shrink(),
-              ),
-              const SizedBox(height: 22),
-              Text(
-                _allActivity ? 'ACTIVITY' : 'STRENGTH TRAINING',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                  color: _muted,
-                ),
-              ),
-              const SizedBox(height: 9),
-              Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: context.vivordoColors.card,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.vivordoColors.border),
-                ),
-                child: Row(
+              ValueListenableBuilder<bool>(
+                key: widget.buttonsKey,
+                valueListenable: FitnessWorkoutTimerState.isRunning,
+                builder: (context, isWorkoutRunning, _) => Row(
                   children: [
                     Expanded(
-                      child: _Segment(
-                        label: 'Strength',
-                        selected: !_allActivity,
-                        onTap: () => setState(() => _allActivity = false),
+                      child: SizedBox(
+                        height: 52,
+                        child: FilledButton.icon(
+                          onPressed: _startWorkout,
+                          icon: Icon(
+                            isWorkoutRunning && _activeWorkoutDraft != null
+                                ? Icons.timer_outlined
+                                : Icons.fitness_center_rounded,
+                          ),
+                          label: _WorkoutButtonLabel(
+                            draft: isWorkoutRunning
+                                ? _activeWorkoutDraft
+                                : null,
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _purple,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                    Expanded(
-                      child: _Segment(
-                        label: 'All Activity',
-                        selected: _allActivity,
-                        onTap: () => setState(() => _allActivity = true),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      height: 52,
+                      child: OutlinedButton.icon(
+                        onPressed: _logActivity,
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text(
+                          'Log activity',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _purple,
+                          side: BorderSide(
+                            color: _purple.withValues(alpha: .45),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 14),
-              if (_allActivity) _buildAllActivity() else _buildStrength(),
+              const SizedBox(height: 24),
+              KeyedSubtree(
+                key: widget.weekKey,
+                child: _ThisWeekCard(strengthGoals: _strengthGoals),
+              ),
+              const _TrainingLoadSection(),
+              const SizedBox(height: 24),
+              KeyedSubtree(key: widget.recentKey, child: const _RecentFeed()),
+              const SizedBox(height: 24),
+              KeyedSubtree(key: widget.bodyKey, child: _BodyCard(_recentDays)),
             ],
           ),
         ),
@@ -326,154 +388,18 @@ class _FitnessScreenState extends State<FitnessScreen> {
     );
   }
 
-  Widget _buildStrength() => Column(
-    children: [
-      ValueListenableBuilder<bool>(
-        valueListenable: FitnessWorkoutTimerState.isRunning,
-        builder: (context, isWorkoutRunning, _) {
-          final activeDraft = isWorkoutRunning ? _activeWorkoutDraft : null;
-          return _Card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'START A WORKOUT',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2,
-                    color: _muted,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    _IconBox(
-                      icon: activeDraft == null
-                          ? Icons.fitness_center_rounded
-                          : Icons.timer_outlined,
-                      color: _purple,
-                      size: 68,
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(child: _WorkoutStatusMessage(draft: activeDraft)),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: FilledButton.icon(
-                    onPressed: _startWorkout,
-                    icon: const Icon(Icons.add),
-                    label: Text(
-                      activeDraft == null
-                          ? 'Start New Workout'
-                          : 'Resume Workout',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _purple,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-      const SizedBox(height: 12),
-      _WeeklyStrengthProgress(goals: _strengthGoals),
-      const SizedBox(height: 18),
-      Row(
-        children: [
-          const Expanded(
-            child: Text(
-              'RECENT SESSIONS',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.2,
-                color: _muted,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const _AllWorkoutsScreen()),
-            ),
-            child: const Text('View All'),
-          ),
-        ],
-      ),
-      const SizedBox(height: 8),
-      const _RecentWorkoutSessions(),
-    ],
-  );
-
-  Widget _buildAllActivity() => Column(
-    children: [
-      const _ThisWeekActivityCard(),
-      const SizedBox(height: 18),
-      const Row(
-        children: [
-          Expanded(
-            child: Text(
-              'RECENT ACTIVITY',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.2,
-                color: _muted,
-              ),
-            ),
-          ),
-          Text(
-            'See all',
-            style: TextStyle(fontWeight: FontWeight.w800, color: _purple),
-          ),
-        ],
-      ),
-      const SizedBox(height: 8),
-      const _RecentActivitiesCard(),
-      const SizedBox(height: 12),
-      SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: FilledButton.icon(
-          onPressed: _logActivity,
-          icon: const Icon(Icons.add),
-          label: const Text('Log Activity'),
-          style: FilledButton.styleFrom(
-            backgroundColor: _purple,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-      ),
-    ],
-  );
-
   Future<void> _logActivity() async {
-    final saved = await showDialog<bool>(
-      context: context,
+    // The sheet shows its own saved / will-sync toast before closing.
+    await showAppleSheet<bool>(
+      context,
       builder: (_) => const _LogActivityDialog(),
     );
-    if (saved == true && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Activity saved.')));
-    }
   }
 
   Future<void> _startWorkout() async {
     if (ActiveWorkoutNavigation.focusExisting()) return;
     _activeWorkoutDraft ??= await _ActiveWorkoutDraft.restore();
-    _activeWorkoutDraft ??= _ActiveWorkoutDraft();
+    _activeWorkoutDraft ??= await _ActiveWorkoutDraft.fresh();
     await _activeWorkoutDraft!.persist();
     if (!mounted) return;
     final draft = _activeWorkoutDraft!;
@@ -501,184 +427,292 @@ class _FitnessScreenState extends State<FitnessScreen> {
       showDialog(context: context, builder: (_) => const MonthlyRingsDialog());
 }
 
-class _TodayActivityRings extends StatelessWidget {
+class _TodayActivityRings extends StatefulWidget {
   const _TodayActivityRings({required this.onTap});
 
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final now = DateTime.now();
-    final dayKey =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final stream = user == null
-        ? const Stream<DocumentSnapshot<Map<String, dynamic>>>.empty()
-        : FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .collection('metrics_daily')
-              .doc(dayKey)
-              .snapshots();
+  State<_TodayActivityRings> createState() => _TodayActivityRingsState();
+}
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: stream,
+class _TodayActivityRingsState extends State<_TodayActivityRings>
+    with WidgetsBindingObserver {
+  StreamSubscription<User?>? _authSubscription;
+  Timer? _midnightTimer;
+  String? _uid;
+  late DateTime _day;
+  late String _dayKey;
+  late Stream<MetricWindow> _historyStream;
+  late Stream<ActivityGoals> _goalsStream;
+  Object? _insightKey;
+  String _insight = '';
+  bool _active = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _connect();
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((_) {
+      if (mounted) _refreshIfStale();
+    });
+  }
+
+  void _connect() {
+    _uid = FirebaseAuth.instance.currentUser?.uid;
+    final now = DateTime.now();
+    _day = DateTime(now.year, now.month, now.day);
+    _dayKey = DateFormat('yyyy-MM-dd').format(_day);
+    _insightKey = null;
+    var goalsHadError = false;
+    _historyStream = _uid == null
+        ? Stream.multi((controller) {
+            controller.add(const MetricWindow(days: {}));
+            controller.close();
+          })
+        : MetricsRepository.instance.watchActivity(
+            uid: _uid!,
+            endDay: _dayKey,
+            startDay: DateFormat(
+              'yyyy-MM-dd',
+            ).format(DateTime(now.year, now.month, now.day - 14)),
+          );
+    _goalsStream = ActivityGoalsService.watch()
+        .handleError((Object error, StackTrace stack) {
+          goalsHadError = true;
+          Error.throwWithStackTrace(error, stack);
+        })
+        .distinct((a, b) {
+          final recovering = goalsHadError;
+          goalsHadError = false;
+          return !recovering &&
+              a.steps == b.steps &&
+              a.activeCalories == b.activeCalories &&
+              a.exerciseMinutes == b.exerciseMinutes;
+        });
+  }
+
+  void _refreshIfStale() {
+    if (_uid != FirebaseAuth.instance.currentUser?.uid ||
+        _dayKey != DateFormat('yyyy-MM-dd').format(DateTime.now())) {
+      setState(_connect);
+    }
+    _scheduleMidnight();
+  }
+
+  void _scheduleMidnight() {
+    _midnightTimer?.cancel();
+    if (!_active) return;
+    final now = DateTime.now();
+    _midnightTimer = Timer(
+      DateTime(now.year, now.month, now.day + 1).difference(now),
+      _refreshIfStale,
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _active = TickerMode.valuesOf(context).enabled;
+    _refreshIfStale();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshIfStale();
+  }
+
+  @override
+  void dispose() {
+    _midnightTimer?.cancel();
+    _authSubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return VisibleStreamBuilder<MetricWindow>(
+      key: ValueKey((_uid, _dayKey)),
+      stream: _historyStream,
       builder: (context, snapshot) {
-        final data = snapshot.data?.data();
+        final history =
+            snapshot.data?.days ?? const <String, Map<String, dynamic>>{};
+        final data = history[_dayKey];
         final steps = ((data?['steps'] as Map?)?['sum'] as num?)?.round() ?? 0;
         final calories =
             ((data?['active_calories'] as Map?)?['sum'] as num?)?.round() ?? 0;
         final exercise =
             ((data?['exercise_time'] as Map?)?['sum'] as num?)?.round() ?? 0;
 
-        return StreamBuilder<ActivityGoals>(
-          stream: ActivityGoalsService.watch(),
+        return VisibleStreamBuilder<ActivityGoals>(
+          stream: _goalsStream,
           initialData: const ActivityGoals(),
           builder: (context, goalsSnapshot) {
             final goals = goalsSnapshot.data ?? const ActivityGoals();
-            return InkWell(
-              borderRadius: BorderRadius.circular(22),
-              onTap: onTap,
-              child: _Card(
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 82,
-                      height: 82,
-                      child: CustomPaint(
-                        painter: ActivityRingsPainter(
-                          move: (steps / goals.steps).clamp(0.0, 1.0),
-                          exercise: (calories / goals.activeCalories).clamp(
-                            0.0,
-                            1.0,
-                          ),
-                          stand: (exercise / goals.exerciseMinutes).clamp(
-                            0.0,
-                            1.0,
+            final insightKey = (
+              history,
+              goals.steps,
+              goals.activeCalories,
+              goals.exerciseMinutes,
+              _dayKey,
+            );
+            if (_insightKey != insightKey) {
+              _insightKey = insightKey;
+              _insight = fitnessGoalInsight(
+                data,
+                goals,
+                history: history,
+                now: _day,
+              );
+            }
+            final number = NumberFormat.decimalPattern();
+            final rings = [
+              (steps, goals.steps, 'steps'),
+              (calories, goals.activeCalories, 'kcal'),
+              (exercise, goals.exerciseMinutes, 'min'),
+            ];
+            final progress = [
+              for (final ring in rings)
+                ring.$2 <= 0 ? 1.0 : (ring.$1 / ring.$2).clamp(0.0, 1.0),
+            ];
+            final open = [
+              for (var i = 0; i < rings.length; i++)
+                if (progress[i] < 1) i,
+            ]..sort((a, b) => progress[b].compareTo(progress[a]));
+            final next = open.isEmpty ? null : rings[open.first];
+            return Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(24),
+              clipBehavior: Clip.antiAlias,
+              child: Ink(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: const Color(0xFFAA91FF).withValues(alpha: .6),
+                  ),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF5844ED), Color(0xFF3529AD)],
+                  ),
+                ),
+                child: InkWell(
+                  onTap: widget.onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            SizedBox(
+                              width: 86,
+                              height: 86,
+                              child: CustomPaint(
+                                painter: ActivityRingsPainter(
+                                  move: progress[0],
+                                  exercise: progress[1],
+                                  stand: progress[2],
+                                  moveColor: Colors.white,
+                                  trackColor: Colors.white.withValues(
+                                    alpha: .18,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'TODAY\'S ACTIVITY',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 1.3,
+                                      color: Color(0xFFE8E0FF),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${3 - open.length} of 3 closed',
+                                    style: const TextStyle(
+                                      fontSize: 25,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    next == null
+                                        ? 'Every goal reached today.'
+                                        : '${number.format(next.$2 - next.$1)} ${next.$3} to your next ring',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFFF1ECFF),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              color: Color(0xFFE8E0FF),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          height: 1,
+                          color: Colors.white.withValues(alpha: .15),
+                        ),
+                        const SizedBox(height: 12),
+                        IntrinsicHeight(
+                          child: Row(
+                            children: [
+                              for (var i = 0; i < rings.length; i++) ...[
+                                if (i > 0)
+                                  VerticalDivider(
+                                    width: 1,
+                                    color: Colors.white.withValues(alpha: .15),
+                                  ),
+                                Expanded(
+                                  child: _HeroStat(
+                                    color: i == 0
+                                        ? Colors.white
+                                        : ActivityRingsPainter.ringColors[i],
+                                    value: number.format(rings[i].$1),
+                                    detail:
+                                        '/ ${number.format(rings[i].$2)} ${rings[i].$3}',
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _RingLegend(
-                            color: _purple,
-                            text:
-                                'Steps  ${NumberFormat.decimalPattern().format(steps)} / ${NumberFormat.decimalPattern().format(goals.steps)} steps',
-                          ),
-                          const SizedBox(height: 7),
-                          _RingLegend(
-                            color: const Color(0xFFFB923C),
-                            text:
-                                'Active calories  ${NumberFormat.decimalPattern().format(calories)} / ${goals.activeCalories} calories burnt',
-                          ),
-                          const SizedBox(height: 7),
-                          _RingLegend(
-                            color: const Color(0xFF34D399),
-                            text:
-                                'Exercise  $exercise / ${goals.exerciseMinutes} minutes',
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(Icons.chevron_right_rounded, color: _muted),
-                  ],
+                  ),
                 ),
+              ),
+            ).withScreenInsight(
+              ScreenInsight(
+                'fitness',
+                'Your activity',
+                snapshot.hasError ||
+                        snapshot.data?.error != null ||
+                        goalsSnapshot.hasError
+                    ? 'Your activity or goals could not be loaded. Refresh before comparing progress.'
+                    : !snapshot.hasData ||
+                          goalsSnapshot.connectionState ==
+                              ConnectionState.waiting
+                    ? 'Loading your activity and saved goals…'
+                    : _insight,
               ),
             );
           },
-        );
-      },
-    );
-  }
-}
-
-class _DailyStepRecommendation extends StatelessWidget {
-  const _DailyStepRecommendation();
-
-  static const optimalSteps = 10000;
-
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return const _Recommendation(
-        icon: Icons.directions_walk_rounded,
-        color: _muted,
-        title: 'Sign in to see your daily step feedback.',
-        detail: 'Your step recommendation is based on today’s synced activity.',
-      );
-    }
-
-    final dayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final stream = FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('metrics_daily')
-        .doc(dayKey)
-        .snapshots();
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: stream,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return const _Card(
-            child: Center(
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.4),
-              ),
-            ),
-          );
-        }
-
-        final data = snapshot.data?.data();
-        final steps = ((data?['steps'] as Map?)?['sum'] as num?)?.round() ?? 0;
-        final remaining = math.max(0, optimalSteps - steps);
-        final formattedSteps = NumberFormat.decimalPattern().format(steps);
-        final formattedRemaining = NumberFormat.decimalPattern().format(
-          remaining,
-        );
-
-        late final String title;
-        late final String detail;
-        late final Color color;
-        if (steps >= optimalSteps) {
-          title = 'Your step count is optimal for today.';
-          detail =
-              '$formattedSteps steps recorded — you reached the 10,000-step target.';
-          color = const Color(0xFF22B879);
-        } else if (steps >= 7500) {
-          title = 'Your step count is in a healthy range.';
-          detail =
-              '$formattedSteps steps recorded. Add $formattedRemaining more to reach the optimal 10,000-step target.';
-          color = const Color(0xFF22B879);
-        } else if (steps >= 5000) {
-          title = 'You’re making progress toward a healthy step count.';
-          detail =
-              '$formattedSteps steps recorded. You’re $formattedRemaining steps from the optimal daily target.';
-          color = const Color(0xFFFFA726);
-        } else if (steps > 0) {
-          title = 'Your step count is low so far today.';
-          detail =
-              '$formattedSteps steps recorded. Gradually add movement toward the 10,000-step optimal target.';
-          color = const Color(0xFFFF7043);
-        } else {
-          title = 'No steps have been recorded today.';
-          detail =
-              'Sync your activity data or start moving toward the 10,000-step optimal target.';
-          color = _muted;
-        }
-
-        return _Recommendation(
-          icon: Icons.directions_walk_rounded,
-          color: color,
-          title: title,
-          detail: detail,
         );
       },
     );
@@ -702,288 +736,20 @@ class _WorkoutStreakPillState extends State<_WorkoutStreakPill> {
   }
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<SavedWorkout>>(
-    stream: _workoutsStream,
-    builder: (context, snapshot) {
-      final streak = WorkoutService.calculateCurrentStreak(
-        snapshot.data ?? const [],
-      );
-      return _PillButton(
-        icon: Icons.local_fire_department_rounded,
-        label: '$streak-day streak',
-        color: Colors.orange,
-      );
-    },
-  );
-}
-
-class _LatestHeartScanCard extends StatefulWidget {
-  const _LatestHeartScanCard();
-
-  @override
-  State<_LatestHeartScanCard> createState() => _LatestHeartScanCardState();
-}
-
-class _LatestHeartScanCardState extends State<_LatestHeartScanCard> {
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _scanStream;
-
-  @override
-  void initState() {
-    super.initState();
-    final user = FirebaseAuth.instance.currentUser;
-    _scanStream = user == null
-        ? const Stream.empty()
-        : FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .collection('metrics_daily')
-              .snapshots();
-  }
-
-  @override
   Widget build(BuildContext context) =>
-      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _scanStream,
+      VisibleStreamBuilder<List<SavedWorkout>>(
+        stream: _workoutsStream,
         builder: (context, snapshot) {
-          final bpm = _latestBpmFrom(snapshot.data?.docs ?? const []);
-          return _MetricCard(
-            icon: Icons.favorite_rounded,
-            iconColor: const Color(0xFFFF4D67),
-            label: 'HEART RATE',
-            value: bpm?.toString() ?? '--',
-            detail: bpm == null ? 'No scan yet' : 'bpm · Latest scan',
+          final streak = WorkoutService.calculateCurrentStreak(
+            snapshot.data ?? const [],
+          );
+          return _PillButton(
+            icon: Icons.local_fire_department_rounded,
+            label: '$streak-day streak',
+            color: Colors.orange,
           );
         },
       );
-
-  int? _latestBpmFrom(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    final sortedDocs = [...docs]..sort((a, b) => b.id.compareTo(a.id));
-    for (final doc in sortedDocs) {
-      final data = doc.data();
-      final savedScan = data['heart_rate_scan'] as Map?;
-      if (savedScan != null) {
-        final rawEntries = savedScan['entries'];
-        if (rawEntries is List && rawEntries.isNotEmpty) {
-          Map? latestEntry;
-          DateTime? latestTime;
-          for (final entry in rawEntries) {
-            if (entry is! Map || entry['bpm'] is! num) continue;
-            final timestamp = entry['timestamp'];
-            final entryTime = timestamp is Timestamp
-                ? timestamp.toDate()
-                : null;
-            if (latestEntry == null ||
-                (entryTime != null &&
-                    (latestTime == null || entryTime.isAfter(latestTime)))) {
-              latestEntry = entry;
-              latestTime = entryTime;
-            }
-          }
-          final bpm = latestEntry?['bpm'];
-          if (bpm is num) return bpm.round();
-        }
-
-        final legacyBpm = savedScan['avg'];
-        if (legacyBpm is num) return legacyBpm.round();
-      }
-
-      final heartRate = data['heart_rate'] as Map?;
-      if (heartRate?['source'] == 'camera_ppg' && heartRate?['avg'] is num) {
-        return (heartRate!['avg'] as num).round();
-      }
-    }
-    return null;
-  }
-}
-
-class _PersonalProfileCard extends StatefulWidget {
-  const _PersonalProfileCard();
-
-  @override
-  State<_PersonalProfileCard> createState() => _PersonalProfileCardState();
-}
-
-class _PersonalProfileCardState extends State<_PersonalProfileCard> {
-  late final Stream<PersonalProfile> profileStream;
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> metricsStream;
-
-  @override
-  void initState() {
-    super.initState();
-    profileStream = PersonalProfileService.watch();
-    final user = FirebaseAuth.instance.currentUser;
-    metricsStream = user == null
-        ? const Stream.empty()
-        : FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .collection('metrics_daily')
-              .orderBy(FieldPath.documentId, descending: true)
-              .limit(30)
-              .snapshots();
-  }
-
-  double? _latestMetric(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-    String key,
-  ) {
-    for (final doc in docs) {
-      final value = ((doc.data()[key] as Map?)?['avg'] as num?)?.toDouble();
-      if (value != null) return value;
-    }
-    return null;
-  }
-
-  String _number(double? value, {int decimals = 1}) {
-    if (value == null) return '--';
-    return value.toStringAsFixed(value % 1 == 0 ? 0 : decimals);
-  }
-
-  String _imperialHeight(double centimeters) {
-    final totalInches = centimeters / 2.54;
-    var feet = totalInches ~/ 12;
-    var inches = (totalInches - feet * 12).round();
-    if (inches == 12) {
-      feet++;
-      inches = 0;
-    }
-    return '$feet\u2032 $inches\u2033';
-  }
-
-  String _updatedLabel(DateTime? updatedAt) {
-    if (updatedAt == null) return 'Tap to add your measurements';
-    final local = updatedAt.toLocal();
-    final now = DateTime.now();
-    if (DateUtils.isSameDay(local, now)) return 'Updated today';
-    return 'Updated ${DateFormat('MMM d').format(local)}';
-  }
-
-  @override
-  Widget build(BuildContext context) => StreamBuilder<PersonalProfile>(
-    stream: profileStream,
-    initialData: const PersonalProfile(),
-    builder: (context, profileSnapshot) =>
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: metricsStream,
-          builder: (context, metricsSnapshot) {
-            final profile = profileSnapshot.data ?? const PersonalProfile();
-            final docs = metricsSnapshot.data?.docs ?? const [];
-            final height = profile.heightCm;
-            final weight = profile.weightKg ?? _latestMetric(docs, 'weight');
-            final bodyFat =
-                profile.bodyFatPercent ?? _latestMetric(docs, 'body_fat');
-            final bmi = height != null && height > 0 && weight != null
-                ? weight / math.pow(height / 100, 2)
-                : null;
-            DateTime? metricDate;
-            if (docs.isNotEmpty) {
-              metricDate = DateTime.tryParse(docs.first.id);
-            }
-            final updatedAt = profile.updatedAt ?? metricDate;
-
-            return Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: .035),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Material(
-                color: context.vivordoColors.card,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: BorderSide(color: context.vivordoColors.border),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  splashColor: _purple.withValues(alpha: .10),
-                  highlightColor: _purple.withValues(alpha: .055),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const PersonalProfileScreen(),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            _IconBox(
-                              icon: Icons.person_outline_rounded,
-                              color: _purple,
-                            ),
-                            SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Personal Profile',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: context.vivordoColors.textPrimary,
-                                ),
-                              ),
-                            ),
-                            Icon(Icons.chevron_right_rounded, color: _muted),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _ProfileMetric(
-                                label: 'HEIGHT',
-                                value: height == null
-                                    ? '--'
-                                    : _imperialHeight(height),
-                              ),
-                            ),
-                            const _ProfileDivider(),
-                            Expanded(
-                              child: _ProfileMetric(
-                                label: 'WEIGHT',
-                                value: weight == null
-                                    ? '--'
-                                    : '${_number(weight * 2.2046226218)} lbs',
-                              ),
-                            ),
-                            const _ProfileDivider(),
-                            Expanded(
-                              child: _ProfileMetric(
-                                label: 'BMI',
-                                value: _number(bmi),
-                              ),
-                            ),
-                            const _ProfileDivider(),
-                            Expanded(
-                              child: _ProfileMetric(
-                                label: 'BODY FAT',
-                                value: bodyFat == null
-                                    ? '--'
-                                    : '${_number(bodyFat)}%',
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _updatedLabel(updatedAt),
-                          style: const TextStyle(fontSize: 12, color: _muted),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-  );
 }
 
 class _ProfileMetric extends StatelessWidget {
@@ -1020,238 +786,332 @@ class _ProfileDivider extends StatelessWidget {
   const _ProfileDivider();
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: 1,
-    height: 46,
-    color: Colors.black.withValues(alpha: .08),
+  Widget build(BuildContext context) =>
+      Container(width: 1, height: 40, color: context.vivordoColors.border);
+}
+
+class _HeroStat extends StatelessWidget {
+  const _HeroStat({
+    required this.color,
+    required this.value,
+    required this.detail,
+  });
+
+  final Color color;
+  final String value, detail;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 2),
+      FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          detail,
+          style: const TextStyle(fontSize: 11, color: Color(0xFFE8E0FF)),
+        ),
+      ),
+    ],
   );
 }
 
-class _ThisWeekActivityCard extends StatelessWidget {
-  const _ThisWeekActivityCard();
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.title, {this.trailing});
+
+  final String title;
+  final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+  Widget build(BuildContext context) => SizedBox(
+    height: 36,
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.3,
+              color: context.vivordoColors.textSecondary,
+            ),
+          ),
+        ),
+        ?trailing,
+      ],
+    ),
+  );
+}
+
+class _SectionNote extends StatelessWidget {
+  const _SectionNote(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: TextStyle(fontSize: 12, color: context.vivordoColors.textSecondary),
+  );
+}
+
+class _ThisWeekCard extends StatefulWidget {
+  const _ThisWeekCard({required this.strengthGoals});
+
+  final Map<String, int> strengthGoals;
+
+  @override
+  State<_ThisWeekCard> createState() => _ThisWeekCardState();
+}
+
+class _ThisWeekCardState extends State<_ThisWeekCard> {
+  // ponytail: the week is fixed when the screen first builds; a screen left
+  // open across Sunday midnight shows last week until it is rebuilt.
+  late final DateTime _monday;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _metrics;
+  late final Stream<List<SavedWorkout>> _workouts;
+
+  @override
+  void initState() {
+    super.initState();
     final today = DateUtils.dateOnly(DateTime.now());
-    final monday = today.subtract(Duration(days: today.weekday - 1));
-    final sunday = monday.add(const Duration(days: 6));
-    if (user == null) return _buildCard(context, monday, today, const {});
+    _monday = today.subtract(Duration(days: today.weekday - 1));
+    final user = FirebaseAuth.instance.currentUser;
+    _metrics = user == null
+        ? const Stream.empty()
+        : FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .collection('metrics_daily')
+              .where(
+                FieldPath.documentId,
+                isGreaterThanOrEqualTo: localDayKey(_monday),
+              )
+              .where(
+                FieldPath.documentId,
+                isLessThanOrEqualTo: localDayKey(
+                  _monday.add(const Duration(days: 6)),
+                ),
+              )
+              .orderBy(FieldPath.documentId)
+              .snapshots();
+    _workouts = WorkoutService.watchBetween(
+      start: _monday,
+      end: _monday.add(const Duration(days: 7)),
+    );
+  }
 
-    final startKey = DateFormat('yyyy-MM-dd').format(monday);
-    final endKey = DateFormat('yyyy-MM-dd').format(sunday);
-    final stream = FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('metrics_daily')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: startKey)
-        .where(FieldPath.documentId, isLessThanOrEqualTo: endKey)
-        .orderBy(FieldPath.documentId)
-        .snapshots();
+  static double _sum(Map<String, dynamic>? data, String key) =>
+      ((data?[key] as Map?)?['sum'] as num?)?.toDouble() ?? 0;
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: stream,
-      builder: (context, snapshot) {
-        final dataByDay = {
+  @override
+  Widget build(
+    BuildContext context,
+  ) => VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    stream: _metrics,
+    builder: (context, metricsSnapshot) => VisibleStreamBuilder<List<SavedWorkout>>(
+      stream: _workouts,
+      builder: (context, workoutsSnapshot) {
+        final colors = context.vivordoColors;
+        final today = DateUtils.dateOnly(DateTime.now());
+        final byDay = {
           for (final doc
-              in snapshot.data?.docs ??
+              in metricsSnapshot.data?.docs ??
                   const <QueryDocumentSnapshot<Map<String, dynamic>>>[])
             doc.id: doc.data(),
         };
-        return _buildCard(context, monday, today, dataByDay);
-      },
-    );
-  }
+        final workouts = workoutsSnapshot.data ?? const <SavedWorkout>[];
+        final workoutDays = {
+          for (final workout in workouts)
+            DateUtils.dateOnly(workout.completedAt.toLocal()),
+        };
+        final days = List.generate(7, (index) {
+          final date = _monday.add(Duration(days: index));
+          final data = byDay[localDayKey(date)];
+          return (
+            date: date,
+            minutes: _sum(data, 'exercise_time'),
+            km: _sum(data, 'distance'),
+            calories: _sum(data, 'active_calories'),
+            workout: workoutDays.contains(date),
+          );
+        });
+        final minutes = days.fold<double>(0, (t, d) => t + d.minutes);
+        final km = days.fold<double>(0, (t, d) => t + d.km);
+        final calories = days.fold<double>(0, (t, d) => t + d.calories);
+        final maxMinutes = days.fold<double>(
+          0,
+          (m, d) => math.max(m, d.minutes),
+        );
+        final activeDays = days
+            .where(
+              (d) => d.workout || d.minutes > 0 || d.km > 0 || d.calories > 0,
+            )
+            .length;
 
-  Widget _buildCard(
-    BuildContext context,
-    DateTime monday,
-    DateTime today,
-    Map<String, Map<String, dynamic>> dataByDay,
-  ) {
-    final days = List.generate(7, (index) {
-      final date = monday.add(Duration(days: index));
-      final data = dataByDay[DateFormat('yyyy-MM-dd').format(date)];
-      return _WeeklyActivityDay(
-        date: date,
-        activeMinutes: _metricSum(data, 'exercise_time'),
-        distanceKm: _metricSum(data, 'distance'),
-        calories: _metricSum(data, 'active_calories'),
-      );
-    });
-    final activeMinutes = days.fold<double>(
-      0,
-      (total, day) => total + day.activeMinutes,
-    );
-    final distance = days.fold<double>(
-      0,
-      (total, day) => total + day.distanceKm,
-    );
-    final calories = days.fold<double>(0, (total, day) => total + day.calories);
-    final activeDays = days
-        .where(
-          (day) =>
-              day.activeMinutes > 0 || day.distanceKm > 0 || day.calories > 0,
-        )
-        .length;
-    final maxCalories = days.fold<double>(
-      0,
-      (largest, day) => math.max(largest, day.calories),
-    );
+        final setsByCategory = {
+          for (final category in widget.strengthGoals.keys) category: 0,
+        };
+        for (final workout in workouts) {
+          for (final exercise in workout.exercises) {
+            final category = exercise.category.trim().toLowerCase();
+            for (final key in setsByCategory.keys) {
+              if (key.toLowerCase() == category) {
+                setsByCategory[key] =
+                    setsByCategory[key]! + exercise.sets.length;
+              }
+            }
+          }
+        }
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const ExerciseDetailScreen())),
-      child: _Card(
-        child: Column(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'THIS WEEK',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 2,
-                      color: _muted,
+            _SectionHeader(
+              'THIS WEEK',
+              trailing: _SectionNote(
+                '${workouts.length} ${workouts.length == 1 ? 'workout' : 'workouts'} · '
+                '$activeDays active ${activeDays == 1 ? 'day' : 'days'}',
+              ),
+            ),
+            const SizedBox(height: 6),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ExerciseDetailScreen()),
+              ),
+              child: _Card(
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 96,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          for (final day in days)
+                            _WeekDayBar(
+                              letter: 'MTWTFSS'[day.date.weekday - 1],
+                              fraction: maxMinutes == 0
+                                  ? 0
+                                  : day.minutes / maxMinutes,
+                              isToday: day.date == today,
+                              workout: day.workout,
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                ),
-                Text(
-                  '$activeDays active ${activeDays == 1 ? 'day' : 'days'}',
-                  style: const TextStyle(fontSize: 12, color: _muted),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: _ActivityStat(
-                    value: '${activeMinutes.round()} min',
-                    label: 'Active',
-                  ),
-                ),
-                Expanded(
-                  child: _ActivityStat(
-                    value: '${distance.toStringAsFixed(1)} km',
-                    label: 'Distance',
-                  ),
-                ),
-                Expanded(
-                  child: _ActivityStat(
-                    value:
-                        '${NumberFormat.decimalPattern().format(calories.round())} kcal',
-                    label: 'Burned',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 88,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: List.generate(7, (index) {
-                  final day = days[index];
-                  final hasActivity = day.calories > 0;
-                  final height = maxCalories == 0
-                      ? 4.0
-                      : math.max(4.0, day.calories / maxCalories * 64);
-                  final isToday = DateUtils.isSameDay(day.date, today);
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Container(
-                        width: 14,
-                        height: height,
-                        decoration: BoxDecoration(
-                          color: hasActivity
-                              ? _purple.withValues(alpha: isToday ? 1 : .55)
-                              : Colors.black12,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(4),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _ActivityStat(
+                            value: '${minutes.round()} min',
+                            label: 'Active',
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        'MTWTFSS'[index],
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: isToday ? _purple : _muted,
-                          fontWeight: isToday ? FontWeight.w800 : null,
+                        Expanded(
+                          child: _ActivityStat(
+                            value: '${km.toStringAsFixed(1)} km',
+                            label: 'Distance',
+                          ),
                         ),
+                        Expanded(
+                          child: _ActivityStat(
+                            value:
+                                '${NumberFormat.decimalPattern().format(calories.round())} kcal',
+                            label: 'Burned',
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (setsByCategory.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Divider(height: 1, color: colors.border),
+                      const SizedBox(height: 14),
+                      for (final entry in setsByCategory.entries) ...[
+                        _StrengthRow(
+                          label: entry.key,
+                          value: entry.value,
+                          goal: widget.strengthGoals[entry.key]!,
+                        ),
+                        if (entry.key != setsByCategory.keys.last)
+                          const SizedBox(height: 11),
+                      ],
+                    ],
+                    if (workoutsSnapshot.hasError ||
+                        metricsSnapshot.hasError) ...[
+                      const SizedBox(height: 10),
+                      const Text(
+                        'Some of this week’s activity could not be loaded.',
+                        style: TextStyle(fontSize: 12, color: Colors.redAccent),
                       ),
                     ],
-                  );
-                }),
+                  ],
+                ),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  double _metricSum(Map<String, dynamic>? data, String key) {
-    final metric = data?[key] as Map?;
-    return (metric?['sum'] as num?)?.toDouble() ?? 0;
-  }
+        );
+      },
+    ),
+  );
 }
 
-class _WeeklyActivityDay {
-  const _WeeklyActivityDay({
-    required this.date,
-    required this.activeMinutes,
-    required this.distanceKm,
-    required this.calories,
-  });
-
-  final DateTime date;
-  final double activeMinutes;
-  final double distanceKm;
-  final double calories;
-}
-
-class _RecentWorkoutSessions extends StatelessWidget {
-  const _RecentWorkoutSessions();
+/// This week against the usual one; hidden while it's still learning.
+class _TrainingLoadSection extends StatefulWidget {
+  const _TrainingLoadSection();
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<SavedWorkout>>(
-    stream: WorkoutService.watchRecent(limit: 3),
+  State<_TrainingLoadSection> createState() => _TrainingLoadSectionState();
+}
+
+class _TrainingLoadSectionState extends State<_TrainingLoadSection> {
+  late final Stream<TrainingLoadView?> _load = watchTrainingLoad(
+    DateTime.now(),
+  );
+
+  @override
+  Widget build(BuildContext context) => VisibleStreamBuilder<TrainingLoadView?>(
+    stream: _load,
     builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting &&
-          !snapshot.hasData) {
-        return const _Card(child: Center(child: CircularProgressIndicator()));
-      }
-      if (snapshot.hasError) {
-        return const _Card(
-          child: Center(child: Text('Could not load recent workouts.')),
-        );
-      }
-      final workouts = snapshot.data ?? const <SavedWorkout>[];
-      if (workouts.isEmpty) {
-        return const _Card(
-          child: Center(
-            child: Text(
-              'No workouts completed yet.',
-              style: TextStyle(color: _muted),
-            ),
-          ),
-        );
-      }
-      return _Card(
+      final view = snapshot.data;
+      if (view == null) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: 24),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (var index = 0; index < workouts.length; index++) ...[
-              _RecentWorkoutRow(workout: workouts[index]),
-              if (index < workouts.length - 1) const Divider(),
-            ],
+            const _SectionHeader('TRAINING LOAD'),
+            const SizedBox(height: 6),
+            TrainingLoadCard(
+              view: view,
+              onTap: () => showTrainingLoadDetails(context, view),
+            ),
           ],
         ),
       );
@@ -1259,8 +1119,229 @@ class _RecentWorkoutSessions extends StatelessWidget {
   );
 }
 
-class _AllWorkoutsScreen extends StatelessWidget {
-  const _AllWorkoutsScreen();
+class _WeekDayBar extends StatelessWidget {
+  const _WeekDayBar({
+    required this.letter,
+    required this.fraction,
+    required this.isToday,
+    required this.workout,
+  });
+
+  final String letter;
+  final double fraction;
+  final bool isToday, workout;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisAlignment: MainAxisAlignment.end,
+    children: [
+      Container(
+        width: 16,
+        height: math.max(4, fraction * 60),
+        decoration: BoxDecoration(
+          color: fraction == 0
+              ? context.vivordoColors.input
+              : _purple.withValues(alpha: isToday ? 1 : .55),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        letter,
+        style: TextStyle(
+          fontSize: 11,
+          color: isToday ? _purple : _muted,
+          fontWeight: isToday ? FontWeight.w800 : null,
+        ),
+      ),
+      const SizedBox(height: 3),
+      Container(
+        width: 5,
+        height: 5,
+        decoration: BoxDecoration(
+          color: workout ? _purple : Colors.transparent,
+          shape: BoxShape.circle,
+        ),
+      ),
+    ],
+  );
+}
+
+/// Shown on the screen underneath, since the caller is about to close.
+void _showSavedOffline(BuildContext context, String what) => showToast(
+  context,
+  "$what saved. It'll sync when you're online.",
+  kind: ToastKind.offline,
+);
+
+enum _RecentFilter {
+  all('All'),
+  workouts('Workouts'),
+  logged('Logged');
+
+  const _RecentFilter(this.label);
+  final String label;
+}
+
+/// Tracked workouts and logged activities in one newest-first list. The
+/// Fitness screen shows the latest three; "See all" opens the full list.
+class _RecentFeed extends StatefulWidget {
+  const _RecentFeed({this.full = false});
+
+  final bool full;
+
+  @override
+  State<_RecentFeed> createState() => _RecentFeedState();
+}
+
+class _RecentFeedState extends State<_RecentFeed> {
+  static const _previewCount = 3;
+  // ponytail: "See all" lists the newest 200 logged activities; page the
+  // query if anyone logs more than that.
+  static const _fullActivityLimit = 200;
+
+  var _filter = _RecentFilter.all;
+  late final Stream<List<SavedWorkout>> _workouts = widget.full
+      ? WorkoutService.watchAll()
+      : WorkoutService.watchRecent(limit: _previewCount);
+  late final Stream<List<RecentActivity>> _activities =
+      RecentActivityService.watch(
+        limit: widget.full ? _fullActivityLimit : _previewCount,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = Wrap(
+      spacing: 8,
+      children: [
+        for (final filter in _RecentFilter.values)
+          ChoiceChip(
+            label: Text(filter.label),
+            selected: _filter == filter,
+            showCheckmark: false,
+            selectedColor: _purple,
+            labelStyle: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: _filter == filter ? Colors.white : _muted,
+            ),
+            side: BorderSide(color: context.vivordoColors.border),
+            shape: const StadiumBorder(),
+            onSelected: (_) => setState(() => _filter = filter),
+          ),
+      ],
+    );
+
+    final feed = VisibleStreamBuilder<List<SavedWorkout>>(
+      stream: _workouts,
+      builder: (context, workouts) =>
+          VisibleStreamBuilder<List<RecentActivity>>(
+            stream: _activities,
+            builder: (context, activities) {
+              if ((workouts.connectionState == ConnectionState.waiting &&
+                      !workouts.hasData) ||
+                  (activities.connectionState == ConnectionState.waiting &&
+                      !activities.hasData)) {
+                return const _Card(
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final entries = <({DateTime at, Widget row})>[
+                if (_filter != _RecentFilter.logged)
+                  for (final workout in workouts.data ?? const <SavedWorkout>[])
+                    (
+                      at: workout.completedAt,
+                      row: _RecentWorkoutRow(workout: workout),
+                    ),
+                if (_filter != _RecentFilter.workouts)
+                  for (final activity
+                      in activities.data ?? const <RecentActivity>[])
+                    (
+                      at: activity.day,
+                      row: _RecentActivityRow(activity: activity),
+                    ),
+              ]..sort((a, b) => b.at.compareTo(a.at));
+              final rows = widget.full
+                  ? entries
+                  : entries.take(_previewCount).toList();
+              final failed = workouts.hasError || activities.hasError;
+
+              if (rows.isEmpty) {
+                return _Card(
+                  child: Center(
+                    child: Text(
+                      failed
+                          ? 'Could not load your recent activity.'
+                          : switch (_filter) {
+                              _RecentFilter.all =>
+                                'No workouts or activities yet.',
+                              _RecentFilter.workouts =>
+                                'No workouts completed yet.',
+                              _RecentFilter.logged =>
+                                'No activities logged yet.',
+                            },
+                      style: const TextStyle(color: _muted),
+                    ),
+                  ),
+                );
+              }
+              if (widget.full) {
+                return ListView.separated(
+                  padding: const EdgeInsets.only(bottom: 40),
+                  itemCount: rows.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (_, index) => _Card(child: rows[index].row),
+                );
+              }
+              return _Card(
+                child: Column(
+                  children: [
+                    for (var index = 0; index < rows.length; index++) ...[
+                      rows[index].row,
+                      if (index < rows.length - 1) const Divider(),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+    );
+
+    if (widget.full) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            chips,
+            const SizedBox(height: 12),
+            Expanded(child: feed),
+          ],
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          'RECENT',
+          trailing: TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const _AllActivityScreen()),
+            ),
+            child: const Text('See all'),
+          ),
+        ),
+        chips,
+        const SizedBox(height: 8),
+        feed,
+      ],
+    );
+  }
+}
+
+class _AllActivityScreen extends StatelessWidget {
+  const _AllActivityScreen();
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -1269,39 +1350,141 @@ class _AllWorkoutsScreen extends StatelessWidget {
       backgroundColor: context.vivordoColors.page,
       elevation: 0,
       title: const Text(
-        'All Workouts',
+        'All Activity',
         style: TextStyle(fontWeight: FontWeight.w800),
       ),
       centerTitle: true,
     ),
-    body: StreamBuilder<List<SavedWorkout>>(
-      stream: WorkoutService.watchAll(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return const Center(child: Text('Could not load workouts.'));
-        }
-        final workouts = snapshot.data ?? const <SavedWorkout>[];
-        if (workouts.isEmpty) {
-          return const Center(
-            child: Text(
-              'No workouts completed yet.',
-              style: TextStyle(color: _muted),
-            ),
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 40),
-          itemCount: workouts.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 10),
-          itemBuilder: (_, index) =>
-              _Card(child: _RecentWorkoutRow(workout: workouts[index])),
-        );
-      },
-    ),
+    body: const _RecentFeed(full: true),
+  );
+}
+
+class _BodyCard extends StatefulWidget {
+  const _BodyCard(this.recentDays);
+
+  final Stream<QuerySnapshot<Map<String, dynamic>>> recentDays;
+
+  @override
+  State<_BodyCard> createState() => _BodyCardState();
+}
+
+class _BodyCardState extends State<_BodyCard> {
+  late final Stream<PersonalProfile> _profile = PersonalProfileService.watch();
+
+  static double? _latestMetric(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String key,
+  ) {
+    for (final doc in docs) {
+      final value = ((doc.data()[key] as Map?)?['avg'] as num?)?.toDouble();
+      if (value != null) return value;
+    }
+    return null;
+  }
+
+  static String _number(double? value) {
+    if (value == null) return '--';
+    return value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
+  }
+
+  static String _updatedLabel(DateTime? updatedAt) {
+    if (updatedAt == null) return 'Add your measurements';
+    final local = updatedAt.toLocal();
+    if (DateUtils.isSameDay(local, DateTime.now())) return 'Updated today';
+    return 'Updated ${DateFormat('MMM d').format(local)}';
+  }
+
+  @override
+  Widget build(BuildContext context) => VisibleStreamBuilder<PersonalProfile>(
+    stream: _profile,
+    initialData: const PersonalProfile(),
+    builder: (context, profileSnapshot) =>
+        VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: widget.recentDays,
+          builder: (context, metricsSnapshot) {
+            final profile = profileSnapshot.data ?? const PersonalProfile();
+            final docs = metricsSnapshot.data?.docs ?? const [];
+            final height = profile.heightCm;
+            final weight = profile.weightKg ?? _latestMetric(docs, 'weight');
+            final bodyFat =
+                profile.bodyFatPercent ?? _latestMetric(docs, 'body_fat');
+            final bmi = height != null && height > 0 && weight != null
+                ? weight / math.pow(height / 100, 2)
+                : null;
+            final hasValues =
+                height != null || weight != null || bodyFat != null;
+            final updatedAt = !hasValues
+                ? null
+                : profile.updatedAt ??
+                      (docs.isEmpty ? null : DateTime.tryParse(docs.first.id));
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeader(
+                  'BODY',
+                  trailing: _SectionNote(_updatedLabel(updatedAt)),
+                ),
+                const SizedBox(height: 6),
+                Material(
+                  color: context.vivordoColors.card,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: BorderSide(color: context.vivordoColors.border),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    splashColor: _purple.withValues(alpha: .10),
+                    highlightColor: _purple.withValues(alpha: .055),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const PersonalProfileScreen(),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 16,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _ProfileMetric(
+                              label: 'WEIGHT',
+                              value: weight == null
+                                  ? '--'
+                                  : '${_number(weight * 2.2046226218)} lbs',
+                            ),
+                          ),
+                          const _ProfileDivider(),
+                          Expanded(
+                            child: _ProfileMetric(
+                              label: 'BMI',
+                              value: _number(bmi),
+                            ),
+                          ),
+                          const _ProfileDivider(),
+                          Expanded(
+                            child: _ProfileMetric(
+                              label: 'BODY FAT',
+                              value: bodyFat == null
+                                  ? '--'
+                                  : '${_number(bodyFat)}%',
+                            ),
+                          ),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            color: _muted,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
   );
 }
 
@@ -1312,7 +1495,7 @@ class _RecentWorkoutRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateLabel = DateFormat('EEEE, MMMM d, y').format(workout.completedAt);
+    final dateLabel = _recentDayLabel(workout.completedAt);
     final durationLabel = _durationLabel(workout.durationSeconds);
     final visual = workoutActivityVisual(
       workout.displayName,
@@ -1333,7 +1516,14 @@ class _RecentWorkoutRow extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w800),
           ),
           subtitle: Text(
-            '$dateLabel · $durationLabel · ${workout.exerciseCount} exercises · ${workout.setCount} sets',
+            [
+              dateLabel,
+              durationLabel,
+              if (workout.setCount > 0) '${workout.setCount} sets',
+              if (workout.primaryCardioOrSportExercise?.distanceKm
+                  case final km? when km > 0)
+                '${km.toStringAsFixed(1)} km',
+            ].join(' · '),
           ),
           trailing: const Icon(Icons.chevron_right_rounded, color: _muted),
         ),
@@ -1358,40 +1548,14 @@ class _RecentWorkoutRow extends StatelessWidget {
   }
 }
 
-class _RecentActivitiesCard extends StatelessWidget {
-  const _RecentActivitiesCard();
-
-  @override
-  Widget build(BuildContext context) => StreamBuilder<List<RecentActivity>>(
-    stream: RecentActivityService.watch(),
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting &&
-          !snapshot.hasData) {
-        return const _Card(child: Center(child: CircularProgressIndicator()));
-      }
-      final activities = snapshot.data ?? const <RecentActivity>[];
-      if (activities.isEmpty) {
-        return const _Card(
-          child: Center(
-            child: Text(
-              'No activities logged yet.',
-              style: TextStyle(color: _muted),
-            ),
-          ),
-        );
-      }
-      return _Card(
-        child: Column(
-          children: [
-            for (var index = 0; index < activities.length; index++) ...[
-              _RecentActivityRow(activity: activities[index]),
-              if (index < activities.length - 1) const Divider(),
-            ],
-          ],
-        ),
-      );
-    },
-  );
+String _recentDayLabel(DateTime date) {
+  final today = DateUtils.dateOnly(DateTime.now());
+  final day = DateUtils.dateOnly(date.toLocal());
+  if (day == today) return 'Today';
+  if (day == today.subtract(const Duration(days: 1))) return 'Yesterday';
+  return DateFormat(
+    day.year == today.year ? 'EEE, MMM d' : 'MMM d, y',
+  ).format(day);
 }
 
 class _RecentActivityRow extends StatelessWidget {
@@ -1401,30 +1565,27 @@ class _RecentActivityRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final activityDay = DateUtils.dateOnly(activity.day);
-    final dayLabel = DateUtils.isSameDay(today, activityDay)
-        ? 'Today'
-        : DateUtils.isSameDay(
-            today.subtract(const Duration(days: 1)),
-            activityDay,
-          )
-        ? 'Yesterday'
-        : DateFormat('MMM d').format(activityDay);
-    final details = <String>['$dayLabel · ${activity.minutes} min'];
+    final details = <String>[
+      '${_recentDayLabel(activity.day)} · ${activity.minutes} min',
+    ];
     if (activity.km != null) {
       details.add('${activity.km!.toStringAsFixed(1)} km');
     }
     if (activity.sets != null) details.add('${activity.sets} sets');
     final hasSets = activity.sets != null;
-    return _ActivityRow(
-      icon: hasSets
-          ? Icons.fitness_center_rounded
-          : Icons.directions_run_rounded,
-      color: hasSets ? _purple : const Color(0xFF22B879),
-      title: activity.name,
-      detail: details.join(' · '),
-      result: '',
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: _IconBox(
+        icon: hasSets
+            ? Icons.fitness_center_rounded
+            : Icons.directions_run_rounded,
+        color: hasSets ? _purple : const Color(0xFF22B879),
+      ),
+      title: Text(
+        activity.name,
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+      subtitle: Text(details.join(' · ')),
     );
   }
 }
@@ -1437,24 +1598,36 @@ class _LogActivityDialog extends StatefulWidget {
 }
 
 class _LogActivityDialogState extends State<_LogActivityDialog> {
-  String _name = '';
-  String _minutes = '';
-  String _km = '';
-  String _sets = '';
+  final _name = TextEditingController();
+  final _minutes = TextEditingController();
+  final _km = TextEditingController();
+  final _sets = TextEditingController();
   DateTime _day = DateUtils.dateOnly(DateTime.now());
   bool _saving = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _name.dispose();
+    _minutes.dispose();
+    _km.dispose();
+    _sets.dispose();
+    super.dispose();
+  }
+
   Future<void> _save() async {
-    final minutes = int.tryParse(_minutes);
-    final km = _km.trim().isEmpty ? null : double.tryParse(_km);
-    final sets = _sets.trim().isEmpty ? null : int.tryParse(_sets);
-    if (_name.trim().isEmpty || minutes == null || minutes <= 0) {
+    final name = _name.text;
+    final kmText = _km.text;
+    final setsText = _sets.text;
+    final minutes = int.tryParse(_minutes.text);
+    final km = kmText.trim().isEmpty ? null : double.tryParse(kmText);
+    final sets = setsText.trim().isEmpty ? null : int.tryParse(setsText);
+    if (name.trim().isEmpty || minutes == null || minutes <= 0) {
       setState(() => _error = 'Enter a name and valid number of minutes.');
       return;
     }
-    if ((_km.trim().isNotEmpty && km == null) ||
-        (_sets.trim().isNotEmpty && sets == null)) {
+    if ((kmText.trim().isNotEmpty && km == null) ||
+        (setsText.trim().isNotEmpty && sets == null)) {
       setState(() => _error = 'Enter valid numbers for kilometres and sets.');
       return;
     }
@@ -1463,91 +1636,96 @@ class _LogActivityDialogState extends State<_LogActivityDialog> {
       _error = null;
     });
     try {
-      await RecentActivityService.add(
-        name: _name,
+      final synced = await RecentActivityService.add(
+        name: name,
         minutes: minutes,
         day: _day,
         km: km,
         sets: sets,
       );
-      if (mounted) Navigator.pop(context, true);
+      if (!mounted) return;
+      if (synced) {
+        showToast(context, 'Activity saved.', kind: ToastKind.success);
+      } else {
+        _showSavedOffline(context, 'Activity');
+      }
+      Navigator.pop(context, true);
     } catch (error) {
+      debugPrint('Could not save activity: $error');
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = 'Could not save activity: $error';
+        _error = "Couldn't save the activity. Try again.";
       });
     }
   }
 
+  Future<void> _pickDay() async {
+    final picked = await showVivordoDatePicker(
+      context: context,
+      initialDate: _day,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) setState(() => _day = picked);
+  }
+
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-    title: const Text('Log Activity'),
-    content: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) => AppleFormSheet(
+    title: 'Log activity',
+    doneLabel: 'Add',
+    busy: _saving,
+    onDone: _save,
+    onCancel: () => Navigator.pop(context, false),
+    children: [
+      AppleFormGroup(
+        footer: "Counts toward today's Exercise ring.",
         children: [
-          TextFormField(
+          AppleFormTextRow(
+            label: 'Activity',
+            controller: _name,
+            placeholder: 'e.g. Tennis',
             autofocus: true,
             textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(labelText: 'Activity name'),
-            onChanged: (value) => _name = value,
           ),
-          TextFormField(
+          AppleFormTextRow(
+            label: 'Duration',
+            controller: _minutes,
+            placeholder: 'Minutes',
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Time (minutes)'),
-            onChanged: (value) => _minutes = value,
           ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Day'),
-            subtitle: Text(DateFormat('MMMM d, y').format(_day)),
-            trailing: const Icon(Icons.calendar_today_rounded),
-            onTap: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _day,
-                firstDate: DateTime(2000),
-                lastDate: DateTime.now(),
-              );
-              if (picked != null) setState(() => _day = picked);
-            },
+          AppleFormRow(
+            label: 'Date',
+            onTap: _pickDay,
+            trailing: AppleValuePill(DateFormat('MMM d, y').format(_day)),
           ),
-          TextFormField(
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Kilometres (optional)',
-            ),
-            onChanged: (value) => _km = value,
-          ),
-          TextFormField(
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Sets (optional)'),
-            onChanged: (value) => _sets = value,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
-          ],
         ],
       ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: _saving ? null : () => Navigator.pop(context, false),
-        child: const Text('Cancel'),
+      AppleFormGroup(
+        header: 'Optional',
+        children: [
+          AppleFormTextRow(
+            label: 'Distance',
+            controller: _km,
+            placeholder: 'km',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          AppleFormTextRow(
+            label: 'Sets',
+            controller: _sets,
+            placeholder: 'Count',
+            keyboardType: TextInputType.number,
+          ),
+        ],
       ),
-      FilledButton(
-        onPressed: _saving ? null : _save,
-        child: _saving
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Text('Save'),
-      ),
+      if (_error != null)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Text(
+            _error!,
+            style: const TextStyle(color: appleRed, fontSize: 13),
+          ),
+        ),
     ],
   );
 }
@@ -1606,34 +1784,29 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
 
   Future<void> _edit(Map<String, int> target, String key, String unit) async {
     final editingActivityGoal = identical(target, activity);
-    var enteredValue = '${target[key]}';
-    final value = await showDialog<int>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Text('Edit $key Goal'),
-        content: TextFormField(
-          initialValue: enteredValue,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          onChanged: (value) => enteredValue = value,
-          decoration: InputDecoration(
-            suffixText: unit,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, int.tryParse(enteredValue)),
-            child: const Text('Save'),
+    final controller = TextEditingController(text: '${target[key]}');
+    final value = await showAppleSheet<int>(
+      context,
+      builder: (sheetContext) => AppleFormSheet(
+        title: '$key goal',
+        doneLabel: 'Save',
+        onDone: () =>
+            Navigator.pop(sheetContext, int.tryParse(controller.text)),
+        children: [
+          AppleFormGroup(
+            children: [
+              AppleFormTextRow(
+                label: '${unit[0].toUpperCase()}${unit.substring(1)}',
+                controller: controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+              ),
+            ],
           ),
         ],
       ),
     );
+    // Not disposed: the sheet's field is still animating out.
     if (value == null || value <= 0) return;
     setState(() => target[key] = value);
     try {
@@ -1643,10 +1816,13 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
         await ActivityGoalsService.saveStrengthGoals(widget.strengthGoals);
       }
     } catch (error) {
+      debugPrint('Could not save goal: $error');
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      showToast(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not save goal: $error')));
+        "Couldn't save the goal. Try again.",
+        kind: ToastKind.error,
+      );
     }
   }
 
@@ -1750,10 +1926,16 @@ _ActiveWorkoutDraft? _activeWorkoutDraft;
 /// Restores the persisted workout before a Live Activity deep link opens the
 /// workout route. This prevents [ActiveWorkoutScreen] from creating a blank
 /// draft while the app is launching from a terminated state.
-Future<bool> prepareActiveWorkoutForLaunch() async {
-  final restored = await _ActiveWorkoutDraft.restore();
+Future<bool> prepareActiveWorkoutForLaunch({
+  bool createIfMissing = false,
+}) async {
+  final restored =
+      _activeWorkoutDraft ??
+      await _ActiveWorkoutDraft.restore() ??
+      (createIfMissing ? await _ActiveWorkoutDraft.fresh() : null);
   if (restored == null) return false;
   _activeWorkoutDraft = restored;
+  if (createIfMissing) await restored.persist();
   FitnessWorkoutTimerState.start(
     startedAt: restored.startedAt,
     title: restored.liveActivityTitle,
@@ -1762,33 +1944,35 @@ Future<bool> prepareActiveWorkoutForLaunch() async {
   return true;
 }
 
-class _WorkoutStatusMessage extends StatefulWidget {
-  const _WorkoutStatusMessage({required this.draft});
+class _WorkoutButtonLabel extends StatefulWidget {
+  const _WorkoutButtonLabel({required this.draft});
 
   final _ActiveWorkoutDraft? draft;
 
   @override
-  State<_WorkoutStatusMessage> createState() => _WorkoutStatusMessageState();
+  State<_WorkoutButtonLabel> createState() => _WorkoutButtonLabelState();
 }
 
-class _WorkoutStatusMessageState extends State<_WorkoutStatusMessage> {
+class _WorkoutButtonLabelState extends State<_WorkoutButtonLabel> {
   Timer? timer;
+  bool _visible = false;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _visible = TickerMode.valuesOf(context).enabled;
     _updateTimer();
   }
 
   @override
-  void didUpdateWidget(covariant _WorkoutStatusMessage oldWidget) {
+  void didUpdateWidget(covariant _WorkoutButtonLabel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.draft != widget.draft) _updateTimer();
   }
 
   void _updateTimer() {
     timer?.cancel();
-    timer = widget.draft == null
+    timer = !_visible || widget.draft == null
         ? null
         : Timer.periodic(const Duration(seconds: 1), (_) {
             if (mounted) setState(() {});
@@ -1804,51 +1988,15 @@ class _WorkoutStatusMessageState extends State<_WorkoutStatusMessage> {
   @override
   Widget build(BuildContext context) {
     final draft = widget.draft;
-    if (draft == null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Ready to train?',
-            style: TextStyle(
-              fontSize: 23,
-              fontWeight: FontWeight.w800,
-              color: context.vivordoColors.textPrimary,
-            ),
-          ),
-          SizedBox(height: 5),
-          Text(
-            'Build your workout as you go.',
-            style: TextStyle(color: _muted, height: 1.3),
-          ),
-        ],
-      );
-    }
-
+    const style = TextStyle(fontWeight: FontWeight.w800);
+    if (draft == null) return const Text('Start workout', style: style);
     final totalSeconds = DateTime.now().difference(draft.startedAt).inSeconds;
     final hours = totalSeconds ~/ 3600;
-    final minutes = (totalSeconds % 3600) ~/ 60;
-    final seconds = totalSeconds % 60;
-    final elapsed = hours > 0
-        ? '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}'
-        : '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          elapsed,
-          style: TextStyle(
-            fontSize: 23,
-            fontWeight: FontWeight.w800,
-            color: context.vivordoColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 5),
-        const Text(
-          'Workout in progress',
-          style: TextStyle(color: _muted, height: 1.3),
-        ),
-      ],
+    final minutes = ((totalSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return Text(
+      'Resume · ${hours > 0 ? '$hours:' : ''}$minutes:$seconds',
+      style: style.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
     );
   }
 }
@@ -1871,6 +2019,11 @@ class _ActiveWorkoutDraft {
   };
 
   Future<void> persist() => ActiveWorkoutStorage.write(toJson());
+
+  /// A new workout that starts with the user's last sharing choice.
+  static Future<_ActiveWorkoutDraft> fresh() async => _ActiveWorkoutDraft(
+    shareToCircle: await ActiveWorkoutStorage.readShareDefault(),
+  );
 
   static Future<_ActiveWorkoutDraft?> restore() async {
     final json = await ActiveWorkoutStorage.read();
@@ -1906,12 +2059,31 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _registeredRoute = ModalRoute.of(context);
     ActiveWorkoutNavigation.register(context);
   }
+
   Timer? timer;
   late final _ActiveWorkoutDraft draft;
   bool saving = false;
   bool savingTemplate = false;
   bool refreshingDistance = false;
   double? trackedDistanceKm;
+  final _distanceDisplay = ValueNotifier<({double? km, bool loading})>((
+    km: null,
+    loading: false,
+  ));
+  final _setCount = ValueNotifier<int>(0);
+
+  void _updateSetCount() {
+    // Cardio and sports exercises keep placeholder sets that are never shown
+    // or saved, so only count sets on strength exercises.
+    _setCount.value = exercises.fold<int>(
+      0,
+      (total, exercise) =>
+          exercise.isDistanceExercise || exercise.isSportsExercise
+          ? total
+          : total + exercise.sets.length,
+    );
+  }
+
   DateTime? lastDistanceRefresh;
 
   DateTime get startedAt => draft.startedAt;
@@ -1920,13 +2092,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   Future<void> _toggleCircleSharing() async {
     setState(() => draft.shareToCircle = !draft.shareToCircle);
-    await draft.persist();
+    await Future.wait([
+      draft.persist(),
+      ActiveWorkoutStorage.writeShareDefault(draft.shareToCircle),
+    ]);
   }
 
   @override
   void initState() {
     super.initState();
     draft = _activeWorkoutDraft ??= _ActiveWorkoutDraft();
+    _updateSetCount();
     FitnessWorkoutTimerState.start(
       startedAt: draft.startedAt,
       title: draft.liveActivityTitle,
@@ -1944,13 +2120,40 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       }
     });
     unawaited(draft.persist());
+    unawaited(_restorePreviousSets());
     if (_hasCardioExercise) unawaited(_refreshTrackedDistance());
+  }
+
+  Future<void> _restorePreviousSets() async {
+    final missing = exercises.where((e) => !e.historyLoaded).toList();
+    if (missing.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final history = await WorkoutService.loadLatestExerciseSets(
+        missing.map((e) => e.name),
+      );
+      if (!mounted || FirebaseAuth.instance.currentUser?.uid != uid) return;
+      setState(() {
+        for (final exercise in missing) {
+          if (!exercises.contains(exercise) || exercise.historyLoaded) continue;
+          exercise.applyHistory(
+            history[exercise.name.trim().toLowerCase()] ?? [],
+          );
+        }
+      });
+      await draft.persist();
+    } catch (error) {
+      debugPrint('Could not restore previous exercise sets: $error');
+    }
   }
 
   @override
   void dispose() {
     timer?.cancel();
     ActiveWorkoutNavigation.unregister(_registeredRoute);
+    _distanceDisplay.dispose();
+    _setCount.dispose();
     super.dispose();
   }
 
@@ -1966,14 +2169,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
 
     refreshingDistance = true;
-    if (mounted) setState(() {});
-    final distance = await HealthService().readWalkingRunningDistanceKm(
-      start: startedAt,
-    );
-    lastDistanceRefresh = DateTime.now();
-    refreshingDistance = false;
-    if (distance != null) trackedDistanceKm = distance;
-    if (mounted) setState(() {});
+    if (mounted) {
+      _distanceDisplay.value = (km: trackedDistanceKm, loading: true);
+    }
+    try {
+      final distance = await HealthService().readWalkingRunningDistanceKm(
+        start: startedAt,
+      );
+      if (distance != null) trackedDistanceKm = distance;
+    } finally {
+      lastDistanceRefresh = DateTime.now();
+      refreshingDistance = false;
+      if (mounted) {
+        _distanceDisplay.value = (km: trackedDistanceKm, loading: false);
+      }
+    }
     return trackedDistanceKm;
   }
 
@@ -2027,6 +2237,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       exercises
         ..clear()
         ..addAll(updated);
+      _updateSetCount();
     });
     await draft.persist();
     FitnessWorkoutTimerState.update(
@@ -2045,14 +2256,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       setState(() {
         for (final exercise in exercises) {
           final saved = previousSets[exercise.name.trim().toLowerCase()];
-          if (saved == null) continue;
-          for (
-            var index = 0;
-            index < exercise.sets.length && index < saved.length;
-            index++
-          ) {
-            exercise.sets[index].previous = saved[index];
-          }
+          if (!newDefinitions.any((d) => d.name == exercise.name)) continue;
+          exercise.applyHistory(saved ?? []);
         }
       });
       await draft.persist();
@@ -2063,45 +2268,40 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   Future<void> _saveWorkoutTemplate() async {
     if (exercises.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add at least one exercise first.')),
-      );
+      showToast(context, 'Add at least one exercise first.');
       return;
     }
-    var workoutName = '';
+    // Not disposed: the alert's field is still animating out.
+    final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Save Workout'),
-        content: TextField(
-          autofocus: true,
-          maxLength: 40,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Workout name',
-            hintText: 'e.g. Push Day',
-            border: OutlineInputBorder(),
+      builder: (dialogContext) {
+        void save() {
+          final value = controller.text;
+          if (value.trim().isEmpty) return;
+          // The old field capped names at 40 characters.
+          Navigator.pop(
+            dialogContext,
+            value.length > 40 ? value.substring(0, 40) : value,
+          );
+        }
+
+        return AppleAlert(
+          title: 'Save workout',
+          message: 'Name it so you can start it again later.',
+          content: AppleAlertField(
+            controller: controller,
+            placeholder: 'e.g. Push Day',
           ),
-          onChanged: (value) => workoutName = value,
-          onSubmitted: (value) {
-            if (value.trim().isNotEmpty) Navigator.pop(dialogContext, value);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (workoutName.trim().isNotEmpty) {
-                Navigator.pop(dialogContext, workoutName);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+          buttons: [
+            AppleAlertButton(
+              'Cancel',
+              onPressed: () => Navigator.pop(dialogContext),
+            ),
+            AppleAlertButton('Save', bold: true, onPressed: save),
+          ],
+        );
+      },
     );
     if (name == null || !mounted) return;
 
@@ -2119,14 +2319,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             .toList(growable: false),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('$name saved.')));
+      showToast(context, '$name saved.', kind: ToastKind.success);
     } catch (error) {
+      debugPrint('Could not save workout template: $error');
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      showToast(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not save workout: $error')));
+        "Couldn't save the workout. Try again.",
+        kind: ToastKind.error,
+      );
     } finally {
       if (mounted) setState(() => savingTemplate = false);
     }
@@ -2152,9 +2353,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   Future<void> _finishWorkout() async {
     if (exercises.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add at least one exercise first.')),
-      );
+      showToast(context, 'Add at least one exercise first.');
       return;
     }
 
@@ -2198,12 +2397,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         final weight = double.tryParse(set.lbs);
         final reps = int.tryParse(set.reps);
         if (weight == null || weight < 0 || reps == null || reps <= 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Enter a valid weight and reps for every ${exercise.name} set.',
-              ),
-            ),
+          showToast(
+            context,
+            'Enter a valid weight and reps for every ${exercise.name} set.',
           );
           return;
         }
@@ -2220,7 +2416,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
     setState(() => saving = true);
     try {
-      await WorkoutService.save(
+      final saved = await WorkoutService.save(
         startedAt: startedAt,
         durationSeconds: seconds,
         exercises: records,
@@ -2230,37 +2426,30 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _activeWorkoutDraft = null;
       await ActiveWorkoutStorage.clear();
       FitnessWorkoutTimerState.stop();
-      if (mounted) Navigator.pop(context, true);
+      if (!mounted) return;
+      if (!saved.synced) _showSavedOffline(context, 'Workout');
+      Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
+      debugPrint('Could not save workout: $error');
       setState(() => saving = false);
-      ScaffoldMessenger.of(
+      showToast(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not save workout: $error')));
+        "Couldn't save the workout. Try again.",
+        kind: ToastKind.error,
+      );
     }
   }
 
   Future<void> _cancelWorkout() async {
-    final cancel = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancel workout?'),
-        content: const Text(
-          'This will discard the workout and everything entered in it.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep Workout'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Cancel Workout'),
-          ),
-        ],
-      ),
+    final cancel = await confirmAction(
+      context,
+      title: 'Cancel workout?',
+      message: 'This discards the workout and everything entered in it.',
+      cancelLabel: 'Keep workout',
+      confirmLabel: 'Cancel workout',
     );
-    if (cancel != true || !mounted) return;
+    if (!cancel || !mounted) return;
     timer?.cancel();
     _activeWorkoutDraft = null;
     await ActiveWorkoutStorage.clear();
@@ -2269,167 +2458,227 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     Navigator.pop(context, false);
   }
 
+  String get _title {
+    for (final exercise in exercises) {
+      final category = exercise.definition.category;
+      if (category == 'Cardio' || category == 'Sports') {
+        return exercise.name;
+      }
+    }
+    return exercises.isEmpty ? 'New workout' : 'Strength workout';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final setCount = exercises.fold<int>(
-      0,
-      (total, exercise) => total + exercise.sets.length,
-    );
+    final colors = context.vivordoColors;
+    final busy = saving || savingTemplate;
     return Scaffold(
-      backgroundColor: context.vivordoColors.page,
+      backgroundColor: colors.page,
       appBar: AppBar(
-        backgroundColor: context.vivordoColors.page,
+        backgroundColor: colors.page,
         elevation: 0,
-        title: const Text(
-          'New Workout',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        title: Text(
+          _title,
+          style: const TextStyle(fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
         actions: [
-          TextButton(
-            onPressed: saving ? null : _cancelWorkout,
-            child: const Text('Cancel'),
-          ),
+          if (busy)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            IosPullDownMenu<String>(
+              tooltip: 'Workout actions',
+              onSelected: (action) => switch (action) {
+                'template' => _saveWorkoutTemplate(),
+                _ => _cancelWorkout(),
+              },
+              actions: const [
+                IosMenuAction(
+                  value: 'template',
+                  label: 'Save as template',
+                  icon: CupertinoIcons.bookmark,
+                ),
+                IosMenuAction(
+                  value: 'cancel',
+                  label: 'Cancel workout',
+                  icon: CupertinoIcons.trash,
+                  destructive: true,
+                ),
+              ],
+            ),
+          const SizedBox(width: 6),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 10, 18, 40),
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '●  Workout in progress',
-                      style: TextStyle(
-                        color: _muted,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    _WorkoutElapsedLabel(startedAt: startedAt),
-                  ],
-                ),
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton(
-                    onPressed: saving || savingTemplate
-                        ? null
-                        : _saveWorkoutTemplate,
-                    style: TextButton.styleFrom(
-                      foregroundColor: _purple,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                    ),
-                    child: savingTemplate
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text(
-                            'Save Workout',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                  ),
-                  const SizedBox(width: 4),
-                  FilledButton(
-                    onPressed: saving || savingTemplate ? null : _finishWorkout,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFEDE8FF),
-                      foregroundColor: _purple,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                    ),
-                    child: saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Finish'),
-                  ),
-                ],
-              ),
-            ],
+      // Counts as part of the set fields, so adjusting rest while typing a
+      // weight or reps keeps the keyboard up; any other tap still closes it.
+      bottomNavigationBar: TextFieldTapRegion(
+        child: WorkoutRestTimer(
+          onDeadlineChanged: (deadline) =>
+              NotificationService().updateRestTimerNotification(deadline),
+          loadPreset: ActiveWorkoutStorage.readRestPreset,
+          onPresetChanged: (seconds) => unawaited(
+            ActiveWorkoutStorage.writeRestPreset(seconds).catchError(
+              (Object error) =>
+                  debugPrint('Could not save rest timer preset: $error'),
+            ),
           ),
-          const SizedBox(height: 18),
-          WorkoutRestTimer(onDeadlineChanged: (deadline) => NotificationService().updateRestTimerNotification(deadline)),
-          const SizedBox(height: 14),
-          _Card(
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(18, 16, 16, 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: const Color(0xFFAA91FF).withValues(alpha: .6),
+              ),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF5844ED), Color(0xFF3529AD)],
+              ),
+            ),
             child: Row(
               children: [
                 Expanded(
-                  child: _ActivityStat(
-                    value: '${exercises.length}',
-                    label: 'Exercises',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '●  IN PROGRESS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.3,
+                          color: Color(0xFFE8E0FF),
+                        ),
+                      ),
+                      DefaultTextStyle.merge(
+                        style: const TextStyle(color: Colors.white),
+                        child: _WorkoutElapsedLabel(startedAt: startedAt),
+                      ),
+                      ValueListenableBuilder<int>(
+                        valueListenable: _setCount,
+                        builder: (_, totalSets, _) => Text(
+                          '${exercises.length} ${exercises.length == 1 ? 'exercise' : 'exercises'}'
+                          '${totalSets == 0 ? '' : ' · $totalSets ${totalSets == 1 ? 'set' : 'sets'}'}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFFF1ECFF),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Expanded(
-                  child: _ActivityStat(value: '$setCount', label: 'Sets'),
+                FilledButton(
+                  onPressed: busy ? null : _finishWorkout,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF4B3BD9),
+                    disabledBackgroundColor: Colors.white.withValues(alpha: .7),
+                    minimumSize: const Size(96, 48),
+                    shape: const StadiumBorder(),
+                  ),
+                  child: saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(
+                          'Finish',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: saving || savingTemplate ? null : _toggleCircleSharing,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _purple,
-              side: BorderSide(
-                color: draft.shareToCircle
-                    ? _purple
-                    : _purple.withValues(alpha: .45),
-              ),
-              backgroundColor: draft.shareToCircle
-                  ? _purple.withValues(alpha: .07)
-                  : Colors.transparent,
-              minimumSize: const Size.fromHeight(50),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+            decoration: BoxDecoration(
+              color: colors.card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: colors.border),
             ),
-            icon: Icon(
-              draft.shareToCircle
-                  ? Icons.check_circle_rounded
-                  : Icons.groups_rounded,
-            ),
-            label: Text(
-              draft.shareToCircle ? 'Sharing to Circle' : 'Share to Circle',
-              style: const TextStyle(fontWeight: FontWeight.w800),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: _purple.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.person_2_fill,
+                    color: _purple,
+                    size: 19,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Share to Circle',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: colors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        draft.shareToCircle
+                            ? 'Your Circle can see this workout'
+                            : 'Private to you',
+                        style: const TextStyle(color: _muted, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                Semantics(
+                  label: 'Share to Circle',
+                  child: CupertinoSwitch(
+                    value: draft.shareToCircle,
+                    activeTrackColor: _purple,
+                    onChanged: busy ? null : (_) => _toggleCircleSharing(),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                draft.shareToCircle ? Icons.groups_rounded : Icons.lock_rounded,
-                color: _muted,
-                size: 14,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                draft.shareToCircle
-                    ? 'Your Circle can see this workout'
-                    : 'Private to you',
-                style: const TextStyle(color: _muted, fontSize: 12),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
+          if (exercises.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            const _SectionHeader('EXERCISES'),
+            const SizedBox(height: 4),
+          ],
           for (final exercise in exercises) ...[
             _WorkoutExerciseCard(
+              key: ObjectKey(exercise),
               exercise: exercise,
-              trackedDistanceKm: trackedDistanceKm,
-              refreshingDistance: refreshingDistance,
+              distanceDisplay: _distanceDisplay,
               onChanged: () {
-                setState(() {});
+                _updateSetCount();
                 unawaited(draft.persist());
               },
               onRemove: () {
                 setState(() => exercises.remove(exercise));
+                _updateSetCount();
                 unawaited(draft.persist());
                 FitnessWorkoutTimerState.update(
                   title: draft.liveActivityTitle,
@@ -2439,30 +2688,33 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
             const SizedBox(height: 10),
           ],
-          OutlinedButton.icon(
-            onPressed: _addExercises,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Exercise'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(54),
-              side: const BorderSide(color: _purple),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 52,
+            child: FilledButton.icon(
+              onPressed: _addExercises,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text(
+                'Add exercise',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: _purple,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
+          const SizedBox(height: 6),
+          TextButton.icon(
             onPressed: _addSavedWorkout,
+            style: TextButton.styleFrom(foregroundColor: _purple),
             icon: const Icon(Icons.playlist_add_rounded),
-            label: const Text('Add Workout'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(54),
-              foregroundColor: _purple,
-              side: BorderSide(color: _purple.withValues(alpha: .45)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+            label: const Text(
+              'Add saved workout',
+              style: TextStyle(fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -2524,27 +2776,13 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
   final Set<String> _deletingIds = {};
 
   Future<void> _deleteTemplate(WorkoutTemplate template) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Saved Workout?'),
-        content: Text(
-          'Delete "${template.name}"? This will not delete workouts you already completed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmAction(
+      context,
+      title: 'Delete "${template.name}"?',
+      message: "Workouts you've already completed stay in your history.",
+      confirmLabel: 'Delete',
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _deletingIds.add(template.id));
     try {
@@ -2554,20 +2792,23 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
         _deletingIds.remove(template.id);
         if (_selectedId == template.id) _selectedId = null;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('${template.name} deleted.')));
+      showToast(context, '${template.name} deleted.');
     } catch (error) {
+      debugPrint('Could not delete workout template: $error');
       if (!mounted) return;
       setState(() => _deletingIds.remove(template.id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete workout: $error')),
+      showToast(
+        context,
+        "Couldn't delete the workout. Try again.",
+        kind: ToastKind.error,
       );
     }
   }
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<WorkoutTemplate>>(
+  Widget build(
+    BuildContext context,
+  ) => VisibleStreamBuilder<List<WorkoutTemplate>>(
     stream: WorkoutService.watchTemplates(),
     builder: (context, snapshot) {
       final query = _search.trim().toLowerCase();
@@ -2848,14 +3089,28 @@ class _WorkoutSet {
   String lbs = '';
   String reps = '';
 
-  Map<String, dynamic> toJson() => {'lbs': lbs, 'reps': reps};
+  Map<String, dynamic> toJson() => {
+    'lbs': lbs,
+    'reps': reps,
+    'previous': previous?.toMap(),
+  };
+}
+
+WorkoutSetRecord? _previousSetFromJson(dynamic value) {
+  if (value is! Map) return null;
+  final weight = value['weightLbs'];
+  final reps = value['reps'];
+  if (weight is! num || reps is! num || !weight.isFinite || !reps.isFinite) {
+    return null;
+  }
+  return WorkoutSetRecord(weightLbs: weight.toDouble(), reps: reps.toInt());
 }
 
 class _WorkoutExercise {
   _WorkoutExercise(
     this.definition, {
     List<WorkoutSetRecord> previousSets = const [],
-  }) : previousSets = previousSets,
+  }) : previousSets = List.of(previousSets),
        sets = [
          _WorkoutSet(previous: previousSets.firstOrNull),
          _WorkoutSet(previous: previousSets.elementAtOrNull(1)),
@@ -2863,6 +3118,18 @@ class _WorkoutExercise {
 
   final _ExerciseDefinition definition;
   final List<WorkoutSetRecord> previousSets;
+  bool historyLoaded = false;
+
+  void applyHistory(List<WorkoutSetRecord> history) {
+    previousSets
+      ..clear()
+      ..addAll(history);
+    historyLoaded = true;
+    for (var i = 0; i < sets.length; i++) {
+      sets[i].previous ??= history.elementAtOrNull(i);
+    }
+  }
+
   final List<_WorkoutSet> sets;
   String distanceKm = '';
 
@@ -2874,6 +3141,8 @@ class _WorkoutExercise {
     'name': definition.name,
     'category': definition.category,
     'distanceKm': distanceKm,
+    'historyLoaded': historyLoaded,
+    'previousSets': previousSets.map((s) => s.toMap()).toList(),
     'sets': sets.map((set) => set.toJson()).toList(),
   };
 
@@ -2883,7 +3152,12 @@ class _WorkoutExercise {
         name: json['name'] as String? ?? 'Exercise',
         category: json['category'] as String? ?? 'Other',
       ),
+      previousSets: (json['previousSets'] as List? ?? [])
+          .map(_previousSetFromJson)
+          .whereType<WorkoutSetRecord>()
+          .toList(),
     );
+    exercise.historyLoaded = json['historyLoaded'] == true;
     exercise.distanceKm = json['distanceKm'] as String? ?? '';
     final savedSets = json['sets'];
     if (savedSets is List) {
@@ -2892,7 +3166,9 @@ class _WorkoutExercise {
         ..addAll(
           savedSets.whereType<Map>().map((value) {
             final map = Map<String, dynamic>.from(value);
-            final set = _WorkoutSet();
+            final set = _WorkoutSet(
+              previous: _previousSetFromJson(map['previous']),
+            );
             set.lbs = map['lbs'] as String? ?? '';
             set.reps = map['reps'] as String? ?? '';
             return set;
@@ -2903,20 +3179,59 @@ class _WorkoutExercise {
   }
 }
 
-class _WorkoutExerciseCard extends StatelessWidget {
+/// Exercises the same draft codec used when resuming a workout.
+@visibleForTesting
+Map<String, dynamic> roundTripWorkoutExerciseForTesting(
+  Map<String, dynamic> json, {
+  List<WorkoutSetRecord>? recoveredHistory,
+}) {
+  final exercise = _WorkoutExercise.fromJson(json);
+  if (recoveredHistory != null) exercise.applyHistory(recoveredHistory);
+  return exercise.toJson();
+}
+
+/// Builds the production card without starting health/Firebase services.
+@visibleForTesting
+Widget workoutExerciseCardForTesting({
+  required Map<String, dynamic> initialExercise,
+  required ValueNotifier<({double? km, bool loading})> distance,
+  required ValueChanged<Map<String, dynamic>> onChanged,
+}) {
+  final exercise = _WorkoutExercise.fromJson(initialExercise);
+  return _WorkoutExerciseCard(
+    key: ObjectKey(exercise),
+    exercise: exercise,
+    distanceDisplay: distance,
+    onChanged: () => onChanged(exercise.toJson()),
+    onRemove: () {},
+  );
+}
+
+class _WorkoutExerciseCard extends StatefulWidget {
   const _WorkoutExerciseCard({
+    super.key,
     required this.exercise,
-    required this.trackedDistanceKm,
-    required this.refreshingDistance,
+    required this.distanceDisplay,
     required this.onChanged,
     required this.onRemove,
   });
 
   final _WorkoutExercise exercise;
-  final double? trackedDistanceKm;
-  final bool refreshingDistance;
+  final ValueNotifier<({double? km, bool loading})> distanceDisplay;
   final VoidCallback onChanged;
   final VoidCallback onRemove;
+
+  @override
+  State<_WorkoutExerciseCard> createState() => _WorkoutExerciseCardState();
+}
+
+class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
+  _WorkoutExercise get exercise => widget.exercise;
+  void onRemove() => widget.onRemove();
+  void onChanged() {
+    setState(() {});
+    widget.onChanged();
+  }
 
   @override
   Widget build(BuildContext context) => _Card(
@@ -2940,12 +3255,17 @@ class _WorkoutExerciseCard extends StatelessWidget {
                 ],
               ),
             ),
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'remove') onRemove();
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'remove', child: Text('Remove exercise')),
+            IosPullDownMenu<String>(
+              tooltip: 'Exercise actions',
+              icon: CupertinoIcons.ellipsis,
+              onSelected: (_) => onRemove(),
+              actions: const [
+                IosMenuAction(
+                  value: 'remove',
+                  label: 'Remove exercise',
+                  icon: CupertinoIcons.minus_circle,
+                  destructive: true,
+                ),
               ],
             ),
           ],
@@ -2976,47 +3296,50 @@ class _WorkoutExerciseCard extends StatelessWidget {
             ),
           )
         else if (exercise.isDistanceExercise)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            decoration: BoxDecoration(
-              color: context.vivordoColors.cardMuted,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                if (refreshingDistance)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  const Icon(Icons.route_rounded, color: _purple, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        trackedDistanceKm == null
-                            ? 'Tracking distance automatically'
-                            : '${trackedDistanceKm!.toStringAsFixed(2)} km',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 2),
-                      const Text(
-                        'Using walking and running distance from Apple Health',
-                        style: TextStyle(
-                          color: _muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+          ValueListenableBuilder<({double? km, bool loading})>(
+            valueListenable: widget.distanceDisplay,
+            builder: (context, distance, _) => Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              decoration: BoxDecoration(
+                color: context.vivordoColors.cardMuted,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  if (distance.loading)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    const Icon(Icons.route_rounded, color: _purple, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          distance.km == null
+                              ? 'Tracking distance automatically'
+                              : '${distance.km!.toStringAsFixed(2)} km',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Using walking and running distance from Apple Health',
+                          style: TextStyle(
+                            color: _muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           )
         else ...[
@@ -3217,6 +3540,7 @@ class _AddExerciseScreen extends StatefulWidget {
 class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   static const _filters = [
     'All',
+    'Favourites',
     'Chest',
     'Back',
     'Shoulders',
@@ -3232,6 +3556,71 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   final List<_ExerciseDefinition> _customExercises = [];
   String _filter = 'All';
   String _search = '';
+  final Set<String> _favourites = {};
+  final Set<String> _savingFavourites = {};
+  bool _favouritesLoaded = false;
+  final String? _favouritesUid = FirebaseAuth.instance.currentUser?.uid;
+
+  Future<void> _loadFavourites() async {
+    try {
+      if (_favouritesUid == null) return;
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_favouritesUid)
+          .get();
+      if (!mounted) return;
+      setState(() {
+        _favourites.addAll(
+          (doc.data()?['favouriteExercises'] as List? ?? [])
+              .whereType<String>(),
+        );
+        _favouritesLoaded = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      showToast(
+        context,
+        "Couldn't load favourites. Reopen Add exercise to try again.",
+        kind: ToastKind.error,
+      );
+    }
+  }
+
+  Future<void> _toggleFavourite(_ExerciseDefinition exercise) async {
+    final key = _exerciseNameKey(exercise.name);
+    if (!_favouritesLoaded ||
+        _savingFavourites.contains(key) ||
+        FirebaseAuth.instance.currentUser?.uid != _favouritesUid) {
+      return;
+    }
+    final removing = _favourites.contains(key);
+    setState(() {
+      _savingFavourites.add(key);
+      removing ? _favourites.remove(key) : _favourites.add(key);
+    });
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_favouritesUid)
+          .update({
+            'favouriteExercises': removing
+                ? FieldValue.arrayRemove([key])
+                : FieldValue.arrayUnion([key]),
+          });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        removing ? _favourites.add(key) : _favourites.remove(key);
+      });
+      showToast(
+        context,
+        "Couldn't save the favourite. Try again.",
+        kind: ToastKind.error,
+      );
+    } finally {
+      if (mounted) setState(() => _savingFavourites.remove(key));
+    }
+  }
 
   @override
   void initState() {
@@ -3251,6 +3640,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
       ),
     );
     unawaited(_loadCustomExercises());
+    unawaited(_loadFavourites());
   }
 
   Future<void> _loadCustomExercises() async {
@@ -3308,7 +3698,11 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   List<_ExerciseDefinition> get _filteredExercises {
     final query = _search.trim().toLowerCase();
     return [..._exerciseLibrary, ..._customExercises].where((exercise) {
-        final matchesFilter = _filter == 'All' || exercise.category == _filter;
+        final matchesFilter =
+            _filter == 'All' ||
+            (_filter == 'Favourites'
+                ? _favourites.contains(_exerciseNameKey(exercise.name))
+                : exercise.category == _filter);
         final matchesSearch =
             query.isEmpty ||
             exercise.name.toLowerCase().contains(query) ||
@@ -3344,54 +3738,67 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   }
 
   Future<void> _createExercise() async {
-    var name = '';
+    // Not disposed: the sheet's field is still animating out.
+    final name = TextEditingController();
     var category = 'Other';
-    final created = await showDialog<_ExerciseDefinition>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text('Create Exercise'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                autofocus: true,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(labelText: 'Exercise name'),
-                onChanged: (value) => name = value,
-              ),
-              DropdownButtonFormField<String>(
-                initialValue: category,
-                decoration: const InputDecoration(labelText: 'Muscle group'),
-                items: [..._filters.skip(1), 'Other']
-                    .map(
-                      (value) =>
-                          DropdownMenuItem(value: value, child: Text(value)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => category = value);
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (name.trim().isEmpty) return;
-                Navigator.pop(
-                  dialogContext,
-                  _ExerciseDefinition(name: name.trim(), category: category),
-                );
-              },
-              child: const Text('Create'),
+    final created = await showAppleSheet<_ExerciseDefinition>(
+      context,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => AppleFormSheet(
+          title: 'Create exercise',
+          doneLabel: 'Create',
+          onDone: () {
+            if (name.text.trim().isEmpty) return;
+            Navigator.pop(
+              sheetContext,
+              _ExerciseDefinition(name: name.text.trim(), category: category),
+            );
+          },
+          children: [
+            AppleFormGroup(
+              children: [
+                AppleFormTextRow(
+                  label: 'Name',
+                  controller: name,
+                  placeholder: 'e.g. Cable Fly',
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.words,
+                ),
+                AppleFormRow(
+                  label: 'Muscle group',
+                  trailing: IosPullDownMenu<String>(
+                    tooltip: 'Muscle group',
+                    actions: [
+                      for (final value in [..._filters.skip(2), 'Other'])
+                        IosMenuAction(
+                          value: value,
+                          label: value,
+                          checked: value == category,
+                        ),
+                    ],
+                    onSelected: (value) =>
+                        setSheetState(() => category = value),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          category,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: context.vivordoColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          CupertinoIcons.chevron_up_chevron_down,
+                          size: 14,
+                          color: context.vivordoColors.textSecondary,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -3417,10 +3824,10 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
       );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Exercise added, but it could not be saved for later.'),
-        ),
+      showToast(
+        context,
+        "Exercise added, but it couldn't be saved for later.",
+        kind: ToastKind.error,
       );
     }
   }
@@ -3506,13 +3913,21 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 18),
-                    child: _PickerSectionTitle('ALL EXERCISES'),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    child: _PickerSectionTitle(
+                      _filter == 'Favourites' ? 'FAVOURITES' : 'ALL EXERCISES',
+                    ),
                   ),
                   if (exercises.isEmpty)
-                    const Expanded(
-                      child: Center(child: Text('No exercises found.')),
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          _filter == 'Favourites' && _search.trim().isEmpty
+                              ? 'Star exercises to add them to your favourites.'
+                              : 'No exercises found.',
+                        ),
+                      ),
                     )
                   else
                     Expanded(
@@ -3533,6 +3948,16 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                             return _ExercisePickerRow(
                               exercise: exercise,
                               selected: _selected.contains(exercise.name),
+                              favourite: _favourites.contains(
+                                _exerciseNameKey(exercise.name),
+                              ),
+                              onFavourite:
+                                  !_favouritesLoaded ||
+                                      _savingFavourites.contains(
+                                        _exerciseNameKey(exercise.name),
+                                      )
+                                  ? null
+                                  : () => _toggleFavourite(exercise),
                               onTap: () => _toggle(exercise),
                             );
                           },
@@ -3611,11 +4036,15 @@ class _ExercisePickerRow extends StatelessWidget {
     required this.exercise,
     required this.selected,
     required this.onTap,
+    required this.favourite,
+    required this.onFavourite,
   });
 
   final _ExerciseDefinition exercise;
   final bool selected;
   final VoidCallback onTap;
+  final bool favourite;
+  final VoidCallback? onFavourite;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -3646,6 +4075,16 @@ class _ExercisePickerRow extends StatelessWidget {
                     style: const TextStyle(color: _muted),
                   ),
                 ],
+              ),
+            ),
+            IconButton(
+              tooltip: favourite
+                  ? 'Remove from favourites'
+                  : 'Add to favourites',
+              onPressed: onFavourite,
+              icon: Icon(
+                favourite ? Icons.star_rounded : Icons.star_border_rounded,
+                color: favourite ? _purple : _muted,
               ),
             ),
             Icon(
@@ -3750,12 +4189,31 @@ class _ThirtyDayActivityRings extends StatefulWidget {
 }
 
 class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
-  late DateTime _selectedDay;
+  /// A day the user tapped; null follows today, past midnight too.
+  DateTime? _pickedDay;
+  DateTime get _selectedDay => _pickedDay ?? DateUtils.dateOnly(DateTime.now());
+  Timer? _midnight;
 
   @override
   void initState() {
     super.initState();
-    _selectedDay = DateUtils.dateOnly(DateTime.now());
+    _scheduleMidnight();
+  }
+
+  /// Rebuild at midnight (late, on resume, if the app was asleep) so the
+  /// 30-day window and "Today's activity" move to the new day.
+  void _scheduleMidnight() {
+    _midnight = Timer(durationUntilNextLocalDay(DateTime.now()), () {
+      if (!mounted) return;
+      setState(() {});
+      _scheduleMidnight();
+    });
+  }
+
+  @override
+  void dispose() {
+    _midnight?.cancel();
+    super.dispose();
   }
 
   @override
@@ -3778,7 +4236,7 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
         .orderBy(FieldPath.documentId)
         .snapshots();
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    return VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -3793,7 +4251,7 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
                   const <QueryDocumentSnapshot<Map<String, dynamic>>>[])
             doc.id: doc.data(),
         };
-        return StreamBuilder<ActivityGoals>(
+        return VisibleStreamBuilder<ActivityGoals>(
           stream: ActivityGoalsService.watch(),
           initialData: const ActivityGoals(),
           builder: (context, goalsSnapshot) => _buildContent(
@@ -3843,7 +4301,10 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
             final isSelected = DateUtils.isSameDay(date, _selectedDay);
             return InkWell(
               borderRadius: BorderRadius.circular(10),
-              onTap: () => setState(() => _selectedDay = date),
+              onTap: () => setState(
+                () =>
+                    _pickedDay = DateUtils.isSameDay(date, today) ? null : date,
+              ),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.all(3),
@@ -3932,21 +4393,26 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
 }
 
 class ActivityRingsPainter extends CustomPainter {
+  static const ringColors = [_purple, Color(0xFFFB923C), Color(0xFF34D399)];
+
   final double move, exercise, stand;
+  final Color moveColor, trackColor;
   const ActivityRingsPainter({
     required this.move,
     required this.exercise,
     required this.stand,
+    this.moveColor = _purple,
+    this.trackColor = const Color(0xFFECECF3),
   });
   @override
   void paint(Canvas c, Size s) {
     final center = Offset(s.width / 2, s.height / 2);
     final values = [move, exercise, stand];
-    final colors = [_purple, const Color(0xFFFB923C), const Color(0xFF34D399)];
+    final colors = [moveColor, ringColors[1], ringColors[2]];
     for (var i = 0; i < 3; i++) {
       final radius = s.shortestSide / 2 - 5 - i * 9.0;
       final bg = Paint()
-        ..color = const Color(0xFFECECF3)
+        ..color = trackColor
         ..style = PaintingStyle.stroke
         ..strokeWidth = 6;
       final fg = Paint()
@@ -3967,7 +4433,11 @@ class ActivityRingsPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant ActivityRingsPainter old) =>
-      old.move != move || old.exercise != exercise || old.stand != stand;
+      old.move != move ||
+      old.exercise != exercise ||
+      old.stand != stand ||
+      old.moveColor != moveColor ||
+      old.trackColor != trackColor;
 }
 
 class ProgressRingPainter extends CustomPainter {
@@ -4029,17 +4499,14 @@ class _PillButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
-  final VoidCallback? onTap;
   const _PillButton({
     required this.icon,
     required this.label,
-    this.onTap,
     this.color = _purple,
   });
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(30),
+  Widget build(BuildContext context) => Semantics(
+    label: label,
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
       decoration: BoxDecoration(
@@ -4088,338 +4555,45 @@ class _RingLegend extends StatelessWidget {
   );
 }
 
-class _MetricCard extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String label, value, detail;
-  const _MetricCard({
-    required this.icon,
-    required this.iconColor,
-    required this.label,
-    required this.value,
-    required this.detail,
-  });
-  @override
-  Widget build(BuildContext context) => _Card(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 17, color: iconColor),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: _muted,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 7),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
-        ),
-        Text(detail, style: const TextStyle(fontSize: 11, color: _muted)),
-      ],
-    ),
-  );
-}
-
-class _TodayStepsMetricCard extends StatelessWidget {
-  const _TodayStepsMetricCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return const _MetricCard(
-        icon: Icons.directions_walk_rounded,
-        iconColor: Color(0xFF22B879),
-        label: 'STEPS',
-        value: '--',
-        detail: 'Goal: --',
-      );
-    }
-    final dayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final stepsStream = FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('metrics_daily')
-        .doc(dayKey)
-        .snapshots();
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: stepsStream,
-      builder: (context, stepsSnapshot) {
-        final data = stepsSnapshot.data?.data();
-        final steps = ((data?['steps'] as Map?)?['sum'] as num?)?.round();
-        return StreamBuilder<ActivityGoals>(
-          stream: ActivityGoalsService.watch(),
-          initialData: const ActivityGoals(),
-          builder: (context, goalsSnapshot) {
-            final goal =
-                goalsSnapshot.data?.steps ?? const ActivityGoals().steps;
-            return _MetricCard(
-              icon: Icons.directions_walk_rounded,
-              iconColor: const Color(0xFF22B879),
-              label: 'STEPS',
-              value: steps == null
-                  ? '--'
-                  : NumberFormat.decimalPattern().format(steps),
-              detail: 'Goal: ${NumberFormat.decimalPattern().format(goal)}',
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
 class _SectionTitle extends StatelessWidget {
   final IconData icon;
   final String title;
-  final bool? expanded;
-  final VoidCallback? onTap;
-  const _SectionTitle({
-    required this.icon,
-    required this.title,
-    this.expanded,
-    this.onTap,
-  });
+  const _SectionTitle({required this.icon, required this.title});
 
   @override
-  Widget build(BuildContext context) {
-    final content = Row(
-      children: [
-        Icon(icon, size: 16, color: _purple),
-        const SizedBox(width: 7),
-        Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
-              color: _muted,
-            ),
+  Widget build(BuildContext context) => Row(
+    children: [
+      Icon(icon, size: 16, color: _purple),
+      const SizedBox(width: 7),
+      Expanded(
+        child: Text(
+          title,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+            color: _muted,
           ),
-        ),
-        if (expanded != null)
-          AnimatedRotation(
-            turns: expanded! ? .5 : 0,
-            duration: const Duration(milliseconds: 220),
-            child: const Icon(
-              Icons.keyboard_arrow_down_rounded,
-              color: _purple,
-            ),
-          ),
-      ],
-    );
-    if (onTap == null) return content;
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          child: content,
         ),
       ),
-    );
-  }
-}
-
-class _Recommendation extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String title, detail;
-  const _Recommendation({
-    required this.icon,
-    required this.color,
-    required this.title,
-    required this.detail,
-  });
-  @override
-  Widget build(BuildContext context) => _Card(
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _IconBox(icon: icon, color: color),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  height: 1.25,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                detail,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: _muted,
-                  height: 1.3,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
+    ],
   );
 }
 
 class _IconBox extends StatelessWidget {
   final IconData icon;
   final Color color;
-  final double size;
-  const _IconBox({required this.icon, required this.color, this.size = 44});
+  const _IconBox({required this.icon, required this.color});
   @override
   Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
+    width: 44,
+    height: 44,
     decoration: BoxDecoration(
       color: color.withValues(alpha: .11),
       borderRadius: BorderRadius.circular(14),
     ),
-    child: Icon(icon, color: color, size: size * .42),
+    child: Icon(icon, color: color, size: 18.5),
   );
-}
-
-class _Segment extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _Segment({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(10),
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(
-        color: selected ? _purple : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: selected ? Colors.white : _muted,
-        ),
-      ),
-    ),
-  );
-}
-
-class _WeeklyStrengthProgress extends StatelessWidget {
-  const _WeeklyStrengthProgress({required this.goals});
-
-  final Map<String, int> goals;
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final today = DateUtils.dateOnly(now);
-    final monday = today.subtract(Duration(days: today.weekday - 1));
-    final nextMonday = monday.add(const Duration(days: 7));
-    return StreamBuilder<List<SavedWorkout>>(
-      stream: WorkoutService.watchBetween(start: monday, end: nextMonday),
-      builder: (context, snapshot) {
-        final workouts = snapshot.data ?? const <SavedWorkout>[];
-        final setsByCategory = {for (final category in goals.keys) category: 0};
-        for (final workout in workouts) {
-          for (final exercise in workout.exercises) {
-            final category = setsByCategory.keys.cast<String?>().firstWhere(
-              (candidate) =>
-                  candidate!.toLowerCase() ==
-                  exercise.category.trim().toLowerCase(),
-              orElse: () => null,
-            );
-            if (category != null) {
-              setsByCategory[category] =
-                  setsByCategory[category]! + exercise.sets.length;
-            }
-          }
-        }
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ExerciseDetailScreen()),
-          ),
-          child: _Card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'THIS WEEK',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 2,
-                          color: _muted,
-                        ),
-                      ),
-                    ),
-                    if (snapshot.connectionState == ConnectionState.waiting &&
-                        !snapshot.hasData)
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    else
-                      Text(
-                        '${workouts.length} ${workouts.length == 1 ? 'workout' : 'workouts'}',
-                        style: const TextStyle(fontSize: 12, color: _muted),
-                      ),
-                  ],
-                ),
-                if (snapshot.hasError) ...[
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Could not load this week’s workouts.',
-                    style: TextStyle(fontSize: 12, color: Colors.redAccent),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                for (final entry in setsByCategory.entries) ...[
-                  _StrengthRow(
-                    label: entry.key,
-                    value: entry.value,
-                    goal: goals[entry.key]!,
-                  ),
-                  if (entry.key != setsByCategory.keys.last)
-                    const SizedBox(height: 13),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
 }
 
 class _StrengthRow extends StatelessWidget {
@@ -4474,44 +4648,6 @@ class _ActivityStat extends StatelessWidget {
       ),
       const SizedBox(height: 3),
       Text(label, style: const TextStyle(fontSize: 11, color: _muted)),
-    ],
-  );
-}
-
-class _ActivityRow extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String title, detail, result;
-  const _ActivityRow({
-    required this.icon,
-    required this.color,
-    required this.title,
-    required this.detail,
-    required this.result,
-  });
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      _IconBox(icon: icon, color: color),
-      const SizedBox(width: 10),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-            Text(detail, style: const TextStyle(fontSize: 11, color: _muted)),
-          ],
-        ),
-      ),
-      Text(
-        result,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: color,
-        ),
-      ),
-      const Icon(Icons.chevron_right, size: 19),
     ],
   );
 }

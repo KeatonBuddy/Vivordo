@@ -5,8 +5,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'day_record_service.dart';
+import 'plan_classifier.dart';
 import 'notification_service.dart';
 import '../utils/priority_reminder.dart';
+import '../utils/priority_schedule.dart';
 
 class CalendarPriorityCandidate {
   const CalendarPriorityCandidate({
@@ -42,9 +45,21 @@ class DailyPriority {
     this.reminderTimeMinutes,
     this.date,
     this.templateId,
+    this.planning = const {},
+    this.sourceEventKey,
+    this.completedAt,
+    this.habit = false,
+    this.target = 1,
+    this.count = 0,
   });
 
   final String id;
+
+  /// A daily habit: a repeating priority shown as a chip, outside the
+  /// priority list, the brief and Demand. Done once [count] reaches [target].
+  final bool habit;
+  final int target;
+  final int count;
   final String title;
   final bool completed;
   final bool isAllDay;
@@ -55,16 +70,26 @@ class DailyPriority {
   final int? reminderTimeMinutes;
   final DateTime? date;
   final String? templateId;
+  final Map<String, dynamic> planning;
+  final String? sourceEventKey;
+
+  /// When it was ticked off; null while open (or on old priorities).
+  final DateTime? completedAt;
   final DocumentReference<Map<String, dynamic>> reference;
 
   factory DailyPriority.fromDocument(
     QueryDocumentSnapshot<Map<String, dynamic>> document,
   ) {
     final data = document.data();
+    final completed = data['completed'] == true;
+    final target = (data['target'] as num?)?.toInt() ?? 1;
     return DailyPriority(
       id: document.id,
       title: (data['title'] as String? ?? 'Untitled priority').trim(),
-      completed: data['completed'] == true,
+      completed: completed,
+      habit: data['habit'] == true,
+      target: target,
+      count: (data['count'] as num?)?.toInt() ?? (completed ? target : 0),
       isAllDay: data['isAllDay'] == true,
       source: data['source'] as String? ?? 'manual',
       sourceStart: (data['sourceStart'] as Timestamp?)?.toDate(),
@@ -74,8 +99,99 @@ class DailyPriority {
       reference: document.reference,
       date: DateTime.tryParse(document.reference.parent.parent?.id ?? ''),
       templateId: data['templateId'] as String?,
+      planning: Map<String, dynamic>.from(data['planning'] as Map? ?? {}),
+      sourceEventKey: data['sourceEventKey'] as String?,
+      completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
     );
   }
+
+  /// Where a timed priority ends on a timeline: its own end, else its
+  /// estimate. Null when it has no start time.
+  DateTime? get timelineEnd {
+    final start = sourceStart;
+    if (start == null) return null;
+    // ponytail: no end or estimate means a 30-min block, so it still
+    // occupies the timeline instead of creating a false opening.
+    final minutes = (planning['minutes'] as num?)?.toInt();
+    return sourceEnd ??
+        start.add(
+          Duration(minutes: minutes != null && minutes > 0 ? minutes : 30),
+        );
+  }
+}
+
+/// A repeating priority's schedule (`priority_templates`), which
+/// [DailyPriorityService.materializeRecurring] copies into each day.
+class PriorityTemplate {
+  const PriorityTemplate({
+    required this.id,
+    required this.title,
+    required this.recurrence,
+    this.weekdays = const {},
+    this.startDate,
+    this.endDate,
+    this.enabled = true,
+    this.habit = false,
+    this.target = 1,
+    this.reminderTimeMinutes,
+    this.doneDays = const {},
+  });
+
+  factory PriorityTemplate.fromData(String id, Map<String, dynamic> data) =>
+      PriorityTemplate(
+        id: id,
+        title: (data['title'] as String? ?? '').trim(),
+        recurrence: data['recurrence'] as String? ?? 'none',
+        weekdays: {
+          for (final d in (data['selectedWeekdays'] as List?) ?? const [])
+            if (d is num && d >= 1 && d <= 7) d.toInt(),
+        },
+        startDate: (data['startDate'] as Timestamp?)?.toDate(),
+        endDate: (data['recurrenceEnd'] as Timestamp?)?.toDate(),
+        enabled: data['enabled'] == true,
+        habit: data['habit'] == true,
+        target: (data['target'] as num?)?.toInt() ?? 1,
+        reminderTimeMinutes: (data['reminderTimeMinutes'] as num?)?.toInt(),
+        doneDays: {...?(data['doneDays'] as List?)?.whereType<String>()},
+      );
+
+  final String id;
+  final String title;
+  final String recurrence;
+  final Set<int> weekdays;
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final bool enabled;
+  final bool habit;
+  final int target;
+  final int? reminderTimeMinutes;
+
+  /// Day keys of the days a habit was done.
+  final Set<String> doneDays;
+
+  /// Whether a copy is due on [day].
+  bool repeatsOn(DateTime day) {
+    final date = DateTime(day.year, day.month, day.day);
+    final start = startDate, end = endDate;
+    if (start != null &&
+        date.isBefore(DateTime(start.year, start.month, start.day))) {
+      return false;
+    }
+    if (end != null && date.isAfter(DateTime(end.year, end.month, end.day))) {
+      return false;
+    }
+    return recurrence == 'daily' ||
+        (recurrence == 'weekly' && weekdays.contains(date.weekday));
+  }
+
+  String get label {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return recurrence == 'daily'
+        ? 'Every day'
+        : 'Every ${(weekdays.toList()..sort()).map((d) => days[d - 1]).join(', ')}';
+  }
+
+  int streak(DateTime today) => habitStreak(doneDays, repeatsOn, today);
 }
 
 class DailyPriorityService {
@@ -166,9 +282,11 @@ class DailyPriorityService {
     return FirebaseFirestore.instance.collection('users').doc(uid);
   }
 
+  /// The priorities shown on [day]; with [habits], its habits instead.
   static Stream<List<DailyPriority>> watch(
     DateTime day, {
     bool includeUpcoming = false,
+    bool habits = false,
   }) {
     final collection = _collection(day);
     final user = _userDocument();
@@ -182,7 +300,10 @@ class DailyPriorityService {
     late StreamController<List<DailyPriority>> controller;
 
     void emit() {
-      final priorities = items.values.expand((value) => value).toList();
+      final priorities = items.values
+          .expand((value) => value)
+          .where((p) => p.habit == habits)
+          .toList();
       priorities.sort((a, b) {
         final aStart = a.sourceStart?.millisecondsSinceEpoch ?? 1 << 62;
         final bStart = b.sourceStart?.millisecondsSinceEpoch ?? 1 << 62;
@@ -236,6 +357,13 @@ class DailyPriorityService {
           }
         }
         userSubscription = user.snapshots().listen((snapshot) {
+          final plannedSources =
+              (snapshot.data()?['priorityPlanSources'] as Map?)?[dayKey]
+                  as List? ??
+              const [];
+          for (final key in plannedSources.whereType<String>()) {
+            if (DateTime.tryParse(key) != null) subscribe(key);
+          }
           final days =
               snapshot.data()?['priorityReminderDays'] as List? ?? const [];
           for (final key in days.whereType<String>().toSet()) {
@@ -256,18 +384,87 @@ class DailyPriorityService {
     return controller.stream;
   }
 
-  static Stream<Map<String, String>> watchRecurrenceLabels() {
+  /// One-shot snapshot using the same day/rollover rules as My Day.
+  static Future<List<DailyPriority>> incompleteForDay(DateTime day) =>
+      forDay(day, includeCompleted: false);
+
+  /// One-shot snapshot of the priorities My Day shows for [day]: open ones,
+  /// and with [includeCompleted] the ones ticked off that day. Habits are
+  /// left out.
+  static Future<List<DailyPriority>> forDay(
+    DateTime day, {
+    bool includeCompleted = true,
+    Source source = Source.server,
+  }) async {
+    final user = _userDocument();
+    if (user == null) throw StateError('Please sign in first.');
+    final options = GetOptions(source: source);
+    final data = (await user.get(options)).data();
+    final key = localDayKey(day);
+    final sources =
+        (data?['priorityPlanSources'] as Map?)?[key] as List? ?? const [];
+    final keys = {
+      key,
+      ...sources.whereType<String>().where((s) => DateTime.tryParse(s) != null),
+      ...((data?['priorityReminderDays'] as List?) ?? const [])
+          .whereType<String>()
+          .where((s) => DateTime.tryParse(s) != null && s.compareTo(key) < 0),
+    };
+    final result = <DailyPriority>[];
+    for (final source in keys) {
+      final items = user
+          .collection('daily_priorities')
+          .doc(source)
+          .collection('items');
+      final snapshot =
+          await (!includeCompleted
+                  ? items.where('completed', isEqualTo: false)
+                  : source.compareTo(key) >= 0
+                  ? items
+                  : items.where(
+                      Filter.or(
+                        Filter('completed', isEqualTo: false),
+                        Filter('completedDay', isEqualTo: key),
+                      ),
+                    ))
+              .get(options);
+      result.addAll(
+        snapshot.docs
+            .where(
+              (doc) =>
+                  doc.data()['habit'] != true &&
+                  visibleOnDay(doc.data(), source, key),
+            )
+            .map(DailyPriority.fromDocument),
+      );
+    }
+    if (_userDocument()?.path != user.path) {
+      throw StateError('Account changed.');
+    }
+    result.sort(
+      (a, b) => (a.sourceStart ?? DateTime(9999)).compareTo(
+        b.sourceStart ?? DateTime(9999),
+      ),
+    );
+    return result;
+  }
+
+  /// Every repeating schedule, by id, including stopped ones.
+  static Stream<Map<String, PriorityTemplate>> watchTemplates() {
     final user = _userDocument();
     if (user == null) return Stream.value(const {});
-    return user.collection('priority_templates').snapshots().map((snapshot) {
-      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return {
-        for (final document in snapshot.docs)
-          document.id: document.data()['recurrence'] == 'daily'
-              ? 'Every day'
-              : 'Every ${((document.data()['selectedWeekdays'] as List?) ?? const []).whereType<num>().where((d) => d >= 1 && d <= 7).map((d) => days[d.toInt() - 1]).join(', ')}',
-      };
-    });
+    return user
+        .collection('priority_templates')
+        .snapshots()
+        .map(
+          (snapshot) => {
+            for (final document in snapshot.docs)
+              document.id: PriorityTemplate.fromData(
+                document.id,
+                document.data(),
+              ),
+          },
+        );
   }
 
   @visibleForTesting
@@ -276,6 +473,10 @@ class DailyPriorityService {
     String storedDay,
     String viewingDay,
   ) {
+    if (data['dismissed'] != true &&
+        (data['planning'] as Map?)?['plannedDay'] == viewingDay) {
+      return true;
+    }
     if (data['dismissed'] == true || storedDay.compareTo(viewingDay) > 0) {
       return false;
     }
@@ -284,6 +485,27 @@ class DailyPriorityService {
     return data['source'] == 'manual' &&
         data['sourceStart'] == null &&
         (data['completed'] != true || data['completedDay'] == viewingDay);
+  }
+
+  /// The time fields to update on an imported calendar priority whose event
+  /// has moved, or null when nothing changed (or it isn't one).
+  @visibleForTesting
+  static Map<String, Object>? calendarTimeChanges(
+    Map<String, dynamic> data,
+    CalendarPriorityCandidate event,
+  ) {
+    if (data['source'] != 'calendar') return null;
+    DateTime? at(Object? value) => (value as Timestamp?)?.toDate();
+    if (at(data['sourceStart']) == event.start &&
+        at(data['sourceEnd']) == event.end &&
+        data['isAllDay'] == event.isAllDay) {
+      return null;
+    }
+    return {
+      'sourceStart': Timestamp.fromDate(event.start),
+      'sourceEnd': Timestamp.fromDate(event.end),
+      'isAllDay': event.isAllDay,
+    };
   }
 
   static Future<void> seedFromCalendar(
@@ -322,7 +544,20 @@ class DailyPriorityService {
         }
         continue;
       }
-      if (existingDocument != null) continue;
+      if (existingDocument != null) {
+        // The event moved (in the app, a day fix or Google Calendar): keep
+        // its priority, and so its reminder, at the new time.
+        final moved = calendarTimeChanges(existingDocument.data(), candidate);
+        if (moved != null) {
+          batch.update(existingDocument.reference, {
+            ...moved,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          writes++;
+          await flushIfFull();
+        }
+        continue;
+      }
       batch.set(collection.doc(id), {
         'title': candidate.title.trim(),
         'completed': false,
@@ -348,36 +583,48 @@ class DailyPriorityService {
     }
   }
 
-  static Future<void> createManual({
+  static Future<DocumentReference<Map<String, dynamic>>?> createManual({
     required String title,
     required DateTime date,
     DateTime? scheduledAt,
     String recurrence = 'none',
     Set<int> selectedWeekdays = const {},
     DateTime? recurrenceEnd,
+    Map<String, dynamic> planning = const {},
     int reminderMinutes = 60,
     int? reminderTimeMinutes,
+    bool habit = false,
+    int target = 1,
   }) async {
     final userDocument = _userDocument();
     final value = title.trim();
-    if (userDocument == null || value.isEmpty) return;
+    if (userDocument == null || value.isEmpty) return null;
+    // A habit always repeats.
+    if (habit && recurrence == 'none') recurrence = 'daily';
     await userDocument.update({
       'priorityReminderDays': FieldValue.arrayUnion([localDayKey(date)]),
+      if (planning['plannedDay'] is String)
+        'priorityPlanSources.${planning['plannedDay']}': FieldValue.arrayUnion([
+          localDayKey(date),
+        ]),
     });
     if (recurrence == 'none') {
-      await _addManualItem(
+      final reference = await _addManualItem(
+        planning: planning,
         date: date,
         title: value,
         scheduledAt: scheduledAt,
         reminderMinutes: reminderMinutes,
         reminderTimeMinutes: reminderTimeMinutes,
       );
-      return;
+      if (reference != null) unawaited(estimateBlanks(reference));
+      return reference;
     }
 
     final template = userDocument.collection('priority_templates').doc();
     await template.set({
       'title': value,
+      'planning': planning,
       'reminderMinutes': reminderMinutes,
       'reminderTimeMinutes': reminderTimeMinutes,
       'startDate': Timestamp.fromDate(_dateOnly(date)),
@@ -389,11 +636,14 @@ class DailyPriorityService {
           ? null
           : Timestamp.fromDate(_dateOnly(recurrenceEnd)),
       'enabled': true,
+      if (habit) 'habit': true,
+      if (habit) 'target': target,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
     await materializeRecurring(date);
     await refreshReminders(force: true);
+    return _collection(date)?.doc('template_${template.id}');
   }
 
   static Future<void> materializeRecurring(
@@ -438,12 +688,24 @@ class DailyPriorityService {
       if (existingIds.contains(priorityId)) continue;
       batch.set(collection.doc(priorityId), {
         'title': data['title'],
+        'planning': {
+          ...Map<String, dynamic>.from(data['planning'] as Map? ?? {}),
+          if ((data['planning'] as Map?)?['plannedDay'] != null)
+            'plannedDay': localDayKey(date),
+        },
         'reminderMinutes': data['reminderMinutes'] ?? 60,
         'reminderTimeMinutes': data['reminderTimeMinutes'],
         'completed': false,
         'dismissed': false,
         'source': 'recurring_manual',
         'templateId': template.id,
+        if (data['habit'] == true) ...{
+          'habit': true,
+          'target': data['target'] ?? 1,
+          'count': 0,
+        },
+        if (data['sourceEventKey'] != null)
+          'sourceEventKey': data['sourceEventKey'],
         'sourceStart': scheduledAt == null
             ? null
             : Timestamp.fromDate(scheduledAt),
@@ -456,17 +718,19 @@ class DailyPriorityService {
     if (writes > 0) await batch.commit();
   }
 
-  static Future<void> _addManualItem({
+  static Future<DocumentReference<Map<String, dynamic>>?> _addManualItem({
     required DateTime date,
     required String title,
     DateTime? scheduledAt,
+    Map<String, dynamic> planning = const {},
     int reminderMinutes = 60,
     int? reminderTimeMinutes,
   }) async {
     final collection = _collection(date);
-    if (collection == null) return;
+    if (collection == null) return null;
     final reference = await collection.add({
       'title': title,
+      'planning': planning,
       'completed': false,
       'dismissed': false,
       'source': 'manual',
@@ -480,19 +744,180 @@ class DailyPriorityService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
     await _syncReminder(reference);
+    return reference;
+  }
+
+  /// One-shot lookup for a user-confirmed Panda action; never trusts model paths.
+  static Future<List<DailyPriority>> findByTitle(
+    String title, {
+    DateTime? day,
+  }) async {
+    final user = _userDocument();
+    if (user == null) throw StateError('Please sign in first.');
+    final data = (await user.get(
+      const GetOptions(source: Source.server),
+    )).data();
+    final keys = day != null
+        ? {localDayKey(day)}
+        : {
+            localDayKey(DateTime.now()),
+            ...((data?['priorityReminderDays'] as List?) ?? [])
+                .whereType<String>(),
+          };
+    final matches = <DailyPriority>[];
+    for (final key in keys) {
+      if (DateTime.tryParse(key) == null) continue;
+      final snapshot = await user
+          .collection('daily_priorities')
+          .doc(key)
+          .collection('items')
+          .where('title', isEqualTo: title)
+          .get(const GetOptions(source: Source.server));
+      matches.addAll(
+        snapshot.docs
+            .where((doc) => doc.data()['dismissed'] != true)
+            .map(DailyPriority.fromDocument),
+      );
+    }
+    return matches;
   }
 
   static Future<void> setCompleted(
     DailyPriority priority,
     bool completed,
   ) async {
+    if (priority.habit) {
+      return setHabitCount(priority, completed ? priority.target : 0);
+    }
     await priority.reference.update({
       'completed': completed,
       'completedAt': completed ? FieldValue.serverTimestamp() : null,
       'completedDay': completed ? localDayKey(DateTime.now()) : null,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    DayRecordService.syncSoon();
     await _syncReminder(priority.reference);
+  }
+
+  /// Sets how many times [habit] was done on its day (0 to its target),
+  /// ticking it off at the target and recording the day for its streak.
+  /// ponytail: no transaction, so taps work offline; two taps faster than
+  /// the local snapshot updates count once.
+  static Future<void> setHabitCount(DailyPriority habit, int count) async {
+    final user = _userDocument();
+    if (user == null) return;
+    final value = count.clamp(0, habit.target);
+    final done = value >= habit.target;
+    final day = habit.reference.parent.parent!.id;
+    final batch = FirebaseFirestore.instance.batch()
+      ..update(habit.reference, {
+        'count': value,
+        'completed': done,
+        'completedAt': done ? FieldValue.serverTimestamp() : null,
+        'completedDay': done ? localDayKey(DateTime.now()) : null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    final templateId = habit.templateId;
+    if (templateId != null) {
+      batch.update(user.collection('priority_templates').doc(templateId), {
+        'doneDays': done
+            ? FieldValue.arrayUnion([day])
+            : FieldValue.arrayRemove([day]),
+      });
+    }
+    await batch.commit();
+    await _syncReminder(habit.reference);
+  }
+
+  /// Changes a repeating schedule and its copies from today on. Turning
+  /// [habit] on keeps each copy's progress.
+  static Future<void> updateSchedule(
+    String templateId, {
+    required String title,
+    required bool habit,
+    required int target,
+    required int? reminderTimeMinutes,
+  }) async {
+    final user = _userDocument();
+    if (user == null) return;
+    await user.collection('priority_templates').doc(templateId).update({
+      'title': title.trim(),
+      'habit': habit,
+      'target': target,
+      'reminderTimeMinutes': reminderTimeMinutes,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await _forUpcomingCopies(user, templateId, (data) {
+      final completed = data['completed'] == true;
+      final count =
+          ((data['count'] as num?)?.toInt() ?? (completed ? target : 0)).clamp(
+            0,
+            target,
+          );
+      return {
+        'title': title.trim(),
+        'habit': habit,
+        'target': target,
+        'reminderTimeMinutes': reminderTimeMinutes,
+        if (habit) 'count': count,
+        if (habit) 'completed': count >= target,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+    });
+  }
+
+  /// Stops a repeating schedule and removes its copies from today on.
+  /// Earlier days, and a habit's streak history, are kept.
+  static Future<void> deleteSchedule(String templateId) async {
+    final user = _userDocument();
+    if (user == null) return;
+    await user.collection('priority_templates').doc(templateId).update({
+      'enabled': false,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await _forUpcomingCopies(
+      user,
+      templateId,
+      (_) => {'dismissed': true, 'updatedAt': FieldValue.serverTimestamp()},
+    );
+  }
+
+  /// Updates [templateId]'s copies from today on with [changes] of each.
+  static Future<void> _forUpcomingCopies(
+    DocumentReference<Map<String, dynamic>> user,
+    String templateId,
+    Map<String, Object?> Function(Map<String, dynamic> data) changes,
+  ) async {
+    for (final day in await _upcomingDays(user)) {
+      final copy = user
+          .collection('daily_priorities')
+          .doc(day)
+          .collection('items')
+          .doc('template_$templateId');
+      final data = (await copy.get()).data();
+      if (data == null || data['dismissed'] == true) continue;
+      await copy.update(changes(data));
+      await _syncReminder(copy);
+    }
+  }
+
+  /// Day keys from today on that may hold copies: the next 2 weeks and any
+  /// later day with reminders.
+  static Future<List<String>> _upcomingDays(
+    DocumentReference<Map<String, dynamic>> user,
+  ) async {
+    final now = DateTime.now();
+    final saved =
+        (await user.get()).data()?['priorityReminderDays'] as List? ?? const [];
+    return <String>{
+      ...saved.whereType<String>().where(
+        (day) =>
+            DateTime.tryParse(day) != null &&
+            day.compareTo(localDayKey(now)) >= 0,
+      ),
+      for (var offset = 0; offset < 14; offset++)
+        localDayKey(DateTime(now.year, now.month, now.day + offset)),
+    }.toList()..sort();
   }
 
   static Future<void> delete(DailyPriority priority) async {
@@ -522,7 +947,7 @@ class DailyPriorityService {
     await _syncReminder(priority.reference);
   }
 
-  static Future<void> editPriority(
+  static Future<DocumentReference<Map<String, dynamic>>?> editPriority(
     DailyPriority priority, {
     required String title,
     required DateTime date,
@@ -530,13 +955,14 @@ class DailyPriorityService {
     required bool completed,
     required int reminderMinutes,
     required int? reminderTimeMinutes,
+    Map<String, dynamic>? planning,
     String recurrence = 'none',
     Set<int> selectedWeekdays = const {},
     DateTime? recurrenceEnd,
   }) async {
     final user = _userDocument();
     final collection = _collection(date);
-    if (user == null || collection == null) return;
+    if (user == null || collection == null) return null;
     final template = priority.source == 'manual' && recurrence != 'none'
         ? user.collection('priority_templates').doc()
         : null;
@@ -557,6 +983,7 @@ class DailyPriorityService {
       }
       transaction.set(destination, {
         ...data,
+        'planning': ?planning,
         'title': title.trim(),
         'sourceStart': scheduledAt == null
             ? null
@@ -589,6 +1016,7 @@ class DailyPriorityService {
         transaction.set(template, {
           'title': title.trim(),
           'enabled': true,
+          'planning': planning ?? priority.planning,
           'startDate': Timestamp.fromDate(_dateOnly(date)),
           'scheduledHour': scheduledAt?.hour,
           'scheduledMinute': scheduledAt?.minute,
@@ -605,6 +1033,9 @@ class DailyPriorityService {
       }
       transaction.update(user, {
         'priorityReminderDays': FieldValue.arrayUnion([localDayKey(date)]),
+        if (planning?['plannedDay'] is String)
+          'priorityPlanSources.${planning!['plannedDay']}':
+              FieldValue.arrayUnion([localDayKey(date)]),
       });
     });
     if (destination.path != priority.reference.path) {
@@ -612,6 +1043,61 @@ class DailyPriorityService {
     }
     await _syncReminder(destination);
     if (template != null) await refreshReminders(force: true);
+    unawaited(estimateBlanks(destination));
+    return destination;
+  }
+
+  /// Fills a priority's blank effort and duration with Claude's estimate
+  /// (docs/scores.md §1), listing them in `planning.estimated` so the app
+  /// can show them as estimates. Never changes a value the user set, and
+  /// does nothing without AI consent.
+  /// ponytail: recurring priorities' templates aren't estimated; each
+  /// occurrence is when it's edited.
+  static Future<void> estimateBlanks(
+    DocumentReference<Map<String, dynamic>> reference,
+  ) async {
+    try {
+      final data = (await reference.get()).data();
+      final title = (data?['title'] as String?)?.trim() ?? '';
+      final planning = data?['planning'] as Map? ?? const {};
+      if (title.isEmpty ||
+          (planning['effort'] != null && planning['minutes'] != null)) {
+        return;
+      }
+      final estimate = (await PlanClassifier.classify(
+        priorityTitles: [title],
+      ))?.priorities[0];
+      if (estimate == null) return;
+      final changed = await FirebaseFirestore.instance.runTransaction((
+        transaction,
+      ) async {
+        final current = Map<String, dynamic>.from(
+          (await transaction.get(reference)).data()?['planning'] as Map? ?? {},
+        );
+        final estimated = {
+          ...?(current['estimated'] as List?)?.whereType<String>(),
+        };
+        var filled = false;
+        if (current['effort'] == null) {
+          current['effort'] = estimate.effort;
+          estimated.add('effort');
+          filled = true;
+        }
+        if (current['minutes'] == null && estimate.minutes != null) {
+          current['minutes'] = estimate.minutes;
+          estimated.add('minutes');
+          filled = true;
+        }
+        if (!filled) return false;
+        transaction.update(reference, {
+          'planning': {...current, 'estimated': estimated.toList()..sort()},
+        });
+        return true;
+      });
+      if (changed) DayRecordService.syncSoon();
+    } catch (error) {
+      debugPrint('Priority estimate failed: $error');
+    }
   }
 
   static Future<void> _syncReminder(
@@ -653,17 +1139,8 @@ class DailyPriorityService {
   static Future<void> _refreshReminders() async {
     final user = _userDocument();
     if (user == null) return;
-    final now = DateTime.now();
     final templates = (await user.collection('priority_templates').get()).docs;
-    final savedDays =
-        (await user.get()).data()?['priorityReminderDays'] as List? ?? const [];
-    final days = <String>{
-      ...savedDays.whereType<String>().where(
-        (day) => day.compareTo(localDayKey(now)) >= 0,
-      ),
-      for (var offset = 0; offset < 14; offset++)
-        localDayKey(DateTime(now.year, now.month, now.day + offset)),
-    }.toList()..sort();
+    final days = await _upcomingDays(user);
     // Materialize upcoming occurrences so reminders work while the app is closed.
     for (final dayKey in days) {
       if (FirebaseAuth.instance.currentUser?.uid != user.id) return;

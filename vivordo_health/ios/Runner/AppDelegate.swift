@@ -1,6 +1,7 @@
 import ActivityKit
 import AppIntents
 import Flutter
+import HealthKit
 import UIKit
 import WidgetKit
 
@@ -9,6 +10,9 @@ import WidgetKit
   private let workoutActivities = WorkoutLiveActivityManager()
   private var workoutActivityChannel: FlutterMethodChannel?
   private var homeWidgetChannel: FlutterMethodChannel?
+  private var vo2MaxChannel: FlutterMethodChannel?
+  private let vo2MaxReader = Vo2MaxReader()
+  private let sleepObserver = SleepObserver()
   private var pendingWorkoutLaunch = false
   private var pendingWidgetDestination: String?
 
@@ -34,6 +38,8 @@ import WidgetKit
 
     UNUserNotificationCenter.current().delegate = self
     application.registerForRemoteNotifications()
+    // HealthKit only delivers in the background to queries started at launch.
+    sleepObserver.start()
 
     return launched
   }
@@ -47,6 +53,38 @@ import WidgetKit
       workoutActivityChannel = channel
       channel.setMethodCallHandler { [weak self] call, result in
         self?.handleWorkoutActivity(call, result: result)
+      }
+
+      // VO₂ max (cardio fitness) from Apple Watch. The health plugin can't
+      // read it, so it's read here (Physical Health, docs/scores.md).
+      let vo2Channel = FlutterMethodChannel(
+        name: "com.vivordo.health/vo2_max",
+        binaryMessenger: engineBridge.applicationRegistrar.messenger()
+      )
+      vo2MaxChannel = vo2Channel
+      vo2Channel.setMethodCallHandler { [weak self] call, result in
+        guard call.method == "read",
+              let days = (call.arguments as? [String: Any])?["days"] as? Int
+        else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        self?.vo2MaxReader.read(days: days) { samples in
+          DispatchQueue.main.async { result(samples) }
+        }
+      }
+
+      let sleepChannel = FlutterMethodChannel(
+        name: "com.vivordo.health/sleep_observer",
+        binaryMessenger: engineBridge.applicationRegistrar.messenger()
+      )
+      sleepChannel.setMethodCallHandler { [weak self] call, result in
+        guard call.method == "ready" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        self?.sleepObserver.attach(sleepChannel)
+        result(nil)
       }
 
       let widgetChannel = FlutterMethodChannel(
@@ -76,10 +114,17 @@ import WidgetKit
               return
             }
             values.forEach { defaults.set($0.value, forKey: $0.key) }
+            WidgetCenter.shared.reloadTimelines(ofKind: "VivordoDayDashboard")
+            if !changedKeys.isDisjoint(with: ["dashboardEvents", "dashboardPriorities", "dashboardCalendarConnected"]) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoTodayAgenda")
+            }
             defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
 
             let stressKeys: Set<String> = ["stressScore"]
-            let wellnessKeys: Set<String> = ["wellnessScore", "wellnessDelta"]
+            let capacityKeys: Set<String> = [
+              "capacityScore", "capacityDelta", "capacityLabel", "capacityNote",
+              "capacityDay", "dashboardHasCapacity",
+            ]
             let fitnessKeys: Set<String> = [
               "steps", "stepsGoal", "activeCalories", "activeCaloriesGoal",
               "exerciseMinutes", "exerciseGoal",
@@ -89,7 +134,7 @@ import WidgetKit
             if !changedKeys.isDisjoint(with: stressKeys) {
               WidgetCenter.shared.reloadTimelines(ofKind: "VivordoStressScore")
             }
-            if !changedKeys.isDisjoint(with: wellnessKeys) {
+            if !changedKeys.isDisjoint(with: capacityKeys) {
               WidgetCenter.shared.reloadTimelines(ofKind: "VivordoWellnessScore")
             }
             if !changedKeys.isDisjoint(with: fitnessKeys) {
@@ -154,8 +199,8 @@ import WidgetKit
     }
     let destination = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
     return [
-      "home", "wellness", "fitness", "calendar", "stress", "sleep",
-      "heartrate", "steps"
+      "home", "capacity", "fitness", "calendar", "myday", "mood", "workout",
+      "stress", "sleep", "heartrate", "steps"
     ].contains(destination) ? destination : nil
   }
 
@@ -230,6 +275,92 @@ class SceneDelegate: FlutterSceneDelegate {
     let app = UIApplication.shared.delegate as? AppDelegate
     let remaining = Set(URLContexts.filter { app?.handleVivordoURL($0.url) != true })
     if !remaining.isEmpty { super.scene(scene, openURLContexts: remaining) }
+  }
+}
+
+/// Reads Apple Watch VO₂ max samples. Asks for read access the first time
+/// (HealthKit shows its sheet once); returns [] when unavailable or denied,
+/// since HealthKit never reveals whether read access was refused.
+private final class Vo2MaxReader {
+  private let store = HKHealthStore()
+  private let type = HKQuantityType(.vo2Max)
+  private let unit = HKUnit(from: "ml/kg*min")
+
+  func read(days: Int, completion: @escaping ([[String: Any]]) -> Void) {
+    guard HKHealthStore.isHealthDataAvailable() else { return completion([]) }
+    store.requestAuthorization(toShare: [], read: [type]) { [weak self] _, _ in
+      guard let self else { return completion([]) }
+      let start = Calendar.current.date(byAdding: .day, value: -days, to: Date())
+      let predicate = HKQuery.predicateForSamples(
+        withStart: start, end: Date(), options: .strictStartDate
+      )
+      let query = HKSampleQuery(
+        sampleType: self.type,
+        predicate: predicate,
+        limit: HKObjectQueryNoLimit,
+        sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)]
+      ) { _, samples, _ in
+        completion((samples as? [HKQuantitySample] ?? []).map {
+          [
+            "date": $0.endDate.timeIntervalSince1970 * 1000,
+            "value": $0.quantity.doubleValue(for: self.unit),
+          ]
+        })
+      }
+      self.store.execute(query)
+    }
+  }
+}
+
+/// Wakes Vivordo when new sleep reaches the iPhone's Health store (from
+/// Apple Watch, or any app writing sleep), so last night shows up without
+/// opening Apple Health. Dart syncs it (HealthService.listenForNewSleep).
+/// HealthKit stops waking an app that doesn't call the completion handler,
+/// so each one is called when Dart replies, or after 25 seconds at most.
+private final class SleepObserver {
+  private let store = HKHealthStore()
+  private let type = HKCategoryType(.sleepAnalysis)
+  private var channel: FlutterMethodChannel?
+  private var waiting: [() -> Void] = []
+  private var syncing = false
+
+  func start() {
+    guard HKHealthStore.isHealthDataAvailable() else { return }
+    let query = HKObserverQuery(sampleType: type, predicate: nil) {
+      [weak self] _, completion, error in
+      DispatchQueue.main.async {
+        guard let self, error == nil else { return completion() }
+        var called = false
+        let done = {
+          guard !called else { return }
+          called = true
+          completion()
+        }
+        self.waiting.append(done)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25, execute: done)
+        self.syncIfReady()
+      }
+    }
+    store.execute(query)
+    store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
+  }
+
+  /// Called once Dart has its handler, which may be after the first wake.
+  func attach(_ channel: FlutterMethodChannel) {
+    self.channel = channel
+    syncIfReady()
+  }
+
+  private func syncIfReady() {
+    guard let channel, !syncing, !waiting.isEmpty else { return }
+    syncing = true
+    let batch = waiting
+    waiting = []
+    channel.invokeMethod("sleepChanged", arguments: nil) { [weak self] _ in
+      batch.forEach { $0() }
+      self?.syncing = false
+      self?.syncIfReady()
+    }
   }
 }
 

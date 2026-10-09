@@ -1,0 +1,690 @@
+# Daily scores: Capacity, Demand, Effort (design, v1)
+
+Status: proposed, not implemented. All numbers are starting values to tune
+against real histories. These are wellness estimates, not medical scores.
+
+Lineup: **Capacity** (the energy you have today), **Demand** (what's still
+ahead), **Effort** (what the day took), **Stress** (live, unchanged) and
+**Heart** (long-term, unchanged), plus **Physical Health** (long-term, §7),
+which replaces Wellness. Sleep has no separate daily score: it is
+Capacity's main ingredient.
+
+## 1. Item points (shared by Demand and Effort)
+
+Demand and Effort price every item the same way, so they always agree.
+Items are calendar events and timed priorities, priced by the existing
+hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
+
+- Base demand per minute from the category: routine 15, social 20,
+  collaboration 40, focused work 55, high-consequence 75; rest (breaks)
+  takes no part at all, not even as a back-to-back. Priorities use
+  the effort they were given, as Home does today: light 20, moderate 45,
+  demanding 75 (unset = moderate).
+- **Unknown events** (titles the local rules can't classify) are sent to
+  Claude Opus 5.5 (low effort, structured JSON) through the
+  `classifyPlanItems` function, which answers with one of the same five
+  categories or "can't tell". It sends the title, duration and attendee
+  count only, never notes, at most 20 events per call, with its own daily
+  budget of 50 calls per account. Answers (including "can't tell") are
+  cached on the device per title, and AI answers carry confidence 0.6.
+  It needs the user's AI consent (version 2, which added this use).
+  Whatever is still unknown
+  ("Busy", "Hold", private events, offline) counts as 30 and lowers the
+  day's confidence. Nothing is treated as free time.
+- Pressure: +10 while events overlap (overlapping demand is not summed),
+  and a continuous-run ramp: nothing for the first 60 min, rising to +5
+  at 120 min. **Gaps under 15 min don't reset the run**, so a chain of
+  back-to-backs builds up like one long block; a gap of 15 min or more
+  does.
+- **Back-to-back events** (next event starts < 15 min after one ends): a
+  flat **+0.5 points each**, whatever the event's length: +10 on the
+  rating for its first 30 minutes, or packed into a shorter event (+20
+  for 15 min, +30 for 10 min). Today's calculator adds +10 for the whole
+  event; that changes. All events count, not only meetings. No
+  time-of-day weighting: the cost is the missing buffer, after-hours time
+  already has its own multiplier, and a fixed 9–5 doesn't fit shift
+  workers or students. Harder transitions (straight out of a
+  presentation) are left to per-event costs learned from each person's
+  stress reactions.
+- **After hours** (after the time the person usually wraps up their main
+  work or classes; 5 PM if unanswered or "It varies"): the item's points
+  × 1.25. The time comes from an onboarding question, "When do you
+  usually wrap up your main work or classes for the day?", is editable in
+  Settings, and existing users are asked once on My Day. There's no
+  separate weekend rule. This is a separate signal from back-to-backs.
+
+**Untimed priorities** have no slot, so they get flat points by effort:
+light 2, moderate 4, demanding 6.
+
+**Blank priority estimates** are filled in by Claude. When a priority is
+saved without an effort or a duration, the same server function that
+classifies unknown events estimates the missing ones from the title only
+(never notes). It only fills blanks: a value the user entered is never
+changed. Estimated fields are listed in `planning.estimated`, show with
+"≈" in the priority editor, and become the user's own value when
+changed there. It runs after saving, in the background, and only with AI
+consent; without it, the defaults apply (moderate, no duration).
+Recurring priorities' templates aren't estimated (each occurrence is,
+when edited). Later, the person's own past durations for
+similar titles replace Claude's guess.
+
+**Points scale:** the hourly calendar load (0–100 per hour) summed over
+the day, ÷ 10. One fully booked hour of collaboration (40) = 4 points, and
+an 8-hour workday of mostly collaboration and focused work ≈ 40–50. 100
+means an extremely heavy day. The scale is fixed rather than personal: a
+person who is always overloaded should see big numbers. Personal context
+comes from Capacity and from burnout's own baselines.
+
+## 2. Demand: what's still ahead
+
+`Demand = points of items not yet finished`:
+- the remaining minutes of events in progress and of later events;
+- timed priorities not yet done;
+- open untimed priorities;
+- workouts **planned in the calendar** (moderate intensity unless the
+  title says otherwise: 0.2 points per minute).
+
+Demand updates live and reaches ~0 once the last item is behind you. In
+the evening (past the end-of-day time, with nothing timed left) the card
+shows tomorrow's expected Demand; open untimed priorities carry over, so
+they count there rather than holding off the evening view. A workout
+logged during the day doesn't change Demand: it already happened, so it
+is Effort.
+
+**Implemented** on the phone in `buildDayEffort`
+(`lib/src/utils/day_effort.dart`), the same calculation as Home's Effort
+bars, so "still ahead" on Home and Demand on My Day always agree. My
+Day's brief shows it in place of the old schedule score
+(`analyzeBriefPlan`, removed). It isn't stored on the server yet; store
+it when burnout or trends need it.
+
+**Morning comparison** (expected Demand at wake vs Capacity):
+- Demand ≤ Capacity − 15: "Room to spare".
+- Within ±15: "A full day".
+- Demand > Capacity + 15: "More than you've got: protect a break".
+
+**Ways to lighten today** (`lib/src/utils/day_fixes.dart`,
+`lib/widgets/day_fixes_card.dart`): under a "More than you've got" brief,
+up to 3 one-tap fixes, each priced by re-running Demand with the change
+made (a real "−6", not a guess). Shown only when a fix exists; the X hides
+the card until tomorrow (`users/{uid}/day_fixes/{day}.hidden`).
+- **Move a priority:** the open one-off priority of your own that saves the
+  most (recurring and calendar-linked ones stay put). A sheet shows the next
+  5 days' expected Demand with the lightest picked; it keeps its time of day
+  and `plannedDay` moves with it.
+- **Buffer:** an event that starts within 15 min of another moves to 15 min
+  after it, if it then fits before whatever comes next. Only Google events
+  not linked to a priority, with no other guests unless you organised them
+  (the sheet warns that guests will get the new time). A repeating event
+  moves this occurrence only.
+- **Better energy slot:** hard work in a low-energy window moves to the
+  forecast's suggested time (§8). Also offered as "Move to …" on the clash
+  note in My Day's timeline, even when the day isn't overloaded.
+- Each fix confirms in a sheet (before and after, Demand change), applies
+  through the calendar or priority service, and offers Undo for 5 seconds.
+
+- **Break:** a 15-minute "Break" event in Google Calendar right after the
+  longest back-to-back run of 90+ minutes still to come (or just before it
+  if the run ends the day), unless a break is already there. Breaks are the
+  rest category, so it saves nothing on paper ("Breather" on the card); it
+  keeps recovery time from being booked. Undo deletes the event. Only with
+  Google Calendar connected.
+
+**Learning (phase 1)** (`rankByHistory`): each kind of fix shown, used or
+undone is logged per day in `day_fixes/{day}.kinds.<kind>` (`shown`,
+`used`, `undone`, and `item: {category, guests}` for later per-item
+learning; never titles). From the last 4 weeks before today:
+- a kind shown on 5+ days and never kept (an Undo counts as not kept) stops
+  being offered; after 3 weeks unseen it gets one more try;
+- the rest rank by (kept + 1) / (shown + 2) × (1 + Demand saved), so with
+  no history the order is by Demand saved, and a kind someone uses can
+  outrank a bigger saving they never take.
+The ranking only uses earlier days, so the card doesn't change while it's
+showing. The X (hidden) leaves everything on the card as shown, not used.
+
+Not built yet: learning which items people move (phase 2, from the logged
+`item`), learning which fixes help (phase 3), a morning notification and
+the evening-before card.
+
+## 3. Effort: what the day took
+
+`Effort = mental points + physical points` (grows through the day). Both
+parts are stored. Because the phone's day record can arrive late (the
+nightly push may be dropped, and the next open may be the next
+afternoon), the server keeps recalculating a day's Effort for 2 days
+after it ends, then locks it.
+
+**Mental:** points of what happened:
+- the elapsed minutes of events (events you declined or that were
+  cancelled don't count);
+- timed priorities that were **completed**;
+- untimed priorities completed today.
+
+Priorities whose slot passed unfinished add no Effort. They are counted
+as `unfinishedPriorities` for burnout.
+
+**Physical:** first source that has data (v1; heart-rate zones aren't
+stored, so they're a later upgrade):
+1. Exercise: in-app workouts' minutes × intensity by type (light 0.1 for
+   walks, yoga and stretching; vigorous 0.35 for runs, HIIT, cycling,
+   rowing, swimming and boxing; moderate 0.2 for strength, sports and
+   everything else), plus Health exercise minutes outside in-app
+   workouts (`exercise_time.healthSum`) × 0.2. A 45-min run ≈ 16 points.
+2. No exercise: active calories above your 90-day median (from 7 days of
+   history) ÷ 50 kcal (a heavy day on your feet still counts).
+
+Physical points are capped at 25. In-app workouts and Health minutes
+don't overlap (the app already subtracts one from the other), so nothing
+is counted twice.
+
+**Implemented** in `functions/effort.js` (`computeDailyEffort` on day
+records, `computeEffortFromWorkout` on workouts, and the existing
+`computeDailyCapacity` trigger when exercise minutes or active calories
+change). `finishDailyEffort` recalculates every day about an hour after it
+ends, so the final Effort counts the whole day even if the phone's
+record wasn't rewritten after the last event. Its hourly loads match the
+phone's calculator through shared cases in
+`test/fixtures/calendar_load_cases.json`.
+
+**Recovery from yesterday** (in Capacity) starts once there are 7 days of
+Effort; until then it's left out.
+
+**Shown on Home** as "Your Day" (replacing "Your Day's Load"),
+never as a headline number. Hourly bars before now are Effort (solid,
+workouts in their own colour) and after now are Demand (outlined). A
+summary shows **So far** as a word only: "Heavier than usual", "About
+usual" or "Lighter than usual" against your usual Effort by this time of
+day, or "Still learning your usual" until there are 14 days of Effort.
+**Still ahead** shows the planned time and how heavy it is, switching to
+**Tomorrow** after the last item. Implemented in `lib/src/utils/day_effort.dart`
+and Home's card: "usual by this time of day" is the median of the last 28
+days' `effort.byHour` at the current hour (from 14 days), and Home rates
+events with the same Claude sorting as the day records. Tapping a bar and the "Open" row stay as
+they are.
+
+Priorities on the chart:
+- **Untimed priorities** have no hour, so they don't get a bar. Their
+  points count towards "So far", and a small tick marks the hour they
+  were completed.
+- **Timed priorities finished early** count as soon as they're ticked
+  off and are drawn as done in their planned slot, so the chart keeps the
+  plan's shape.
+- Unticking a priority removes its points.
+
+## 4. Capacity: the energy you have today
+
+Calculated each morning, 0–100. Each ingredient becomes a 0–100 sub-score
+against **your own** 90-day normal: a long memory, so a slow decline isn't
+absorbed into "normal". Missing ingredients are left out and the rest are
+re-weighted, except overnight body data (see below).
+
+| Ingredient | Weight | Sub-score |
+|---|---|---|
+| Sleep | 45 | 100 × min(1, hours ÷ your need); below 5 h, × 0.7. −10 if bedtime is > 60 min off your 14-day median |
+| Overnight body | 35 | Average of the available parts: HRV 70 + 100 × (HRV ÷ your 90-day HRV − 1); resting HR 70 − 6 × (bpm above your 90-day RHR) |
+| Recovery | 20 | 100 − the larger of (yesterday's Effort − your usual Effort, if above) and a big day's cost (below), floored at 0. Higher = less to recover from |
+| Morning check-in (optional) | +15 | Average of the parts answered: "How do you feel?" as a mood score (0–100, the same scale as mood check-ins) and "How did you sleep?" (Awful 0, Poor 25, Okay 50, Good 75, Great 100) |
+
+`Capacity = Σ(weight × sub-score) ÷ Σ(weights of the ingredients present)`
+
+Note the two meanings of "100": an Effort of 100 is an extremely heavy
+day, but a Recovery-from-yesterday sub-score of 100 means yesterday was no
+heavier than usual.
+
+**A big day** (version 2, `strongestBigDay` in `functions/capacity.js`).
+A day's load is measured two ways, each with its own usual, and the two are
+never compared with each other:
+
+- **Heart-rate load** (`functions/activity_load.js`), counted once there
+  are 14 active days of it in the last 90: Banister's TRIMP over minutes at or
+  above 40% of heart-rate reserve (ACSM's moderate), each minute weighted
+  by reserve × 0.64e^(1.92 × reserve) (men; women 0.86e^(1.67 × reserve);
+  the average when sex isn't given). Reserve uses the day's resting heart
+  rate and a maximum of 208 − 0.7 × age (190 without an age), raised to
+  the highest reading seen. Apple Health and Bluetooth wearables, a
+  wearable winning a shared minute, scans left out; a sparse reading
+  stands for up to 5 minutes. A day needs 60 readings to count as
+  measured. Calculated when the day's heart rate syncs (the metrics
+  trigger already has it) and saved small as `scores_daily/{day}
+  .activityLoad` ({trimp, minutes, readings, peakHr, restingHr, maxHr}),
+  so Capacity never reads the heart-rate arrays. Roughly: an hour at 150
+  bpm for a 30-year-old is about 115; harder short sessions outweigh long
+  easy ones.
+- **Minutes:** Effort's physical points without the 25-point cap
+  (`physicalLoad` in `functions/effort.js`: in-app workouts × intensity
+  plus Health exercise minutes × 0.2, or active calories above the usual ÷
+  50), read straight from workouts and metrics.
+
+Each recent day uses heart-rate load if it was measured (and the person has
+a heart-rate usual), otherwise minutes against the minutes usual, so a day
+with the watch left off still counts. Each usual is the median load on
+active days in the last 90. A big day is
+at least 2× your usual and at least a minimum (40 TRIMP or 12 points, about
+an hour of moderate exercise); the usual counts as at least half the
+minimum, so an hour reads as 2× for someone who rarely exercises. It costs
+Recovery 40 at 2×, 70 at 3× and 90 from 4× (straight lines between), about
+7, 12 and 15 Capacity points, fading over the next 3 days (full, then half,
+then a quarter); the strongest of the three counts. Halved when this
+morning's overnight body sub-score is at your normal (65 or more). Saved as
+`capacity.bigDay` ({day, ratio, penalty, halved, kind}) and
+`capacity.activityUsual` ({heart, minutes}, each {usual, base, threshold}
+or null: a day is big from `threshold`, its ratio is load ÷ `base`). The
+app's evening note uses heart rate once today's is measured, minutes
+otherwise.
+A changed Effort or heart-rate load recalculates the next 3 days' Capacity.
+One big day never feeds the training-load warning (a pattern, not a peak).
+
+**Training load** (`functions/training_load.js`, version 1): this week's
+activity against the person's usual week, calculated with Capacity each
+morning (even when Capacity itself can't be) and saved as
+`scores_daily/{day}.trainingLoad`.
+
+- Each day is relative to its own measure's usual, as for a big day:
+  heart-rate load ÷ its base when measured, minutes ÷ the minutes base
+  otherwise, so 1.0 is an ordinary active day; a rest day is 0.
+- **This week** is the sum of the last 7 complete days; **the usual week**
+  is the sum of days 8–35 ÷ 4, so this week never raises its own bar. The
+  ratio is this week ÷ the usual week. A **hard day** is 1.5× or more.
+- **Learning** (hidden) until 21 of those 28 days have a load and the usual
+  week is at least 1 (an ordinary active day a week).
+- **States:** Lighter under 0.8; Steady 0.8–1.3; Building 1.3 or more;
+  **High** 1.5 or more with at least 3 hard days; **Strained** is High
+  while the body agrees: HRV more than 5% under its 90-day median or
+  resting heart rate at least 3 bpm over it, on 2 of the last 3 mornings.
+  High and Strained hold until the ratio drops under 1.3.
+- Saved: `{version, state, ratio, thisWeek, usualWeek, hardDays, kind
+  (heart, minutes or mixed), days: [{day, value, kind}] oldest first,
+  body: {mornings, hrvLow, restingHigh, restingHrChange, agrees}}`, or
+  `{version, state: "learning", coveredDays}`.
+- **One push when Strained starts** (yesterday wasn't Strained, and none
+  in the last 7 days; only for a day still under way): "You've trained a
+  lot more than usual", naming the multiple and HRV or resting HR. Sent
+  from `refreshCapacity`, recorded as `trainingLoad.lastNotified` (carried
+  from yesterday's record) so recalculations never repeat it. Off with
+  Settings → Training load (`preferences.trainingLoadNotificationsEnabled`,
+  on unless false) or `preferences.notificationsEnabled`; opens My Day.
+  Sent through `functions/push.js`, shared with the burnout warning.
+- **Burnout** reads the daily ratio as a driver in the Effort group
+  ("Training load about 60% above your usual"; suggestion "Take an easier
+  week: swap one hard session for a walk").
+- **App** (`lib/widgets/training_load_card.dart`, words from
+  `lib/src/utils/training_load_view.dart`): a Training Load card on Fitness
+  after This week in every state but Learning (the 7 days as bars, hard
+  days in coral, the usual week's average day as a line); a coral card on
+  My Day under the brief only at High or Strained, with "Plan an easier
+  week" (Vivordo AI, screen `training_load`) and "Details" (the card and
+  how it works in a sheet). Both read the latest of the last 3 days.
+- Thresholds are estimates from sports-science norms (acute:chronic
+  workload around 1.3–1.5) until there's real data.
+
+Without a check-in the weights are exactly 45 / 35 / 20. With one, they
+work out to about 39 / 30 / 17 / 13. Each sub-score is clamped to 0–100.
+
+**Missing overnight body data counts as 70** (a normal night) instead of
+being left out. Leaving it out inflated scores without a wearable: an
+ordinary day scored 99 without one and 89 with one, because the body
+sub-score sits at 70 on a normal night. With a neutral 70, the same day
+scores the same either way. The day is still flagged as having no body
+data (`hrv` and `restingHr` stay null), so trends and burnout know it was
+assumed, not measured.
+
+**Why there is no morning stress:** the stress score is already built from
+sleep, HRV and resting heart rate, so including it counted last night
+twice (and, without a wearable, it adds little beyond sleep and mood).
+Stress stays its own live number. The check-in replaces it as the one
+signal sensors can't measure. It is left out on days it isn't answered.
+
+**The daily check-in** is a one-line row on Home under the stress card
+("Daily check-in · 2 taps ›", `CheckInRow`) from 5 AM (local; not before
+5 AM, when most people haven't slept yet) until both questions are answered
+or it's put off with "Not today"; unanswered, it goes at midnight and comes
+back at 5 AM. Tapping it opens the check-in sheet (below). "How do you
+feel?" uses the mood labels (Awful 10, Down 30, Okay 50, Good 75, Great 95)
+and is also saved as the day's mood check-in. "How did you sleep?" is asked
+even when sleep was recorded, with the recorded duration shown beside it.
+Answers are saved to `metrics_daily/{day}.morning_check_in` as
+`{feel, sleep, dismissed}` (scores), which the Capacity trigger reads. Once
+both are answered the row disappears; an answer given late in the day still
+counts for that day's Capacity. An opt-in reminder (Settings → Morning
+check-in reminder, `preferences.checkInMorningReminder`,
+`lib/src/services/check_in_reminder.dart`) fires at 10 AM on days the
+check-in is still open; the next 7 mornings are scheduled whenever Home
+loads the calendar, and today's is dropped as soon as the check-in is
+answered or dismissed.
+
+**The check-in sheet** asks everything on one screen: sleep, "Anything from
+last night?" tags, then feel (answers already given show as selected). Once
+both questions are answered it waits 1.5 s (any tap restarts the wait, so a
+last tag still lands), shows "You're set for today" and closes itself. The
+recorded-sleep hint is live, so it appears if the sleep syncs while the
+sheet is open. Opened from the row, "Not today" sets `dismissed` and hides
+the row for the day; a swipe down just closes it.
+
+**The check-in pop-up.** On the first Home open between 5 AM and noon,
+while the check-in is still open, the sheet opens by itself. It shows once a
+day (`morning_check_in.prompted`), only over Home itself (not over another
+screen, sheet or dialog, and not when the app opened to the mood check-in),
+so the 10 AM reminder, which opens Home, brings it up. "Not today" or a
+swipe down closes it without hiding the row. After 3 dismissals in a row
+(`preferences.checkInPopupDismissals`, reset when both get answered in it)
+it stops popping up and the row stays as the way in.
+
+**Night tags.** Alcohol, late caffeine, late meal, screens in bed, sick and
+travel, on the check-in sheet and in Journal for any night. Saved in
+`users/{uid}/daily_tags/{day}` (`tags`, sorted ids) under the date the
+evening belongs to, outside metrics_daily so a tap doesn't resend the large
+day documents to their listeners. Rating sleep with the tags in view saves
+the current set, so an empty list means "nothing that night": the
+comparisons (planned: next-day Capacity, sleep, resting HR and HRV on tagged
+vs untagged nights, shown once a tag has 5 of each) need those days.
+
+- **Your sleep need** is your 90-day median sleep, kept between 7 and 9 h.
+  With fewer than 14 nights it is 8 h.
+- **Your usual Effort** is the 90-day median.
+- **Without a wearable:** sleep from Health, recovery from yesterday, the
+  morning check-in, and a morning camera heart scan (resting HR) if one was
+  done.
+- **Not enough data:** with no sleep, no overnight body data and no
+  check-in, Capacity is shown as unavailable. It is never guessed.
+- **One reading never decides it:** a resting HR more than 12 bpm from your
+  normal is treated as a bad reading and left out (`restingHrIgnored`), and
+  with no sleep and no check-in, the body part needs both HRV and resting
+  HR. Otherwise the day is unavailable. (A lone resting HR of 67 against a
+  normal of 49 used to score 0.)
+- **Check-in only** (no sleep or body data yet): Capacity is the check-in
+  (plus recovery from yesterday, once built), without the assumed neutral
+  body, and is labelled "Based on your check-in" until sleep syncs.
+- **Provisional until last night's sleep syncs.** There's no time cutoff,
+  because there's no way to know when someone woke up. Capacity
+  recalculates whenever last night's sleep arrives, and locks at local
+  midnight. If sleep never arrives, it stays provisional on the other
+  ingredients.
+- **Labels:** High ≥ 80, Moderate 50–79, Low < 50. These are raised from
+  70 / 40, because an ordinary day scores about 85–90 with this formula and
+  the old bands called nearly every day High.
+
+Changes from the current Capacity:
+- sleep is compared with your own need, not 8 h;
+- HRV and resting HR are compared with your own normal, instead of heart
+  rate vs a fixed 60 bpm. HRV uses one kind only (WHOOP or Fitbit overnight
+  RMSSD, else Apple SDNN; `functions/hrv.js`), since the kinds can't be
+  compared; `hrvKind` records which;
+- recovery from yesterday's Effort carries over;
+- morning stress is dropped (it double-counted sleep and the body);
+- an optional morning check-in adds a self-reported signal;
+- missing body data counts as a neutral 70, so scores with and without a
+  wearable are comparable;
+- the label bands are raised to 80 / 50;
+- the score recalculates when sleep arrives and locks at midnight.
+
+## 5. Daily record
+
+One record per day in `users/{uid}/scores_daily/{day}` (server-written,
+owner-readable). It is not stored in `metrics_daily`, where writing back
+would re-trigger the function, nor in the summary documents, which are
+replaced whole on every projection. Capacity is implemented in
+`functions/capacity.js`: the `computeDailyCapacity` trigger recalculates
+only when a day's sleep, HRV, resting heart rate or check-in changes, reads just
+those fields for 90 days, and never rewrites a day once it is over in
+every time zone (`final`). `scripts/backfill_capacity.js` fills past days.
+Field names below are the planned shape; see `capacity.js` for the exact
+Capacity record.
+
+```
+capacity: { score, final, version, provisional,
+            sleepHours, sleepNeed, bedtimeOffsetMin,
+            hrv, hrvKind, hrvNormal, restingHr, restingHrNormal,
+            checkInFeel, checkInSleep, yesterdayEffort, usualEffort }
+effort:   { total, mental, physical, physicalSource, final, version,
+            busyMinutes, backToBack, afterHoursMinutes,
+            prioritiesDone, unfinishedPriorities, unknownMinutes,
+            byHour }   // running total at the end of each hour
+demand:   { expectedAtWake, version }
+```
+
+- Missing values are null, never 0.
+- Each score carries a formula version; trends and burnout only compare
+  days from the same version.
+- Capacity and Effort are calculated on the server.
+- The phone writes the day's calendar facts (event intervals with
+  category and demand, no titles), because calendar data only exists on
+  the device.
+- Live Demand is calculated in the app with the same formulas, kept in
+  sync with the server by shared test cases.
+
+## 6. Burnout
+
+**Implemented** in `functions/burnout.js`; runs each night from
+`finishDailyEffort`, about an hour after a day ends in the person's time
+zone, right after that day's final Effort.
+
+- **Three areas**, each compared with the person's own normal (the 8 weeks
+  ending 2 weeks before the last 2): **Capacity** (lower is worse; a
+  Capacity still waiting for sleep is left out), **Effort** (heavier is
+  worse) and **Mood** (lower is worse).
+- **Drivers** explain it but don't decide it: sleep, resting HR (unless
+  ignored as a bad reading), HRV (one kind only), back-to-backs,
+  after-hours minutes and training load (§4).
+- An area is **strained** when its last 2 weeks are off by at least the
+  minimum meaningful change (Capacity/Effort/Mood: 5 points) on at least
+  65% of days, scored against the normal's spread.
+- **Levels:** learning (no area has enough data), steady, **watch** (one
+  area strained; no notification), **warning** (two areas strained for 7
+  nights, or one area far off plus another strained). A warning holds until
+  7 calm nights.
+- **Early check** (from ~3 weeks until the full check has enough data at
+  ~6 weeks): the last 7 days (at least 5 with data) against every day before
+  them (at least 14), no gap. It can say steady or watch but never warning
+  or notify, since a short normal is noisy and may include the strain
+  itself; its strained nights don't count towards a warning. Saved with
+  `early: true`; the app shows "Steady · early check" and words reasons as
+  "for a week".
+- **One push** when a warning starts (not within 7 days of the last), naming
+  the areas: "Lower energy and heavier days than usual." Off with Settings →
+  Burnout check (`preferences.burnoutNotificationsEnabled`, on unless
+  false) or `preferences.notificationsEnabled`; tapping opens My Day.
+- Saved in `scores_daily/{day}.burnout` (`level`, `since`, `areas`,
+  `drivers`, `learningDays`, `early`, `state`). Each day is evaluated once.
+- **App:** under My Day's brief (`lib/widgets/burnout_card.dart`, words
+  from `lib/src/utils/burnout_view.dart`): a one-line row while learning or
+  steady ("Burnout check · Learning your normal" with no day count, or
+  "Steady"), the full card at Watch or Warning; both
+  open a detail sheet. During a warning the brief's headline softens.
+- No backfills: history starts when each person is on this build.
+- Known limits: a day without a day record (app not opened that day or the
+  next) isn't evaluated; strain lasting ~10+ weeks becomes the new normal.
+
+## 7. Physical Health
+
+**Implemented** in `functions/physical_health.js`. It replaces Wellness on
+Metrics (same card, same position) and its detail screen
+(`lib/screens/physical_health_screen.dart`, words from
+`lib/src/utils/physical_health_view.dart`).
+
+- **What it measures:** long-term physical habits and fitness over the last
+  28 days. It has nothing to do with My Day.
+- **Ingredients** (each 0–100 towards a target):
+
+  | Ingredient | Weight | Target |
+  |---|---|---|
+  | Active minutes | 30% | 150 min a week (WHO) |
+  | Daily movement | 15% | 8,000 steps a day |
+  | Strength | 20% | 2 sessions a week, from in-app workouts |
+  | Cardio fitness | 20% | VO₂ max vs the median for age and sex |
+  | Sleep habits | 15% | 7–9 h, plus a regular bedtime |
+
+- **Counting rules:**
+  - Strength counts only for people who logged any in-app workout in the
+    last 90 days, so non-loggers aren't marked down.
+  - Sleep habits = 70% duration and 30% on-time share; on-time needs 5
+    bedtimes.
+  - Without tracked sleep, sleep falls back to the morning check-in's
+    "How did you sleep?" (needs 7 answers).
+- **VO₂ max**, in this order:
+  1. The latest measured value in 90 days, from Apple Watch (HealthKit,
+     read in the app through a native channel) or Fitbit (Google Health
+     `daily-vo2-max`, unless flagged estimated).
+  2. Otherwise an estimate: the Jackson non-exercise formula (age, sex,
+     BMI, activity), averaged with Uth (resting HR) when known. Missing
+     exercise data counts as inactive.
+  - WHOOP's API has no VO₂ max, so WHOOP users get the estimate.
+  - Needs age (and height/weight for the estimate). Sex "prefer not to
+    say" averages the male and female norms.
+  - Score = 60 at the median, ±40 per 20% above or below.
+- **Labels:** excellent ≥90, good ≥70, fair ≥50, low <50.
+- **Building:** it stays building until there are 14 days with data and
+  at least 3 of the 5 ingredients. It never guesses.
+- **Where it's saved:** `scores_daily/{day}.physical` (`score`, `label`,
+  `parts`, `details`, `daysOfData`).
+- **When it updates:**
+  - `computeDailyCapacity` recalculates it when steps, exercise, sleep,
+    check-in sleep, VO₂ max or weight change.
+  - `computeEffortFromWorkout` recalculates it for the workout's day.
+  - `computePhysicalFromProfile` recalculates it when height, weight, age
+    or sex change on the profile, for the newest day with synced data.
+- **Age and sex** come from onboarding (question 11) and the profile button
+  on Fitness → Body. They are stored in `preferences.personalProfile`
+  (`birthYear`, `sex`).
+- No backfills: history starts when each person is on this build.
+
+## 8. Energy forecast
+
+**Phase 1 implemented** (the model only, not yet shown in the app) in
+`lib/src/utils/energy_forecast.dart`. It's calculated on the phone, like
+Demand, because clash detection will need the device calendar. It's a
+forecast from sleep and body clock, not a measurement, and shows as windows
+and words, never a score.
+
+- **Model:** a two-process model plus sleep inertia, every 15 min from wake
+  to your usual bedtime: body clock (a 24 h wave peaking 11 h after your
+  sleep midpoint, plus a 12 h wave peaking 5.5 h after it) − sleep pressure
+  (rising while awake, time constant 18.2 h, starting higher after a short
+  night or with sleep debt) − grogginess (fading over ~70 min). The constants
+  are product choices fitted to the textbook day of an 11 PM–7 AM sleeper;
+  tune them later against "How's your energy?" answers.
+- **Inputs:** the last 14 nights (sleep start and end), last night, and
+  Capacity's sleep need (8 h if missing).
+  - **Chronotype:** the median sleep midpoint, preferring weekend nights
+    when there are at least 2. Until there are 5 nights it comes from your
+    usual sleep schedule (below), else 3:30 AM.
+  - **Sleep debt:** the shortfall against your need over the last 7 nights,
+    capped at 10 h.
+- **Windows:**
+  - groggy: until grogginess fades;
+  - peak: the high point in the first half of the waking day;
+  - dip: the lowest turning point after the peak, at least 0.08 below it;
+  - second wind: a later turning point at least 0.04 above the dip;
+  - wind-down: the hour before bed-by.
+- **Bed-by:** tomorrow's first event − 60 min − your sleep need, no later
+  than your usual bedtime.
+- **Missing last night:** your usual pattern is used and the forecast is
+  marked `estimated`.
+- **Usual sleep schedule** (`preferences.sleepSchedule`: `bed`, `wake`, and
+  `weekendBed`/`weekendWake` for Friday and Saturday nights when they
+  differ; minutes after midnight, `lib/src/utils/sleep_schedule.dart`).
+  Asked in onboarding for everyone, after Health, and changed from the Sleep
+  screen's menu. Both are prefilled from the last two weeks of tracked sleep
+  when there are at least 3 nights (medians, rounded to 15 min; weekend
+  times only when they differ by 30 min or more). Until 5 nights are
+  tracked it sets the chronotype, a usual night's length (and so the
+  morning's sleep pressure when last night is missing) and tonight's
+  bedtime; it also lets the forecast show with no tracked sleep at all.
+  Tracked nights always win: last night's real wake time replaces the
+  scheduled one, and from 5 nights on the schedule is ignored. It's never
+  counted as sleep (Capacity doesn't see it).
+- **Night shifts:** everything is anchored to your actual sleep, not clock
+  time. Known limit: a mix of day and night sleeps gives a meaningless
+  median midpoint.
+
+**Phase 2 implemented** (logic only, not yet shown) in
+`lib/src/utils/energy_fit.dart`: `fitDayToEnergy` judges the day's items
+still ahead (Your Day's events and timed priorities) against the forecast.
+
+- **Hard work:** focused-work and high-consequence events, and priorities
+  rated demanding.
+- **Light work:** routine events and light priorities.
+- **Judged at** 30 minutes in (or the middle, if shorter), so a meeting that
+  starts just before the dip still counts as in it.
+- **Clash:** hard work in the groggy, dip or wind-down window. At most 2 a
+  day, hardest first.
+- **Good fit:** hard work in the peak or second wind, or light work in the
+  dip.
+- **Movable:** timed priorities, and events with no other guests. Events
+  with other people get the note only.
+- **Suggested slot** (movable clashes only): the free start nearest the
+  item's current time in the peak, else the second wind. It must be on the
+  same day, at least 15 min from now, and end before wind-down. Declined,
+  cancelled, all-day and free-time events don't block slots, and the item
+  never blocks its own new slot.
+
+**Phase 3 implemented** (what you see):
+- **Data:** the screen projections now read `sleep.bedtime` and
+  `sleep.wakeTime` (Home's history window, My Day's brief window), so no
+  extra Firestore reads are needed (`lib/src/utils/sleep_nights.dart`).
+  Sleep need comes from today's server Capacity (`capacity.sleepNeed`). The
+  forecast shows once a night is recorded or a usual sleep schedule is
+  saved.
+- **Home, Your Day:**
+  - the curve drawn over the bars, scaled to the day's own range so its
+    shape shows;
+  - the peak and dip shaded;
+  - Peak / Dip / Second wind chips, which open the sheet;
+  - the first clash as a sentence.
+- **My Day timeline:**
+  - a thin energy strip beside each upcoming row;
+  - good fits get "in your peak ✓";
+  - clashes get an amber note with the suggested time ("Lands in your
+    afternoon dip. Try 6 PM, in your second wind"), never for repeating
+    events.
+  - Moves aren't applied yet; they'll share the confirm sheet with "Act on
+    More than you've got".
+- **"Your energy today" sheet** (`lib/widgets/energy_forecast_view.dart`):
+  the curve, the chips, and plain-language reasons (sleep against need,
+  grogginess, body clock, sleep debt, best focus time).
+- **Evening card on My Day,** after your end-of-day time:
+  - wind-down time;
+  - bed-by (from tomorrow's first timed event);
+  - sleep debt;
+  - tomorrow's windows if you're in bed by then.
+- **Rounding:** windows and bedtime round to the nearest quarter-hour.
+
+**Phase 4 implemented** (the wind-down reminder,
+`lib/src/services/wind_down_reminder.dart`):
+- **Opt-in:** the evening card offers "Remind me at <wind-down>" once.
+  "No thanks" hides the offer for good and says where to turn it on later.
+  Also switchable in Settings → Notifications and the Sleep screen's menu.
+  Stored as `preferences.windDownReminder` (missing = not asked yet).
+- **Scheduling:** while on, the next 7 nights are scheduled as local
+  notifications at each night's wind-down start (bed-by − 60 min), skipping
+  any already past. They're rescheduled whenever Home or My Day loads the
+  calendar, and tonight's uses tomorrow's first timed event. Later nights
+  use the usual bedtime until a reschedule. Nothing is scheduled without
+  tracked sleep or a usual schedule, or while notifications are denied.
+- **Text:** "Time to wind down. Bed by 11:15 PM for 8 h before 7:15 AM.
+  Tomorrow's peak is 9:15–11:30 AM." Tapping opens My Day.
+
+**Phase 5 implemented** (Vivordo AI context): Home and My Day keep the
+forecast they last showed in `latestEnergy` (`energyContext`), and each chat
+message sends it as ENERGY when it's from today:
+- today's wake (or usual wake, marked estimated), groggy end, windows and
+  bed-by (Home now also uses tomorrow's first event, like My Day);
+- last night against need, and sleep debt;
+- each clash still ahead, whether it can move and where;
+- after the end-of-day time, tomorrow's windows if in bed by bed-by.
+
+`functions/assistant.js` accepts the `energy` key and has one rule: it's a
+forecast, suggest the peak or second wind for demanding work, propose moves
+for the user to confirm, and never invent windows without it. The server
+ignores unknown keys, so app and functions can ship in either order.
+
+## Open questions
+
+None. Decided (2026-10-01):
+- Ticking off any priority, timed or untimed, adds Effort.
+- Late sleep updates Capacity, with no time cutoff.
+- Unknown events are classified by Claude Opus 5.5 at low effort. Revisit
+  with a Haiku 4.5 comparison on real titles once there are thousands of
+  users.
+- The privacy policy needs a line about event titles being processed by
+  an AI provider.
+- After hours = after the user's own wrap-up time (default 5 PM).

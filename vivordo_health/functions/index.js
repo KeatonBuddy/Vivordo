@@ -3,6 +3,7 @@ const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {
   onDocumentCreated,
+  onDocumentUpdated,
   onDocumentWritten,
 } = require("firebase-functions/v2/firestore");
 const {defineSecret} = require("firebase-functions/params");
@@ -17,6 +18,7 @@ const {
 const {
   shouldDeleteWhoopSleep,
   whoopDateKey,
+  whoopFetchMayClearSleep,
   whoopPresentSleepDays,
   whoopReconciliationDays,
 } = require("./whoop_reconciliation");
@@ -24,19 +26,206 @@ const {
   activityGoalsFromUserData,
   calculateActivityScore,
 } = require("./activity_score");
-const {
-  calculateHeartHealthScore,
-  HEART_HEALTH_BASELINE_WINDOW_DAYS,
-} = require("./heart_health_score");
 const {normalizeGoogleHealthSleep} = require("./google_health_sleep");
+const {
+  GOOGLE_DAILY_VITALS,
+  googleHealthVitals,
+  whoopVitals,
+} = require("./wearable_vitals");
 const {whoopDeletionPlan} = require("./whoop_deletion");
+const {nextUsage} = require("./ai_limits");
+const {runAssistant, validateAssistantRequest} = require("./assistant");
+const {buildTask, runTask} = require("./ai_tasks");
 const {
   challengeDeletionPlan,
   hasRecentAuthentication,
+  writeUnlessDeleting,
 } = require("./account_deletion");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
+
+// Deploy explicitly after emulator validation; readers remain opt-in until
+// the account's bounded backfill is verified and its rollout marker enabled.
+exports.projectDailyActivitySummary = onDocumentWritten(
+    {document: "users/{uid}/metrics_daily/{day}", retry: true},
+    async (event) => {
+      const {refreshActivitySummary} = require("./metrics_summary");
+      await refreshActivitySummary(admin.firestore(), event.params.uid,
+          event.params.day, () => admin.firestore.FieldValue.serverTimestamp());
+    },
+);
+
+// Hourly: a silent push to the devices where it's 11 PM, waking the app to
+// record the day for Effort (functions/day_record_push.js).
+exports.sendDayRecordPushes = onSchedule({
+  schedule: "0 * * * *",
+  timeZone: "UTC",
+}, async () => {
+  const {sendDayRecordPushes} = require("./day_record_push");
+  const sent = await sendDayRecordPushes(admin.firestore(), admin.messaging());
+  console.log("Day record pushes sent", {sent});
+});
+
+// Capacity (docs/scores.md §4): recalculated only when a day's sleep, HRV,
+// resting heart rate or check-in changes (and for the next 3 days when the
+// day's heart-rate load changes), Effort (§3) only when its
+// exercise minutes or active calories change, and Physical Health (§7) only
+// when its activity, sleep, VO₂ max or weight change, so other syncs cost
+// nothing.
+// One trigger for both, so each metrics write runs one function.
+exports.computeDailyCapacity = onDocumentWritten(
+    {document: "users/{uid}/metrics_daily/{day}", retry: true},
+    async (event) => {
+      const before = event.data?.before?.data();
+      const after = event.data?.after?.data();
+      const {capacityInputsChanged, refreshCapacity} = require("./capacity");
+      const {effortInputsChanged, refreshEffort} = require("./effort");
+      const timestamp = () => admin.firestore.FieldValue.serverTimestamp();
+      const {uid, day} = event.params;
+      if (capacityInputsChanged(before, after)) {
+        await refreshCapacity(admin.firestore(), uid, day, timestamp);
+      }
+      if (effortInputsChanged(before, after)) {
+        await refreshEffort(admin.firestore(), uid, day, timestamp);
+      }
+      // Heart-rate load (docs/scores.md §4) from the heart rate this event
+      // already carries; a changed load moves the next 3 days' Recovery.
+      const {heartRateChanged, refreshActivityLoad} =
+        require("./activity_load");
+      if (heartRateChanged(before, after) &&
+          await refreshActivityLoad(admin.firestore(), uid, day, after,
+              timestamp) === "written") {
+        for (let k = 1; k <= 3; k++) {
+          const next = new Date(Date.parse(`${day}T00:00:00Z`) +
+            k * 86400000).toISOString().slice(0, 10);
+          await refreshCapacity(admin.firestore(), uid, next, timestamp);
+        }
+      }
+      // Physical Health (docs/scores.md §7): the 28 days ending on this day.
+      const {physicalInputsChanged, refreshPhysicalHealth} =
+        require("./physical_health");
+      if (physicalInputsChanged(before, after)) {
+        await refreshPhysicalHealth(admin.firestore(), uid, day, timestamp);
+      }
+    },
+);
+
+// Effort (docs/scores.md §3): recalculated when the phone writes a day's
+// record of events and priorities (lib/src/services/day_record_service.dart).
+exports.computeDailyEffort = onDocumentWritten(
+    {document: "users/{uid}/effort_inputs/{day}", retry: true},
+    async (event) => {
+      const {refreshEffort} = require("./effort");
+      await refreshEffort(admin.firestore(), event.params.uid,
+          event.params.day, () => admin.firestore.FieldValue.serverTimestamp());
+    },
+);
+
+// Hourly: recalculates each day's Effort about an hour after that day ends
+// (in its own time zone), so the final Effort counts the whole day even if
+// the phone's record wasn't rewritten after the last event.
+exports.finishDailyEffort = onSchedule({
+  schedule: "15 * * * *",
+  timeZone: "UTC",
+}, async () => {
+  const {Timestamp} = require("firebase-admin/firestore");
+  const {refreshEffort} = require("./effort");
+  const {refreshBurnout} = require("./burnout");
+  const db = admin.firestore();
+  const timestamp = () => admin.firestore.FieldValue.serverTimestamp();
+  const now = Date.now();
+  const ended = await db.collectionGroup("effort_inputs")
+      .where("dayEnd", ">=", Timestamp.fromMillis(now - 2 * 3600000))
+      .where("dayEnd", "<", Timestamp.fromMillis(now - 3600000))
+      .select()
+      .get();
+  // ponytail: one day at a time; run in parallel chunks if this hour's
+  // count grows into the thousands.
+  const burnout = {};
+  for (const doc of ended.docs) {
+    const uid = doc.ref.parent.parent.id;
+    await refreshEffort(db, uid, doc.id, timestamp);
+    // The burnout check for the day that just ended, on its final Effort
+    // (docs/scores.md §6). One account failing doesn't stop the rest.
+    try {
+      const outcome = await refreshBurnout(db, admin.messaging(), uid,
+          doc.id, timestamp);
+      burnout[outcome] = (burnout[outcome] ?? 0) + 1;
+    } catch (error) {
+      console.error("Burnout check failed", {uid, day: doc.id, error});
+    }
+  }
+  console.log("Effort and burnout finished for days",
+      {count: ended.size, burnout});
+});
+
+// Effort again when an in-app workout is saved, changed or deleted: the day
+// is the one whose record covers the workout's start.
+exports.computeEffortFromWorkout = onDocumentWritten(
+    {document: "users/{uid}/workouts/{workoutId}", retry: true},
+    async (event) => {
+      const workout = event.data?.after?.data() ?? event.data?.before?.data();
+      // Physical Health counts strength sessions by the workout's local day.
+      const {refreshPhysicalHealth} = require("./physical_health");
+      if (typeof workout?.exerciseGoalDay === "string") {
+        await refreshPhysicalHealth(admin.firestore(), event.params.uid,
+            workout.exerciseGoalDay,
+            () => admin.firestore.FieldValue.serverTimestamp());
+      }
+      const startedAt = event.data?.after?.data()?.startedAt ??
+        event.data?.before?.data()?.startedAt;
+      if (typeof startedAt?.toMillis !== "function") return;
+      const db = admin.firestore();
+      const records = await db
+          .collection(`users/${event.params.uid}/effort_inputs`)
+          .where("dayStart", "<=", startedAt)
+          .orderBy("dayStart", "desc")
+          .limit(1)
+          .select("dayEnd")
+          .get();
+      const record = records.docs[0];
+      if (!record || record.get("dayEnd")?.toMillis() <= startedAt.toMillis()) {
+        return;
+      }
+      const {refreshEffort} = require("./effort");
+      await refreshEffort(db, event.params.uid, record.id,
+          () => admin.firestore.FieldValue.serverTimestamp());
+    },
+);
+
+// Physical Health again when height, weight, age or sex change on the
+// profile, for the newest day with synced data (the user's own today, so no
+// time zone is needed). Other user document writes return straight away.
+exports.computePhysicalFromProfile = onDocumentUpdated(
+    {document: "users/{uid}", retry: true},
+    async (event) => {
+      const {profileInputsChanged, refreshPhysicalHealth} =
+        require("./physical_health");
+      if (!profileInputsChanged(event.data?.before?.data(),
+          event.data?.after?.data())) return;
+      const {uid} = event.params;
+      const db = admin.firestore();
+      const newest = await db.collection(`users/${uid}/metrics_daily`)
+          .orderBy(admin.firestore.FieldPath.documentId(), "desc")
+          .limit(1)
+          .select()
+          .get();
+      if (newest.empty) return;
+      await refreshPhysicalHealth(db, uid, newest.docs[0].id,
+          () => admin.firestore.FieldValue.serverTimestamp());
+    },
+);
+
+// New accounts start on compact achievement inputs; see
+// enableSummariesForNewAccount for why only history-free accounts qualify.
+exports.enableAchievementSummaries = onDocumentCreated("users/{uid}",
+    async (event) => {
+      const {enableSummariesForNewAccount} = require("./metrics_summary");
+      await enableSummariesForNewAccount(admin.firestore(), event.params.uid,
+          () => admin.firestore.FieldValue.serverTimestamp());
+    },
+);
 
 // Server-owned block records cannot be forged or removed by the other user.
 exports.blockCircleUser = onCall(async (request) => {
@@ -467,7 +656,10 @@ exports.achievementUnlockNotification = onDocumentWritten(
         user.collection("notification_tokens").get(),
       ]);
 
-      if (userSnapshot.data()?.preferences?.notificationsEnabled === false) {
+      // Settings → Achievements (on unless switched off).
+      const preferences = userSnapshot.data()?.preferences;
+      if (preferences?.notificationsEnabled === false ||
+          preferences?.achievementNotificationsEnabled === false) {
         console.info("Achievement notification disabled by user", {
           userUid,
           achievementId,
@@ -548,65 +740,121 @@ exports.achievementUnlockNotification = onDocumentWritten(
 );
 
 // =============================================================================
-// pandaClaude — real-time HTTPS Callable proxy for Anthropic API
-// Security: API key stays server-side (VIV-309).
+// AI budget. The Anthropic API key stays server-side (VIV-309).
 // =============================================================================
 
-exports.pandaClaude = onCall({secrets: [anthropicApiKey]}, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Must be logged in.");
-  }
-
-  const {system, user, maxTokens} = request.data;
-  if (!system || !user) {
-    throw new HttpsError("invalid-argument", "system and user are required.");
-  }
-
-  // maxTokens: 300 for chat turns, 1800 for spike analysis (set by client).
-  // Fall back to 300 (chat default) if omitted.
-  const outputCap =
-      (typeof maxTokens === "number" && maxTokens > 0) ? maxTokens : 300;
-
-  const systemBlocks = Array.isArray(system) ?
-    system :
-    [
-      {
-        type: "text",
-        text: String(system),
-        cache_control: {type: "ephemeral"},
-      },
-    ];
-  const userBlocks = Array.isArray(user) ?
-    user :
-    [{type: "text", text: String(user)}];
-
-  const msg = await getAnthropicClient().messages.create({
-    model: "claude-sonnet-4-5",
-    max_tokens: outputCap,
-    system: systemBlocks,
-    messages: [{role: "user", content: userBlocks}],
+/**
+ * Spends one call of the account's daily AI budget, shared by assistant and
+ * aiTask. ai_usage has no client rule, so only the Admin SDK can read or
+ * reset it.
+ *
+ * @param {string} uid The caller.
+ */
+async function consumeAiQuota(uid) {
+  const db = admin.firestore();
+  const usageRef = db.collection("ai_usage").doc(uid);
+  const today = new Date().toISOString().slice(0, 10);
+  const allowed = await db.runTransaction(async (transaction) => {
+    const next = nextUsage((await transaction.get(usageRef)).data(), today);
+    if (next) transaction.set(usageRef, next);
+    return next !== null;
   });
+  if (!allowed) {
+    throw new HttpsError(
+        "resource-exhausted",
+        "Daily AI limit reached. Try again tomorrow.",
+    );
+  }
+}
 
-  const text = (msg.content || []).reduce((acc, block) => {
-    if (block && block.type === "text") {
-      return acc ? `${acc}\n${block.text}` : block.text;
-    }
-    return acc;
-  }, "");
+// =============================================================================
+// assistant — one Vivordo AI chat turn. The prompt and the tool loop live
+// server-side (assistant.js); the app sends the conversation plus context only
+// it has (device calendar, priorities, screen, check-in state).
+// =============================================================================
 
-  // VIV-307: log cache token usage so billing dashboard shows cache hits.
-  console.log("[pandaClaude] usage", JSON.stringify({
-    input: msg.usage?.input_tokens ?? 0,
-    output: msg.usage?.output_tokens ?? 0,
-    cache_create: msg.usage?.cache_creation_input_tokens ?? 0,
-    cache_read: msg.usage?.cache_read_input_tokens ?? 0,
+exports.assistant = onCall(
+    {secrets: [anthropicApiKey], timeoutSeconds: 120},
+    async (request) => {
+      const uid = requireAuth(request);
+      const validated = validateAssistantRequest(request.data);
+      if (validated.error) {
+        throw new HttpsError("invalid-argument", validated.error);
+      }
+      await consumeAiQuota(uid);
+      const {reply, usage, memoryChanges} = await runAssistant({
+        client: getAnthropicClient(),
+        db: admin.firestore(),
+        uid,
+        request: validated,
+        now: () => admin.firestore.FieldValue.serverTimestamp(),
+      });
+      console.log("[assistant] usage", JSON.stringify(usage.map((u) => ({
+        input: u?.input_tokens ?? 0,
+        output: u?.output_tokens ?? 0,
+        cache_create: u?.cache_creation_input_tokens ?? 0,
+        cache_read: u?.cache_read_input_tokens ?? 0,
+      }))), `memory changes: ${memoryChanges}`,
+      `blocks: ${reply.blocks?.map((b) => b.type).join(",")}`);
+      // The conversation summary is stored server-side; the app doesn't use it.
+      const forApp = {...reply};
+      delete forApp.summary;
+      return forApp;
+    },
+);
+
+// =============================================================================
+// aiTask — one-shot AI tasks (check-in questions, chat summaries, workout
+// analysis). The prompts live server-side (ai_tasks.js); the app sends data.
+// =============================================================================
+
+exports.aiTask = onCall({secrets: [anthropicApiKey]}, async (request) => {
+  const uid = requireAuth(request);
+  const call = buildTask(request.data);
+  if (call.error) throw new HttpsError("invalid-argument", call.error);
+  await consumeAiQuota(uid);
+  const {text, usage} = await runTask(getAnthropicClient(), call);
+  console.log("[aiTask]", request.data.task, JSON.stringify({
+    model: call.model,
+    input: usage?.input_tokens ?? 0,
+    output: usage?.output_tokens ?? 0,
   }));
-
-  return {
-    text,
-    usage: msg.usage || {},
-  };
+  return {text};
 });
+
+// =============================================================================
+// classifyPlanItems — sorts unknown calendar events and estimates blank
+// priority effort and duration for Effort and Demand (plan_classifier.js).
+// The app calls it only with the user's AI consent.
+// =============================================================================
+
+exports.classifyPlanItems = onCall({secrets: [anthropicApiKey]},
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Must be logged in.");
+      }
+      const {DAILY_CALL_LIMIT, validatePlanRequest, classifyPlanItems} =
+        require("./plan_classifier");
+      const validated = validatePlanRequest(request.data);
+      if (validated.error) {
+        throw new HttpsError("invalid-argument", validated.error);
+      }
+      // Its own daily budget, so it never uses up Vivordo AI chat's.
+      const db = admin.firestore();
+      const usageRef = db.collection("ai_usage")
+          .doc(`${request.auth.uid}_planning`);
+      const today = new Date().toISOString().slice(0, 10);
+      const allowed = await db.runTransaction(async (transaction) => {
+        const next = nextUsage((await transaction.get(usageRef)).data(),
+            today, DAILY_CALL_LIMIT);
+        if (next) transaction.set(usageRef, next);
+        return next !== null;
+      });
+      if (!allowed) {
+        throw new HttpsError("resource-exhausted", "Daily limit reached.");
+      }
+      return classifyPlanItems(getAnthropicClient(), validated);
+    });
 
 // =============================================================================
 // Fitbit metric sync through the Google Health API
@@ -762,6 +1010,7 @@ async function googleHealthDailyRollup(accessToken, dataType, start, end) {
       "dataPoints:dailyRollUp",
       {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: {
           "Authorization": `Bearer ${accessToken}`,
           "Content-Type": "application/json",
@@ -824,12 +1073,15 @@ function throwGoogleHealthError(status, body) {
   );
 }
 
-async function googleHealthSleep(accessToken, start, end) {
+async function googleHealthPoints(accessToken, type, start, end) {
   const dataPoints = [];
+  const seenTokens = new Set();
   let pageToken;
+  const dateField = type === "sleep" ? "sleep.interval.civil_end_time" :
+    `${type.replace(/-/g, "_")}.date`;
   const filter =
-      `sleep.interval.civil_end_time >= "${dateKey(start)}" AND ` +
-      `sleep.interval.civil_end_time < "${dateKey(end)}"`;
+      `${dateField} >= "${dateKey(start)}" AND ` +
+      `${dateField} < "${dateKey(end)}"`;
   do {
     const query = new URLSearchParams({
       filter,
@@ -838,9 +1090,10 @@ async function googleHealthSleep(accessToken, start, end) {
     });
     if (pageToken) query.set("pageToken", pageToken);
     const response = await fetch(
-        `${_GOOGLE_HEALTH_API}/users/me/dataTypes/sleep/` +
+        `${_GOOGLE_HEALTH_API}/users/me/dataTypes/${type}/` +
         `dataPoints:reconcile?${query}`,
         {
+          signal: AbortSignal.timeout(15000),
           headers: {
             "Authorization": `Bearer ${accessToken}`,
             "Accept": "application/json",
@@ -848,13 +1101,13 @@ async function googleHealthSleep(accessToken, start, end) {
         },
     );
     if (response.status === 403 || response.status === 404) {
-      console.warn("[Google Health] optional data unavailable: sleep");
+      console.warn(`[Google Health] optional data unavailable: ${type}`);
       return [];
     }
     if (!response.ok) {
       const body = await response.text();
       console.error(
-          "[Google Health] sleep request failed",
+          `[Google Health] ${type} request failed`,
           response.status,
           body,
       );
@@ -863,11 +1116,14 @@ async function googleHealthSleep(accessToken, start, end) {
     const body = await response.json();
     dataPoints.push(...(body.dataPoints || []));
     pageToken = body.nextPageToken;
+    if (pageToken && seenTokens.has(pageToken)) {
+      throw new HttpsError("unavailable", "Google Health pagination stalled.");
+    }
+    if (pageToken) seenTokens.add(pageToken);
   } while (pageToken);
-  return dataPoints.filter((point) => {
-    const platform = point.dataSource?.platform;
-    return platform === "FITBIT" || platform === "FITBIT_WEB_API";
-  });
+  // ReconciledDataPoint has no dataSource field. The google-wearables query
+  // already excludes HealthKit; filtering by platform here drops every point.
+  return dataPoints;
 }
 
 function civilDate(date) {
@@ -898,7 +1154,8 @@ function dateKey(date) {
 function metricPayload(values) {
   const payload = {};
   for (const [key, value] of Object.entries(values)) {
-    if (value !== undefined && value !== null && Number.isFinite(value)) {
+    if (Number.isFinite(value) ||
+        (["unit", "dimension"].includes(key) && typeof value === "string")) {
       payload[key] = value;
     }
   }
@@ -906,7 +1163,8 @@ function metricPayload(values) {
 }
 
 function addMetric(days, day, key, values) {
-  if (!day || Object.keys(values).length === 0) return;
+  if (!day || !["avg", "min", "max", "sum"].some(
+      (field) => Number.isFinite(values[field]))) return;
   if (!days[day]) days[day] = {};
   days[day][key] = {
     ...values,
@@ -947,7 +1205,9 @@ async function fetchGoogleHealthData(accessToken, start, end) {
     type,
     results[index],
   ]));
-  data.sleep = await googleHealthSleep(accessToken, start, end);
+  await Promise.all(["sleep", ...GOOGLE_DAILY_VITALS].map(async (type) => {
+    data[type] = await googleHealthPoints(accessToken, type, start, end);
+  }));
   return data;
 }
 
@@ -989,6 +1249,11 @@ function normalizeGoogleHealthData(data) {
       }));
     }
   }
+  for (const [day, metrics] of Object.entries(googleHealthVitals(data))) {
+    for (const [key, value] of Object.entries(metrics)) {
+      addMetric(days, day, key, value);
+    }
+  }
   const sleepByDay = normalizeGoogleHealthSleep(data.sleep);
   for (const [day, sleep] of Object.entries(sleepByDay)) {
     const hours = sleep.minutes / 60;
@@ -1016,20 +1281,10 @@ function normalizeGoogleHealthData(data) {
   return days;
 }
 
-function importedHeartHealthSignals(metrics = {}) {
-  const valid = (value) => Number.isFinite(value) && value > 0 ? value : null;
-  return {
-    restingHeartRate: valid(metrics.resting_heart_rate?.avg),
-    hrvSdnn: valid(metrics.hrv?.avg),
-    quietHeartRate: valid(metrics.heart_rate_scan?.avg) ??
-      valid(metrics.heart_rate?.min),
-  };
-}
-
 function addFitbitWellness(days, activityGoals) {
   const dates = Object.keys(days).sort();
-  for (let dateIndex = 0; dateIndex < dates.length; dateIndex++) {
-    const metrics = days[dates[dateIndex]];
+  for (const date of dates) {
+    const metrics = days[date];
     let weightedScore = 0;
     let totalWeight = 0;
     const sleep = metrics.sleep?.avg;
@@ -1044,15 +1299,6 @@ function addFitbitWellness(days, activityGoals) {
       exerciseMinutesGoal: activityGoals.exerciseMinutes,
       activeCaloriesGoal: activityGoals.activeCalories,
     });
-    const historyStart = Math.max(
-        0,
-        dateIndex - HEART_HEALTH_BASELINE_WINDOW_DAYS,
-    );
-    const heartHealth = calculateHeartHealthScore(
-        importedHeartHealthSignals(metrics),
-        dates.slice(historyStart, dateIndex)
-            .map((date) => importedHeartHealthSignals(days[date])),
-    );
     if (Number.isFinite(sleep)) {
       weightedScore += Math.max(0, Math.min(100, sleep / 8 * 100)) * 0.30;
       totalWeight += 30;
@@ -1061,28 +1307,6 @@ function addFitbitWellness(days, activityGoals) {
       weightedScore += activity.score * 0.20;
       totalWeight += 20;
     }
-    if (heartHealth.score !== null) {
-      weightedScore += heartHealth.score * 0.15;
-      totalWeight += 15;
-    }
-    metrics.heart_health = {
-      avg: heartHealth.score,
-      unit: "score",
-      source: "computed_personal_baseline",
-      status: heartHealth.isBuildingBaseline ?
-        "building_baseline" : heartHealth.score === null ?
-          "unavailable" : "ready",
-      confidence: heartHealth.confidence,
-      availableSignals: heartHealth.availableSignals,
-      scoredSignals: heartHealth.scoredSignals,
-      baselineDays: heartHealth.baselineDays,
-      components: {
-        restingHeartRate: heartHealth.restingHeartRateScore,
-        hrv: heartHealth.hrvScore,
-        quietHeartRate: heartHealth.quietHeartRateScore,
-      },
-      computedAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
     if (totalWeight > 0) {
       metrics.wellness = {
         avg: weightedScore / totalWeight * 100,
@@ -1109,6 +1333,7 @@ const _WHOOP_SECRETS = [whoopClientId, whoopClientSecret];
 const _WHOOP_SCOPES = [
   "offline",
   "read:sleep",
+  "read:recovery",
 ];
 
 async function requestWhoopToken(parameters) {
@@ -1158,12 +1383,13 @@ async function saveWhoopTokens(uid, tokens) {
   );
   const values = {
     accessToken: tokens.access_token,
-    scope: tokens.scope || "",
     tokenType: tokens.token_type || "Bearer",
     expiresAt,
     refreshLease: admin.firestore.FieldValue.delete(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
+  // Refresh responses may omit scope; do not erase the original grant.
+  if (typeof tokens.scope === "string") values.scope = tokens.scope;
   if (tokens.refresh_token) values.refreshToken = tokens.refresh_token;
   await admin.firestore()
       .collection("whoop_credentials")
@@ -1446,6 +1672,8 @@ async function claimWhoopSync(uid, force, timezoneOffsetMinutes) {
       sleep,
       localDate: schedule.localDate,
       sleepSlot: schedule.sleepSlot,
+      recoveryAuthorized: (credentials.scope || "").split(/\s+/)
+          .includes("read:recovery"),
     };
   });
 }
@@ -1503,7 +1731,7 @@ function setWhoopMetric(days, day, key, values) {
   };
 }
 
-function normalizeWhoopData({sleeps}) {
+function normalizeWhoopData({sleeps, recoveries = []}) {
   const days = {};
   const sleepTotals = {};
   for (const sleep of sleeps) {
@@ -1564,6 +1792,12 @@ function normalizeWhoopData({sleeps}) {
       efficiency: whoopNumber(score.sleep_efficiency_percentage),
     });
   }
+  const vitals = whoopVitals(sleeps, recoveries);
+  for (const [day, metrics] of Object.entries(vitals)) {
+    for (const [key, value] of Object.entries(metrics)) {
+      setWhoopMetric(days, day, key, value);
+    }
+  }
   return days;
 }
 
@@ -1587,11 +1821,25 @@ async function saveAndReconcileWhoopSleep(
       (day) => metricsCollection.doc(day),
   );
 
+  // A fetch that returned no sleep at all cannot distinguish "no nights" from
+  // "could not read nights", so it clears nothing.
+  const mayClear = whoopFetchMayClearSleep(presentDays);
+
   return firestore.runTransaction(async (transaction) => {
-    const existingSnapshots = reconciliationReferences.length > 0 ?
+    // Do not restore a connection (or deleted imports) if a disconnect won
+    // the race while the upstream HTTP requests were running.
+    const credentials = await transaction.get(claim.reference);
+    const user = await transaction.get(userReference);
+    if (!credentials.exists || !user.exists) {
+      throw new HttpsError("failed-precondition", "WHOOP was disconnected.");
+    }
+    const existingSnapshots = reconciliationReferences.length > 0 && mayClear ?
       await transaction.getAll(...reconciliationReferences) : [];
     let removed = 0;
-    for (let index = 0; index < reconciliationDays.length; index += 1) {
+    // Only the deletions are skipped — the writes below still run, so an
+    // empty fetch leaves saved nights alone without stalling the sync.
+    for (let index = 0; mayClear && index < reconciliationDays.length;
+      index += 1) {
       const day = reconciliationDays[index];
       const snapshot = existingSnapshots[index];
       const existingSleep = snapshot.data()?.sleep;
@@ -1601,10 +1849,17 @@ async function saveAndReconcileWhoopSleep(
       )) {
         continue;
       }
-      transaction.update(reconciliationReferences[index], {
+      const update = {
         sleep: admin.firestore.FieldValue.delete(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      };
+      for (const key of ["resting_heart_rate", "hrv_rmssd",
+        "blood_oxygen", "respiratory_rate"]) {
+        if (snapshot.data()?.[key]?.source === "whoop") {
+          update[key] = admin.firestore.FieldValue.delete();
+        }
+      }
+      transaction.update(reconciliationReferences[index], update);
       removed += 1;
     }
 
@@ -1613,7 +1868,7 @@ async function saveAndReconcileWhoopSleep(
         ...metrics,
         date: day,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, {merge: true});
+      }, {mergeFields: [...Object.keys(metrics), "date", "updatedAt"]});
     }
     transaction.set(userReference, {
       whoopConnected: true,
@@ -1688,6 +1943,8 @@ exports.whoopOAuthCallback = onRequest(
           code,
           redirect_uri: whoopCallbackUrl(),
         });
+        // OAuth may omit scope when the grant exactly matches the request.
+        if (tokens.scope === undefined) tokens.scope = _WHOOP_SCOPES.join(" ");
         await saveWhoopTokens(values.uid, tokens);
         await admin.firestore().collection("users").doc(values.uid).set({
           whoopConnected: true,
@@ -1748,7 +2005,21 @@ exports.syncWhoop = onCall(
             start,
             end,
         );
-        const days = normalizeWhoopData({sleeps});
+        // Vitals are best-effort: sleep already succeeded with this token, so
+        // a recovery failure must not fail the sync or force a reconnect.
+        let recoveries = [];
+        let vitals = claim.recoveryAuthorized ?
+          "synced" : "permission_required";
+        if (claim.recoveryAuthorized) {
+          try {
+            recoveries = await whoopCollection(uid, "/v2/recovery", start, end);
+          } catch (error) {
+            console.warn("[WHOOP] recovery fetch failed; syncing sleep only",
+                error);
+            vitals = "failed";
+          }
+        }
+        const days = normalizeWhoopData({sleeps, recoveries});
         const sleepRemoved = await saveAndReconcileWhoopSleep(
             uid,
             days,
@@ -1760,14 +2031,14 @@ exports.syncWhoop = onCall(
         return {
           daysSynced: Object.keys(days).length,
           sleepRemoved,
-          records: {sleeps: sleeps.length},
-          endpoints: {sleep: "synced"},
+          records: {sleeps: sleeps.length, recoveries: recoveries.length},
+          endpoints: {sleep: "synced", vitals},
         };
       } catch (error) {
         await finishWhoopSync(claim, {sleep: false});
         await throwWhoopReconnectRequired(uid, error);
         if (error instanceof HttpsError) throw error;
-        console.error("[WHOOP] sleep sync failed", error);
+        console.error("[WHOOP] health sync failed", error);
         throw new HttpsError(
             "unavailable",
             "WHOOP could not be synced. Please try again.",
@@ -1964,11 +2235,6 @@ exports.syncFitbit = onCall(
       const days = normalizeGoogleHealthData(raw);
       const firestore = admin.firestore();
       const userReference = firestore.collection("users").doc(uid);
-      const activityGoalsSnapshot = await userReference.get();
-      addFitbitWellness(
-          days,
-          activityGoalsFromUserData(activityGoalsSnapshot.data()),
-      );
       const entries = Object.entries(days);
       const references = entries.map(([day]) => userReference
           .collection("metrics_daily")
@@ -1977,13 +2243,23 @@ exports.syncFitbit = onCall(
       // decision deterministic even if WHOOP and Fitbit finish syncing at
       // nearly the same time.
       const daysSynced = await firestore.runTransaction(async (transaction) => {
+        const credentials = await transaction.get(
+            firestore.collection("google_health_credentials").doc(uid));
+        if (!credentials.exists) {
+          throw new HttpsError("failed-precondition", "Fitbit disconnected.");
+        }
         const snapshots = references.length > 0 ?
           await transaction.getAll(userReference, ...references) :
           [await transaction.get(userReference)];
         const userSnapshot = snapshots[0];
+        if (!userSnapshot.exists) {
+          throw new HttpsError("failed-precondition", "Account unavailable.");
+        }
         const existingSnapshots = snapshots.slice(1);
         const whoopConnected =
             userSnapshot.data()?.whoopConnected === true;
+        const resolvedDays = {};
+        const mergedDays = {};
         let written = 0;
         for (let index = 0; index < entries.length; index += 1) {
           const [day, metrics] = entries[index];
@@ -1995,11 +2271,26 @@ exports.syncFitbit = onCall(
             resolvedMetrics[key] = value;
           }
           if (Object.keys(resolvedMetrics).length === 0) continue;
+          resolvedDays[day] = resolvedMetrics;
+          mergedDays[day] = {...existing, ...resolvedMetrics};
+        }
+        // Scores must use the selected canonical values, including WHOOP and
+        // Apple fallback data, not values discarded by source precedence.
+        addFitbitWellness(mergedDays,
+            activityGoalsFromUserData(userSnapshot.data()));
+        for (let index = 0; index < entries.length; index += 1) {
+          const day = entries[index][0];
+          const resolvedMetrics = resolvedDays[day];
+          if (!resolvedMetrics) continue;
+          if (mergedDays[day].wellness) {
+            resolvedMetrics.wellness = mergedDays[day].wellness;
+          }
           transaction.set(references[index], {
             ...resolvedMetrics,
             date: day,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          }, {merge: true});
+          }, {mergeFields: [...Object.keys(resolvedMetrics),
+            "date", "updatedAt"]});
           written += 1;
         }
         transaction.set(userReference, {
@@ -2113,6 +2404,9 @@ async function deleteGlobalUserReferences(uid) {
     db.collection("insights").where("userId", "==", uid),
     db.collection("bug_reports").where("userId", "==", uid),
     db.collection("batch_jobs").where("userId", "==", uid),
+    db.collection("baas_scores").where("userId", "==", uid),
+    db.collection("baas_scores_full").where("userId", "==", uid),
+    db.collection("baas_training_samples").where("user_id", "==", uid),
     db.collectionGroup("friend_requests").where("fromUid", "==", uid),
     db.collectionGroup("comments").where("authorUid", "==", uid),
     db.collectionGroup("likes").where("userUid", "==", uid),
@@ -2148,6 +2442,11 @@ async function deleteVivordoAccountData(uid) {
   await Promise.all([
     db.recursiveDelete(db.collection("challenge_memberships").doc(uid)),
     db.recursiveDelete(db.collection("challenge_medal_awards").doc(uid)),
+    db.recursiveDelete(db.collection("baas_state").doc(uid)),
+    db.recursiveDelete(db.collection("baas_weights").doc(uid)),
+    db.collection("founders").doc(uid).delete(),
+    db.collection("ai_usage").doc(uid).delete(),
+    db.collection("ai_usage").doc(`${uid}_planning`).delete(),
   ]);
   await admin.storage().bucket().deleteFiles({
     prefix: `circle_profiles/${uid}/`,
@@ -2516,29 +2815,30 @@ exports.pandaBatchPoller = onSchedule({
         prefix: "weekly-trend-",
         // rest = userId
         write: (rest, text) =>
-          db.collection("users").doc(rest).collection("weekly_trends")
-              .doc(weekOf)
-              .set({content: text, generatedAt: ts(), weekOf}, {merge: true}),
+          writeUnlessDeleting(db, rest,
+              db.collection("users").doc(rest).collection("weekly_trends")
+                  .doc(weekOf), {content: text, generatedAt: ts(), weekOf}),
       },
       {
         prefix: "insight-summary-",
         // rest = userId
         write: (rest, text) =>
-          db.collection("users").doc(rest).collection("insight_summaries")
-              .doc(weekOf)
-              .set({content: text, generatedAt: ts(), weekOf}, {merge: true}),
+          writeUnlessDeleting(db, rest,
+              db.collection("users").doc(rest).collection("insight_summaries")
+                  .doc(weekOf), {content: text, generatedAt: ts(), weekOf}),
       },
       {
         prefix: "questionnaire-",
         // rest = insightId; userId comes from the batch_jobs doc (the
         // custom_id alone doesn't carry it for this workload).
         write: (rest, text) =>
-          db.collection("users").doc(jobData.userId)
-              .collection("insights").doc(rest).update({
+          writeUnlessDeleting(db, jobData.userId,
+              db.collection("users").doc(jobData.userId)
+                  .collection("insights").doc(rest), {
                 questionnaireAnalysis: text,
                 questionnaireAnalysisStatus: "completed",
                 questionnaireAnalyzedAt: ts(),
-              }),
+              }, true),
       },
     ];
 
@@ -2556,8 +2856,9 @@ exports.pandaBatchPoller = onSchedule({
         const text = result.result.message.content?.[0]?.text ?? "";
         const route = routes.find((r) => result.custom_id.startsWith(r.prefix));
         if (!route) continue;
-        await route.write(result.custom_id.slice(route.prefix.length), text);
-        written++;
+        const saved = await route.write(
+            result.custom_id.slice(route.prefix.length), text);
+        if (saved) written++;
       }
     } catch (err) {
       console.error(

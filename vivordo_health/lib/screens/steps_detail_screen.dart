@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -77,12 +78,28 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
           final date = DateTime.tryParse(doc.id);
           return date != null && date.isBefore(cutoff);
         })
-        .map(
-          (doc) =>
-              ((doc.data()['steps'] as Map?)?['sum'] as num?)?.round() ?? 0,
-        )
+        .map((doc) => ((doc.data()['steps'] as Map?)?['sum'] as num?)?.round())
+        .whereType<int>()
         .toList();
   }
+
+  /// Each day's steps by date, for the insight. Days without data are left
+  /// out, never counted as 0.
+  DayValues _dayValues(QuerySnapshot<Map<String, dynamic>>? snapshot) => {
+    for (final doc in snapshot?.docs ?? const [])
+      if (((doc.data()['steps'] as Map?)?['sum'] as num?) case final v?)
+        ?DateTime.tryParse(doc.id): v.toDouble(),
+  };
+
+  /// Each day's steps per hour, for "usual for this time of day".
+  DayHours _dayHours(QuerySnapshot<Map<String, dynamic>>? snapshot) => {
+    for (final doc in snapshot?.docs ?? const [])
+      if ((doc.data()['steps'] as Map?)?['byHour'] case final List hours
+          when hours.length == 24)
+        ?DateTime.tryParse(doc.id): [
+          for (final h in hours) h is num ? h.toDouble() : 0.0,
+        ],
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -117,7 +134,13 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
             builder: (context, goalSnapshot) {
               final dailyGoal =
                   goalSnapshot.data?.steps ?? const ActivityGoals().steps;
-              return _buildContent(data, usualValues, dailyGoal);
+              return _buildContent(
+                data,
+                usualValues,
+                dailyGoal,
+                _dayValues(snapshot.data),
+                _dayHours(snapshot.data),
+              );
             },
           );
         },
@@ -129,6 +152,8 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     List<_StepDay> data,
     List<int> usualValues,
     int dailyGoal,
+    DayValues values,
+    DayHours hours,
   ) {
     final total = data.fold<int>(0, (total, day) => total + day.steps);
     final totalDistance = data.fold<double>(
@@ -139,7 +164,14 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     final usual = usualValues.isEmpty
         ? null
         : usualValues.reduce((a, b) => a + b) / usualValues.length;
-    final change = usual == null || usual == 0
+    // Day compares with the usual by this time of day (like the insight),
+    // not with whole earlier days; hidden until a week of hours exists.
+    final byNow = _rangeIndex == 0 ? usualByNow(hours, DateTime.now()) : null;
+    final change = _rangeIndex == 0
+        ? (byNow == null || byNow == 0
+              ? null
+              : ((average - byNow) / byNow * 100).round())
+        : usual == null || usual == 0
         ? null
         : ((average - usual) / usual * 100).round();
     final goal = dailyGoal * _rangeDays;
@@ -191,7 +223,17 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
-          _insightCard(best),
+          _insightCard(
+            countInsight(
+              values: values,
+              today: DateTime.now(),
+              rangeDays: _rangeDays,
+              goal: dailyGoal.toDouble(),
+              hours: hours,
+              unit: 'steps',
+              fewer: 'fewer',
+            ),
+          ),
         ],
       ),
     );
@@ -284,9 +326,15 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
                     if (change != null) ...[
                       const SizedBox(height: 10),
                       Text(
-                        '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs your usual',
+                        _rangeIndex == 0 && change.abs() < 10
+                            ? 'About usual for this time'
+                            : '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs '
+                                  '${_rangeIndex == 0 ? 'usual for this time' : 'your usual'}',
                         style: TextStyle(
-                          color: change >= 0
+                          // Below usual by now isn't flagged on Day.
+                          color: _rangeIndex == 0 && change < 10
+                              ? context.vivordoColors.textSecondary
+                              : change >= 0
                               ? const Color(0xFF20B26B)
                               : Colors.red,
                           fontSize: 16,
@@ -444,17 +492,17 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     );
   }
 
-  Widget _insightCard(_StepDay? best) {
-    final text = best == null || best.steps == 0
-        ? 'Keep moving to begin building your step trend.'
-        : 'Your activity was highest on ${DateFormat('EEEE').format(best.date)}.';
+  Widget _insightCard(DetailInsight insight) {
+    final (icon, color) = insightStyle(insight.tone);
     return _card(
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          _iconBubble(Icons.trending_up_rounded, const Color(0xFF20B26B)),
+          _iconBubble(icon, color),
           const SizedBox(width: 14),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 16))),
+          Expanded(
+            child: Text(insight.text, style: const TextStyle(fontSize: 16)),
+          ),
         ],
       ),
     );

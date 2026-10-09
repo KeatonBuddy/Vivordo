@@ -77,6 +77,7 @@ enum PandaIntent {
   chitchat,
   skip,
   calendarAction,
+  priorityAction,
 }
 
 enum PandaCalendarOperation { create, update, delete }
@@ -111,9 +112,18 @@ class PandaTurnReply {
     this.filledSlots,
     this.recHint,
     this.calendarAction,
+    this.priorityAction,
+    this.actions = const [],
+    this.offerEndSession = false,
+    this.crisis = false,
   });
 
   final PandaIntent intent;
+  final bool offerEndSession;
+
+  /// The model judged this turn a possible crisis or emergency; the app shows
+  /// crisis resources and pauses everything else.
+  final bool crisis;
 
   /// What Panda says (always present, never empty).
   final String message;
@@ -132,4 +142,11 @@ class PandaTurnReply {
 
   /// Present only when [intent] is [PandaIntent.calendarAction].
   final PandaCalendarAction? calendarAction;
+  final Map<String, dynamic>? priorityAction;
+
+  /// Every change the assistant proposed this turn, checked by the server,
+  /// in order. Each is a calendar change or a raw priority action. When
+  /// non-empty it replaces [calendarAction] / [priorityAction].
+  final List<({PandaCalendarAction? calendar, Map<String, dynamic>? priority})>
+  actions;
 }

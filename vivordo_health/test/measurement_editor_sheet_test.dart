@@ -49,7 +49,7 @@ void main() {
         await tester.tap(find.text('Date'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('1').last);
-        await tester.tap(find.text('OK'));
+        await tester.tap(find.text('Done'));
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Save Measurement'));
         await tester.tap(find.text('Save Measurement'));

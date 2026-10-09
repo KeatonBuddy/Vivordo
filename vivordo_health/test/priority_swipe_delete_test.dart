@@ -6,6 +6,7 @@ import 'package:vivordo_health/screens/my_day_screen.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/add_priority_sheet.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 
 // The row never accesses Firestore; this mock only supplies its model reference.
 // ignore: subtype_of_sealed_class, must_be_immutable
@@ -109,7 +110,7 @@ void main() {
       expect(result, isNull);
       await tester.tap(find.text('Delete Priority'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       expect(result?.deleteRequested, isTrue);
       expect(tester.takeException(), isNull);
@@ -161,7 +162,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AppleAlert),
+        matching: find.text('Delete'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(deleted, isTrue);
     expect(find.text('Prepare presentation'), findsNothing);

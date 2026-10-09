@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/visible_stream_builder.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/material.dart';
@@ -6,7 +7,10 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
+import 'package:vivordo_health/src/utils/home_metrics_summary.dart'
+    show durationUntilNextLocalDay;
 import 'profile_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'active_calories_detail_screen.dart';
@@ -14,7 +18,10 @@ import 'exercise_detail_screen.dart';
 import 'mood_detail_screen.dart';
 import 'sleep_detail_screen.dart';
 import 'steps_detail_screen.dart';
-import 'wellness_detail_screen.dart';
+import 'physical_health_screen.dart';
+import '../src/utils/metrics_insights.dart';
+import '../src/utils/physical_health_view.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,13 +38,32 @@ import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 class DashboardScreen extends StatefulWidget {
   final VoidCallback? onScanTap;
   final bool isActive;
-  const DashboardScreen({super.key, this.onScanTap, this.isActive = true});
+
+  /// Spotlight targets for the Metrics tour.
+  final Key? customizeKey;
+  final Key? physicalHealthKey;
+  final Key? keyMetricsKey;
+  final Key? insightsKey;
+  const DashboardScreen({
+    super.key,
+    this.onScanTap,
+    this.isActive = true,
+    this.customizeKey,
+    this.physicalHealthKey,
+    this.keyMetricsKey,
+    this.insightsKey,
+  });
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  // 5 weeks: Physical Health compares with 4 weeks ago, and the insights
+  // compare this week with the 4 before it.
+  final _scoresStream = scoresDailyStream(35);
+  // The latest scores, for a listener that joins the broadcast stream late.
+  Map<String, Map<String, dynamic>>? _scores;
   static const Color accentPurple = VivordoTheme.brand;
   static const Color greenColor = Color(0xFF34C759);
   static const Color textGrey = Color(0xFF8E8E93);
@@ -50,14 +76,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     'sleep',
   ];
 
-  // 0 = Day (default), 1 = Week, 2 = Month
-  int _filterIndex = 0;
-  static const _filterLabels = ['Day', 'Week', 'Month'];
-  int get _daysBack => _filterIndex == 0
-      ? 1
-      : _filterIndex == 1
-      ? 7
-      : 30;
+  // Today only: the Day / Week / Month filter is no longer shown.
+  static const _daysBack = 1;
 
   // ── ONE combined stream for all metrics_daily docs in the date window ──────
   late Stream<QuerySnapshot<Map<String, dynamic>>> _allMetricsStream;
@@ -95,6 +115,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _automaticRefreshScheduled = false;
     }
     if (!oldWidget.isActive && widget.isActive) {
+      if (_streamDay != localDayKey(DateTime.now())) _rebuildStreams();
       _requestAutomaticRefreshIfActive();
     }
   }
@@ -124,6 +145,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _automaticRefreshTimer?.cancel();
+    _dayRolloverTimer?.cancel();
     super.dispose();
   }
 
@@ -188,8 +210,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }, SetOptions(merge: true));
   }
 
+  /// The local day the query was built for; it moves at midnight (a timer
+  /// that also fires late, on resume) or when the tab is shown again.
+  String _streamDay = '';
+  Timer? _dayRolloverTimer;
+
   void _rebuildStreams() {
+    _streamDay = localDayKey(DateTime.now());
     _allMetricsStream = _buildCombinedStream();
+    _dayRolloverTimer?.cancel();
+    _dayRolloverTimer = Timer(durationUntilNextLocalDay(DateTime.now()), () {
+      if (mounted) setState(_rebuildStreams);
+    });
   }
 
   Future<void> _refreshHealthMetricsFromHealth({
@@ -203,8 +235,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!mounted) return;
       setState(() => _lastManualHealthRefresh = DateTime.now());
       if (showFeedback) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Apple Health metrics refreshed.')),
+        showToast(
+          context,
+          'Apple Health metrics refreshed.',
+          kind: ToastKind.success,
         );
       }
     } catch (e) {
@@ -212,8 +246,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'DashboardScreen: failed to refresh metrics from Apple Health: $e',
       );
       if (showFeedback && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Apple Health refresh failed: $e')),
+        showToast(
+          context,
+          "Couldn't refresh from Apple Health. Try again.",
+          kind: ToastKind.error,
         );
       }
     } finally {
@@ -289,32 +325,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return null;
   }
 
-  List<String> _dayLabels(
-    QuerySnapshot<Map<String, dynamic>>? snap,
-    String metricType,
-  ) {
-    if (snap == null) return [];
-    return snap.docs.where((d) => d.data().containsKey(metricType)).map((d) {
-      final dt = DateTime.tryParse(d.id);
-      if (dt == null) return '';
-      const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return names[dt.weekday - 1];
-    }).toList();
-  }
-
   /// Month view: only label Mondays to avoid x-axis crowding.
-  List<String> _monthLabels(
-    QuerySnapshot<Map<String, dynamic>>? snap,
-    String metricType,
-  ) {
-    if (snap == null) return [];
-    return snap.docs.where((d) => d.data().containsKey(metricType)).map((d) {
-      final dt = DateTime.tryParse(d.id);
-      if (dt == null || dt.weekday != DateTime.monday) return '';
-      return '${dt.day}/${dt.month}';
-    }).toList();
-  }
-
   // ── Daily mood helpers ─────────────────────────────────────────────────────
   List<Map<String, dynamic>> _dailyMoodPoints(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
@@ -360,63 +371,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) => _dailyMoodPoints(docs).map((point) => point['score'] as double).toList();
 
-  List<String> _dailyMoodLabels(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final points = _dailyMoodPoints(docs);
-    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-    return points.map((point) {
-      final dateTime = point['dateTime'] as DateTime;
-
-      if (_filterIndex == 2 && dateTime.weekday != DateTime.monday) {
-        return '';
-      }
-
-      return dayNames[dateTime.weekday - 1];
-    }).toList();
-  }
-
-  List<Map<String, dynamic>> _todayMoodEntries(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final entries = <Map<String, dynamic>>[];
-
-    for (final doc in docs) {
-      final moodMap = doc.data()['mood'] as Map?;
-      final rawEntries = moodMap?['entries'];
-      if (rawEntries is! List) continue;
-
-      for (final entry in rawEntries) {
-        if (entry is! Map || entry['score'] is! num) continue;
-        final timestamp = entry['timestamp'];
-        entries.add({
-          'score': (entry['score'] as num).toDouble(),
-          'dateTime': timestamp is Timestamp
-              ? timestamp.toDate()
-              : DateTime.tryParse(doc.id),
-        });
-      }
-    }
-
-    entries.sort((a, b) {
-      final aTime = a['dateTime'] as DateTime?;
-      final bTime = b['dateTime'] as DateTime?;
-      if (aTime == null) return -1;
-      if (bTime == null) return 1;
-      return aTime.compareTo(bTime);
-    });
-    return entries;
-  }
-
-  String _formatMoodEntryTime(DateTime? dateTime) {
-    if (dateTime == null) return '';
-    final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
-    final minute = dateTime.minute.toString().padLeft(2, '0');
-    final suffix = dateTime.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $suffix';
-  }
-
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _heartRateDocs(
     QuerySnapshot<Map<String, dynamic>>? snapshot,
   ) {
@@ -457,21 +411,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return points;
   }
 
-  List<Map<String, dynamic>> _dailyBpmPoints(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final points = <Map<String, dynamic>>[];
-    for (final doc in docs) {
-      final entries = _heartRateEntries([doc]);
-      if (entries.isEmpty) continue;
-      points.add({
-        'bpm': _avg(entries.map((entry) => entry['bpm'] as double).toList()),
-        'dateTime': DateTime.tryParse(doc.id),
-      });
-    }
-    return points;
-  }
-
   double _avg(List<double> vals) =>
       vals.isEmpty ? 0 : vals.reduce((a, b) => a + b) / vals.length;
 
@@ -493,16 +432,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return false;
   }
 
-  String _trend(List<double> vals) {
-    if (vals.length < 2) return '';
-    final half = vals.length ~/ 2;
-    final old = _avg(vals.sublist(0, half));
-    final recent = _avg(vals.sublist(half));
-    if (old == 0) return '';
-    final pct = ((recent - old) / old * 100).round();
-    return pct >= 0 ? '+$pct%' : '$pct%';
-  }
-
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -510,92 +439,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 26),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Metrics',
-                          style: TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w900,
-                            color: context.vivordoColors.textPrimary,
-                            letterSpacing: -1,
+        child: RefreshIndicator(
+          onRefresh: () => _refreshHealthMetricsFromHealth(showFeedback: true),
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 26),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Metrics',
+                            style: TextStyle(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w900,
+                              color: context.vivordoColors.textPrimary,
+                              letterSpacing: -1,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: _allMetricsStream,
-                          builder: (context, snapshot) => Wrap(
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 7,
-                            runSpacing: 4,
-                            children: [
-                              Text(
-                                '${_lastManualHealthRefresh == null ? 'Synced automatically' : _manualRefreshLabel().replaceFirst('Updated', 'Synced')}${_hasVisibleWhoopData(snapshot.data) ? ' · Data includes' : ''}',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  color: context.vivordoColors.textSecondary,
+                          const SizedBox(height: 2),
+                          VisibleStreamBuilder<
+                            QuerySnapshot<Map<String, dynamic>>
+                          >(
+                            stream: _allMetricsStream,
+                            builder: (context, snapshot) => Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 7,
+                              runSpacing: 4,
+                              children: [
+                                Text(
+                                  '${_lastManualHealthRefresh == null ? 'Synced automatically' : _manualRefreshLabel().replaceFirst('Updated', 'Synced')}${_hasVisibleWhoopData(snapshot.data) ? ' · Data includes' : ''}',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    color: context.vivordoColors.textSecondary,
+                                  ),
                                 ),
-                              ),
-                              if (_hasVisibleWhoopData(snapshot.data))
-                                const WhoopSourceBadge(compact: true),
-                            ],
+                                if (_hasVisibleWhoopData(snapshot.data))
+                                  const WhoopSourceBadge(compact: true),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Refresh Apple Health',
-                    onPressed: _refreshingHealthMetrics
-                        ? null
-                        : () => _refreshHealthMetricsFromHealth(
-                            showFeedback: true,
-                          ),
-                    icon: _refreshingHealthMetrics
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2.4),
-                          )
-                        : const Icon(Icons.refresh_rounded),
-                    color: accentPurple,
-                  ),
-                  TextButton.icon(
-                    onPressed: _isLoadingMetricOrder ? null : _showLayoutEditor,
-                    icon: const Icon(Icons.tune_rounded, size: 18),
-                    label: const Text('Customize'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: accentPurple,
-                      textStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+                        ],
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 28),
-              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _allMetricsStream,
-                builder: (_, metricsSnap) => _buildMetricsOverview(
-                  metricsSnap.data,
-                  loading:
-                      metricsSnap.connectionState == ConnectionState.waiting,
+                    TextButton.icon(
+                      key: widget.customizeKey,
+                      onPressed: _isLoadingMetricOrder
+                          ? null
+                          : _showLayoutEditor,
+                      icon: const Icon(Icons.tune_rounded, size: 18),
+                      label: const Text('Customize'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: accentPurple,
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 28),
+                VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _allMetricsStream,
+                  builder: (_, metricsSnap) => _buildMetricsOverview(
+                    metricsSnap.data,
+                    loading:
+                        metricsSnap.connectionState == ConnectionState.waiting,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -615,54 +538,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    final steps = _vals(_docsFor(snap, 'steps'), 'steps', 'sum');
-    final stress = _vals(_docsFor(snap, 'stress'), 'stress', 'avg');
-    final wellness = _vals(_docsFor(snap, 'wellness'), 'wellness', 'avg');
-    final stepLabels = _dayLabels(snap, 'steps');
-    final latestWellness = wellness.isEmpty ? null : wellness.last;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildWellnessHero(wellness),
+        VisibleStreamBuilder<Map<String, Map<String, dynamic>>>(
+          key: widget.physicalHealthKey,
+          stream: _scoresStream,
+          builder: (context, snapshot) {
+            final scores = _scores = snapshot.data ?? _scores;
+            return _buildPhysicalHealthHero(
+              scores == null ? null : PhysicalHealthView.fromDays(scores),
+            );
+          },
+        ),
         const SizedBox(height: 24),
-        const Text(
-          'Key metrics',
-          style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 12),
-        if (_enabledKeyMetrics.isEmpty)
-          _buildNoKeyMetricsCard()
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final tileWidth = (constraints.maxWidth - 12) / 2;
-              return Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: _keyMetricOrder
-                    .where(_enabledKeyMetrics.contains)
-                    .map(
-                      (metric) => SizedBox(
-                        width: tileWidth,
-                        child: _buildKeyMetricFor(metric, snap),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
+        KeyedSubtree(
+          key: widget.keyMetricsKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Key metrics',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 12),
+              if (_enabledKeyMetrics.isEmpty)
+                _buildNoKeyMetricsCard()
+              else
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final tileWidth = (constraints.maxWidth - 12) / 2;
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: _keyMetricOrder
+                          .where(_enabledKeyMetrics.contains)
+                          .map(
+                            (metric) => SizedBox(
+                              width: tileWidth,
+                              child: _buildKeyMetricFor(metric, snap),
+                            ),
+                          )
+                          .toList(),
+                    );
+                  },
+                ),
+            ],
           ),
-        const SizedBox(height: 28),
-        const Text(
-          'Insights',
-          style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
         ),
-        const SizedBox(height: 10),
-        _buildInsightsCard(
-          steps: steps,
-          stress: stress,
-          wellness: latestWellness,
-          labels: stepLabels,
+        const SizedBox(height: 28),
+        KeyedSubtree(
+          key: widget.insightsKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Insights',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 10),
+              VisibleStreamBuilder<Map<String, Map<String, dynamic>>>(
+                stream: _scoresStream,
+                builder: (context, snapshot) {
+                  final scores = snapshot.data ?? _scores;
+                  return _buildInsightsCard(
+                    scores == null
+                        ? null
+                        : metricsInsights(scores, DateTime.now()),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
         if (snap == null || snap.docs.isEmpty) ...[
           const SizedBox(height: 18),
@@ -673,33 +620,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildWellnessHero(List<double> values) {
-    final score = values.isEmpty ? null : values.last.clamp(0, 100);
-    final previous = values.length < 2 ? null : values[values.length - 2];
-    final change = score == null || previous == null || previous == 0
-        ? null
-        : ((score - previous) / previous * 100).round();
-    final status = score == null
-        ? 'Not enough data'
-        : score >= 75
-        ? 'Doing well'
+  /// Physical Health (docs/scores.md §7) in the spot Wellness had: the
+  /// last 4 weeks of activity, strength, cardio fitness and sleep habits.
+  Widget _buildPhysicalHealthHero(PhysicalHealthView? view) {
+    final score = view?.score?.toDouble();
+    final status = view?.status ?? 'Not enough data';
+    final color = physicalHealthColor(context, score);
+    final explanation = view == null
+        ? 'Sync your health data to see your Physical Health.'
+        : score == null
+        ? 'Appears after 2 weeks of activity and sleep data.'
+        : score >= 70
+        ? 'You\'re meeting most of your activity, fitness and sleep targets.'
         : score >= 50
-        ? 'Fair'
-        : 'Needs attention';
-    final color = score == null
-        ? context.vivordoColors.textSecondary
-        : score >= 75
-        ? greenColor
-        : score >= 50
-        ? const Color(0xFFFF9500)
-        : const Color(0xFFE91F3D);
-    final explanation = score == null
-        ? 'Sync your health data to calculate your wellness score.'
-        : score >= 75
-        ? 'Your recent health signals indicate strong overall wellness.'
-        : score >= 50
-        ? 'Your wellness is fair. Small improvements can raise your score.'
-        : 'Your recent health signals suggest that recovery needs attention.';
+        ? 'A few targets are short. Tap to see the easiest wins.'
+        : 'Most targets are short. Tap to see where to start.';
 
     return Material(
       color: context.vivordoColors.card,
@@ -711,7 +646,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: InkWell(
         onTap: () => Navigator.of(
           context,
-        ).push(MaterialPageRoute(builder: (_) => const WellnessDetailScreen())),
+        ).push(MaterialPageRoute(builder: (_) => const PhysicalHealthScreen())),
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Row(
@@ -721,7 +656,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'WELLNESS SCORE',
+                      'PHYSICAL HEALTH',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
@@ -762,15 +697,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ],
                     ),
-                    if (change != null) ...[
+                    if (view != null && view.score != null) ...[
                       const SizedBox(height: 8),
                       Text(
-                        '${change >= 0 ? '↑' : '↓'} ${change.abs()}%',
+                        view.note,
                         style: TextStyle(
-                          color: change >= 0
+                          color: view.note.startsWith('↓')
+                              ? const Color(0xFFE91F3D)
+                              : view.note.startsWith('↑')
                               ? greenColor
-                              : const Color(0xFFE91F3D),
-                          fontSize: 17,
+                              : context.vivordoColors.textSecondary,
+                          fontSize: 15,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -807,7 +744,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         shape: BoxShape.circle,
                         color: color.withValues(alpha: .1),
                       ),
-                      child: Icon(Icons.spa_rounded, color: color),
+                      child: Icon(Icons.directions_run_rounded, color: color),
                     ),
                   ],
                 ),
@@ -864,7 +801,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Key metric tiles describe the current day. Resolve summed daily metrics
     // by today's document ID so a missing sync never falls back to yesterday.
     final todaySummedValue =
-        metric == 'exercise_time' || metric == 'active_calories'
+        metric == 'steps' ||
+            metric == 'exercise_time' ||
+            metric == 'active_calories'
         ? _todayMetricValue(snap, metric, 'sum') ?? 0
         : null;
 
@@ -881,7 +820,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _ => _metricTitle(metric),
     };
     final value = todaySummedValue != null
-        ? _formatMetricValue(metric, todaySummedValue)
+        ? metric == 'steps'
+              ? _formatCount(todaySummedValue)
+              : _formatMetricValue(metric, todaySummedValue)
         : values.isEmpty
         ? 'No data'
         : metric == 'steps'
@@ -892,6 +833,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ? _comparisonText(values, lowerIsBetter: false)
               : metric == 'active_calories'
               ? 'No active calories recorded today'
+              : metric == 'steps'
+              ? 'No steps recorded today'
               : 'No exercise recorded today'
         : values.isEmpty
         ? 'Not synced recently'
@@ -1042,35 +985,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildInsightsCard({
-    required List<double> steps,
-    required List<double> stress,
-    required double? wellness,
-    required List<String> labels,
-  }) {
-    String activityInsight;
-    if (steps.isEmpty) {
-      activityInsight = 'Sync steps to reveal your activity pattern';
-    } else {
-      var peak = 0;
-      for (var i = 1; i < steps.length; i++) {
-        if (steps[i] > steps[peak]) peak = i;
-      }
-      final day = labels.length == steps.length ? labels[peak] : 'recently';
-      activityInsight = 'Activity peaked on $day';
-    }
-
-    String recoveryInsight;
-    if (stress.length >= 3 &&
-        stress.last > stress[stress.length - 2] &&
-        stress[stress.length - 2] > stress[stress.length - 3]) {
-      recoveryInsight = 'Stress has increased for 3 days';
-    } else if (wellness != null && wellness < 50) {
-      recoveryInsight = 'Your wellness signals need attention';
-    } else {
-      recoveryInsight = 'Your recent stress trend is stable';
-    }
-
+  /// [insights] is null while the scores load (metrics_insights.dart).
+  Widget _buildInsightsCard(List<MetricsInsight>? insights) {
+    if (insights == null) return const SizedBox(height: 70);
+    final rows = insights.isEmpty
+        ? [
+            _insightRow(
+              icon: Icons.insights_rounded,
+              color: accentPurple,
+              text:
+                  'Insights appear after about a week of sleep and activity '
+                  'data.',
+            ),
+          ]
+        : [
+            for (final insight in insights)
+              _insightRow(
+                icon: switch (insight.kind) {
+                  MetricsInsightKind.sleep => Icons.bedtime_rounded,
+                  MetricsInsightKind.energy => Icons.bolt_rounded,
+                  MetricsInsightKind.effort => Icons.event_note_rounded,
+                  MetricsInsightKind.afterHours => Icons.nights_stay_rounded,
+                  MetricsInsightKind.physical => Icons.directions_run_rounded,
+                },
+                color: switch (insight.tone) {
+                  MetricsInsightTone.concern => const Color(0xFFE08600),
+                  MetricsInsightTone.good => const Color(0xFF16B877),
+                  MetricsInsightTone.neutral => accentPurple,
+                },
+                text: insight.text,
+              ),
+          ];
     return Container(
       decoration: BoxDecoration(
         color: context.vivordoColors.card,
@@ -1079,17 +1024,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Column(
         children: [
-          _insightRow(
-            icon: Icons.trending_up_rounded,
-            color: const Color(0xFF16B877),
-            text: activityInsight,
-          ),
-          Divider(height: 1, indent: 68, color: context.vivordoColors.border),
-          _insightRow(
-            icon: Icons.psychology_rounded,
-            color: accentPurple,
-            text: recoveryInsight,
-          ),
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0)
+              Divider(
+                height: 1,
+                indent: 68,
+                color: context.vivordoColors.border,
+              ),
+            rows[i],
+          ],
         ],
       ),
     );
@@ -1141,12 +1084,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (bpm <= 100) return 'Within typical resting range';
     return 'Above typical resting range';
   }
-
-  bool _isManualMetric(String key) =>
-      key == 'stress' ||
-      key == 'mood' ||
-      key == 'wellness' ||
-      key == 'heart_rate_scan';
 
   String _metricTitle(String key) {
     switch (key) {
@@ -1230,65 +1167,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return summed.contains(key) ? 'sum' : 'avg';
   }
 
-  double _metricMaxY(String key) {
-    switch (key) {
-      case 'stress':
-      case 'mood':
-      case 'wellness':
-      case 'blood_oxygen':
-        return 100;
-      case 'steps':
-        return 20000;
-      case 'active_calories':
-        return 1000;
-      case 'exercise_time':
-      case 'resting_heart_rate':
-      case 'hrv':
-        return 120;
-      case 'heart_rate':
-      case 'heart_rate_scan':
-        return 200;
-      case 'respiratory_rate':
-        return 30;
-      case 'sleep':
-        return 12;
-      case 'body_fat':
-        return 50;
-      case 'vo2max':
-        return 70;
-      default:
-        return 0;
-    }
-  }
-
-  Widget _buildOrderedMetric(
-    QuerySnapshot<Map<String, dynamic>>? snap,
-    Map<String, bool> consent,
-    String metric,
-  ) {
-    final hasData = metric == 'heart_rate_scan'
-        ? _heartRateDocs(snap).isNotEmpty
-        : _docsFor(snap, metric).isNotEmpty;
-    return KeyedSubtree(
-      key: ValueKey('dashboard-metric-$metric'),
-      child: !_isManualMetric(metric) && consent[metric] != true && !hasData
-          ? const SizedBox.shrink()
-          : _maybeChart(
-              snap,
-              metric,
-              _metricTitle(metric),
-              _metricColor(metric),
-              _metricField(metric),
-              _metricMaxY(metric),
-            ),
-    );
-  }
-
   Future<void> _showLayoutEditor() async {
     final draft = {..._enabledKeyMetrics};
     final draftOrder = [..._keyMetricOrder];
     final result = await showModalBottomSheet<_KeyMetricPreferences>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
@@ -1446,9 +1330,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       await _saveKeyMetrics(result.enabled, result.order);
     } catch (e) {
+      debugPrint('Could not save metric preferences: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save metric preferences.')),
+      showToast(
+        context,
+        "Couldn't save your metric choices. Try again.",
+        kind: ToastKind.error,
       );
     }
   }
@@ -1473,181 +1360,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   };
 
   /// Returns a chart card if the metric has data, otherwise SizedBox.shrink().
-  Widget _maybeChart(
-    QuerySnapshot<Map<String, dynamic>>? snap,
-    String metricType,
-    String title,
-    Color color,
-    String field,
-    double maxY,
-  ) {
-    final docs = metricType == 'heart_rate_scan'
-        ? _heartRateDocs(snap)
-        : _docsFor(snap, metricType);
-    if (metricType == 'heart_rate_scan') {
-      final points = _filterIndex == 0
-          ? _heartRateEntries(docs)
-          : _dailyBpmPoints(docs);
-      if (points.isEmpty) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: _buildChartCard(
-          title: title,
-          icon: _metricIcon(metricType),
-          color: color,
-          values: points.map((point) => point['bpm'] as double).toList(),
-          maxY: maxY,
-          labels: points.map((point) {
-            final dateTime = point['dateTime'] as DateTime?;
-            if (_filterIndex == 0) return _formatMoodEntryTime(dateTime);
-            if (dateTime == null) return '';
-            if (_filterIndex == 2 && dateTime.weekday != DateTime.monday) {
-              return '';
-            }
-            const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-            return names[dateTime.weekday - 1];
-          }).toList(),
-        ),
-      );
-    }
-    if (metricType == 'mood' && _filterIndex == 0) {
-      final entries = _todayMoodEntries(docs);
-      if (entries.isEmpty) return const SizedBox.shrink();
-
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: _buildChartCard(
-          title: title,
-          icon: _metricIcon(metricType),
-          color: color,
-          values: entries.map((entry) => entry['score'] as double).toList(),
-          maxY: maxY,
-          labels: entries
-              .map(
-                (entry) => _formatMoodEntryTime(entry['dateTime'] as DateTime?),
-              )
-              .toList(),
-        ),
-      );
-    }
-
-    final values = metricType == 'mood'
-        ? _dailyMoodValues(docs)
-        : _vals(docs, metricType, field);
-    final labels = metricType == 'mood'
-        ? _dailyMoodLabels(docs)
-        : _filterIndex == 2
-        ? _monthLabels(snap, metricType)
-        : _dayLabels(snap, metricType);
-    if (values.isEmpty) return const SizedBox.shrink();
-
-    if (_filterIndex == 0) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: _buildDailyMetricTile(
-          title: title,
-          icon: _metricIcon(metricType),
-          color: color,
-          metricType: metricType,
-          field: field,
-          values: values,
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: _buildChartCard(
-        title: title,
-        icon: _metricIcon(metricType),
-        color: color,
-        values: values,
-        maxY: maxY > 0
-            ? maxY
-            : (values.reduce((a, b) => a > b ? a : b) * 1.2).clamp(
-                1,
-                double.infinity,
-              ),
-        labels: labels,
-      ),
-    );
-  }
-
-  Widget _buildDailyMetricTile({
-    required String title,
-    required IconData icon,
-    required Color color,
-    required String metricType,
-    required String field,
-    required List<double> values,
-  }) {
-    final primaryValue = field == 'sum'
-        ? values.fold<double>(0, (total, value) => total + value)
-        : values.last;
-    final avgValue = _avg(values);
-    final hasMultipleValues = values.length > 1;
-
-    final primaryLabel = _formatMetricValue(metricType, primaryValue);
-    final subtitle = hasMultipleValues
-        ? field == 'sum'
-              ? '${values.length} entries today'
-              : 'avg ${_formatMetricValue(metricType, avgValue)} today'
-        : 'today';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 20, color: color),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: context.vivordoColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(fontSize: 12, color: textGrey),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            primaryLabel,
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   String _formatMetricValue(String metricType, double value) {
     String number({int decimals = 0}) => decimals == 0
         ? value.round().toString()
@@ -1725,230 +1437,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  // ── Filter chips ───────────────────────────────────────────────────────────
-
-  Widget _buildFilter() {
-    return Row(
-      children: List.generate(_filterLabels.length, (i) {
-        final active = _filterIndex == i;
-        return Padding(
-          padding: EdgeInsets.only(right: i < _filterLabels.length - 1 ? 8 : 0),
-          child: GestureDetector(
-            onTap: () {
-              setState(() {
-                _filterIndex = i;
-                _rebuildStreams();
-              });
-              _refreshHealthMetricsFromHealth();
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-              decoration: BoxDecoration(
-                color: active ? accentPurple : context.vivordoColors.cardMuted,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: active ? accentPurple : context.vivordoColors.border,
-                ),
-              ),
-              child: Text(
-                _filterLabels[i],
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: active ? Colors.white : textGrey,
-                ),
-              ),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
-  // ── Shared UI widgets (from dev — unchanged) ──────────────────────────────
-
-  Widget _buildStatCard({
-    required String label,
-    required String value,
-    required String change,
-    required bool trendUp,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Column(
-        children: [
-          Text(
-            label.toUpperCase(),
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 9,
-              color: textGrey,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: context.vivordoColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          if (change.isNotEmpty)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  change.startsWith('+')
-                      ? Icons.trending_up_rounded
-                      : Icons.trending_down_rounded,
-                  size: 13,
-                  color: trendUp ? greenColor : const Color(0xFFFF3B30),
-                ),
-                const SizedBox(width: 3),
-                Text(
-                  change,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: trendUp ? greenColor : const Color(0xFFFF3B30),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWellnessCard(List<double> vals) {
-    final avg = vals.isEmpty ? null : _avg(vals);
-    final trend = _trend(vals);
-
-    Color labelColor;
-    String labelText;
-    if (avg == null) {
-      labelColor = textGrey;
-      labelText = 'No data yet';
-    } else if (avg >= 70) {
-      labelColor = greenColor;
-      labelText = 'Good';
-    } else if (avg >= 50) {
-      labelColor = const Color(0xFFFF9500);
-      labelText = 'Fair';
-    } else {
-      labelColor = const Color(0xFFFF3B30);
-      labelText = 'Needs attention';
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: labelColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.spa_rounded, size: 18, color: labelColor),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'WELLNESS SCORE',
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: textGrey,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      avg == null ? '--' : avg.toInt().toString(),
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: context.vivordoColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: labelColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        labelText,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: labelColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (trend.isNotEmpty)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  trend.startsWith('+')
-                      ? Icons.trending_up_rounded
-                      : Icons.trending_down_rounded,
-                  size: 16,
-                  color: trend.startsWith('+')
-                      ? greenColor
-                      : const Color(0xFFFF3B30),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  trend,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: trend.startsWith('+')
-                        ? greenColor
-                        : const Color(0xFFFF3B30),
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEmptyState() {
     return Container(
       width: double.infinity,
@@ -2001,194 +1489,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHealthConsentLoadingCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              color: accentPurple,
-            ),
-          ),
-          SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Checking Apple Health permissions',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: context.vivordoColors.textPrimary,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Loading your connected health data…',
-                  style: TextStyle(fontSize: 12, color: textGrey, height: 1.4),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildConnectCard() {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const SettingsScreen()),
-      ),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: context.vivordoColors.border),
-        ),
-        child: Column(
-          children: [
-            const Icon(
-              Icons.health_and_safety_outlined,
-              size: 36,
-              color: VivordoTheme.brand,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Apple Health not connected',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: context.vivordoColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Tap to go to App Settings → Health Data Permissions',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: textGrey, height: 1.5),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: accentPurple,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                'Enable Health Data',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChartCard({
-    required String title,
-    required Color color,
-    required List<double> values,
-    required double maxY,
-    required List<String> labels,
-    IconData? icon,
-  }) {
-    // Compute a quick summary value for the subtitle
-    final avg = values.isEmpty
-        ? 0.0
-        : values.reduce((a, b) => a + b) / values.length;
-    final latest = values.isNotEmpty ? values.last : 0.0;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (icon != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(icon, size: 16, color: color),
-                ),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: context.vivordoColors.textPrimary,
-                  ),
-                ),
-              ),
-              // Latest value badge
-              Text(
-                latest == latest.roundToDouble()
-                    ? latest.toInt().toString()
-                    : latest.toStringAsFixed(1),
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-          if (values.length > 1) ...[
-            const SizedBox(height: 2),
-            Padding(
-              padding: EdgeInsets.only(left: icon != null ? 42 : 0),
-              child: Text(
-                'avg ${avg == avg.roundToDouble() ? avg.toInt() : avg.toStringAsFixed(1)}',
-                style: const TextStyle(fontSize: 11, color: textGrey),
-              ),
-            ),
-          ],
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 160,
-            child: _AreaChart(
-              values: values,
-              maxY: maxY,
-              color: color,
-              labels: labels,
-            ),
           ),
         ],
       ),
@@ -2286,7 +1586,7 @@ class _AreaChartState extends State<_AreaChart>
             _selectPoint(details.localPosition.dx, constraints.maxWidth),
         child: AnimatedBuilder(
           animation: _animation,
-          builder: (_, __) => CustomPaint(
+          builder: (_, _) => CustomPaint(
             painter: _AreaChartPainter(
               values: widget.values,
               maxY: widget.maxY,
@@ -2330,7 +1630,7 @@ class _AreaChartPainter extends CustomPainter {
 
     // Grid lines — light translucent for a modern look
     final gridPaint = Paint()
-      ..color = Colors.black.withOpacity(0.06)
+      ..color = Colors.black.withValues(alpha: 0.06)
       ..strokeWidth = 0.8;
     const gridLines = 4;
     for (int i = 0; i <= gridLines; i++) {

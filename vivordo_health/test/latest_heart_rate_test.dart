@@ -217,6 +217,61 @@ void main() {
       );
     });
 
+    test('a scan surfaces without being mirrored into heart_rate', () {
+      // The shape scan_screen writes now that it no longer copies the reading
+      // into heart_rate: heart_rate_scan alone has to carry it.
+      final now = DateTime(2026, 9, 19, 14);
+      expect(
+        tileBpm(now: now, [
+          day('2026-09-19', {
+            'heart_rate_scan': {
+              'avg': 72,
+              'source': 'camera_ppg',
+              'entries': [
+                {
+                  'bpm': 72,
+                  'timestamp': Timestamp.fromDate(DateTime(2026, 9, 19, 13)),
+                },
+              ],
+            },
+          }),
+        ]),
+        72,
+      );
+    });
+
+    test('an unmirrored scan does not displace the day\'s health average', () {
+      // heart_rate stays HealthKit's daily aggregate; the scan sits alongside
+      // it rather than overwriting avg with a single spot reading.
+      final now = DateTime(2026, 9, 19, 14);
+      final data = {
+        'heart_rate': {
+          'avg': 65,
+          'source': 'apple_health',
+          'entries': [
+            {
+              'bpm': 65,
+              'timestamp': Timestamp.fromDate(DateTime(2026, 9, 19, 8)),
+            },
+          ],
+        },
+        'heart_rate_scan': {
+          'avg': 72,
+          'source': 'camera_ppg',
+          'entries': [
+            {
+              'bpm': 72,
+              'timestamp': Timestamp.fromDate(DateTime(2026, 9, 19, 13)),
+            },
+          ],
+        },
+      };
+      // The tile shows the newer reading — the scan.
+      expect(tileBpm(now: now, [day('2026-09-19', data)]), 72);
+      // And the day's average is untouched by it.
+      expect((data['heart_rate']!['avg'] as num).toDouble(), 65);
+    });
+
     test('a camera scan is shown when it is the only reading', () {
       final now = DateTime(2026, 9, 19, 14);
       expect(
