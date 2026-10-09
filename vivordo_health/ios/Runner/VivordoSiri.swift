@@ -21,7 +21,20 @@ struct VivordoSiriSnapshot: Equatable, Sendable {
   let stressScore: Int?
   let stressUpdatedAt: Date?
   let stressDrivers: [String]
-  let wellnessScore: Int?
+  let capacityScore: Int?
+  let capacityLabel: String
+  let capacityDay: String
+  /// My Day's Demand for the rest of today and its headline ("Room to spare
+  /// today"), as last shown there; nil until My Day has worked it out.
+  let demand: Int?
+  let demandHeadline: String
+  let demandAt: Date?
+  let trainingState: String
+  let trainingRatio: Double?
+  let trainingHardDays: Int?
+  let meetings: [VivordoMeetingPattern]
+  let sleepNeed: Double?
+  let stepsGoal: Int?
   let steps: Int?
   let activeCalories: Int?
   let exerciseMinutes: Int?
@@ -35,6 +48,14 @@ struct VivordoSiriSnapshot: Equatable, Sendable {
   let sleepStages: [String]
 }
 
+/// One of today's meetings with a heart-rate pattern (lib meeting_patterns).
+struct VivordoMeetingPattern: Equatable, Sendable {
+  let title: String
+  let start: Date
+  let high: Bool
+  let lift: String
+}
+
 enum VivordoSnapshotError: Error, Equatable {
   case unavailable
   case unsupportedSchema(Int)
@@ -46,8 +67,9 @@ enum VivordoHealthMetric: String, Sendable {
   case sleep
   case heartRate
   case steps
-  case wellness
-
+  case capacity
+  case trainingLoad
+  case meetings
 }
 
 struct VivordoSiriAnswer: Equatable, Sendable {
@@ -92,7 +114,19 @@ struct VivordoSnapshotStore {
       stressScore: positiveInt(defaults, key: "siriStressScore", allowZero: true),
       stressUpdatedAt: date(defaults, key: "stressUpdatedAt"),
       stressDrivers: stringArray(defaults, key: "stressDrivers"),
-      wellnessScore: positiveInt(defaults, key: "siriWellnessScore", allowZero: true),
+      capacityScore: defaults.bool(forKey: "dashboardHasCapacity")
+        ? positiveInt(defaults, key: "capacityScore", allowZero: true) : nil,
+      capacityLabel: defaults.string(forKey: "capacityLabel") ?? "",
+      capacityDay: defaults.string(forKey: "capacityDay") ?? "",
+      demand: positiveInt(defaults, key: "siriDemand", allowZero: true),
+      demandHeadline: defaults.string(forKey: "siriDemandHeadline") ?? "",
+      demandAt: date(defaults, key: "siriDemandAt"),
+      trainingState: defaults.string(forKey: "siriTrainingState") ?? "",
+      trainingRatio: positiveDouble(defaults, key: "siriTrainingRatio"),
+      trainingHardDays: positiveInt(defaults, key: "siriTrainingHardDays", allowZero: true),
+      meetings: meetings(defaults),
+      sleepNeed: positiveDouble(defaults, key: "siriSleepNeed"),
+      stepsGoal: positiveInt(defaults, key: "stepsGoal"),
       steps: positiveInt(defaults, key: "steps", allowZero: true),
       activeCalories: positiveInt(defaults, key: "activeCalories", allowZero: true),
       exerciseMinutes: positiveInt(defaults, key: "exerciseMinutes", allowZero: true),
@@ -134,6 +168,21 @@ struct VivordoSnapshotStore {
 
   private func stringArray(_ defaults: UserDefaults, key: String) -> [String] {
     (defaults.array(forKey: key) as? [String]) ?? []
+  }
+
+  private func meetings(_ defaults: UserDefaults) -> [VivordoMeetingPattern] {
+    let raw = defaults.array(forKey: "siriMeetingPatterns") as? [[String: Any]] ?? []
+    return raw.compactMap { item in
+      guard let title = item["title"] as? String,
+            let startAt = (item["startAt"] as? NSNumber)?.doubleValue,
+            let high = item["high"] as? Bool else { return nil }
+      return VivordoMeetingPattern(
+        title: title,
+        start: Date(timeIntervalSince1970: startAt / 1000),
+        high: high,
+        lift: item["lift"] as? String ?? ""
+      )
+    }
   }
 }
 
@@ -206,7 +255,7 @@ struct VivordoSiriQueryService {
           unit: nil,
           status: Self.sleepStatus(hours),
           detail: snapshot.sleepStages.isEmpty ? "Latest sleep" : snapshot.sleepStages.prefix(4).joined(separator: " • "),
-          progress: min(hours / 8, 1)
+          progress: min(hours / (snapshot.sleepNeed ?? 8), 1)
         )
       } else {
         return Self.missing(metric, dialog: "Vivordo doesn't have sleep data for you yet.")
@@ -235,28 +284,84 @@ struct VivordoSiriQueryService {
           value: steps.formatted(),
           unit: "steps",
           status: "Today",
-          detail: nil,
-          progress: min(Double(steps) / 10_000, 1)
+          detail: snapshot.stepsGoal.map { "Goal: \($0.formatted()) steps" },
+          progress: min(Double(steps) / Double(snapshot.stepsGoal ?? 10_000), 1)
         )
       } else {
         return Self.missing(metric, dialog: "Vivordo doesn't have a step count for you yet today.")
       }
-    case .wellness:
-      if let score = snapshot.wellnessScore {
-        return VivordoSiriAnswer(
-          metric: metric,
-          dialog: "Your Vivordo wellness score is \(score) out of 100 today.",
-          title: "Wellness Score",
-          value: "\(score)",
-          unit: "out of 100",
-          status: Self.wellnessStatus(score),
-          detail: "Today",
-          progress: Double(score) / 100
-        )
-      } else {
-        return Self.missing(metric, dialog: "Vivordo doesn't have a wellness score for you yet today.")
+    case .capacity:
+      guard let score = snapshot.capacityScore,
+            snapshot.capacityDay == snapshot.dataDay else {
+        return Self.missing(metric, dialog: "Vivordo doesn't have your Capacity for today yet. It comes in once last night's sleep syncs.")
       }
+      let plan = Self.todaysDemand(snapshot, now: now)
+      let label = snapshot.capacityLabel.isEmpty ? "" : ", which is \(snapshot.capacityLabel.lowercased())"
+      return VivordoSiriAnswer(
+        metric: metric,
+        dialog: "Your Capacity today is \(score)\(label).\(plan.map { " \($0.headline)." } ?? "")",
+        title: "Capacity",
+        value: "\(score)",
+        unit: "out of 100",
+        status: plan?.headline ?? (snapshot.capacityLabel.isEmpty ? "Today" : snapshot.capacityLabel),
+        detail: plan.map { "Demand \($0.demand) still ahead today" },
+        progress: Double(score) / 100
+      )
+    case .trainingLoad:
+      guard !snapshot.trainingState.isEmpty else {
+        return Self.missing(metric, dialog: "Vivordo is still learning your usual week of activity. Training load needs about four weeks.")
+      }
+      let percent = Int((((snapshot.trainingRatio ?? 1) - 1) * 100).rounded())
+      let vsUsual = abs(percent) < 5 ? "about your usual" :
+        "\(abs(percent))% \(percent > 0 ? "above" : "below") your usual week"
+      let hard = snapshot.trainingHardDays ?? 0
+      let advice: String = switch snapshot.trainingState {
+      case "strained": " Your HRV or resting heart rate agrees. An easier few days will help."
+      case "high": " An easier few days will help."
+      case "building": " Keep an eye on how you feel."
+      default: ""
+      }
+      return VivordoSiriAnswer(
+        metric: metric,
+        dialog: "Your training load is \(snapshot.trainingState). The last 7 days were \(vsUsual), with \(hard) hard \(hard == 1 ? "day" : "days").\(advice)",
+        title: "Training Load",
+        value: snapshot.trainingState.capitalized,
+        unit: nil,
+        status: abs(percent) < 5 ? "About your usual week" : "\(percent > 0 ? "+" : "−")\(abs(percent))% vs your usual week",
+        detail: "\(hard) hard \(hard == 1 ? "day" : "days") in the last 7",
+        progress: nil
+      )
+    case .meetings:
+      let upcoming = snapshot.meetings.filter { $0.start > now }.sorted { $0.start < $1.start }
+      guard let first = upcoming.first else {
+        return Self.missing(metric, dialog: "None of your meetings left today has a heart-rate pattern yet.")
+      }
+      let line: (VivordoMeetingPattern) -> String = { meeting in
+        "\(meeting.title) at \(meeting.start.formatted(date: .omitted, time: .shortened)) usually \(meeting.high ? "raises your heart rate" : "keeps your heart rate lower")"
+      }
+      let rest = upcoming.dropFirst().prefix(2).map(line)
+      return VivordoSiriAnswer(
+        metric: metric,
+        dialog: ([line(first) + (first.high && !first.lift.isEmpty ? ", about \(first.lift)" : "")] + rest)
+          .joined(separator: ". ") + ".",
+        title: "Meeting Patterns",
+        value: first.title,
+        unit: nil,
+        status: first.high ? "Heart rate usually up" : "Heart rate usually lower",
+        detail: upcoming.count > 1 ? "\(upcoming.count) of today's meetings have a pattern" : first.lift,
+        progress: nil
+      )
     }
+  }
+
+  /// My Day's Demand when it was worked out for today in the last 2 hours.
+  static func todaysDemand(_ snapshot: VivordoSiriSnapshot, now: Date)
+    -> (demand: Int, headline: String)? {
+    guard let demand = snapshot.demand, let at = snapshot.demandAt,
+          !snapshot.demandHeadline.isEmpty,
+          Calendar.autoupdatingCurrent.isDate(at, inSameDayAs: now),
+          now.timeIntervalSince(at) <= 2 * 60 * 60 else { return nil }
+    return (demand, snapshot.demandHeadline)
   }
 
   private static func missing(_ metric: VivordoHealthMetric, dialog: String) -> VivordoSiriAnswer {
@@ -278,7 +383,9 @@ struct VivordoSiriQueryService {
     case .sleep: "Sleep"
     case .heartRate: "Heart Rate"
     case .steps: "Steps"
-    case .wellness: "Wellness Score"
+    case .capacity: "Capacity"
+    case .trainingLoad: "Training Load"
+    case .meetings: "Meeting Patterns"
     }
   }
 
@@ -286,13 +393,6 @@ struct VivordoSiriQueryService {
     if score < 34 { return "Low stress" }
     if score < 67 { return "Moderate stress" }
     return "High stress"
-  }
-
-  private static func wellnessStatus(_ score: Int) -> String {
-    if score >= 80 { return "Great" }
-    if score >= 60 { return "Good" }
-    if score >= 40 { return "Fair" }
-    return "Needs attention"
   }
 
   private static func sleepStatus(_ hours: Double) -> String {
@@ -387,7 +487,9 @@ struct VivordoMetricSnippetView: View {
     case .sleep: "bed.double.fill"
     case .heartRate: "heart.fill"
     case .steps: "figure.walk"
-    case .wellness: "heart.text.square.fill"
+    case .capacity: "bolt.heart.fill"
+    case .trainingLoad: "figure.run"
+    case .meetings: "person.2.fill"
     }
   }
 
@@ -405,6 +507,7 @@ struct VivordoMetricSnippetView: View {
   }
 }
 
+/// Health answers need the phone unlocked, like the calendar ones.
 private protocol VivordoHealthQueryIntent: AppIntent {
   static var metric: VivordoHealthMetric { get }
 }
@@ -423,6 +526,7 @@ struct CheckStressIntent: VivordoHealthQueryIntent {
   static var title: LocalizedStringResource = "Check Stress Score"
   static var description = IntentDescription("Get today's Vivordo stress score.")
   static let metric = VivordoHealthMetric.stress
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
   func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     healthResult()
@@ -433,6 +537,7 @@ struct CheckSleepIntent: VivordoHealthQueryIntent {
   static var title: LocalizedStringResource = "Check Sleep"
   static var description = IntentDescription("Get your latest sleep duration from Vivordo.")
   static let metric = VivordoHealthMetric.sleep
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
   func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     healthResult()
@@ -443,6 +548,7 @@ struct CheckHeartRateIntent: VivordoHealthQueryIntent {
   static var title: LocalizedStringResource = "Check Heart Rate"
   static var description = IntentDescription("Get your latest heart rate from Vivordo.")
   static let metric = VivordoHealthMetric.heartRate
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
   func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     healthResult()
@@ -453,16 +559,40 @@ struct CheckStepsIntent: VivordoHealthQueryIntent {
   static var title: LocalizedStringResource = "Check Steps"
   static var description = IntentDescription("Get today's step count from Vivordo.")
   static let metric = VivordoHealthMetric.steps
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
   func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     healthResult()
   }
 }
 
-struct GetWellnessScoreIntent: VivordoHealthQueryIntent {
-  static var title: LocalizedStringResource = "Get Wellness Score"
-  static var description = IntentDescription("Get today's Vivordo wellness score.")
-  static let metric = VivordoHealthMetric.wellness
+struct CheckCapacityIntent: VivordoHealthQueryIntent {
+  static var title: LocalizedStringResource = "Check Capacity"
+  static var description = IntentDescription("Get today's Vivordo Capacity and how your day compares.")
+  static let metric = VivordoHealthMetric.capacity
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+    healthResult()
+  }
+}
+
+struct CheckTrainingLoadIntent: VivordoHealthQueryIntent {
+  static var title: LocalizedStringResource = "Check Training Load"
+  static var description = IntentDescription("Compare your last 7 days of activity with your usual week.")
+  static let metric = VivordoHealthMetric.trainingLoad
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+
+  func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+    healthResult()
+  }
+}
+
+struct CheckMeetingPatternsIntent: VivordoHealthQueryIntent {
+  static var title: LocalizedStringResource = "Check Today's Meetings"
+  static var description = IntentDescription("Which of today's meetings usually raise or lower your heart rate.")
+  static let metric = VivordoHealthMetric.meetings
+  static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
   func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
     healthResult()
@@ -855,6 +985,25 @@ struct VivordoPlanningService {
   ) -> VivordoPlanningAnswer {
     let remaining = remainingTimedEvents(events, now: now)
     let todayEvents = eventsForToday(events, now: now)
+    // My Day's own Demand against Capacity, so Siri and My Day agree.
+    if let health, let plan = VivordoSiriQueryService.todaysDemand(health, now: now) {
+      let capacity = health.capacityScore.map { " against a Capacity of \($0)" } ?? ""
+      return VivordoPlanningAnswer(
+        dialog: "\(plan.headline). Your Demand for the rest of today is \(plan.demand)\(capacity).",
+        title: "Your Day",
+        headline: plan.headline,
+        detail: "Demand \(plan.demand)\(health.capacityScore.map { " · Capacity \($0)" } ?? "")",
+        drivers: healthDrivers(health),
+        events: todayEvents,
+        priorities: schedulePriorities(
+          remaining: remaining,
+          backToBack: backToBackCount(remaining),
+          health: health
+        ),
+        loadScore: plan.demand,
+        recoveryWindow: nil
+      )
+    }
     guard !remaining.isEmpty else {
       return VivordoPlanningAnswer(
         dialog: "Your remaining schedule is clear today in Vivordo.",
@@ -889,8 +1038,8 @@ struct VivordoPlanningService {
     if let sleep = health?.sleepHours {
       score += sleep < 6 ? 10 : sleep < 7 ? 5 : 0
     }
-    if let wellness = health?.wellnessScore {
-      score += wellness < 40 ? 10 : wellness < 60 ? 5 : 0
+    if let capacity = health?.capacityScore {
+      score += capacity < 40 ? 10 : capacity < 60 ? 5 : 0
     }
     score = min(score, 100)
 
@@ -1040,7 +1189,7 @@ struct VivordoPlanningService {
     let recoveryIsImportant =
       (health?.stressScore ?? 0) >= 67 ||
       (health?.sleepHours ?? 24) < 7 ||
-      (health?.wellnessScore ?? 100) < 60
+      (health?.capacityScore ?? 100) < 60
     if recoveryIsImportant {
       priorities.append("Protect time for recovery")
     } else if !remaining.isEmpty {
@@ -1072,8 +1221,8 @@ struct VivordoPlanningService {
     if let sleep = health.sleepHours, sleep < 7 {
       drivers.append("Sleep was \(shortHoursText(sleep))")
     }
-    if let wellness = health.wellnessScore, wellness < 60 {
-      drivers.append("Wellness is \(wellness)")
+    if let capacity = health.capacityScore, capacity < 60 {
+      drivers.append("Capacity is \(capacity)")
     }
     return drivers
   }
@@ -1272,13 +1421,16 @@ struct OpenVivordoIntent: AppIntent {
 struct VivordoAppShortcuts: AppShortcutsProvider {
   static var appShortcuts: [AppShortcut] {
     AppShortcut(
-      intent: OpenVivordoIntent(),
+      intent: CheckCapacityIntent(),
       phrases: [
-        "Open \(.applicationName)",
-        "Show \(.applicationName)"
+        "What's my capacity in \(.applicationName)",
+        "What's my \(.applicationName) capacity",
+        "How's my energy today in \(.applicationName)",
+        "How much energy do I have in \(.applicationName)",
+        "Check my capacity in \(.applicationName)"
       ],
-      shortTitle: "Open Vivordo",
-      systemImageName: "heart.text.square"
+      shortTitle: "Capacity",
+      systemImageName: "bolt.heart.fill"
     )
     AppShortcut(
       intent: CheckStressIntent(),
@@ -1325,17 +1477,6 @@ struct VivordoAppShortcuts: AppShortcutsProvider {
       systemImageName: "figure.walk"
     )
     AppShortcut(
-      intent: GetWellnessScoreIntent(),
-      phrases: [
-        "What's my wellness score in \(.applicationName)",
-        "What's my \(.applicationName) wellness score",
-        "Tell me my wellness score with \(.applicationName)",
-        "Check my wellness score in \(.applicationName)"
-      ],
-      shortTitle: "Wellness Score",
-      systemImageName: "heart.text.square.fill"
-    )
-    AppShortcut(
       intent: GetTodayScheduleIntent(),
       phrases: [
         "What's on my schedule today in \(.applicationName)",
@@ -1349,17 +1490,6 @@ struct VivordoAppShortcuts: AppShortcutsProvider {
       ],
       shortTitle: "Today's Schedule",
       systemImageName: "calendar"
-    )
-    AppShortcut(
-      intent: GetNextCalendarEventIntent(),
-      phrases: [
-        "What's next on my calendar in \(.applicationName)",
-        "What's my next event in \(.applicationName)",
-        "Tell me my next event from \(.applicationName)",
-        "Show my next \(.applicationName) event"
-      ],
-      shortTitle: "Next Event",
-      systemImageName: "calendar.badge.clock"
     )
     AppShortcut(
       intent: AnalyzeScheduleLoadIntent(),
@@ -1383,11 +1513,33 @@ struct VivordoAppShortcuts: AppShortcutsProvider {
       phrases: [
         "Find me a recovery break in \(.applicationName)",
         "When can I take a break with \(.applicationName)",
-        "Find a free wellness break in \(.applicationName)",
+        "Find a free break in \(.applicationName)",
         "Where can I fit a break in \(.applicationName)"
       ],
       shortTitle: "Recovery Window",
       systemImageName: "leaf.fill"
+    )
+    AppShortcut(
+      intent: CheckTrainingLoadIntent(),
+      phrases: [
+        "What's my training load in \(.applicationName)",
+        "What's my \(.applicationName) training load",
+        "Am I overdoing it in \(.applicationName)",
+        "Am I training too much in \(.applicationName)"
+      ],
+      shortTitle: "Training Load",
+      systemImageName: "figure.run"
+    )
+    AppShortcut(
+      intent: CheckMeetingPatternsIntent(),
+      phrases: [
+        "Which meetings stress me out in \(.applicationName)",
+        "How will my meetings affect me in \(.applicationName)",
+        "Check my meetings in \(.applicationName)",
+        "Which of my \(.applicationName) meetings are hard today"
+      ],
+      shortTitle: "Today's Meetings",
+      systemImageName: "person.2.fill"
     )
   }
 }

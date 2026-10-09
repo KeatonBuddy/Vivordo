@@ -45,6 +45,7 @@ import '../src/services/metrics_repository.dart';
 import '../src/utils/day_key.dart';
 import '../widgets/burnout_card.dart';
 import '../widgets/training_load_card.dart';
+import '../src/services/home_widget_service.dart';
 import '../widgets/meeting_patterns_view.dart';
 import '../src/services/meeting_patterns_service.dart';
 import '../src/utils/meeting_patterns.dart';
@@ -1312,6 +1313,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 headline: headline,
                 capacity: capacityScore,
                 at: now,
+              );
+              unawaited(
+                publishSiriDemand(
+                  demand: demand,
+                  headline: headline,
+                  tomorrow: evening,
+                ),
               );
             }
             final brief =

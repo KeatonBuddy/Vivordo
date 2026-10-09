@@ -108,35 +108,39 @@ final class RunnerTests: XCTestCase {
     XCTAssertEqual(service.answer(for: .heartRate, now: now).dialog, "Your latest heart rate is 72 beats per minute.")
     XCTAssertEqual(service.answer(for: .steps, now: now).dialog, "You've taken 8,450 steps today.")
     XCTAssertEqual(
-      service.answer(for: .wellness, now: now).dialog,
-      "Vivordo doesn't have a wellness score for you yet today."
+      service.answer(for: .capacity, now: now).dialog,
+      "Vivordo doesn't have your Capacity for today yet. It comes in once last night's sleep syncs."
+    )
+    XCTAssertEqual(
+      service.answer(for: .trainingLoad, now: now).dialog,
+      "Vivordo is still learning your usual week of activity. Training load needs about four weeks."
     )
   }
 
   func testSiriQueryRejectsStaleSnapshot() {
     seedSnapshot(publishedAt: 1_000)
-    defaults.set(80, forKey: "siriWellnessScore")
+    seedCapacity(80)
     let service = VivordoSiriQueryService(store: VivordoSnapshotStore(defaults: defaults))
 
     XCTAssertEqual(
       service.answer(
-        for: .wellness,
+        for: .capacity,
         now: Date(timeIntervalSince1970: 1_000 + VivordoSiriQueryService.maximumSnapshotAge + 1)
       ).dialog,
       "Your Vivordo data needs a refresh. Open the app to update it."
     )
   }
 
-  func testSiriQueryBuildsDistinctStressAndWellnessCards() {
+  func testSiriQueryBuildsDistinctStressAndCapacityCards() {
     seedSnapshot(publishedAt: 1_000)
     defaults.set(32, forKey: "siriStressScore")
     defaults.set(["Busy calendar"], forKey: "stressDrivers")
-    defaults.set(84, forKey: "siriWellnessScore")
+    seedCapacity(84)
 
     let service = VivordoSiriQueryService(store: VivordoSnapshotStore(defaults: defaults))
     let now = Date(timeIntervalSince1970: 1_100)
     let stress = service.answer(for: .stress, now: now)
-    let wellness = service.answer(for: .wellness, now: now)
+    let capacity = service.answer(for: .capacity, now: now)
 
     XCTAssertEqual(stress.metric, .stress)
     XCTAssertEqual(stress.title, "Stress Score")
@@ -145,13 +149,62 @@ final class RunnerTests: XCTestCase {
     XCTAssertEqual(stress.detail, "Main drivers: Busy calendar")
     XCTAssertEqual(stress.progress, 0.32)
 
-    XCTAssertEqual(wellness.metric, .wellness)
-    XCTAssertEqual(wellness.title, "Wellness Score")
-    XCTAssertEqual(wellness.value, "84")
-    XCTAssertEqual(wellness.status, "Great")
-    XCTAssertEqual(wellness.detail, "Today")
-    XCTAssertEqual(wellness.progress, 0.84)
-    XCTAssertNotEqual(stress.dialog, wellness.dialog)
+    XCTAssertEqual(capacity.metric, .capacity)
+    XCTAssertEqual(capacity.title, "Capacity")
+    XCTAssertEqual(capacity.value, "84")
+    XCTAssertEqual(capacity.status, "Above your usual")
+    XCTAssertNil(capacity.detail)
+    XCTAssertEqual(capacity.progress, 0.84)
+    XCTAssertEqual(capacity.dialog, "Your Capacity today is 84, which is above your usual.")
+  }
+
+  func testCapacityUsesMyDaysRecentDemand() {
+    seedSnapshot(publishedAt: 1_000)
+    seedCapacity(84)
+    defaults.set(37, forKey: "siriDemand")
+    defaults.set("Room to spare today", forKey: "siriDemandHeadline")
+    defaults.set(900_000.0, forKey: "siriDemandAt")
+    let service = VivordoSiriQueryService(store: VivordoSnapshotStore(defaults: defaults))
+
+    let answer = service.answer(for: .capacity, now: Date(timeIntervalSince1970: 1_100))
+    XCTAssertEqual(answer.dialog, "Your Capacity today is 84, which is above your usual. Room to spare today.")
+    XCTAssertEqual(answer.status, "Room to spare today")
+    XCTAssertEqual(answer.detail, "Demand 37 still ahead today")
+
+    // Hours old: left out rather than out of date.
+    let later = service.answer(for: .capacity, now: Date(timeIntervalSince1970: 1_000 + 3 * 3_600))
+    XCTAssertEqual(later.dialog, "Your Capacity today is 84, which is above your usual.")
+  }
+
+  func testTrainingLoadAndMeetingAnswers() {
+    seedSnapshot(publishedAt: 1_000)
+    defaults.set("high", forKey: "siriTrainingState")
+    defaults.set(1.6, forKey: "siriTrainingRatio")
+    defaults.set(4, forKey: "siriTrainingHardDays")
+    let now = Date(timeIntervalSince1970: 1_100)
+    defaults.set(
+      [[
+        "title": "Team sync",
+        "startAt": (now.timeIntervalSince1970 + 3_600) * 1_000,
+        "high": true,
+        "lift": "21% over your usual",
+      ]],
+      forKey: "siriMeetingPatterns"
+    )
+    let service = VivordoSiriQueryService(store: VivordoSnapshotStore(defaults: defaults))
+
+    XCTAssertEqual(
+      service.answer(for: .trainingLoad, now: now).dialog,
+      "Your training load is high. The last 7 days were 60% above your usual week, with 4 hard days. An easier few days will help."
+    )
+    let meetings = service.answer(for: .meetings, now: now)
+    XCTAssertTrue(meetings.dialog.hasPrefix("Team sync at "))
+    XCTAssertTrue(meetings.dialog.hasSuffix("usually raises your heart rate, about 21% over your usual."))
+    XCTAssertEqual(meetings.status, "Heart rate usually up")
+    XCTAssertEqual(
+      service.answer(for: .meetings, now: now.addingTimeInterval(7_200)).dialog,
+      "None of your meetings left today has a heart-rate pattern yet."
+    )
   }
 
   func testSiriQueryHandlesMissingSnapshot() {
@@ -249,7 +302,7 @@ final class RunnerTests: XCTestCase {
     ))!
     seedSnapshot(publishedAt: now.timeIntervalSince1970 - 300)
     defaults.set(72, forKey: "siriStressScore")
-    defaults.set(45, forKey: "siriWellnessScore")
+    seedCapacity(45)
     defaults.set(5.5, forKey: "siriSleepHours")
     defaults.set(
       [
@@ -282,6 +335,35 @@ final class RunnerTests: XCTestCase {
         "Protect time for recovery",
         "Create a buffer between meetings",
       ]
+    )
+  }
+
+  func testScheduleLoadUsesMyDaysDemandWhenFresh() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 22, hour: 12))!
+    seedSnapshot(publishedAt: now.timeIntervalSince1970 - 300)
+    seedCapacity(86)
+    defaults.set(37, forKey: "siriDemand")
+    defaults.set("Room to spare today", forKey: "siriDemandHeadline")
+    defaults.set((now.timeIntervalSince1970 - 600) * 1_000, forKey: "siriDemandAt")
+    defaults.set(
+      [calendarEvent("Team sync", start: now.addingTimeInterval(3_600), duration: 3_600)],
+      forKey: "siriCalendarEvents"
+    )
+    defaults.set((now.timeIntervalSince1970 - 300) * 1_000, forKey: "calendarWeekUpdatedAt")
+
+    let answer = VivordoPlanningService(
+      healthStore: VivordoSnapshotStore(defaults: defaults),
+      calendarStore: VivordoCalendarSnapshotStore(defaults: defaults),
+      calendar: calendar
+    ).answer(for: .scheduleLoad, now: now)
+
+    XCTAssertEqual(answer.headline, "Room to spare today")
+    XCTAssertEqual(answer.loadScore, 37)
+    XCTAssertEqual(
+      answer.dialog,
+      "Room to spare today. Your Demand for the rest of today is 37 against a Capacity of 86."
     )
   }
 
@@ -368,6 +450,13 @@ final class RunnerTests: XCTestCase {
     XCTAssertEqual(answer.recoveryWindow?.start, expectedStart)
     XCTAssertEqual(answer.recoveryWindow?.end, expectedStart.addingTimeInterval(1_800))
     XCTAssertTrue(answer.dialog.contains("30 minute recovery window"))
+  }
+
+  private func seedCapacity(_ score: Int) {
+    defaults.set(true, forKey: "dashboardHasCapacity")
+    defaults.set(score, forKey: "capacityScore")
+    defaults.set("Above your usual", forKey: "capacityLabel")
+    defaults.set("2026-09-19", forKey: "capacityDay")
   }
 
   private func seedSnapshot(publishedAt: TimeInterval) {
