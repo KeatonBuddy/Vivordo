@@ -207,6 +207,8 @@ class NotificationService {
     await cancelDailyScanReminder();
     await cancelCalendarCheckIn();
     await cancelWeeklyReviewReminder();
+    await cancelCheckInReminders();
+    await cancelWindDownReminders();
   }
 
   /// Removes local notification state after the server has deleted an account.
