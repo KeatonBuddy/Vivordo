@@ -22,6 +22,7 @@ void main() {
         return (
           start: end.subtract(Duration(minutes: (hours * 60).round())),
           end: end,
+          asleepHours: null,
         );
       }(),
   ];
@@ -59,7 +60,10 @@ void main() {
     );
     final short = forecastEnergy(
       day: day,
-      nights: [(start: at(0, 30), end: at(6)), ...nights(hours: 7).skip(1)],
+      nights: [
+        (start: at(0, 30), end: at(6), asleepHours: null),
+        ...nights(hours: 7).skip(1),
+      ],
       sleepNeedHours: 8,
     );
     expect(short.sleptHours, 5.5);
@@ -149,10 +153,28 @@ void main() {
   test('a night after today is ignored', () {
     final f = forecastEnergy(
       day: day,
-      nights: [...nights(), (start: at(23), end: at(7, 0, 2))],
+      nights: [
+        ...nights(),
+        (start: at(23), end: at(7, 0, 2), asleepHours: null),
+      ],
       sleepNeedHours: 8,
     );
     expect(f.wake, at(7));
+  });
+
+  test('hours slept are time asleep, not bed to wake', () {
+    // Asleep 12:46–7:00 (6h 14m) but awake an hour in the night: 5.3 h.
+    final f = forecastEnergy(
+      day: day,
+      nights: [
+        (start: at(0, 46), end: at(7), asleepHours: 5.3),
+        ...nights().skip(1),
+      ],
+      sleepNeedHours: 8,
+    );
+    expect(f.wake, at(7));
+    expect(f.sleptHours, 5.3);
+    expect(f.sleepDebtHours, closeTo(2.7, 0.01));
   });
 
   group('usual sleep schedule', () {
@@ -168,12 +190,18 @@ void main() {
       expect(SleepSchedule.fallback.nightEnding(day), (
         start: at(23, 30, -1),
         end: at(7),
+        asleepHours: null,
       ));
-      expect(late.nightEnding(day), (start: at(1), end: at(9)));
+      expect(late.nightEnding(day), (
+        start: at(1),
+        end: at(9),
+        asleepHours: null,
+      ));
       // Saturday morning uses the weekend times.
       expect(late.nightEnding(at(0, 0, 2)), (
         start: at(2, 0, 2),
         end: at(10, 30, 2),
+        asleepHours: null,
       ));
     });
 
@@ -224,7 +252,7 @@ void main() {
             final start = wakeDay.add(
               Duration(minutes: weekend ? 60 : (i.isEven ? -10 : 10)),
             );
-            return (start: start, end: end);
+            return (start: start, end: end, asleepHours: null);
           }(),
       ];
       final s = SleepSchedule.fromNights(tracked)!;

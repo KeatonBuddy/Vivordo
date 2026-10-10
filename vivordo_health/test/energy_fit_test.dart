@@ -17,6 +17,7 @@ void main() {
         (
           start: DateTime(2026, 10, 7 - i, 23),
           end: DateTime(2026, 10, 8 - i, 7),
+          asleepHours: null,
         ),
     ],
     sleepNeedHours: 8,

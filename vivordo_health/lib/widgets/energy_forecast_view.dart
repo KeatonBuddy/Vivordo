@@ -670,7 +670,7 @@ EnergyForecast tomorrowEnergyForecast({
   );
   return forecastEnergy(
     day: DateTime(today.year, today.month, today.day + 1),
-    nights: [...nights, (start: start, end: end)],
+    nights: [...nights, (start: start, end: end, asleepHours: null)],
     sleepNeedHours: tonight.sleepNeedHours,
     schedule: schedule,
   );

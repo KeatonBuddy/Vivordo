@@ -2,8 +2,10 @@ import 'dart:math' as math;
 
 import 'sleep_schedule.dart';
 
-/// One night's sleep, from falling asleep to waking.
-typedef SleepPeriod = ({DateTime start, DateTime end});
+/// One night's sleep, from falling asleep to waking. [asleepHours] is the
+/// time actually asleep (the tracker's total, without waking in the night);
+/// null when only the times are known, so the whole span counts.
+typedef SleepPeriod = ({DateTime start, DateTime end, double? asleepHours});
 
 enum EnergyPhase { groggy, peak, dip, secondWind, windDown }
 
@@ -180,10 +182,15 @@ EnergyForecast forecastEnergy({
       ? _hours(usual.end.difference(usual.start))
       : need;
 
+  // Time asleep, for how rested you are; the span (bed to wake) is only for
+  // timing, since waking in the night still leaves you short.
+  double asleepOf(SleepPeriod n) =>
+      n.asleepHours ?? _hours(n.end.difference(n.start));
+
   final anchor = date.add(_fromHours(midSleep));
   final wake = lastNight?.end ?? anchor.add(_fromHours(usualHours / 2));
   final slept = lastNight != null
-      ? _hours(lastNight.end.difference(lastNight.start))
+      ? asleepOf(lastNight)
       : usual != null
       ? usualHours
       : need;
@@ -199,7 +206,7 @@ EnergyForecast forecastEnergy({
     [
       for (final n in recent)
         if (n.end.isAfter(date.subtract(const Duration(days: _debtDays - 1))))
-          math.max(0.0, need - _hours(n.end.difference(n.start))),
+          math.max(0.0, need - asleepOf(n)),
     ].fold(0.0, (a, b) => a + b),
   );
 

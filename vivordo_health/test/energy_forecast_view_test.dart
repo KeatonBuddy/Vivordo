@@ -19,6 +19,7 @@ void main() {
         return (
           start: end.subtract(Duration(minutes: (hours * 60).round())),
           end: end,
+          asleepHours: null,
         );
       }(),
   ];
@@ -40,7 +41,7 @@ void main() {
         },
         null,
       ]),
-      [(start: bed, end: wake)],
+      [(start: bed, end: wake, asleepHours: 8.0)],
     );
   });
 
@@ -88,7 +89,11 @@ void main() {
     final short = forecastEnergy(
       day: day,
       nights: [
-        (start: DateTime(2026, 10, 8, 0, 20), end: DateTime(2026, 10, 8, 7)),
+        (
+          start: DateTime(2026, 10, 8, 0, 20),
+          end: DateTime(2026, 10, 8, 7),
+          asleepHours: null,
+        ),
         ...nights().skip(1),
       ],
       sleepNeedHours: 8,
@@ -208,6 +213,7 @@ void main() {
           (
             start: DateTime(2026, 10, 7 - i, 23),
             end: DateTime(2026, 10, 8 - i, 7),
+            asleepHours: null,
           ),
       ],
       sleepNeedHours: 8,
@@ -285,7 +291,11 @@ void main() {
     final short = forecastEnergy(
       day: day,
       nights: [
-        (start: DateTime(2026, 10, 8, 0, 20), end: DateTime(2026, 10, 8, 7)),
+        (
+          start: DateTime(2026, 10, 8, 0, 20),
+          end: DateTime(2026, 10, 8, 7),
+          asleepHours: null,
+        ),
         ...nights().skip(1),
       ],
       sleepNeedHours: 8,

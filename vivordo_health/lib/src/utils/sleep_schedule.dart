@@ -99,7 +99,7 @@ class SleepSchedule {
     var start = date.add(Duration(minutes: weekend ? weekendBed! : bed));
     // An 11:30 PM bedtime is the evening before; 12:30 AM is the same date.
     if (!start.isBefore(end)) start = start.subtract(const Duration(days: 1));
-    return (start: start, end: end);
+    return (start: start, end: end, asleepHours: null);
   }
 }
 
