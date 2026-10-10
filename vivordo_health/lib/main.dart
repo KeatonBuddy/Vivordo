@@ -79,7 +79,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseAuth.instance.authStateChanges().listen((user) {
-    if (user == null) unawaited(HomeWidgetService.clearAccountSnapshot());
+    // Signed in (including at launch): save any check-ins tapped on the Mood
+    // widget. Signed out: stop the widget taking them.
+    unawaited(
+      user == null
+          ? HomeWidgetService.clearAccountSnapshot()
+          : HomeWidgetService.syncMoodWidget(),
+    );
   });
   HealthService.listenForNewSleep();
 
@@ -491,6 +497,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
           await WhoopService.instance.syncInBackground();
         });
         unawaited(HomeWidgetService.refreshCalendarSnapshot());
+        unawaited(HomeWidgetService.syncMoodWidget());
         unawaited(
           DailyPriorityService.refreshReminders().catchError((Object error) {
             debugPrint('Could not refresh priority reminders: $error');

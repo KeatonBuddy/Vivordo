@@ -11,6 +11,9 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
+import 'package:vivordo_health/src/services/metrics_service.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/mood_widget_values.dart';
 import 'package:vivordo_health/src/utils/training_load_view.dart';
 
 class HomeWidgetService {
@@ -214,6 +217,74 @@ class HomeWidgetService {
     _channel.setMethodCallHandler(null);
   }
 
+  static bool _syncingMood = false;
+
+  /// Saves mood check-ins tapped on the Mood widget, then refreshes the
+  /// widget. Each tap keeps the time it was made, so one saved later still
+  /// counts from then. A tap is removed from the queue only once it is saved;
+  /// saving the same tap twice adds no duplicate entry.
+  static Future<void> syncMoodWidget() async {
+    if (!Platform.isIOS || _syncingMood) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    _syncingMood = true;
+    try {
+      final raw =
+          await _channel.invokeListMethod<Object?>('pendingMoodCheckIns') ??
+          const [];
+      final queued = pendingMoodCheckIns(user.uid, raw);
+      for (final checkIn in queued) {
+        await MetricsService.saveMoodCheckIn(
+          checkIn.label,
+          moodScore: checkIn.score,
+          occurredAt: checkIn.at,
+          source: 'widget',
+        );
+        await _channel.invokeMethod<void>('removeMoodCheckIns', [checkIn.id]);
+      }
+      // Saving a check-in already refreshes the widget.
+      if (queued.isEmpty) await publishMoodSnapshot();
+    } on MissingPluginException {
+      // The native widget is available after installing an iOS build.
+    } on PlatformException catch (error) {
+      debugPrint('Mood widget sync failed: ${error.message}');
+    } catch (error) {
+      debugPrint('Mood widget check-ins could not be saved: $error');
+    } finally {
+      _syncingMood = false;
+    }
+  }
+
+  /// Tells the Mood widget who is signed in, how many check-ins today has
+  /// and the latest one. One read rather than a listener: day documents
+  /// carry large heart-rate arrays, and a listener re-sends the whole day on
+  /// every health write.
+  static Future<void> publishMoodSnapshot() async {
+    if (!Platform.isIOS) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final generation = _accountGeneration;
+    final today = localDayKey(DateTime.now());
+    try {
+      final day = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('metrics_daily')
+          .doc(today)
+          .get();
+      if (generation != _accountGeneration) return;
+      await _channel.invokeMethod<void>('updateSnapshot', {
+        'moodAccount': user.uid,
+        'moodDay': today,
+        ...moodWidgetValues(day.data()?['mood']),
+      });
+    } on MissingPluginException {
+      // The native widget is available after installing an iOS build.
+    } catch (error) {
+      debugPrint('Mood widget update failed: $error');
+    }
+  }
+
   static Future<void> clearAccountSnapshot() async {
     _accountGeneration++;
     _priorityScope = null;
@@ -276,6 +347,12 @@ class HomeWidgetService {
         'dashboardHasStress': false,
         'dashboardMetricsUpdatedAt': 0,
         'dashboardCalendarConnected': false,
+        // Signed out: the Mood widget stops taking check-ins.
+        'moodAccount': '',
+        'moodDay': '',
+        'moodTodayCount': 0,
+        'moodLastScore': -1,
+        'moodLastAt': 0,
       });
     } on MissingPluginException {
       // The native widget is available after installing an iOS build.
