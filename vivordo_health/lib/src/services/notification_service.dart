@@ -118,7 +118,7 @@ class NotificationService {
     return operation;
   }
 
-  bool _dailyScanRemindersEnabled = true;
+  bool _dailyScanRemindersEnabled = false;
   bool _calendarCheckInReminderEnabled = true;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _fitnessGoalSubscription;
@@ -176,8 +176,9 @@ class NotificationService {
               .toInt();
       _scanReminderMinutes = {morning, evening}.toList()..sort();
     }
+    // Scan reminders are off unless switched on in Settings.
     await setDailyScanRemindersEnabled(
-      preferences?['scanReminderEnabled'] != false,
+      preferences?['scanReminderEnabled'] == true,
     );
     await setCalendarCheckInReminderEnabled(
       preferences?['checkInReminderEnabled'] != false,

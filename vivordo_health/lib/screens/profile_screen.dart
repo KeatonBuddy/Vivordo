@@ -1040,7 +1040,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         final dayWrapUp =
             (preferences['dayWrapUpMinutes'] as num?)?.toInt() ??
             kDefaultDayWrapUpMinutes;
-        final scanReminderEnabled = preferences['scanReminderEnabled'] != false;
+        // Off unless switched on: most people's stress comes from a watch.
+        final scanReminderEnabled = preferences['scanReminderEnabled'] == true;
         final checkInReminderEnabled =
             preferences['checkInReminderEnabled'] != false;
         final windDownReminder = preferences['windDownReminder'] == true;
