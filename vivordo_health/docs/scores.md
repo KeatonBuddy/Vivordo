@@ -677,6 +677,57 @@ forecast, suggest the peak or second wind for demanding work, propose moves
 for the user to confirm, and never invent windows without it. The server
 ignores unknown keys, so app and functions can ship in either order.
 
+## 9. Weekly review
+
+**Implemented** in `lib/src/utils/weekly_review.dart` (rules) and
+`lib/src/services/weekly_review_service.dart` (loading and saving). Each
+Sunday, after the morning check-in is answered or dismissed, My Day shows a
+card for the week just ended (from noon without a check-in) (Sunday to Saturday; the Sunday it's read on
+isn't in it). It's built on the phone from small documents only:
+`scores_daily` (the week and the 28 days before), `event_reactions`,
+`daily_tags`, `day_fixes`, the week's workout count, today's open
+priorities and, on the Sunday, next Monday to Friday's Demand from the
+calendar. There's no review with Capacity on fewer than 4 of the 7 days.
+
+- **Usual:** the median Capacity of the 28 days before, of the same
+  Capacity version (the week's own median with fewer than 7). A heavy day is
+  Effort over that usual + 15, as in the brief.
+- **Headline, in order:** a sick night and 2+ low days → "A tough week
+  while you were unwell"; training load High or Strained, or the burnout
+  check at Watch or Warning → "A week that asked a lot"; 3+ heavy days → "A
+  heavy week you handled well", or "… that wore on you" when the last 3
+  days' Capacity averaged 5+ under the first 3, or the week 5+ under usual;
+  5 of 7 nights on target → "A good week for sleep"; no heavy days and
+  Capacity within 5 of usual → "A lighter, steadier week"; else "A mixed
+  week".
+- **What drained you (up to 3):** sick and travel nights; the heaviest day;
+  a big day; a meeting series whose heart rate rose 7+ bpm over its usual;
+  late nights before low days; after-hours time 1.5× the usual week and an
+  hour more; training load High or Strained; a priority open 3+ days ("open
+  since …").
+- **What helped (up to 3):** nights on target with Capacity 5+ higher the
+  next morning; 2+ day fixes used; meetings or focus blocks 3+ bpm calmer
+  than usual; a steady training week.
+- **Body signals only as a reason.** A low day is Capacity 8+ under usual;
+  the body is named only when its part made the largest weighted drop. An
+  off day is resting heart rate 5+ bpm over normal or HRV at 85% of normal
+  or under (`bodyOffDay`, shared with meeting patterns): that day's meetings
+  aren't counted against them, and the review says so.
+- **Next week:** each weekday is Light (Demand 15+ under usual), About usual
+  or More than your usual (15+ over), with one suggestion by rule (a slot for
+  a slipping priority on the lightest day, then moving a priority off two
+  busy days in a row, then protecting the evening before the heaviest).
+- **Saved** once at `users/{uid}/weekly_reviews/{the week's Sunday}` (v1),
+  with no event titles: meetings are stored by series key and named from
+  the calendar when shown. "Anything else going on this week?" (Busy at
+  home / Not feeling well / Travel / Big deadline / a note of 80 characters
+  or fewer) is saved on it, sent to Vivordo AI with "Plan next week", and
+  mentioned in next week's review.
+- **Where:** My Day on Sundays until hidden for the day; Journal lists each
+  review on its Sunday, with a dot on the mood calendar, and search finds
+  it. An opt-in reminder (`preferences.weeklyReviewReminder`) fires Sundays
+  at 11 AM.
+
 ## Open questions
 
 None. Decided (2026-10-01):

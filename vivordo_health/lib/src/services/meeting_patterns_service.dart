@@ -68,9 +68,14 @@ class MeetingPatternsService {
       range('event_reactions'),
       range('scores_daily'),
     ]);
+    final scores = results[1];
     return (
-      patterns: meetingPatternsFrom(MeetingReaction.fromDays(results[0])),
-      heavy: heavyDaysFrom(results[1]),
+      // Days the body was off aren't counted against that day's meetings.
+      patterns: meetingPatternsFrom([
+        for (final r in MeetingReaction.fromDays(results[0]))
+          if (!bodyOffDay(scores[localDayKey(r.day)]?['capacity'])) r,
+      ]),
+      heavy: heavyDaysFrom(scores),
     );
   }
 }

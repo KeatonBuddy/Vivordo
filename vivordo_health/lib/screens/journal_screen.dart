@@ -11,10 +11,13 @@ import '../src/services/calendar_service.dart';
 import '../src/services/journal_lock_service.dart';
 import '../src/services/metrics_service.dart';
 import '../src/services/outlook_calendar_service.dart';
+import '../src/services/weekly_review_service.dart';
 import '../src/utils/journal_summary.dart';
+import '../src/utils/weekly_review.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/daily_tags.dart';
 import '../widgets/journal_entry_sheet.dart';
+import 'weekly_review_screen.dart';
 
 const _purple = Color(0xFF5B4CF4);
 const _muted = Color(0xFF7F8098);
@@ -48,6 +51,8 @@ class _JournalScreenState extends State<JournalScreen> {
   bool _accessGranted = false;
   bool _journalLocked = false;
   bool _authenticating = false;
+  List<WeeklyReview> _reviews = const [];
+  StreamSubscription<List<WeeklyReview>>? _reviewSubscription;
 
   CollectionReference<Map<String, dynamic>>? get _entries {
     final user = FirebaseAuth.instance.currentUser;
@@ -69,6 +74,10 @@ class _JournalScreenState extends State<JournalScreen> {
         ?.orderBy('entryDate', descending: true)
         .limit(500)
         .snapshots();
+    _reviewSubscription = WeeklyReviewService.watchAll().listen(
+      (reviews) => setState(() => _reviews = reviews),
+      onError: (Object error) => debugPrint('Weekly reviews: $error'),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkJournalAccess());
     _loadPrompts();
   }
@@ -76,6 +85,7 @@ class _JournalScreenState extends State<JournalScreen> {
   @override
   void dispose() {
     _search.dispose();
+    unawaited(_reviewSubscription?.cancel());
     super.dispose();
   }
 
@@ -384,12 +394,14 @@ class _JournalScreenState extends State<JournalScreen> {
         _selectedDay != null && DateUtils.isSameDay(_selectedDay, day);
     final isToday = DateUtils.isSameDay(day, today);
     final filled = hasEntry && moodTone(mood) != MoodTone.none;
+    final review = _reviews.any((r) => DateUtils.isSameDay(r.readOn, day));
     return Semantics(
       button: !future,
       selected: selected,
       label:
           '${DateFormat('MMMM d').format(day)}, '
-          '${hasEntry ? (mood ?? 'entry without a mood') : 'no entry'}',
+          '${hasEntry ? (mood ?? 'entry without a mood') : 'no entry'}'
+          '${review ? ', weekly review' : ''}',
       child: ExcludeSemantics(
         child: Opacity(
           opacity: future ? .35 : 1,
@@ -411,13 +423,38 @@ class _JournalScreenState extends State<JournalScreen> {
                     ? null
                     : Border.all(color: colors.border),
               ),
-              child: Text(
-                '${day.day}',
-                style: TextStyle(
-                  color: filled ? Colors.white : colors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: hasEntry ? FontWeight.w800 : FontWeight.w500,
-                ),
+              child: Stack(
+                alignment: Alignment.center,
+                // Fills the cell, so the review dot sits in its corner.
+                fit: StackFit.expand,
+                children: [
+                  Center(
+                    child: Text(
+                      '${day.day}',
+                      style: TextStyle(
+                        color: filled ? Colors.white : colors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: hasEntry
+                            ? FontWeight.w800
+                            : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  // A weekly review was read this Sunday.
+                  if (review)
+                    Positioned(
+                      top: 3,
+                      right: 3,
+                      child: Container(
+                        width: 5,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: filled ? Colors.white : _reviewPurple,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -499,9 +536,17 @@ class _JournalScreenState extends State<JournalScreen> {
   List<Widget> _buildList(List<JournalItem> items) {
     final today = _today;
     var shown = searchJournal(items, _searching ? _search.text : '');
+    var reviews = [
+      for (final r in _reviews)
+        if (r.matches(_searching ? _search.text : '', reviewLineName)) r,
+    ];
     final day = _selectedDay;
     if (!_searching && day != null) {
       shown = shown.where((i) => DateUtils.isSameDay(i.date, day)).toList();
+      reviews = [
+        for (final r in reviews)
+          if (DateUtils.isSameDay(r.readOn, day)) r,
+      ];
       return [
         Row(
           children: [
@@ -517,13 +562,14 @@ class _JournalScreenState extends State<JournalScreen> {
           ],
         ),
         const SizedBox(height: 6),
-        if (shown.isEmpty)
+        if (shown.isEmpty && reviews.isEmpty)
           const _Empty(
             title: 'No entries for this day',
             body: 'Add one now if you’d like to remember it.',
           )
         else
-          _entryGroup(shown),
+          // The review first: it's what a review Sunday was tapped for.
+          _entryGroup(shown, reviews: reviews, reviewsFirst: true),
         const SizedBox(height: 10),
         OutlinedButton.icon(
           onPressed: () => _write(date: day),
@@ -536,7 +582,7 @@ class _JournalScreenState extends State<JournalScreen> {
         ),
       ];
     }
-    if (shown.isEmpty) {
+    if (shown.isEmpty && reviews.isEmpty) {
       return [
         _searching
             ? const _Empty(title: 'No matches', body: 'Try a different word.')
@@ -549,43 +595,69 @@ class _JournalScreenState extends State<JournalScreen> {
     if (_searching) {
       return [
         _SectionTitle(
-          '${shown.length} ${shown.length == 1 ? 'RESULT' : 'RESULTS'}',
+          '${shown.length + reviews.length} '
+          '${shown.length + reviews.length == 1 ? 'RESULT' : 'RESULTS'}',
         ),
         const SizedBox(height: 8),
-        _entryGroup(shown),
+        _entryGroup(shown, reviews: reviews),
       ];
     }
     final months = <DateTime, List<JournalItem>>{};
+    final reviewMonths = <DateTime, List<WeeklyReview>>{};
     for (final item in shown) {
       months
           .putIfAbsent(DateTime(item.date.year, item.date.month), () => [])
           .add(item);
     }
+    for (final r in reviews) {
+      final month = DateTime(r.readOn.year, r.readOn.month);
+      months.putIfAbsent(month, () => []);
+      reviewMonths.putIfAbsent(month, () => []).add(r);
+    }
+    final sorted = months.entries.toList()
+      ..sort((a, b) => b.key.compareTo(a.key));
     return [
-      for (final month in months.entries) ...[
+      for (final month in sorted) ...[
         _SectionTitle(
           DateFormat(
             month.key.year == today.year ? 'MMMM' : 'MMMM y',
           ).format(month.key).toUpperCase(),
         ),
         const SizedBox(height: 8),
-        _entryGroup(month.value),
+        _entryGroup(month.value, reviews: reviewMonths[month.key] ?? const []),
         const SizedBox(height: 22),
       ],
     ];
   }
 
-  Widget _entryGroup(List<JournalItem> items) {
+  /// Entries and weekly reviews, newest first; a review sits at the start
+  /// of its Sunday, or first of all with [reviewsFirst].
+  Widget _entryGroup(
+    List<JournalItem> items, {
+    List<WeeklyReview> reviews = const [],
+    bool reviewsFirst = false,
+  }) {
     final colors = context.vivordoColors;
+    final rows = <(DateTime, Widget)>[
+      for (final item in items)
+        (item.date, _EntryRow(item: item, onTap: () => _open(item))),
+      for (final r in reviews)
+        (
+          reviewsFirst
+              ? DateTime(9999)
+              : DateTime(r.readOn.year, r.readOn.month, r.readOn.day + 1),
+          _ReviewRow(review: r, onTap: () => openWeeklyReview(context, r)),
+        ),
+    ]..sort((a, b) => b.$1.compareTo(a.$1));
     return _Card(
       padding: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
         child: Column(
           children: [
-            for (var i = 0; i < items.length; i++) ...[
+            for (var i = 0; i < rows.length; i++) ...[
               if (i > 0) Divider(height: 1, indent: 38, color: colors.border),
-              _EntryRow(item: items[i], onTap: () => _open(items[i])),
+              rows[i].$2,
             ],
           ],
         ),
@@ -990,6 +1062,86 @@ class _SectionTitle extends StatelessWidget {
       letterSpacing: 1.3,
     ),
   );
+}
+
+const _reviewPurple = Color(0xFF7F77DD);
+
+/// A weekly review among the entries, on the Sunday it was read.
+class _ReviewRow extends StatelessWidget {
+  const _ReviewRow({required this.review, required this.onTap});
+
+  final WeeklyReview review;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return Semantics(
+      button: true,
+      label: 'Open your weekly review, ${review.range}: ${review.headline}',
+      child: ExcludeSemantics(
+        child: Material(
+          color: _reviewPurple.withValues(alpha: .08),
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Icons.event_note_rounded,
+                      size: 15,
+                      color: _reviewPurple,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          review.headline,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          [
+                            '${DateFormat('EEE d').format(review.readOn)} · '
+                                'Week of ${review.range}',
+                            ...review.chips.take(2),
+                          ].join(' · '),
+                          maxLines: 2,
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: colors.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _EntryRow extends StatelessWidget {

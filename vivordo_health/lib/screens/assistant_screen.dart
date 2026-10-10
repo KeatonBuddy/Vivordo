@@ -333,6 +333,14 @@ class _AssistantScreenState extends State<AssistantScreen> {
             'hard session for an easy one or a rest day, and offer calendar '
             'or priority changes for them to approve. If something hurts, '
             'suggest rest and a professional. Be brief.',
+      'weekly_review' =>
+        'This is Vivordo\'s Sunday weekly review of the past Sunday to '
+            'Saturday: what drained them, what helped, and next week\'s '
+            'Demand by day. Help them plan the week ahead: start from the '
+            'suggestion and their heaviest and lightest days, protect what '
+            'helped, and offer calendar or priority changes for them to '
+            'approve. Body signals are wellness signals, not a diagnosis. '
+            'Be warm and brief, and go easy on numbers.',
       _ =>
         'Verify current data before quoting exact values. Do not infer '
             'medical causes.',
@@ -879,6 +887,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
         'Plan an easier week',
         'Which session should I swap?',
         'What counts as a hard day?',
+      ],
+      'weekly_review' => [
+        'Plan next week',
+        'Protect time for my priorities',
+        'What should I do less of?',
       ],
       _ => ['What does this mean?', 'What can I do about it?'],
     };

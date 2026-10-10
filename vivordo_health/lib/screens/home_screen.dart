@@ -13,6 +13,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
 import 'package:vivordo_health/src/services/check_in_reminder.dart';
+import 'package:vivordo_health/src/services/weekly_review_service.dart';
 import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
@@ -982,6 +983,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // early Outlook start until My Day reschedules it.
       // Keeps the next week of morning check-in reminders scheduled.
       unawaited(CheckInReminders.sync());
+      unawaited(WeeklyReviewService.syncReminder());
       unawaited(
         WindDownReminders.sync(
           tomorrowFirstEvent: _firstTimedStart(

@@ -238,4 +238,12 @@ void main() {
       expect(find.text('Learning which meetings get to you'), findsOneWidget);
     });
   });
+
+  test('an off day: resting heart rate 5 bpm up, or HRV at 85% or under', () {
+    expect(bodyOffDay({'restingHr': 60, 'restingHrNormal': 55}), isTrue);
+    expect(bodyOffDay({'restingHr': 59, 'restingHrNormal': 55}), isFalse);
+    expect(bodyOffDay({'hrv': 42, 'hrvNormal': 50}), isTrue);
+    expect(bodyOffDay({'hrv': 43, 'hrvNormal': 50}), isFalse);
+    expect(bodyOffDay(null), isFalse);
+  });
 }

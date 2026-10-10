@@ -1,6 +1,6 @@
 # Vivordo Privacy Policy
 
-**Last updated: October 8, 2026**
+**Last updated: October 10, 2026**
 
 ## Introduction
 
@@ -119,6 +119,8 @@ Vivordo's servers calculate scores from the information described above and stor
 
 Vivordo also forecasts your energy through the day—when you're likely to be at your sharpest or in a dip—on your device, from your sleep, usual sleep times, and sleep need, and compares it with your calendar and priorities. The forecast isn't stored. If you turn on the wind-down reminder, Vivordo schedules notifications on your device for the hour before your suggested bedtime and saves only that the reminder is on.
 
+Each Sunday, Vivordo also prepares a **weekly review** of the week just ended: what drained you, what helped, and how demanding next week looks. It's made on your device from your scores, daily records, event reactions, night tags, suggestion history, workouts, priorities, and next week's calendar, and saved in your account. It doesn't store event titles; meetings it mentions are named from your calendar when you open it. If you tell it what else was going on that week (for example, travel or a short note of your own), that's saved with the review and mentioned in the next one. If you ask Vivordo AI to plan your next week, the review's summary, including that answer and the names of meetings it mentions, is sent with your message. If you turn on the weekly review reminder, Vivordo schedules a notification on your device for Sundays and saves only that the reminder is on.
+
 These are wellness signals, not medical assessments or diagnoses.
 
 ### Widgets and Siri
@@ -136,7 +138,7 @@ We use personal information to:
 - display health, fitness, sleep, calendar, journal, and activity information;
 - calculate and explain Vivordo stress, Capacity, Demand, Effort, Physical Health, heart-health, activity, and related scores, and run the burnout check;
 - personalize insights, recommendations, reminders, and AI-assisted responses;
-- send notifications you've allowed, such as check-in reminders, wind-down reminders, burnout warnings, and training-load alerts, and silent notifications that keep your daily records up to date;
+- send notifications you've allowed, such as check-in reminders, wind-down reminders, weekly review reminders, burnout warnings, and training-load alerts, and silent notifications that keep your daily records up to date;
 - support social or sharing features you intentionally use;
 - respond to support, privacy, and security requests;
 - diagnose errors, monitor performance, prevent abuse, and protect Vivordo and its users;
@@ -193,7 +195,7 @@ If we discover a security incident, we will investigate and provide notices to a
 
 We retain account information and user content while your account is active and as reasonably necessary to provide Vivordo. Imported WHOOP, Fitbit/Google Health, Apple Health, Bluetooth wearable, and other health information is generally retained until you delete the applicable information, delete your account, or ask us to delete it. OAuth credentials are retained only while the relevant connection remains authorized and are deleted when you disconnect it.
 
-You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; daily records, suggestion history, and event reactions; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, comments, likes, activity, and challenge participation; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
+You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; daily records, suggestion history, event reactions, and weekly reviews; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, comments, likes, activity, and challenge participation; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
 
 After a verified deletion request, we delete or de-identify information under our control within the period required by applicable law, except information we must retain for legal compliance, fraud prevention, dispute resolution, security, or enforcement. Information may remain temporarily in encrypted backups until those backups are overwritten through their ordinary lifecycle. We do not use backup copies for ordinary product purposes.
 

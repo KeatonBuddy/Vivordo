@@ -45,6 +45,8 @@ import '../src/services/metrics_repository.dart';
 import '../src/utils/day_key.dart';
 import '../widgets/burnout_card.dart';
 import '../widgets/training_load_card.dart';
+import '../src/services/weekly_review_service.dart';
+import 'weekly_review_screen.dart';
 import '../src/services/home_widget_service.dart';
 import '../widgets/meeting_patterns_view.dart';
 import '../src/services/meeting_patterns_service.dart';
@@ -131,6 +133,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   final _capacitySnapshot = OwnedStreamSnapshot<ServerCapacity?>();
   final _burnoutSnapshot = OwnedStreamSnapshot<BurnoutView?>();
   final _trainingLoadSnapshot = OwnedStreamSnapshot<TrainingLoadView?>();
+  final _weeklyReviewSnapshot = OwnedStreamSnapshot<WeeklyReviewCardState?>();
 
   /// The latest nightly burnout check: it's saved on the day that just
   /// ended, so look back a few days.
@@ -193,6 +196,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _capacitySnapshot.connect(_capacityStreamFor(day));
     _burnoutSnapshot.connect(_burnoutStreamFor(day));
     _trainingLoadSnapshot.connect(watchTrainingLoad(day));
+    _weeklyReviewSnapshot.connectFactory(
+      () => WeeklyReviewService.watchCard(day),
+    );
     final stream = _metricsStreamFor(day);
     _briefSnapshot.connect(
       (stream ?? const Stream<MetricWindow>.empty()).map((snapshot) {
@@ -602,6 +608,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _capacitySnapshot.setActive(active);
     _burnoutSnapshot.setActive(active);
     _trainingLoadSnapshot.setActive(active);
+    _weeklyReviewSnapshot.setActive(active);
     _prioritySnapshot.setActive(active);
     _tomorrowPrioritySnapshot.setActive(active);
     _habitSnapshot.setActive(active);
@@ -678,6 +685,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _capacitySnapshot.dispose();
     _burnoutSnapshot.dispose();
     _trainingLoadSnapshot.dispose();
+    _weeklyReviewSnapshot.dispose();
     _prioritySnapshot.dispose();
     _tomorrowPrioritySnapshot.dispose();
     _habitSnapshot.dispose();
@@ -993,6 +1001,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               KeyedSubtree(
                 key: widget.briefKey,
                 child: _buildDayOutlookCard(timedEvents: timedEvents),
+              ),
+              // Sundays, once the check-in is done: the week in review.
+              ValueListenableBuilder<AsyncSnapshot<WeeklyReviewCardState?>>(
+                valueListenable: _weeklyReviewSnapshot,
+                builder: (context, snapshot, _) => snapshot.data == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: WeeklyReviewCard(state: snapshot.data!),
+                      ),
               ),
               ValueListenableBuilder<AsyncSnapshot<BurnoutView?>>(
                 valueListenable: _burnoutSnapshot,

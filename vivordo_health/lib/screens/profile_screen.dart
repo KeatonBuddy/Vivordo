@@ -11,6 +11,7 @@ import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/check_in_reminder.dart';
+import 'package:vivordo_health/src/services/weekly_review_service.dart';
 import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/account_deletion_service.dart';
@@ -1047,6 +1048,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         final windDownReminder = preferences['windDownReminder'] == true;
         final checkInMorningReminder =
             preferences['checkInMorningReminder'] == true;
+        final weeklyReviewReminder =
+            preferences['weeklyReviewReminder'] == true;
         // Server pushes: on unless switched off.
         final burnoutNotificationsEnabled =
             preferences['burnoutNotificationsEnabled'] != false;
@@ -1239,6 +1242,20 @@ class _SettingsScreenState extends State<SettingsScreen>
                         value: checkInMorningReminder,
                         onChanged: (value) => _setPreferenceWith(
                           () => CheckInReminders.setEnabled(value),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.event_note_outlined,
+                        Color(0xFF7F77DD),
+                      ),
+                      title: 'Weekly review',
+                      subtitle: 'Sundays at 11 AM, when your week is ready',
+                      trailing: AppSwitch(
+                        value: weeklyReviewReminder,
+                        onChanged: (value) => _setPreferenceWith(
+                          () => WeeklyReviewService.setReminder(value),
                         ),
                       ),
                     ),
