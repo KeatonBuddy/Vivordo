@@ -1048,8 +1048,9 @@ class _SettingsScreenState extends State<SettingsScreen>
         final windDownReminder = preferences['windDownReminder'] == true;
         final checkInMorningReminder =
             preferences['checkInMorningReminder'] == true;
+        // On unless switched off.
         final weeklyReviewReminder =
-            preferences['weeklyReviewReminder'] == true;
+            preferences['weeklyReviewReminder'] != false;
         // Server pushes: on unless switched off.
         final burnoutNotificationsEnabled =
             preferences['burnoutNotificationsEnabled'] != false;

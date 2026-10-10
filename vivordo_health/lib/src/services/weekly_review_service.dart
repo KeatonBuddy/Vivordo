@@ -250,7 +250,7 @@ class WeeklyReviewService {
             : (
                 review: review,
                 intro: preferences!['weeklyReviewIntroSeen'] != true,
-                reminder: preferences!['weeklyReviewReminder'] == true,
+                reminder: preferences!['weeklyReviewReminder'] != false,
               ),
       );
     }
@@ -302,8 +302,8 @@ class WeeklyReviewService {
   static Future<void> markIntroSeen() =>
       _setPreferences({'weeklyReviewIntroSeen': true});
 
-  /// The Sunday 11 AM reminder (`preferences.weeklyReviewReminder`, off
-  /// unless switched on).
+  /// The Sunday 11 AM reminder (`preferences.weeklyReviewReminder`, on
+  /// unless switched off).
   static Future<void> setReminder(bool enabled) async {
     await _setPreferences({
       'weeklyReviewReminder': enabled,
@@ -320,8 +320,8 @@ class WeeklyReviewService {
     try {
       final on =
           ((await user.get()).data()?['preferences']
-              as Map?)?['weeklyReviewReminder'] ==
-          true;
+              as Map?)?['weeklyReviewReminder'] !=
+          false;
       await (on
           ? NotificationService().scheduleWeeklyReviewReminder()
           : NotificationService().cancelWeeklyReviewReminder());

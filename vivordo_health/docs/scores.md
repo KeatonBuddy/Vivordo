@@ -739,8 +739,8 @@ calendar. There's no review with Capacity on fewer than 4 of the 7 days.
   mentioned in next week's review.
 - **Where:** My Day on Sundays until hidden for the day; Journal lists each
   review on its Sunday, with a dot on the mood calendar, and search finds
-  it. An opt-in reminder (`preferences.weeklyReviewReminder`) fires Sundays
-  at 11 AM.
+  it. A reminder (`preferences.weeklyReviewReminder`, on unless switched
+  off) fires Sundays at 11 AM.
 
 ## Open questions
 
