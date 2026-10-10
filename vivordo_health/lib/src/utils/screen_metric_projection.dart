@@ -141,8 +141,8 @@ Map<String, dynamic> projectScreenFields(
     },
     MetricsProjection.homeHistory => const {
       'stress': ['anchor', 'current', 'avg'],
-      // Bedtime and wake time for the energy forecast.
-      'sleep': ['bedtime', 'wakeTime'],
+      // Bedtime, wake time and hours asleep for the energy forecast.
+      'sleep': ['avg', 'bedtime', 'wakeTime'],
     },
     MetricsProjection.dailyBrief => const {
       'sleep': ['avg', 'bedtime', 'wakeTime'],

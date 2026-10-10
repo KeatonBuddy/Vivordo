@@ -677,6 +677,20 @@ forecast, suggest the peak or second wind for demanding work, propose moves
 for the user to confirm, and never invent windows without it. The server
 ignores unknown keys, so app and functions can ship in either order.
 
+**Personal factors** (built 2026-10-10, `lib/src/utils/energy_factors.dart`):
+last night's tags and yesterday's training add to the sleep pressure you
+wake with, so today's curve runs lower, most of all early on. Each tag has
+a default (alcohol 0.08, late caffeine 0.05, late meal 0.03, screens in bed
+0.03, sick 0.15, travel 0.05; 0.06 is about an hour of lost sleep). Once a
+tag has 3 tagged and 5 untagged nights in the last four weeks, your own
+mornings replace the default: the median next-morning Capacity drop × 0.008
+(up to 0.15), or nothing when it's under 3 points. A hard training day
+yesterday (training load's day value ≥ 1.5) adds 0.05. The sheet lists each
+under the sleep line; tags are not sent to Vivordo AI. Hours slept use the
+tracker's asleep total (`sleep.avg`); bedtime and wake time are for timing
+only. Home's Your Day shows last night above the curve: time asleep against
+your need, and the night's tags.
+
 ## 9. Weekly review
 
 **Implemented** in `lib/src/utils/weekly_review.dart` (rules) and

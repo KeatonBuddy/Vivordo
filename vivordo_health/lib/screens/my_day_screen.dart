@@ -46,6 +46,8 @@ import '../src/utils/day_key.dart';
 import '../widgets/burnout_card.dart';
 import '../widgets/training_load_card.dart';
 import '../src/services/weekly_review_service.dart';
+import '../src/services/daily_tags_service.dart';
+import '../src/utils/energy_factors.dart';
 import 'weekly_review_screen.dart';
 import '../src/services/home_widget_service.dart';
 import '../widgets/meeting_patterns_view.dart';
@@ -100,6 +102,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   /// Your usual sleep times, for the energy forecast when no sleep is tracked.
   SleepSchedule? _sleepSchedule;
+
+  /// Last night's tags and yesterday's training, for today's forecast.
+  List<EnergyFactor> _energyFactors = const [];
 
   /// `preferences.windDownReminder`: null until asked, then on or off.
   bool? _windDownReminder;
@@ -199,6 +204,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _weeklyReviewSnapshot.connectFactory(
       () => WeeklyReviewService.watchCard(day),
     );
+    _loadEnergyFactors(day);
     final stream = _metricsStreamFor(day);
     _briefSnapshot.connect(
       (stream ?? const Stream<MetricWindow>.empty()).map((snapshot) {
@@ -618,6 +624,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _clockTimer?.cancel();
     if (!active) return;
     if (!_handleDayRollover()) {
+      // Tags saved elsewhere (Home's check-in, Journal) since last shown.
+      _loadEnergyFactors(_priorityDay);
       _refreshBriefClock();
       if (_eventsStale) unawaited(_loadTodayEvents());
     }
@@ -1146,6 +1154,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
+  void _loadEnergyFactors(DateTime day) => unawaited(
+    DailyTagsService.energyFactorsFor(day).then((factors) {
+      if (mounted && !identical(factors, _energyFactors)) {
+        setState(() => _energyFactors = factors);
+      }
+    }),
+  );
+
   /// Today's energy forecast (docs/scores.md §8), once any night is
   /// recorded or your usual sleep times are set. Tomorrow's first timed event
   /// sets tonight's bed-by.
@@ -1158,6 +1174,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       sleepNeedHours: _capacitySnapshot.value.data?.sleepNeedHours,
       tomorrowFirstEvent: _tomorrowFirst()?.start,
       schedule: _sleepSchedule,
+      factors: _energyFactors,
     );
   }
 

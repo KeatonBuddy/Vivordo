@@ -38,6 +38,7 @@ import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/plan_slot_sheet.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
+import 'package:vivordo_health/src/utils/energy_factors.dart';
 import 'package:vivordo_health/src/utils/energy_fit.dart';
 import 'package:vivordo_health/src/utils/energy_forecast.dart';
 import 'package:vivordo_health/src/utils/sleep_schedule.dart';
@@ -1783,6 +1784,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           '• Workouts are shown in teal.\n\n'
           'Longer items, overlaps and back-to-back runs make an hour busier, and so does anything after your end-of-day time.\n\n'
           'So far compares today with your usual by this time of day, once there are 14 days to compare with.\n\n'
+          'The line is your energy forecast from your sleep and body clock, with last night above it. Tap either to see what shaped today.\n\n'
           'Below the bars is your next free stretch of 30+ minutes. Tap Plan it to fill it, or tap a bar to see its busiest event.\n\n'
           'Effort and ratings are estimates.',
           style: TextStyle(
@@ -1996,15 +1998,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 builder: (context, contextSnapshot) =>
                     ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
                       valueListenable: _prioritySnapshot,
-                      builder: (context, prioritySnapshot, _) => _dayLoadCard(
-                        now: now,
-                        sleepNights: sleepNights,
-                        scored: scoresSnapshot.data ?? const [],
-                        events: eventsSnapshot.data,
-                        priorities: prioritySnapshot.data ?? const [],
-                        effortContext:
-                            contextSnapshot.data ?? const _EffortContext(),
-                      ),
+                      builder: (context, prioritySnapshot, _) =>
+                          FutureBuilder<List<EnergyFactor>>(
+                            future: DailyTagsService.energyFactorsFor(
+                              todayStart,
+                            ),
+                            builder: (context, factors) => _dayLoadCard(
+                              now: now,
+                              sleepNights: sleepNights,
+                              energyFactors: factors.data ?? const [],
+                              scored: scoresSnapshot.data ?? const [],
+                              events: eventsSnapshot.data,
+                              priorities: prioritySnapshot.data ?? const [],
+                              effortContext:
+                                  contextSnapshot.data ??
+                                  const _EffortContext(),
+                            ),
+                          ),
                     ),
               );
             },
@@ -2015,6 +2025,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _dayLoadCard({
     required DateTime now,
     required List<SleepPeriod> sleepNights,
+    required List<EnergyFactor> energyFactors,
     required List<_ScoredReachableEvent> scored,
     required List<_ScheduleEvent>? events,
     required List<DailyPriority> priorities,
@@ -2110,6 +2121,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             nights: sleepNights,
             sleepNeedHours: effortContext.sleepNeedHours,
             schedule: effortContext.sleepSchedule,
+            factors: energyFactors,
             tomorrowFirstEvent: ([
               for (final event in events ?? const <_ScheduleEvent>[])
                 if (!event.start.isBefore(tomorrow) &&
@@ -2208,6 +2220,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ],
               ),
             ),
+            if (energy != null) ...[
+              const SizedBox(height: 12),
+              EnergySleepLine(
+                forecast: energy,
+                onTap: () => showEnergyForecastSheet(context, energy),
+              ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               height: 60,

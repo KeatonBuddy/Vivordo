@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'energy_factors.dart';
 import 'sleep_schedule.dart';
 
 /// One night's sleep, from falling asleep to waking. [asleepHours] is the
@@ -34,6 +35,7 @@ class EnergyForecast {
     required this.midSleepHours,
     required this.estimated,
     this.usesSchedule = false,
+    this.factors = const [],
   });
 
   final DateTime wake;
@@ -60,6 +62,9 @@ class EnergyForecast {
 
   /// True when your saved sleep schedule stood in for tracked sleep.
   final bool usesSchedule;
+
+  /// Last night's tags and yesterday's training, already in the curve.
+  final List<EnergyFactor> factors;
 
   /// Energy at [time], or null outside the waking day.
   double? at(DateTime time) {
@@ -140,13 +145,15 @@ const _maxDebtHours = 10.0;
 /// night). [sleepNeedHours] is Capacity's sleep need; [tomorrowFirstEvent]
 /// sets tonight's bed-by time. Until [_minNights] nights are tracked, your
 /// usual [schedule] sets the body clock, the length of a usual night and
-/// tonight's bedtime.
+/// tonight's bedtime. [factors] (last night's tags, yesterday's training)
+/// add to the sleep pressure you wake with.
 EnergyForecast forecastEnergy({
   required DateTime day,
   required List<SleepPeriod> nights,
   double? sleepNeedHours,
   DateTime? tomorrowFirstEvent,
   SleepSchedule? schedule,
+  List<EnergyFactor> factors = const [],
 }) {
   final date = DateTime(day.year, day.month, day.day);
   final need = sleepNeedHours ?? _defaultNeedHours;
@@ -214,7 +221,8 @@ EnergyForecast forecastEnergy({
     _pressureMax,
     _pressureRested +
         _pressurePerMissingNight * math.max(0, 1 - slept / need) +
-        _pressurePerDebtHour * debt,
+        _pressurePerDebtHour * debt +
+        factors.fold(0.0, (sum, f) => sum + f.pressure),
   );
   double energy(DateTime t) {
     final phase = _hours(t.difference(anchor));
@@ -258,6 +266,7 @@ EnergyForecast forecastEnergy({
     midSleepHours: midSleep,
     estimated: lastNight == null,
     usesSchedule: usual != null,
+    factors: factors,
   );
 }
 
