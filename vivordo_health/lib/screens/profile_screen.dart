@@ -1355,6 +1355,27 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
+                        Icons.abc_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Show score numbers',
+                      subtitle:
+                          'Off: scores show as words. Sleep, heart rate and '
+                          'steps still show.',
+                      trailing: Selector<ThemeController, bool>(
+                        selector: (_, c) => c.showScoreNumbers,
+                        builder: (context, showNumbers, _) => AppSwitch(
+                          value: showNumbers,
+                          onChanged: (value) => _setPreferenceWith(
+                            () => context
+                                .read<ThemeController>()
+                                .setShowScoreNumbers(value),
+                          ),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
                         Icons.wb_twilight_rounded,
                         VivordoTheme.brand,
                       ),

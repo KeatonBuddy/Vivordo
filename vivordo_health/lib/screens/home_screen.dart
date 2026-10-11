@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:provider/provider.dart';
 import '../widgets/visible_stream_builder.dart';
 import '../src/services/metrics_repository.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
@@ -1180,18 +1181,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   key: widget.rightNowKey,
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _push(const StressDetailScreen()),
-                  child: HomeStressCard(
-                    score: stressScore,
-                    updatedAt: stressUpdatedAt,
-                    sevenDayAverage: sevenDayStressAverage,
-                    drivers: stressDrivers,
-                    steps: steps,
-                    loading: stressLoading,
-                    updating: stressUpdating,
-                    revealScore: widget.revealStress,
-                    onInfoTap: _showStressScoreExplanation,
-                    showWhoopBadge:
-                        sleepIsWhoop || latestHeartRate?.source == 'whoop_ble',
+                  child: Selector<ThemeController, bool>(
+                    selector: (_, c) => c.showScoreNumbers,
+                    builder: (context, showNumbers, _) => HomeStressCard(
+                      score: stressScore,
+                      updatedAt: stressUpdatedAt,
+                      sevenDayAverage: sevenDayStressAverage,
+                      drivers: stressDrivers,
+                      steps: steps,
+                      loading: stressLoading,
+                      updating: stressUpdating,
+                      revealScore: widget.revealStress,
+                      onInfoTap: _showStressScoreExplanation,
+                      showWhoopBadge:
+                          sleepIsWhoop ||
+                          latestHeartRate?.source == 'whoop_ble',
+                      showNumbers: showNumbers,
+                    ),
                   ),
                 ),
                 _buildCheckIn(checkIn),
@@ -1468,14 +1474,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           _divider(),
           Expanded(
-            child: _vital(
-              icon: Icons.mood_rounded,
-              color: _moodOrange,
-              value: moodScore?.round().toString(),
-              label: 'Mood',
-              loading: loading,
-              emptyAction: 'Check in',
-              onTap: _showMoodCheck,
+            child: Selector<ThemeController, bool>(
+              selector: (_, c) => c.showScoreNumbers,
+              builder: (context, showNumbers, _) => _vital(
+                icon: Icons.mood_rounded,
+                color: _moodOrange,
+                // Words mode shows the check-in's word, not its score.
+                value: moodScore == null
+                    ? null
+                    : showNumbers
+                    ? moodScore.round().toString()
+                    : MetricsService.moodLabelForScore(moodScore),
+                label: 'Mood',
+                loading: loading,
+                emptyAction: 'Check in',
+                onTap: _showMoodCheck,
+              ),
             ),
           ),
         ],

@@ -742,6 +742,29 @@ calendar. There's no review with Capacity on fewer than 4 of the 7 days.
   it. A reminder (`preferences.weeklyReviewReminder`, on unless switched
   off) fires Sundays at 11 AM.
 
+## 10. Words mode
+
+**Implemented** (2026-10-11): `preferences.showScoreNumbers` (on unless
+switched off), set in onboarding ("How do you want to see your scores?") or
+Settings → Preferences → Show score numbers, and shared by
+`ThemeController`. With it off, scores show as a sentence and a state chip
+(3-4 states), never as a number, ring or fill:
+- **Home:** stress becomes "Calm / A bit tense / Quite tense / Very tense"
+  with its level (Low / Moderate / Elevated / High), compared with the week
+  as calmer, about the same or more tense (5 points either way); Mood shows
+  its check-in word.
+- **My Day:** the brief's Capacity and Demand rings become Energy (8 points
+  either side of the usual Capacity, or its own bands without one) and
+  Today's / Tomorrow's load (Light, Full or Heavy: Demand ±15 of the
+  Capacity it's set beside).
+- **Stress detail:** the dial, today's axis and points, and the trend's
+  numbers become words and a week of coloured days; Vivordo AI still gets
+  the score.
+- **Metrics:** the Capacity and Effort insights drop their numbers.
+Measurements (sleep, sleep debt, heart rate, steps), Your Day's bars and
+energy line, Fitness, the Metrics charts, widgets, Siri, notifications and
+Vivordo AI are unchanged.
+
 ## Open questions
 
 None. Decided (2026-10-01):

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../src/services/calendar_cognitive_load_service.dart';
 import '../src/services/calendar_service.dart';
@@ -1358,80 +1359,101 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               );
             }
             final brief =
-                DailyBriefCard(
-                  headline: headline,
-                  summary:
-                      '${sleepComparison(sleep, usualSleep)} $calendarText',
-                  // In the evening it sits beside tomorrow's Demand, so
-                  // it shows what tomorrow is compared with.
-                  capacityScore: evening && usualCapacity != null
-                      ? usualCapacity
-                      : capacityScore,
-                  capacityLabel: evening && usualCapacity != null
-                      ? 'Your usual'
-                      : recovering
-                      ? 'Recovering'
-                      : server != null
-                      ? server.note
-                      : capacity?.score == null
-                      ? 'Needs health data'
-                      : capacityNote,
-                  scheduleScore: ready ? demand.round().clamp(0, 100) : null,
-                  scheduleLabel: !ready
-                      ? 'Plan unavailable'
-                      : evening
-                      ? 'Expected tomorrow'
-                      : 'Remaining today',
-                  footer: capacityStale || !ready
-                      ? 'Limited data'
-                      : 'Available data',
-                  onDetails: () => showInfoSheet(
-                    context,
-                    icon: CupertinoIcons.info_circle,
-                    title: 'Daily Brief data',
+                Selector<ThemeController, bool>(
+                  selector: (_, c) => c.showScoreNumbers,
+                  builder: (context, showNumbers, _) => DailyBriefCard(
+                    headline: headline,
                     summary:
-                        'Where today\'s numbers come from. These are wellness estimates, not clinical assessments.',
-                    items: [
-                      AppleInfoItem(
-                        'Calendar loaded',
-                        '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
-                        icon: CupertinoIcons.calendar,
-                      ),
-                      AppleInfoItem(
-                        'Heart rate measured',
-                        '${timeLabel(healthTime)}.',
-                        icon: CupertinoIcons.heart,
-                      ),
-                      AppleInfoItem(
-                        'Stress calculated',
-                        '${timeLabel(stressTime)}.',
-                        icon: CupertinoIcons.waveform_path,
-                      ),
-                      if (summary?.isFromCache == true)
-                        const AppleInfoItem(
-                          'Health data',
-                          'From the local cache.',
-                          icon: CupertinoIcons.tray,
+                        '${sleepComparison(sleep, usualSleep)} $calendarText',
+                    // In the evening it sits beside tomorrow's Demand, so
+                    // it shows what tomorrow is compared with.
+                    capacityScore: evening && usualCapacity != null
+                        ? usualCapacity
+                        : capacityScore,
+                    capacityLabel: evening && usualCapacity != null
+                        ? 'Your usual'
+                        : recovering
+                        ? 'Recovering'
+                        : server != null
+                        ? server.note
+                        : capacity?.score == null
+                        ? 'Needs health data'
+                        : capacityNote,
+                    scheduleScore: ready ? demand.round().clamp(0, 100) : null,
+                    scheduleLabel: !ready
+                        ? 'Plan unavailable'
+                        : evening
+                        ? 'Expected tomorrow'
+                        : 'Remaining today',
+                    footer: capacityStale || !ready
+                        ? 'Limited data'
+                        : 'Available data',
+                    words: showNumbers
+                        ? null
+                        : (
+                            energy: briefEnergyState(
+                              capacity: capacityScore,
+                              usual: usualCapacity,
+                              recovering: recovering,
+                            ),
+                            loadTitle: evening
+                                ? "Tomorrow's load"
+                                : "Today's load",
+                            load: briefLoadState(
+                              demand: ready ? demand : null,
+                              capacity: evening
+                                  ? tomorrowCapacity
+                                  : capacityScore,
+                            ),
+                          ),
+                    onDetails: () => showInfoSheet(
+                      context,
+                      icon: CupertinoIcons.info_circle,
+                      title: 'Daily Brief data',
+                      summary:
+                          'Where today\'s numbers come from. These are wellness estimates, not clinical assessments.',
+                      items: [
+                        AppleInfoItem(
+                          'Calendar loaded',
+                          '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
+                          icon: CupertinoIcons.calendar,
                         ),
-                      AppleInfoItem(
-                        'Sleep baseline',
-                        '${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.',
-                        icon: CupertinoIcons.moon,
-                      ),
-                      AppleInfoItem(
-                        'Capacity',
-                        server != null
-                            ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.'
-                            : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
-                        icon: CupertinoIcons.battery_75_percent,
-                      ),
-                      const AppleInfoItem(
-                        'Demand',
-                        'The Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work doesn\'t block a specific opening.',
-                        icon: CupertinoIcons.chart_bar,
-                      ),
-                    ],
-                    buttonLabel: 'Close',
+                        AppleInfoItem(
+                          'Heart rate measured',
+                          '${timeLabel(healthTime)}.',
+                          icon: CupertinoIcons.heart,
+                        ),
+                        AppleInfoItem(
+                          'Stress calculated',
+                          '${timeLabel(stressTime)}.',
+                          icon: CupertinoIcons.waveform_path,
+                        ),
+                        if (summary?.isFromCache == true)
+                          const AppleInfoItem(
+                            'Health data',
+                            'From the local cache.',
+                            icon: CupertinoIcons.tray,
+                          ),
+                        AppleInfoItem(
+                          'Sleep baseline',
+                          '${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.',
+                          icon: CupertinoIcons.moon,
+                        ),
+                        AppleInfoItem(
+                          'Capacity',
+                          server != null
+                              ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.'
+                              : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
+                          icon: CupertinoIcons.battery_75_percent,
+                        ),
+                        const AppleInfoItem(
+                          'Demand',
+                          'The Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work doesn\'t block a specific opening.',
+                          icon: CupertinoIcons.chart_bar,
+                        ),
+                      ],
+                      buttonLabel: 'Close',
+                    ),
                   ),
                 ).withScreenInsight(
                   ScreenInsight(

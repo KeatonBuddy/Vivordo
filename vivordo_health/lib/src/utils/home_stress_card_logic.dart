@@ -88,6 +88,28 @@ String homeStressComparison(double? score, double? sevenDayAverage) {
       '${difference < 0 ? 'below' : 'above'} your 7-day average.';
 }
 
+/// Words mode's sentence for where [score] sits (the chip says the level).
+String? homeStressSentence(double? score) => switch (homeStressLevel(score)) {
+  'Low' => 'Calm',
+  'Moderate' => 'A bit tense',
+  'Elevated' => 'Quite tense',
+  'High' => 'Very tense',
+  _ => null,
+};
+
+/// Words mode's comparison with the week, without points.
+String homeStressComparisonWords(double? score, double? sevenDayAverage) {
+  if (score == null || sevenDayAverage == null) {
+    return 'Building your 7-day baseline.';
+  }
+  final difference = score - sevenDayAverage;
+  return difference <= -5
+      ? 'Calmer than your week.'
+      : difference >= 5
+      ? 'More tense than your week.'
+      : 'About the same as your week.';
+}
+
 String homeStressAction({
   required double? score,
   required List<HomeStressDriver> drivers,

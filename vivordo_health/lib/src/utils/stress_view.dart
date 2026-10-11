@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import 'home_stress_card_logic.dart';
 
@@ -344,6 +345,33 @@ StressTrendStats? stressTrendStats(
         ? average - mean(before)
         : null,
   );
+}
+
+/// Words mode's headline against your usual: no points.
+String stressUsualHeadlineWords(double score, double usual) {
+  final difference = score - usual;
+  return difference >= 5
+      ? 'Higher than usual'
+      : difference <= -5
+      ? 'Lower than usual'
+      : 'About usual';
+}
+
+/// Words mode's trend: the calmest and most tense day, and the change
+/// against [unit] ("last week"), without numbers.
+String stressTrendSentence(StressTrendStats stats, String unit) {
+  String day(StressDay d) => DateFormat('EEEE').format(d.date);
+  final change = stats.change;
+  return [
+    if (!identical(stats.calmest, stats.hardest))
+      'Calmest on ${day(stats.calmest)}, most tense on ${day(stats.hardest)}.',
+    if (change != null)
+      change <= -5
+          ? 'Calmer than $unit.'
+          : change >= 5
+          ? 'More tense than $unit.'
+          : 'About the same as $unit.',
+  ].join(' ');
 }
 
 const _labels = {

@@ -5,16 +5,20 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' show DateFormat;
+import 'package:provider/provider.dart';
 
 import '../src/services/metrics_service.dart';
 import '../src/services/stress_score_service.dart';
 import '../src/services/wind_down_reminder.dart';
 import '../src/utils/day_key.dart';
+import '../src/utils/home_stress_card_logic.dart';
 import '../src/utils/smooth_chart_path.dart';
 import '../src/utils/stress_view.dart';
 import '../theme/vivordo_theme.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/contextual_insight_bar.dart';
+import '../widgets/home_stress_card.dart'
+    show StressLevelChip, stressLevelColors;
 import '../widgets/morning_check_in_card.dart' show feelCheckInLabels;
 
 /// Stress, against the person's own usual: a dial anchored at their usual,
@@ -76,6 +80,10 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
   /// it only when it isn't.
   bool _windDownOn = false;
 
+  /// Words mode (Settings → Show score numbers off): the level in words
+  /// instead of the dial, no score axis, and the trend as a row of days.
+  bool _words = false;
+
   @override
   void initState() {
     super.initState();
@@ -124,6 +132,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _words = !context.select<ThemeController, bool>((c) => c.showScoreNumbers);
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
       appBar: AppBar(
@@ -217,11 +226,21 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
         "Today's stress estimate",
         score == null
             ? 'There is no stress estimate available for today yet. An empty reading does not mean low stress.'
+            : _words
+            ? 'Your latest stress estimate is ${stressBand(score).toLowerCase()}, '
+                  '${stressUsualHeadlineWords(score, today.usual).toLowerCase()} for you. '
+                  '${today.drivers.isEmpty ? "There are no recorded drivers to explain it yet." : "Recorded drivers include ${today.drivers.take(2).map((d) => d.label).join(' and ')}; these are contributions to the estimate, not proven causes."} '
+                  'Want to explore a manageable next step?'
             : 'Your latest displayed stress estimate is ${score.round()}/100, '
                   '${stressUsualHeadline(score, today.usual).toLowerCase()} for you. '
                   '${today.computedAt == null ? "Its update time is unavailable." : "Calculated ${DateFormat('MMM d, h:mm a').format(today.computedAt!.toLocal())}."} '
                   '${today.drivers.isEmpty ? "There are no recorded drivers to explain it yet." : "Recorded drivers include ${today.drivers.take(2).map((d) => d.label).join(' and ')}; these are contributions to the estimate, not proven causes."} '
                   'Want to explore a manageable next step?',
+        // Words mode hides the score on screen; Vivordo AI still gets it.
+        context: _words && score != null
+            ? 'Stress estimate ${score.round()}/100 '
+                  '(${stressUsualHeadline(score, today.usual).toLowerCase()}).'
+            : null,
       ),
     );
   }
@@ -234,6 +253,8 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
     final grey = today.lowConfidence;
     final headline = score == null
         ? 'No reading yet today'
+        : _words
+        ? stressUsualHeadlineWords(score, today.usual)
         : stressUsualHeadline(score, today.usual);
     final difference = score == null ? 0 : (score - today.usual).round();
     final measured = today.measuredSignals, total = today.signals.length;
@@ -270,83 +291,107 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
             ],
           ),
           const SizedBox(height: 6),
-          Semantics(
-            label: score == null
-                ? 'No stress reading yet today'
-                : 'Stress ${score.round()} out of 100, '
-                      '${stressBand(score)}, ${headline.toLowerCase()}'
-                      '${grey ? ', low confidence' : ''}',
-            child: ExcludeSemantics(
-              child: SizedBox(
-                width: 210,
-                height: 186,
-                child: CustomPaint(
-                  painter: _DialPainter(
-                    score: score,
-                    usual: today.usual,
-                    swing: score == null || grey
-                        ? colors.textSecondary.withValues(alpha: .7)
-                        : _bandColor(context, score),
-                    knobFill: colors.card,
-                    knob: grey ? colors.textSecondary : colors.textPrimary,
-                    tick: colors.textPrimary,
+          if (_words)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Column(
+                children: [
+                  Text(
+                    homeStressSentence(score) ?? 'No reading yet',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.8,
+                      color: grey ? colors.textSecondary : colors.textPrimary,
+                    ),
                   ),
-                  child: Stack(
-                    children: [
-                      Align(
-                        alignment: Alignment.topCenter,
-                        child: Text(
-                          'USUAL',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                            color: colors.textSecondary,
+                  if (score != null) ...[
+                    const SizedBox(height: 10),
+                    StressLevelChip(stressBand(score)),
+                  ],
+                ],
+              ),
+            )
+          else
+            Semantics(
+              label: score == null
+                  ? 'No stress reading yet today'
+                  : 'Stress ${score.round()} out of 100, '
+                        '${stressBand(score)}, ${headline.toLowerCase()}'
+                        '${grey ? ', low confidence' : ''}',
+              child: ExcludeSemantics(
+                child: SizedBox(
+                  width: 210,
+                  height: 186,
+                  child: CustomPaint(
+                    painter: _DialPainter(
+                      score: score,
+                      usual: today.usual,
+                      swing: score == null || grey
+                          ? colors.textSecondary.withValues(alpha: .7)
+                          : _bandColor(context, score),
+                      knobFill: colors.card,
+                      knob: grey ? colors.textSecondary : colors.textPrimary,
+                      tick: colors.textPrimary,
+                    ),
+                    child: Stack(
+                      children: [
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: Text(
+                            'USUAL',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2,
+                              color: colors.textSecondary,
+                            ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        top: 72,
-                        child: Column(
-                          children: [
-                            Text(
-                              score?.round().toString() ?? '--',
-                              style: TextStyle(
-                                fontSize: 64,
-                                height: .9,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -2.5,
-                                color: grey
-                                    ? colors.textSecondary
-                                    : colors.textPrimary,
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          top: 72,
+                          child: Column(
+                            children: [
+                              Text(
+                                score?.round().toString() ?? '--',
+                                style: TextStyle(
+                                  fontSize: 64,
+                                  height: .9,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -2.5,
+                                  color: grey
+                                      ? colors.textSecondary
+                                      : colors.textPrimary,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              score == null ? 'No data' : stressBand(score),
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                color: score == null
-                                    ? colors.textSecondary
-                                    : _bandColor(context, score, text: true),
+                              const SizedBox(height: 6),
+                              Text(
+                                score == null ? 'No data' : stressBand(score),
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: score == null
+                                      ? colors.textSecondary
+                                      : _bandColor(context, score, text: true),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (difference.abs() > 1)
+              if (_words
+                  ? headline != 'About usual' && score != null
+                  : difference.abs() > 1)
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: Icon(
@@ -414,7 +459,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                       ? null
                       : () => _showCoverageExplanation(today.coverage!),
                 ),
-              if (yesterdayNow != null)
+              if (yesterdayNow != null && !_words)
                 _chip(
                   text:
                       'Yesterday at ${_time(DateTime.now())}: ${yesterdayNow.round()}',
@@ -498,7 +543,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
             children: [
               _title('Today so far'),
               const Spacer(),
-              if (peak != null && low != null)
+              if (peak != null && low != null && !_words)
                 Text(
                   'Low ${low.round()} · High ${peak.score.round()}',
                   style: TextStyle(fontSize: 12, color: colors.textSecondary),
@@ -534,6 +579,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                 usualRange: usualRange,
                 events: events,
                 day: today.date,
+                showNumbers: !_words,
               ),
             ),
             const SizedBox(height: 10),
@@ -554,7 +600,13 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               const SizedBox(height: 8),
               Text(
                 // A peak is only worth naming when the day actually rose.
-                '${peak.score - low >= 3 ? 'Peak ${peak.score.round()} at ${_time(peak.at)}${duringEvent ? ', during an event' : ''}' : 'Steady around ${peak.score.round()} so far'}. '
+                '${peak.score - low >= 3
+                    ? _words
+                          ? 'Highest at ${_time(peak.at)}${duringEvent ? ', during an event' : ''}'
+                          : 'Peak ${peak.score.round()} at ${_time(peak.at)}${duringEvent ? ', during an event' : ''}'
+                    : _words
+                    ? 'Steady so far'
+                    : 'Steady around ${peak.score.round()} so far'}. '
                 'Touch the curve to see any moment.',
                 style: TextStyle(fontSize: 12, color: colors.textSecondary),
               ),
@@ -601,7 +653,9 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           _title('What\'s moving it'),
           const SizedBox(height: 3),
           Text(
-            'Points each signal added to or took off your latest reading',
+            _words
+                ? 'How each signal moved your latest reading'
+                : 'Points each signal added to or took off your latest reading',
             style: TextStyle(fontSize: 13, color: colors.textSecondary),
           ),
           const SizedBox(height: 14),
@@ -626,12 +680,16 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
     final up = d.contribution > 0;
     final color = up ? _up(context) : _down(context);
     final points = d.contribution.round();
-    final value = points == 0
+    // Words mode keeps the bar's direction and size, not the points.
+    final value = _words
+        ? ''
+        : points == 0
         ? (up ? '+<1' : '−<1')
         : '${up ? '+' : '−'}${points.abs()}';
     return Semantics(
       label:
-          '${d.label}: ${up ? 'raised' : 'lowered'} it by ${points.abs()} points. '
+          '${d.label}: ${up ? 'raised' : 'lowered'} it'
+          '${_words ? '' : ' by ${points.abs()} points'}. '
           '${stressDriverDetail(d, day, _time)}',
       child: ExcludeSemantics(
         child: Row(
@@ -919,56 +977,132 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Each bar is a day\'s range, the dot its average. Tap a day for details.',
-            style: TextStyle(fontSize: 13, color: colors.textSecondary),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 170,
-            child: _RangeChart(
-              days: period,
-              labels: [
-                for (final (i, d) in period.indexed)
-                  _rangeIndex == 0
-                      ? (i == period.length - 1
-                            ? 'Today'
-                            : DateFormat('E').format(d.date))
-                      : (i % 5 == 4 || i == period.length - 1
-                            ? DateFormat('M/d').format(d.date)
-                            : ''),
-              ],
-              onDay: (d) => _showDay(d),
-            ),
-          ),
-          if (stats != null) ...[
-            const SizedBox(height: 10),
-            Divider(height: 1, color: colors.border),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                _stat(stats.average.round().toString(), 'Average'),
-                _stat(stats.calmest.average!.round().toString(), 'Calmest day'),
-                _stat(stats.hardest.average!.round().toString(), 'Hardest day'),
-                _stat(
-                  stats.change == null
-                      ? '--'
-                      : stats.change!.round() == 0
-                      ? '0'
-                      : '${stats.change! > 0 ? '+' : '−'}${stats.change!.round().abs()}',
-                  'vs $unit',
-                  color: stats.change == null || stats.change!.round() == 0
-                      ? null
-                      : stats.change! > 0
-                      ? _up(context)
-                      : _down(context),
+          if (_words) ...[
+            const SizedBox(height: 14),
+            _wordsTrend(period),
+            if (stats != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                stressTrendSentence(stats, unit),
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: colors.textPrimary,
                 ),
-              ],
+              ),
+            ],
+          ] else ...[
+            const SizedBox(height: 6),
+            Text(
+              'Each bar is a day\'s range, the dot its average. Tap a day for details.',
+              style: TextStyle(fontSize: 13, color: colors.textSecondary),
             ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 170,
+              child: _RangeChart(
+                days: period,
+                labels: [
+                  for (final (i, d) in period.indexed)
+                    _rangeIndex == 0
+                        ? (i == period.length - 1
+                              ? 'Today'
+                              : DateFormat('E').format(d.date))
+                        : (i % 5 == 4 || i == period.length - 1
+                              ? DateFormat('M/d').format(d.date)
+                              : ''),
+                ],
+                onDay: (d) => _showDay(d),
+              ),
+            ),
+            if (stats != null) ...[
+              const SizedBox(height: 10),
+              Divider(height: 1, color: colors.border),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _stat(stats.average.round().toString(), 'Average'),
+                  _stat(
+                    stats.calmest.average!.round().toString(),
+                    'Calmest day',
+                  ),
+                  _stat(
+                    stats.hardest.average!.round().toString(),
+                    'Hardest day',
+                  ),
+                  _stat(
+                    stats.change == null
+                        ? '--'
+                        : stats.change!.round() == 0
+                        ? '0'
+                        : '${stats.change! > 0 ? '+' : '−'}${stats.change!.round().abs()}',
+                    'vs $unit',
+                    color: stats.change == null || stats.change!.round() == 0
+                        ? null
+                        : stats.change! > 0
+                        ? _up(context)
+                        : _down(context),
+                  ),
+                ],
+              ),
+            ],
           ],
         ],
       ),
+    );
+  }
+
+  /// Words mode's trend: each day as its level's colour, no axis or values.
+  Widget _wordsTrend(List<StressDay> period) {
+    final colors = context.vivordoColors;
+    final week = period.length <= 7;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            for (final (i, d) in period.indexed) ...[
+              if (i > 0) SizedBox(width: week ? 6 : 2),
+              Expanded(
+                child: Column(
+                  children: [
+                    Container(
+                      height: week ? 22 : 16,
+                      decoration: BoxDecoration(
+                        color: d.average == null
+                            ? colors.border
+                            : stressLevelColors(stressBand(d.average!)).$1,
+                        borderRadius: BorderRadius.circular(week ? 6 : 3),
+                      ),
+                    ),
+                    if (week) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        i == period.length - 1
+                            ? 'Today'
+                            : DateFormat('E').format(d.date),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 12,
+          runSpacing: 4,
+          children: [
+            for (final level in const ['Low', 'Moderate', 'Elevated', 'High'])
+              _legend(stressLevelColors(level).$1, level),
+          ],
+        ),
+      ],
     );
   }
 
@@ -1522,12 +1656,16 @@ class _DayChart extends StatefulWidget {
     required this.usualRange,
     required this.events,
     required this.day,
+    this.showNumbers = true,
   });
 
   final List<StressReading> readings;
   final (double, double)? usualRange;
   final List<(DateTime, DateTime)> events;
   final DateTime day;
+
+  /// False in words mode: no score axis, and touch shows the level.
+  final bool showNumbers;
 
   @override
   State<_DayChart> createState() => _DayChartState();
@@ -1592,8 +1730,9 @@ class _DayChartState extends State<_DayChart> {
             selected: _selected,
             selectedLabel: _selected == null
                 ? null
-                : '${widget.readings[_selected!].score.round()} · '
+                : '${widget.showNumbers ? widget.readings[_selected!].score.round() : stressBand(widget.readings[_selected!].score)} · '
                       '${DateFormat('h:mm a').format(widget.readings[_selected!].at.toLocal())}',
+            showAxis: widget.showNumbers,
             line: _purple,
             text: colors.textSecondary,
             grid: colors.border,
@@ -1627,8 +1766,10 @@ class _DayChartPainter extends CustomPainter {
     required this.band,
     required this.tooltip,
     required this.tooltipText,
+    this.showAxis = true,
   });
 
+  final bool showAxis;
   final List<(double, double)> points;
   final double start, end;
   final (double, double)? usualRange;
@@ -1659,13 +1800,15 @@ class _DayChartPainter extends CustomPainter {
       ..strokeWidth = 1;
     for (final v in [hi, (hi + lo) / 2, lo]) {
       canvas.drawLine(Offset(0, y(v)), Offset(width, y(v)), gridPaint);
-      _text(
-        canvas,
-        v.round().toString(),
-        Offset(width + 6, y(v) - 7),
-        text,
-        10,
-      );
+      if (showAxis) {
+        _text(
+          canvas,
+          v.round().toString(),
+          Offset(width + 6, y(v) - 7),
+          text,
+          10,
+        );
+      }
     }
 
     final offsets = [for (final p in points) Offset(x(p.$1), y(p.$2))];
@@ -1754,7 +1897,8 @@ class _DayChartPainter extends CustomPainter {
       old.usualRange != usualRange ||
       old.events != events ||
       old.line != line ||
-      old.text != text;
+      old.text != text ||
+      old.showAxis != showAxis;
 }
 
 /// Each day as a range bar (lowest to highest) with its average as a dot.

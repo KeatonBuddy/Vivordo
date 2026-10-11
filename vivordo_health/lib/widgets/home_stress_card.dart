@@ -18,6 +18,7 @@ class HomeStressCard extends StatefulWidget {
     required this.revealScore,
     required this.onInfoTap,
     this.showWhoopBadge = false,
+    this.showNumbers = true,
   });
 
   final double? score;
@@ -30,6 +31,10 @@ class HomeStressCard extends StatefulWidget {
   final bool revealScore;
   final VoidCallback onInfoTap;
   final bool showWhoopBadge;
+
+  /// False in words mode: a sentence and a level chip instead of the ring
+  /// and percentage.
+  final bool showNumbers;
 
   @override
   State<HomeStressCard> createState() => _HomeStressCardState();
@@ -84,7 +89,8 @@ class _HomeStressCardState extends State<HomeStressCard>
         widget.loading != oldWidget.loading ||
         widget.updating != oldWidget.updating ||
         widget.revealScore != oldWidget.revealScore ||
-        widget.showWhoopBadge != oldWidget.showWhoopBadge;
+        widget.showWhoopBadge != oldWidget.showWhoopBadge ||
+        widget.showNumbers != oldWidget.showNumbers;
     final nextScore = _visibleScore;
     if (nextScore != _targetScore) {
       final currentScore = _scoreAnimation.value;
@@ -166,28 +172,31 @@ class _HomeStressCardState extends State<HomeStressCard>
                 children: [
                   _header(),
                   const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      RepaintBoundary(
-                        child: SizedBox(
-                          width: 104,
-                          height: 104,
-                          child: AnimatedBuilder(
-                            animation: _scoreAnimation,
-                            child: _ringCenter(displayedScore),
-                            builder: (context, child) => CustomPaint(
-                              painter: _StressRingPainter(
-                                progress: _scoreAnimation.value / 100,
+                  if (!widget.showNumbers)
+                    _summary(displayedScore)
+                  else
+                    Row(
+                      children: [
+                        RepaintBoundary(
+                          child: SizedBox(
+                            width: 104,
+                            height: 104,
+                            child: AnimatedBuilder(
+                              animation: _scoreAnimation,
+                              child: _ringCenter(displayedScore),
+                              builder: (context, child) => CustomPaint(
+                                painter: _StressRingPainter(
+                                  progress: _scoreAnimation.value / 100,
+                                ),
+                                child: child,
                               ),
-                              child: child,
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(child: _summary(displayedScore)),
-                    ],
-                  ),
+                        const SizedBox(width: 16),
+                        Expanded(child: _summary(displayedScore)),
+                      ],
+                    ),
                   const SizedBox(height: 14),
                   _action(action),
                   const SizedBox(height: 12),
@@ -287,15 +296,28 @@ class _HomeStressCardState extends State<HomeStressCard>
   Widget _summary(double? displayedScore) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
-        homeStressLevel(displayedScore) ?? 'No score yet',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 22,
-          fontWeight: FontWeight.w800,
-          letterSpacing: -0.3,
+      if (!widget.showNumbers && widget.loading)
+        const SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            color: Colors.white,
+          ),
+        )
+      else
+        Text(
+          (widget.showNumbers
+                  ? homeStressLevel(displayedScore)
+                  : homeStressSentence(displayedScore)) ??
+              'No score yet',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+          ),
         ),
-      ),
       const SizedBox(height: 3),
       Row(
         children: [
@@ -303,7 +325,12 @@ class _HomeStressCardState extends State<HomeStressCard>
           const SizedBox(width: 5),
           Expanded(
             child: Text(
-              homeStressComparison(widget.score, widget.sevenDayAverage),
+              widget.showNumbers
+                  ? homeStressComparison(widget.score, widget.sevenDayAverage)
+                  : homeStressComparisonWords(
+                      widget.score,
+                      widget.sevenDayAverage,
+                    ),
               style: const TextStyle(
                 color: Color(0xFFDCD6FF),
                 fontSize: 12.5,
@@ -313,6 +340,11 @@ class _HomeStressCardState extends State<HomeStressCard>
           ),
         ],
       ),
+      if (!widget.showNumbers)
+        if (homeStressLevel(displayedScore) case final level?) ...[
+          const SizedBox(height: 8),
+          StressLevelChip(level),
+        ],
       if (widget.drivers.isNotEmpty) ...[
         const SizedBox(height: 10),
         Wrap(
@@ -402,7 +434,9 @@ class _HomeStressCardState extends State<HomeStressCard>
   IconData _comparisonIcon() {
     final score = widget.score;
     final average = widget.sevenDayAverage;
-    if (score == null || average == null || (score - average).abs() < 1) {
+    // Words mode says "about the same" within 5 points, so the arrow does.
+    final flat = widget.showNumbers ? 1 : 5;
+    if (score == null || average == null || (score - average).abs() < flat) {
       return Icons.trending_flat_rounded;
     }
     return score < average
@@ -525,4 +559,41 @@ class _StressRingPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _StressRingPainter oldDelegate) =>
       progress != oldDelegate.progress;
+}
+
+/// Words mode's stress colour for a level ("Low"…"High"): light enough for
+/// a chip, with its text colour.
+(Color, Color) stressLevelColors(String level) => switch (level) {
+  'Low' => (const Color(0xFFE1F5EE), const Color(0xFF085041)),
+  'Moderate' => (const Color(0xFFFAEEDA), const Color(0xFF633806)),
+  'Elevated' => (const Color(0xFFFAECE7), const Color(0xFF712B13)),
+  _ => (const Color(0xFFFCEBEB), const Color(0xFF791F1F)),
+};
+
+/// Words mode's stress level as a coloured chip, on Home and the stress
+/// detail.
+class StressLevelChip extends StatelessWidget {
+  const StressLevelChip(this.level, {super.key});
+
+  final String level;
+
+  @override
+  Widget build(BuildContext context) {
+    final (background, foreground) = stressLevelColors(level);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Text(
+        level,
+        style: TextStyle(
+          color: foreground,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
 }

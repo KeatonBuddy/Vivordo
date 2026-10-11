@@ -17,11 +17,13 @@ class MetricsInsight {
 /// The Metrics screen's insights, from the `scores_daily` documents it
 /// already streams for Physical Health (keyed by day). "This week" is the
 /// last 7 days; "usual" is the 28 days before that. Concerns come first,
-/// then the Physical Health win, then good news; at most [limit].
+/// then the Physical Health win, then good news; at most [limit]. Without
+/// [numbers] (words mode), Capacity and Effort are said without scores.
 List<MetricsInsight> metricsInsights(
   Map<String, Map<String, dynamic>> days,
   DateTime today, {
   int limit = 3,
+  bool numbers = true,
 }) {
   final date = DateTime(today.year, today.month, today.day);
   final week = [for (var i = 0; i < 7; i++) localDayKey(_back(date, i))];
@@ -83,8 +85,10 @@ List<MetricsInsight> metricsInsights(
         MetricsInsight(
           MetricsInsightKind.energy,
           MetricsInsightTone.concern,
-          'Your energy is lower than usual: Capacity averaged $now this '
-          'week, against your usual $before.',
+          numbers
+              ? 'Your energy is lower than usual: Capacity averaged $now '
+                    'this week, against your usual $before.'
+              : 'Your energy has been lower than usual this week.',
         ),
       );
     } else if (now >= before + 5) {
@@ -92,8 +96,10 @@ List<MetricsInsight> metricsInsights(
         MetricsInsight(
           MetricsInsightKind.energy,
           MetricsInsightTone.good,
-          'Your energy is up: Capacity averaged $now this week, against '
-          'your usual $before.',
+          numbers
+              ? 'Your energy is up: Capacity averaged $now this week, '
+                    'against your usual $before.'
+              : 'Your energy has been higher than usual this week.',
         ),
       );
     }
@@ -110,9 +116,11 @@ List<MetricsInsight> metricsInsights(
         MetricsInsight(
           MetricsInsightKind.effort,
           MetricsInsightTone.concern,
-          'Your days have been heavier than usual: Effort averaged '
-          '${now.round()} a day this week, against your usual '
-          '${before.round()}.',
+          numbers
+              ? 'Your days have been heavier than usual: Effort averaged '
+                    '${now.round()} a day this week, against your usual '
+                    '${before.round()}.'
+              : 'Your days have been heavier than usual this week.',
         ),
       );
     }
