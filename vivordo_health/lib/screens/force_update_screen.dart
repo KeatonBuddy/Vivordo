@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 /// Full-screen, non-dismissible block shown when VersionGateService
 /// determines the installed app version is below the Remote Config minimum.
@@ -10,9 +11,7 @@ class ForceUpdateScreen extends StatelessWidget {
 
   const ForceUpdateScreen({super.key, required this.updateUrl});
 
-  static const Color accentPurple = Color(0xFF7B6EF6);
-  static const Color textDark = Color(0xFF1C1C1E);
-  static const Color textGrey = Color(0xFF8E8E93);
+  static const Color accentPurple = VivordoTheme.brand;
 
   Future<void> _openUpdateLink() async {
     final uri = Uri.tryParse(updateUrl);
@@ -22,10 +21,11 @@ class ForceUpdateScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: colors.page,
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -36,7 +36,7 @@ class ForceUpdateScreen extends StatelessWidget {
                   width: 88,
                   height: 88,
                   decoration: BoxDecoration(
-                    color: accentPurple.withOpacity(0.1),
+                    color: accentPurple.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -46,20 +46,24 @@ class ForceUpdateScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 28),
-                const Text(
-                  'Update Required',
+                Text(
+                  'Update required',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    color: textDark,
+                    color: colors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 10),
-                const Text(
+                Text(
                   "You're on a version of Vivordo Health that's no longer "
-                  "supported. Please update to keep using the app.",
+                  'supported. Update to keep using the app.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: textGrey, height: 1.5),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: colors.textSecondary,
+                    height: 1.5,
+                  ),
                 ),
                 const SizedBox(height: 32),
                 SizedBox(
@@ -70,15 +74,20 @@ class ForceUpdateScreen extends StatelessWidget {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: accentPurple,
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFFD1CEFF),
+                      disabledBackgroundColor: accentPurple.withValues(
+                        alpha: 0.3,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
                       elevation: 0,
                     ),
                     child: const Text(
-                      'Update Now',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      'Update now',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),

@@ -67,19 +67,16 @@ List<HomeStressDriver> homeStressDrivers(Object? raw, {int limit = 2}) {
   return drivers;
 }
 
-String homeStressRangeMessage(double? score, double? sevenDayAverage) {
-  if (score == null) return 'Your stress score will appear as data comes in.';
-  if (sevenDayAverage != null) {
-    final difference = score - sevenDayAverage;
-    if (difference <= -2) return 'Your stress is below your usual range.';
-    if (difference >= 2) return 'Your stress is above your usual range.';
-    return 'Your stress is within your usual range.';
-  }
-  if (score < 30) return 'Your current stress is low.';
-  if (score < 60) return 'Your current stress is manageable.';
-  if (score < 80) return 'Your current stress is elevated.';
-  return 'Your current stress is high.';
-}
+/// One word for where [score] sits. Null until there is a score.
+String? homeStressLevel(double? score) => score == null
+    ? null
+    : score < 30
+    ? 'Low'
+    : score < 60
+    ? 'Moderate'
+    : score < 80
+    ? 'Elevated'
+    : 'High';
 
 String homeStressComparison(double? score, double? sevenDayAverage) {
   if (score == null || sevenDayAverage == null) {
@@ -89,6 +86,28 @@ String homeStressComparison(double? score, double? sevenDayAverage) {
   if (difference == 0) return 'In line with your 7-day average.';
   return '${difference.abs()} point${difference.abs() == 1 ? '' : 's'} '
       '${difference < 0 ? 'below' : 'above'} your 7-day average.';
+}
+
+/// Words mode's sentence for where [score] sits (the chip says the level).
+String? homeStressSentence(double? score) => switch (homeStressLevel(score)) {
+  'Low' => 'Calm',
+  'Moderate' => 'A bit tense',
+  'Elevated' => 'Quite tense',
+  'High' => 'Very tense',
+  _ => null,
+};
+
+/// Words mode's comparison with the week, without points.
+String homeStressComparisonWords(double? score, double? sevenDayAverage) {
+  if (score == null || sevenDayAverage == null) {
+    return 'Building your 7-day baseline.';
+  }
+  final difference = score - sevenDayAverage;
+  return difference <= -5
+      ? 'Calmer than your week.'
+      : difference >= 5
+      ? 'More tense than your week.'
+      : 'About the same as your week.';
 }
 
 String homeStressAction({

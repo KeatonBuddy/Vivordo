@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
@@ -13,7 +14,8 @@ void main() {
       ..start = (gcal.EventDateTime()
         ..dateTime = DateTime(2026, 8, 26, 9).toUtc())
       ..end = (gcal.EventDateTime()
-        ..dateTime = DateTime(2026, 8, 26, 10, 30).toUtc());
+        ..dateTime = DateTime(2026, 8, 26, 10, 30).toUtc())
+      ..recurrence = ['RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE'];
 
     await tester.pumpWidget(
       MaterialApp(
@@ -35,10 +37,60 @@ void main() {
     expect(find.text('Start time'), findsOneWidget);
     expect(find.text('End time'), findsOneWidget);
     expect(find.text('All-day event'), findsOneWidget);
-    expect(find.text('Once'), findsOneWidget);
-    expect(find.text('Every day'), findsOneWidget);
-    expect(find.text('Selected days'), findsOneWidget);
+    expect(find.text('Repeat'), findsOneWidget);
+    expect(find.text('Every 2 weeks on Mon, Wed'), findsOneWidget);
     expect(find.text('Save Changes'), findsOneWidget);
     expect(find.text('Delete Event'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Custom'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Custom'));
+    await tester.pumpAndSettle();
+    for (final option in [
+      'Does not repeat',
+      'Every day',
+      'Every week',
+      'Every month',
+      'Every year',
+      'Selected days',
+      'Custom…',
+    ]) {
+      expect(find.text(option), findsOneWidget);
+    }
+    final custom = find.ancestor(
+      of: find.text('Custom…'),
+      matching: find.byWidgetPredicate((w) => w is PopupMenuItem),
+    );
+    expect(
+      find.descendant(
+        of: custom,
+        matching: find.byIcon(CupertinoIcons.checkmark_alt),
+      ),
+      findsOneWidget,
+    );
+
+    // The menu item, not its text box, takes the tap.
+    await tester.tap(find.text('Every year'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.text('Every year'), findsOneWidget);
+    expect(find.text('Every 2 weeks on Mon, Wed'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('moving the start keeps the event length', () {
+    TimeOfDay t(int h, [int m = 0]) => TimeOfDay(hour: h, minute: m);
+    expect(
+      keepEventLength(oldStart: t(9), oldEnd: t(10), newStart: t(11)),
+      t(12),
+    );
+    expect(
+      keepEventLength(oldStart: t(9), oldEnd: t(10, 30), newStart: t(23)),
+      t(0, 30),
+    );
+    // An overnight event keeps its length too.
+    expect(
+      keepEventLength(oldStart: t(22), oldEnd: t(1), newStart: t(21)),
+      t(0),
+    );
   });
 }

@@ -7,13 +7,18 @@ import 'package:image_picker/image_picker.dart';
 
 import '../src/services/circle_profile_service.dart';
 import '../theme/vivordo_theme.dart';
+import '../widgets/apple_ui.dart';
 
 enum _UsernameStatus { idle, invalid, checking, available, taken, error }
 
 class CreateCircleProfileScreen extends StatefulWidget {
-  const CreateCircleProfileScreen({super.key, this.initialProfile});
+  const CreateCircleProfileScreen({super.key, this.initialProfile, this.intro});
 
   final CircleProfile? initialProfile;
+
+  /// Shown above a compact form when this is Circle's first-run screen.
+  /// It then stays put after saving: Circle swaps to its home by itself.
+  final Widget? intro;
 
   @override
   State<CreateCircleProfileScreen> createState() =>
@@ -34,6 +39,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
   String? errorMessage;
 
   bool get editing => widget.initialProfile != null;
+  bool get onboarding => widget.intro != null && !editing;
 
   @override
   void initState() {
@@ -102,34 +108,13 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
   }
 
   Future<void> _choosePhoto() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              title: Text(
-                'Choose a profile picture',
-                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Choose from Gallery'),
-              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('Take a Photo'),
-              subtitle: const Text('Uses the front-facing camera'),
-              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
-            ),
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
+    final source = await showAppleActionSheet<ImageSource>(
+      context,
+      title: 'Choose a profile picture',
+      actions: const [
+        AppleSheetAction('Take photo', ImageSource.camera),
+        AppleSheetAction('Choose from library', ImageSource.gallery),
+      ],
     );
     if (source == null) return;
     try {
@@ -149,8 +134,11 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
         errorMessage = null;
       });
     } catch (error) {
+      debugPrint('Open profile photo failed: $error');
       if (!mounted) return;
-      setState(() => errorMessage = 'Could not open that photo: $error');
+      setState(
+        () => errorMessage = "Couldn't open that photo. Try another one.",
+      );
     }
   }
 
@@ -188,7 +176,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
           photoName: photoName,
         );
       }
-      if (!mounted) return;
+      if (!mounted || onboarding) return;
       Navigator.pop(context);
     } on CircleUsernameTakenException {
       if (!mounted) return;
@@ -197,11 +185,12 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
         errorMessage = 'That username was just taken. Choose another one.';
       });
     } catch (error) {
+      debugPrint('Save Circle profile failed: $error');
       if (!mounted) return;
       setState(
         () => errorMessage = editing
-            ? 'Could not update your profile: $error'
-            : 'Could not create your profile: $error',
+            ? "Couldn't update your profile. Try again."
+            : "Couldn't create your profile. Try again.",
       );
     } finally {
       if (mounted) setState(() => saving = false);
@@ -215,10 +204,12 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
       backgroundColor: context.vivordoColors.page,
       surfaceTintColor: Colors.transparent,
       centerTitle: true,
-      title: Text(
-        editing ? 'Edit Profile' : 'Create Profile',
-        style: const TextStyle(fontWeight: FontWeight.w800),
-      ),
+      title: onboarding
+          ? null
+          : Text(
+              editing ? 'Edit Profile' : 'Create Profile',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
     ),
     body: SafeArea(
       top: false,
@@ -228,102 +219,107 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
           children: [
-            Text(
-              editing
-                  ? 'Update how your circle sees you.'
-                  : 'Help your circle recognize you.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: context.vivordoColors.textSecondary,
-                fontSize: 16,
+            if (onboarding) ...[
+              widget.intro!,
+              const SizedBox(height: 24),
+            ] else ...[
+              Text(
+                editing
+                    ? 'Update how your circle sees you.'
+                    : 'Help your circle recognize you.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: context.vivordoColors.textSecondary,
+                  fontSize: 16,
+                ),
               ),
-            ),
-            const SizedBox(height: 26),
-            Center(
-              child: GestureDetector(
-                onTap: saving ? null : _choosePhoto,
-                child: Column(
-                  children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Container(
-                          width: 154,
-                          height: 154,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: context.vivordoColors.cardMuted,
-                            border: Border.all(
-                              color: context.vivordoColors.card,
-                              width: 3,
-                            ),
-                            image: photoBytes != null
-                                ? DecorationImage(
-                                    image: MemoryImage(photoBytes!),
-                                    fit: BoxFit.cover,
-                                  )
-                                : widget.initialProfile?.photoUrl != null
-                                ? DecorationImage(
-                                    image: NetworkImage(
-                                      widget.initialProfile!.photoUrl!,
-                                    ),
-                                    fit: BoxFit.cover,
-                                  )
-                                : null,
-                          ),
-                          child:
-                              photoBytes == null &&
-                                  widget.initialProfile?.photoUrl == null
-                              ? const Icon(
-                                  Icons.person_rounded,
-                                  color: _purple,
-                                  size: 78,
-                                )
-                              : null,
-                        ),
-                        Positioned(
-                          right: 0,
-                          bottom: 5,
-                          child: Container(
-                            width: 48,
-                            height: 48,
+              const SizedBox(height: 26),
+              Center(
+                child: GestureDetector(
+                  onTap: saving ? null : _choosePhoto,
+                  child: Column(
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 154,
+                            height: 154,
                             decoration: BoxDecoration(
-                              color: _purple,
                               shape: BoxShape.circle,
+                              color: context.vivordoColors.cardMuted,
                               border: Border.all(
                                 color: context.vivordoColors.card,
                                 width: 3,
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: context.vivordoColors.shadow,
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
+                              image: photoBytes != null
+                                  ? DecorationImage(
+                                      image: MemoryImage(photoBytes!),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : widget.initialProfile?.photoUrl != null
+                                  ? DecorationImage(
+                                      image: NetworkImage(
+                                        widget.initialProfile!.photoUrl!,
+                                      ),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
                             ),
-                            child: const Icon(
-                              Icons.camera_alt_rounded,
-                              color: Colors.white,
+                            child:
+                                photoBytes == null &&
+                                    widget.initialProfile?.photoUrl == null
+                                ? const Icon(
+                                    Icons.person_rounded,
+                                    color: _purple,
+                                    size: 78,
+                                  )
+                                : null,
+                          ),
+                          Positioned(
+                            right: 0,
+                            bottom: 5,
+                            child: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: _purple,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: context.vivordoColors.card,
+                                  width: 3,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: context.vivordoColors.shadow,
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.camera_alt_rounded,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      editing ? 'Change Photo' : 'Choose Photo',
-                      style: const TextStyle(
-                        color: _purple,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 14),
+                      Text(
+                        editing ? 'Change Photo' : 'Choose Photo',
+                        style: const TextStyle(
+                          color: _purple,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 28),
+              const SizedBox(height: 28),
+            ],
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -334,6 +330,10 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (onboarding) ...[
+                    _compactPhotoRow(),
+                    const SizedBox(height: 22),
+                  ],
                   const _FormLabel('DISPLAY NAME'),
                   const SizedBox(height: 9),
                   TextField(
@@ -428,7 +428,11 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                         ),
                       )
                     : Text(
-                        editing ? 'Save Changes' : 'Create Profile',
+                        editing
+                            ? 'Save Changes'
+                            : onboarding
+                            ? 'Create profile'
+                            : 'Create Profile',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -436,6 +440,17 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                       ),
               ),
             ),
+            if (onboarding && Navigator.canPop(context))
+              TextButton(
+                onPressed: saving ? null : () => Navigator.maybePop(context),
+                style: TextButton.styleFrom(
+                  foregroundColor: context.vivordoColors.textSecondary,
+                ),
+                child: const Text(
+                  'Maybe later',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -457,6 +472,62 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
             ),
           ],
         ),
+      ),
+    ),
+  );
+
+  Widget _compactPhotoRow() => Semantics(
+    button: true,
+    label: 'Add a profile photo',
+    excludeSemantics: true,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: saving ? null : _choosePhoto,
+      child: Row(
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: context.vivordoColors.cardMuted,
+              border: Border.all(color: context.vivordoColors.border, width: 2),
+              image: photoBytes == null
+                  ? null
+                  : DecorationImage(
+                      image: MemoryImage(photoBytes!),
+                      fit: BoxFit.cover,
+                    ),
+            ),
+            child: photoBytes == null
+                ? const Icon(Icons.camera_alt_rounded, color: _purple)
+                : null,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  photoBytes == null ? 'Add a photo' : 'Change photo',
+                  style: TextStyle(
+                    color: context.vivordoColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Optional. Friends see your initials otherwise.',
+                  style: TextStyle(
+                    color: context.vivordoColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     ),
   );

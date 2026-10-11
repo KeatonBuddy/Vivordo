@@ -102,4 +102,22 @@ void main() {
     expect(result.custom, isEmpty);
     expect(result.defaults, hasLength(3));
   });
+
+  test('Favourites keeps starred exercises from both sources, in one list', () {
+    final results = exercisePickerResults(
+      search: '',
+      filter: favouritesFilter,
+      catalog: const [
+        (name: 'Barbell Row', category: 'Back', isCustom: false),
+        (name: 'Back Squat', category: 'Legs', isCustom: false),
+      ],
+      custom: const [(name: 'My Cable Fly', category: 'Chest', isCustom: true)],
+      favourites: {'barbellrow', 'mycablefly'},
+    );
+    expect(results.custom, isEmpty);
+    expect(results.defaults.map((e) => e.name), [
+      'Barbell Row',
+      'My Cable Fly',
+    ]);
+  });
 }

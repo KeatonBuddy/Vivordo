@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import '../data/exercise_library.dart';
 import '../utils/exercise_catalog.dart';
 
 export '../utils/exercise_catalog.dart';
@@ -20,8 +21,11 @@ class ExerciseCatalogService {
   static List<WorkoutExerciseCatalogItem> _defaults = const [];
   static bool _isLoaded = false;
 
-  /// The default exercises, in catalog order. Empty until [prefetch] succeeds.
-  static List<WorkoutExerciseCatalogItem> get defaults => _defaults;
+  /// The default exercises, in catalog order: the Firestore catalog once
+  /// [prefetch] succeeds, and the list built into the app until then (offline
+  /// first launch, before the catalog is seeded).
+  static List<WorkoutExerciseCatalogItem> get defaults =>
+      _isLoaded ? _defaults : workoutExerciseCatalog;
 
   /// Whether the catalog document was actually read.
   ///

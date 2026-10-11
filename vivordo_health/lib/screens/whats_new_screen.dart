@@ -140,7 +140,7 @@ class WhatsNewScreen extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                          colors: [Color(0xFF4935F5), Color(0xFF7B6EF6)],
+                          colors: [Color(0xFF4935F5), VivordoTheme.brand],
                         ),
                         borderRadius: BorderRadius.circular(999),
                       ),

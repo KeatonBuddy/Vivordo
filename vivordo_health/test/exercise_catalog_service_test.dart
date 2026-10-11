@@ -1,11 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vivordo_health/src/data/exercise_library.dart';
 import 'package:vivordo_health/src/services/exercise_catalog_service.dart';
 
 void main() {
   setUp(ExerciseCatalogService.resetForTesting);
 
-  test('starts empty and not loaded', () {
-    expect(ExerciseCatalogService.defaults, isEmpty);
+  test('starts on the built-in list, not loaded', () {
+    expect(ExerciseCatalogService.defaults, workoutExerciseCatalog);
     expect(ExerciseCatalogService.isLoaded, isFalse);
   });
 
@@ -35,7 +36,7 @@ void main() {
     ]);
     ExerciseCatalogService.resetForTesting();
 
-    expect(ExerciseCatalogService.defaults, isEmpty);
+    expect(ExerciseCatalogService.defaults, workoutExerciseCatalog);
     expect(ExerciseCatalogService.isLoaded, isFalse);
   });
 
@@ -44,7 +45,7 @@ void main() {
     test('missing document does not change state', () {
       ExerciseCatalogService.applySnapshot(exists: false, data: {});
 
-      expect(ExerciseCatalogService.defaults, isEmpty);
+      expect(ExerciseCatalogService.defaults, workoutExerciseCatalog);
       expect(ExerciseCatalogService.isLoaded, isFalse);
     });
 
@@ -92,7 +93,7 @@ void main() {
           data: {'exercises': 'nope'},
         );
 
-        expect(ExerciseCatalogService.defaults, isEmpty);
+        expect(ExerciseCatalogService.defaults, workoutExerciseCatalog);
         expect(
           ExerciseCatalogService.isLoaded,
           isFalse,
@@ -110,7 +111,7 @@ void main() {
           data: {'version': 3},
         );
 
-        expect(ExerciseCatalogService.defaults, isEmpty);
+        expect(ExerciseCatalogService.defaults, workoutExerciseCatalog);
         expect(
           ExerciseCatalogService.isLoaded,
           isFalse,

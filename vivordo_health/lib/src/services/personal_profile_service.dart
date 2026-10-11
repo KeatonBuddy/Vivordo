@@ -1,18 +1,29 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+/// Sex for fitness norms (the VO₂ max estimate): 'female', 'male' or
+/// 'unspecified' (the estimate then averages the two).
+const profileSexes = ['female', 'male', 'unspecified'];
+
 class PersonalProfile {
   const PersonalProfile({
     this.heightCm,
     this.weightKg,
     this.bodyFatPercent,
     this.updatedAt,
+    this.birthYear,
+    this.sex,
   });
 
   final double? heightCm;
   final double? weightKg;
   final double? bodyFatPercent;
   final DateTime? updatedAt;
+  final int? birthYear;
+  final String? sex;
+
+  /// Age this year, for display and fitness norms.
+  int? get age => birthYear == null ? null : DateTime.now().year - birthYear!;
 
   factory PersonalProfile.fromUserData(Map<String, dynamic>? data) {
     final preferences = data?['preferences'] as Map?;
@@ -22,6 +33,10 @@ class PersonalProfile {
       weightKg: (profile?['weightKg'] as num?)?.toDouble(),
       bodyFatPercent: (profile?['bodyFatPercent'] as num?)?.toDouble(),
       updatedAt: (profile?['updatedAt'] as Timestamp?)?.toDate(),
+      birthYear: (profile?['birthYear'] as num?)?.toInt(),
+      sex: profileSexes.contains(profile?['sex'])
+          ? profile!['sex'] as String
+          : null,
     );
   }
 }
@@ -124,5 +139,20 @@ class PersonalProfileService {
         'createdAt': FieldValue.serverTimestamp(),
       });
     });
+  }
+
+  /// Saves birth year and sex (asked in onboarding, editable on Body).
+  /// A nested map: set() would store dotted keys as literal field names.
+  static Future<void> saveAbout({int? birthYear, String? sex}) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError('Sign in before saving your profile.');
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      'preferences': {
+        'personalProfile': {
+          'birthYear': ?birthYear,
+          if (sex != null && profileSexes.contains(sex)) 'sex': sex,
+        },
+      },
+    }, SetOptions(merge: true));
   }
 }

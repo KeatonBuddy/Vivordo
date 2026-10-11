@@ -8,9 +8,18 @@ class WorkoutRestTimer extends StatefulWidget {
     super.key,
     this.now = DateTime.now,
     this.onDeadlineChanged,
+    this.loadPreset,
+    this.onPresetChanged,
   });
   final DateTime Function() now;
   final Future<void> Function(DateTime?)? onDeadlineChanged;
+
+  /// The rest length the user last chose, so every rest and every new
+  /// workout starts from it instead of the 1:15 default.
+  final Future<int?> Function()? loadPreset;
+
+  /// Called when the user changes the rest length while it isn't running.
+  final ValueChanged<int>? onPresetChanged;
 
   @override
   State<WorkoutRestTimer> createState() => _WorkoutRestTimerState();
@@ -24,6 +33,27 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
   int _remaining = 75;
   DateTime? _deadline;
   Timer? _ticker;
+  bool _complete = false;
+  bool _changedByUser = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final load = widget.loadPreset;
+    if (load != null) unawaited(_applySavedPreset(load));
+  }
+
+  Future<void> _applySavedPreset(Future<int?> Function() load) async {
+    final saved = await load().catchError((Object error) {
+      debugPrint('Could not load rest timer preset: $error');
+      return null;
+    });
+    // A tap before the saved value arrives wins over it.
+    if (saved == null || !mounted || _changedByUser || _deadline != null) {
+      return;
+    }
+    setState(() => _preset = _remaining = saved.clamp(15, 3600));
+  }
 
   int get _seconds => _deadline == null
       ? _remaining
@@ -35,14 +65,18 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
     if (_seconds == 0) {
       _ticker?.cancel();
       _deadline = null;
-      _remaining = 0;
+      // Ready for the next set at the user's chosen length.
+      _remaining = _preset;
+      _complete = true;
       unawaited(HapticFeedback.mediumImpact());
     }
     setState(() {});
   }
 
   void _toggle() {
+    _changedByUser = true;
     setState(() {
+      _complete = false;
       if (_deadline != null) {
         _remaining = _seconds;
         _deadline = null;
@@ -60,15 +94,19 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
   }
 
   void _adjust(int delta) {
+    _changedByUser = true;
+    final running = _deadline != null;
     setState(() {
-      final running = _deadline != null;
+      _complete = false;
       _remaining = (_seconds + delta).clamp(15, 3600);
       if (running) {
+        // Only this rest; the chosen length stays for the next one.
         _deadline = widget.now().add(Duration(seconds: _remaining));
       } else {
         _preset = _remaining;
       }
     });
+    if (!running) widget.onPresetChanged?.call(_preset);
     _updateNotification();
   }
 
@@ -76,6 +114,7 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
     _ticker?.cancel();
     setState(() {
       _deadline = null;
+      _complete = false;
       _remaining = _preset;
     });
     _updateNotification();
@@ -107,97 +146,87 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
     final seconds = _seconds;
     final label =
         '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
-    const purple = Color(0xFF6254F4);
+    const purple = Color(0xFF6B5CE7);
+    final running = _deadline != null;
+    final adjustStyle = IconButton.styleFrom(
+      foregroundColor: purple,
+      side: BorderSide(color: purple.withValues(alpha: .45)),
+      minimumSize: const Size(40, 40),
+    );
     return Material(
       color: colors.card,
+      shape: Border(top: BorderSide(color: colors.border)),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          // The app-wide assistant bubble floats over the bottom-right
+          // corner of every screen; keep the controls clear of it.
+          padding: const EdgeInsets.fromLTRB(18, 8, 84, 8),
+          child: Row(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    seconds == 0 ? 'Rest complete' : 'Rest timer',
-                    style: TextStyle(
-                      color: colors.textPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  TextButton(onPressed: _reset, child: const Text('Reset')),
-                ],
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton.outlined(
-                    tooltip: 'Subtract 15 seconds',
-                    onPressed: () => _adjust(-15),
-                    icon: const Icon(Icons.remove),
-                    iconSize: 28,
-                    style: IconButton.styleFrom(
-                      foregroundColor: purple,
-                      side: const BorderSide(color: purple, width: 2),
-                      minimumSize: const Size(52, 52),
-                    ),
-                  ),
-                  const SizedBox(width: 24),
-                  Semantics(
-                    label: 'Rest timer, $label',
-                    button: true,
-                    child: InkWell(
-                      onTap: _toggle,
-                      customBorder: const CircleBorder(),
-                      child: Container(
-                        width: 88,
-                        height: 88,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: purple, width: 3),
-                        ),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                _deadline == null
-                                    ? Icons.play_arrow_rounded
-                                    : Icons.pause_rounded,
-                                color: purple,
-                                size: 30,
-                              ),
-                              Text(
-                                label,
-                                style: TextStyle(
-                                  color: colors.textPrimary,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _complete ? 'Rest done' : 'Rest',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.visible,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colors.textSecondary,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 24),
-                  IconButton.outlined(
-                    tooltip: 'Add 15 seconds',
-                    onPressed: () => _adjust(15),
-                    icon: const Icon(Icons.add),
-                    iconSize: 28,
-                    style: IconButton.styleFrom(
-                      foregroundColor: purple,
-                      side: const BorderSide(color: purple, width: 2),
-                      minimumSize: const Size(52, 52),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: colors.textPrimary,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
                     ),
+                  ],
+                ),
+              ),
+              IconButton.outlined(
+                tooltip: 'Subtract 15 seconds',
+                onPressed: () => _adjust(-15),
+                icon: const Icon(Icons.remove),
+                style: adjustStyle,
+              ),
+              const SizedBox(width: 8),
+              Semantics(
+                label: 'Rest timer, $label',
+                button: true,
+                child: IconButton.filled(
+                  tooltip: running ? 'Pause rest timer' : 'Start rest timer',
+                  onPressed: _toggle,
+                  icon: Icon(
+                    running ? Icons.pause_rounded : Icons.play_arrow_rounded,
                   ),
-                ],
+                  iconSize: 28,
+                  style: IconButton.styleFrom(
+                    backgroundColor: purple,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(52, 52),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.outlined(
+                tooltip: 'Add 15 seconds',
+                onPressed: () => _adjust(15),
+                icon: const Icon(Icons.add),
+                style: adjustStyle,
+              ),
+              TextButton(
+                onPressed: _reset,
+                style: TextButton.styleFrom(foregroundColor: purple),
+                child: const Text('Reset'),
               ),
             ],
           ),

@@ -2,6 +2,63 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/screens/sleep_detail_screen.dart';
 
 void main() {
+  group('refreshConnectedSleepSources', () {
+    for (final source in ['whoop', 'fitbit', 'apple']) {
+      test('refreshes only connected $source', () async {
+        final calls = <String>[];
+        await refreshConnectedSleepSources(
+          {
+            'whoopConnected': source == 'whoop',
+            'fitbitConnected': source == 'fitbit',
+            'healthKitConsent': {'sleep': source == 'apple'},
+          },
+          whoop: () async {
+            calls.add('whoop');
+          },
+          fitbit: () async {
+            calls.add('fitbit');
+          },
+          appleHealth: () async {
+            calls.add('apple');
+          },
+        );
+        expect(calls, [source]);
+      });
+    }
+    test('no connections does not sync or request Apple permission', () async {
+      Future<void> unexpected() async => fail('Unexpected sync');
+      await refreshConnectedSleepSources(
+        {},
+        whoop: unexpected,
+        fitbit: unexpected,
+        appleHealth: unexpected,
+      );
+    });
+    test(
+      'provider failure still allows remaining sources to refresh',
+      () async {
+        final calls = <String>[];
+        await refreshConnectedSleepSources(
+          {
+            'whoopConnected': true,
+            'fitbitConnected': true,
+            'healthKitConsent': {'sleep': true},
+          },
+          whoop: () async {
+            calls.add('whoop');
+            throw Exception('offline');
+          },
+          fitbit: () async {
+            calls.add('fitbit');
+          },
+          appleHealth: () async {
+            calls.add('apple');
+          },
+        );
+        expect(calls, ['whoop', 'fitbit', 'apple']);
+      },
+    );
+  });
   group('hasRecordedSleep', () {
     test('returns true for a positive daily sleep value', () {
       expect(

@@ -1,14 +1,28 @@
+import 'dart:async';
 import 'dart:math' as math;
+import '../widgets/contextual_insight_bar.dart';
+import '../src/utils/daily_brief_analysis.dart' show sleepBaseline;
 import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/services/fitbit_service.dart';
+import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
+import 'package:vivordo_health/src/services/wind_down_reminder.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
+import 'package:vivordo_health/src/utils/sleep_nights.dart';
+import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/ios_pull_down_menu.dart';
+import 'package:vivordo_health/widgets/sleep_schedule_editor.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
 bool hasRecordedSleep(Map<String, dynamic>? dailyMetrics) {
@@ -20,6 +34,29 @@ bool hasRecordedSleep(Map<String, dynamic>? dailyMetrics) {
 
 bool hasConnectedWhoop(Map<String, dynamic>? userData) =>
     userData?['whoopConnected'] == true;
+
+/// Refresh sequentially so the existing wearable/Apple fallback policy applies.
+/// A failed provider must not prevent the other connected providers from syncing.
+Future<void> refreshConnectedSleepSources(
+  Map<String, dynamic> userData, {
+  required Future<void> Function() whoop,
+  required Future<void> Function() fitbit,
+  required Future<void> Function() appleHealth,
+}) async {
+  final consent = userData['healthKitConsent'];
+  final sources = <Future<void> Function()>[
+    if (userData['whoopConnected'] == true) whoop,
+    if (userData['fitbitConnected'] == true) fitbit,
+    if (consent is Map && consent['sleep'] == true) appleHealth,
+  ];
+  for (final sync in sources) {
+    try {
+      await sync();
+    } catch (error) {
+      debugPrint('[SleepDetailScreen] Sleep source refresh failed: $error');
+    }
+  }
+}
 
 bool includesWhoopSleepSource(Iterable<String?> sources) =>
     sources.any((source) => source?.toLowerCase() == 'whoop');
@@ -40,33 +77,79 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   static const _purple = Color(0xFF5420DE);
   int _rangeIndex = 0;
   DateTime? _lastRefreshAt;
-  bool _refreshingWhoopSleep = false;
+  bool _refreshingSleep = false;
+
+  /// `preferences.windDownReminder`, for the menu's switch.
+  bool _windDownReminder = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadWindDownReminder());
+  }
+
+  Future<void> _loadWindDownReminder() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final user = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      final on = (user.data()?['preferences'] as Map?)?['windDownReminder'];
+      if (mounted) setState(() => _windDownReminder = on == true);
+    } catch (_) {
+      // Shows as off.
+    }
+  }
+
+  Future<void> _toggleWindDownReminder() async {
+    final on = !_windDownReminder;
+    setState(() => _windDownReminder = on);
+    try {
+      await WindDownReminders.setEnabled(on);
+      if (mounted) {
+        showToast(
+          context,
+          on
+              ? 'Wind-down reminder on. It follows your forecast each night.'
+              : 'Wind-down reminder off.',
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _windDownReminder = !on);
+    }
+  }
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,
     1 => 7,
     _ => 30,
   };
+  String _previousName() => switch (_rangeIndex) {
+    0 => 'the night before',
+    1 => 'the week before',
+    _ => 'the month before',
+  };
+
   String get _rangeName => switch (_rangeIndex) {
     0 => 'Daily',
     1 => 'Weekly',
     _ => 'Monthly',
   };
 
-  String _dayKey(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
-
-  Future<void> _refreshWhoopSleepIfMissing() async {
+  Future<void> _refreshSleepIfMissing() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null || _refreshingWhoopSleep) return;
+    if (uid == null || _refreshingSleep) return;
 
     final firestore = FirebaseFirestore.instance;
     final userReference = firestore.collection('users').doc(uid);
     final todayReference = userReference
         .collection('metrics_daily')
-        .doc(_dayKey(DateTime.now()));
+        .doc(localDayKey(DateTime.now()));
 
     try {
-      _refreshingWhoopSleep = true;
+      _refreshingSleep = true;
       final today = await todayReference.get(
         const GetOptions(source: Source.server),
       );
@@ -76,21 +159,13 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
       }
 
       final user = await userReference.get();
-      if (user.data()?['whoopConnected'] != true) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Connect WHOOP to refresh today\'s sleep.'),
-            ),
-          );
-        }
-        return;
-      }
-
-      // Include yesterday as well as today. WHOOP sleep crosses midnight and
-      // its wake-day assignment can otherwise sit outside a one-day request
-      // around UTC/local-day boundaries.
-      await WhoopService.instance.sync(daysBack: 2, force: true);
+      // Include yesterday to cover sleep spanning midnight.
+      await refreshConnectedSleepSources(
+        user.data() ?? {},
+        whoop: () => WhoopService.instance.sync(daysBack: 2, force: true),
+        fitbit: () => FitbitService.instance.sync(daysBack: 2),
+        appleHealth: () => HealthService().syncMetric('sleep', daysBack: 2),
+      );
 
       final refreshed = await todayReference.get(
         const GetOptions(source: Source.server),
@@ -98,26 +173,22 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
       final updated = hasRecordedSleep(refreshed.data());
       if (!mounted) return;
       setState(() => _lastRefreshAt = DateTime.now());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            updated
-                ? 'Sleep updated from WHOOP.'
-                : 'WHOOP has not finished processing today\'s sleep yet.',
-          ),
-        ),
+      showToast(
+        context,
+        updated ? 'Sleep updated.' : 'No sleep data available.',
+        kind: updated ? ToastKind.success : ToastKind.info,
       );
     } catch (error) {
-      debugPrint('[SleepDetailScreen] WHOOP refresh failed: $error');
+      debugPrint('[SleepDetailScreen] Sleep refresh failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('WHOOP sleep could not be refreshed. Try again.'),
-          ),
+        showToast(
+          context,
+          "Couldn't refresh sleep. Try again.",
+          kind: ToastKind.error,
         );
       }
     } finally {
-      _refreshingWhoopSleep = false;
+      _refreshingSleep = false;
     }
   }
 
@@ -130,10 +201,47 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         .collection('users')
         .doc(uid)
         .collection('metrics_daily')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: _dayKey(oldest))
-        .where(FieldPath.documentId, isLessThanOrEqualTo: _dayKey(today))
+        .where(
+          FieldPath.documentId,
+          isGreaterThanOrEqualTo: localDayKey(oldest),
+        )
+        .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(today))
         .orderBy(FieldPath.documentId)
         .snapshots();
+  }
+
+  Future<void> _editSleepSchedule() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    SleepSchedule? current;
+    try {
+      final user = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      current = SleepSchedule.fromPreferences(
+        user.data()?['preferences'] as Map?,
+      );
+      // Nothing saved yet: start from the last two weeks of tracked sleep.
+      if (current == null) {
+        final today = DateUtils.dateOnly(DateTime.now());
+        final days = await user.reference
+            .collection('metrics_daily')
+            .where(
+              FieldPath.documentId,
+              isGreaterThan: localDayKey(
+                today.subtract(const Duration(days: 14)),
+              ),
+            )
+            .get();
+        current = SleepSchedule.fromNights(
+          sleepNights([for (final day in days.docs) day.data()]),
+        );
+      }
+    } catch (_) {
+      // Starts from 11:30 PM–7 AM.
+    }
+    if (mounted) await showSleepScheduleSheet(context, current);
   }
 
   @override
@@ -152,6 +260,27 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           'Sleep',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
+        actions: [
+          IosPullDownMenu<bool>(
+            tooltip: 'Sleep options',
+            // true = wind-down reminder, false = usual sleep schedule.
+            onSelected: (reminder) =>
+                reminder ? _toggleWindDownReminder() : _editSleepSchedule(),
+            actions: [
+              const IosMenuAction(
+                value: false,
+                label: 'Usual sleep schedule',
+                icon: CupertinoIcons.bed_double,
+              ),
+              IosMenuAction(
+                value: true,
+                label: 'Wind-down reminder',
+                icon: CupertinoIcons.bell,
+                checked: _windDownReminder,
+              ),
+            ],
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _sleepStream(),
@@ -184,7 +313,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     final days = List.generate(_rangeDays, (index) {
       final date = today.subtract(Duration(days: _rangeDays - index - 1));
-      return _SleepDay(date, byDay[_dayKey(date)]);
+      return _SleepDay(date, byDay[localDayKey(date)]);
     });
     final previousCutoff = today.subtract(Duration(days: _rangeDays));
     final previous = (snapshot?.docs ?? const [])
@@ -211,10 +340,30 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     final previousAverage = previous.isEmpty
         ? null
         : previous.reduce((a, b) => a + b) / previous.length;
-    final changeMinutes = previousAverage == null
+    // Nothing to compare until this period has a night.
+    final changeMinutes = previousAverage == null || recorded.isEmpty
         ? null
         : ((average - previousAverage) * 60).round();
     final latest = recorded.isEmpty ? null : recorded.last.value;
+    final baseline = sleepBaseline(
+      byDay.entries
+          .where((entry) {
+            final date = DateTime.tryParse(entry.key);
+            return date != null &&
+                date.isBefore(today) &&
+                !date.isBefore(
+                  DateTime(today.year, today.month, today.day - 28),
+                );
+          })
+          .map((entry) => entry.value.hours),
+    );
+    final planningAdvice =
+        _rangeIndex == 0 &&
+            latest != null &&
+            baseline != null &&
+            latest.hours < baseline - .75
+        ? 'That is less sleep than your recent usual. Consider keeping your plan flexible and leaving room for a break, especially if you feel tired.'
+        : 'Consider how rested you feel alongside this measurement when planning your day. Want help leaving room for rest?';
     final hasWhoopSleepData = includesWhoopSleepSource(
       recorded.map((day) => day.value?.source),
     );
@@ -225,7 +374,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
 
     return RefreshIndicator(
       color: _purple,
-      onRefresh: _refreshWhoopSleepIfMissing,
+      onRefresh: _refreshSleepIfMissing,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
@@ -281,9 +430,29 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
               ],
             ),
             const SizedBox(height: 10),
-            _insightCard(recorded, average),
+            _insightCard(
+              sleepInsight(
+                nights: {
+                  for (final MapEntry(:key, :value) in byDay.entries)
+                    ?DateTime.tryParse(key): SleepNight(
+                      value.hours,
+                      value.bedtime,
+                    ),
+                },
+                today: DateTime.now(),
+                rangeDays: _rangeDays,
+              ),
+            ),
           ],
         ),
+      ),
+    ).withScreenInsight(
+      ScreenInsight(
+        'sleep',
+        '$_rangeName sleep',
+        recorded.isEmpty
+            ? 'No sleep data is available for this period. Refresh your connected source before drawing conclusions about recovery.'
+            : 'You averaged ${average.toStringAsFixed(1)} hours across ${recorded.length} recorded nights in this view. $planningAdvice',
       ),
     );
   }
@@ -366,20 +535,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   }
 
   void _showInsightInfo(bool hasWhoopSleepData) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('About Vivordo Insight'),
-        content: Text(
-          sleepInsightInfoText(hasWhoopSleepData: hasWhoopSleepData),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
+    showInfoSheet(
+      context,
+      icon: CupertinoIcons.sparkles,
+      title: 'About Vivordo Insight',
+      summary: sleepInsightInfoText(hasWhoopSleepData: hasWhoopSleepData),
     );
   }
 
@@ -433,9 +593,13 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                     if (changeMinutes != null) ...[
                       const SizedBox(height: 8),
                       Text(
-                        '${changeMinutes >= 0 ? '↑' : '↓'} ${changeMinutes.abs()} min vs previous $_rangeName',
+                        changeMinutes == 0
+                            ? 'Same as ${_previousName()}'
+                            : '${changeMinutes > 0 ? '↑' : '↓'} ${changeMinutes.abs()} min vs ${_previousName()}',
                         style: TextStyle(
-                          color: changeMinutes >= 0
+                          color: changeMinutes == 0
+                              ? context.vivordoColors.textSecondary
+                              : changeMinutes > 0
                               ? const Color(0xFF20B26B)
                               : Colors.red,
                           fontWeight: FontWeight.w700,
@@ -818,25 +982,17 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     );
   }
 
-  Widget _insightCard(List<_SleepDay> recorded, double average) {
-    String text;
-    if (recorded.isEmpty) {
-      text = 'Sync sleep from your health source to reveal sleep trends.';
-    } else if (average >= 8) {
-      text = 'You averaged at least eight hours of sleep in this period.';
-    } else if (average >= 7) {
-      text =
-          'Your average sleep is within the recommended range for many adults.';
-    } else {
-      text = 'Your average sleep was below seven hours in this period.';
-    }
+  Widget _insightCard(DetailInsight insight) {
+    final (icon, color) = insightStyle(insight.tone);
     return _card(
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          _iconBubble(Icons.trending_up_rounded, const Color(0xFF20B26B)),
+          _iconBubble(icon, color),
           const SizedBox(width: 14),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 16))),
+          Expanded(
+            child: Text(insight.text, style: const TextStyle(fontSize: 16)),
+          ),
         ],
       ),
     );
@@ -1261,7 +1417,7 @@ class _SleepingHeartRatePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SleepingHeartRatePainter oldDelegate) =>
-      oldDelegate.readings != readings ||
+      !listEquals(oldDelegate.readings, readings) ||
       oldDelegate.bedtime != bedtime ||
       oldDelegate.wakeTime != wakeTime ||
       oldDelegate.selectedIndex != selectedIndex ||

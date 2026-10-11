@@ -23,8 +23,10 @@ function whoopDeletionPlan(data = {}) {
   const sources = data.heart_rate_sources || {};
   const removedHeartRate = Boolean(sources[WHOOP_BLE_SOURCE]) ||
     data.heart_rate?.source === WHOOP_BLE_SOURCE;
+  const cloudMetrics = Object.keys(data)
+      .filter((key) => data[key]?.source === WHOOP_CLOUD_SOURCE);
 
-  if (removedSleep) deletePaths.push("sleep");
+  deletePaths.push(...cloudMetrics);
 
   if (sources[WHOOP_BLE_SOURCE]) {
     const remainingKeys = Object.keys(sources)
@@ -47,18 +49,19 @@ function whoopDeletionPlan(data = {}) {
   // These outputs can depend on WHOOP sleep or heart rate but legacy records
   // do not yet carry complete input provenance. Invalidate replaceable output
   // instead of leaving a score derived from data the member asked to delete.
-  if (removedSleep || removedHeartRate) {
+  if (cloudMetrics.length > 0 || removedHeartRate) {
     if (data.stress !== undefined) deletePaths.push("stress");
     if (data.wellness !== undefined) deletePaths.push("wellness");
   }
-  if (removedHeartRate && data.heart_health !== undefined) {
+  if ((removedHeartRate || cloudMetrics.includes("resting_heart_rate")) &&
+      data.heart_health !== undefined) {
     deletePaths.push("heart_health");
   }
 
   return {
     deletePaths: [...new Set(deletePaths)],
     setFields,
-    changed: removedSleep || removedHeartRate,
+    changed: cloudMetrics.length > 0 || removedHeartRate,
     removedSleep,
     removedHeartRate,
   };

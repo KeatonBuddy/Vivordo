@@ -1,3 +1,5 @@
+import 'exercise_catalog.dart';
+
 /// One row in the Add Exercise picker.
 typedef PickerExercise = ({String name, String category, bool isCustom});
 
@@ -14,13 +16,22 @@ class ExercisePickerResults {
   final List<PickerExercise> defaults;
 }
 
+/// The picker's filter for the user's starred exercises (by
+/// [exerciseNameKey]) rather than a category.
+const favouritesFilter = 'Favourites';
+
 List<PickerExercise> _matching(
   Iterable<PickerExercise> source,
   String query,
   String filter,
+  Set<String> favourites,
 ) =>
     source.where((exercise) {
-        final matchesFilter = filter == 'All' || exercise.category == filter;
+        final matchesFilter =
+            filter == 'All' ||
+            (filter == favouritesFilter
+                ? favourites.contains(exerciseNameKey(exercise.name))
+                : exercise.category == filter);
         final matchesSearch =
             query.isEmpty ||
             exercise.name.toLowerCase().contains(query) ||
@@ -38,6 +49,7 @@ ExercisePickerResults exercisePickerResults({
   required String filter,
   required Iterable<PickerExercise> catalog,
   required Iterable<PickerExercise> custom,
+  Set<String> favourites = const {},
 }) {
   final query = search.trim().toLowerCase();
   final sectioned = query.isEmpty && filter == 'All';
@@ -45,12 +57,12 @@ ExercisePickerResults exercisePickerResults({
   if (!sectioned) {
     return ExercisePickerResults(
       custom: const [],
-      defaults: _matching([...catalog, ...custom], query, filter),
+      defaults: _matching([...catalog, ...custom], query, filter, favourites),
     );
   }
 
   return ExercisePickerResults(
-    custom: _matching(custom, query, filter),
-    defaults: _matching(catalog, query, filter),
+    custom: _matching(custom, query, filter, favourites),
+    defaults: _matching(catalog, query, filter, favourites),
   );
 }

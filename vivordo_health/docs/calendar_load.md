@@ -8,7 +8,10 @@ BaaS weighting changes, deployment and user demand overrides remain separate.
 `CalendarCognitiveLoadService.scoreEvents` uses local rules by default. AI is
 optional (`allowAi: true`) and is not invoked by Home. Categories have fixed
 starting demand: routine 15, social 20, collaboration 40, focused-work 55,
-high-consequence 75. Unknown has a numeric placeholder of 0 and confidence 0;
+high-consequence 75, rest 0 ("Break", "Lunch break", "Coffee break",
+"Breather"). Rest events take no part in load: the hourly calculator skips
+them, so they never make the next event back-to-back, and the day record
+leaves them out, so the server's Effort never sees them. Unknown has a numeric placeholder of 0 and confidence 0;
 consumers must use `isKnown` rather than interpret it as low demand.
 
 Title matches take precedence over notes. More specific (longer) matching
@@ -24,7 +27,11 @@ For example, hotel check-in is routine and team check-in is collaboration.
 AI is restricted to the same categories/scores, with 0.6 confidence for known
 categories. Its cache namespace and signatures include classifier version 3.
 
-## Hourly calculator v1
+## Hourly calculator v2
+
+(The JSON sent with stress scoring still says `version: 1`: the stress
+backend rejects any other value, and it doesn't use these windows in
+scores yet. Bump it together with the backend.)
 
 `HourlyCalendarLoadCalculator.calculate` accepts classified events and a time
 range. Pass an hour-aligned `from`; windows advance by one elapsed hour.
@@ -37,10 +44,15 @@ For each interval between event boundaries:
 - Occupied minutes are the union of eligible event intervals.
 - Use the highest known active event demand; overlapping demand is not summed.
 - Add 10 pressure points while two or more distinct events overlap.
-- Add 10 pressure points during an event that starts less than 15 minutes
-  after a preceding event ends. Only transitions already reached are used.
-- Add a continuous-run pressure ramp: zero through 60 uninterrupted minutes,
-  rising linearly to 5 at 120 minutes, then capped at 5. A gap resets the run.
+- A back-to-back event (starting less than 15 minutes after a preceding
+  event ends) adds a flat 300 pressure-minutes: 10 pressure points for its
+  first 30 minutes, or packed into a shorter event (20 for 15 minutes).
+  Only transitions already reached are used. (v1 added 10 for the whole
+  event, so long back-to-back events cost more than short ones.)
+- Add a continuous-run pressure ramp: zero through 60 minutes, rising
+  linearly to 5 at 120 minutes, then capped at 5. A gap of 15 minutes or
+  more resets the run; shorter gaps don't, so chains of back-to-backs
+  build up. (v1 reset on any gap.)
 
 `demand = integral(active demand) / 60 minutes`
 

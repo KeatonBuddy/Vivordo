@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import 'activity_goals_service.dart';
+import 'achievement_inputs.dart';
 import 'achievement_unlock_service.dart';
 import 'calendar_service.dart';
 import 'circle_profile_service.dart';
@@ -103,8 +104,8 @@ class AchievementMonitor {
   final String _userId;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   Timer? _debounce;
-  String? _workoutSignature;
-  String? _metricSignature;
+  late final _AchievementSession _session;
+  bool _disposed = false;
   String? _activityGoalsSignature;
   String? _journalSignature;
   String? _profileSignature;
@@ -114,6 +115,8 @@ class AchievementMonitor {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
     final monitor = AchievementMonitor._(user.uid);
+    monitor._session = AchievementService._sessionFor(user.uid);
+    monitor._session.monitors++;
     monitor._listen();
     return monitor;
   }
@@ -121,61 +124,14 @@ class AchievementMonitor {
   void _listen() {
     final userRef = FirebaseFirestore.instance.collection('users').doc(_userId);
     _subscriptions.add(
-      userRef
-          .collection('workouts')
-          .snapshots()
-          .listen(
-            (snapshot) => _updateSignature(
-              snapshot.docs
-                  .map((doc) {
-                    final data = doc.data();
-                    final exercises = (data['exercises'] as List? ?? const [])
-                        .whereType<Map>()
-                        .map((exercise) => exercise['category'])
-                        .join(',');
-                    return '${doc.id}:${data['activityCategory']}:$exercises';
-                  })
-                  .join('|'),
-              (value) => _workoutSignature = value,
-              () => _workoutSignature,
-            ),
-            onError: _logMonitorError,
-          ),
+      _session.inputs.changes.listen((changed) {
+        if (changed) _schedule();
+      }),
     );
     _subscriptions.add(
-      userRef
-          .collection('metrics_daily')
-          .snapshots()
-          .listen(
-            (snapshot) => _updateSignature(
-              snapshot.docs
-                  .map((doc) {
-                    final data = doc.data();
-                    final scan = data['heart_rate_scan'];
-                    var count = 0;
-                    if (scan is Map) {
-                      final entries = scan['entries'];
-                      count = entries is List && entries.isNotEmpty
-                          ? entries.length
-                          : (scan['source'] == 'camera_ppg' ||
-                                scan['avg'] is num)
-                          ? 1
-                          : 0;
-                    }
-                    final moodCount = countMoodCheckIns(metricDays: [data]);
-                    num? sumFor(String key) {
-                      final metric = data[key];
-                      return metric is Map ? metric['sum'] as num? : null;
-                    }
-
-                    return '${doc.id}:$count:$moodCount:${sumFor('steps')}:${sumFor('active_calories')}:${sumFor('exercise_time')}';
-                  })
-                  .join('|'),
-              (value) => _metricSignature = value,
-              () => _metricSignature,
-            ),
-            onError: _logMonitorError,
-          ),
+      FirebaseAuth.instance.authStateChanges().listen((user) {
+        if (user?.uid != _userId) unawaited(dispose());
+      }),
     );
     _subscriptions.add(
       userRef.snapshots().listen((snapshot) {
@@ -234,15 +190,17 @@ class AchievementMonitor {
   }
 
   void _schedule() {
+    if (_disposed || !_session.current) return;
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 450), scheduleNow);
   }
 
   void scheduleNow() {
+    if (_disposed || !_session.current) return;
     _debounce?.cancel();
     _debounce = null;
     unawaited(
-      AchievementService.reconcileAll().catchError((Object error) {
+      _session.queue.request().catchError((Object error) {
         debugPrint('AchievementMonitor: reconciliation failed: $error');
         return <AchievementProgress>[];
       }),
@@ -254,7 +212,10 @@ class AchievementMonitor {
   }
 
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     _debounce?.cancel();
+    if (--_session.monitors == 0) AchievementService._release(_session);
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
@@ -267,35 +228,47 @@ class AchievementService {
   AchievementService._();
 
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static Future<List<AchievementProgress>>? _activeReconciliation;
+  static const _sourceTimeout = Duration(seconds: 5);
+  static _AchievementSession? _session;
+  static StreamSubscription<User?>? _auth;
+
+  static _AchievementSession _sessionFor(String uid) {
+    _auth ??= FirebaseAuth.instance.authStateChanges().listen((user) {
+      final session = _session;
+      if (session != null && user?.uid != session.uid) _release(session);
+    });
+    if (_session?.uid != uid) {
+      final previous = _session;
+      if (previous != null) _release(previous);
+      _session = _AchievementSession(uid, _firestore);
+    }
+    return _session!;
+  }
+
+  static void _release(_AchievementSession session) {
+    session.queue.valid = false;
+    session.nextProfile = null;
+    unawaited(session.inputs.dispose());
+    if (identical(_session, session)) _session = null;
+  }
 
   static Future<List<AchievementProgress>> reconcileAll({
     CircleProfile? profile,
   }) {
-    final active = _activeReconciliation;
-    if (active != null) return active;
-    final future = _runReconciliation(profile);
-    _activeReconciliation = future;
-    return future;
-  }
-
-  static Future<List<AchievementProgress>> _runReconciliation(
-    CircleProfile? profile,
-  ) async {
-    try {
-      return await _reconcileAll(profile: profile);
-    } finally {
-      _activeReconciliation = null;
-    }
-  }
-
-  static Future<List<AchievementProgress>> _reconcileAll({
-    CircleProfile? profile,
-  }) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return const [];
+    if (user == null) return Future.value(const []);
+    final session = _sessionFor(user.uid);
+    if (profile?.uid == user.uid) session.nextProfile = profile;
+    return session.queue.request();
+  }
 
-    CircleProfile? resolvedProfile = profile;
+  static Future<List<AchievementProgress>> _reconcileAll(
+    _AchievementSession session,
+  ) async {
+    if (!session.current) return const [];
+
+    CircleProfile? resolvedProfile = session.nextProfile;
+    session.nextProfile = null;
     if (resolvedProfile == null) {
       try {
         resolvedProfile = await CircleProfileService.watchCurrentProfile().first
@@ -305,65 +278,49 @@ class AchievementService {
       }
     }
 
-    final userRef = _firestore.collection('users').doc(user.uid);
+    if (!session.current) return const [];
+    final userRef = _firestore.collection('users').doc(session.uid);
     final results = await Future.wait<Object>([
-      userRef.collection('workouts').get(),
-      userRef.collection('metrics_daily').get(),
+      session.inputs.load(),
       userRef.collection('journal_entries').count().get(),
       userRef.collection('achievements').get(),
-      CircleProfileService.watchFriends().first,
+      // A source that never answers must not stall every achievement.
+      // Earned achievements are never revoked, so a timed-out source only
+      // delays an unlock to the next run.
+      CircleProfileService.watchFriends().first.timeout(
+        _sourceTimeout,
+        onTimeout: () => const <CircleProfile>[],
+      ),
       _hasGoogleCalendar(),
       _hasOutlookCalendar(),
       userRef.get(),
     ]);
 
-    final workouts = results[0] as QuerySnapshot<Map<String, dynamic>>;
-    final metricDays = results[1] as QuerySnapshot<Map<String, dynamic>>;
+    if (!session.current) return const [];
+    // Metadata queries may outlast a sensor update. Take the latest prepared
+    // snapshot before calculating, without another Firestore history fetch.
+    final inputs = await session.inputs.load();
+    if (!session.current) return const [];
     final journalEntryCount =
-        (results[2] as AggregateQuerySnapshot).count?.toInt() ?? 0;
-    final savedAchievements = results[3] as QuerySnapshot<Map<String, dynamic>>;
-    final friends = results[4] as List<CircleProfile>;
-    final calendarConnected = (results[5] as bool) || (results[6] as bool);
-    final userSnapshot = results[7] as DocumentSnapshot<Map<String, dynamic>>;
+        (results[1] as AggregateQuerySnapshot).count?.toInt() ?? 0;
+    final savedAchievements = results[2] as QuerySnapshot<Map<String, dynamic>>;
+    final friends = results[3] as List<CircleProfile>;
+    final calendarConnected = (results[4] as bool) || (results[5] as bool);
+    final userSnapshot = results[6] as DocumentSnapshot<Map<String, dynamic>>;
     final activityGoals = ActivityGoals.fromUserData(userSnapshot.data());
     final savedById = {
       for (final document in savedAchievements.docs) document.id: document,
     };
+    final founder =
+        savedById['founder']?.data()['completed'] == true ||
+        await _isFounder(session);
+    if (!session.current) return const [];
 
-    final heartRateScanCount = metricDays.docs.fold<int>(0, (total, document) {
-      final scan = document.data()['heart_rate_scan'];
-      if (scan is! Map) return total;
-      final entries = scan['entries'];
-      if (entries is List && entries.isNotEmpty) return total + entries.length;
-      if (scan['source'] == 'camera_ppg' || scan['avg'] is num) {
-        return total + 1;
-      }
-      return total;
-    });
-    final moodCheckInCount = countMoodCheckIns(
-      metricDays: metricDays.docs.map((document) => document.data()),
-    );
-    final cardioOrSportsActivityCount = workouts.docs.where((document) {
-      final data = document.data();
-      final activityCategory = data['activityCategory'] as String?;
-      if (activityCategory == 'Cardio' || activityCategory == 'Sports') {
-        return true;
-      }
-      final exercises = (data['exercises'] as List? ?? const [])
-          .whereType<Map>()
-          .toList(growable: false);
-      if (exercises.isEmpty) return false;
-      return exercises.every((exercise) {
-        final category = exercise['category'] as String?;
-        return category == 'Cardio' || category == 'Sports';
-      });
-    }).length;
-    final strengthWorkoutCount =
-        workouts.docs.length - cardioOrSportsActivityCount;
-    final completedActivityRingDays = countCompletedActivityRingDays(
-      metricDays: metricDays.docs.map((document) => document.data()),
-      goals: activityGoals,
-    );
+    final heartRateScanCount = inputs.scans;
+    final moodCheckInCount = inputs.moods;
+    final cardioOrSportsActivityCount = inputs.cardioCount;
+    final strengthWorkoutCount = inputs.workoutCount - inputs.cardioCount;
+    final completedActivityRingDays = inputs.ringDays(activityGoals);
 
     final momentum = _tierProgress(
       id: 'workout_momentum',
@@ -415,11 +372,19 @@ class AchievementService {
     );
 
     final checks = <AchievementProgress>[
+      // Only beta accounts can ever hold Founder, so nobody else sees it.
+      if (founder)
+        _singleAchievement(
+          id: 'founder',
+          name: 'Founder',
+          requirement: 'Joined Vivordo during the beta',
+          unlocked: true,
+        ),
       _singleAchievement(
         id: 'in_motion',
         name: 'In Motion',
         requirement: 'Complete your first activity',
-        unlocked: workouts.docs.isNotEmpty,
+        unlocked: inputs.workoutCount > 0,
       ),
       _singleAchievement(
         id: 'first_pulse',
@@ -490,6 +455,7 @@ class AchievementService {
     ];
 
     final batch = _firestore.batch();
+    var writes = 0;
     final now = DateTime.now();
     final newlyUnlocked = <AchievementUnlock>[];
     final resolved = checks
@@ -506,28 +472,33 @@ class AchievementService {
           final earnedAt = newUnlock
               ? now
               : (savedData?['earnedAt'] as Timestamp?)?.toDate();
-          batch.set(
-            userRef.collection('achievements').doc(achievement.id),
-            {
-              'achievementId': achievement.id,
-              'name': achievement.name,
-              'requirement': achievement.requirement,
-              'badgeAsset': achievement.earnedBadgeAsset,
-              'progress': achievement.progress,
-              'target': achievement.target,
-              if (achievement.progressUnit != null)
-                'progressUnit': achievement.progressUnit,
-              'completed': isEarned,
-              if (achievement.tier != null) 'tier': achievement.tier,
-              if (achievement.goalTier != null)
-                'nextTier': achievement.goalTier,
-              if (newUnlock) 'earnedAt': FieldValue.serverTimestamp(),
-              if (tierAdvanced)
-                'earnedTiers': FieldValue.arrayUnion([achievement.tier]),
-              'updatedAt': FieldValue.serverTimestamp(),
-            },
-            SetOptions(merge: true),
-          );
+          final fields = <String, dynamic>{
+            'achievementId': achievement.id,
+            'name': achievement.name,
+            'requirement': achievement.requirement,
+            'badgeAsset': achievement.earnedBadgeAsset,
+            'progress': achievement.progress,
+            'target': achievement.target,
+            if (achievement.progressUnit != null)
+              'progressUnit': achievement.progressUnit,
+            'completed': isEarned,
+            if (achievement.tier != null) 'tier': achievement.tier,
+            if (achievement.goalTier != null) 'nextTier': achievement.goalTier,
+          };
+          if (newUnlock || achievementFieldsChanged(savedData, fields)) {
+            batch.set(
+              userRef.collection('achievements').doc(achievement.id),
+              {
+                ...fields,
+                if (newUnlock) 'earnedAt': FieldValue.serverTimestamp(),
+                if (tierAdvanced)
+                  'earnedTiers': FieldValue.arrayUnion([achievement.tier]),
+                'updatedAt': FieldValue.serverTimestamp(),
+              },
+              SetOptions(merge: true),
+            );
+            writes++;
+          }
           if (newUnlock) {
             final unlockedRequirement = _requirementForTier(achievement);
             final activityId = achievement.tier == null
@@ -540,7 +511,9 @@ class AchievementService {
                 'name': achievement.name,
                 'summary': unlockedRequirement,
                 'achievementId': achievement.id,
-                'achievementBadgeAsset': achievement.earnedBadgeAsset,
+                // One-time achievements only have a goal badge.
+                'achievementBadgeAsset':
+                    achievement.earnedBadgeAsset ?? achievement.goalBadgeAsset,
                 'achievementTier': ?achievement.tier,
                 'minutes': 0,
                 'day': FieldValue.serverTimestamp(),
@@ -562,11 +535,31 @@ class AchievementService {
         })
         .toList(growable: false);
 
-    await batch.commit();
+    if (!session.current) return const [];
+    if (writes > 0) await batch.commit();
+    if (!session.current) return const [];
     for (final achievement in newlyUnlocked) {
       AchievementUnlockService.announce(achievement);
     }
     return resolved;
+  }
+
+  /// Whether a backend record marks this account as a beta user. Read once
+  /// per session; a failed read is retried on the next reconciliation.
+  static Future<bool> _isFounder(_AchievementSession session) async {
+    final cached = session.founder;
+    if (cached != null) return cached;
+    try {
+      final record = await _firestore
+          .collection('founders')
+          .doc(session.uid)
+          .get()
+          .timeout(_sourceTimeout);
+      return session.founder = record.exists;
+    } catch (error) {
+      debugPrint('AchievementService: founder check failed: $error');
+      return false;
+    }
   }
 
   static Future<void> reconcileStoryKeeper() async {
@@ -686,7 +679,10 @@ class AchievementService {
 
   static Future<bool> _hasGoogleCalendar() async {
     try {
-      return await CalendarService.hasCalendarAccess();
+      return await CalendarService.hasCalendarAccess().timeout(
+        _sourceTimeout,
+        onTimeout: () => false,
+      );
     } catch (_) {
       return false;
     }
@@ -694,7 +690,10 @@ class AchievementService {
 
   static Future<bool> _hasOutlookCalendar() async {
     try {
-      return await OutlookCalendarService.isSignedIn();
+      return await OutlookCalendarService.isSignedIn().timeout(
+        _sourceTimeout,
+        onTimeout: () => false,
+      );
     } catch (_) {
       return false;
     }
@@ -706,6 +705,26 @@ class AchievementService {
     'gold' => 3,
     _ => 0,
   };
+}
+
+class _AchievementSession {
+  _AchievementSession(this.uid, FirebaseFirestore db)
+    : inputs = AchievementInputsRepository(db, uid) {
+    queue = AchievementReconciliationQueue(
+      () => AchievementService._reconcileAll(this),
+    );
+    inputs.changes.listen((changed) {
+      if (changed) queue.markDirty();
+    });
+  }
+  final String uid;
+  final AchievementInputsRepository inputs;
+  CircleProfile? nextProfile;
+  bool? founder;
+  int monitors = 0;
+  late final AchievementReconciliationQueue<List<AchievementProgress>> queue;
+  bool get current =>
+      queue.valid && FirebaseAuth.instance.currentUser?.uid == uid;
 }
 
 class _TierProgress {

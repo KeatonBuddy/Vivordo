@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
 /// Semantic colors used by Vivordo surfaces.
@@ -139,6 +140,31 @@ abstract final class VivordoTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: colors.card,
         surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      // iOS navigation bars: page colour, no scroll tint, centred bold title,
+      // and the chevron back button everywhere.
+      appBarTheme: AppBarTheme(
+        backgroundColor: colors.page,
+        foregroundColor: colors.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
+        titleTextStyle: TextStyle(
+          fontFamily: 'DMSans',
+          fontSize: 17,
+          fontWeight: FontWeight.w700,
+          color: colors.textPrimary,
+        ),
+      ),
+      actionIconTheme: ActionIconThemeData(
+        backButtonIconBuilder: (_) => const Icon(CupertinoIcons.back),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: colors.card,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: colors.card,
@@ -149,8 +175,24 @@ abstract final class VivordoTheme {
         filled: true,
         fillColor: colors.input,
         hintStyle: TextStyle(color: colors.textSecondary),
+        border: OutlineInputBorder(
+          borderSide: BorderSide(color: colors.border),
+          borderRadius: BorderRadius.circular(14),
+        ),
         enabledBorder: OutlineInputBorder(
           borderSide: BorderSide(color: colors.border),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: colors.border.withValues(alpha: .5)),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderSide: const BorderSide(color: Color(0xFFFF3B30)),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderSide: const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
           borderRadius: BorderRadius.circular(14),
         ),
         focusedBorder: OutlineInputBorder(
@@ -163,11 +205,22 @@ abstract final class VivordoTheme {
         displayColor: colors.textPrimary,
         fontFamily: 'DMSans',
       ),
+      // Toasts: a floating capsule that clears the floating tab bar.
       snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 104),
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         backgroundColor: brightness == Brightness.dark
             ? const Color(0xFFF0EDF8)
             : const Color(0xFF29272F),
+        actionTextColor: brightness == Brightness.dark
+            ? const Color(0xFF534AB7)
+            : const Color(0xFFAFA9EC),
         contentTextStyle: TextStyle(
+          fontFamily: 'DMSans',
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
           color: brightness == Brightness.dark
               ? const Color(0xFF29272F)
               : Colors.white,
@@ -177,13 +230,20 @@ abstract final class VivordoTheme {
   }
 }
 
-/// Keeps the selected appearance in the signed-in user's Firestore profile.
+/// Keeps the selected appearance, and whether scores show as numbers or
+/// words, in the signed-in user's Firestore profile.
 class ThemeController extends ChangeNotifier {
   ThemeMode _mode = ThemeMode.system;
+  bool _showScoreNumbers = true;
   String? _boundUid;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
 
   ThemeMode get mode => _mode;
+
+  /// False in words mode (`preferences.showScoreNumbers`, on unless
+  /// switched off): scores show as sentences and state chips. Measurements
+  /// (sleep, heart rate, steps) always show.
+  bool get showScoreNumbers => _showScoreNumbers;
 
   String get modeLabel => switch (_mode) {
     ThemeMode.system => 'System Default',
@@ -199,6 +259,7 @@ class ThemeController extends ChangeNotifier {
 
     if (user == null) {
       _setMode(ThemeMode.system);
+      _setShowScoreNumbers(true);
       return;
     }
 
@@ -223,7 +284,23 @@ class ThemeController extends ChangeNotifier {
             _ => ThemeMode.system,
           };
           _setMode(nextMode);
+          _setShowScoreNumbers(preferences?['showScoreNumbers'] != false);
         });
+  }
+
+  Future<void> setShowScoreNumbers(bool show) async {
+    _setShowScoreNumbers(show);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      'preferences.showScoreNumbers': show,
+    });
+  }
+
+  void _setShowScoreNumbers(bool show) {
+    if (_showScoreNumbers == show) return;
+    _showScoreNumbers = show;
+    notifyListeners();
   }
 
   Future<void> setMode(ThemeMode mode) async {

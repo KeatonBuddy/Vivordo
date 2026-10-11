@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'package:vivordo_health/src/services/hourly_calendar_load.dart';
@@ -93,7 +96,36 @@ void main() {
   });
   test('cross-hour transition and continuous run are retained', () {
     final hour = calculate([event('a', -60, 0), event('b', 0, 60)]).single;
-    expect(hour.pressure, 12.5);
+    // Back-to-back +10 for the first 30 min (300) + run ramp 60→120 (150).
+    expect(hour.pressure, 7.5);
+  });
+  test('every back-to-back costs the same, whatever its length', () {
+    double bump(int length) {
+      final hour = calculate([
+        event('a', 0, 20),
+        event('b', 20, 20 + length),
+      ]).single;
+      return hour.pressure * hour.occupiedMinutes;
+    }
+
+    expect(bump(10), closeTo(300, 1e-9));
+    expect(bump(30), closeTo(300, 1e-9));
+    expect(bump(40), closeTo(300, 1e-9));
+  });
+  test('gaps under 15 minutes keep a run going; 15 minutes resets it', () {
+    final chained = calculate([
+      event('a', 0, 55),
+      event('b', 60, 115),
+      event('c', 120, 175),
+    ], hours: 3);
+    final rested = calculate([
+      event('a', 0, 45),
+      event('b', 60, 105),
+      event('c', 120, 165),
+    ], hours: 3);
+    expect(chained[1].continuousPressurePoints, greaterThan(0));
+    expect(chained[2].continuousPressurePoints, greaterThan(2));
+    expect(rested.map((h) => h.continuousPressurePoints), [0, 0, 0]);
   });
   test(
     'invalid, declined, cancelled, free and all-day events do not occupy time',
@@ -134,5 +166,68 @@ void main() {
       json['classifier_version'],
       CalendarCognitiveLoadService.classifierVersion,
     );
+    // The stress backend returns 422 for any other version.
+    expect(json['version'], 1);
+  });
+
+  test('matches the server\'s Effort calculator (shared fixture)', () {
+    // functions/test/effort.test.js checks the same cases.
+    final fixture =
+        jsonDecode(
+              File('test/fixtures/calendar_load_cases.json').readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final origin = DateTime.utc(2026, 1, 1);
+    for (final c in (fixture['cases'] as List).cast<Map<String, dynamic>>()) {
+      final events = <CalendarCognitiveEvent>[];
+      final scores = <CognitiveLoadScore>[];
+      for (final (i, e) in (c['events'] as List).indexed) {
+        final [start, end, rating] = (e as List).cast<num>();
+        events.add(
+          CalendarCognitiveEvent(
+            id: 'e$i',
+            title: 'Event',
+            start: origin.add(Duration(minutes: start.toInt())),
+            end: origin.add(Duration(minutes: end.toInt())),
+          ),
+        );
+        scores.add(
+          CognitiveLoadScore(
+            eventId: 'e$i',
+            score: rating.toInt(),
+            category: 'collaboration',
+            reason: 'fixture',
+            usedAi: false,
+            confidence: 0.85,
+          ),
+        );
+      }
+      final hours = HourlyCalendarLoadCalculator.calculate(
+        events: events,
+        scores: scores,
+        from: origin,
+        until: origin.add(Duration(hours: c['hours'] as int)),
+        asOf: origin.add(Duration(minutes: c['asOf'] as int)),
+      );
+      expect(
+        [for (final h in hours) ((h.score ?? 0) * 10).round() / 10],
+        [for (final v in c['expected'] as List) (v as num).toDouble()],
+        reason: c['name'] as String,
+      );
+    }
+  });
+
+  test('a break adds nothing and keeps the next event off back-to-back', () {
+    final meetings = [
+      event('a', 0, 30, title: 'Team meeting'),
+      event('b', 45, 60, title: 'Team meeting'),
+    ];
+    final withBreak = calculate([
+      ...meetings,
+      event('break', 30, 45, title: 'Break'),
+    ]).single;
+    final without = calculate(meetings).single;
+    expect(withBreak.score, without.score);
+    expect(withBreak.backToBackTransitions, 0);
   });
 }

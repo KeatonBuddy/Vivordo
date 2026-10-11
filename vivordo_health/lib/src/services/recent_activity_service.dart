@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:vivordo_health/src/services/workout_service.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 
 class RecentActivity {
   const RecentActivity({
@@ -59,7 +61,8 @@ class RecentActivityService {
         );
   }
 
-  static Future<void> add({
+  /// False when saved on the phone but still waiting to sync.
+  static Future<bool> add({
     required String name,
     required int minutes,
     required DateTime day,
@@ -83,15 +86,29 @@ class RecentActivityService {
       'sets': sets,
       'createdAt': FieldValue.serverTimestamp(),
     };
-    final user = FirebaseAuth.instance.currentUser!;
-    final circleDocument = FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
+    final goalDay = localDayKey(day);
+    final userReference = collection.parent!;
+    final circleDocument = userReference
         .collection('circle_activity')
         .doc(document.id);
-    final batch = FirebaseFirestore.instance.batch();
-    batch.set(document, activityData);
-    batch.set(circleDocument, {...activityData, 'kind': 'activity'});
-    await batch.commit();
+    final dailyReference = userReference
+        .collection('metrics_daily')
+        .doc(goalDay);
+    // Logged minutes count toward the Exercise ring the same way a tracked
+    // workout's do; exerciseGoalDay/Minutes record what to undo on delete.
+    // A batch, not a transaction, so it works offline and syncs later.
+    final batch = FirebaseFirestore.instance.batch()
+      ..set(document, {
+        ...activityData,
+        'exerciseGoalDay': goalDay,
+        'exerciseGoalMinutes': minutes,
+      })
+      ..set(circleDocument, {...activityData, 'kind': 'activity'})
+      ..set(dailyReference, {
+        'exercise_time': exerciseTimeIncrement(minutes),
+        'date': goalDay,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    return syncedOrQueued(batch.commit());
   }
 }

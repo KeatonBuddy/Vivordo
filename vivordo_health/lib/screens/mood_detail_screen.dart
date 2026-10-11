@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 
@@ -31,8 +33,6 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     _ => 'Monthly',
   };
 
-  String _dayKey(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
-
   Stream<QuerySnapshot<Map<String, dynamic>>> _moodStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -42,8 +42,11 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
         .collection('users')
         .doc(uid)
         .collection('metrics_daily')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: _dayKey(oldest))
-        .where(FieldPath.documentId, isLessThanOrEqualTo: _dayKey(now))
+        .where(
+          FieldPath.documentId,
+          isGreaterThanOrEqualTo: localDayKey(oldest),
+        )
+        .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(now))
         .orderBy(FieldPath.documentId)
         .snapshots();
   }
@@ -52,7 +55,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     if (_rangeIndex == 0) {
       final todayDoc = (snapshot?.docs ?? const [])
-          .where((doc) => doc.id == _dayKey(today))
+          .where((doc) => doc.id == localDayKey(today))
           .firstOrNull;
       final mood = todayDoc?.data()['mood'] as Map?;
       final entries = <_MoodDay>[];
@@ -77,7 +80,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     }
     return List.generate(_rangeDays, (index) {
       final date = today.subtract(Duration(days: _rangeDays - index - 1));
-      return _MoodDay(date, values[_dayKey(date)] ?? 0);
+      return _MoodDay(date, values[localDayKey(date)] ?? 0);
     });
   }
 
@@ -90,10 +93,39 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
           final date = DateTime.tryParse(doc.id);
           return date != null && date.isBefore(cutoff);
         })
-        .map(
-          (doc) => ((doc.data()['mood'] as Map?)?['avg'] as num?)?.round() ?? 0,
-        )
+        // Days without a check-in aren't a mood of 0.
+        .map((doc) => ((doc.data()['mood'] as Map?)?['avg'] as num?)?.round())
+        .whereType<int>()
         .toList();
+  }
+
+  /// Each day's average mood by date, for the insight.
+  DayValues _dayValues(QuerySnapshot<Map<String, dynamic>>? snapshot) => {
+    for (final doc in snapshot?.docs ?? const [])
+      if (((doc.data()['mood'] as Map?)?['avg'] as num?) case final v?)
+        ?DateTime.tryParse(doc.id): v.toDouble(),
+  };
+
+  /// Today's check-ins, oldest first.
+  List<MoodCheckIn> _todayCheckIns(
+    QuerySnapshot<Map<String, dynamic>>? snapshot,
+  ) {
+    final today = localDayKey(DateTime.now());
+    final mood =
+        (snapshot?.docs ?? const [])
+                .where((doc) => doc.id == today)
+                .firstOrNull
+                ?.data()['mood']
+            as Map?;
+    return [
+      for (final raw in mood?['entries'] as List? ?? const [])
+        if (raw is Map && raw['score'] is num && raw['timestamp'] is Timestamp)
+          MoodCheckIn(
+            (raw['timestamp'] as Timestamp).toDate(),
+            (raw['score'] as num).toDouble(),
+            raw['label'] as String?,
+          ),
+    ]..sort((a, b) => a.at.compareTo(b.at));
   }
 
   @override
@@ -123,13 +155,27 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
           }
           final data = _rangeData(snapshot.data);
           final usualValues = _usualValues(snapshot.data);
-          return _buildContent(data, usualValues);
+          return _buildContent(
+            data,
+            usualValues,
+            moodInsight(
+              values: _dayValues(snapshot.data),
+              todayCheckIns: _todayCheckIns(snapshot.data),
+              today: DateTime.now(),
+              rangeDays: _rangeDays,
+              time: (t) => DateFormat('h:mm a').format(t),
+            ),
+          );
         },
       ),
     );
   }
 
-  Widget _buildContent(List<_MoodDay> data, List<int> usualValues) {
+  Widget _buildContent(
+    List<_MoodDay> data,
+    List<int> usualValues,
+    DetailInsight insight,
+  ) {
     final recorded = data.where((day) => day.moodScore > 0).toList();
     final total = recorded.fold<int>(0, (total, day) => total + day.moodScore);
     final average = recorded.isEmpty ? 0 : (total / recorded.length).round();
@@ -182,7 +228,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
-          _insightCard(best),
+          _insightCard(insight),
         ],
       ),
     );
@@ -359,17 +405,17 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     );
   }
 
-  Widget _insightCard(_MoodDay? best) {
-    final text = best == null || best.moodScore == 0
-        ? 'Log how you feel to begin building your mood trend.'
-        : 'You felt your best on ${DateFormat('EEEE').format(best.date)}.';
+  Widget _insightCard(DetailInsight insight) {
+    final (icon, color) = insightStyle(insight.tone);
     return _card(
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          _iconBubble(Icons.trending_up_rounded, const Color(0xFF20B26B)),
+          _iconBubble(icon, color),
           const SizedBox(width: 14),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 16))),
+          Expanded(
+            child: Text(insight.text, style: const TextStyle(fontSize: 16)),
+          ),
         ],
       ),
     );

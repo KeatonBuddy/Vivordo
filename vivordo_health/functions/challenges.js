@@ -249,6 +249,16 @@ exports.createChallenge = onCall(async (request) => {
     );
   }
 
+  const blockSnapshots = await db.getAll(
+      ...input.invitees.flatMap((uid) => [
+        db.doc(`circle_blocks/${creatorUid}/users/${uid}`),
+        db.doc(`circle_blocks/${uid}/users/${creatorUid}`),
+      ]),
+  );
+  if (blockSnapshots.some((snapshot) => snapshot.exists)) {
+    throw new HttpsError("permission-denied", "Cannot invite this user.");
+  }
+
   const profileUids = [creatorUid, ...input.invitees];
   const profileSnapshots = await db.getAll(
       ...profileUids.map((uid) => profileReference(db, uid)),
