@@ -233,6 +233,18 @@ String seriesDescription(List<MeetingReaction> events) {
   ].join(' · ');
 }
 
+/// A day the body was clearly off all day (resting heart rate 5+ bpm over
+/// normal, or HRV at 85% of normal or under), from its scores_daily
+/// `capacity`: events that day aren't judged against themselves.
+bool bodyOffDay(Object? capacity) {
+  if (capacity is! Map) return false;
+  double? n(String key) => (capacity[key] as num?)?.toDouble();
+  final rhr = n('restingHr'), rhrNormal = n('restingHrNormal');
+  final hrv = n('hrv'), hrvNormal = n('hrvNormal');
+  return (rhr != null && rhrNormal != null && rhr >= rhrNormal + 5) ||
+      (hrv != null && hrvNormal != null && hrv <= hrvNormal * .85);
+}
+
 /// Patterns from saved reactions: repeating series (4+ times) and kinds of
 /// event (8+), consistent in direction. The top 3 each way, strongest
 /// first; a kind is skipped when a shown series makes up most of it.

@@ -58,7 +58,7 @@
 <section class="first">
   <div class="kicker">Vivordo · Internal reference</div>
   <h1>How Vivordo's scores work</h1>
-  <p class="lede">What each score means, what goes into it, how it's calculated, and when it updates. Accurate as of the build of October 7, 2026.</p>
+  <p class="lede">What each score means, what goes into it, how it's calculated, and when it updates. Accurate as of the build of October 10, 2026.</p>
 
   <table class="toc">
     <tr><th>Score</th><th>The question it answers</th><th>Range</th><th>Where you see it</th><th>Updates</th></tr>
@@ -320,10 +320,25 @@
   <h3>Meeting patterns</h3>
   <ul>
     <li><b>Which meetings raise your heart rate or keep it lower,</b> from the last 90 days of saved reactions, worked out on the phone. A repeating meeting needs 4 measured times; a kind of meeting (a category, 1:1s, 3–5 or 6+ people, before 10 AM, after 4 PM, 90+ minutes) needs 8.</li>
-    <li><b>Up:</b> its median heart rate is 5+ bpm over your usual and 70% of times were above it. <b>Lower:</b> 3+ bpm under, with 70% below. The top 3 each way; a kind made mostly of events already listed is skipped.</li>
+    <li><b>Up:</b> its median heart rate is 5+ bpm over your usual and 70% of times were above it. <b>Lower:</b> 3+ bpm under, with 70% below. The top 3 each way; a kind made mostly of events already listed is skipped. Days your body was off (resting heart rate 5+ bpm over normal, or HRV at 85% of normal or under) aren't counted against that day's meetings.</li>
     <li><b>Where you see it:</b> a tag on today's upcoming repeating meetings on My Day ("Heart rate usually up" or "Heart rate usually lower", matching the "Heart rate up" chip on past events), and one row in Home's Your Day naming today's meeting. Both open a sheet with each measured time, and from there the full list. Names come from your own calendar on the phone; the saved data has none.</li>
     <li><b>Heavy meeting days</b> (4+ hours of events) against your other weekdays: that night's sleep and the next morning's Capacity, once there are 6 heavy days and 10 lighter ones.</li>
   </ul>
+</section>
+
+<section>
+  <div class="kicker">My Day on Sundays · Journal</div>
+  <h2>Weekly review</h2>
+  <p class="question">How did my week go, and what's next week like?</p>
+  <p>Each Sunday, once the morning check-in is answered or dismissed (or from noon), My Day shows a review of the week just ended, <b>Sunday to Saturday</b>. It needs Capacity on 4 of the 7 days. Your <b>usual</b> is the median Capacity of the 28 days before, and a <b>heavy day</b> is Effort 15+ over it, as in the brief.</p>
+  <ul>
+    <li><b>Headline, first that fits:</b> sick and 2+ low days ("A tough week while you were unwell"); training load High or Strained, or the burnout check at Watch or Warning ("A week that asked a lot"); 3+ heavy days ("A heavy week you handled well", or "… that wore on you" when your mornings slid 5+ points); 5 of 7 nights on target ("A good week for sleep"); no heavy days and Capacity near usual ("A lighter, steadier week"); otherwise "A mixed week".</li>
+    <li><b>What drained you, up to 3:</b> sick or travel nights, the heaviest day, a big day, a repeating meeting that raised your heart rate 7+ bpm, late nights before low days, after-hours time well over your usual week, high training load, and a priority open 3+ days.</li>
+    <li><b>What helped, up to 3:</b> sleeping your need (when the next mornings were 5+ higher), using day fixes twice or more, calmer meetings or focus blocks, and a steady training week.</li>
+    <li><b>Body signals only as a reason:</b> a low day is Capacity 8+ under usual, and the body is named only when it caused most of the drop. On an off day (resting heart rate 5+ bpm up, or HRV at 85% of normal or under), meetings aren't counted against you, and the review says so.</li>
+    <li><b>Next week:</b> each weekday's Demand from your calendar and priorities as <span class="pill">Light</span> (15+ under usual), <span class="pill">About usual</span> or <span class="pill">More than your usual</span> (15+ over), with one suggestion, and a button to plan it with Vivordo AI.</li>
+  </ul>
+  <p class="note">Saved once per week with no event titles (meetings are named from your calendar when you open it). Your answer to "Anything else going on this week?" is saved with it and mentioned in next week's. Journal lists each review on its Sunday. A reminder comes Sundays at 11 AM unless you turn it off.</p>
 </section>
 
 <section>
@@ -356,6 +371,7 @@
     <tr><td>Stress</td><td>Vivordo's stress service</td><td>Daily metrics</td></tr>
     <tr><td>Capacity, Effort, Physical Health, burnout check, heart-rate load, training load</td><td>Vivordo's servers (Cloud Functions)</td><td>scores_daily/{day}</td></tr>
     <tr><td>Event reactions</td><td>On the phone</td><td>event_reactions/{day}, no titles</td></tr>
+    <tr><td>Weekly review</td><td>On the phone, once a week</td><td>weekly_reviews/{Sunday}, no titles</td></tr>
     <tr><td>Demand, Your Day words, Heart insight</td><td>On the phone</td><td>Not stored</td></tr>
   </table>
 </section>

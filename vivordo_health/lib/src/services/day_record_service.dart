@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 
+import '../utils/day_effort.dart';
 import '../utils/day_key.dart';
 import '../utils/day_wrap_up.dart';
 import 'calendar_cognitive_load_service.dart';
@@ -235,6 +236,23 @@ class DayRecordService {
       await target.set({...record, 'updatedAt': FieldValue.serverTimestamp()});
       _written[target.path] = record;
     }
+  }
+
+  /// The connected calendars' rated events from [from] to [until] as Demand
+  /// items, as the day record counts them: the weekly review prices the
+  /// week ahead with these. Empty when signed out.
+  static Future<List<EffortItem>> plannedItems(
+    DateTime from,
+    DateTime until,
+  ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const [];
+    final calendar = await _fetchCalendar(uid, from, until, false);
+    return [
+      for (final e in calendar.events)
+        if (e.event.contributesToSchedule && e.score.category != 'rest')
+          (event: e.event, score: e.score, done: false, open: false),
+    ];
   }
 
   /// Fetches and rates the connected calendars' events from [from] to

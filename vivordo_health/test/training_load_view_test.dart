@@ -52,6 +52,7 @@ void main() {
     expect(view.vsUsual, 'About your usual');
     expect(view.days, hasLength(7));
     expect(view.bodyRows.single.value, 'HRV and resting HR normal');
+    expect(view.bodyExplanation, isNull);
     expect(view.measuredBy, 'Measured by heart rate');
   });
 
@@ -81,6 +82,19 @@ void main() {
       'Low 2 of the last 3 mornings',
       '+4 bpm today',
     ]);
+    expect(view.bodyExplanation, contains('HRV (heart rate variability)'));
+    expect(view.bodyExplanation, contains('Resting heart rate is'));
+    expect(
+      TrainingLoadView.fromMap(
+        record('high', body: {'mornings': 3, 'hrvLow': 0, 'restingHigh': 2}),
+        'd',
+      )!.bodyExplanation,
+      allOf(
+        startsWith('Resting heart rate is'),
+        isNot(contains('HRV')),
+        contains("It's compared with your own normal"),
+      ),
+    );
     expect(view.chatContext, contains('1.60× the usual week'));
     expect(
       TrainingLoadView.fromMap(record('high', ratio: 2.4), 'd')!.summary,
@@ -95,6 +109,7 @@ void main() {
     )!;
     expect(view.vsUsual, '−38% vs your usual');
     expect(view.bodyRows, isEmpty);
+    expect(view.bodyExplanation, isNull);
   });
 
   test('burnout names training load and suggests an easier week', () {
@@ -141,7 +156,43 @@ void main() {
     await tester.tap(find.text('Details ›'));
     await tester.pumpAndSettle();
     expect(find.byType(TrainingLoadCard), findsOneWidget);
-    expect(find.text('HOW THIS WORKS'), findsOneWidget);
     expect(find.text('+60% vs your usual'), findsOneWidget);
+    // A normal body needs no explanation.
+    expect(find.text('WHAT YOUR BODY IS SAYING'), findsNothing);
+  });
+
+  testWidgets('the body explanation is in the sheet, not on the card', (
+    tester,
+  ) async {
+    final view = TrainingLoadView.fromMap(
+      record(
+        'strained',
+        ratio: 1.6,
+        hardDays: 4,
+        body: {'mornings': 3, 'hrvLow': 2, 'restingHigh': 0},
+      ),
+      '2026-09-30',
+    )!;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: SingleChildScrollView(
+              child: TrainingLoadCard(
+                view: view,
+                onTap: () => showTrainingLoadDetails(context, view),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.textContaining('HRV (heart rate variability)'), findsNothing);
+
+    await tester.tap(find.byType(TrainingLoadCard));
+    await tester.pumpAndSettle();
+    expect(find.text('WHAT YOUR BODY IS SAYING'), findsOneWidget);
+    expect(find.textContaining('HRV (heart rate variability)'), findsOneWidget);
   });
 }

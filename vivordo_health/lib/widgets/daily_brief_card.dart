@@ -25,10 +25,14 @@ class DailyBriefCard extends StatelessWidget {
     required this.footer,
     this.onDetails,
     this.now,
+    this.words,
   });
 
   final String headline, summary, capacityLabel, scheduleLabel, footer;
   final int? capacityScore, scheduleScore;
+
+  /// Words mode: state rows instead of the score rings.
+  final BriefWords? words;
   final VoidCallback? onDetails;
 
   /// The time the sun is drawn for; defaults to now. My Day rebuilds every
@@ -100,40 +104,49 @@ class DailyBriefCard extends StatelessWidget {
               const SizedBox(height: 16),
               const Divider(color: Colors.white24, height: 1),
               const SizedBox(height: 16),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final capacity = _BriefScore(
-                    title: 'CAPACITY',
-                    semanticTitle: 'Daily capacity',
-                    score: capacityScore,
-                    label: capacityLabel,
-                  );
-                  final schedule = _BriefScore(
-                    title: 'DEMAND',
-                    semanticTitle: 'Schedule demand',
-                    score: scheduleScore,
-                    label: scheduleLabel,
-                  );
-                  if (constraints.maxWidth < 280 ||
-                      MediaQuery.textScalerOf(context).scale(12) > 19) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              if (words case final words?)
+                Column(
+                  children: [
+                    _BriefStateRow('Energy', words.energy),
+                    const SizedBox(height: 8),
+                    _BriefStateRow(words.loadTitle, words.load),
+                  ],
+                )
+              else
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final capacity = _BriefScore(
+                      title: 'CAPACITY',
+                      semanticTitle: 'Daily capacity',
+                      score: capacityScore,
+                      label: capacityLabel,
+                    );
+                    final schedule = _BriefScore(
+                      title: 'DEMAND',
+                      semanticTitle: 'Schedule demand',
+                      score: scheduleScore,
+                      label: scheduleLabel,
+                    );
+                    if (constraints.maxWidth < 280 ||
+                        MediaQuery.textScalerOf(context).scale(12) > 19) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          capacity,
+                          const SizedBox(height: 12),
+                          schedule,
+                        ],
+                      );
+                    }
+                    return Row(
                       children: [
-                        capacity,
-                        const SizedBox(height: 12),
-                        schedule,
+                        Expanded(child: capacity),
+                        const SizedBox(width: 10),
+                        Expanded(child: schedule),
                       ],
                     );
-                  }
-                  return Row(
-                    children: [
-                      Expanded(child: capacity),
-                      const SizedBox(width: 10),
-                      Expanded(child: schedule),
-                    ],
-                  );
-                },
-              ),
+                  },
+                ),
               const SizedBox(height: 12),
               InkWell(
                 onTap: onDetails,
@@ -167,6 +180,96 @@ class DailyBriefCard extends StatelessWidget {
       ],
     ),
   );
+}
+
+enum BriefTone { good, usual, low }
+
+typedef BriefState = ({String word, BriefTone tone});
+
+/// Words mode's brief: Energy and today's (or tomorrow's) load as states.
+typedef BriefWords = ({BriefState energy, String loadTitle, BriefState load});
+
+/// Today's Capacity as a state: against your usual when known (8 points
+/// either way, as the weekly review's low days), else by its own bands.
+BriefState briefEnergyState({
+  required int? capacity,
+  required int? usual,
+  required bool recovering,
+}) {
+  if (capacity == null) {
+    return (word: 'Needs health data', tone: BriefTone.usual);
+  }
+  if (recovering) return (word: 'Recovering', tone: BriefTone.low);
+  if (usual != null) {
+    return capacity <= usual - 8
+        ? (word: 'Lower than usual', tone: BriefTone.low)
+        : capacity >= usual + 8
+        ? (word: 'Higher than usual', tone: BriefTone.good)
+        : (word: 'Your usual', tone: BriefTone.usual);
+  }
+  return capacity >= 80
+      ? (word: 'High', tone: BriefTone.good)
+      : capacity >= 50
+      ? (word: 'Moderate', tone: BriefTone.usual)
+      : (word: 'Low', tone: BriefTone.low);
+}
+
+/// Demand against the Capacity it's set beside, ±15 as the headline.
+BriefState briefLoadState({required double? demand, required int? capacity}) {
+  if (demand == null) return (word: 'Plan unavailable', tone: BriefTone.usual);
+  if (capacity == null) {
+    return (word: demand < 40 ? 'Light' : 'Full', tone: BriefTone.usual);
+  }
+  return demand <= capacity - 15
+      ? (word: 'Light', tone: BriefTone.good)
+      : demand > capacity + 15
+      ? (word: 'Heavy', tone: BriefTone.low)
+      : (word: 'Full', tone: BriefTone.usual);
+}
+
+class _BriefStateRow extends StatelessWidget {
+  const _BriefStateRow(this.title, this.state);
+
+  final String title;
+  final BriefState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final (background, foreground) = switch (state.tone) {
+      BriefTone.good => (const Color(0xFFE1F5EE), const Color(0xFF085041)),
+      BriefTone.low => (const Color(0xFFFAEEDA), const Color(0xFF633806)),
+      BriefTone.usual => (const Color(0xFFEEEDFE), const Color(0xFF3C3489)),
+    };
+    return Semantics(
+      label: '$title: ${state.word}',
+      excludeSemantics: true,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Text(
+              state.word,
+              style: TextStyle(
+                color: foreground,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _BriefScore extends StatelessWidget {

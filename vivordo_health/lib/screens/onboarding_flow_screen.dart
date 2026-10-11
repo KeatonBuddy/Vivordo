@@ -41,6 +41,7 @@ enum OnboardingStep {
   wearables,
   calendar,
   ai,
+  scores,
   notifications,
 }
 
@@ -107,6 +108,10 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       true;
   late bool _whoop = widget.userDoc?['whoopConnected'] == true;
   late bool _fitbit = widget.userDoc?['fitbitConnected'] == true;
+
+  /// Numbers (the default) or words mode (`preferences.showScoreNumbers`).
+  late bool _showNumbers =
+      (widget.userDoc?['preferences'] as Map?)?['showScoreNumbers'] != false;
   bool _google = false;
   bool _aiOn = false;
 
@@ -613,6 +618,41 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         ),
       ],
     ),
+    OnboardingStep.scores => _StepLayout(
+      kicker: 'YOUR SCORES',
+      title: 'How do you want to see your scores?',
+      body: 'You can change this any time in Settings.',
+      primary: 'Continue',
+      onPrimary: _busy
+          ? null
+          : () => _next(
+              () => _userRef.set({
+                'preferences': {'showScoreNumbers': _showNumbers},
+              }, SetOptions(merge: true)),
+            ),
+      children: [
+        _ScoreStyleOption(
+          title: 'Numbers',
+          example: 'Stress 47%, Capacity 78, Demand 18',
+          selected: _showNumbers,
+          onTap: () => setState(() => _showNumbers = true),
+        ),
+        const SizedBox(height: 10),
+        _ScoreStyleOption(
+          title: 'Words',
+          example:
+              '"A bit tense. Your usual energy, a light day." The same '
+              'insights, nothing to chase.',
+          selected: !_showNumbers,
+          onTap: () => setState(() => _showNumbers = false),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Hours slept, heart rate and steps always show.',
+          style: TextStyle(fontSize: 12, color: _grey),
+        ),
+      ],
+    ),
     OnboardingStep.notifications => _StepLayout(
       kicker: 'ALMOST DONE',
       title: 'Stay in the loop',
@@ -873,6 +913,80 @@ class _StepLayout extends StatelessWidget {
         ),
       ),
     ],
+  );
+}
+
+/// One way to see scores, picked like a radio button.
+class _ScoreStyleOption extends StatelessWidget {
+  const _ScoreStyleOption({
+    required this.title,
+    required this.example,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String title, example;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    selected: selected,
+    label: '$title. $example',
+    excludeSemantics: true,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFF3F1FF) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? _purple : _line,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: _ink,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    example,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.35,
+                      color: _grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(
+              selected
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: selected ? _purple : _line,
+            ),
+          ],
+        ),
+      ),
+    ),
   );
 }
 

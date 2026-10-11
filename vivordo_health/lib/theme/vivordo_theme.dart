@@ -230,13 +230,20 @@ abstract final class VivordoTheme {
   }
 }
 
-/// Keeps the selected appearance in the signed-in user's Firestore profile.
+/// Keeps the selected appearance, and whether scores show as numbers or
+/// words, in the signed-in user's Firestore profile.
 class ThemeController extends ChangeNotifier {
   ThemeMode _mode = ThemeMode.system;
+  bool _showScoreNumbers = true;
   String? _boundUid;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
 
   ThemeMode get mode => _mode;
+
+  /// False in words mode (`preferences.showScoreNumbers`, on unless
+  /// switched off): scores show as sentences and state chips. Measurements
+  /// (sleep, heart rate, steps) always show.
+  bool get showScoreNumbers => _showScoreNumbers;
 
   String get modeLabel => switch (_mode) {
     ThemeMode.system => 'System Default',
@@ -252,6 +259,7 @@ class ThemeController extends ChangeNotifier {
 
     if (user == null) {
       _setMode(ThemeMode.system);
+      _setShowScoreNumbers(true);
       return;
     }
 
@@ -276,7 +284,23 @@ class ThemeController extends ChangeNotifier {
             _ => ThemeMode.system,
           };
           _setMode(nextMode);
+          _setShowScoreNumbers(preferences?['showScoreNumbers'] != false);
         });
+  }
+
+  Future<void> setShowScoreNumbers(bool show) async {
+    _setShowScoreNumbers(show);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      'preferences.showScoreNumbers': show,
+    });
+  }
+
+  void _setShowScoreNumbers(bool show) {
+    if (_showScoreNumbers == show) return;
+    _showScoreNumbers = show;
+    notifyListeners();
   }
 
   Future<void> setMode(ThemeMode mode) async {

@@ -4,6 +4,7 @@ import 'package:vivordo_health/src/utils/daily_brief_metrics.dart';
 import 'package:vivordo_health/src/utils/home_metrics_summary.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/src/utils/screen_metric_projection.dart';
+import 'package:vivordo_health/src/utils/sleep_nights.dart';
 
 Object? field(Map<String, dynamic> data, String path) {
   Object? value = data;
@@ -259,6 +260,23 @@ void main() {
       expectBrief(next.summarize(tomorrow), old.summarize(tomorrow));
     },
   );
+
+  test('Home history keeps hours asleep for the energy forecast', () {
+    final night = {
+      'sleep': {
+        'avg': 5.3,
+        'bedtime': Timestamp.fromDate(DateTime(2026, 10, 10, 0, 46)),
+        'wakeTime': Timestamp.fromDate(DateTime(2026, 10, 10, 7)),
+        'entries': [1, 2, 3],
+      },
+    };
+    final projected = projectScreenFields(
+      (path) => field(night, path),
+      MetricsProjection.homeHistory,
+      isToday: false,
+    );
+    expect(sleepNights([projected]).single.asleepHours, 5.3);
+  });
 
   test('large irrelevant histories are never traversed by screen projections', () {
     final data = <String, dynamic>{

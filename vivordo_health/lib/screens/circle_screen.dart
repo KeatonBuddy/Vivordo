@@ -6,7 +6,7 @@ import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:vivordo_health/src/data/exercise_library.dart';
+import 'package:vivordo_health/src/services/exercise_catalog_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/activity_goals_service.dart';

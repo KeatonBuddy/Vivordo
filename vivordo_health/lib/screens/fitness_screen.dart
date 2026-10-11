@@ -17,13 +17,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
-import 'package:vivordo_health/src/data/exercise_library.dart';
 
 import '../src/services/activity_goals_service.dart';
 import '../src/services/active_workout_storage.dart';
 import '../src/services/health_service.dart';
 import '../src/services/recent_activity_service.dart';
+import '../src/services/exercise_catalog_service.dart';
 import '../src/services/workout_service.dart';
+import '../src/utils/custom_exercise_backfill.dart';
+import '../src/utils/exercise_picker_results.dart';
 import '../src/services/personal_profile_service.dart';
 import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
@@ -3070,14 +3072,20 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
 }
 
 class _ExerciseDefinition {
-  const _ExerciseDefinition({required this.name, required this.category});
+  const _ExerciseDefinition({
+    required this.name,
+    required this.category,
+    this.isCustom = false,
+  });
 
   final String name;
   final String category;
-}
 
-String _exerciseNameKey(String value) =>
-    value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+  /// True for exercises the user created, false for catalog defaults.
+  /// Derived from the source the exercise was loaded from, never persisted on
+  /// the workout record.
+  final bool isCustom;
+}
 
 String _compactWorkoutNumber(double value) =>
     value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
@@ -3521,12 +3529,28 @@ class _WorkoutSetRow extends StatelessWidget {
   );
 }
 
-final List<_ExerciseDefinition> _exerciseLibrary = List.unmodifiable(
-  workoutExerciseCatalog.map(
-    (exercise) =>
-        _ExerciseDefinition(name: exercise.name, category: exercise.category),
-  ),
-);
+List<WorkoutExerciseCatalogItem>? _librarySource;
+List<_ExerciseDefinition>? _libraryCache;
+
+/// The default exercises, mapped once per catalog load.
+///
+/// ExerciseCatalogService publishes one immutable list, so identity is a sound
+/// cache key and the picker does not remap 1,128 entries on every build.
+List<_ExerciseDefinition> get _exerciseLibrary {
+  final source = ExerciseCatalogService.defaults;
+  if (!identical(source, _librarySource)) {
+    _librarySource = source;
+    _libraryCache = source
+        .map(
+          (exercise) => _ExerciseDefinition(
+            name: exercise.name,
+            category: exercise.category,
+          ),
+        )
+        .toList(growable: false);
+  }
+  return _libraryCache!;
+}
 
 class _AddExerciseScreen extends StatefulWidget {
   const _AddExerciseScreen({this.initiallySelected = const []});
@@ -3540,7 +3564,7 @@ class _AddExerciseScreen extends StatefulWidget {
 class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   static const _filters = [
     'All',
-    'Favourites',
+    favouritesFilter,
     'Chest',
     'Back',
     'Shoulders',
@@ -3587,7 +3611,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   }
 
   Future<void> _toggleFavourite(_ExerciseDefinition exercise) async {
-    final key = _exerciseNameKey(exercise.name);
+    final key = exerciseNameKey(exercise.name);
     if (!_favouritesLoaded ||
         _savingFavourites.contains(key) ||
         FirebaseAuth.instance.currentUser?.uid != _favouritesUid) {
@@ -3632,27 +3656,36 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
         .map((exercise) => exercise.name)
         .toList();
     final libraryNames = _exerciseLibrary
-        .map((exercise) => _exerciseNameKey(exercise.name))
+        .map((exercise) => exerciseNameKey(exercise.name))
         .toSet();
     _customExercises.addAll(
-      widget.initiallySelected.where(
-        (exercise) => !libraryNames.contains(_exerciseNameKey(exercise.name)),
-      ),
+      widget.initiallySelected
+          .where(
+            (exercise) =>
+                !libraryNames.contains(exerciseNameKey(exercise.name)),
+          )
+          .map(
+            (exercise) => _ExerciseDefinition(
+              name: exercise.name,
+              category: exercise.category,
+              isCustom: true,
+            ),
+          ),
     );
     unawaited(_loadCustomExercises());
     unawaited(_loadFavourites());
   }
 
   Future<void> _loadCustomExercises() async {
-    final recovered = <_ExerciseDefinition>[];
+    // Retries a failed prefetch (offline launch, cold cache) every time the
+    // picker opens; idempotent and instant once the catalog has loaded.
+    await ExerciseCatalogService.prefetch();
+    final recovered = <WorkoutExerciseCatalogItem>[];
     try {
       final saved = await WorkoutService.loadCustomExercises();
       recovered.addAll(
         saved.map(
-          (exercise) => _ExerciseDefinition(
-            name: exercise.name,
-            category: exercise.category,
-          ),
+          (exercise) => (name: exercise.name, category: exercise.category),
         ),
       );
     } catch (_) {
@@ -3663,10 +3696,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
       recovered.addAll(
         workouts.expand(
           (workout) => workout.exercises.map(
-            (exercise) => _ExerciseDefinition(
-              name: exercise.name,
-              category: exercise.category,
-            ),
+            (exercise) => (name: exercise.name, category: exercise.category),
           ),
         ),
       );
@@ -3674,17 +3704,30 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
       // Keep the built-in and already loaded custom exercises available.
     }
     if (!mounted) return;
-    final knownNames = {
-      for (final exercise in [..._exerciseLibrary, ..._customExercises])
-        _exerciseNameKey(exercise.name),
-    };
-    final additions = <_ExerciseDefinition>[];
-    for (final exercise in recovered) {
-      final key = _exerciseNameKey(exercise.name);
-      if (key.isNotEmpty && knownNames.add(key)) additions.add(exercise);
-    }
+
+    final additions = customExerciseAdditions(
+      catalogLoaded: ExerciseCatalogService.isLoaded,
+      catalog: _exerciseLibrary.map(
+        (exercise) => (name: exercise.name, category: exercise.category),
+      ),
+      known: _customExercises.map(
+        (exercise) => (name: exercise.name, category: exercise.category),
+      ),
+      recovered: recovered,
+    );
     if (additions.isEmpty) return;
-    setState(() => _customExercises.addAll(additions));
+
+    setState(
+      () => _customExercises.addAll(
+        additions.map(
+          (exercise) => _ExerciseDefinition(
+            name: exercise.name,
+            category: exercise.category,
+            isCustom: true,
+          ),
+        ),
+      ),
+    );
     for (final exercise in additions) {
       unawaited(
         WorkoutService.saveCustomExercise(
@@ -3695,21 +3738,38 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
     }
   }
 
-  List<_ExerciseDefinition> get _filteredExercises {
-    final query = _search.trim().toLowerCase();
-    return [..._exerciseLibrary, ..._customExercises].where((exercise) {
-        final matchesFilter =
-            _filter == 'All' ||
-            (_filter == 'Favourites'
-                ? _favourites.contains(_exerciseNameKey(exercise.name))
-                : exercise.category == _filter);
-        final matchesSearch =
-            query.isEmpty ||
-            exercise.name.toLowerCase().contains(query) ||
-            exercise.category.toLowerCase().contains(query);
-        return matchesFilter && matchesSearch;
-      }).toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  PickerExercise _entry(_ExerciseDefinition exercise) => (
+    name: exercise.name,
+    category: exercise.category,
+    isCustom: exercise.isCustom,
+  );
+
+  _ExerciseDefinition _definitionFor(PickerExercise entry) =>
+      _ExerciseDefinition(
+        name: entry.name,
+        category: entry.category,
+        isCustom: entry.isCustom,
+      );
+
+  ExercisePickerResults get _pickerResults => exercisePickerResults(
+    search: _search,
+    filter: _filter,
+    catalog: _exerciseLibrary.map(_entry),
+    custom: _customExercises.map(_entry),
+    favourites: _favourites,
+  );
+
+  _ExercisePickerRow _pickerRow(_ExerciseDefinition exercise) {
+    final key = exerciseNameKey(exercise.name);
+    return _ExercisePickerRow(
+      exercise: exercise,
+      selected: _selected.contains(exercise.name),
+      favourite: _favourites.contains(key),
+      onFavourite: !_favouritesLoaded || _savingFavourites.contains(key)
+          ? null
+          : () => _toggleFavourite(exercise),
+      onTap: () => _toggle(exercise),
+    );
   }
 
   void _toggle(_ExerciseDefinition exercise) {
@@ -3751,7 +3811,11 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
             if (name.text.trim().isEmpty) return;
             Navigator.pop(
               sheetContext,
-              _ExerciseDefinition(name: name.text.trim(), category: category),
+              _ExerciseDefinition(
+                name: name.text.trim(),
+                category: category,
+                isCustom: true,
+              ),
             );
           },
           children: [
@@ -3807,7 +3871,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
     if (created == null || !mounted) return;
     _ExerciseDefinition? matchingExercise;
     for (final exercise in [..._exerciseLibrary, ..._customExercises]) {
-      if (_exerciseNameKey(exercise.name) == _exerciseNameKey(created.name)) {
+      if (exerciseNameKey(exercise.name) == exerciseNameKey(created.name)) {
         matchingExercise = exercise;
         break;
       }
@@ -3834,7 +3898,10 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final exercises = _filteredExercises;
+    final results = _pickerResults;
+    final customResults = results.custom.map(_definitionFor).toList();
+    final exercises = results.defaults.map(_definitionFor).toList();
+    final noResults = customResults.isEmpty && exercises.isEmpty;
 
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
@@ -3910,27 +3977,69 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    child: _PickerSectionTitle(
-                      _filter == 'Favourites' ? 'FAVOURITES' : 'ALL EXERCISES',
+              // A single scrollable holds both sections. The custom section's
+              // height is unbounded (it grows with however many exercises the
+              // user has created), so it cannot be a sibling of a flex
+              // (Expanded) child inside a plain Column without risking a
+              // RenderFlex overflow; CustomScrollView lets it take whatever
+              // height it needs and pushes the defaults section down instead.
+              // SliverFillRemaining still gives the defaults list a bounded
+              // viewport, so its ListView stays lazy over the full catalog.
+              child: CustomScrollView(
+                slivers: [
+                  if (customResults.isNotEmpty) ...[
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 18),
+                        child: _PickerSectionTitle('YOUR EXERCISES'),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Container(
+                        margin: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+                        clipBehavior: Clip.antiAlias,
+                        decoration: BoxDecoration(
+                          color: context.vivordoColors.card,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: context.vivordoColors.border,
+                          ),
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: customResults.length,
+                          itemBuilder: (context, index) {
+                            return _pickerRow(customResults[index]);
+                          },
+                          separatorBuilder: (_, _) =>
+                              const Divider(height: 1, indent: 72),
+                        ),
+                      ),
+                    ),
+                  ],
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      child: _PickerSectionTitle(
+                        _filter == favouritesFilter
+                            ? 'FAVOURITES'
+                            : 'ALL EXERCISES',
+                      ),
                     ),
                   ),
-                  if (exercises.isEmpty)
-                    Expanded(
+                  if (noResults)
+                    SliverFillRemaining(
                       child: Center(
                         child: Text(
-                          _filter == 'Favourites' && _search.trim().isEmpty
+                          _filter == favouritesFilter && _search.trim().isEmpty
                               ? 'Star exercises to add them to your favourites.'
                               : 'No exercises found.',
                         ),
                       ),
                     )
                   else
-                    Expanded(
+                    SliverFillRemaining(
                       child: Container(
                         margin: const EdgeInsets.fromLTRB(18, 0, 18, 20),
                         clipBehavior: Clip.antiAlias,
@@ -3944,22 +4053,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                         child: ListView.separated(
                           itemCount: exercises.length,
                           itemBuilder: (context, index) {
-                            final exercise = exercises[index];
-                            return _ExercisePickerRow(
-                              exercise: exercise,
-                              selected: _selected.contains(exercise.name),
-                              favourite: _favourites.contains(
-                                _exerciseNameKey(exercise.name),
-                              ),
-                              onFavourite:
-                                  !_favouritesLoaded ||
-                                      _savingFavourites.contains(
-                                        _exerciseNameKey(exercise.name),
-                                      )
-                                  ? null
-                                  : () => _toggleFavourite(exercise),
-                              onTap: () => _toggle(exercise),
-                            );
+                            return _pickerRow(exercises[index]);
                           },
                           separatorBuilder: (_, _) =>
                               const Divider(height: 1, indent: 72),
@@ -4070,9 +4164,17 @@ class _ExercisePickerRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    exercise.category,
-                    style: const TextStyle(color: _muted),
+                  Row(
+                    children: [
+                      Text(
+                        exercise.category,
+                        style: const TextStyle(color: _muted),
+                      ),
+                      if (exercise.isCustom) ...[
+                        const SizedBox(width: 8),
+                        const _CustomExerciseBadge(),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -4704,6 +4806,28 @@ class _GoalTile extends StatelessWidget {
           backgroundColor: context.vivordoColors.input,
         ),
       ],
+    ),
+  );
+}
+
+class _CustomExerciseBadge extends StatelessWidget {
+  const _CustomExerciseBadge();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: _purple.withValues(alpha: .12),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: const Text(
+      'CUSTOM',
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w800,
+        letterSpacing: .8,
+        color: _purple,
+      ),
     ),
   );
 }

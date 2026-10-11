@@ -372,6 +372,20 @@ Future<void> showTrainingLoadDetails(
               ),
               const SizedBox(height: 10),
               TrainingLoadCard(view: view),
+              if (view.bodyExplanation case final explanation?) ...[
+                const SizedBox(height: 22),
+                Text(
+                  'WHAT YOUR BODY IS SAYING',
+                  style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: .8,
+                    fontWeight: FontWeight.w600,
+                    color: colors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(explanation, style: secondary),
+              ],
               if (view.alert) ...[
                 const SizedBox(height: 14),
                 Text(
@@ -402,34 +416,6 @@ Future<void> showTrainingLoadDetails(
                   ),
                 ),
               ],
-              const SizedBox(height: 22),
-              Text(
-                'HOW THIS WORKS',
-                style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: .8,
-                  fontWeight: FontWeight.w600,
-                  color: colors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Each morning Vivordo adds up your last 7 days of activity '
-                'and compares it with your usual week, the 4 weeks before. '
-                'Each day is measured against an ordinary active day for '
-                'you: by heart rate when your watch was worn, by active '
-                'minutes otherwise. A hard day is one and a half times an '
-                'ordinary one or more.\n\n'
-                '• Steady: around your usual week\n'
-                '• Lighter: under 80% of it\n'
-                '• Building: 30% or more above it\n'
-                '• High: 50% or more above it, with 3 or more hard days\n'
-                '• Strained: High, and your HRV or resting heart rate agrees '
-                'on 2 of the last 3 mornings\n\n'
-                'High stays on until your week drops back under 30% above '
-                'usual, so one rest day doesn\'t switch it off.',
-                style: secondary,
-              ),
               const SizedBox(height: 20),
               Text(
                 'A wellness signal, not a diagnosis. If something hurts or '

@@ -509,9 +509,8 @@ class HealthService {
   /// The last [days] nights (bed to wake) straight from Apple Health or
   /// Health Connect, for prefilling the usual sleep schedule in onboarding,
   /// before the first sync has reached Firestore.
-  Future<List<({DateTime start, DateTime end})>> recentSleepNights({
-    int days = 14,
-  }) async {
+  Future<List<({DateTime start, DateTime end, double? asleepHours})>>
+  recentSleepNights({int days = 14}) async {
     final end = DateTime.now();
     final intervals = await _sleepIntervals(
       end.subtract(Duration(days: days)),
@@ -519,7 +518,11 @@ class HealthService {
     );
     return [
       for (final summary in summarizeSleepByWakeDay(intervals))
-        (start: summary.bedtime, end: summary.wakeTime),
+        (
+          start: summary.bedtime,
+          end: summary.wakeTime,
+          asleepHours: summary.totalAsleepMinutes / 60,
+        ),
     ];
   }
 

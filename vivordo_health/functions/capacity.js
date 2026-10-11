@@ -246,6 +246,9 @@ function computeCapacity({today, history}) {
     restingHr: finite(today.restingHr) ? today.restingHr : null,
     restingHrNormal,
     restingHrIgnored,
+    // The morning check-in's "how do you feel" (0–100), for the weekly
+    // review's mood; null without a check-in.
+    checkInFeel: finite(today.checkInFeel) ? today.checkInFeel : null,
     bigDay: bigDay && {...bigDay, ratio: round1(bigDay.ratio),
       penalty: round1(bigDay.penalty)},
     activityUsual: today.activityUsual ?? null,

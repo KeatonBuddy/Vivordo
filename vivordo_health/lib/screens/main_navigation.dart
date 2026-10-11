@@ -67,7 +67,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   /// The screen whose tour is running, if any.
   String? _tourScreen;
   bool _tourShowsChat = false;
-  late final Map<String, dynamic> _seenTours = {...?widget.seenTours};
+
+  /// Tours already seen; null until known, and no tour starts until then
+  /// (the user document can fail to load at launch, e.g. offline right
+  /// after an install).
+  Map<String, dynamic>? _seenTours;
   final GlobalKey _navBarKey = GlobalKey();
   final GlobalKey _chatLayerKey = GlobalKey();
   final GlobalKey _homeRightNowKey = GlobalKey();
@@ -125,6 +129,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         ? 0
         : widget.initialIndex.clamp(0, 4);
     _loadedTabs.add(_selectedIndex);
+    if (widget.seenTours case final seen?) {
+      _seenTours = {...seen};
+    } else {
+      unawaited(
+        loadSeenTours().then((seen) {
+          if (!mounted || seen == null) return;
+          _seenTours = seen;
+          if (!_startupSplashMounted) {
+            _maybeStartTour(_screenNames[_selectedIndex]);
+          }
+        }),
+      );
+    }
     _tabActivity = List.generate(
       5,
       (index) => ValueNotifier<bool>(
@@ -188,7 +205,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Future<void> _replayTour() async {
     if (!AppTour.replayRequested.value || !mounted) return;
     AppTour.replayRequested.value = false;
-    _seenTours.clear();
+    _seenTours = {};
     unawaited(resetTours());
     _contentNavigatorKey.currentState?.popUntil((route) => route.isFirst);
     await _closeChat();
@@ -206,6 +223,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         _chatOpen ||
         _detailRouteOpen ||
         FitnessWorkoutTimerState.isRunning.value ||
+        _seenTours == null ||
         !needsTour(_seenTours, screen) ||
         !_tourScripts.containsKey(screen)) {
       return;
@@ -216,7 +234,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   void _finishTour() {
     final screen = _tourScreen;
     if (screen == null) return;
-    _seenTours[screen] = kTourVersion;
+    (_seenTours ??= {})[screen] = kTourVersion;
     setState(() {
       _tourScreen = null;
       _tourShowsChat = false;

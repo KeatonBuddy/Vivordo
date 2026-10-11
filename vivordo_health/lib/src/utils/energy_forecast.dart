@@ -1,9 +1,12 @@
 import 'dart:math' as math;
 
+import 'energy_factors.dart';
 import 'sleep_schedule.dart';
 
-/// One night's sleep, from falling asleep to waking.
-typedef SleepPeriod = ({DateTime start, DateTime end});
+/// One night's sleep, from falling asleep to waking. [asleepHours] is the
+/// time actually asleep (the tracker's total, without waking in the night);
+/// null when only the times are known, so the whole span counts.
+typedef SleepPeriod = ({DateTime start, DateTime end, double? asleepHours});
 
 enum EnergyPhase { groggy, peak, dip, secondWind, windDown }
 
@@ -32,6 +35,7 @@ class EnergyForecast {
     required this.midSleepHours,
     required this.estimated,
     this.usesSchedule = false,
+    this.factors = const [],
   });
 
   final DateTime wake;
@@ -58,6 +62,9 @@ class EnergyForecast {
 
   /// True when your saved sleep schedule stood in for tracked sleep.
   final bool usesSchedule;
+
+  /// Last night's tags and yesterday's training, already in the curve.
+  final List<EnergyFactor> factors;
 
   /// Energy at [time], or null outside the waking day.
   double? at(DateTime time) {
@@ -138,13 +145,15 @@ const _maxDebtHours = 10.0;
 /// night). [sleepNeedHours] is Capacity's sleep need; [tomorrowFirstEvent]
 /// sets tonight's bed-by time. Until [_minNights] nights are tracked, your
 /// usual [schedule] sets the body clock, the length of a usual night and
-/// tonight's bedtime.
+/// tonight's bedtime. [factors] (last night's tags, yesterday's training)
+/// add to the sleep pressure you wake with.
 EnergyForecast forecastEnergy({
   required DateTime day,
   required List<SleepPeriod> nights,
   double? sleepNeedHours,
   DateTime? tomorrowFirstEvent,
   SleepSchedule? schedule,
+  List<EnergyFactor> factors = const [],
 }) {
   final date = DateTime(day.year, day.month, day.day);
   final need = sleepNeedHours ?? _defaultNeedHours;
@@ -180,10 +189,15 @@ EnergyForecast forecastEnergy({
       ? _hours(usual.end.difference(usual.start))
       : need;
 
+  // Time asleep, for how rested you are; the span (bed to wake) is only for
+  // timing, since waking in the night still leaves you short.
+  double asleepOf(SleepPeriod n) =>
+      n.asleepHours ?? _hours(n.end.difference(n.start));
+
   final anchor = date.add(_fromHours(midSleep));
   final wake = lastNight?.end ?? anchor.add(_fromHours(usualHours / 2));
   final slept = lastNight != null
-      ? _hours(lastNight.end.difference(lastNight.start))
+      ? asleepOf(lastNight)
       : usual != null
       ? usualHours
       : need;
@@ -199,7 +213,7 @@ EnergyForecast forecastEnergy({
     [
       for (final n in recent)
         if (n.end.isAfter(date.subtract(const Duration(days: _debtDays - 1))))
-          math.max(0.0, need - _hours(n.end.difference(n.start))),
+          math.max(0.0, need - asleepOf(n)),
     ].fold(0.0, (a, b) => a + b),
   );
 
@@ -207,7 +221,8 @@ EnergyForecast forecastEnergy({
     _pressureMax,
     _pressureRested +
         _pressurePerMissingNight * math.max(0, 1 - slept / need) +
-        _pressurePerDebtHour * debt,
+        _pressurePerDebtHour * debt +
+        factors.fold(0.0, (sum, f) => sum + f.pressure),
   );
   double energy(DateTime t) {
     final phase = _hours(t.difference(anchor));
@@ -251,6 +266,7 @@ EnergyForecast forecastEnergy({
     midSleepHours: midSleep,
     estimated: lastNight == null,
     usesSchedule: usual != null,
+    factors: factors,
   );
 }
 

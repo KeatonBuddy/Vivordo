@@ -28,6 +28,18 @@ Future<void> markTourSeen(String screen) async => _userRef?.set({
   'updatedAt': FieldValue.serverTimestamp(),
 }, SetOptions(merge: true));
 
+/// The saved tours, read again when the app started without them; null
+/// when they still can't be read, so no tour starts rather than rerunning
+/// tours already seen.
+Future<Map<String, dynamic>?> loadSeenTours() async {
+  try {
+    final data = (await _userRef?.get())?.data();
+    return {...?(data?['tours'] as Map?)?.cast<String, dynamic>()};
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Forgets every tour, so each runs again on its next visit.
 Future<void> resetTours() async => _userRef?.set({
   'tours': FieldValue.delete(),

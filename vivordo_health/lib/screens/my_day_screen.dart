@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../src/services/calendar_cognitive_load_service.dart';
 import '../src/services/calendar_service.dart';
@@ -45,6 +46,10 @@ import '../src/services/metrics_repository.dart';
 import '../src/utils/day_key.dart';
 import '../widgets/burnout_card.dart';
 import '../widgets/training_load_card.dart';
+import '../src/services/weekly_review_service.dart';
+import '../src/services/daily_tags_service.dart';
+import '../src/utils/energy_factors.dart';
+import 'weekly_review_screen.dart';
 import '../src/services/home_widget_service.dart';
 import '../widgets/meeting_patterns_view.dart';
 import '../src/services/meeting_patterns_service.dart';
@@ -99,6 +104,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// Your usual sleep times, for the energy forecast when no sleep is tracked.
   SleepSchedule? _sleepSchedule;
 
+  /// Last night's tags and yesterday's training, for today's forecast.
+  List<EnergyFactor> _energyFactors = const [];
+
   /// `preferences.windDownReminder`: null until asked, then on or off.
   bool? _windDownReminder;
 
@@ -131,6 +139,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   final _capacitySnapshot = OwnedStreamSnapshot<ServerCapacity?>();
   final _burnoutSnapshot = OwnedStreamSnapshot<BurnoutView?>();
   final _trainingLoadSnapshot = OwnedStreamSnapshot<TrainingLoadView?>();
+  final _weeklyReviewSnapshot = OwnedStreamSnapshot<WeeklyReviewCardState?>();
 
   /// The latest nightly burnout check: it's saved on the day that just
   /// ended, so look back a few days.
@@ -193,6 +202,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _capacitySnapshot.connect(_capacityStreamFor(day));
     _burnoutSnapshot.connect(_burnoutStreamFor(day));
     _trainingLoadSnapshot.connect(watchTrainingLoad(day));
+    _weeklyReviewSnapshot.connectFactory(
+      () => WeeklyReviewService.watchCard(day),
+    );
+    _loadEnergyFactors(day);
     final stream = _metricsStreamFor(day);
     _briefSnapshot.connect(
       (stream ?? const Stream<MetricWindow>.empty()).map((snapshot) {
@@ -602,6 +615,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _capacitySnapshot.setActive(active);
     _burnoutSnapshot.setActive(active);
     _trainingLoadSnapshot.setActive(active);
+    _weeklyReviewSnapshot.setActive(active);
     _prioritySnapshot.setActive(active);
     _tomorrowPrioritySnapshot.setActive(active);
     _habitSnapshot.setActive(active);
@@ -611,6 +625,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _clockTimer?.cancel();
     if (!active) return;
     if (!_handleDayRollover()) {
+      // Tags saved elsewhere (Home's check-in, Journal) since last shown.
+      _loadEnergyFactors(_priorityDay);
       _refreshBriefClock();
       if (_eventsStale) unawaited(_loadTodayEvents());
     }
@@ -678,6 +694,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _capacitySnapshot.dispose();
     _burnoutSnapshot.dispose();
     _trainingLoadSnapshot.dispose();
+    _weeklyReviewSnapshot.dispose();
     _prioritySnapshot.dispose();
     _tomorrowPrioritySnapshot.dispose();
     _habitSnapshot.dispose();
@@ -994,6 +1011,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 key: widget.briefKey,
                 child: _buildDayOutlookCard(timedEvents: timedEvents),
               ),
+              // Sundays, once the check-in is done: the week in review.
+              ValueListenableBuilder<AsyncSnapshot<WeeklyReviewCardState?>>(
+                valueListenable: _weeklyReviewSnapshot,
+                builder: (context, snapshot, _) => snapshot.data == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: WeeklyReviewCard(state: snapshot.data!),
+                      ),
+              ),
               ValueListenableBuilder<AsyncSnapshot<BurnoutView?>>(
                 valueListenable: _burnoutSnapshot,
                 builder: (context, snapshot, _) => snapshot.data == null
@@ -1128,6 +1155,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
+  void _loadEnergyFactors(DateTime day) => unawaited(
+    DailyTagsService.energyFactorsFor(day).then((factors) {
+      if (mounted && !identical(factors, _energyFactors)) {
+        setState(() => _energyFactors = factors);
+      }
+    }),
+  );
+
   /// Today's energy forecast (docs/scores.md §8), once any night is
   /// recorded or your usual sleep times are set. Tomorrow's first timed event
   /// sets tonight's bed-by.
@@ -1140,6 +1175,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       sleepNeedHours: _capacitySnapshot.value.data?.sleepNeedHours,
       tomorrowFirstEvent: _tomorrowFirst()?.start,
       schedule: _sleepSchedule,
+      factors: _energyFactors,
     );
   }
 
@@ -1323,80 +1359,101 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               );
             }
             final brief =
-                DailyBriefCard(
-                  headline: headline,
-                  summary:
-                      '${sleepComparison(sleep, usualSleep)} $calendarText',
-                  // In the evening it sits beside tomorrow's Demand, so
-                  // it shows what tomorrow is compared with.
-                  capacityScore: evening && usualCapacity != null
-                      ? usualCapacity
-                      : capacityScore,
-                  capacityLabel: evening && usualCapacity != null
-                      ? 'Your usual'
-                      : recovering
-                      ? 'Recovering'
-                      : server != null
-                      ? server.note
-                      : capacity?.score == null
-                      ? 'Needs health data'
-                      : capacityNote,
-                  scheduleScore: ready ? demand.round().clamp(0, 100) : null,
-                  scheduleLabel: !ready
-                      ? 'Plan unavailable'
-                      : evening
-                      ? 'Expected tomorrow'
-                      : 'Remaining today',
-                  footer: capacityStale || !ready
-                      ? 'Limited data'
-                      : 'Available data',
-                  onDetails: () => showInfoSheet(
-                    context,
-                    icon: CupertinoIcons.info_circle,
-                    title: 'Daily Brief data',
+                Selector<ThemeController, bool>(
+                  selector: (_, c) => c.showScoreNumbers,
+                  builder: (context, showNumbers, _) => DailyBriefCard(
+                    headline: headline,
                     summary:
-                        'Where today\'s numbers come from. These are wellness estimates, not clinical assessments.',
-                    items: [
-                      AppleInfoItem(
-                        'Calendar loaded',
-                        '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
-                        icon: CupertinoIcons.calendar,
-                      ),
-                      AppleInfoItem(
-                        'Heart rate measured',
-                        '${timeLabel(healthTime)}.',
-                        icon: CupertinoIcons.heart,
-                      ),
-                      AppleInfoItem(
-                        'Stress calculated',
-                        '${timeLabel(stressTime)}.',
-                        icon: CupertinoIcons.waveform_path,
-                      ),
-                      if (summary?.isFromCache == true)
-                        const AppleInfoItem(
-                          'Health data',
-                          'From the local cache.',
-                          icon: CupertinoIcons.tray,
+                        '${sleepComparison(sleep, usualSleep)} $calendarText',
+                    // In the evening it sits beside tomorrow's Demand, so
+                    // it shows what tomorrow is compared with.
+                    capacityScore: evening && usualCapacity != null
+                        ? usualCapacity
+                        : capacityScore,
+                    capacityLabel: evening && usualCapacity != null
+                        ? 'Your usual'
+                        : recovering
+                        ? 'Recovering'
+                        : server != null
+                        ? server.note
+                        : capacity?.score == null
+                        ? 'Needs health data'
+                        : capacityNote,
+                    scheduleScore: ready ? demand.round().clamp(0, 100) : null,
+                    scheduleLabel: !ready
+                        ? 'Plan unavailable'
+                        : evening
+                        ? 'Expected tomorrow'
+                        : 'Remaining today',
+                    footer: capacityStale || !ready
+                        ? 'Limited data'
+                        : 'Available data',
+                    words: showNumbers
+                        ? null
+                        : (
+                            energy: briefEnergyState(
+                              capacity: capacityScore,
+                              usual: usualCapacity,
+                              recovering: recovering,
+                            ),
+                            loadTitle: evening
+                                ? "Tomorrow's load"
+                                : "Today's load",
+                            load: briefLoadState(
+                              demand: ready ? demand : null,
+                              capacity: evening
+                                  ? tomorrowCapacity
+                                  : capacityScore,
+                            ),
+                          ),
+                    onDetails: () => showInfoSheet(
+                      context,
+                      icon: CupertinoIcons.info_circle,
+                      title: 'Daily Brief data',
+                      summary:
+                          'Where today\'s numbers come from. These are wellness estimates, not clinical assessments.',
+                      items: [
+                        AppleInfoItem(
+                          'Calendar loaded',
+                          '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
+                          icon: CupertinoIcons.calendar,
                         ),
-                      AppleInfoItem(
-                        'Sleep baseline',
-                        '${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.',
-                        icon: CupertinoIcons.moon,
-                      ),
-                      AppleInfoItem(
-                        'Capacity',
-                        server != null
-                            ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.'
-                            : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
-                        icon: CupertinoIcons.battery_75_percent,
-                      ),
-                      const AppleInfoItem(
-                        'Demand',
-                        'The Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work doesn\'t block a specific opening.',
-                        icon: CupertinoIcons.chart_bar,
-                      ),
-                    ],
-                    buttonLabel: 'Close',
+                        AppleInfoItem(
+                          'Heart rate measured',
+                          '${timeLabel(healthTime)}.',
+                          icon: CupertinoIcons.heart,
+                        ),
+                        AppleInfoItem(
+                          'Stress calculated',
+                          '${timeLabel(stressTime)}.',
+                          icon: CupertinoIcons.waveform_path,
+                        ),
+                        if (summary?.isFromCache == true)
+                          const AppleInfoItem(
+                            'Health data',
+                            'From the local cache.',
+                            icon: CupertinoIcons.tray,
+                          ),
+                        AppleInfoItem(
+                          'Sleep baseline',
+                          '${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.',
+                          icon: CupertinoIcons.moon,
+                        ),
+                        AppleInfoItem(
+                          'Capacity',
+                          server != null
+                              ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.'
+                              : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
+                          icon: CupertinoIcons.battery_75_percent,
+                        ),
+                        const AppleInfoItem(
+                          'Demand',
+                          'The Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work doesn\'t block a specific opening.',
+                          icon: CupertinoIcons.chart_bar,
+                        ),
+                      ],
+                      buttonLabel: 'Close',
+                    ),
                   ),
                 ).withScreenInsight(
                   ScreenInsight(

@@ -1,7 +1,9 @@
-/// Built-in exercises offered by the Fitness workout builder and reused by
-/// Circle challenge targets. Order is meaningful: the UI sorts or filters it,
-/// but persisted custom exercises are appended after these.
-typedef WorkoutExerciseCatalogItem = ({String name, String category});
+import '../utils/exercise_catalog.dart';
+
+/// The exercises built into the app: what ExerciseCatalogService serves until
+/// the Firestore catalog (`exercise_catalog/current`) has loaded, so the
+/// picker and Circle challenges work offline and before the catalog is
+/// seeded. Keep it in step with functions/scripts/exercise_catalog_seed.json.
 
 const List<WorkoutExerciseCatalogItem> workoutExerciseCatalog = [
   (name: 'Barbell Bench Press', category: 'Chest'),

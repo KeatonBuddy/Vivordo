@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/exercise_catalog_service.dart';
 import 'package:vivordo_health/src/services/achievement_unlock_service.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/workout_live_activity_service.dart';
@@ -79,7 +80,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseAuth.instance.authStateChanges().listen((user) {
-    if (user == null) unawaited(HomeWidgetService.clearAccountSnapshot());
+    // Signed in (including at launch): save any check-ins tapped on the Mood
+    // widget. Signed out: stop the widget taking them.
+    unawaited(
+      user == null
+          ? HomeWidgetService.clearAccountSnapshot()
+          : HomeWidgetService.syncMoodWidget(),
+    );
   });
   HealthService.listenForNewSleep();
 
@@ -491,6 +498,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
           await WhoopService.instance.syncInBackground();
         });
         unawaited(HomeWidgetService.refreshCalendarSnapshot());
+        unawaited(HomeWidgetService.syncMoodWidget());
         unawaited(
           DailyPriorityService.refreshReminders().catchError((Object error) {
             debugPrint('Could not refresh priority reminders: $error');
@@ -522,6 +530,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       await WhoopService.instance.syncInBackground(daysBack: 30);
     });
     NotificationService().configureForUser(uid);
+    unawaited(ExerciseCatalogService.prefetch());
     unawaited(HomeWidgetService.refreshCalendarSnapshot(force: true));
     AnalyticsService().logLogin();
   }

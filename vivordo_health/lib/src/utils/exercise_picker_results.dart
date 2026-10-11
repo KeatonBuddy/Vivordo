@@ -1,0 +1,68 @@
+import 'exercise_catalog.dart';
+
+/// One row in the Add Exercise picker.
+typedef PickerExercise = ({String name, String category, bool isCustom});
+
+/// What the picker should render for the current search and filter.
+///
+/// While browsing, [custom] holds its own section shown above [defaults].
+/// Once a search or category filter narrows things down, [custom] is empty
+/// and [defaults] holds every match in one ranking, each still carrying its
+/// own `isCustom` flag.
+class ExercisePickerResults {
+  const ExercisePickerResults({required this.custom, required this.defaults});
+
+  final List<PickerExercise> custom;
+  final List<PickerExercise> defaults;
+}
+
+/// The picker's filter for the user's starred exercises (by
+/// [exerciseNameKey]) rather than a category.
+const favouritesFilter = 'Favourites';
+
+List<PickerExercise> _matching(
+  Iterable<PickerExercise> source,
+  String query,
+  String filter,
+  Set<String> favourites,
+) =>
+    source.where((exercise) {
+        final matchesFilter =
+            filter == 'All' ||
+            (filter == favouritesFilter
+                ? favourites.contains(exerciseNameKey(exercise.name))
+                : exercise.category == filter);
+        final matchesSearch =
+            query.isEmpty ||
+            exercise.name.toLowerCase().contains(query) ||
+            exercise.category.toLowerCase().contains(query);
+        return matchesFilter && matchesSearch;
+      }).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+/// Splits the picker into a pinned custom section plus the defaults while
+/// browsing, and into one merged list once a search or category filter is
+/// narrowing things down — a user who typed a query wants one ranking, not
+/// their match split across two headings.
+ExercisePickerResults exercisePickerResults({
+  required String search,
+  required String filter,
+  required Iterable<PickerExercise> catalog,
+  required Iterable<PickerExercise> custom,
+  Set<String> favourites = const {},
+}) {
+  final query = search.trim().toLowerCase();
+  final sectioned = query.isEmpty && filter == 'All';
+
+  if (!sectioned) {
+    return ExercisePickerResults(
+      custom: const [],
+      defaults: _matching([...catalog, ...custom], query, filter, favourites),
+    );
+  }
+
+  return ExercisePickerResults(
+    custom: _matching(custom, query, filter, favourites),
+    defaults: _matching(catalog, query, filter, favourites),
+  );
+}

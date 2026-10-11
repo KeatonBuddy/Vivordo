@@ -62,6 +62,9 @@ class NotificationService {
   static const int _checkInReminderBaseId = 1501;
   static const int _maxCheckInReminders = 7;
 
+  /// The Sunday weekly review reminder, repeating.
+  static const int _weeklyReviewReminderId = 1601;
+
   factory NotificationService() {
     return _instance;
   }
@@ -118,7 +121,7 @@ class NotificationService {
     return operation;
   }
 
-  bool _dailyScanRemindersEnabled = true;
+  bool _dailyScanRemindersEnabled = false;
   bool _calendarCheckInReminderEnabled = true;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _fitnessGoalSubscription;
@@ -176,8 +179,9 @@ class NotificationService {
               .toInt();
       _scanReminderMinutes = {morning, evening}.toList()..sort();
     }
+    // Scan reminders are off unless switched on in Settings.
     await setDailyScanRemindersEnabled(
-      preferences?['scanReminderEnabled'] != false,
+      preferences?['scanReminderEnabled'] == true,
     );
     await setCalendarCheckInReminderEnabled(
       preferences?['checkInReminderEnabled'] != false,
@@ -202,6 +206,9 @@ class NotificationService {
     _fitnessGoalSubscription = null;
     await cancelDailyScanReminder();
     await cancelCalendarCheckIn();
+    await cancelWeeklyReviewReminder();
+    await cancelCheckInReminders();
+    await cancelWindDownReminders();
   }
 
   /// Removes local notification state after the server has deleted an account.
@@ -893,6 +900,52 @@ class NotificationService {
         return;
       }
     }
+  }
+
+  /// Sundays at 11 AM, repeating: the weekly review is ready.
+  Future<void> scheduleWeeklyReviewReminder() async {
+    if (kIsWeb) return;
+    final now = tz.TZDateTime.now(tz.local);
+    var at = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day + (7 - now.weekday % 7) % 7,
+      11,
+    );
+    if (!at.isAfter(now)) at = at.add(const Duration(days: 7));
+    try {
+      await _localNotificationsPlugin.zonedSchedule(
+        _weeklyReviewReminderId,
+        'Your week in review',
+        'What drained you, what helped, and a look at next week.',
+        at,
+        const NotificationDetails(
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentSound: true,
+            presentBanner: true,
+            presentList: true,
+          ),
+          android: AndroidNotificationDetails(
+            'weekly_review_reminders',
+            'Weekly review',
+          ),
+        ),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        payload: '{"screen": "my_day", "type": "weekly_review_reminder"}',
+      );
+    } on PlatformException catch (error) {
+      debugPrint('Weekly review reminder not scheduled: $error');
+    }
+  }
+
+  Future<void> cancelWeeklyReviewReminder() async {
+    if (kIsWeb) return;
+    await _localNotificationsPlugin.cancel(_weeklyReviewReminderId);
   }
 
   Future<void> cancelCheckInReminders() async {

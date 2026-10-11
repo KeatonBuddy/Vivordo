@@ -11,6 +11,7 @@ import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/check_in_reminder.dart';
+import 'package:vivordo_health/src/services/weekly_review_service.dart';
 import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/account_deletion_service.dart';
@@ -1040,12 +1041,16 @@ class _SettingsScreenState extends State<SettingsScreen>
         final dayWrapUp =
             (preferences['dayWrapUpMinutes'] as num?)?.toInt() ??
             kDefaultDayWrapUpMinutes;
-        final scanReminderEnabled = preferences['scanReminderEnabled'] != false;
+        // Off unless switched on: most people's stress comes from a watch.
+        final scanReminderEnabled = preferences['scanReminderEnabled'] == true;
         final checkInReminderEnabled =
             preferences['checkInReminderEnabled'] != false;
         final windDownReminder = preferences['windDownReminder'] == true;
         final checkInMorningReminder =
             preferences['checkInMorningReminder'] == true;
+        // On unless switched off.
+        final weeklyReviewReminder =
+            preferences['weeklyReviewReminder'] != false;
         // Server pushes: on unless switched off.
         final burnoutNotificationsEnabled =
             preferences['burnoutNotificationsEnabled'] != false;
@@ -1243,6 +1248,20 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
+                        Icons.event_note_outlined,
+                        Color(0xFF7F77DD),
+                      ),
+                      title: 'Weekly review',
+                      subtitle: 'Sundays at 11 AM, when your week is ready',
+                      trailing: AppSwitch(
+                        value: weeklyReviewReminder,
+                        onChanged: (value) => _setPreferenceWith(
+                          () => WeeklyReviewService.setReminder(value),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
                         Icons.monitor_heart_outlined,
                         Color(0xFFE24B4A),
                       ),
@@ -1333,6 +1352,27 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       title: 'Appearance',
                       trailing: _AppearanceToggle(),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.abc_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Show score numbers',
+                      subtitle:
+                          'Off: scores show as words. Sleep, heart rate and '
+                          'steps still show.',
+                      trailing: Selector<ThemeController, bool>(
+                        selector: (_, c) => c.showScoreNumbers,
+                        builder: (context, showNumbers, _) => AppSwitch(
+                          value: showNumbers,
+                          onChanged: (value) => _setPreferenceWith(
+                            () => context
+                                .read<ThemeController>()
+                                .setShowScoreNumbers(value),
+                          ),
+                        ),
+                      ),
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(

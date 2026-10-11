@@ -10,6 +10,7 @@ struct VivordoLiveActivitiesBundle: WidgetBundle {
     FitnessRingWidget()
     CalendarWidget()
     TodayAgendaWidget()
+    MoodWidget()
     if #available(iOS 27.0, *) {
       DayDashboardWidget()
     }
@@ -1481,5 +1482,424 @@ private struct TodayAgendaContent: View {
   private func stat(_ value: String, _ label: String) -> some View {
     (Text(value).font(.subheadline.weight(.semibold)) + Text(" \(label)").font(.caption).foregroundStyle(.secondary))
       .padding(.top, 16)
+  }
+}
+
+// MARK: - Mood
+
+/// The five check-ins the Mood widget offers, on the app's mood scale
+/// (MetricsService.moodScoreForLabel) with the colours of its check-in sheet.
+private struct VivordoMood: Identifiable {
+  let label: String
+  let score: Int
+  // -1 is a deep frown, 1 a broad smile.
+  let smile: CGFloat
+  let color: Color
+  var id: Int { score }
+
+  static let all: [VivordoMood] = [
+    VivordoMood(label: "Awful", score: 10, smile: -1, color: Color(red: 0.94, green: 0.27, blue: 0.27)),
+    VivordoMood(label: "Down", score: 30, smile: -0.5, color: Color(red: 0.48, green: 0.43, blue: 0.96)),
+    VivordoMood(label: "Okay", score: 50, smile: 0, color: Color(red: 1.00, green: 0.58, blue: 0.00)),
+    VivordoMood(label: "Good", score: 75, smile: 0.55, color: Color(red: 0.20, green: 0.78, blue: 0.35)),
+    VivordoMood(label: "Great", score: 95, smile: 1, color: Color(red: 0.13, green: 0.77, blue: 0.37)),
+  ]
+
+  /// Any 0–100 score, including one from the in-app slider, on the app's
+  /// label thresholds (MetricsService.moodLabelForScore).
+  static func forScore(_ score: Int) -> VivordoMood {
+    switch score {
+    case 80...: return all[4]
+    case 60..<80: return all[3]
+    case 40..<60: return all[2]
+    case 20..<40: return all[1]
+    default: return all[0]
+    }
+  }
+}
+
+/// A drawn mood face. Emoji rendered as empty boxes in widgets on the
+/// simulator, and a shape also reads in the Lock Screen's single colour.
+private struct MoodFace: View {
+  let smile: CGFloat
+  var lineWidth: CGFloat = 2
+
+  var body: some View {
+    GeometryReader { proxy in
+      let size = min(proxy.size.width, proxy.size.height)
+      ZStack {
+        Circle().strokeBorder(lineWidth: lineWidth)
+        HStack(spacing: size * 0.22) {
+          Circle().frame(width: size * 0.11, height: size * 0.11)
+          Circle().frame(width: size * 0.11, height: size * 0.11)
+        }
+        .offset(y: -size * 0.12)
+        if smile >= 1 {
+          // Great: an open grin, so it reads apart from Good's smile.
+          MoodMouth(smile: smile, open: true)
+            .fill()
+            .frame(width: size * 0.5, height: size * 0.22)
+            .offset(y: size * 0.16)
+        } else {
+          MoodMouth(smile: smile)
+            .stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+            .frame(width: size * 0.46, height: size * 0.2)
+            .offset(y: size * 0.18)
+        }
+      }
+      .frame(width: size, height: size)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    .accessibilityHidden(true)
+  }
+}
+
+private struct MoodMouth: Shape {
+  let smile: CGFloat
+  var open = false
+
+  func path(in rect: CGRect) -> Path {
+    var path = Path()
+    let edge = open ? rect.minY : rect.midY - smile * rect.height / 2
+    path.move(to: CGPoint(x: rect.minX, y: edge))
+    path.addQuadCurve(
+      to: CGPoint(x: rect.maxX, y: edge),
+      control: CGPoint(x: rect.midX, y: open ? rect.maxY * 1.6 : rect.midY + smile * rect.height)
+    )
+    if open { path.closeSubpath() }
+    return path
+  }
+}
+
+/// Logs a check-in from the Mood widget without opening the app. Each tap is
+/// queued under its own key; the app saves it with its tap time on its next
+/// launch or return to the foreground (HomeWidgetService.syncMoodWidget).
+struct LogMoodIntent: AppIntent {
+  static var title: LocalizedStringResource = "Log mood"
+  static var description = IntentDescription("Logs a Vivordo mood check-in.")
+  static var openAppWhenRun = false
+  static var isDiscoverable = false
+
+  @Parameter(title: "Score")
+  var score: Int
+
+  init() {}
+
+  init(score: Int) {
+    self.score = score
+  }
+
+  func perform() async throws -> some IntentResult {
+    let defaults = VivordoWidgetData.defaults
+    // Taps only count for a signed-in account, so another person's check-in
+    // never lands in the next account to sign in.
+    guard let account = defaults.string(forKey: "moodAccount"), !account.isEmpty else {
+      return .result()
+    }
+    let mood = VivordoMood.forScore(score)
+    let now = Date()
+    defaults.set([
+      "score": mood.score,
+      "label": mood.label,
+      "at": now.timeIntervalSince1970 * 1_000,
+      "account": account,
+    ], forKey: "\(VivordoMoodEntry.queuePrefix)\(UUID().uuidString)")
+    defaults.set(mood.score, forKey: "moodTapScore")
+    defaults.set(now.timeIntervalSince1970, forKey: "moodTapAt")
+    WidgetCenter.shared.reloadTimelines(ofKind: "VivordoMood")
+    return .result()
+  }
+}
+
+private struct VivordoMoodEntry: TimelineEntry {
+  static let queuePrefix = "pendingMood."
+  // How long the "logged" confirmation shows before the widget asks again.
+  static let confirmationLifetime: TimeInterval = 5 * 60
+
+  let date: Date
+  let signedIn: Bool
+  // Today's check-ins: saved ones plus taps still waiting for the app.
+  let todayCount: Int
+  let last: (mood: VivordoMood, at: Date)?
+  // The latest widget tap, while its confirmation shows.
+  let confirmed: (mood: VivordoMood, at: Date)?
+  let confirmationEnds: Date?
+
+  static func current(date: Date = .now) -> VivordoMoodEntry {
+    let defaults = VivordoWidgetData.defaults
+    let account = defaults.string(forKey: "moodAccount") ?? ""
+    let today = VivordoCalendarDates.dayKey(for: date)
+
+    let queued: [(score: Int, at: Date)] = defaults.dictionaryRepresentation()
+      .compactMap { key, value in
+        guard key.hasPrefix(queuePrefix),
+              let entry = value as? [String: Any],
+              entry["account"] as? String == account,
+              let score = entry["score"] as? Int,
+              let at = entry["at"] as? Double else { return nil }
+        return (score, Date(timeIntervalSince1970: at / 1_000))
+      }
+      .filter { VivordoCalendarDates.dayKey(for: $0.at) == today }
+
+    let savedToday = defaults.string(forKey: "moodDay") == today
+    var latest: (score: Int, at: Date)?
+    let savedScore = VivordoWidgetData.integer("moodLastScore", fallback: -1)
+    let savedAt = defaults.double(forKey: "moodLastAt")
+    if savedToday, savedScore >= 0, savedAt > 0 {
+      latest = (savedScore, Date(timeIntervalSince1970: savedAt / 1_000))
+    }
+    for tap in queued where latest.map({ tap.at > $0.at }) ?? true {
+      latest = tap
+    }
+
+    let tapAt = defaults.double(forKey: "moodTapAt")
+    let tapDate = Date(timeIntervalSince1970: tapAt)
+    let ends = tapDate.addingTimeInterval(confirmationLifetime)
+    let showing = !account.isEmpty && tapAt > 0 && date >= tapDate && date < ends
+
+    return VivordoMoodEntry(
+      date: date,
+      signedIn: !account.isEmpty,
+      todayCount: (savedToday ? VivordoWidgetData.integer("moodTodayCount", fallback: 0) : 0) + queued.count,
+      last: latest.map { (VivordoMood.forScore($0.score), $0.at) },
+      confirmed: showing
+        ? (VivordoMood.forScore(VivordoWidgetData.integer("moodTapScore", fallback: 50)), tapDate)
+        : nil,
+      confirmationEnds: showing ? ends : nil
+    )
+  }
+}
+
+private struct VivordoMoodProvider: TimelineProvider {
+  func placeholder(in context: Context) -> VivordoMoodEntry { .current() }
+
+  func getSnapshot(in context: Context, completion: @escaping (VivordoMoodEntry) -> Void) {
+    completion(.current())
+  }
+
+  func getTimeline(in context: Context, completion: @escaping (Timeline<VivordoMoodEntry>) -> Void) {
+    let now = Date()
+    let entry = VivordoMoodEntry.current(date: now)
+    var entries = [entry]
+    // Ask again once the confirmation ends, and start a fresh count at midnight.
+    if let ends = entry.confirmationEnds {
+      entries.append(.current(date: ends))
+    }
+    if let midnight = Calendar.autoupdatingCurrent.date(
+      byAdding: .day, value: 1, to: Calendar.autoupdatingCurrent.startOfDay(for: now)
+    ) {
+      entries.append(.current(date: midnight))
+    }
+    completion(Timeline(entries: entries.sorted { $0.date < $1.date }, policy: .after(now.addingTimeInterval(30 * 60))))
+  }
+}
+
+private struct MoodWidget: Widget {
+  let kind = "VivordoMood"
+
+  var body: some WidgetConfiguration {
+    StaticConfiguration(kind: kind, provider: VivordoMoodProvider()) { entry in
+      MoodWidgetView(entry: entry)
+        .containerBackground(for: .widget) { VivordoWidgetBackground() }
+    }
+    .configurationDisplayName("Mood")
+    .description("Log how you're feeling without opening Vivordo.")
+    .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
+    .contentMarginsDisabled()
+  }
+}
+
+private struct MoodWidgetView: View {
+  let entry: VivordoMoodEntry
+  @Environment(\.widgetFamily) private var family
+
+  private static let moodURL = URL(string: "com.vivordo.health://widget/mood")!
+
+  var body: some View {
+    if !entry.signedIn {
+      signedOut
+    } else {
+      switch family {
+      case .accessoryRectangular: lockScreen
+      case .systemSmall: small
+      default: medium
+      }
+    }
+  }
+
+  // MARK: Pieces
+
+  private var countText: String? {
+    entry.todayCount > 0 ? "\(entry.todayCount) today" : nil
+  }
+
+  /// "✓ Good logged · 2:14 PM" after a tap, otherwise the question.
+  @ViewBuilder
+  private func status(_ font: Font) -> some View {
+    if let confirmed = entry.confirmed {
+      Label {
+        Text("\(confirmed.mood.label) logged · \(confirmed.at.formatted(date: .omitted, time: .shortened))")
+      } icon: {
+        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+      }
+      .font(font.weight(.semibold))
+      .lineLimit(1)
+      .minimumScaleFactor(0.8)
+    } else {
+      Text("How are you feeling?")
+        .font(font.weight(.semibold))
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+    }
+  }
+
+  private func face(_ mood: VivordoMood, size: CGFloat, faceSize: CGFloat, radius: CGFloat) -> some View {
+    let hit = entry.confirmed?.mood.score == mood.score
+    return Button(intent: LogMoodIntent(score: mood.score)) {
+      MoodFace(smile: mood.smile, lineWidth: faceSize / 11)
+        .foregroundStyle(hit ? Color.white : mood.color)
+        .frame(width: faceSize, height: faceSize)
+        .frame(width: size, height: size)
+        .background(
+          RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(hit ? mood.color : Color.primary.opacity(0.08))
+        )
+        .overlay(
+          RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .strokeBorder(hit ? Color.white : Color.clear, lineWidth: 2.5)
+        )
+        .overlay(alignment: .topTrailing) {
+          if hit {
+            Image(systemName: "checkmark.circle.fill")
+              .font(.system(size: 15, weight: .bold))
+              .symbolRenderingMode(.palette)
+              .foregroundStyle(.white, .green)
+              .offset(x: 5, y: -5)
+          }
+        }
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Log \(mood.label)")
+  }
+
+  private var header: some View {
+    HStack(spacing: 6) {
+      VivordoMark()
+        .fill(VivordoWidgetPalette.accent)
+        .frame(width: 18, height: 14)
+        .widgetAccentable()
+        .accessibilityHidden(true)
+      status(.subheadline)
+      Spacer(minLength: 4)
+      if let countText {
+        Text(countText).font(.caption).foregroundStyle(.secondary)
+      } else if entry.confirmed == nil, let last = entry.last {
+        Text("Last: \(last.mood.label)").font(.caption).foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  // MARK: Families
+
+  private var medium: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      header
+      Spacer(minLength: 8)
+      HStack(spacing: 0) {
+        ForEach(VivordoMood.all) { mood in
+          VStack(spacing: 5) {
+            face(mood, size: 50, faceSize: 28, radius: 15)
+            Text(mood.label)
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: .infinity)
+        }
+      }
+    }
+    .padding(16)
+    .widgetURL(Self.moodURL)
+  }
+
+  private var small: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 6) {
+        VivordoMark()
+          .fill(VivordoWidgetPalette.accent)
+          .frame(width: 16, height: 13)
+          .widgetAccentable()
+          .accessibilityHidden(true)
+        Text("Mood").font(.footnote.weight(.semibold))
+        Spacer(minLength: 2)
+        if let countText {
+          Text(countText).font(.caption2).foregroundStyle(.secondary)
+        }
+      }
+      status(.caption)
+        .padding(.top, 6)
+      Spacer(minLength: 6)
+      let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
+      LazyVGrid(columns: columns, spacing: 6) {
+        ForEach(VivordoMood.all) { mood in
+          face(mood, size: 38, faceSize: 22, radius: 11)
+        }
+        Link(destination: Self.moodURL) {
+          Text("More")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(VivordoWidgetPalette.accent)
+            .frame(width: 38, height: 38)
+            .background(
+              RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(Color.primary.opacity(0.08))
+            )
+        }
+        .accessibilityLabel("Open the full mood check-in")
+      }
+    }
+    .padding(14)
+    .widgetURL(Self.moodURL)
+  }
+
+  private var lockScreen: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 4) {
+        status(.caption2)
+        Spacer(minLength: 2)
+        if let countText {
+          Text(countText).font(.caption2).foregroundStyle(.secondary)
+        }
+      }
+      HStack(spacing: 4) {
+        ForEach(VivordoMood.all) { mood in
+          let hit = entry.confirmed?.mood.score == mood.score
+          Button(intent: LogMoodIntent(score: mood.score)) {
+            MoodFace(smile: mood.smile, lineWidth: 1.5)
+              .frame(width: 16, height: 16)
+              .frame(maxWidth: .infinity, minHeight: 26)
+              .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                  .fill(Color.primary.opacity(hit ? 0.55 : 0.15))
+              )
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Log \(mood.label)")
+        }
+      }
+    }
+    .widgetURL(Self.moodURL)
+  }
+
+  private var signedOut: some View {
+    VStack(spacing: 6) {
+      Image(systemName: "face.smiling")
+        .font(.title2)
+        .foregroundStyle(VivordoWidgetPalette.accent)
+      Text("Sign in to Vivordo to log your mood")
+        .font(.caption.weight(.semibold))
+        .multilineTextAlignment(.center)
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .widgetURL(URL(string: "com.vivordo.health://widget/home"))
   }
 }

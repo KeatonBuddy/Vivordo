@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:provider/provider.dart';
 import '../widgets/visible_stream_builder.dart';
 import '../src/services/metrics_repository.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
@@ -13,6 +14,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'profile_screen.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
 import 'package:vivordo_health/src/services/check_in_reminder.dart';
+import 'package:vivordo_health/src/services/weekly_review_service.dart';
 import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
@@ -37,6 +39,7 @@ import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/plan_slot_sheet.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/latest_heart_rate.dart';
+import 'package:vivordo_health/src/utils/energy_factors.dart';
 import 'package:vivordo_health/src/utils/energy_fit.dart';
 import 'package:vivordo_health/src/utils/energy_forecast.dart';
 import 'package:vivordo_health/src/utils/sleep_schedule.dart';
@@ -982,6 +985,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // early Outlook start until My Day reschedules it.
       // Keeps the next week of morning check-in reminders scheduled.
       unawaited(CheckInReminders.sync());
+      unawaited(WeeklyReviewService.syncReminder());
       unawaited(
         WindDownReminders.sync(
           tomorrowFirstEvent: _firstTimedStart(
@@ -1177,18 +1181,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   key: widget.rightNowKey,
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _push(const StressDetailScreen()),
-                  child: HomeStressCard(
-                    score: stressScore,
-                    updatedAt: stressUpdatedAt,
-                    sevenDayAverage: sevenDayStressAverage,
-                    drivers: stressDrivers,
-                    steps: steps,
-                    loading: stressLoading,
-                    updating: stressUpdating,
-                    revealScore: widget.revealStress,
-                    onInfoTap: _showStressScoreExplanation,
-                    showWhoopBadge:
-                        sleepIsWhoop || latestHeartRate?.source == 'whoop_ble',
+                  child: Selector<ThemeController, bool>(
+                    selector: (_, c) => c.showScoreNumbers,
+                    builder: (context, showNumbers, _) => HomeStressCard(
+                      score: stressScore,
+                      updatedAt: stressUpdatedAt,
+                      sevenDayAverage: sevenDayStressAverage,
+                      drivers: stressDrivers,
+                      steps: steps,
+                      loading: stressLoading,
+                      updating: stressUpdating,
+                      revealScore: widget.revealStress,
+                      onInfoTap: _showStressScoreExplanation,
+                      showWhoopBadge:
+                          sleepIsWhoop ||
+                          latestHeartRate?.source == 'whoop_ble',
+                      showNumbers: showNumbers,
+                    ),
                   ),
                 ),
                 _buildCheckIn(checkIn),
@@ -1465,14 +1474,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           _divider(),
           Expanded(
-            child: _vital(
-              icon: Icons.mood_rounded,
-              color: _moodOrange,
-              value: moodScore?.round().toString(),
-              label: 'Mood',
-              loading: loading,
-              emptyAction: 'Check in',
-              onTap: _showMoodCheck,
+            child: Selector<ThemeController, bool>(
+              selector: (_, c) => c.showScoreNumbers,
+              builder: (context, showNumbers, _) => _vital(
+                icon: Icons.mood_rounded,
+                color: _moodOrange,
+                // Words mode shows the check-in's word, not its score.
+                value: moodScore == null
+                    ? null
+                    : showNumbers
+                    ? moodScore.round().toString()
+                    : MetricsService.moodLabelForScore(moodScore),
+                label: 'Mood',
+                loading: loading,
+                emptyAction: 'Check in',
+                onTap: _showMoodCheck,
+              ),
             ),
           ),
         ],
@@ -1781,6 +1798,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           '• Workouts are shown in teal.\n\n'
           'Longer items, overlaps and back-to-back runs make an hour busier, and so does anything after your end-of-day time.\n\n'
           'So far compares today with your usual by this time of day, once there are 14 days to compare with.\n\n'
+          'The line is your energy forecast from your sleep and body clock, with last night above it. Tap either to see what shaped today.\n\n'
           'Below the bars is your next free stretch of 30+ minutes. Tap Plan it to fill it, or tap a bar to see its busiest event.\n\n'
           'Effort and ratings are estimates.',
           style: TextStyle(
@@ -1994,15 +2012,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 builder: (context, contextSnapshot) =>
                     ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
                       valueListenable: _prioritySnapshot,
-                      builder: (context, prioritySnapshot, _) => _dayLoadCard(
-                        now: now,
-                        sleepNights: sleepNights,
-                        scored: scoresSnapshot.data ?? const [],
-                        events: eventsSnapshot.data,
-                        priorities: prioritySnapshot.data ?? const [],
-                        effortContext:
-                            contextSnapshot.data ?? const _EffortContext(),
-                      ),
+                      builder: (context, prioritySnapshot, _) =>
+                          FutureBuilder<List<EnergyFactor>>(
+                            future: DailyTagsService.energyFactorsFor(
+                              todayStart,
+                            ),
+                            builder: (context, factors) => _dayLoadCard(
+                              now: now,
+                              sleepNights: sleepNights,
+                              energyFactors: factors.data ?? const [],
+                              scored: scoresSnapshot.data ?? const [],
+                              events: eventsSnapshot.data,
+                              priorities: prioritySnapshot.data ?? const [],
+                              effortContext:
+                                  contextSnapshot.data ??
+                                  const _EffortContext(),
+                            ),
+                          ),
                     ),
               );
             },
@@ -2013,6 +2039,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _dayLoadCard({
     required DateTime now,
     required List<SleepPeriod> sleepNights,
+    required List<EnergyFactor> energyFactors,
     required List<_ScoredReachableEvent> scored,
     required List<_ScheduleEvent>? events,
     required List<DailyPriority> priorities,
@@ -2108,6 +2135,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             nights: sleepNights,
             sleepNeedHours: effortContext.sleepNeedHours,
             schedule: effortContext.sleepSchedule,
+            factors: energyFactors,
             tomorrowFirstEvent: ([
               for (final event in events ?? const <_ScheduleEvent>[])
                 if (!event.start.isBefore(tomorrow) &&
@@ -2206,6 +2234,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ],
               ),
             ),
+            if (energy != null) ...[
+              const SizedBox(height: 12),
+              EnergySleepLine(
+                forecast: energy,
+                onTap: () => showEnergyForecastSheet(context, energy),
+              ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               height: 60,

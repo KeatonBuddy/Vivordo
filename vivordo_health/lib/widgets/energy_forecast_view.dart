@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
+import '../src/utils/energy_factors.dart';
 import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
 import '../src/utils/sleep_schedule.dart';
+import 'daily_tags.dart';
 
 /// The energy forecast's colours: green when you're at your best, amber in
 /// the dip, muted while groggy, purple while winding down.
@@ -64,6 +66,98 @@ String _hoursText(double hours) {
 }
 
 /// The peak, dip and second wind as chips. Taps open the "why" sheet.
+/// Last night on Home's Your Day: time asleep against your need, and the
+/// night's tags. Nothing when last night isn't tracked and nothing's tagged.
+class EnergySleepLine extends StatelessWidget {
+  const EnergySleepLine({super.key, required this.forecast, this.onTap});
+
+  final EnergyForecast forecast;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = energySleepLines(forecast);
+    if (lines.sleep == null && lines.tags == null) {
+      return const SizedBox.shrink();
+    }
+    final colors = context.vivordoColors;
+    return Material(
+      color: _energyWindDown.withValues(alpha: .10),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.bedtime_outlined,
+                size: 18,
+                color: _energyWindDown,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (lines.sleep case final sleep?)
+                      Text(
+                        sleep,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: colors.textPrimary,
+                        ),
+                      ),
+                    if (lines.tags case final tags?)
+                      Text(
+                        tags,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: colors.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "5 h 18 asleep · 2 h 10 under your need" and "Alcohol last night".
+@visibleForTesting
+({String? sleep, String? tags}) energySleepLines(EnergyForecast forecast) {
+  final short = forecast.sleepNeedHours - forecast.sleptHours;
+  final tags = {
+    for (final f in forecast.factors)
+      if (f.id != hardTrainingFactor) f.id,
+  };
+  final phrase = dailyTagsPhrase(tags);
+  return (
+    sleep: forecast.estimated
+        ? null
+        : '${_hoursText(forecast.sleptHours)} asleep · '
+              '${short >= 0.25
+                  ? '${_hoursText(short)} under your need'
+                  : short <= -0.25
+                  ? '${_hoursText(-short)} over your need'
+                  : 'about your need'}',
+    tags: phrase.isEmpty
+        ? null
+        : '${phrase[0].toUpperCase()}${phrase.substring(1)} last night',
+  );
+}
+
 class EnergyChips extends StatelessWidget {
   const EnergyChips({super.key, required this.forecast, this.onTap});
 
@@ -315,8 +409,8 @@ class _EnergyForecastSheet extends StatelessWidget {
                 ),
               ),
             Text(
-              'Built on research into sleep pressure and body clocks. It '
-              "doesn't learn your own patterns yet.",
+              'Built on research into sleep pressure and body clocks. Night '
+              'tags use your own mornings once you have tagged a few nights.',
               style: TextStyle(fontSize: 12, color: colors.textSecondary),
             ),
           ],
@@ -353,6 +447,13 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
           : 'You slept ${_hoursText(forecast.sleptHours)}, about what you '
                 'need.',
     ),
+    for (final f in forecast.factors)
+      (
+        f.id == hardTrainingFactor
+            ? Icons.fitness_center_rounded
+            : Icons.nightlight_outlined,
+        f.reason,
+      ),
     if (groggy != null)
       (
         Icons.wb_twilight_rounded,
@@ -670,7 +771,7 @@ EnergyForecast tomorrowEnergyForecast({
   );
   return forecastEnergy(
     day: DateTime(today.year, today.month, today.day + 1),
-    nights: [...nights, (start: start, end: end)],
+    nights: [...nights, (start: start, end: end, asleepHours: null)],
     sleepNeedHours: tonight.sleepNeedHours,
     schedule: schedule,
   );

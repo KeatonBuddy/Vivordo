@@ -609,14 +609,14 @@ class _TargetPicker extends StatelessWidget {
   bool get _activity => type == _ChallengeType.activities;
 
   List<WorkoutExerciseCatalogItem> get _exercises => _activity
-      ? workoutExerciseCatalog
+      ? ExerciseCatalogService.defaults
             .where(
               (exercise) =>
                   exercise.category == 'Cardio' ||
                   exercise.category == 'Sports',
             )
             .toList(growable: false)
-      : workoutExerciseCatalog;
+      : ExerciseCatalogService.defaults;
 
   @override
   Widget build(BuildContext context) {

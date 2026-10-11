@@ -677,6 +677,94 @@ forecast, suggest the peak or second wind for demanding work, propose moves
 for the user to confirm, and never invent windows without it. The server
 ignores unknown keys, so app and functions can ship in either order.
 
+**Personal factors** (built 2026-10-10, `lib/src/utils/energy_factors.dart`):
+last night's tags and yesterday's training add to the sleep pressure you
+wake with, so today's curve runs lower, most of all early on. Each tag has
+a default (alcohol 0.08, late caffeine 0.05, late meal 0.03, screens in bed
+0.03, sick 0.15, travel 0.05; 0.06 is about an hour of lost sleep). Once a
+tag has 3 tagged and 5 untagged nights in the last four weeks, your own
+mornings replace the default: the median next-morning Capacity drop × 0.008
+(up to 0.15), or nothing when it's under 3 points. A hard training day
+yesterday (training load's day value ≥ 1.5) adds 0.05. The sheet lists each
+under the sleep line; tags are not sent to Vivordo AI. Hours slept use the
+tracker's asleep total (`sleep.avg`); bedtime and wake time are for timing
+only. Home's Your Day shows last night above the curve: time asleep against
+your need, and the night's tags.
+
+## 9. Weekly review
+
+**Implemented** in `lib/src/utils/weekly_review.dart` (rules) and
+`lib/src/services/weekly_review_service.dart` (loading and saving). Each
+Sunday, after the morning check-in is answered or dismissed, My Day shows a
+card for the week just ended (from noon without a check-in) (Sunday to Saturday; the Sunday it's read on
+isn't in it). It's built on the phone from small documents only:
+`scores_daily` (the week and the 28 days before), `event_reactions`,
+`daily_tags`, `day_fixes`, the week's workout count, today's open
+priorities and, on the Sunday, next Monday to Friday's Demand from the
+calendar. There's no review with Capacity on fewer than 4 of the 7 days.
+
+- **Usual:** the median Capacity of the 28 days before, of the same
+  Capacity version (the week's own median with fewer than 7). A heavy day is
+  Effort over that usual + 15, as in the brief.
+- **Headline, in order:** a sick night and 2+ low days → "A tough week
+  while you were unwell"; training load High or Strained, or the burnout
+  check at Watch or Warning → "A week that asked a lot"; 3+ heavy days → "A
+  heavy week you handled well", or "… that wore on you" when the last 3
+  days' Capacity averaged 5+ under the first 3, or the week 5+ under usual;
+  5 of 7 nights on target → "A good week for sleep"; no heavy days and
+  Capacity within 5 of usual → "A lighter, steadier week"; else "A mixed
+  week".
+- **What drained you (up to 3):** sick and travel nights; the heaviest day;
+  a big day; a meeting series whose heart rate rose 7+ bpm over its usual;
+  late nights before low days; after-hours time 1.5× the usual week and an
+  hour more; training load High or Strained; a priority open 3+ days ("open
+  since …").
+- **What helped (up to 3):** nights on target with Capacity 5+ higher the
+  next morning; 2+ day fixes used; meetings or focus blocks 3+ bpm calmer
+  than usual; a steady training week.
+- **Body signals only as a reason.** A low day is Capacity 8+ under usual;
+  the body is named only when its part made the largest weighted drop. An
+  off day is resting heart rate 5+ bpm over normal or HRV at 85% of normal
+  or under (`bodyOffDay`, shared with meeting patterns): that day's meetings
+  aren't counted against them, and the review says so.
+- **Next week:** each weekday is Light (Demand 15+ under usual), About usual
+  or More than your usual (15+ over), with one suggestion by rule (a slot for
+  a slipping priority on the lightest day, then moving a priority off two
+  busy days in a row, then protecting the evening before the heaviest).
+- **Saved** once at `users/{uid}/weekly_reviews/{the week's Sunday}` (v1),
+  with no event titles: meetings are stored by series key and named from
+  the calendar when shown. "Anything else going on this week?" (Busy at
+  home / Not feeling well / Travel / Big deadline / a note of 80 characters
+  or fewer) is saved on it, sent to Vivordo AI with "Plan next week", and
+  mentioned in next week's review.
+- **Where:** My Day on Sundays until hidden for the day; Journal lists each
+  review on its Sunday, with a dot on the mood calendar, and search finds
+  it. A reminder (`preferences.weeklyReviewReminder`, on unless switched
+  off) fires Sundays at 11 AM.
+
+## 10. Words mode
+
+**Implemented** (2026-10-11): `preferences.showScoreNumbers` (on unless
+switched off), set in onboarding ("How do you want to see your scores?") or
+Settings → Preferences → Show score numbers, and shared by
+`ThemeController`. With it off, scores show as a sentence and a state chip
+(3-4 states), never as a number, ring or fill:
+- **Home:** stress becomes "Calm / A bit tense / Quite tense / Very tense"
+  with its level (Low / Moderate / Elevated / High), compared with the week
+  as calmer, about the same or more tense (5 points either way); Mood shows
+  its check-in word.
+- **My Day:** the brief's Capacity and Demand rings become Energy (8 points
+  either side of the usual Capacity, or its own bands without one) and
+  Today's / Tomorrow's load (Light, Full or Heavy: Demand ±15 of the
+  Capacity it's set beside).
+- **Stress detail:** the dial, today's axis and points, and the trend's
+  numbers become words and a week of coloured days; Vivordo AI still gets
+  the score.
+- **Metrics:** the Capacity and Effort insights drop their numbers.
+Measurements (sleep, sleep debt, heart rate, steps), Your Day's bars and
+energy line, Fitness, the Metrics charts, widgets, Siri, notifications and
+Vivordo AI are unchanged.
+
 ## Open questions
 
 None. Decided (2026-10-01):

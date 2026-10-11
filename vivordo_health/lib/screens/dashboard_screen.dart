@@ -3,6 +3,7 @@ import '../widgets/visible_stream_builder.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -601,10 +602,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 stream: _scoresStream,
                 builder: (context, snapshot) {
                   final scores = snapshot.data ?? _scores;
-                  return _buildInsightsCard(
-                    scores == null
-                        ? null
-                        : metricsInsights(scores, DateTime.now()),
+                  return Selector<ThemeController, bool>(
+                    selector: (_, c) => c.showScoreNumbers,
+                    builder: (context, showNumbers, _) => _buildInsightsCard(
+                      scores == null
+                          ? null
+                          : metricsInsights(
+                              scores,
+                              DateTime.now(),
+                              numbers: showNumbers,
+                            ),
+                    ),
                   );
                 },
               ),

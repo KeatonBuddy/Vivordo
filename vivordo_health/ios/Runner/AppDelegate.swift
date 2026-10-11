@@ -105,6 +105,29 @@ import WidgetKit
           result(nil)
           return
         }
+        // Check-ins tapped on the Mood widget (LogMoodIntent). Each sits under
+        // its own key, so a tap and an upload never overwrite each other.
+        if call.method == "pendingMoodCheckIns" {
+          let defaults = UserDefaults(suiteName: "group.com.vivordo.health")
+          let queued = (defaults?.dictionaryRepresentation() ?? [:])
+            .compactMap { key, value -> [String: Any]? in
+              guard key.hasPrefix("pendingMood."),
+                    var entry = value as? [String: Any] else { return nil }
+              entry["id"] = key
+              return entry
+            }
+          result(queued)
+          return
+        }
+        if call.method == "removeMoodCheckIns",
+           let ids = call.arguments as? [String] {
+          let defaults = UserDefaults(suiteName: "group.com.vivordo.health")
+          ids.filter { $0.hasPrefix("pendingMood.") }
+            .forEach { defaults?.removeObject(forKey: $0) }
+          WidgetCenter.shared.reloadTimelines(ofKind: "VivordoMood")
+          result(nil)
+          return
+        }
         if call.method == "updateSnapshot",
            let values = call.arguments as? [String: Any] {
           let changedKeys = Set(values.keys)
@@ -130,6 +153,9 @@ import WidgetKit
               "exerciseMinutes", "exerciseGoal",
             ]
             let calendarKeys: Set<String> = ["calendarEvents"]
+            let moodKeys: Set<String> = [
+              "moodAccount", "moodDay", "moodTodayCount", "moodLastScore", "moodLastAt",
+            ]
 
             if !changedKeys.isDisjoint(with: stressKeys) {
               WidgetCenter.shared.reloadTimelines(ofKind: "VivordoStressScore")
@@ -142,6 +168,9 @@ import WidgetKit
             }
             if !changedKeys.isDisjoint(with: calendarKeys) {
               WidgetCenter.shared.reloadTimelines(ofKind: "VivordoCalendar")
+            }
+            if !changedKeys.isDisjoint(with: moodKeys) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "VivordoMood")
             }
 
             DispatchQueue.main.async { result(nil) }
