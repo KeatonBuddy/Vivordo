@@ -1014,64 +1014,85 @@ private struct DayDashboardView: View {
 
   var body: some View {
     GeometryReader { geometry in
-      // Fit the whole composition on the smaller supported iPhones without
-      // clipping the actions below the fold. No scrolling inside WidgetKit.
-      let scale = min(geometry.size.width / 360, geometry.size.height / 740)
-      VStack(alignment: .leading, spacing: 12) {
-        HStack(spacing: 6) {
-          VivordoMark()
-            .fill(accent)
-            .frame(width: 25, height: 20)
-            .widgetAccentable()
-            .accessibilityHidden(true)
-          Text(entry.date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-        }
-        VStack(alignment: .leading, spacing: 3) {
-          Text(greeting)
-            .font(.system(size: 24, weight: .bold))
-            .lineLimit(1)
-            .minimumScaleFactor(0.65)
-          Text(entry.summary)
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
-        }
-        HStack(spacing: 10) {
-          Link(destination: destination("home")) { tile { stressTile.frame(maxHeight: .infinity, alignment: .top) } }
-          Link(destination: destination("myday")) { tile { prioritiesTile.frame(maxHeight: .infinity, alignment: .top) } }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        VStack(alignment: .leading, spacing: 6) {
-          heading("Now and next")
-          Link(destination: destination("calendar")) { tile { nowAndNext } }
-        }
-        VStack(alignment: .leading, spacing: 6) {
-          heading("Activity")
-          Link(destination: destination("fitness")) { tile { activity } }
-        }
-        VStack(alignment: .leading, spacing: 6) {
-          HStack {
-            heading("Priorities")
-            Spacer()
-            Link("Open My Day ›", destination: destination("myday"))
-              .font(.caption)
-              .foregroundStyle(accent)
-          }
-          Link(destination: destination("myday")) { tile { priorityList } }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        Spacer(minLength: 0)
-        HStack(spacing: 10) {
-          shortcut("Mood check-in", icon: "heart.fill", color: .pink, route: "mood")
-          shortcut("Start workout", icon: "dumbbell.fill", color: accent, route: "workout")
-        }
+      // Laid out at the widget's real shape, shrunk only on phones narrower
+      // than 360 pt. The widget's shape and the text size vary by phone, so
+      // the first layout whose height fits is used; the shortcuts are never
+      // pushed below the edge. No scrolling inside WidgetKit.
+      let scale = min(1, geometry.size.width / 360)
+      ViewThatFits(in: .vertical) {
+        layout(activity: .bars, priorities: 3)
+        layout(activity: .row, priorities: 2)
+        layout(activity: .row, priorities: 1)
+        layout(activity: .hidden, priorities: 1)
       }
       .padding(18)
-      .frame(width: 360, height: 740, alignment: .top)
+      .frame(width: geometry.size.width / scale, height: geometry.size.height / scale,
+             alignment: .top)
       .scaleEffect(scale)
       .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+    }
+  }
+
+  /// Activity as three bars, the three totals on one row, or left out.
+  private enum ActivityStyle { case bars, row, hidden }
+
+  private func layout(activity style: ActivityStyle, priorities: Int) -> some View {
+    VStack(alignment: .leading, spacing: style == .bars ? 12 : 10) {
+      HStack(spacing: 6) {
+        VivordoMark()
+          .fill(accent)
+          .frame(width: 25, height: 20)
+          .widgetAccentable()
+          .accessibilityHidden(true)
+        Text(entry.date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+      VStack(alignment: .leading, spacing: 3) {
+        Text(greeting)
+          .font(.system(size: 24, weight: .bold))
+          .lineLimit(1)
+          .minimumScaleFactor(0.65)
+        Text(entry.summary)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+          .lineLimit(style == .bars ? 2 : 1)
+      }
+      HStack(spacing: 10) {
+        Link(destination: destination("home")) { tile { stressTile.frame(maxHeight: .infinity, alignment: .top) } }
+        Link(destination: destination("myday")) { tile { prioritiesTile.frame(maxHeight: .infinity, alignment: .top) } }
+      }
+      .fixedSize(horizontal: false, vertical: true)
+      VStack(alignment: .leading, spacing: 6) {
+        heading("Now and next")
+        Link(destination: destination("calendar")) { tile { nowAndNext } }
+      }
+      if style != .hidden {
+        VStack(alignment: .leading, spacing: 6) {
+          heading("Activity")
+          Link(destination: destination("fitness")) {
+            tile { if style == .bars { activity } else { activityRow } }
+          }
+        }
+      }
+      VStack(alignment: .leading, spacing: 6) {
+        HStack {
+          heading("Priorities")
+          Spacer()
+          Link("Open My Day ›", destination: destination("myday"))
+            .font(.caption)
+            .foregroundStyle(accent)
+        }
+        Link(destination: destination("myday")) {
+          tile { priorityList(limit: priorities) }
+        }
+      }
+      .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
+      HStack(spacing: 10) {
+        shortcut("Mood check-in", icon: "heart.fill", color: .pink, route: "mood")
+        shortcut("Start workout", icon: "dumbbell.fill", color: accent, route: "workout")
+      }
     }
   }
 
@@ -1161,6 +1182,26 @@ private struct DayDashboardView: View {
     }
   }
 
+  /// The three totals side by side, for the compact layout.
+  private var activityRow: some View {
+    HStack(spacing: 12) {
+      activityColumn(value: metrics.steps, goal: metrics.stepsGoal, unit: "steps", color: accent)
+      activityColumn(value: metrics.calories, goal: metrics.caloriesGoal, unit: "cal", color: VivordoWidgetPalette.coral)
+      activityColumn(value: metrics.exerciseMinutes, goal: metrics.exerciseGoal, unit: "min", color: VivordoWidgetPalette.mint)
+    }
+  }
+
+  private func activityColumn(value: Int, goal: Int, unit: String, color: Color) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      (Text(metrics.hasMetrics ? value.formatted() : "—").font(.subheadline.weight(.semibold))
+        + Text(" \(unit)").font(.caption).foregroundStyle(.secondary))
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+      ProgressBar(progress: metrics.hasMetrics ? Double(value) / Double(goal) : 0, color: color)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
   private func activityRow(value: Int, goal: Int, unit: String, color: Color) -> some View {
     VStack(spacing: 4) {
       HStack {
@@ -1179,14 +1220,14 @@ private struct DayDashboardView: View {
     }
   }
 
-  private var priorityList: some View {
+  private func priorityList(limit: Int) -> some View {
     let ordered = entry.priorities.filter { !$0.completed } + entry.priorities.filter(\.completed)
     return VStack(alignment: .leading, spacing: 9) {
       if ordered.isEmpty {
         Text("No priorities yet").font(.subheadline.weight(.semibold))
         Text("Add one in My Day.").font(.caption).foregroundStyle(.secondary)
       } else {
-        ForEach(Array(ordered.prefix(3))) { priority in
+        ForEach(Array(ordered.prefix(limit))) { priority in
           HStack(spacing: 9) {
             Image(systemName: priority.completed ? "checkmark.circle.fill" : "circle")
               .foregroundStyle(accent)
@@ -1202,8 +1243,8 @@ private struct DayDashboardView: View {
             }
           }
         }
-        if ordered.count > 3 {
-          Text("+\(ordered.count - 3) more").font(.caption).foregroundStyle(.secondary)
+        if ordered.count > limit {
+          Text("+\(ordered.count - limit) more").font(.caption).foregroundStyle(.secondary)
         }
       }
     }
