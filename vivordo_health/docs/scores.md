@@ -386,6 +386,10 @@ vs untagged nights, shown once a tag has 5 of each) need those days.
   done.
 - **Not enough data:** with no sleep, no overnight body data and no
   check-in, Capacity is shown as unavailable. It is never guessed.
+- **Without HRV**, My Day's Capacity explanation says so and names what was
+  used instead: resting heart rate, the lowest heart rate while asleep, or
+  (with no overnight heart data) a normal night (`capacityBodyNote` in
+  `lib/src/utils/server_capacity.dart`). HRV is never estimated.
 - **One reading never decides it:** a resting HR more than 12 bpm from your
   normal is treated as a bad reading and left out (`restingHrIgnored`), and
   with no sleep and no check-in, the body part needs both HRV and resting

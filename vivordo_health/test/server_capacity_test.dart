@@ -195,4 +195,36 @@ void main() {
     expect(c.todayLoad, 160);
     expect(c.todayBigDayRatio, closeTo(3.2, 1e-9));
   });
+
+  test('says when Capacity was calculated without HRV, and from what', () {
+    Map<String, dynamic> capacity(Map<String, dynamic> extra) => {
+      'parts': {'sleep': 90, 'body': 70},
+      'bodyMeasured': true,
+      ...extra,
+    };
+    expect(capacityBodyNote(capacity({'hrv': 52, 'restingHr': 55})), isNull);
+    expect(
+      capacityBodyNote(capacity({'restingHr': 55, 'restingHrKind': 'resting'})),
+      startsWith(
+        "Today's was calculated without HRV, from your sleep and resting heart rate.",
+      ),
+    );
+    expect(
+      capacityBodyNote(
+        capacity({'restingHr': 48, 'restingHrKind': 'sleeping'}),
+      ),
+      contains('lowest heart rate while asleep'),
+    );
+    expect(
+      capacityBodyNote(capacity({'bodyMeasured': false})),
+      startsWith('There was no overnight heart data today'),
+    );
+    // A check-in-only score has no body part to explain.
+    expect(
+      capacityBodyNote({
+        'parts': {'checkIn': 70, 'body': null},
+      }),
+      isNull,
+    );
+  });
 }

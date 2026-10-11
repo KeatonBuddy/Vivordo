@@ -1268,9 +1268,10 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
         'Check in above to add how you feel.',
       if (missing.contains(StressSignalKind.sleep))
         'Last night\'s sleep hasn\'t synced yet.',
-      if (missing.contains(StressSignalKind.hrv) ||
-          missing.contains(StressSignalKind.heartRate))
-        'Wearing your watch adds heart signals.',
+      if (missing.contains(StressSignalKind.heartRate))
+        'Wearing your watch adds heart signals.'
+      else if (missing.contains(StressSignalKind.hrv))
+        'No HRV yet today. Not every device shares it, so the score uses your other signals.',
     ];
     return _card(
       key: _signalsKey,

@@ -12,6 +12,7 @@ class ServerCapacity {
     this.activityBase,
     this.activityThreshold,
     this.todayLoad,
+    this.bodyNote,
   });
 
   final int score;
@@ -45,6 +46,10 @@ class ServerCapacity {
   /// Today's load so far, in the same kind: `activityLoad.trimp` or
   /// `effort.physicalLoad`.
   final double? todayLoad;
+
+  /// What today's overnight body part was calculated without, for the
+  /// Capacity explanation; null when HRV was measured.
+  final String? bodyNote;
 
   /// Today's load against the usual when it's a big day, e.g. 3.1; null
   /// otherwise.
@@ -154,7 +159,27 @@ ServerCapacity? serverCapacityFor(
     note: note,
     sleepNeedHours: (today['sleepNeed'] as num?)?.toDouble(),
     usual: usual,
+    bodyNote: capacityBodyNote(today),
   );
+}
+
+/// Today's Capacity without HRV says so, and what it used instead
+/// (docs/scores.md §4). Null when HRV was measured, or for a check-in-only
+/// score, which has no body part.
+String? capacityBodyNote(Map capacity) {
+  if (capacity['hrv'] is num) return null;
+  final parts = capacity['parts'];
+  if (parts is! Map || parts['body'] == null) return null;
+  const more = 'A device that records HRV adds more detail.';
+  if (capacity['bodyMeasured'] != true) {
+    return 'There was no overnight heart data today, so that part counts as '
+        'a normal night. $more';
+  }
+  return capacity['restingHrKind'] == 'sleeping'
+      ? 'Today\'s was calculated without HRV, from your sleep and your '
+            'lowest heart rate while asleep. $more'
+      : 'Today\'s was calculated without HRV, from your sleep and resting '
+            'heart rate. $more';
 }
 
 /// My Day's morning headline while a big day is lowering Capacity:
