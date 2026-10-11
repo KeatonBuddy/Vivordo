@@ -236,11 +236,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!mounted) return;
       setState(() => _lastManualHealthRefresh = DateTime.now());
       if (showFeedback) {
-        showToast(
-          context,
-          'Apple Health metrics refreshed.',
-          kind: ToastKind.success,
-        );
+        showToast(context, 'Metrics refreshed.', kind: ToastKind.success);
       }
     } catch (e) {
       debugPrint(
@@ -249,7 +245,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (showFeedback && mounted) {
         showToast(
           context,
-          "Couldn't refresh from Apple Health. Try again.",
+          "Couldn't refresh metrics. Try again.",
           kind: ToastKind.error,
         );
       }
