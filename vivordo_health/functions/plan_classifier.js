@@ -5,7 +5,9 @@
 // Titles only (plus duration and attendee count for events), never notes.
 // Called by the app only with the user's AI consent.
 
-const MODEL = "claude-opus-5-5";
+// Haiku matched Opus 5.5 on 98 of 100 test items at ~1/30th the cost
+// (2026-10-11).
+const MODEL = "claude-haiku-5-5";
 const MAX_EVENTS = 20;
 const MAX_PRIORITIES = 10;
 const MAX_TITLE = 120;

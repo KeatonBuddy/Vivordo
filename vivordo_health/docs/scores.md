@@ -21,7 +21,7 @@ hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
   the effort they were given, as Home does today: light 20, moderate 45,
   demanding 75 (unset = moderate).
 - **Unknown events** (titles the local rules can't classify) are sent to
-  Claude Opus 5.5 (low effort, structured JSON) through the
+  Claude Haiku 5.5 (low effort, structured JSON) through the
   `classifyPlanItems` function, which answers with one of the same five
   categories or "can't tell". It sends the title, duration and attendee
   count only, never notes, at most 20 events per call, with its own daily
@@ -770,9 +770,10 @@ Vivordo AI are unchanged.
 None. Decided (2026-10-01):
 - Ticking off any priority, timed or untimed, adds Effort.
 - Late sleep updates Capacity, with no time cutoff.
-- Unknown events are classified by Claude Opus 5.5 at low effort. Revisit
-  with a Haiku 4.5 comparison on real titles once there are thousands of
-  users.
+- Unknown events are classified by Claude Haiku 5.5 at low effort (switched
+  from Opus 5.5 on 2026-10-11: on 100 test events and priorities it agreed
+  with Opus on 98, Sonnet 5.5 on 95, at about 1/30th of Opus's cost).
+  Recheck on real titles once there are thousands of users.
 - The privacy policy needs a line about event titles being processed by
   an AI provider.
 - After hours = after the user's own wrap-up time (default 5 PM).

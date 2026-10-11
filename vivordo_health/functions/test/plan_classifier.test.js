@@ -39,7 +39,7 @@ test("answers keep only asked-about ids and valid values", () => {
   ]);
 });
 
-test("calls Opus 5.5 at low effort with a JSON schema; titles only", async () => {
+test("calls Haiku 5.5 at low effort with a JSON schema; titles only", async () => {
   let sent;
   const client = {messages: {create: async (body) => {
     sent = body;
@@ -49,7 +49,7 @@ test("calls Opus 5.5 at low effort with a JSON schema; titles only", async () =>
   }}};
   const request = validatePlanRequest({events: [{id: "e1", title: "Deep work", minutes: 120}]});
   const result = await classifyPlanItems(client, request);
-  assert.equal(sent.model, "claude-opus-5-5");
+  assert.equal(sent.model, "claude-haiku-5-5");
   assert.equal(sent.output_config.effort, "low");
   assert.equal(sent.output_config.format.type, "json_schema");
   assert.deepEqual(JSON.parse(sent.messages[0].content).events[0], {id: "e1", title: "Deep work", minutes: 120, attendees: 0});
