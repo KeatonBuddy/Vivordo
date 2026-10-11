@@ -1838,23 +1838,25 @@ private struct MoodWidgetView: View {
       status(.caption)
         .padding(.top, 6)
       Spacer(minLength: 6)
-      let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
-      LazyVGrid(columns: columns, spacing: 6) {
-        ForEach(VivordoMood.all) { mood in
-          face(mood, size: 38, faceSize: 22, radius: 11)
+      // Three faces, then two centred with the same gap. The full check-in
+      // is a tap anywhere else on the widget (widgetURL).
+      GeometryReader { geometry in
+        let gap = max(6, (geometry.size.width - 3 * 38) / 2)
+        VStack(spacing: 6) {
+          HStack(spacing: gap) {
+            ForEach(VivordoMood.all.prefix(3)) { mood in
+              face(mood, size: 38, faceSize: 22, radius: 11)
+            }
+          }
+          HStack(spacing: gap) {
+            ForEach(VivordoMood.all.suffix(2)) { mood in
+              face(mood, size: 38, faceSize: 22, radius: 11)
+            }
+          }
         }
-        Link(destination: Self.moodURL) {
-          Text("More")
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(VivordoWidgetPalette.accent)
-            .frame(width: 38, height: 38)
-            .background(
-              RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(Color.primary.opacity(0.08))
-            )
-        }
-        .accessibilityLabel("Open the full mood check-in")
+        .frame(maxWidth: .infinity)
       }
+      .frame(height: 82)
     }
     .padding(14)
     .widgetURL(Self.moodURL)
