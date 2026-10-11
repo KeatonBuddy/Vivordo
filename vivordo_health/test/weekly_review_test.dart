@@ -255,4 +255,56 @@ void main() {
     expect(reviewWeekStart(DateTime(2026, 10, 14)), DateTime(2026, 10, 4));
     expect(reviewWeekStart(DateTime(2026, 10, 17)), DateTime(2026, 10, 4));
   });
+
+  test('day lists only make ranges of consecutive days', () {
+    DateTime d(int day) => DateTime(2026, 10, day); // Oct 4 is a Sunday
+    expect(weekdayList([d(6)]), 'Tuesday');
+    expect(weekdayList([d(4), d(10)]), 'Sunday and Saturday');
+    // Oct 4–10: Sun, Mon, Tue and Sat flagged, Wed–Fri normal.
+    expect(weekdayList([d(4), d(5), d(6), d(10)]), 'Sun–Tue and Sat');
+    expect(weekdayList([d(4), d(6), d(8)]), 'Sun, Tue and Thu');
+    expect(weekdayList([for (var i = 4; i <= 10; i++) d(i)]), 'Sun–Sat');
+  });
+
+  test('after-hours is only compared with weeks that had Effort', () {
+    String? afterHoursLine(Map<String, Map<String, dynamic>> history) {
+      final week = [
+        for (var i = 0; i < 7; i++)
+          day()..['effort'] = {'total': 50, 'afterHoursMinutes': 30.0},
+      ];
+      final review = buildWeeklyReview(
+        WeeklyReviewInput(
+          weekStart: sunday,
+          scores: {
+            ...history,
+            for (var i = 0; i < 7; i++) localDayKey(at(i)): week[i],
+          },
+        ),
+      );
+      return review!.drained
+          .where((l) => l.title == 'After-hours work')
+          .map((l) => l.detail)
+          .firstOrNull;
+    }
+
+    Map<String, Map<String, dynamic>> weeks(int count, double minutes) => {
+      for (var i = 1; i <= 7 * count; i++)
+        localDayKey(sunday.subtract(Duration(days: i))): {
+          'capacity': {'score': 75, 'version': 2},
+          'effort': {'total': 50, 'afterHoursMinutes': minutes},
+        },
+    };
+    // 3h 30m this week; only one earlier week of Effort, so no usual.
+    expect(afterHoursLine(weeks(1, 0)), isNull);
+    // Four earlier weeks at 0 a day: all of it is more than usual.
+    expect(
+      afterHoursLine(weeks(4, 0)),
+      '3h 30m after hours, 3h 30m more than usual.',
+    );
+    // 10 minutes a day before (1h 10m a week): 2h 20m more than usual.
+    expect(
+      afterHoursLine(weeks(4, 10)),
+      '3h 30m after hours, 2h 20m more than usual.',
+    );
+  });
 }

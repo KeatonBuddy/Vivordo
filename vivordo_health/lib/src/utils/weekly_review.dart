@@ -317,6 +317,31 @@ String _minutes(num minutes) {
 
 String _weekday(DateTime d) => DateFormat('EEEE').format(d);
 
+/// Days in order as words: "Monday", "Sunday and Saturday", or with three
+/// or more, abbreviated with only consecutive runs of 3+ as a range:
+/// "Sun–Tue and Sat". A range never spans a day that isn't in [on].
+String weekdayList(List<DateTime> on) {
+  final name = on.length <= 2 ? _weekday : DateFormat('EEE').format;
+  bool next(DateTime a, DateTime b) =>
+      DateTime(a.year, a.month, a.day + 1) == DateTime(b.year, b.month, b.day);
+  final parts = <String>[];
+  for (var i = 0; i < on.length;) {
+    var j = i;
+    while (j + 1 < on.length && next(on[j], on[j + 1])) {
+      j++;
+    }
+    if (j - i >= 2) {
+      parts.add('${name(on[i])}–${name(on[j])}');
+    } else {
+      parts.addAll([for (var k = i; k <= j; k++) name(on[k])]);
+    }
+    i = j + 1;
+  }
+  return parts.length == 1
+      ? parts.single
+      : '${parts.sublist(0, parts.length - 1).join(', ')} and ${parts.last}';
+}
+
 /// The review for [input], or null with Capacity on fewer than 4 days.
 WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
   final start = DateTime(
@@ -434,11 +459,7 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
     return 'your HRV was lower than usual';
   }
 
-  String dayList(List<DateTime> on) => on.length == 1
-      ? _weekday(on.first)
-      : on.length == 2
-      ? '${_weekday(on[0])} and ${_weekday(on[1])}'
-      : '${DateFormat('EEE').format(on.first)}–${DateFormat('EEE').format(on.last)}';
+  String dayList(List<DateTime> on) => weekdayList(on);
 
   // --- What drained you, strongest first.
   final drained = <ReviewLine>[];
@@ -545,25 +566,32 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
     0,
     (sum, d) => sum + (_num(effortOf(d)?['afterHoursMinutes']) ?? 0),
   );
+  // The usual week: the median of earlier weeks with Effort on 5+ days, so
+  // weeks before Effort existed don't count as zero after-hours. Needs 2.
   final priorWeeks = [
     for (var w = 1; w <= 4; w++)
-      [
-        for (var i = 0; i < 7; i++)
-          _num(
-            (input.scores[localDayKey(
-                  start.subtract(Duration(days: 7 * w - i)),
-                )]?['effort']
-                as Map?)?['afterHoursMinutes'],
-          ),
-      ].whereType<double>().fold<double>(0, (a, b) => a + b),
+      if ([
+            for (var i = 0; i < 7; i++)
+              _num(
+                (input.scores[localDayKey(
+                      start.subtract(Duration(days: 7 * w - i)),
+                    )]?['effort']
+                    as Map?)?['afterHoursMinutes'],
+              ),
+          ].whereType<double>().toList()
+          case final week when week.length >= 5)
+        week.fold<double>(0, (a, b) => a + b),
   ];
-  final usualAfter = _median(priorWeeks);
-  if (afterHours >= usualAfter * 1.5 && afterHours - usualAfter >= 60) {
+  final usualAfter = priorWeeks.length < 2 ? null : _median(priorWeeks);
+  if (usualAfter != null &&
+      afterHours >= usualAfter * 1.5 &&
+      afterHours - usualAfter >= 60) {
     drained.add(
       ReviewLine(
         'afterHours',
         'After-hours work',
-        '${_minutes(afterHours)} after hours, usually ${_minutes(usualAfter)}.',
+        '${_minutes(afterHours)} after hours, ${_minutes(afterHours - usualAfter)} '
+            'more than usual.',
       ),
     );
   }
