@@ -124,6 +124,30 @@ class TrainingLoadView {
           ];
   }
 
+  /// What a low HRV or high resting heart rate means, for people who don't
+  /// know; null when neither is flagged.
+  String? get bodyExplanation {
+    if (mornings == 0) return null;
+    final parts = [
+      if (hrvLow > 0)
+        'HRV (heart rate variability) is the small change in time between '
+            'heartbeats. It\'s usually higher when you\'re well rested, so '
+            'lower than your normal often means your body is still '
+            'recovering.',
+      if (restingHigh > 0)
+        'Resting heart rate is how fast your heart beats at rest. A few '
+            'beats above your normal often means your body is working '
+            'harder to recover.',
+    ];
+    if (parts.isEmpty) return null;
+    final compared = parts.length == 1
+        ? "It's compared with your own normal, and it's"
+        : 'Both are compared with your own normal, and either is';
+    return '${parts.join('\n\n')}\n\nHard training, short sleep, stress, '
+        'alcohol or getting ill can all do this. $compared a sign to take it '
+        'a bit easier for a day or two.';
+  }
+
   String get measuredBy => switch (kind) {
     'heart' => 'Measured by heart rate',
     'minutes' => 'Measured by active minutes',
