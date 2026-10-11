@@ -409,6 +409,13 @@ Changes from the current Capacity:
   rate vs a fixed 60 bpm. HRV uses one kind only (WHOOP or Fitbit overnight
   RMSSD, else Apple SDNN; `functions/hrv.js`), since the kinds can't be
   compared; `hrvKind` records which;
+- resting HR follows the same one-kind rule: Health's or the wearable's
+  resting heart rate, else the night's **sleeping heart rate** (the lowest
+  tenth of Health heart-rate readings while asleep, at least 12 of them;
+  written as `sleeping_heart_rate` by the app's sleep sync) for wearables
+  that write heart rate but no resting heart rate. It runs a few bpm lower,
+  so it has its own normal; `restingHrKind` records which, and burnout
+  compares one kind only;
 - recovery from yesterday's Effort carries over;
 - morning stress is dropped (it double-counted sleep and the body);
 - an optional morning check-in adds a self-reported signal;

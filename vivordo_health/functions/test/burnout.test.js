@@ -153,6 +153,8 @@ test("provisional Capacity, ignored resting HR and other Effort versions are lef
   const ignored = dailySignals({capacity: {score: 70, provisional: false, restingHr: 67, restingHrIgnored: true, hrv: 50, hrvKind: "sdnn"}});
   assert.equal(ignored.restingHeartRate, null);
   assert.deepEqual(ignored.hrv, {sdnn: 50});
+  assert.deepEqual(dailySignals({capacity: {score: 70, provisional: false, restingHr: 52}}).restingHeartRate, {resting: 52});
+  assert.deepEqual(dailySignals({capacity: {score: 70, provisional: false, restingHr: 47, restingHrKind: "sleeping"}}).restingHeartRate, {sleeping: 47});
 });
 
 test("small shifts under the minimum meaningful change score zero", () => {

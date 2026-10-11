@@ -148,3 +148,28 @@ double _durationMinutes(Iterable<SleepInterval> intervals) => intervals.fold(
   (total, interval) =>
       total + interval.end.difference(interval.start).inMilliseconds / 60000,
 );
+
+/// Readings needed while asleep to call the night measured (about two hours
+/// at one reading every ten minutes).
+const minSleepingHeartRateReadings = 12;
+
+/// The night's resting heart rate for wearables that don't write one to
+/// Health: the lowest tenth of the heart-rate readings taken while asleep.
+/// It runs a few bpm under Health's resting heart rate, so Capacity treats
+/// it as its own kind (functions/capacity.js). Null with too few readings.
+double? sleepingHeartRate(
+  SleepDaySummary night,
+  Iterable<({DateTime time, double bpm})> readings,
+) {
+  final asleep = [
+    for (final reading in readings)
+      if (night.asleepIntervals.any(
+        (interval) =>
+            !reading.time.isBefore(interval.start) &&
+            reading.time.isBefore(interval.end),
+      ))
+        reading.bpm,
+  ]..sort();
+  if (asleep.length < minSleepingHeartRateReadings) return null;
+  return asleep[asleep.length ~/ 10];
+}

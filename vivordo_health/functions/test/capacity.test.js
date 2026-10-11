@@ -96,6 +96,7 @@ test("only sleep, HRV, resting HR and check-in changes trigger a recalculation",
   assert.equal(capacityInputsChanged(undefined, base), true);
   assert.equal(capacityInputsChanged(base, {...base, morning_check_in: {feel: 75}}), true);
   assert.equal(capacityInputs({morning_check_in: {feel: 75, sleep: 50}}).checkInSleep, 50);
+  assert.equal(capacityInputsChanged(base, {...base, sleeping_heart_rate: {avg: 48}}), true);
   const bedtime = {toDate: () => new Date("2026-09-30T05:15:00Z")};
   assert.equal(capacityInputs({sleep: {avg: 7, bedtime}}).bedtimeMin, 5 * 60 + 15);
 });

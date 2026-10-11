@@ -7,7 +7,8 @@
 const crypto = require("node:crypto");
 const {isDeepStrictEqual} = require("node:util");
 const {validDay} = require("./metrics_summary");
-const {hrvReadings, pickHrv} = require("./hrv");
+const {RESTING_HR_KINDS, hrvReadings, restingHrReadings, pickHrv} =
+  require("./hrv");
 const {trainingLoadFor, shouldNotify, notifyStrained} =
   require("./training_load");
 
@@ -142,13 +143,14 @@ function bigDayEffect(recent, usual, minimum = BIG_DAY_MIN.minutes) {
  * Capacity for one day.
  * @param {object} input
  * @param {object} input.today {sleepHours, bedtimeMin, hrv, hrvKind,
- *   restingHr, yesterdayEffort, usualEffort, checkInFeel, checkInSleep,
+ *   restingHr, restingHrKind, yesterdayEffort, usualEffort, checkInFeel,
+ *   checkInSleep,
  *   bigDay ({day, ratio, penalty} from bigDayEffect), activityUsual};
  *   any may be null. bedtimeMin is minutes after midnight in a fixed clock (UTC
  *   is fine: only gaps between bedtimes are used).
  * @param {object[]} input.history Earlier days in the last 90, any order:
- *   {sleepHours, bedtimeMin, hrv, restingHr}; hrv of today's kind only
- *   (see pickHrv in hrv.js).
+ *   {sleepHours, bedtimeMin, hrv, restingHr}; hrv and restingHr of today's
+ *   kind only (see pickHrv in hrv.js).
  * @return {object|null} Capacity record, or null when there is no sleep,
  *   no measured body data and no check-in (never guessed).
  */
@@ -244,6 +246,9 @@ function computeCapacity({today, history}) {
     hrvKind: finite(today.hrv) ? today.hrvKind ?? null : null,
     hrvNormal,
     restingHr: finite(today.restingHr) ? today.restingHr : null,
+    // "resting" (Health's or the wearable's) or "sleeping" (the night's low).
+    restingHrKind: finite(today.restingHr) ?
+      today.restingHrKind ?? "resting" : null,
     restingHrNormal,
     restingHrIgnored,
     // The morning check-in's "how do you feel" (0–100), for the weekly
@@ -258,7 +263,7 @@ function computeCapacity({today, history}) {
 /**
  * The inputs Capacity reads from a metrics_daily document.
  * @param {object} data metrics_daily document data.
- * @return {object} {sleepHours, bedtimeMin, hrvReadings, restingHr,
+ * @return {object} {sleepHours, bedtimeMin, hrvReadings, restingHrReadings,
  *   checkInFeel, checkInSleep}.
  */
 function capacityInputs(data) {
@@ -269,8 +274,7 @@ function capacityInputs(data) {
     sleepHours: finite(data?.sleep?.avg) ? data.sleep.avg : null,
     bedtimeMin: date ? date.getUTCHours() * 60 + date.getUTCMinutes() : null,
     hrvReadings: hrvReadings(data),
-    restingHr: finite(data?.resting_heart_rate?.avg) ?
-      data.resting_heart_rate.avg : null,
+    restingHrReadings: restingHrReadings(data),
     checkInFeel: finite(checkIn?.feel) ? checkIn.feel : null,
     checkInSleep: finite(checkIn?.sleep) ? checkIn.sleep : null,
   };
@@ -452,7 +456,8 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date(),
       .where(FieldPath.documentId(), ">=", start)
       .where(FieldPath.documentId(), "<=", day)
       .select("sleep", "hrv", "hrv_rmssd", "resting_heart_rate",
-          "morning_check_in", "exercise_time", "active_calories")
+          "sleeping_heart_rate", "morning_check_in", "exercise_time",
+          "active_calories")
       .get();
   let todayData = null;
   const history = [];
@@ -471,9 +476,20 @@ async function refreshCapacity(db, uid, day, timestamp, now = new Date(),
     const today = capacityInputs(todayData);
     const hrv = pickHrv(today.hrvReadings,
         history.map((past) => past.hrvReadings), MIN_BASELINE);
-    history.forEach((past, index) => past.hrv = hrv.history[index]);
+    // Both kinds listed even without a reading today, so the normal (and
+    // training load's last 3 mornings) still use the kind that has one.
+    const resting = pickHrv(
+        {resting: null, sleeping: null, ...today.restingHrReadings},
+        history.map((past) => past.restingHrReadings), MIN_BASELINE,
+        RESTING_HR_KINDS);
+    history.forEach((past, index) => {
+      past.hrv = hrv.history[index];
+      past.restingHr = resting.history[index];
+    });
+    today.restingHr = resting.value;
     capacity = computeCapacity({
       today: {...today, hrv: hrv.value, hrvKind: hrv.kind,
+        restingHrKind: resting.kind,
         ...await effortContext(user, start, day), ...activity},
       history,
     });

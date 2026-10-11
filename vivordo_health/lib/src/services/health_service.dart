@@ -532,6 +532,7 @@ class HealthService {
     required DateTime end,
   }) async {
     final intervals = await _sleepIntervals(start, end);
+    final heartRate = await _sleepHeartRateReadings(start, end);
 
     final summaries = summarizeSleepByWakeDay(intervals).where((summary) {
       return !summary.date.isBefore(
@@ -565,7 +566,11 @@ class HealthService {
             .doc(day);
         final existing = await ref.get();
         if (_connectedWearableHasPriority(existing.data(), 'sleep')) continue;
+        final sleepingHr = sleepingHeartRate(summary, heartRate);
         batch.set(ref, {
+          'sleeping_heart_rate': sleepingHr == null
+              ? FieldValue.delete()
+              : {'avg': sleepingHr, 'unit': 'bpm', 'source': 'apple_health'},
           'sleep': {
             'avg': hours,
             'min': hours,
@@ -597,6 +602,29 @@ class HealthService {
       end: end,
       daysWithData: daysWithData,
     );
+  }
+
+  /// Heart rate over the sleep window, for the night's sleeping heart rate.
+  /// A failed read leaves it out rather than stopping the sleep sync.
+  Future<List<({DateTime time, double bpm})>> _sleepHeartRateReadings(
+    DateTime start,
+    DateTime end,
+  ) async {
+    try {
+      final points = await _health.getHealthDataFromTypes(
+        startTime: start.subtract(const Duration(hours: 12)),
+        endTime: end,
+        types: [HealthDataType.HEART_RATE],
+      );
+      return [
+        for (final point in points)
+          if (point.value case final NumericHealthValue value)
+            (time: point.dateFrom, bpm: value.numericValue.toDouble()),
+      ];
+    } catch (error) {
+      debugPrint('HealthService: no heart rate for sleeping HR: $error');
+      return const [];
+    }
   }
 
   VivordoSleepStage? _sleepStageForType(HealthDataType type) {
@@ -1213,6 +1241,7 @@ class HealthService {
       } else {
         batch.set(ref, {
           metricKey: FieldValue.delete(),
+          if (metricKey == 'sleep') 'sleeping_heart_rate': FieldValue.delete(),
         }, SetOptions(merge: true));
       }
       deletes++;

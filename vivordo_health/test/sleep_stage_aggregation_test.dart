@@ -86,4 +86,27 @@ void main() {
     expect(summaries.single.totalAsleepMinutes, 210);
     expect(summaries.single.stageMinutes['awake'], 30);
   });
+
+  test('sleeping heart rate: the low tenth while asleep, null when sparse', () {
+    final night = summarizeSleepByWakeDay([
+      interval(
+        VivordoSleepStage.unspecified,
+        DateTime(2026, 10, 10, 23),
+        DateTime(2026, 10, 11, 7),
+      ),
+    ]).single;
+    // One reading every 10 minutes asleep, 46–65 bpm, plus awake readings
+    // either side that must not count.
+    final readings = [
+      for (var i = 0; i < 48; i++)
+        (
+          time: DateTime(2026, 10, 10, 23).add(Duration(minutes: 10 * i)),
+          bpm: 46.0 + i % 20,
+        ),
+      (time: DateTime(2026, 10, 10, 22, 30), bpm: 30.0),
+      (time: DateTime(2026, 10, 11, 7, 30), bpm: 30.0),
+    ];
+    expect(sleepingHeartRate(night, readings), 47); // 5th lowest of 48
+    expect(sleepingHeartRate(night, readings.take(11)), isNull);
+  });
 }

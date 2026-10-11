@@ -2,7 +2,7 @@
 /* eslint-disable max-len, require-jsdoc */
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {hrvReadings, pickHrv} = require("../hrv");
+const {RESTING_HR_KINDS, hrvReadings, restingHrReadings, pickHrv} = require("../hrv");
 const {assess, dailySignals, dayKey, dayIndex} = require("../burnout");
 
 const apple = (avg) => ({hrv: {avg, source: "apple_health"}});
@@ -53,4 +53,23 @@ test("burnout compares HRV within one kind", () => {
   const {signals} = assess(byDay, "2026-09-30");
   assert.equal(signals.hrv, undefined, "neither kind has both a normal and a recent run");
   assert.equal(signals.capacity.elevated, false);
+});
+
+test("resting HR: Health's when it has a normal, else the night's sleeping low, never mixed", () => {
+  assert.deepEqual(restingHrReadings({resting_heart_rate: {avg: 52}, sleeping_heart_rate: {avg: 47}}), {resting: 52, sleeping: 47});
+  assert.deepEqual(restingHrReadings({sleeping_heart_rate: {avg: 0}}), {});
+  const both = Array.from({length: 7}, () => ({resting: 52, sleeping: 47}));
+  const sleepingOnly = Array.from({length: 7}, () => ({sleeping: 47}));
+  const pick = (today, history) => pickHrv({resting: null, sleeping: null, ...today}, history, 7, RESTING_HR_KINDS);
+  // A ring-only wearer: the sleeping kind, with its own normal.
+  assert.deepEqual(pick({sleeping: 49}, sleepingOnly), {kind: "sleeping", value: 49, history: sleepingOnly.map(() => 47)});
+  // Health's resting HR wins when both have a normal.
+  assert.equal(pick({resting: 53, sleeping: 48}, both).kind, "resting");
+  // Watch left off overnight but a ring worn: last night's reading is used.
+  assert.deepEqual(pick({sleeping: 48}, both).value, 48);
+  // Nothing today: the normal is kept for training load's last 3 mornings.
+  const none = pick({}, both);
+  assert.equal(none.value, null);
+  assert.equal(none.kind, "resting");
+  assert.deepEqual(none.history, both.map(() => 52));
 });

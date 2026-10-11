@@ -9,7 +9,7 @@
 // Thresholds are starting values to tune against real histories; this is a
 // wellness signal, not a diagnosis.
 
-const {HRV_KINDS} = require("./hrv");
+const {HRV_KINDS, RESTING_HR_KINDS} = require("./hrv");
 const {VERSION: EFFORT_VERSION} = require("./effort");
 const {VERSION: TRAINING_VERSION} = require("./training_load");
 
@@ -35,6 +35,9 @@ const EARLY_MIN_RECENT = 5;
 /** The full check's windows, and the early check's (no gap). */
 const FULL = {recent: RECENT_DAYS, gap: GAP_DAYS, minRecent: MIN_RECENT};
 const EARLY = {recent: EARLY_RECENT_DAYS, gap: 0, minRecent: EARLY_MIN_RECENT};
+
+// Signals that come in kinds which can't be compared (hrv.js).
+const KINDS = {hrv: HRV_KINDS, restingHeartRate: RESTING_HR_KINDS};
 
 // direction: +1 when a rise is worse, -1 when a fall is worse.
 // minChange: smallest shift that counts; relative: as a share of the normal.
@@ -81,8 +84,10 @@ function dailySignals(scores, metrics) {
     effort: num(effort?.total),
     mood: num(metrics?.mood?.avg),
     sleepHours: num(capacity?.sleepHours),
-    restingHeartRate: capacity?.restingHrIgnored ? null :
-      num(capacity?.restingHr),
+    // By kind, like HRV; records before the sleeping kind are all "resting".
+    restingHeartRate: capacity?.restingHrIgnored ||
+      num(capacity?.restingHr) === null ? null :
+      {[capacity.restingHrKind ?? "resting"]: capacity.restingHr},
     // By kind; assess() compares one kind only.
     hrv: num(capacity?.hrv) !== null && capacity.hrvKind ?
       {[capacity.hrvKind]: capacity.hrv} : null,
@@ -151,9 +156,9 @@ function assess(byDay, today, windows = FULL) {
   const end = dayIndex(today);
   const signals = {};
   for (const [name, config] of Object.entries(SIGNALS)) {
-    // HRV kinds can't be compared, so use the preferred kind with enough
-    // readings in both windows.
-    for (const kind of name === "hrv" ? HRV_KINDS : [null]) {
+    // HRV (and resting HR) kinds can't be compared, so use the preferred
+    // kind with enough readings in both windows.
+    for (const kind of KINDS[name] ?? [null]) {
       const recent = [];
       const baseline = [];
       for (let i = end - RECENT_DAYS - GAP_DAYS - BASELINE_DAYS + 1;
