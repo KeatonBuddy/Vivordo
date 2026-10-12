@@ -152,7 +152,12 @@ the evening-before card.
 parts are stored. Because the phone's day record can arrive late (the
 nightly push may be dropped, and the next open may be the next
 afternoon), the server keeps recalculating a day's Effort for 2 days
-after it ends, then locks it.
+after it ends, then locks it. A day record is written only from a calendar read that
+worked (`CalendarService` / `OutlookCalendarService.getScoringEvents`,
+null on any failure, every Outlook page): a failed read writes nothing
+and the next sync tries again, so a day is never recorded as empty.
+Google counts as connected only with calendar access, not just a Google
+sign-in.
 
 **Mental:** points of what happened:
 - the elapsed minutes of events (events you declined or that were

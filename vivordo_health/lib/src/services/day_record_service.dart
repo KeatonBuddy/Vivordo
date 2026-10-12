@@ -157,23 +157,18 @@ class DayRecordService {
     final now = DateTime.now();
     final first = DateTime(now.year, now.month, now.day - historyDays + 1);
     final end = DateTime(now.year, now.month, now.day + 1);
-    final calendar = _calendar = await _fetchCalendar(uid, first, end, false);
-    // The calendar reads return nothing on any error, and four weeks with
-    // no events at all is far likelier a failed read than a real month.
+    final calendar = _calendar = await _fetchCalendar(uid, first, end);
+    // A failed read throws; four weeks read fine but with no events at all
+    // is still likelier a wrong calendar than a real month, so not recorded.
     if (calendar.events.isEmpty) return false;
-    await _sync(historyDays, false, true);
+    await _sync(historyDays, true);
     return true;
   }
 
-  /// Whether Outlook, or Google Calendar with calendar access (signing in
-  /// with Google alone doesn't grant it), is connected.
+  /// Whether Google Calendar (with calendar access) or Outlook is connected.
   static Future<bool> calendarConnected() async {
-    final google = await CalendarService.hasCalendarAccess()
-        .timeout(const Duration(seconds: 5), onTimeout: () => false)
-        .catchError((_) => false);
-    if (google) return true;
-    final (google: _, :outlook) = await _connected();
-    return outlook;
+    final (:google, :outlook) = await _connected();
+    return google || outlook;
   }
 
   /// A priority changed: syncs today 2 seconds later, so quick ticks become
@@ -186,27 +181,18 @@ class DayRecordService {
     );
   }
 
-  /// Records the [days] days ending today. [forceRefresh] bypasses the
-  /// calendar cache, after the schedule was just edited; [reuseCalendar]
-  /// uses the last fetch when it covers those days.
-  static Future<void> sync({
-    int days = 1,
-    bool forceRefresh = false,
-    bool reuseCalendar = false,
-  }) async {
+  /// Records the [days] days ending today, from a fresh calendar read
+  /// unless [reuseCalendar] and the last fetch covers those days.
+  static Future<void> sync({int days = 1, bool reuseCalendar = false}) async {
     try {
-      await _sync(days, forceRefresh, reuseCalendar);
+      await _sync(days, reuseCalendar);
     } catch (error) {
       // Best effort: the next open or tick tries again.
       debugPrint('Day record sync failed: $error');
     }
   }
 
-  static Future<void> _sync(
-    int days,
-    bool forceRefresh,
-    bool reuseCalendar,
-  ) async {
+  static Future<void> _sync(int days, bool reuseCalendar) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final now = DateTime.now();
@@ -225,7 +211,7 @@ class DayRecordService {
             !cached.from.isAfter(from) &&
             !cached.until.isBefore(end)
         ? cached
-        : _calendar = await _fetchCalendar(user.uid, from, end, forceRefresh);
+        : _calendar = await _fetchCalendar(user.uid, from, end);
 
     final userDocument = FirebaseFirestore.instance
         .collection('users')
@@ -286,7 +272,7 @@ class DayRecordService {
   ) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const [];
-    final calendar = await _fetchCalendar(uid, from, until, false);
+    final calendar = await _fetchCalendar(uid, from, until);
     return [
       for (final e in calendar.events)
         if (e.event.contributesToSchedule && e.score.category != 'rest')
@@ -296,39 +282,41 @@ class DayRecordService {
 
   /// Fetches and rates the connected calendars' events from [from] to
   /// [until]. A failed fetch throws, so a day is never recorded as falsely
-  /// empty.
+  /// empty: the scoring reads say when they couldn't read the calendar,
+  /// where the screens' reads just come back empty.
   static Future<_Calendar> _fetchCalendar(
     String uid,
     DateTime from,
     DateTime until,
-    bool forceRefresh,
   ) async {
     final (:google, :outlook) = await _connected();
+    const limit = Duration(seconds: 20);
+    final googleEvents = google
+        ? await CalendarService.getScoringEvents(from, until).timeout(limit)
+        : const <gcal.Event>[];
+    final outlookEvents = outlook
+        ? await OutlookCalendarService.getScoringEvents(
+            from,
+            until,
+          ).timeout(limit)
+        : const <OutlookEvent>[];
+    if (googleEvents == null || outlookEvents == null) {
+      throw StateError('The calendar could not be read.');
+    }
     final inputs = <(CalendarCognitiveEvent, String?)>[
-      if (google)
-        for (final event in await CalendarService.getEventsBetween(
-          from,
-          until,
-          forceRefresh: forceRefresh,
-        ).timeout(const Duration(seconds: 8)))
-          if (_fromGoogle(event) case final input?)
-            (input, 'google:${event.id}'),
-      if (outlook)
-        for (final event in await OutlookCalendarService.getEventsBetween(
-          from,
-          until,
-          forceRefresh: forceRefresh,
-        ).timeout(const Duration(seconds: 8)))
-          (
-            CalendarCognitiveEvent(
-              id: 'outlook:${event.id}',
-              title: event.subject,
-              start: event.start.toLocal(),
-              end: event.end.toLocal(),
-              isAllDay: event.isAllDay,
-            ),
-            null,
+      for (final event in googleEvents)
+        if (_fromGoogle(event) case final input?) (input, 'google:${event.id}'),
+      for (final event in outlookEvents)
+        (
+          CalendarCognitiveEvent(
+            id: 'outlook:${event.id}',
+            title: event.subject,
+            start: event.start.toLocal(),
+            end: event.end.toLocal(),
+            isAllDay: event.isAllDay,
           ),
+          null,
+        ),
     ];
     // Claude sorts what the local rules can't, with the user's AI consent.
     // In twenties: each call sorts at most 20 uncertain events and rates
@@ -352,8 +340,10 @@ class DayRecordService {
     );
   }
 
+  /// Google counts only with calendar access: signing in to Vivordo with
+  /// Google alone doesn't grant it, and its days aren't empty ones.
   static Future<({bool google, bool outlook})> _connected() async => (
-    google: await CalendarService.isSignedIn()
+    google: await CalendarService.hasCalendarAccess()
         .timeout(const Duration(seconds: 5), onTimeout: () => false)
         .catchError((_) => false),
     outlook: await OutlookCalendarService.isSignedIn()

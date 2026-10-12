@@ -280,6 +280,62 @@ class OutlookCalendarService {
     return events;
   }
 
+  /// Silent, all-or-nothing fetch for scoring, like
+  /// CalendarService.getScoringEvents: null when Outlook can't be read (no
+  /// token, an error, or a page that didn't load), an empty list when it
+  /// read fine and had no events. Follows every page, so a busy range isn't
+  /// cut off at Graph's first 100 events.
+  static Future<List<OutlookEvent>?> getScoringEvents(
+    DateTime start,
+    DateTime end,
+  ) async {
+    if (!enabled) return null;
+    try {
+      var token = await _getSavedAccessToken();
+      if (token == null) {
+        final result = await (await _getPca()).acquireTokenSilent(
+          scopes: scopes,
+          authority: authority,
+        );
+        if (result.accessToken.isEmpty) return null;
+        await _saveAuthResult(result);
+        token = result.accessToken;
+      }
+      final events = <OutlookEvent>[];
+      Uri? page = Uri.https(_graphHost, '/v1.0/me/calendarView', {
+        'startDateTime': start.toUtc().toIso8601String(),
+        'endDateTime': end.toUtc().toIso8601String(),
+        r'$orderby': 'start/dateTime',
+        r'$top': '100',
+      });
+      while (page != null) {
+        final response = await http.get(
+          page,
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Accept': 'application/json',
+            'Prefer': 'outlook.timezone="UTC"',
+          },
+        );
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          return null;
+        }
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        for (final item in decoded['value'] as List? ?? const []) {
+          if (_parseEvent(item as Map<String, dynamic>) case final event?) {
+            events.add(event);
+          }
+        }
+        final next = decoded['@odata.nextLink'];
+        page = next is String ? Uri.parse(next) : null;
+      }
+      return events;
+    } catch (error) {
+      debugPrint('Outlook scoring fetch failed: $error');
+      return null;
+    }
+  }
+
   static OutlookEvent? _parseEvent(Map<String, dynamic> json) {
     try {
       final startJson = json['start'] as Map<String, dynamic>?;

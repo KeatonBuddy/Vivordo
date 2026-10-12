@@ -757,7 +757,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
     if (!mounted || generation != _loadGeneration) return;
     // The schedule may have just changed (pull to refresh, an edit).
-    if (forceRefresh) unawaited(DayRecordService.sync(forceRefresh: true));
+    if (forceRefresh) unawaited(DayRecordService.sync());
     setState(() {
       _calendarLoadedAt = DateTime.now();
       _events = events;
