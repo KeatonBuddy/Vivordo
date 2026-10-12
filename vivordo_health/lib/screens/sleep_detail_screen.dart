@@ -339,6 +339,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         wakeTime: (raw['wakeTime'] as Timestamp?)?.toDate().toLocal(),
         stages: _stageValues(raw['stages'] as Map?),
         source: raw['source'] as String?,
+        inBed: raw['measure'] == 'inBed',
       );
     }
     final today = DateUtils.dateOnly(DateTime.now());
@@ -441,6 +442,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
               averageStages,
               average,
               hasWhoopSleepData: hasWhoopSleepData,
+              inBed: _rangeIndex == 0 && latest?.inBed == true,
             ),
             const SizedBox(height: 24),
             Row(
@@ -596,7 +598,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _rangeIndex == 0 ? "LAST NIGHT'S SLEEP" : 'AVERAGE SLEEP',
+                      _rangeIndex == 0
+                          ? latest?.inBed == true
+                                ? 'LAST NIGHT IN BED'
+                                : "LAST NIGHT'S SLEEP"
+                          : 'AVERAGE SLEEP',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
@@ -920,6 +926,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     Map<String, double> stages,
     double average, {
     required bool hasWhoopSleepData,
+    bool inBed = false,
   }) {
     if (stages.isEmpty) {
       return _card(
@@ -932,12 +939,14 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Sleep-stage data not synced',
-                    style: TextStyle(fontWeight: FontWeight.w800),
+                  Text(
+                    inBed ? 'Time in bed' : 'Sleep-stage data not synced',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                   Text(
-                    hasWhoopSleepData
+                    inBed
+                        ? 'From your iPhone\'s Sleep schedule. A watch or ring that tracks sleep adds actual sleep and stages.'
+                        : hasWhoopSleepData
                         ? 'Total sleep is available, but WHOOP did not provide stage details.'
                         : 'Total sleep is available, but stage details were not provided by your health source.',
                     style: TextStyle(
@@ -1114,7 +1123,11 @@ class _SleepValue {
     this.wakeTime,
     required this.stages,
     this.source,
+    this.inBed = false,
   });
+
+  /// From time in bed (no wearable that night), not measured sleep.
+  final bool inBed;
   final double hours;
   final DateTime? bedtime;
   final DateTime? wakeTime;

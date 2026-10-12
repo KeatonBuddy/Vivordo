@@ -1,4 +1,14 @@
-enum VivordoSleepStage { unspecified, awake, core, deep, rem }
+enum VivordoSleepStage {
+  unspecified,
+  awake,
+  core,
+  deep,
+  rem,
+
+  /// Time in bed, not necessarily asleep (iPhone's Sleep schedule writes it
+  /// without a wearable). Only used when a night has no asleep data.
+  inBed,
+}
 
 class SleepInterval {
   const SleepInterval({
@@ -20,7 +30,12 @@ class SleepDaySummary {
     required this.bedtime,
     required this.wakeTime,
     required this.asleepIntervals,
+    this.fromInBed = false,
   });
+
+  /// True when the night had no asleep data, so its hours, bedtime and wake
+  /// time are time in bed.
+  final bool fromInBed;
 
   /// Local calendar day on which the sleep session ended.
   final DateTime date;
@@ -84,13 +99,20 @@ List<SleepDaySummary> summarizeSleepByWakeDay(
           interval.stage == VivordoSleepStage.rem,
     );
     final stagedAsleepList = stagedAsleep.toList(growable: false);
-    final asleep = _mergeIntervals(
+    var asleep = _mergeIntervals(
       stagedAsleepList.isNotEmpty
           ? stagedAsleepList
           : all.where(
               (interval) => interval.stage == VivordoSleepStage.unspecified,
             ),
     );
+    // No wearable that night: time in bed stands in for sleep.
+    final fromInBed = asleep.isEmpty;
+    if (fromInBed) {
+      asleep = _mergeIntervals(
+        all.where((interval) => interval.stage == VivordoSleepStage.inBed),
+      );
+    }
     if (asleep.isEmpty) continue;
 
     final stages = <String, double>{};
@@ -114,6 +136,7 @@ List<SleepDaySummary> summarizeSleepByWakeDay(
         bedtime: asleep.first.start,
         wakeTime: asleep.last.end,
         asleepIntervals: asleep,
+        fromInBed: fromInBed,
       ),
     );
   }

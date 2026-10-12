@@ -8,6 +8,40 @@ void main() {
     DateTime end,
   ) => SleepInterval(stage: stage, start: start, end: end);
 
+  test('without asleep data, time in bed stands in for the night', () {
+    final night = summarizeSleepByWakeDay([
+      interval(
+        VivordoSleepStage.inBed,
+        DateTime(2026, 8, 16, 22, 30),
+        DateTime(2026, 8, 17, 6, 45),
+      ),
+    ]).single;
+    expect(night.fromInBed, isTrue);
+    expect(night.date, DateTime(2026, 8, 17));
+    expect(night.totalAsleepMinutes, 495);
+    expect(night.bedtime, DateTime(2026, 8, 16, 22, 30));
+    expect(night.wakeTime, DateTime(2026, 8, 17, 6, 45));
+    expect(night.stageMinutes, isEmpty);
+  });
+
+  test('asleep data always wins over time in bed', () {
+    final night = summarizeSleepByWakeDay([
+      interval(
+        VivordoSleepStage.inBed,
+        DateTime(2026, 8, 16, 22),
+        DateTime(2026, 8, 17, 7),
+      ),
+      interval(
+        VivordoSleepStage.unspecified,
+        DateTime(2026, 8, 16, 23),
+        DateTime(2026, 8, 17, 6),
+      ),
+    ]).single;
+    expect(night.fromInBed, isFalse);
+    expect(night.totalAsleepMinutes, 420);
+    expect(night.bedtime, DateTime(2026, 8, 16, 23));
+  });
+
   test('assigns a staged night to the day the user wakes up', () {
     final summaries = summarizeSleepByWakeDay([
       interval(

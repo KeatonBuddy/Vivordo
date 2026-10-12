@@ -187,6 +187,13 @@ class HealthService {
   List<HealthDataType> get _authorizationTypes => [
     ...kHealthMetrics.map((metric) => metric.type),
     ...kSleepStageTypes,
+    ..._inBedTypes,
+  ];
+
+  /// Time in bed (iOS only), the fallback for nights without a wearable.
+  List<HealthDataType> get _inBedTypes => [
+    if (_health.isDataTypeAvailable(HealthDataType.SLEEP_IN_BED))
+      HealthDataType.SLEEP_IN_BED,
   ];
 
   List<HealthDataAccess> get _authorizationAccess => List.filled(
@@ -598,7 +605,7 @@ class HealthService {
     final points = await _health.getHealthDataFromTypes(
       startTime: start.subtract(const Duration(hours: 12)),
       endTime: end,
-      types: [HealthDataType.SLEEP_ASLEEP, ...kSleepStageTypes],
+      types: [HealthDataType.SLEEP_ASLEEP, ...kSleepStageTypes, ..._inBedTypes],
     );
     return [
       for (final point in _health.removeDuplicates(points))
@@ -687,6 +694,8 @@ class HealthService {
             'stages': summary.stageMinutes,
             'bedtime': Timestamp.fromDate(summary.bedtime),
             'wakeTime': Timestamp.fromDate(summary.wakeTime),
+            // Time in bed, not measured sleep, on nights without a wearable.
+            'measure': summary.fromInBed ? 'inBed' : FieldValue.delete(),
             'source': 'apple_health',
             'syncedAt': FieldValue.serverTimestamp(),
           },
@@ -745,6 +754,8 @@ class HealthService {
         return VivordoSleepStage.deep;
       case HealthDataType.SLEEP_REM:
         return VivordoSleepStage.rem;
+      case HealthDataType.SLEEP_IN_BED:
+        return VivordoSleepStage.inBed;
       default:
         return null;
     }

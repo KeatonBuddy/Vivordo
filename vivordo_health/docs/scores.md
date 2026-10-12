@@ -415,6 +415,16 @@ vs untagged nights, shown once a tag has 5 of each) need those days.
 - **Without a wearable:** sleep from Health, recovery from yesterday, the
   morning check-in, and a morning camera heart scan (resting HR) if one was
   done.
+- **Time in bed as sleep** (2026-10-12, iOS): a night with no asleep or
+  stage data from any source uses Apple Health's "In bed" records, which
+  the iPhone's Sleep schedule writes without a wearable, for its hours,
+  bedtime and wake time (`summarizeSleepByWakeDay`, saved with
+  `sleep.measure: 'inBed'`). Asleep data always wins. Everything that
+  reads `sleep.avg` uses it: Metrics, Capacity, the sleep need, Physical
+  Health and the energy forecast. Time in bed runs longer than sleep, so
+  for those users the need and hours read a little high. Sleep detail says
+  "Last night in bed" and explains there are no stages. Health Connect
+  (Android) has no "In bed" type, so this is iOS only.
 - **Not enough data:** with no sleep, no overnight body data and no
   check-in, Capacity is shown as unavailable. It is never guessed.
 - **History import:** the first time Health is connected on an account,
