@@ -397,6 +397,15 @@ vs untagged nights, shown once a tag has 5 of each) need those days.
   (heart-rate load, Capacity, Physical Health), so each day's normal uses
   only the days before it. Days already scored keep their score
   (`functions/history_import.js`).
+- **Calendar history:** the same import records the last 28 days of
+  calendar day records (`DayRecordService.syncHistory`, only once a calendar
+  is connected, since days without one would read as empty), rating past
+  events 20 at a time so each gets the AI sort. A day's Effort normally
+  rescores the next 3 days' Capacity; during an import the day-record
+  trigger leaves old days alone too, and the rebuild scores every day's
+  Effort (with that cascade off) before any Capacity, so Recovery has
+  yesterday and a usual from the 8th day on. `historyImport.health` and
+  `.calendar` are marked done separately, each once it's scored.
 - **Without HRV**, My Day's Capacity explanation says so and names what was
   used instead: resting heart rate, the lowest heart rate while asleep, or
   (with no overnight heart data) a normal night (`capacityBodyNote` in

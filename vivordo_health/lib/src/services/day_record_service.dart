@@ -144,6 +144,25 @@ class DayRecordService {
     await sync(days: 2);
   }
 
+  /// Days of calendar history recorded once per account, so Effort has a
+  /// usual from day one (docs/scores.md §3).
+  static const historyDays = 28;
+
+  /// Records the last [historyDays] days for the history import. False,
+  /// with nothing written, when no calendar is connected: those days would
+  /// read as empty ones, not unknown. Throws when the calendar can't be read.
+  static Future<bool> syncHistory() async {
+    if (!await calendarConnected()) return false;
+    await _sync(historyDays, false, false);
+    return true;
+  }
+
+  /// Whether Google Calendar or Outlook is connected.
+  static Future<bool> calendarConnected() async {
+    final (:google, :outlook) = await _connected();
+    return google || outlook;
+  }
+
   /// A priority changed: syncs today 2 seconds later, so quick ticks become
   /// one write, reusing the last calendar fetch.
   static void syncSoon() {
@@ -182,8 +201,9 @@ class DayRecordService {
     final first = DateTime(today.year, today.month, today.day - days + 1);
     final end = DateTime(today.year, today.month, today.day + 1);
 
-    // Always yesterday and today, so one fetch serves every kind of sync.
-    final from = DateTime(today.year, today.month, today.day - 1);
+    // At least yesterday and today, so one fetch serves every kind of sync.
+    final yesterday = DateTime(today.year, today.month, today.day - 1);
+    final from = first.isBefore(yesterday) ? first : yesterday;
     final cached = _calendar;
     final calendar =
         reuseCalendar &&
@@ -206,11 +226,17 @@ class DayRecordService {
       day.isBefore(end);
       day = DateTime(day.year, day.month, day.day + 1)
     ) {
-      // Server normally; the phone's copy when offline.
-      final priorities = await DailyPriorityService.forDay(
-        day,
-        source: Source.serverAndCache,
-      );
+      // Server normally; the phone's copy when offline. None before the
+      // account existed, so the history import doesn't read for them.
+      final created = user.metadata.creationTime;
+      final priorities =
+          created != null &&
+              DateTime(day.year, day.month, day.day + 1).isBefore(created)
+          ? const <DailyPriority>[]
+          : await DailyPriorityService.forDay(
+              day,
+              source: Source.serverAndCache,
+            );
       final record = buildDayRecord(
         day: day,
         wrapUpMinutes: wrapUp is int ? wrapUp : kDefaultDayWrapUpMinutes,
@@ -264,12 +290,7 @@ class DayRecordService {
     DateTime until,
     bool forceRefresh,
   ) async {
-    final google = await CalendarService.isSignedIn()
-        .timeout(const Duration(seconds: 5), onTimeout: () => false)
-        .catchError((_) => false);
-    final outlook = await OutlookCalendarService.isSignedIn()
-        .timeout(const Duration(seconds: 5), onTimeout: () => false)
-        .catchError((_) => false);
+    final (:google, :outlook) = await _connected();
     final inputs = <(CalendarCognitiveEvent, String?)>[
       if (google)
         for (final event in await CalendarService.getEventsBetween(
@@ -297,9 +318,14 @@ class DayRecordService {
           ),
     ];
     // Claude sorts what the local rules can't, with the user's AI consent.
-    final scores = await CalendarCognitiveLoadService.scoreEvents([
-      for (final (event, _) in inputs) event,
-    ], allowAi: true);
+    // In twenties: each call sorts at most 20 uncertain events and rates
+    // the rest by the rules, and weeks of history can hold far more.
+    final scores = <CognitiveLoadScore>[
+      for (var i = 0; i < inputs.length; i += 20)
+        ...await CalendarCognitiveLoadService.scoreEvents([
+          for (final (event, _) in inputs.skip(i).take(20)) event,
+        ], allowAi: true),
+    ];
     return (
       uid: uid,
       from: from,
@@ -312,6 +338,15 @@ class DayRecordService {
       ],
     );
   }
+
+  static Future<({bool google, bool outlook})> _connected() async => (
+    google: await CalendarService.isSignedIn()
+        .timeout(const Duration(seconds: 5), onTimeout: () => false)
+        .catchError((_) => false),
+    outlook: await OutlookCalendarService.isSignedIn()
+        .timeout(const Duration(seconds: 5), onTimeout: () => false)
+        .catchError((_) => false),
+  );
 
   static CalendarCognitiveEvent? _fromGoogle(gcal.Event event) {
     final start = event.start?.dateTime;

@@ -293,9 +293,12 @@ function computeEffort({record, workouts = [], healthMinutes = null,
  * @param {string} day Day key.
  * @param {Function} timestamp Server timestamp factory.
  * @param {Date} now Current time.
+ * @param {boolean} cascade Also the next 3 days' Capacity; off for the
+ *   history rebuild, which scores Capacity after every day's Effort.
  * @return {Promise<string>} Outcome.
  */
-async function refreshEffort(db, uid, day, timestamp, now = new Date()) {
+async function refreshEffort(db, uid, day, timestamp, now = new Date(),
+    cascade = true) {
   if (!validDay(day)) return "ignored";
   const user = db.doc(`users/${uid}`);
   const record = (await user.collection("effort_inputs").doc(day).get()).data();
@@ -360,7 +363,7 @@ async function refreshEffort(db, uid, day, timestamp, now = new Date()) {
         {merge: true});
     return "written";
   });
-  if (outcome === "written") {
+  if (outcome === "written" && cascade) {
     // Recovery reads the last 3 days' load (a big day fades over three).
     const {refreshCapacity} = require("./capacity");
     for (let k = 1; k <= 3; k++) {

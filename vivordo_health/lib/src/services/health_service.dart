@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:health/health.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/exercise_minutes.dart';
+import 'day_record_service.dart';
 import 'stress_score_service.dart';
 import '../utils/metric_cleanup.dart';
 import '../utils/step_totals.dart';
@@ -318,19 +319,28 @@ class HealthService {
   /// Days of Health history imported once per account (docs/scores.md §4).
   static const historyDays = 90;
 
-  /// The sign-in and first-connect sync: the last 30 days, or the first time
-  /// on this account the last [historyDays], after which the server scores
-  /// the imported days oldest first (functions/history_import.js), so the
-  /// usuals exist on day one. Without Health connected nothing is marked,
-  /// and an import the app didn't finish runs again next time.
+  /// The sign-in and first-connect sync: the last 30 days, or once per
+  /// account the history import: [historyDays] of Health and
+  /// [DayRecordService.historyDays] of calendar day records, each as soon
+  /// as it's connected. The server then scores the imported days in order
+  /// (functions/history_import.js), so the usuals exist on day one. A part
+  /// is marked done only once it's scored; an unfinished one runs again.
   Future<void> syncWithHistory() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final user = _db.collection('users').doc(uid);
     final consent = await getConsent();
     final run = (await user.get()).data()?['historyImport'];
-    if (!consent.containsValue(true) ||
-        (run is Map && run['state'] == 'done')) {
+    // The first imports were Health only and marked just `state: done`.
+    final healthDone =
+        run is Map &&
+        (run['health'] == 'done' ||
+            (run['health'] == null && run['state'] == 'done'));
+    final importHealth = !healthDone && consent.containsValue(true);
+    final importCalendar =
+        !(run is Map && run['calendar'] == 'done') &&
+        await DayRecordService.calendarConnected();
+    if (!importHealth && !importCalendar) {
       return syncToFirestore(daysBack: 30);
     }
     await user.set({
@@ -339,7 +349,15 @@ class HealthService {
         'startedAt': FieldValue.serverTimestamp(),
       },
     }, SetOptions(merge: true));
-    await syncToFirestore(daysBack: historyDays);
+    await syncToFirestore(daysBack: importHealth ? historyDays : 30);
+    var calendar = false;
+    if (importCalendar) {
+      try {
+        calendar = await DayRecordService.syncHistory();
+      } catch (error) {
+        debugPrint('HealthService: calendar history failed: $error');
+      }
+    }
     if (FirebaseAuth.instance.currentUser?.uid != uid) return;
     try {
       await FirebaseFunctions.instance
@@ -348,6 +366,12 @@ class HealthService {
             options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
           )
           .call<void>();
+      await user.set({
+        'historyImport': {
+          if (importHealth) 'health': 'done',
+          if (calendar) 'calendar': 'done',
+        },
+      }, SetOptions(merge: true));
     } catch (error) {
       debugPrint(
         'HealthService: history rebuild failed, retried later: $error',

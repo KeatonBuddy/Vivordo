@@ -138,6 +138,9 @@ exports.computeDailyEffort = onDocumentWritten(
     {document: "users/{uid}/effort_inputs/{day}", retry: true},
     async (event) => {
       const {refreshEffort} = require("./effort");
+      const {leaveToImport} = require("./history_import");
+      if (await leaveToImport(admin.firestore(), event.params.uid,
+          event.params.day)) return;
       await refreshEffort(admin.firestore(), event.params.uid,
           event.params.day, () => admin.firestore.FieldValue.serverTimestamp());
     },

@@ -1,13 +1,16 @@
 "use strict";
 
 // History import (docs/scores.md §4): once per account the app imports 90
-// days of Health history so the usuals exist on day one. Old days are
+// days of Health history and 28 days of calendar day records, so the
+// usuals exist on day one. Old days are
 // scored once and then locked, so scoring them one write at a time would
 // lock each day before all its data arrived (resting HR, then HRV, then
-// sleep). While an import runs, the metrics trigger leaves old days alone;
-// rebuildHistory then scores them oldest first, so each day's normal uses
-// the days before it. Only days without a score are filled: a locked day
-// keeps its score.
+// sleep), and a day's Effort rescoring the next 3 days' Capacity would
+// lock those before their own Effort arrived. While an import runs, the
+// metrics and day-record triggers leave old days alone; rebuildHistory then
+// scores every day's Effort, then Capacity oldest first, so each day's
+// normal and Recovery use only the days before it. Only days without a
+// score are filled: a locked day keeps its score.
 
 const {validDay} = require("./metrics_summary");
 
@@ -62,8 +65,9 @@ async function leaveToImport(db, uid, day, now = new Date()) {
 }
 
 /**
- * Scores the imported days oldest first: heart-rate load, Capacity and
- * Physical Health for each day in the last [IMPORT_DAYS] that has metrics.
+ * Scores the imported days: Effort for each day with a day record, then
+ * heart-rate load, Capacity and Physical Health for each day with metrics,
+ * oldest first, in the last [IMPORT_DAYS].
  * @param {object} db Admin Firestore instance.
  * @param {string} uid Account ID.
  * @param {Function} timestamp Server timestamp factory.
@@ -73,6 +77,7 @@ async function leaveToImport(db, uid, day, now = new Date()) {
 async function rebuildHistory(db, uid, timestamp, now = new Date()) {
   const {FieldPath} = require("firebase-admin/firestore");
   const {refreshCapacity} = require("./capacity");
+  const {refreshEffort} = require("./effort");
   const {refreshActivityLoad} = require("./activity_load");
   const {refreshPhysicalHealth} = require("./physical_health");
   const user = db.doc(`users/${uid}`);
@@ -84,10 +89,15 @@ async function rebuildHistory(db, uid, timestamp, now = new Date()) {
   }
   const start = new Date(now.getTime() - IMPORT_DAYS * DAY_MS)
       .toISOString().slice(0, 10);
-  const ids = (await user.collection("metrics_daily")
+  const days = async (collection) => (await user.collection(collection)
       .where(FieldPath.documentId(), ">=", start)
       .select().get()).docs.map((doc) => doc.id)
       .filter(validDay).sort();
+  // Every day's Effort first: Capacity's Recovery reads the days before.
+  for (const day of await days("effort_inputs")) {
+    await refreshEffort(db, uid, day, timestamp, now, false);
+  }
+  const ids = await days("metrics_daily");
   for (const day of ids) {
     // One day at a time: the heart-rate arrays make whole documents large.
     const data = (await user.collection("metrics_daily").doc(day).get())
