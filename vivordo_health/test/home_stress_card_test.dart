@@ -14,7 +14,7 @@ void main() {
       body: HomeStressCard(
         score: score,
         updatedAt: DateTime(2026, 8, 28, 9),
-        sevenDayAverage: 52,
+        usual: 52,
         drivers: const [],
         steps: steps,
         loading: false,

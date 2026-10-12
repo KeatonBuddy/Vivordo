@@ -90,55 +90,6 @@ void main() {
     });
   });
 
-  group('seven day stress average', () {
-    test('spans today-7 inclusive through yesterday, excluding today', () {
-      final summary = summarizeHomeMetrics(
-        now: DateTime(2026, 9, 18, 14),
-        days: [
-          day('2026-09-18', stressDay({'avg': 100})), // today, excluded
-          day('2026-09-17', stressDay({'avg': 10})),
-          day('2026-09-11', stressDay({'avg': 20})), // today-7, included
-          day('2026-09-10', stressDay({'avg': 900})), // older, excluded
-        ],
-      );
-      expect(summary.sevenDayStressAverage, 15);
-    });
-
-    test('prefers avg over current, matching the previous definition', () {
-      final summary = summarizeHomeMetrics(
-        now: DateTime(2026, 9, 18),
-        days: [
-          day('2026-09-17', stressDay({'avg': 40, 'current': 90})),
-          day('2026-09-16', stressDay({'current': 60})),
-        ],
-      );
-      expect(summary.sevenDayStressAverage, 50);
-    });
-
-    test('is null rather than zero when no day in range has stress', () {
-      final summary = summarizeHomeMetrics(
-        now: DateTime(2026, 9, 18),
-        days: [
-          day('2026-09-17', {
-            'steps': {'sum': 900},
-          }),
-        ],
-      );
-      expect(summary.sevenDayStressAverage, isNull);
-    });
-
-    test('skips documents whose id is not a date', () {
-      final summary = summarizeHomeMetrics(
-        now: DateTime(2026, 9, 18),
-        days: [
-          day('not-a-date', stressDay({'avg': 999})),
-          day('2026-09-17', stressDay({'avg': 30})),
-        ],
-      );
-      expect(summary.sevenDayStressAverage, 30);
-    });
-  });
-
   group('stress anchor', () {
     test('takes anchor, then current, then avg from the newest day', () {
       expect(
@@ -460,7 +411,6 @@ void main() {
       expect(cache.computeCount, 1);
       expect(second.latestHeartRate, isNull);
       expect(second.stressAnchor, isNull);
-      expect(second.sevenDayStressAverage, isNull);
     });
   });
 }

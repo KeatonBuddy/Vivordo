@@ -214,7 +214,6 @@ void main() {
       final oldHome = summarizeHomeMetrics(days: raw, now: now);
       final newHome = summarizeHomeMetrics(days: projected, now: now);
       expect(newHome.stressAnchor, oldHome.stressAnchor);
-      expect(newHome.sevenDayStressAverage, oldHome.sevenDayStressAverage);
       final oldBrief = DailyBriefMetrics(raw).summarize(now);
       final newBrief = DailyBriefMetrics(
         briefWindow.days.entries
@@ -223,7 +222,6 @@ void main() {
       ).summarize(now);
       expect(newBrief.capacity.score, oldBrief.capacity.score);
       expect(newBrief.capacityNote, oldBrief.capacityNote);
-      expect(newBrief.usualSleep, oldBrief.usualSleep);
       expect(newBrief.priorNights, oldBrief.priorNights);
       expect(newBrief.stressTime, oldBrief.stressTime);
       expect(newBrief.stale, oldBrief.stale);
@@ -480,7 +478,6 @@ void main() {
         heartRate?.timestamp,
         heartRate?.source,
         result.stressAnchor,
-        result.sevenDayStressAverage,
       );
     }
 
@@ -491,7 +488,6 @@ void main() {
       DateTime(2026, 9, 10, 9),
       'apple_health',
       40.0,
-      42.5,
     ));
 
     final olderBefore = olderEmissions;

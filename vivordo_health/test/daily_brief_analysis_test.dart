@@ -2,10 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/daily_brief_analysis.dart';
 
 void main() {
-  test('baseline requires seven valid nights and uses median', () {
-    expect(sleepBaseline([0, double.nan, 8, 8]), isNull);
-    expect(sleepBaseline([8, 8, 8, 8, 8, 8, 2]), 8);
-  });
   test('last night against the need, never a moving 28-night usual', () {
     // A rough fortnight: 5 h 50 against a need of 7 h 03.
     expect(sleepComparison(5.83, need: 7.05), 'Slept 1h 13m under your need.');

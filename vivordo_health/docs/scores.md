@@ -812,12 +812,21 @@ switched off), set in onboarding ("How do you want to see your scores?") or
 Settings → Preferences → Show score numbers, and shared by
 `ThemeController`. With it off, scores show as a sentence and a state chip
 (3-4 states), never as a number, ring or fill:
-- **Home:** stress becomes a sentence that follows the score's 50 = a
-  typical day: under 30 "Calm", 30–44 "Calmer than usual", 45–59
-  "Steady", 60–79 "Quite tense", 80+ "Very tense", with its level (Low /
-  Moderate / Elevated / High), compared with the week
-  as calmer, about the same or more tense (5 points either way); Mood shows
-  its check-in word.
+- **Home:** stress becomes a sentence around the person's usual (the
+  stress service's `anchor`, else 50), with the bands set for a usual of 50
+  and moved with it: under 30 "Calm", 30–44 "Calmer than usual", 45–59
+  "Steady", 60–79 "Quite tense", 80+ "Very tense"; with its level (Low /
+  Moderate / Elevated / High, absolute) and "Higher than usual", "About
+  usual" or "Lower than usual" (5 points either way); Mood shows its
+  check-in word.
+
+**One "usual" per measure** (2026-10-12):
+- **Stress:** the `anchor` everywhere. Home and Stress detail say "4 above
+  usual" (words: "Higher than usual"); the detail chart's band is the
+  "Typical range, last 4 weeks", not a second usual.
+- **Sleep:** hours are always compared with the sleep need (Capacity's,
+  none while it's the placeholder), on every screen including Sleep
+  detail; "usual" is only used for bedtime.
 - **My Day:** the brief's Capacity and Demand rings become Energy (8 points
   either side of the usual Capacity, or its own bands without one) and
   Today's / Tomorrow's load (Light, Full or Heavy: Demand ±15 of the

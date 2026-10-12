@@ -11,22 +11,19 @@ import 'package:vivordo_health/widgets/home_stress_card.dart';
 /// Words mode (Settings → Show score numbers off): scores as sentences and
 /// states, measurements kept.
 void main() {
-  test(
-    'stress in words: a sentence per level, and the week without points',
-    () {
-      expect(homeStressSentence(20), 'Calm');
-      expect(homeStressSentence(38), 'Calmer than usual');
-      expect(homeStressSentence(47), 'Steady');
-      expect(homeStressSentence(70), 'Quite tense');
-      expect(homeStressSentence(90), 'Very tense');
-      expect(homeStressSentence(null), isNull);
-      expect(homeStressComparisonWords(40, 48), 'Calmer than your week.');
-      expect(homeStressComparisonWords(47, 48), 'About the same as your week.');
-      expect(homeStressComparisonWords(60, 48), 'More tense than your week.');
-      expect(stressUsualHeadlineWords(58, 50), 'Higher than usual');
-      expect(stressUsualHeadlineWords(52, 50), 'About usual');
-    },
-  );
+  test('stress in words: a sentence per level, around the person\'s usual', () {
+    expect(homeStressSentence(20), 'Calm');
+    expect(homeStressSentence(38), 'Calmer than usual');
+    expect(homeStressSentence(47), 'Steady');
+    expect(homeStressSentence(70), 'Quite tense');
+    expect(homeStressSentence(90), 'Very tense');
+    expect(homeStressSentence(null), isNull);
+    // The bands move with the person's usual.
+    expect(homeStressSentence(40, usual: 35), 'Steady');
+    expect(homeStressSentence(40, usual: 65), 'Calm');
+    expect(stressUsualHeadlineWords(58, 50), 'Higher than usual');
+    expect(stressUsualHeadlineWords(52, 50), 'About usual');
+  });
 
   test('the stress trend in a sentence', () {
     StressDay day(int d, double average) =>
@@ -103,7 +100,7 @@ void main() {
           body: HomeStressCard(
             score: 47,
             updatedAt: DateTime(2026, 10, 11, 9),
-            sevenDayAverage: 48,
+            usual: 48,
             drivers: const [],
             steps: 1200,
             loading: false,
@@ -118,7 +115,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Steady'), findsOneWidget);
     expect(find.text('Moderate'), findsOneWidget);
-    expect(find.text('About the same as your week.'), findsOneWidget);
+    expect(find.text('About usual'), findsOneWidget);
     expect(find.textContaining('%'), findsNothing);
     expect(find.text('STRESS'), findsNothing);
   });

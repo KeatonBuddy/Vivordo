@@ -200,7 +200,7 @@ void main() {
         back(i): SleepNight(7.5, DateTime(2026, 10, 8 - i - 1, 23)),
     };
 
-    test('Day: last night against the usual, with a late bedtime', () {
+    test('Day: last night against the need, with a late bedtime', () {
       final insight = sleepInsight(
         nights: {
           ...nights,
@@ -208,30 +208,44 @@ void main() {
         },
         today: today,
         rangeDays: 1,
+        need: 7.5,
       );
       expect(
         insight.text,
-        '6h 30m last night, 1h 00m less than your usual 7h 30m. Bedtime was '
-        '1h 30m later than usual.',
+        '6h 30m last night, 1h 00m less than your need of 7h 30m. Bedtime '
+        'was 1h 30m later than usual.',
       );
       expect(insight.tone, InsightTone.concern);
     });
 
-    test('Day: about usual, and nothing synced yet', () {
+    test('Day: about the need, no need yet, and nothing synced yet', () {
+      final lastNight = {
+        ...nights,
+        back(0): SleepNight(7.4, DateTime(2026, 10, 7, 23)),
+      };
       expect(
         sleepInsight(
-          nights: {
-            ...nights,
-            back(0): SleepNight(7.4, DateTime(2026, 10, 7, 23)),
-          },
+          nights: lastNight,
           today: today,
           rangeDays: 1,
+          need: 7.5,
         ).text,
-        '7h 24m last night, about your usual.',
+        '7h 24m last night, about your need.',
+      );
+      // While the need is still the 8 h placeholder: no comparison.
+      expect(
+        sleepInsight(nights: lastNight, today: today, rangeDays: 1).text,
+        '7h 24m last night. Vivordo learns your sleep need after 2 weeks of '
+        'nights.',
       );
       expect(
-        sleepInsight(nights: nights, today: today, rangeDays: 1).text,
-        'Last night\'s sleep hasn\'t synced yet. Your usual is 7h 30m.',
+        sleepInsight(
+          nights: nights,
+          today: today,
+          rangeDays: 1,
+          need: 7.5,
+        ).text,
+        'Last night\'s sleep hasn\'t synced yet. Your need is 7h 30m.',
       );
       // Someone with no sleep tracked at all isn't told it's "not synced".
       expect(
@@ -248,12 +262,15 @@ void main() {
         },
         today: today,
         rangeDays: 7,
+        need: 8,
       );
       expect(
         insight.text,
-        'You averaged 7h 30m a night over 7 nights, about your usual. Bedtime '
-        'was within an hour of usual on 6 of 7 nights.',
+        'You averaged 7h 30m a night over 7 nights, 30 min less than your '
+        'need of 8h 00m. Bedtime was within an hour of usual on 6 of 7 '
+        'nights.',
       );
+      expect(insight.tone, InsightTone.concern);
     });
   });
 

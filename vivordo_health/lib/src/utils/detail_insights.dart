@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'daily_brief_analysis.dart' show sleepBaseline;
 
 /// The one-line insight on each metric detail screen, comparing the person
 /// with their own usual rather than population cut-offs.
@@ -241,19 +240,20 @@ class SleepNight {
   final DateTime? bedtime;
 }
 
-/// Sleep against the person's usual (median of the 28 nights before today)
-/// and their usual bedtime (median of the 14 before).
+/// Sleep hours against the person's [need] (Capacity's, null while it's
+/// the 8 h placeholder), and bedtime against their usual (median of the 14
+/// nights before). "Usual" is only ever about timing.
 DetailInsight sleepInsight({
   required Map<DateTime, SleepNight> nights,
   required DateTime today,
   required int rangeDays,
+  double? need,
 }) {
   final day = insightDay(today);
   List<SleepNight> between(int from, int to) => [
     for (var i = from; i < to; i++)
       ?nights[DateTime(day.year, day.month, day.day - i)],
   ];
-  final usual = sleepBaseline(between(1, 29).map((n) => n.hours));
   final bedtimes = [
     for (final n in between(1, 15))
       if (n.bedtime case final b?) _minutesFromNoon(b),
@@ -262,12 +262,12 @@ DetailInsight sleepInsight({
       ? median(bedtimes.map((m) => m.toDouble()))
       : null;
 
-  String versusUsual(double hours) {
-    if (usual == null) return '';
-    final difference = ((hours - usual) * 60).round();
-    if (difference.abs() < 15) return ', about your usual';
+  String versusNeed(double hours) {
+    if (need == null) return '';
+    final difference = ((hours - need) * 60).round();
+    if (difference.abs() < 15) return ', about your need';
     return ', ${_duration(difference.abs())} ${difference < 0 ? 'less' : 'more'} '
-        'than your usual ${hoursMinutes(usual)}';
+        'than your need of ${hoursMinutes(need)}';
   }
 
   if (rangeDays == 1) {
@@ -280,14 +280,14 @@ DetailInsight sleepInsight({
     if (night == null) {
       return DetailInsight(
         'Last night\'s sleep hasn\'t synced yet.'
-        '${usual == null ? '' : ' Your usual is ${hoursMinutes(usual)}.'}',
+        '${need == null ? '' : ' Your need is ${hoursMinutes(need)}.'}',
       );
     }
     var text =
-        '${hoursMinutes(night.hours)} last night${versusUsual(night.hours)}.';
-    if (usual == null) {
+        '${hoursMinutes(night.hours)} last night${versusNeed(night.hours)}.';
+    if (need == null) {
       text =
-          '${hoursMinutes(night.hours)} last night. Vivordo learns your usual after a week of nights.';
+          '${hoursMinutes(night.hours)} last night. Vivordo learns your sleep need after 2 weeks of nights.';
     }
     if (night.bedtime case final bedtime? when usualBedtime != null) {
       final offset = _minutesFromNoon(bedtime) - usualBedtime.round();
@@ -296,7 +296,7 @@ DetailInsight sleepInsight({
             ' Bedtime was ${_duration(offset.abs())} ${offset > 0 ? 'later' : 'earlier'} than usual.';
       }
     }
-    final short = usual != null && (usual - night.hours) * 60 >= 45;
+    final short = need != null && (need - night.hours) * 60 >= 45;
     return DetailInsight(
       text,
       short ? InsightTone.concern : InsightTone.neutral,
@@ -312,7 +312,7 @@ DetailInsight sleepInsight({
   final average = _mean(recent.map((n) => n.hours).toList());
   var text =
       'You averaged ${hoursMinutes(average)} a night over '
-      '${recent.length} nights${versusUsual(average)}.';
+      '${recent.length} nights${versusNeed(average)}.';
   final timed = [
     for (final n in recent)
       if (n.bedtime case final b?) _minutesFromNoon(b),
@@ -322,7 +322,7 @@ DetailInsight sleepInsight({
     text +=
         ' Bedtime was within an hour of usual on $onTime of ${timed.length} nights.';
   }
-  final short = usual != null && (usual - average) * 60 >= 30;
+  final short = need != null && (need - average) * 60 >= 30;
   return DetailInsight(text, short ? InsightTone.concern : InsightTone.neutral);
 }
 

@@ -78,41 +78,21 @@ String? homeStressLevel(double? score) => score == null
     ? 'Elevated'
     : 'High';
 
-String homeStressComparison(double? score, double? sevenDayAverage) {
-  if (score == null || sevenDayAverage == null) {
-    return 'Building your 7-day baseline.';
-  }
-  final difference = (score - sevenDayAverage).round();
-  if (difference == 0) return 'In line with your 7-day average.';
-  return '${difference.abs()} point${difference.abs() == 1 ? '' : 's'} '
-      '${difference < 0 ? 'below' : 'above'} your 7-day average.';
-}
-
 /// Words mode's sentence for where [score] sits (the chip says the level).
-/// The score is built so 50 is a typical day, so the words follow that.
-String? homeStressSentence(double? score) => score == null
-    ? null
-    : score < 30
-    ? 'Calm'
-    : score < 45
-    ? 'Calmer than usual'
-    : score < 60
-    ? 'Steady'
-    : score < 80
-    ? 'Quite tense'
-    : 'Very tense';
-
-/// Words mode's comparison with the week, without points.
-String homeStressComparisonWords(double? score, double? sevenDayAverage) {
-  if (score == null || sevenDayAverage == null) {
-    return 'Building your 7-day baseline.';
-  }
-  final difference = score - sevenDayAverage;
-  return difference <= -5
-      ? 'Calmer than your week.'
-      : difference >= 5
-      ? 'More tense than your week.'
-      : 'About the same as your week.';
+/// The bands are set for a usual of 50 and move with the person's [usual]
+/// (the stress service's anchor), so "Calmer than usual" stays true.
+String? homeStressSentence(double? score, {double usual = 50}) {
+  if (score == null) return null;
+  final relative = score - usual + 50;
+  return relative < 30
+      ? 'Calm'
+      : relative < 45
+      ? 'Calmer than usual'
+      : relative < 60
+      ? 'Steady'
+      : relative < 80
+      ? 'Quite tense'
+      : 'Very tense';
 }
 
 String homeStressAction({

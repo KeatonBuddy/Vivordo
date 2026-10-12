@@ -20,7 +20,6 @@ void expectBrief(
   DailyBriefMetricsSummary expected,
 ) {
   expect(actual.sleep, expected.sleep);
-  expect(actual.usualSleep, expected.usualSleep);
   expect(actual.capacity.score, expected.capacity.score);
   expect(actual.capacity.label, expected.capacity.label);
   expect(actual.capacity.availableSignals, expected.capacity.availableSignals);

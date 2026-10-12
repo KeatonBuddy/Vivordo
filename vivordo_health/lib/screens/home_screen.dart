@@ -815,7 +815,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return _buildScaffold(
         stressScore: null,
         stressUpdatedAt: null,
-        sevenDayStressAverage: null,
+        stressUsual: 50,
         stressDrivers: const [],
         stressLoading: false,
         sleepHours: null,
@@ -908,7 +908,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             final latestHeartRate = metricsSummary.latestHeartRate;
             final displayedStressScore =
                 stressScore ?? metricsSummary.stressAnchor;
-            final sevenDayStressAverage = metricsSummary.sevenDayStressAverage;
+            // The usual Stress detail compares with: today's anchor.
+            final stressUsual =
+                (stressMap?['anchor'] as num?)?.toDouble() ??
+                metricsSummary.stressAnchor ??
+                50;
             final stressDrivers = homeStressDrivers(stressMap?['top_drivers']);
             final stressStillLoading =
                 loading ||
@@ -950,7 +954,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               builder: (context, computingStress, _) => _buildScaffold(
                 stressScore: displayedStressScore,
                 stressUpdatedAt: _stressUpdatedAt(stressMap),
-                sevenDayStressAverage: sevenDayStressAverage,
+                stressUsual: stressUsual,
                 stressDrivers: stressDrivers,
                 stressUpdating: computingStress,
                 stressLoading: stressStillLoading,
@@ -1145,7 +1149,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildScaffold({
     required double? stressScore,
     required DateTime? stressUpdatedAt,
-    required double? sevenDayStressAverage,
+    required double stressUsual,
     required List<HomeStressDriver> stressDrivers,
     bool stressUpdating = false,
     required bool stressLoading,
@@ -1188,7 +1192,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     builder: (context, showNumbers, _) => HomeStressCard(
                       score: stressScore,
                       updatedAt: stressUpdatedAt,
-                      sevenDayAverage: sevenDayStressAverage,
+                      usual: stressUsual,
                       drivers: stressDrivers,
                       steps: steps,
                       loading: stressLoading,

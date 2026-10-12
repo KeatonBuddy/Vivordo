@@ -300,7 +300,8 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               child: Column(
                 children: [
                   Text(
-                    homeStressSentence(score) ?? 'No reading yet',
+                    homeStressSentence(score, usual: today.usual) ??
+                        'No reading yet',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.w800,
@@ -593,7 +594,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                 if (usualRange != null)
                   _legend(
                     colors.textPrimary.withValues(alpha: .16),
-                    'Your usual range',
+                    'Typical range, last 4 weeks',
                   ),
                 if (events.isNotEmpty)
                   _legend(_purple.withValues(alpha: .7), 'Calendar events'),

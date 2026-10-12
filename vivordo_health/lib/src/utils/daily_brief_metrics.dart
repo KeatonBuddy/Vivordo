@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
-import 'daily_brief_analysis.dart';
 import 'daily_outlook_score.dart';
 import 'energy_forecast.dart';
 import 'home_metrics_summary.dart';
@@ -30,11 +29,6 @@ class DailyBriefMetrics {
     final todayDocuments = documents.where((d) => d.dayKey == todayKey);
     final data = todayDocuments.isEmpty ? null : todayDocuments.first.data;
     final previous = documents.where((d) => d.dayKey.compareTo(todayKey) < 0);
-    final usualSleep = sleepBaseline(
-      previous.map(
-        (d) => ((d.data['sleep'] as Map?)?['avg'] as num?)?.toDouble() ?? 0,
-      ),
-    );
     final sleep = ((data?['sleep'] as Map?)?['avg'] as num?)?.toDouble();
     final stressMap = data?['stress'] as Map?;
     final hrvMap = data?['hrv'] as Map?;
@@ -132,7 +126,6 @@ class DailyBriefMetrics {
     _minute = minute;
     return _summary = DailyBriefMetricsSummary(
       sleep: sleep,
-      usualSleep: usualSleep,
       capacity: capacity,
       capacityNote: capacityNote,
       stale: stale,
@@ -150,7 +143,6 @@ class DailyBriefMetrics {
 class DailyBriefMetricsSummary {
   const DailyBriefMetricsSummary({
     required this.sleep,
-    required this.usualSleep,
     required this.capacity,
     required this.capacityNote,
     required this.stale,
@@ -161,7 +153,6 @@ class DailyBriefMetricsSummary {
     this.sleepNights = const [],
   });
   final double? sleep;
-  final double? usualSleep;
   final DailyCapacityResult capacity;
   final String capacityNote;
   final bool stale;

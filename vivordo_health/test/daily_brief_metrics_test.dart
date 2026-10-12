@@ -45,7 +45,6 @@ void main() {
         result.capacity.score,
         calculateDailyCapacity(sleepHours: 8, stressScore: 40).score,
       );
-      expect(result.usualSleep, 8);
       expect(result.priorNights, 7);
       expect(result.capacityNote, 'Near your usual');
       expect(result.stale, false);

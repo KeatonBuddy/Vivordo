@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 import '../widgets/contextual_insight_bar.dart';
-import '../src/utils/daily_brief_analysis.dart' show sleepBaseline;
 import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -17,6 +16,7 @@ import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
+import 'package:vivordo_health/src/utils/server_capacity.dart';
 import 'package:vivordo_health/src/utils/sleep_nights.dart';
 import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -86,6 +86,37 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   void initState() {
     super.initState();
     unawaited(_loadWindDownReminder());
+    unawaited(_loadSleepNeed());
+  }
+
+  /// Capacity's sleep need, as Home and My Day use it (null while it's the
+  /// 8 h placeholder).
+  double? _sleepNeed;
+
+  Future<void> _loadSleepNeed() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final today = DateUtils.dateOnly(DateTime.now());
+    try {
+      final scores = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('scores_daily')
+          .where(
+            FieldPath.documentId,
+            isGreaterThanOrEqualTo: localDayKey(
+              today.subtract(const Duration(days: 13)),
+            ),
+          )
+          .where(FieldPath.documentId, isLessThanOrEqualTo: localDayKey(today))
+          .get();
+      final need = latestSleepNeed({
+        for (final doc in scores.docs) doc.id: doc.data(),
+      });
+      if (mounted && need != _sleepNeed) setState(() => _sleepNeed = need);
+    } catch (error) {
+      debugPrint('Sleep need failed to load: $error');
+    }
   }
 
   Future<void> _loadWindDownReminder() async {
@@ -345,24 +376,13 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         ? null
         : ((average - previousAverage) * 60).round();
     final latest = recorded.isEmpty ? null : recorded.last.value;
-    final baseline = sleepBaseline(
-      byDay.entries
-          .where((entry) {
-            final date = DateTime.tryParse(entry.key);
-            return date != null &&
-                date.isBefore(today) &&
-                !date.isBefore(
-                  DateTime(today.year, today.month, today.day - 28),
-                );
-          })
-          .map((entry) => entry.value.hours),
-    );
+    final need = _sleepNeed;
     final planningAdvice =
         _rangeIndex == 0 &&
             latest != null &&
-            baseline != null &&
-            latest.hours < baseline - .75
-        ? 'That is less sleep than your recent usual. Consider keeping your plan flexible and leaving room for a break, especially if you feel tired.'
+            need != null &&
+            latest.hours < need - .75
+        ? 'That is less sleep than you need. Consider keeping your plan flexible and leaving room for a break, especially if you feel tired.'
         : 'Consider how rested you feel alongside this measurement when planning your day. Want help leaving room for rest?';
     final hasWhoopSleepData = includesWhoopSleepSource(
       recorded.map((day) => day.value?.source),
@@ -441,6 +461,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                 },
                 today: DateTime.now(),
                 rangeDays: _rangeDays,
+                need: _sleepNeed,
               ),
             ),
           ],

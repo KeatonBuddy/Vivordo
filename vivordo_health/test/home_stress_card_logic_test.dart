@@ -27,11 +27,7 @@ void main() {
   });
 
   group('home stress card copy', () {
-    test('compares the score with the seven-day average', () {
-      expect(
-        homeStressComparison(48, 54),
-        '6 points below your 7-day average.',
-      );
+    test('levels', () {
       expect(homeStressLevel(null), isNull);
       expect(homeStressLevel(29), 'Low');
       expect(homeStressLevel(48), 'Moderate');

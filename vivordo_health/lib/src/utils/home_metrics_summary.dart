@@ -27,7 +27,6 @@ class HomeMetricsSummary {
   const HomeMetricsSummary({
     this.latestHeartRate,
     this.stressAnchor,
-    this.sevenDayStressAverage,
     this.sleepNights = const [],
   });
 
@@ -38,10 +37,6 @@ class HomeMetricsSummary {
   /// Most recent stress anchor in the window, or null when the window holds
   /// none.
   final double? stressAnchor;
-
-  /// Mean stress across the seven days before today, or null when none of
-  /// those days carry a stress value.
-  final double? sevenDayStressAverage;
 
   /// Recorded nights in the window, for the energy forecast.
   final List<SleepPeriod> sleepNights;
@@ -92,7 +87,6 @@ HomeMetricsSummary summarizeHomeMetrics({
   return HomeMetricsSummary(
     latestHeartRate: _latestHeartRate(newestFirst, now),
     stressAnchor: _latestStressAnchor(newestFirst),
-    sevenDayStressAverage: _sevenDayStressAverage(newestFirst, now),
     sleepNights: sleepNights(newestFirst.take(15).map((d) => d.data)),
   );
 }
@@ -162,25 +156,6 @@ double? _latestStressAnchor(List<MetricDayEntry> newestFirst) {
     if (average is num) return average.toDouble();
   }
   return null;
-}
-
-double? _sevenDayStressAverage(List<MetricDayEntry> entries, DateTime now) {
-  final today = DateTime(now.year, now.month, now.day);
-  final oldest = today.subtract(const Duration(days: 7));
-  final values = <double>[];
-  for (final entry in entries) {
-    final date = DateTime.tryParse(entry.dayKey);
-    if (date == null || date.isBefore(oldest) || !date.isBefore(today)) {
-      continue;
-    }
-    final stress = entry.data['stress'] as Map?;
-    final value =
-        (stress?['avg'] as num?)?.toDouble() ??
-        (stress?['current'] as num?)?.toDouble();
-    if (value != null) values.add(value);
-  }
-  if (values.isEmpty) return null;
-  return values.reduce((a, b) => a + b) / values.length;
 }
 
 /// Holds the last [HomeMetricsSummary] so unrelated rebuilds reuse it instead

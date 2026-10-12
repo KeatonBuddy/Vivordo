@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
+import 'package:vivordo_health/src/utils/stress_view.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
@@ -10,7 +11,7 @@ class HomeStressCard extends StatefulWidget {
     super.key,
     required this.score,
     required this.updatedAt,
-    required this.sevenDayAverage,
+    required this.usual,
     required this.drivers,
     required this.steps,
     required this.loading,
@@ -23,7 +24,9 @@ class HomeStressCard extends StatefulWidget {
 
   final double? score;
   final DateTime? updatedAt;
-  final double? sevenDayAverage;
+
+  /// The person's usual (the stress service's anchor), as on Stress detail.
+  final double usual;
   final List<HomeStressDriver> drivers;
   final int steps;
   final bool loading;
@@ -83,7 +86,7 @@ class _HomeStressCardState extends State<HomeStressCard>
     final contentChanged =
         widget.score != oldWidget.score ||
         widget.updatedAt != oldWidget.updatedAt ||
-        widget.sevenDayAverage != oldWidget.sevenDayAverage ||
+        widget.usual != oldWidget.usual ||
         !_sameDrivers(widget.drivers, oldWidget.drivers) ||
         widget.steps != oldWidget.steps ||
         widget.loading != oldWidget.loading ||
@@ -309,7 +312,7 @@ class _HomeStressCardState extends State<HomeStressCard>
         Text(
           (widget.showNumbers
                   ? homeStressLevel(displayedScore)
-                  : homeStressSentence(displayedScore)) ??
+                  : homeStressSentence(displayedScore, usual: widget.usual)) ??
               'No score yet',
           style: const TextStyle(
             color: Colors.white,
@@ -325,12 +328,14 @@ class _HomeStressCardState extends State<HomeStressCard>
           const SizedBox(width: 5),
           Expanded(
             child: Text(
-              widget.showNumbers
-                  ? homeStressComparison(widget.score, widget.sevenDayAverage)
-                  : homeStressComparisonWords(
-                      widget.score,
-                      widget.sevenDayAverage,
-                    ),
+              switch (widget.score) {
+                null => 'Learning your usual.',
+                final score when widget.showNumbers => stressUsualHeadline(
+                  score,
+                  widget.usual,
+                ),
+                final score => stressUsualHeadlineWords(score, widget.usual),
+              },
               style: const TextStyle(
                 color: Color(0xFFDCD6FF),
                 fontSize: 12.5,
@@ -433,13 +438,15 @@ class _HomeStressCardState extends State<HomeStressCard>
 
   IconData _comparisonIcon() {
     final score = widget.score;
-    final average = widget.sevenDayAverage;
-    // Words mode says "about the same" within 5 points, so the arrow does.
-    final flat = widget.showNumbers ? 1 : 5;
-    if (score == null || average == null || (score - average).abs() < flat) {
+    final usual = widget.usual;
+    // Flat whenever the text says "About usual".
+    if (score == null ||
+        (widget.showNumbers
+            ? (score - usual).round().abs() <= 1
+            : (score - usual).abs() < 5)) {
       return Icons.trending_flat_rounded;
     }
-    return score < average
+    return score < usual
         ? Icons.trending_down_rounded
         : Icons.trending_up_rounded;
   }

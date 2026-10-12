@@ -26,14 +26,6 @@ class BriefPriority {
 bool sameBriefDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
-double? sleepBaseline(Iterable<double> nights) {
-  final values = nights.where((n) => n.isFinite && n > 0 && n <= 24).toList()
-    ..sort();
-  if (values.length < 7) return null;
-  final m = values.length ~/ 2;
-  return values.length.isOdd ? values[m] : (values[m - 1] + values[m]) / 2;
-}
-
 /// Last night against the sleep need: Capacity's, the same one Home and
 /// the energy forecast use (docs/scores.md §4). [need] is null while it's
 /// still the 8 h placeholder, so a plain duration is shown instead.
