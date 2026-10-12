@@ -138,6 +138,14 @@ void main() {
     );
   });
 
+  test('Demand against Capacity: over above it, full within 25 below', () {
+    // The packed 9 AM-8 PM workday from the insight check.
+    expect(demandFit(64.3, 58), DemandFit.over);
+    expect(demandFit(64.3, 88), DemandFit.full);
+    expect(demandFit(21.6, 76), DemandFit.roomToSpare);
+    expect(demandFit(58, 58), DemandFit.full);
+  });
+
   test('activity so far follows the server: minutes, else calories', () {
     // A 45-minute run (15.75) plus 30 Health minutes (6).
     expect(

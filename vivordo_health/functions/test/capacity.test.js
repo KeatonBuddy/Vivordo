@@ -2,7 +2,7 @@
 /* eslint-disable max-len, require-jsdoc */
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {BIG_DAY_MIN, bigDayEffect, bigDayPenalty, bigDayScale, strongestBigDay, computeCapacity, capacityInputs, capacityInputsChanged, sleepNeed, clockGap, usualClockTime} = require("../capacity");
+const {BIG_DAY_MIN, bigDayEffect, bigDayPenalty, bigDayScale, strongestBigDay, computeCapacity, physicalLoads, capacityInputs, capacityInputsChanged, sleepNeed, clockGap, usualClockTime} = require("../capacity");
 
 // 30 normal days: 7.5 h sleep, bed at 23:00, HRV 60, resting HR 55.
 const history = (overrides = {}) => Array.from({length: 30}, () => ({
@@ -188,4 +188,23 @@ test("a day without heart rate is judged by minutes, each against its own usual"
       {daysAgo: 1, ratio: 3, penalty: 70, kind: "heart"});
   // Nothing to judge by: no big day.
   assert.equal(strongestBigDay([null, null, null]), null);
+});
+
+test("a calories-only day (a long walk on a phone) is never a big day", async () => {
+  // A user with no scores or workouts yet: only metrics_daily, passed in.
+  const empty = {get: async () => ({docs: []})};
+  const query = {where: () => query, select: () => empty, get: empty.get};
+  const user = {collection: () => query};
+  const day = "2026-10-12";
+  const key = (k) => new Date(Date.parse(`${day}T00:00:00Z`) - k * 86400000).toISOString().slice(0, 10);
+  const doc = (id, data) => ({id, get: (field) => data[field], data: () => data});
+  // 20 days of 30 Health exercise minutes (6 points) and 400 kcal.
+  const usual = Array.from({length: 20}, (_, i) => doc(key(i + 2),
+      {exercise_time: {healthSum: 30}, active_calories: {sum: 400}}));
+  const loads = (yesterday) => physicalLoads(user, [...usual, doc(key(1), yesterday)], key(90), day);
+  // Yesterday: 2,000 kcal and no exercise minutes, 32 points from calories.
+  assert.equal((await loads({active_calories: {sum: 2000}})).bigDay, null);
+  // Two hours of Health exercise minutes (24 points) still is one.
+  const exercise = await loads({exercise_time: {healthSum: 120}, active_calories: {sum: 900}});
+  assert.equal(exercise.bigDay?.day, key(1));
 });

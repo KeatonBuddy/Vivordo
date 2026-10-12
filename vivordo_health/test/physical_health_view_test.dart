@@ -75,6 +75,21 @@ void main() {
       PhysicalHealthView.fromDays({'2026-10-01': parts(96)})!.heroLine,
       'You\'re meeting your activity, fitness and sleep targets.',
     );
+    // Meeting the guidelines (80) without going beyond them: Good, and
+    // what Excellent takes.
+    final basics = parts(85);
+    (basics['physical'] as Map)['score'] = 84;
+    (basics['physical'] as Map)['parts'] = {
+      'activeMinutes': 80.0,
+      'movement': 82.0,
+      'strength': 80.0,
+      'cardio': 90.0,
+      'sleep': 85.0,
+    };
+    expect(
+      PhysicalHealthView.fromDays({'2026-10-01': basics})!.insights.single,
+      startsWith('You\'re meeting the guidelines. 300 active minutes'),
+    );
   });
 
   test('building shows progress and what is missing', () {

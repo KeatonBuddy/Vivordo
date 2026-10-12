@@ -267,6 +267,21 @@ DayEffort buildDayEffort({
   );
 }
 
+/// How a day's Demand sits against Capacity (docs/scores.md §2).
+enum DemandFit { roomToSpare, full, over }
+
+/// Over when Demand is above Capacity, the same line the weekly review
+/// uses for a heavy day; full within [_fullBand] below it; else room.
+/// Demand runs lower than Capacity's 0-100, so a margin above Capacity
+/// left even a packed day short of "over".
+DemandFit demandFit(double demand, num capacity) => demand > capacity
+    ? DemandFit.over
+    : demand >= capacity - _fullBand
+    ? DemandFit.full
+    : DemandFit.roomToSpare;
+
+const _fullBand = 25;
+
 /// Today's activity Effort so far, by the server's rules (physicalLoad in
 /// functions/effort.js): in-app workouts plus Health exercise minutes × 0.2,
 /// else active calories above the usual ÷ 50; capped at 25. Whatever Health

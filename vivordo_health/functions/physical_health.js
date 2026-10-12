@@ -10,7 +10,7 @@ const {isDeepStrictEqual} = require("node:util");
 const {validDay} = require("./metrics_summary");
 const {clockGap, usualClockTime} = require("./capacity");
 
-const VERSION = 1;
+const VERSION = 2; // 2: the guideline scores 80, going beyond it 100
 const WINDOW_DAYS = 28;
 const VO2_LOOKBACK_DAYS = 90;
 const MIN_DAYS = 14; // days with any data before there's a score
@@ -19,10 +19,17 @@ const DAY_MS = 86400000;
 const WEIGHTS = {activeMinutes: 30, movement: 15, strength: 20, cardio: 20,
   sleep: 15};
 // Targets: WHO activity guidelines (150 min a week, strength twice a week),
-// ~8,000 steps a day, 7–9 hours of sleep.
+// ~8,000 steps a day, 7–9 hours of sleep. Meeting a guideline scores
+// GUIDELINE_SCORE; full marks need the WHO's "additional benefits" level
+// (300 min, 3 strength sessions) or 10,000 steps, so meeting the basics is
+// Good and Excellent is for going beyond them.
 const ACTIVE_MINUTES_TARGET = 150;
+const ACTIVE_MINUTES_FULL = 300;
 const STEPS_TARGET = 8000;
+const STEPS_FULL = 10000;
 const STRENGTH_TARGET = 2;
+const STRENGTH_FULL = 3;
+const GUIDELINE_SCORE = 80;
 const STRENGTH = new RegExp("\\b(legs|arms|back|shoulders|chest|core|" +
   "strength|weights?|lift|lifting)\\b", "i");
 // Median VO₂ max (ml/kg/min) by age decade, from published fitness norms
@@ -37,6 +44,17 @@ const clamp = (value) => Math.min(100, Math.max(0, value));
 const round1 = (value) => value === null ? null :
   Math.round(value * 10 + 1e-9) / 10;
 const sum = (values) => values.reduce((a, b) => a + b, 0);
+/**
+ * 0 at nothing, GUIDELINE_SCORE at the guideline, 100 at the full level.
+ * @param {number} value The measure.
+ * @param {number} guideline Where the guideline is met.
+ * @param {number} full Where it scores 100.
+ * @return {number} 0–100.
+ */
+const towards = (value, guideline, full) => clamp(value <= guideline ?
+  GUIDELINE_SCORE * value / guideline :
+  GUIDELINE_SCORE + (100 - GUIDELINE_SCORE) * (value - guideline) /
+    (full - guideline));
 const mean = (values) => values.length ? sum(values) / values.length : null;
 
 /**
@@ -105,12 +123,12 @@ function computePhysicalHealth({days, workouts = [], logsWorkouts = false,
   const weeklyActiveMinutes = exercise.length >= 7 ?
     sum(exercise) / weeks : null;
   const activeMinutes = weeklyActiveMinutes === null ? null :
-    clamp(100 * weeklyActiveMinutes / ACTIVE_MINUTES_TARGET);
+    towards(weeklyActiveMinutes, ACTIVE_MINUTES_TARGET, ACTIVE_MINUTES_FULL);
 
   const steps = days.map((d) => d.steps).filter((v) => finite(v) && v > 0);
   const avgSteps = steps.length >= 7 ? mean(steps) : null;
   const movement = avgSteps === null ? null :
-    clamp(100 * avgSteps / STEPS_TARGET);
+    towards(avgSteps, STEPS_TARGET, STEPS_FULL);
 
   const strengthSessions = workouts.filter((w) => STRENGTH.test(
       [w.name, w.category, ...(w.exerciseCategories || [])]
@@ -118,7 +136,7 @@ function computePhysicalHealth({days, workouts = [], logsWorkouts = false,
       [w.name, w.category].filter(Boolean).join(" "))).length;
   const strengthPerWeek = logsWorkouts ? strengthSessions / weeks : null;
   const strength = strengthPerWeek === null ? null :
-    clamp(100 * strengthPerWeek / STRENGTH_TARGET);
+    towards(strengthPerWeek, STRENGTH_TARGET, STRENGTH_FULL);
 
   const age = profile.age;
   const estimated = vo2 ? null : estimateVo2Max({...profile,

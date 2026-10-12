@@ -205,7 +205,10 @@ class PhysicalHealthView {
                         'sleep habits.',
           },
       if (gaps.isEmpty && score != null)
-        'You\'re meeting your targets. Keep it up.',
+        score >= 90
+            ? 'You\'re meeting your targets. Keep it up.'
+            : 'You\'re meeting the guidelines. 300 active minutes a week, '
+                  '10,000 steps and 3 strength sessions reach Excellent.',
     ];
 
     return PhysicalHealthView(
@@ -226,11 +229,13 @@ class PhysicalHealthView {
   }
 }
 
-/// The easiest wins: counted ingredients furthest below target, weighted.
+/// The easiest wins: counted ingredients below their guideline (80, since
+/// version 2 scores the guideline 80 and going beyond it 100), furthest
+/// below first, weighted.
 List<PhysicalIngredient> _gaps(List<PhysicalIngredient> ingredients) =>
     [
       for (final i in ingredients)
-        if (i.progress != null && i.progress! < 95) i,
+        if (i.progress != null && i.progress! < 80) i,
     ]..sort(
       (a, b) => ((100 - b.progress!) * b.weight).compareTo(
         (100 - a.progress!) * a.weight,

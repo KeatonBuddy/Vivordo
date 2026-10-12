@@ -18,12 +18,27 @@ test("a fairly active person with a watch VO2 max", () => {
     days: days(), workouts: strength(6), logsWorkouts: true,
     vo2: {value: 41, source: "apple_health"}, profile,
   });
-  // 210 min/week → 100; 7,000 steps → 87.5; 1.5 strength/week → 75;
-  // VO2 41 vs median 41 (30s, male) → 60; sleep 7.5 h, regular → 100.
-  assert.deepEqual(result.parts, {activeMinutes: 100, movement: 87.5, strength: 75, cardio: 60, sleep: 100});
-  assert.equal(result.score, Math.round((30 * 100 + 15 * 87.5 + 20 * 75 + 20 * 60 + 15 * 100) / 100));
+  // The guideline scores 80, going beyond it 100: 210 min/week → 88
+  // (80 at 150, 100 at 300); 7,000 steps → 70 (80 at 8,000); 1.5 strength
+  // a week → 60 (80 at 2); VO2 41 vs median 41 (30s, male) → 60; sleep
+  // 7.5 h, regular → 100.
+  assert.deepEqual(result.parts, {activeMinutes: 88, movement: 70, strength: 60, cardio: 60, sleep: 100});
+  assert.equal(result.score, Math.round((30 * 88 + 15 * 70 + 20 * 60 + 20 * 60 + 15 * 100) / 100));
   assert.equal(result.label, "good");
   assert.equal(result.details.vo2Source, "apple_health");
+});
+
+test("meeting every guideline is Good; Excellent is for going beyond them", () => {
+  const score = (minutes, steps, sessions) => computePhysicalHealth({
+    days: days().map((d) => ({...d, exerciseMinutes: minutes / 7, steps})),
+    workouts: strength(sessions * 4), logsWorkouts: true,
+    vo2: {value: 41, source: "apple_health"}, profile,
+  });
+  const basics = score(150, 8000, 2);
+  assert.deepEqual([basics.parts.activeMinutes, basics.parts.movement, basics.parts.strength], [80, 80, 80]);
+  assert.equal(basics.label, "good");
+  const beyond = score(300, 10000, 3);
+  assert.deepEqual([beyond.parts.activeMinutes, beyond.parts.movement, beyond.parts.strength], [100, 100, 100]);
 });
 
 test("without a measured VO2 max it's estimated from age, sex, BMI and activity", () => {

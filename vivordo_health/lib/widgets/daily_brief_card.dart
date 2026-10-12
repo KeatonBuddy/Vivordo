@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../src/utils/day_effort.dart';
+
 /// Where the brief's sun sits at [time], as fractions of the landscape: it
 /// rises bottom-left at 6 AM, peaks around 1 PM and sets bottom-right at
 /// 8 PM. Null at night, when no sun is drawn.
@@ -214,17 +216,18 @@ BriefState briefEnergyState({
       : (word: 'Low', tone: BriefTone.low);
 }
 
-/// Demand against the Capacity it's set beside, ±15 as the headline.
+/// Demand against the Capacity it's set beside, as the headline
+/// ([demandFit]).
 BriefState briefLoadState({required double? demand, required int? capacity}) {
   if (demand == null) return (word: 'Plan unavailable', tone: BriefTone.usual);
   if (capacity == null) {
     return (word: demand < 40 ? 'Light' : 'Full', tone: BriefTone.usual);
   }
-  return demand <= capacity - 15
-      ? (word: 'Light', tone: BriefTone.good)
-      : demand > capacity + 15
-      ? (word: 'Heavy', tone: BriefTone.low)
-      : (word: 'Full', tone: BriefTone.usual);
+  return switch (demandFit(demand, capacity)) {
+    DemandFit.roomToSpare => (word: 'Light', tone: BriefTone.good),
+    DemandFit.over => (word: 'Heavy', tone: BriefTone.low),
+    DemandFit.full => (word: 'Full', tone: BriefTone.usual),
+  };
 }
 
 class _BriefStateRow extends StatelessWidget {

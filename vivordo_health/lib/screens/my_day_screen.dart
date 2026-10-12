@@ -1316,7 +1316,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 evening &&
                 ready &&
                 tomorrowCapacity != null &&
-                demand > tomorrowCapacity + 15;
+                demandFit(demand, tomorrowCapacity) == DemandFit.over;
             // A big day in the last 3 is lowering Capacity (docs/scores.md
             // §4): say why, unless the body has already bounced back.
             final bigDay = server?.bigDay;
@@ -1332,11 +1332,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 ? bigDayHeadline(bigDay, today)
                 : capacityScore == null || !ready
                 ? 'Make space for your day'
-                : demand <= capacityScore - 15
-                ? 'Room to spare today'
-                : demand > capacityScore + 15
-                ? 'More than you’ve got: protect a break'
-                : 'A full day ahead';
+                : switch (demandFit(demand, capacityScore)) {
+                    DemandFit.roomToSpare => 'Room to spare today',
+                    DemandFit.over => 'More than you’ve got: protect a break',
+                    DemandFit.full => 'A full day ahead',
+                  };
             final calendarText = ready
                 ? remainingToday(
                     timedEvents.where((e) => e.end.isAfter(now)).length,
@@ -1496,7 +1496,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                         )
                 : !ready ||
                       capacityScore == null ||
-                      demand <= capacityScore + 15 ||
+                      demandFit(demand, capacityScore) != DemandFit.over ||
                       _fixesHiddenDay == localDayKey(today)
                 ? const <DayFix>[]
                 : _dayFixes(now, timedEvents, todayPriorities);

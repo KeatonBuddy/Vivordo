@@ -123,6 +123,23 @@ test("from 3 weeks in, an early check runs on the last 7 days", () => {
   assert.equal(evaluateRange(history(), END, END)[0].early, false);
 });
 
+test("an area with only a 28-day import is checked the early way, and only watches", () => {
+  // 84 days of Health (Capacity, mood) but Effort only from the calendar
+  // import's 28 days, with the last week much heavier.
+  const days = history({
+    skip: (key, ago) => key === "effort" && ago >= 28,
+    shape: (ago) => ({effort: ago < 7 ? 75 : 35}),
+  });
+  const results = evaluateRange(days, dayKey(end - 13), END);
+  const night = results.at(-1);
+  assert.equal(night.early, false, "the full check runs");
+  assert.ok(night.areas.effort, "Effort is checked, not 'not enough data'");
+  assert.equal(night.areas.effort.elevated, true);
+  assert.equal(night.level, "watch");
+  assert.ok(results.every((r) => r.level !== "warning"), "never warns on it");
+  assert.match(night.reasons[0], /for a week$/);
+});
+
 test("an early check can watch but never warns or notifies", () => {
   // A month in, the last week slides hard in Capacity, Effort and Mood:
   // the full check would warn; the early one stops at watch.

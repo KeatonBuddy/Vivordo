@@ -98,10 +98,15 @@ Day's brief shows it in place of the old schedule score
 (`analyzeBriefPlan`, removed). It isn't stored on the server yet; store
 it when burnout or trends need it.
 
-**Morning comparison** (expected Demand at wake vs Capacity):
-- Demand ≤ Capacity − 15: "Room to spare".
-- Within ±15: "A full day".
-- Demand > Capacity + 15: "More than you've got: protect a break".
+**Morning comparison** (expected Demand at wake vs Capacity, `demandFit`
+in `lib/src/utils/day_effort.dart`; 2026-10-12):
+- Demand above Capacity: "More than you've got: protect a break", with
+  "Ways to lighten today" (the weekly review's heavy-day line too).
+- Within 25 below: "A full day".
+- Further below: "Room to spare".
+Words mode's Light / Full / Heavy and the evening's "Tomorrow looks heavy"
+use the same bands. (The old ±15 margin above Capacity left even a packed
+9 AM–8 PM day short: Demand runs lower than Capacity's 0–100.)
 
 **Ways to lighten today** (`lib/src/utils/day_fixes.dart`,
 `lib/widgets/day_fixes_card.dart`): under a "More than you've got" brief,
@@ -277,7 +282,9 @@ never compared with each other:
 Each recent day uses heart-rate load if it was measured (and the person has
 a heart-rate usual), otherwise minutes against the minutes usual, so a day
 with the watch left off still counts. Each usual is the median load on
-active days in the last 90. A big day is
+active days in the last 90. Days measured only by calories above the
+usual (no heart rate, exercise minutes or workouts: a long walk on a phone)
+never count as a big day; they still count towards training load. A big day is
 at least 2× your usual and at least a minimum (40 TRIMP or 12 points, about
 an hour of moderate exercise); the usual counts as at least half the
 minimum, so an hour reads as 2× for someone who rarely exercises. It costs
@@ -548,6 +555,10 @@ zone, right after that day's final Effort.
   itself; its strained nights don't count towards a warning. Saved with
   `early: true`; the app shows "Steady · early check" and words reasons as
   "for a week".
+- **An area with less history** than the rest (Effort from the 28-day
+  calendar import against 90 days of Health) is checked the early way inside
+  the full check: it can raise a watch, with its reason worded "for a week",
+  but never counts towards a warning until it has the full history.
 - **One push** when a warning starts (not within 7 days of the last), naming
   the areas: "Lower energy and heavier days than usual." Off with Settings →
   Burnout check (`preferences.burnoutNotificationsEnabled`, on unless
@@ -572,15 +583,20 @@ Metrics (same card, same position) and its detail screen
 
 - **What it measures:** long-term physical habits and fitness over the last
   28 days. It has nothing to do with My Day.
-- **Ingredients** (each 0–100 towards a target):
+- **Ingredients** (each 0–100; version 2, 2026-10-12: the guideline scores
+  80 and going beyond it reaches 100, so meeting the basics is Good and
+  Excellent is for more; `scripts/backfill_physical_health.js` recomputes
+  stored days):
 
-  | Ingredient | Weight | Target |
-  |---|---|---|
-  | Active minutes | 30% | 150 min a week (WHO) |
-  | Daily movement | 15% | 8,000 steps a day |
-  | Strength | 20% | 2 sessions a week, from in-app workouts |
-  | Cardio fitness | 20% | VO₂ max vs the median for age and sex |
-  | Sleep habits | 15% | 7–9 h, plus a regular bedtime |
+  | Ingredient | Weight | Guideline (80) | Full marks (100) |
+  |---|---|---|---|
+  | Active minutes | 30% | 150 min a week (WHO) | 300 (WHO additional benefits) |
+  | Daily movement | 15% | 8,000 steps a day | 10,000 |
+  | Strength | 20% | 2 sessions a week, from in-app workouts | 3 |
+  | Cardio fitness | 20% | VO₂ max vs the median for age and sex (60 at the median, 100 at 20% above) | |
+  | Sleep habits | 15% | 7–9 h, plus a regular bedtime (100) | |
+
+  Gaps and tips are the ingredients below their guideline.
 
 - **Counting rules:**
   - Strength counts only for people who logged any in-app workout in the

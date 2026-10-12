@@ -384,13 +384,18 @@ async function physicalLoads(user, metricsDocs, start, day) {
       .filter((v) => finite(v) && v > 0);
   const usualCalories = calories.length >= 7 ? median(calories) : null;
   const loadOn = new Map();
+  // Days measured only by calories above the usual: more movement, but no
+  // sign of strain (a long walk), so never a big day.
+  const caloriesOnly = new Set();
   for (const doc of earlier) {
-    loadOn.set(doc.id, physicalLoad({
+    const load = physicalLoad({
       workouts: byDay.get(doc.id) ?? [],
       healthMinutes: doc.get("exercise_time")?.healthSum ?? null,
       activeCalories: doc.get("active_calories")?.sum ?? null,
       usualCalories,
-    }).points);
+    });
+    loadOn.set(doc.id, load.points);
+    if (load.source === "calories") caloriesOnly.add(doc.id);
   }
   for (const [key, list] of byDay) {
     if (!loadOn.has(key)) {
@@ -409,7 +414,7 @@ async function physicalLoads(user, metricsDocs, start, day) {
       return {load: heartOn.get(key), usual: heartUsual,
         minimum: BIG_DAY_MIN.heart, kind: "heart"};
     }
-    return minutesUsual === null ? null :
+    return minutesUsual === null || caloriesOnly.has(key) ? null :
       {load: loadOn.get(key) ?? null, usual: minutesUsual,
         minimum: BIG_DAY_MIN.minutes, kind: "minutes"};
   }));
@@ -572,7 +577,7 @@ function capacityInputsChanged(before, after) {
 
 module.exports = {
   VERSION, WEIGHTS, BIG_DAY_MIN, bigDayEffect, bigDayPenalty, bigDayScale,
-  strongestBigDay, computeCapacity,
+  strongestBigDay, computeCapacity, physicalLoads,
   capacityInputs, capacityInputsChanged, refreshCapacity, sleepNeed, clockGap,
   usualClockTime,
 };

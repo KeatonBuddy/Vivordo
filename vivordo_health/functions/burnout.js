@@ -218,7 +218,7 @@ function reasons(signals, early = false) {
       .map(([name, signal]) => `${SIGNALS[name].label} has been ` +
         `${format(name, signal.recent)} vs your usual ` +
         `${format(name, signal.usual)} on most days for ` +
-        `${early ? "a week" : "2 weeks"}`);
+        `${early || signal.early ? "a week" : "2 weeks"}`);
 }
 
 /**
@@ -266,6 +266,24 @@ function learningDays(byDay, today) {
 }
 
 /**
+ * The full check, with any signal it can't score yet (an area with less
+ * history than the rest, like Effort from a 28-day calendar import against
+ * 90 days of Health) taken from the early check. Those can raise a watch
+ * but, like the early check, never count towards a Warning.
+ * @param {object} full assess() with FULL windows.
+ * @param {object} early assess() with EARLY windows.
+ * @return {object} The full check's result with the gaps filled.
+ */
+function withEarlyGaps(full, early) {
+  const filled = Object.fromEntries(Object.entries(early.signals)
+      .filter(([name]) => !full.signals[name])
+      .map(([name, signal]) => [name, {...signal, early: true}]));
+  return {...full, signals: {...full.signals, ...filled},
+    watch: full.watch || Object.entries(filled)
+        .some(([name, signal]) => SIGNALS[name].headline && signal.elevated)};
+}
+
+/**
  * One nightly evaluation, carrying state from the previous night.
  * @param {Map<string, object>} byDay Day key -> dailySignals result.
  * @param {string} today Day key being evaluated.
@@ -276,7 +294,9 @@ function evaluateNight(byDay, today, previous) {
   const state = {strainedDays: 0, calmDays: 0, level: "steady",
     lastNotified: null, ...previous};
   const full = assess(byDay, today);
-  const night = full.enoughData ? full : assess(byDay, today, EARLY);
+  const night = full.enoughData ?
+    withEarlyGaps(full, assess(byDay, today, EARLY)) :
+    assess(byDay, today, EARLY);
   if (!night.enoughData) {
     return {level: "learning", reasons: [], notify: false, early: false,
       learningDays: learningDays(byDay, today), since: null,
