@@ -319,18 +319,41 @@ class HealthService {
   /// Days of Health history imported once per account (docs/scores.md §4).
   static const historyDays = 90;
 
+  /// Where the running history import is, for onboarding's "Getting to know
+  /// you": `health`, `calendar`, `scoring` or `done`; null before one runs.
+  static final historyStep = ValueNotifier<String?>(null);
+  static Future<void>? _historyQueue;
+
   /// The sign-in and first-connect sync: the last 30 days, or once per
   /// account the history import: [historyDays] of Health and
   /// [DayRecordService.historyDays] of calendar day records, each as soon
   /// as it's connected. The server then scores the imported days in order
   /// (functions/history_import.js), so the usuals exist on day one. A part
   /// is marked done only once it's scored; an unfinished one runs again.
-  Future<void> syncWithHistory() async {
+  /// Calls queue behind each other, so onboarding's call after the calendar
+  /// connects picks up what the earlier one (from Health) couldn't.
+  /// [recent] off skips the usual 30-day sync when there's no Health to
+  /// import, so onboarding only waits for what's new. The calendar is read
+  /// only after onboarding, or from its last step ([calendar]), once the
+  /// calendar and AI consent steps are done: rated without consent, four
+  /// weeks of events would stay rated by the rules alone.
+  Future<void> syncWithHistory({bool recent = true, bool calendar = false}) {
+    final run = (_historyQueue ?? Future<void>.value())
+        .catchError((Object _) {})
+        .then((_) => _syncWithHistory(recent, calendar));
+    _historyQueue = run;
+    return run.whenComplete(() {
+      if (identical(_historyQueue, run)) _historyQueue = null;
+    });
+  }
+
+  Future<void> _syncWithHistory(bool recent, bool allowCalendar) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final user = _db.collection('users').doc(uid);
     final consent = await getConsent();
-    final run = (await user.get()).data()?['historyImport'];
+    final data = (await user.get()).data();
+    final run = data?['historyImport'];
     // The first imports were Health only and marked just `state: done`.
     final healthDone =
         run is Map &&
@@ -339,9 +362,11 @@ class HealthService {
     final importHealth = !healthDone && consent.containsValue(true);
     final importCalendar =
         !(run is Map && run['calendar'] == 'done') &&
+        (allowCalendar || data?['onboardingCompleted'] == true) &&
         await DayRecordService.calendarConnected();
     if (!importHealth && !importCalendar) {
-      return syncToFirestore(daysBack: 30);
+      if (recent) await syncToFirestore(daysBack: 30);
+      return;
     }
     await user.set({
       'historyImport': {
@@ -349,9 +374,13 @@ class HealthService {
         'startedAt': FieldValue.serverTimestamp(),
       },
     }, SetOptions(merge: true));
-    await syncToFirestore(daysBack: importHealth ? historyDays : 30);
+    historyStep.value = importHealth ? 'health' : 'calendar';
+    if (importHealth || recent) {
+      await syncToFirestore(daysBack: importHealth ? historyDays : 30);
+    }
     var calendar = false;
     if (importCalendar) {
+      historyStep.value = 'calendar';
       try {
         calendar = await DayRecordService.syncHistory();
       } catch (error) {
@@ -359,6 +388,7 @@ class HealthService {
       }
     }
     if (FirebaseAuth.instance.currentUser?.uid != uid) return;
+    historyStep.value = 'scoring';
     try {
       await FirebaseFunctions.instance
           .httpsCallable(
@@ -377,6 +407,7 @@ class HealthService {
         'HealthService: history rebuild failed, retried later: $error',
       );
     }
+    historyStep.value = 'done';
   }
 
   /// Request HealthKit permission for a single metric, then sync it.

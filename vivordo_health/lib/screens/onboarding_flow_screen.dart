@@ -10,13 +10,16 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/ai_consent.dart';
 import '../src/services/calendar_service.dart';
+import '../src/services/day_record_service.dart';
 import '../src/services/fitbit_service.dart';
 import '../src/services/health_service.dart';
 import '../src/services/notification_service.dart';
 import '../src/services/personal_profile_service.dart';
 import '../src/services/user_service.dart';
 import '../src/services/whoop_service.dart';
+import '../src/utils/day_key.dart';
 import '../src/utils/day_wrap_up.dart';
+import '../src/utils/history_findings.dart';
 import '../src/utils/sleep_schedule.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/birth_year_picker.dart';
@@ -43,6 +46,7 @@ enum OnboardingStep {
   ai,
   scores,
   notifications,
+  history,
 }
 
 /// The steps for this user: people who finished the old onboarding see a
@@ -114,6 +118,13 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       (widget.userDoc?['preferences'] as Map?)?['showScoreNumbers'] != false;
   bool _google = false;
   bool _aiOn = false;
+
+  /// The history step: whether a calendar is connected (null until
+  /// checked), and what was found once the import is scored.
+  bool _historyStarted = false;
+  bool? _historyCalendar;
+  bool _historyDone = false;
+  HistoryFindings? _findings;
 
   Map<String, dynamic> get _preferences =>
       (widget.userDoc?['preferences'] as Map?)?.cast<String, dynamic>() ??
@@ -283,7 +294,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               child: PageView(
                 controller: _pages,
                 physics: const NeverScrollableScrollPhysics(),
-                onPageChanged: (i) => setState(() => _index = i),
+                onPageChanged: (i) {
+                  setState(() => _index = i);
+                  if (_steps[i] == OnboardingStep.history) {
+                    unawaited(_startHistory());
+                  }
+                },
                 children: [for (final step in _steps) _stepPage(step)],
               ),
             ),
@@ -653,6 +669,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         ),
       ],
     ),
+    OnboardingStep.history => _historyPage(),
     OnboardingStep.notifications => _StepLayout(
       kicker: 'ALMOST DONE',
       title: 'Stay in the loop',
@@ -663,9 +680,11 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       onPrimary: _busy ? null : () => _next(_allowNotifications),
       secondary: 'Not now',
       onSecondary: _busy ? null : () => _next(),
-      // Existing users already have these scores.
+      // Existing users already have these scores, and with Health connected
+      // the next step reads them from the history.
       children: [
-        if (_steps.first != OnboardingStep.intro) ...const [
+        if (_steps.first != OnboardingStep.intro &&
+            !_healthConnected) ...const [
           SizedBox(height: 4),
           Text(
             'WHAT HAPPENS NEXT',
@@ -692,6 +711,231 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       ],
     ),
   };
+
+  // The last step: reads the history (docs/scores.md §4) now that Health,
+  // the calendar and AI consent are all set, then shows what it found.
+  Widget _historyPage() {
+    if (!_healthConnected && _historyCalendar == false) {
+      return _StepLayout(
+        kicker: 'ALL SET',
+        title: "You're ready",
+        body:
+            'Connect $_healthName or a calendar any time in Settings, and '
+            'Vivordo will read your history then.',
+        primary: 'Show me my day',
+        onPrimary: _busy ? null : () => _next(),
+      );
+    }
+    if (!_historyDone) {
+      return _StepLayout(
+        kicker: 'ALMOST THERE',
+        title: 'Getting to know you',
+        body:
+            'Reading your last 3 months so your scores know what\'s normal '
+            'for you from today.',
+        primary: 'Working…',
+        onPrimary: null,
+        secondary: 'Continue in the background',
+        onSecondary: _busy ? null : () => _next(),
+        children: [
+          ValueListenableBuilder<String?>(
+            valueListenable: HealthService.historyStep,
+            builder: (context, step, _) {
+              const order = ['health', 'calendar', 'scoring', 'done'];
+              final at = step == null ? -1 : order.indexOf(step);
+              _HistoryState state(String part) {
+                final i = order.indexOf(part);
+                return at > i
+                    ? _HistoryState.done
+                    : at == i
+                    ? _HistoryState.running
+                    : _HistoryState.waiting;
+              }
+
+              return Column(
+                children: [
+                  if (_healthConnected)
+                    _HistoryRow(
+                      'Sleep and heart',
+                      'Last 3 months',
+                      state('health'),
+                    ),
+                  if (_historyCalendar == true)
+                    _HistoryRow('Calendar', 'Last 4 weeks', state('calendar')),
+                  _HistoryRow('Scoring your days', null, state('scoring')),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+    }
+    final found = _findings;
+    return _StepLayout(
+      kicker: 'ALL SET',
+      title: "Here's what we found",
+      body: 'Your scores compare with these from today.',
+      primary: 'Show me my day',
+      onPrimary: _busy ? null : () => _next(),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFCECBF6), width: 1.5),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'FROM YOUR LAST 3 MONTHS',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .8,
+                  color: _grey,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                found?.insight ??
+                    'Vivordo will point out your patterns as it learns your '
+                        'days.',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
+                  color: _ink,
+                ),
+              ),
+              if (found?.basis case final basis?) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '$basis Vivordo will keep checking this.',
+                  style: const TextStyle(fontSize: 13, color: _grey),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (found != null && found.usuals.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          const Text(
+            'YOUR USUAL',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: .8,
+              color: _grey,
+            ),
+          ),
+          const SizedBox(height: 8),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 2.3,
+            children: [
+              for (final usual in found.usuals)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  alignment: Alignment.centerLeft,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        usual.value,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: _ink,
+                        ),
+                      ),
+                      Text(
+                        usual.label,
+                        style: const TextStyle(fontSize: 12, color: _grey),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _startHistory() async {
+    if (_historyStarted) return;
+    _historyStarted = true;
+    final calendar = await DayRecordService.calendarConnected();
+    if (!mounted) return;
+    setState(() => _historyCalendar = calendar);
+    if (_healthConnected || calendar) {
+      // Queued behind the import Health started earlier, so this one adds
+      // the calendar now that it's connected and AI consent is set.
+      await HealthService().syncWithHistory(recent: false, calendar: true);
+    }
+    final findings = await _loadFindings();
+    if (mounted) {
+      setState(() {
+        _findings = findings;
+        _historyDone = true;
+      });
+    }
+  }
+
+  /// The last 90 days' scores as findings; null when they can't be read.
+  Future<HistoryFindings?> _loadFindings() async {
+    try {
+      final today = DateTime.now();
+      final snapshot = await _userRef
+          .collection('scores_daily')
+          .where(
+            FieldPath.documentId,
+            isGreaterThanOrEqualTo: localDayKey(
+              today.subtract(const Duration(days: 90)),
+            ),
+          )
+          .get();
+      double? n(Object? value) => (value as num?)?.toDouble();
+      return historyFindings(
+        [
+          for (final doc in snapshot.docs)
+            if (DateTime.tryParse(doc.id) case final day?)
+              (
+                day: day,
+                capacity: n(doc.data()['capacity']?['score']),
+                sleepHours: n(doc.data()['capacity']?['sleepHours']),
+                sleepNeed: n(doc.data()['capacity']?['sleepNeed']),
+                hrv: n(doc.data()['capacity']?['hrv']),
+                restingHr: doc.data()['capacity']?['restingHrIgnored'] == true
+                    ? null
+                    : n(doc.data()['capacity']?['restingHr']),
+                restingHrKind:
+                    doc.data()['capacity']?['restingHrKind'] as String?,
+                effort: n(doc.data()['effort']?['total']),
+                afterHoursMinutes: n(
+                  doc.data()['effort']?['afterHoursMinutes'],
+                ),
+              ),
+        ],
+        today: DateTime(today.year, today.month, today.day),
+        numbers: _showNumbers,
+      );
+    } catch (error) {
+      debugPrint('Onboarding history findings failed: $error');
+      return null;
+    }
+  }
 
   String get _healthName => defaultTargetPlatform == TargetPlatform.iOS
       ? 'Apple Health'
@@ -1101,6 +1345,60 @@ class _Connected extends StatelessWidget {
             color: Color(0xFF0F6E56),
           ),
         ),
+      ],
+    ),
+  );
+}
+
+enum _HistoryState { waiting, running, done }
+
+/// One part of the history import on "Getting to know you".
+class _HistoryRow extends StatelessWidget {
+  const _HistoryRow(this.title, this.detail, this.state);
+
+  final String title;
+  final String? detail;
+  final _HistoryState state;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 22,
+          height: 22,
+          child: switch (state) {
+            _HistoryState.done => const Icon(
+              Icons.check_circle_rounded,
+              color: Color(0xFF1D9E75),
+              size: 22,
+            ),
+            _HistoryState.running => const Padding(
+              padding: EdgeInsets.all(2),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: _purple,
+              ),
+            ),
+            _HistoryState.waiting => const Icon(
+              Icons.circle_outlined,
+              color: _line,
+              size: 22,
+            ),
+          },
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(title, style: const TextStyle(fontSize: 15, color: _ink)),
+        ),
+        if (detail != null)
+          Text(detail!, style: const TextStyle(fontSize: 13, color: _grey)),
       ],
     ),
   );

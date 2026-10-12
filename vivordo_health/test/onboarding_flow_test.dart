@@ -15,6 +15,7 @@ void main() {
     expect(returning.first, OnboardingStep.intro);
     expect(fresh, isNot(contains(OnboardingStep.intro)));
     expect(fresh.first, OnboardingStep.about);
-    expect(fresh.last, OnboardingStep.notifications);
+    // Last, once Health, the calendar and AI consent are set.
+    expect(fresh.last, OnboardingStep.history);
   });
 }

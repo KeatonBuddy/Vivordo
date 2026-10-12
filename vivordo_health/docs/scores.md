@@ -406,6 +406,20 @@ vs untagged nights, shown once a tag has 5 of each) need those days.
   Effort (with that cascade off) before any Capacity, so Recovery has
   yesterday and a usual from the 8th day on. `historyImport.health` and
   `.calendar` are marked done separately, each once it's scored.
+  The calendar part needs calendar access (signing in with Google alone
+  doesn't grant it), runs only after onboarding or from its last step (so
+  AI consent is set first), and records nothing when four weeks come back
+  empty, since the calendar reads return nothing on any error.
+- **Onboarding's last step** ("Getting to know you") runs the import with
+  the calendar now connected, shows each part as it lands, then "Here's
+  what we found": one pattern and the usuals (`historyFindings` in
+  `lib/src/utils/history_findings.dart`). The pattern is the first strong
+  one of: sleep against the next morning's HRV (5%+), then resting heart
+  rate (2+ bpm; never against Capacity, which is mostly sleep already),
+  the heaviest weekday (3 of each weekday, 25% and 8 points over the
+  usual day), 5+ days after hours in the last 28, or resting heart rate
+  2+ bpm off where the history started. None strong enough: just the
+  usuals.
 - **Without HRV**, My Day's Capacity explanation says so and names what was
   used instead: resting heart rate, the lowest heart rate while asleep, or
   (with no overnight heart data) a normal night (`capacityBodyNote` in

@@ -149,18 +149,31 @@ class DayRecordService {
   static const historyDays = 28;
 
   /// Records the last [historyDays] days for the history import. False,
-  /// with nothing written, when no calendar is connected: those days would
-  /// read as empty ones, not unknown. Throws when the calendar can't be read.
+  /// with nothing written, when no calendar is connected or the read came
+  /// back empty: those days would be recorded as quiet ones for good.
   static Future<bool> syncHistory() async {
-    if (!await calendarConnected()) return false;
-    await _sync(historyDays, false, false);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || !await calendarConnected()) return false;
+    final now = DateTime.now();
+    final first = DateTime(now.year, now.month, now.day - historyDays + 1);
+    final end = DateTime(now.year, now.month, now.day + 1);
+    final calendar = _calendar = await _fetchCalendar(uid, first, end, false);
+    // The calendar reads return nothing on any error, and four weeks with
+    // no events at all is far likelier a failed read than a real month.
+    if (calendar.events.isEmpty) return false;
+    await _sync(historyDays, false, true);
     return true;
   }
 
-  /// Whether Google Calendar or Outlook is connected.
+  /// Whether Outlook, or Google Calendar with calendar access (signing in
+  /// with Google alone doesn't grant it), is connected.
   static Future<bool> calendarConnected() async {
-    final (:google, :outlook) = await _connected();
-    return google || outlook;
+    final google = await CalendarService.hasCalendarAccess()
+        .timeout(const Duration(seconds: 5), onTimeout: () => false)
+        .catchError((_) => false);
+    if (google) return true;
+    final (google: _, :outlook) = await _connected();
+    return outlook;
   }
 
   /// A priority changed: syncs today 2 seconds later, so quick ticks become
