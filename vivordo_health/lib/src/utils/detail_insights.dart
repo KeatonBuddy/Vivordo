@@ -45,7 +45,7 @@ double? usualByNow(DayHours hours, DateTime now) {
         h.take(now.hour).fold<double>(0, (a, b) => a + b) +
             h[now.hour] * now.minute / 60,
   ];
-  return totals.length >= usualByNowMinDays ? _median(totals) : null;
+  return totals.length >= usualByNowMinDays ? median(totals) : null;
 }
 
 DateTime insightDay(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -85,7 +85,7 @@ DetailInsight countInsight({
             : InsightTone.neutral,
       );
     }
-    final usual = _median(_window(values, day, 1, 29).where((v) => v > 0));
+    final usual = median(_window(values, day, 1, 29).where((v) => v > 0));
     if (now <= 0) {
       return DetailInsight(
         'No $unit recorded yet today.'
@@ -114,14 +114,15 @@ DetailInsight countInsight({
       'Not enough days of $unit yet to compare. Your trend fills in as days sync.',
     );
   }
-  final average = _mean(recent);
+  // Medians, so one huge or empty day can't flip the comparison.
+  final typical = median(recent)!;
   final before = _window(values, day, rangeDays + 1, 2 * rangeDays + 1);
   final met = goal > 0 ? recent.where((v) => v >= goal).length : null;
   var tone = InsightTone.neutral;
   var compare = '';
   if (before.length >= 3) {
-    final previous = _mean(before);
-    final difference = average - previous;
+    final previous = median(before)!;
+    final difference = typical - previous;
     if (previous > 0 && (difference / previous).abs() >= .1) {
       compare =
           ', ${formatCount(difference.abs())} ${difference > 0 ? 'more' : fewer} '
@@ -132,8 +133,8 @@ DetailInsight countInsight({
     }
   }
   return DetailInsight(
-    'You averaged ${formatCount(average)} $unit a day over the last '
-    '${recent.length} full days$compare.'
+    'A typical day over the last ${recent.length} full days had '
+    '${formatCount(typical)} $unit$compare.'
     '${met == null ? '' : ' You reached your goal on $met of them.'}',
     tone,
   );
@@ -258,7 +259,7 @@ DetailInsight sleepInsight({
       if (n.bedtime case final b?) _minutesFromNoon(b),
   ];
   final usualBedtime = bedtimes.length >= 5
-      ? _median(bedtimes.map((m) => m.toDouble()))
+      ? median(bedtimes.map((m) => m.toDouble()))
       : null;
 
   String versusUsual(double hours) {
@@ -271,6 +272,11 @@ DetailInsight sleepInsight({
 
   if (rangeDays == 1) {
     final night = nights[day];
+    if (night == null && nights.isEmpty) {
+      return const DetailInsight(
+        'No sleep tracked yet. A watch or ring that records sleep adds it.',
+      );
+    }
     if (night == null) {
       return DetailInsight(
         'Last night\'s sleep hasn\'t synced yet.'
@@ -376,16 +382,16 @@ DetailInsight heartInsight({
   final a = average.round();
   final prior = priorResting;
   if (prior == null) {
-    return DetailInsight('Resting heart rate averaged $a bpm.');
+    return DetailInsight('Resting heart rate was typically $a bpm.');
   }
   final difference = average - prior;
   if (difference.abs() < 1.5) {
     return DetailInsight(
-      'Resting heart rate averaged $a bpm, about the same as the $rangeDays days before.',
+      'Resting heart rate was typically $a bpm, about the same as the $rangeDays days before.',
     );
   }
   return DetailInsight(
-    'Resting heart rate averaged $a bpm, ${difference.abs().round()} '
+    'Resting heart rate was typically $a bpm, ${difference.abs().round()} '
     '${difference < 0 ? 'lower' : 'higher'} than the $rangeDays days before.',
     difference >= 3
         ? InsightTone.concern
@@ -399,7 +405,7 @@ DetailInsight heartInsight({
 /// least 7 days.
 double? restingNormal(DayValues resting, DateTime today) {
   final values = _window(resting, insightDay(today), 1, 29);
-  return values.length >= 7 ? _median(values) : null;
+  return values.length >= 7 ? median(values) : null;
 }
 
 // ── Exercise ─────────────────────────────────────────────────────────────────
@@ -435,32 +441,36 @@ DetailInsight exerciseInsight({
     );
   }
 
-  final days = [
-    for (var i = 1; i <= rangeDays; i++)
-      minutes[DateTime(day.year, day.month, day.day - i)] ?? 0,
-  ];
+  // Only days with data count: a day missing from Health isn't 0 minutes.
+  final days = _window(minutes, day, 1, rangeDays + 1);
+  if (days.isEmpty) {
+    return DetailInsight('No exercise data in the last $rangeDays days yet.');
+  }
   final sum = days.fold<double>(0, (a, b) => a + b).round();
   final active = days.where((m) => m > 0).length;
   final met = goal > 0 ? days.where((m) => m >= goal).length : null;
-  final hasBefore = [
-    for (var i = rangeDays + 1; i <= 2 * rangeDays; i++)
-      ?minutes[DateTime(day.year, day.month, day.day - i)],
-  ].isNotEmpty;
-  final before = total(rangeDays + 1, 2 * rangeDays + 1).round();
+  final before = _window(minutes, day, rangeDays + 1, 2 * rangeDays + 1);
   var tone = InsightTone.neutral;
   var compare = '';
-  if (hasBefore && before > 0) {
-    final difference = sum - before;
-    if ((difference / before).abs() >= .1) {
+  if (days.length >= 3 && before.length >= 3 && _mean(before) > 0) {
+    // A day's minutes against a day's, so uneven coverage compares fairly.
+    final difference = (_mean(days) - _mean(before)).round();
+    if ((difference / _mean(before)).abs() >= .1 && difference != 0) {
       compare =
-          ', ${difference.abs()} min ${difference > 0 ? 'more' : 'less'} than the $rangeDays days before';
+          ', ${difference.abs()} min a day ${difference > 0 ? 'more' : 'less'} '
+          'than the $rangeDays days before';
       tone = difference > 0 ? InsightTone.good : InsightTone.concern;
     } else {
       compare = ', about the same as the $rangeDays days before';
     }
   }
+  final span = days.length == rangeDays
+      ? 'the last $rangeDays full days'
+      : '${days.length} ${days.length == 1 ? 'day' : 'days'} with data in '
+            'the last $rangeDays';
   return DetailInsight(
-    '$sum min over the last $rangeDays full days, active on $active of them$compare.'
+    '${formatCount(sum.toDouble())} min over $span, active on $active of '
+    'them$compare.'
     '${met == null ? '' : ' You met your ${goal.round()}-minute goal on $met.'}',
     tone,
   );
@@ -495,7 +505,8 @@ List<double> _window(DayValues values, DateTime day, int from, int to) => [
 double _mean(List<double> values) =>
     values.reduce((a, b) => a + b) / values.length;
 
-double? _median(Iterable<double> values) {
+/// The middle value, or null for none.
+double? median(Iterable<double> values) {
   final sorted = values.toList()..sort();
   if (sorted.isEmpty) return null;
   final m = sorted.length ~/ 2;

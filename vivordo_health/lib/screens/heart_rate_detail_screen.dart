@@ -214,7 +214,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     // Incoming Bluetooth packets update only the live wearable card below.
     final avg = average(storedReadings);
     final restingAvg = average(resting);
-    final priorAvg = average(prior);
     final low = storedReadings.isEmpty
         ? null
         : storedReadings.reduce(math.min).round();
@@ -300,8 +299,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
               todayResting: days.last.resting,
               restingNormal: restingNormal,
               todayReadings: storedReadings,
-              rangeResting: restingAvg,
-              priorResting: priorAvg,
+              // Medians, so one off morning can't flip the comparison.
+              rangeResting: median(resting),
+              priorResting: median(prior),
             ),
           ),
         ],

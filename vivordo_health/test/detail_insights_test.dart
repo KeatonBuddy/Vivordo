@@ -49,10 +49,21 @@ void main() {
       );
       expect(
         insight.text,
-        'You averaged 9,000 steps a day over the last 7 full days, 2,000 more '
+        'A typical day over the last 7 full days had 9,000 steps, 2,000 more '
         'than the 7 days before. You reached your goal on 7 of them.',
       );
       expect(insight.tone, InsightTone.good);
+    });
+
+    test('Week: one huge day doesn\'t flip the comparison', () {
+      final insight = countInsight(
+        values: days((i) => i == 3 ? 62000 : 8000),
+        today: today,
+        rangeDays: 7,
+        goal: 10000,
+        unit: 'steps',
+      );
+      expect(insight.text, contains('about the same as the 7 days before'));
     });
 
     test('Week: small changes read as about the same', () {
@@ -222,6 +233,11 @@ void main() {
         sleepInsight(nights: nights, today: today, rangeDays: 1).text,
         'Last night\'s sleep hasn\'t synced yet. Your usual is 7h 30m.',
       );
+      // Someone with no sleep tracked at all isn't told it's "not synced".
+      expect(
+        sleepInsight(nights: const {}, today: today, rangeDays: 1).text,
+        'No sleep tracked yet. A watch or ring that records sleep adds it.',
+      );
     });
 
     test('Week: average and bedtime regularity', () {
@@ -285,7 +301,8 @@ void main() {
       );
       expect(
         same.text,
-        'Resting heart rate averaged 56 bpm, about the same as the 7 days before.',
+        'Resting heart rate was typically 56 bpm, about the same as the 7 days '
+        'before.',
       );
       final lower = heartInsight(
         isDay: false,
@@ -317,26 +334,42 @@ void main() {
       );
     });
 
-    test('Week: like-for-like totals and no "increased by 0"', () {
+    test('Week: only days with data count, compared a day at a time', () {
       final same = exerciseInsight(
-        minutes: {back(2): 30, back(4): 30, back(9): 30, back(11): 30},
+        minutes: days(
+          (i) => const {2, 4, 6, 9, 11, 13}.contains(i) ? 30 : 0,
+          from: 1,
+          to: 15,
+        ),
         today: today,
         rangeDays: 7,
         goal: 30,
       );
       expect(
         same.text,
-        '60 min over the last 7 full days, active on 2 of them, about the same '
-        'as the 7 days before. You met your 30-minute goal on 2.',
+        '90 min over the last 7 full days, active on 3 of them, about the same '
+        'as the 7 days before. You met your 30-minute goal on 3.',
       );
       final more = exerciseInsight(
-        minutes: {back(2): 60, back(4): 30, back(9): 30},
+        minutes: days((i) => i <= 7 ? 40 : 20, from: 1, to: 15),
         today: today,
         rangeDays: 7,
         goal: 30,
       );
-      expect(more.text, contains('60 min more than the 7 days before'));
+      expect(more.text, contains('20 min a day more than the 7 days before'));
       expect(more.tone, InsightTone.good);
+      // Health only has the last 4 days: no missing days counted as 0.
+      final thin = exerciseInsight(
+        minutes: days((i) => 30, from: 1, to: 5),
+        today: today,
+        rangeDays: 30,
+        goal: 30,
+      );
+      expect(
+        thin.text,
+        '120 min over 4 days with data in the last 30, active on 4 of them. '
+        'You met your 30-minute goal on 4.',
+      );
     });
   });
 }

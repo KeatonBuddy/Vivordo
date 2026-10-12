@@ -89,13 +89,18 @@ String homeStressComparison(double? score, double? sevenDayAverage) {
 }
 
 /// Words mode's sentence for where [score] sits (the chip says the level).
-String? homeStressSentence(double? score) => switch (homeStressLevel(score)) {
-  'Low' => 'Calm',
-  'Moderate' => 'A bit tense',
-  'Elevated' => 'Quite tense',
-  'High' => 'Very tense',
-  _ => null,
-};
+/// The score is built so 50 is a typical day, so the words follow that.
+String? homeStressSentence(double? score) => score == null
+    ? null
+    : score < 30
+    ? 'Calm'
+    : score < 45
+    ? 'Calmer than usual'
+    : score < 60
+    ? 'Steady'
+    : score < 80
+    ? 'Quite tense'
+    : 'Very tense';
 
 /// Words mode's comparison with the week, without points.
 String homeStressComparisonWords(double? score, double? sevenDayAverage) {

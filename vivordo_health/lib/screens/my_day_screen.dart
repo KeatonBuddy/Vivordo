@@ -137,6 +137,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   late DateTime _priorityDay;
   final _briefSnapshot = OwnedStreamSnapshot<DailyBriefMetricsSummary>();
   final _capacitySnapshot = OwnedStreamSnapshot<ServerCapacity?>();
+
+  /// The latest settled sleep need in the same scores window, so the brief
+  /// and forecast have it before today's Capacity exists (latestSleepNeed).
+  double? _sleepNeedHours;
   final _burnoutSnapshot = OwnedStreamSnapshot<BurnoutView?>();
   final _trainingLoadSnapshot = OwnedStreamSnapshot<TrainingLoadView?>();
   final _weeklyReviewSnapshot = OwnedStreamSnapshot<WeeklyReviewCardState?>();
@@ -190,11 +194,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         )
         .where(FieldPath.documentId, isLessThanOrEqualTo: dayKey)
         .snapshots()
-        .map(
-          (snapshot) => serverCapacityFor({
-            for (final doc in snapshot.docs) doc.id: doc.data(),
-          }, dayKey),
-        );
+        .map((snapshot) {
+          final days = {for (final doc in snapshot.docs) doc.id: doc.data()};
+          _sleepNeedHours = latestSleepNeed(days);
+          return serverCapacityFor(days, dayKey);
+        });
   }
 
   void _connectBriefMetrics(DateTime day) {
@@ -1172,7 +1176,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     return forecastEnergy(
       day: today,
       nights: nights,
-      sleepNeedHours: _capacitySnapshot.value.data?.sleepNeedHours,
+      sleepNeedHours: _sleepNeedHours,
       tomorrowFirstEvent: _tomorrowFirst()?.start,
       schedule: _sleepSchedule,
       factors: _energyFactors,
@@ -1219,7 +1223,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     builder: (context, snapshot, _) {
       final summary = snapshot.data;
       final sleep = summary?.sleep;
-      final usualSleep = summary?.usualSleep;
       final capacity = summary?.capacity;
       final capacityNote = summary?.capacityNote ?? 'Still learning your usual';
       final stale = summary?.stale ?? true;
@@ -1363,8 +1366,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   selector: (_, c) => c.showScoreNumbers,
                   builder: (context, showNumbers, _) => DailyBriefCard(
                     headline: headline,
+                    // Last night against the need Home and Capacity use;
+                    // nothing about sleep for someone who doesn't track it.
                     summary:
-                        '${sleepComparison(sleep, usualSleep)} $calendarText',
+                        '${sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0)} $calendarText'
+                            .trim(),
                     // In the evening it sits beside tomorrow's Demand, so
                     // it shows what tomorrow is compared with.
                     capacityScore: evening && usualCapacity != null

@@ -68,9 +68,9 @@ String fitnessGoalInsight(
       'Building your average for ${building.join(', ')} (at least 7 recorded days needed).',
     if (missing.isNotEmpty) 'No data today for ${missing.join(', ')}.',
     if (reached == 3) 'You’ve also reached all three saved goals today.',
-    if (missing.length < 3)
-      'A quieter day is okay. Want help choosing activity that fits how you feel?'
-    else
-      'Sync a connected source to compare your activity.',
+    if (missing.length == 3)
+      'Sync a connected source to compare your activity.'
+    else if (comparisons.containsKey('are below'))
+      'A quieter day is okay. Want help choosing activity that fits how you feel?',
   ].join(' ');
 }

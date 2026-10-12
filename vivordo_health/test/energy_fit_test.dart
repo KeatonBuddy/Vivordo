@@ -62,9 +62,8 @@ void main() {
     expect(clash.kind, EnergyFitKind.clash);
     expect(clash.phase, EnergyPhase.dip);
     expect(clash.movable, isTrue);
-    // 10:00–11:00 is the free peak hour nearest 2 PM (10:15 would run into
-    // the standup).
-    expect(clash.suggestedStart, at(10));
+    // The earliest free hour in the peak.
+    expect(clash.suggestedStart, at(9));
   });
 
   test('an item never blocks its own new slot', () {
@@ -131,6 +130,20 @@ void main() {
       item('later', at(16), 30),
     ], now: at(15));
     expect([for (final f in fits) f.id], ['later']);
+  });
+
+  test('the whole item fits the window, and no slot is offered twice', () {
+    final fits = fit([
+      item('a', at(14), 60, category: 'high-consequence', score: 75),
+      item('b', at(15), 60),
+    ]);
+    // Peak 9:00–11:15: a gets 9:00, b the next free hour.
+    expect(
+      {for (final f in fits) f.id: f.suggestedStart},
+      {'a': at(9), 'b': at(10)},
+    );
+    // 3 hours doesn't fit the 2¼-hour peak or the 2-hour second wind.
+    expect(fit([item('long', at(14), 180)]).single.suggestedStart, isNull);
   });
 
   test('a full peak falls back to the second wind, then to no suggestion', () {

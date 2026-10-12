@@ -19,6 +19,16 @@ void main() {
   );
   test('empty plan offers help without inventing work', () {
     expect(insight(), contains('no unfinished priorities'));
+    expect(
+      insight(
+        events: [
+          BriefCommitment('a', 'A', now, now.add(const Duration(hours: 1))),
+        ],
+      ),
+      startsWith(
+        'You have 1 calendar event remaining and no unfinished priorities',
+      ),
+    );
   });
   test('missing calendar is not called an empty schedule', () {
     expect(insight(ready: false), contains('calendar is not fully available'));

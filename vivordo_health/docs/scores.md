@@ -384,7 +384,12 @@ comparisons (planned: next-day Capacity, sleep, resting HR and HRV on tagged
 vs untagged nights, shown once a tag has 5 of each) need those days.
 
 - **Your sleep need** is your 90-day median sleep, kept between 7 and 9 h.
-  With fewer than 14 nights it is 8 h.
+  With fewer than 14 nights it is 8 h, and the record says
+  `sleepNeedSettled: false`. The app never calls that placeholder "your
+  need": it says how long you slept, leaves out sleep debt and nights on
+  target, and the wind-down text says "8 h of sleep" (`latestSleepNeed`,
+  `lib/src/utils/server_capacity.dart`, returns null for it). Records from
+  before the flag count as settled.
 - **Your usual Effort** is the 90-day median.
 - **Without a wearable:** sleep from Health, recovery from yesterday, the
   morning check-in, and a morning camera heart scan (resting HR) if one was
@@ -613,7 +618,8 @@ and words, never a score.
   are product choices fitted to the textbook day of an 11 PM–7 AM sleeper;
   tune them later against "How's your energy?" answers.
 - **Inputs:** the last 14 nights (sleep start and end), last night, and
-  Capacity's sleep need (8 h if missing).
+  Capacity's sleep need: the latest in the window, not just today's (8 h
+  if missing or unsettled; `needIsDefault` then hides sleep debt).
   - **Chronotype:** the median sleep midpoint, preferring weekend nights
     when there are at least 2. Until there are 5 nights it comes from your
     usual sleep schedule (below), else 3:30 AM.
@@ -627,6 +633,10 @@ and words, never a score.
   - wind-down: the hour before bed-by.
 - **Bed-by:** tomorrow's first event − 60 min − your sleep need, no later
   than your usual bedtime.
+- **Wake target:** your usual wake (from the schedule, else bedtime + a
+  usual night), or tomorrow's first event − 60 min if that's earlier.
+  Bed-by advice counts back from it: "Bed by 11:30 PM for 7 h 30 before
+  you wake at 7:00 AM" when the usual bedtime leaves less than your need.
 - **Missing last night:** your usual pattern is used and the forecast is
   marked `estimated`.
 - **Usual sleep schedule** (`preferences.sleepSchedule`: `bed`, `wake`, and
@@ -661,11 +671,13 @@ still ahead (Your Day's events and timed priorities) against the forecast.
   dip.
 - **Movable:** timed priorities, and events with no other guests. Events
   with other people get the note only.
-- **Suggested slot** (movable clashes only): the free start nearest the
-  item's current time in the peak, else the second wind. It must be on the
-  same day, at least 15 min from now, and end before wind-down. Declined,
-  cancelled, all-day and free-time events don't block slots, and the item
-  never blocks its own new slot.
+- **Suggested slot** (movable clashes only): the earliest free start where
+  the whole item fits inside the peak or the second wind, whichever comes
+  first (after your end-of-day time is fine). It must be on the same day,
+  at least 15 min from now, end before wind-down, and not overlap another
+  event or a slot already suggested for another clash. No fit, no
+  suggestion. Declined, cancelled, all-day and free-time events don't block
+  slots, and the item never blocks its own new slot.
 
 **Phase 3 implemented** (what you see):
 - **Data:** the screen projections now read `sleep.bedtime` and
@@ -710,8 +722,9 @@ still ahead (Your Day's events and timed priorities) against the forecast.
   calendar, and tonight's uses tomorrow's first timed event. Later nights
   use the usual bedtime until a reschedule. Nothing is scheduled without
   tracked sleep or a usual schedule, or while notifications are denied.
-- **Text:** "Time to wind down. Bed by 11:15 PM for 8 h before 7:15 AM.
-  Tomorrow's peak is 9:15–11:30 AM." Tapping opens My Day.
+- **Text:** "Time to wind down. Bed by 11:15 PM for 8 h before you wake
+  at 7:15 AM. Tomorrow's peak is 9:15–11:30 AM." The hours are your need,
+  or less if the wake target comes sooner. Tapping opens My Day.
 
 **Phase 5 implemented** (Vivordo AI context): Home and My Day keep the
 forecast they last showed in `latestEnergy` (`energyContext`), and each chat
@@ -799,8 +812,10 @@ switched off), set in onboarding ("How do you want to see your scores?") or
 Settings → Preferences → Show score numbers, and shared by
 `ThemeController`. With it off, scores show as a sentence and a state chip
 (3-4 states), never as a number, ring or fill:
-- **Home:** stress becomes "Calm / A bit tense / Quite tense / Very tense"
-  with its level (Low / Moderate / Elevated / High), compared with the week
+- **Home:** stress becomes a sentence that follows the score's 50 = a
+  typical day: under 30 "Calm", 30–44 "Calmer than usual", 45–59
+  "Steady", 60–79 "Quite tense", 80+ "Very tense", with its level (Low /
+  Moderate / Elevated / High), compared with the week
   as calmer, about the same or more tense (5 points either way); Mood shows
   its check-in word.
 - **My Day:** the brief's Capacity and Demand rings become Energy (8 points

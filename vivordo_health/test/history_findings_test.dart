@@ -83,6 +83,14 @@ void main() {
     ], today: today);
     expect(found.insight, 'You worked after hours on 6 of the last 20 days.');
     expect(found.usuals.last, (value: '6 of 20', label: 'days after hours'));
+    // None at all: no "0 of 20" tile.
+    final none = historyFindings([
+      for (var i = 1; i <= 20; i++) day(i, afterHours: 0),
+    ], today: today);
+    expect(
+      none.usuals.map((u) => u.label),
+      isNot(contains('days after hours')),
+    );
   });
 
   test('a change in resting heart rate since the start of the history', () {

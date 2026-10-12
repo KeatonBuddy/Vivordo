@@ -266,9 +266,15 @@ class StressNextStep {
   final StressNextAction action;
 }
 
-/// A suggestion tied to whatever is pushing stress up most.
-StressNextStep stressNextStep(List<StressSignal> drivers) {
-  final top = drivers.where((d) => d.contribution > 0).firstOrNull;
+/// A suggestion tied to whatever is pushing stress up most, only while the
+/// score is above the person's usual: at or below it, nothing needs fixing.
+StressNextStep stressNextStep(StressDay day) {
+  final above =
+      day.score != null &&
+      (day.score! - day.usual).round() > 1; // as the headline
+  final top = above
+      ? day.drivers.where((d) => d.contribution > 0).firstOrNull
+      : null;
   return switch (top?.kind) {
     null => const StressNextStep(
       'Nothing is pushing it up right now',

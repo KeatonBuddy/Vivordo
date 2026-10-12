@@ -3,6 +3,7 @@ import '../widgets/visible_stream_builder.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -630,15 +631,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final score = view?.score?.toDouble();
     final status = view?.status ?? 'Not enough data';
     final color = physicalHealthColor(context, score);
-    final explanation = view == null
-        ? 'Sync your health data to see your Physical Health.'
-        : score == null
-        ? 'Appears after 2 weeks of activity and sleep data.'
-        : score >= 70
-        ? 'You\'re meeting most of your activity, fitness and sleep targets.'
-        : score >= 50
-        ? 'A few targets are short. Tap to see the easiest wins.'
-        : 'Most targets are short. Tap to see where to start.';
+    final explanation =
+        view?.heroLine ?? 'Sync your health data to see your Physical Health.';
 
     return Material(
       color: context.vivordoColors.card,
@@ -792,10 +786,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     QuerySnapshot<Map<String, dynamic>>? snap,
   ) {
     List<double> values;
+    DateTime? latestAt;
     if (metric == 'heart_rate_scan') {
-      values = _heartRateEntries(
-        _heartRateDocs(snap),
-      ).map((entry) => entry['bpm'] as double).toList();
+      final entries = _heartRateEntries(_heartRateDocs(snap));
+      values = entries.map((entry) => entry['bpm'] as double).toList();
+      latestAt = entries.lastOrNull?['dateTime'] as DateTime?;
     } else if (metric == 'mood') {
       values = _dailyMoodValues(_docsFor(snap, metric));
     } else {
@@ -842,7 +837,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               : 'No exercise recorded today'
         : values.isEmpty
         ? 'Not synced recently'
-        : metric == 'heart_rate_scan' || metric == 'resting_heart_rate'
+        // Any reading, not a resting one, so no resting range for it.
+        : metric == 'heart_rate_scan'
+        ? _latestReadingText(latestAt)
+        : metric == 'resting_heart_rate'
         ? _heartRateStatus(values.last)
         : metric == 'stress'
         ? (_stressIntradayDetail(snap) ??
@@ -1080,6 +1078,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (percent == 0) return 'About usual';
     final favorable = lowerIsBetter ? percent < 0 : percent > 0;
     return '${percent > 0 ? '↑' : '↓'} ${percent.abs()}% vs usual${favorable ? '' : ''}';
+  }
+
+  String _latestReadingText(DateTime? at) {
+    if (at == null) return 'Latest reading';
+    final local = at.toLocal();
+    final time = DateFormat.jm().format(local);
+    return DateUtils.isSameDay(local, DateTime.now())
+        ? 'Latest reading, $time'
+        : 'Latest reading, ${DateFormat.E().format(local)} $time';
   }
 
   String _heartRateStatus(double? bpm) {

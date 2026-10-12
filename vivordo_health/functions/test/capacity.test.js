@@ -18,6 +18,11 @@ test("a normal day matches the doc's worked example (89, high)", () => {
   assert.equal(result.label, "high");
   assert.equal(result.sleepNeed, 7.5);
   assert.equal(result.provisional, false);
+  assert.equal(result.sleepNeedSettled, true);
+  // Under 14 nights the need is the 8 h placeholder, and says so.
+  const early = computeCapacity({history: history().slice(0, 5), today: {sleepHours: 7.4}});
+  assert.equal(early.sleepNeed, 8);
+  assert.equal(early.sleepNeedSettled, false);
 });
 
 test("a rough day matches the doc's worked example (61, moderate)", () => {

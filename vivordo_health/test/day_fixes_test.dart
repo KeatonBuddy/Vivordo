@@ -198,8 +198,8 @@ void main() {
       DayFixKind.energySlot,
     ]);
     expect(found.last.id, 'deep work');
-    // The free peak start nearest 2 PM that ends before the noon standup.
-    expect(found.last.newStart, at(11));
+    // The earliest free start in the peak.
+    expect(found.last.newStart, at(9));
   });
 
   group('a break', () {

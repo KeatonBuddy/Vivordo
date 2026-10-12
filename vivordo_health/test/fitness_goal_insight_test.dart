@@ -21,6 +21,7 @@ void main() {
     expect(text, contains('steps are above'));
     expect(text, contains('active calories are below'));
     expect(text, contains('exercise minutes are close to'));
+    expect(text, contains('A quieter day is okay'));
     expect(text, isNot(contains('These compare today')));
     expect(text, isNot(contains('not your usual pace by this time')));
   });
@@ -66,6 +67,7 @@ void main() {
     };
     final text = insight(day(0, 0, 0), partial);
     expect(text, contains('steps match'));
+    expect(text, isNot(contains('quieter')));
     expect(
       text,
       contains('Building your average for active calories, exercise minutes'),

@@ -81,6 +81,8 @@ test("the Strained push names the week and the body", () => {
       "Your last 7 days were about 2.4× your usual week, and your HRV is down. An easier few days will help.");
   assert.equal(strainedBody({ratio: 1.6, body: {hrvLow: 1, restingHigh: 2}}),
       "Your last 7 days were about 60% above your usual week, and your resting heart rate is up. An easier few days will help.");
+  assert.equal(strainedBody({ratio: 1.6, body: {hrvLow: 1, restingHigh: 1}}),
+      "Your last 7 days were about 60% above your usual week, and your HRV and resting heart rate are both off. An easier few days will help.");
 });
 
 test("pushes respect the settings and drop dead tokens", async () => {

@@ -182,6 +182,19 @@ String? capacityBodyNote(Map capacity) {
             'heart rate. $more';
 }
 
+/// The sleep need for the energy forecast and bed-by: the latest one in
+/// [days] (scores_daily day key -> data), so it's still known before
+/// today's Capacity exists; null while that latest one is the 8 h
+/// placeholder, so it's never shown as "your need".
+double? latestSleepNeed(Map<String, Map<String, dynamic>> days) {
+  for (final key in days.keys.toList()..sort((a, b) => b.compareTo(a))) {
+    if (days[key]?['capacity'] case {'sleepNeed': final num need} && final c) {
+      return c['sleepNeedSettled'] == false ? null : need.toDouble();
+    }
+  }
+  return null;
+}
+
 /// My Day's morning headline while a big day is lowering Capacity:
 /// "Big day yesterday. Go easy today." or, two or three days on, "Still
 /// recovering from Monday's big day".

@@ -27,6 +27,7 @@ import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/src/utils/day_agenda.dart';
 import 'package:vivordo_health/src/utils/day_effort.dart';
+import 'package:vivordo_health/src/utils/server_capacity.dart';
 import 'package:vivordo_health/src/utils/day_wrap_up.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/widgets/morning_check_in_card.dart';
@@ -2588,12 +2589,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final wrapUp = preferences?['dayWrapUpMinutes'];
       return _EffortContext(
         sleepSchedule: SleepSchedule.fromPreferences(preferences),
-        sleepNeedHours:
-            (((todayScores as DocumentSnapshot<Map<String, dynamic>>)
-                            .data()?['capacity']
-                        as Map?)?['sleepNeed']
-                    as num?)
-                ?.toDouble(),
+        // Today's need, else the latest one, so it isn't 8 h before last
+        // night's sleep syncs; null while it's still the placeholder.
+        sleepNeedHours: latestSleepNeed({
+          for (final doc
+              in (scores as QuerySnapshot<Map<String, dynamic>>).docs)
+            doc.id: doc.data(),
+          localDayKey(day):
+              ?(todayScores as DocumentSnapshot<Map<String, dynamic>>).data(),
+        }),
         wrapUpMinutes: wrapUp is int ? wrapUp : kDefaultDayWrapUpMinutes,
         workouts: [
           for (final doc
@@ -2623,8 +2627,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
         ],
         pastByHour: [
-          for (final doc
-              in (scores as QuerySnapshot<Map<String, dynamic>>).docs)
+          for (final doc in scores.docs)
             if (doc.data()['effort'] case {
               'version': 1,
               'byHour': final List byHour,
@@ -2885,14 +2888,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           title: _getSleepInsightTitle(sleepHours),
           subtitle: '${_sleepLabel(sleepHours)} of sleep recorded',
         ),
-      HourlyHeartInsightCard(key: _hourlyHeartKey, isActive: widget.isActive),
+      // No heart rate on record: nothing for the past hour to summarize.
+      if (hasHeartRate)
+        HourlyHeartInsightCard(key: _hourlyHeartKey, isActive: widget.isActive),
       if (sleepHours == null && !hasHeartRate)
         const HomeInsightRow(
           icon: Icons.info_outline_rounded,
           color: textGrey,
-          title: 'No insights yet',
+          title: 'No sleep or heart data yet',
           subtitle:
-              'Connect Apple Health or complete a scan to see your daily insights.',
+              'A watch or ring synced to Apple Health, or a heart scan, adds '
+              'these.',
         ),
     ];
     return _card(

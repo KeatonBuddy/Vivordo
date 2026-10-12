@@ -34,11 +34,22 @@ class EnergyForecast {
     required this.sleepDebtHours,
     required this.midSleepHours,
     required this.estimated,
+    DateTime? wakeTarget,
+    this.needIsDefault = false,
     this.usesSchedule = false,
     this.factors = const [],
-  });
+  }) : wakeTarget = wakeTarget ?? bedBy;
 
   final DateTime wake;
+
+  /// When you'll get up tomorrow: your usual wake, or earlier when
+  /// tomorrow's first event needs it. Bed-by advice counts back from this,
+  /// not from bed-by plus your need.
+  final DateTime wakeTarget;
+
+  /// True while [sleepNeedHours] is the 8 h placeholder (no settled need
+  /// from Capacity), so it isn't called "your need" or used for sleep debt.
+  final bool needIsDefault;
 
   /// Tonight's bedtime by your usual pattern.
   final DateTime usualBedtime;
@@ -265,6 +276,18 @@ EnergyForecast forecastEnergy({
     sleepDebtHours: debt,
     midSleepHours: midSleep,
     estimated: lastNight == null,
+    wakeTarget: () {
+      final usualWake = usual != null
+          ? schedule!
+                .nightEnding(DateTime(date.year, date.month, date.day + 1))
+                .end
+          : usualBedtime.add(_fromHours(usualHours));
+      final forEvent = tomorrowFirstEvent?.subtract(_morningPrep);
+      return forEvent != null && forEvent.isBefore(usualWake)
+          ? forEvent
+          : usualWake;
+    }(),
+    needIsDefault: sleepNeedHours == null,
     usesSchedule: usual != null,
     factors: factors,
   );

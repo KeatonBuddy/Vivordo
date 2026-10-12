@@ -152,7 +152,7 @@ HistoryFindings historyFindings(
         (value: '${usualResting.round()} bpm', label: 'resting heart rate'),
       if (heaviest != null)
         (value: heaviest.substring(0, 3), label: 'heaviest day')
-      else if (recent.length >= 14)
+      else if (recent.length >= 14 && lateDays > 0)
         (value: '$lateDays of ${recent.length}', label: 'days after hours'),
     ],
   );

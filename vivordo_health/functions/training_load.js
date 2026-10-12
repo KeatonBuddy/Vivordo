@@ -146,8 +146,11 @@ function shouldNotify(record, previousState, lastNotified, day) {
 function strainedBody(record) {
   const amount = record.ratio >= 2 ? `${record.ratio.toFixed(1)}× your usual` :
     `${Math.round((record.ratio - 1) * 100)}% above your usual`;
-  const body = record.body?.hrvLow >= record.body?.restingHigh ?
-    "your HRV is down" : "your resting heart rate is up";
+  const hrv = record.body?.hrvLow ?? 0;
+  const resting = record.body?.restingHigh ?? 0;
+  const body = hrv > resting ? "your HRV is down" :
+    resting > hrv ? "your resting heart rate is up" :
+    "your HRV and resting heart rate are both off";
   return `Your last 7 days were about ${amount} week, and ${body}. ` +
     "An easier few days will help.";
 }

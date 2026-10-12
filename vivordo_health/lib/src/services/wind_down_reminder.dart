@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../widgets/energy_forecast_view.dart';
 import '../utils/day_key.dart';
+import '../utils/server_capacity.dart';
 import '../utils/sleep_nights.dart';
 import '../utils/sleep_schedule.dart';
 import 'notification_service.dart';
@@ -60,10 +61,17 @@ class WindDownReminders {
               ),
             )
             .get(),
-        user.collection('scores_daily').doc(localDayKey(today)).get(),
+        user
+            .collection('scores_daily')
+            .where(
+              FieldPath.documentId,
+              isGreaterThanOrEqualTo: localDayKey(
+                DateTime(today.year, today.month, today.day - 14),
+              ),
+            )
+            .get(),
       ]);
-      final days = results[0] as QuerySnapshot<Map<String, dynamic>>;
-      final scores = results[1] as DocumentSnapshot<Map<String, dynamic>>;
+      final [days, scores] = results;
       final nights = sleepNights([for (final d in days.docs) d.data()]);
       final schedule = SleepSchedule.fromPreferences(preferences);
       // Like the forecast itself: nothing to go on without sleep or times.
@@ -75,9 +83,9 @@ class WindDownReminders {
         windDownReminders(
           today: today,
           nights: nights,
-          sleepNeedHours:
-              ((scores.data()?['capacity'] as Map?)?['sleepNeed'] as num?)
-                  ?.toDouble(),
+          sleepNeedHours: latestSleepNeed({
+            for (final doc in scores.docs) doc.id: doc.data(),
+          }),
           schedule: schedule,
           tomorrowFirstEvent: tomorrowFirstEvent,
         ),

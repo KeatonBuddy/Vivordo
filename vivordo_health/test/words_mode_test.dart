@@ -15,7 +15,8 @@ void main() {
     'stress in words: a sentence per level, and the week without points',
     () {
       expect(homeStressSentence(20), 'Calm');
-      expect(homeStressSentence(47), 'A bit tense');
+      expect(homeStressSentence(38), 'Calmer than usual');
+      expect(homeStressSentence(47), 'Steady');
       expect(homeStressSentence(70), 'Quite tense');
       expect(homeStressSentence(90), 'Very tense');
       expect(homeStressSentence(null), isNull);
@@ -115,7 +116,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('A bit tense'), findsOneWidget);
+    expect(find.text('Steady'), findsOneWidget);
     expect(find.text('Moderate'), findsOneWidget);
     expect(find.text('About the same as your week.'), findsOneWidget);
     expect(find.textContaining('%'), findsNothing);

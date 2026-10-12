@@ -54,6 +54,27 @@ void main() {
     expect(capacity?.sleepNeedHours, 7.5);
   });
 
+  test('the forecast uses the latest settled need, never the placeholder', () {
+    expect(
+      latestSleepNeed({
+        '2026-10-07': {
+          'capacity': {'sleepNeed': 7.2},
+        },
+        // Today has no Capacity yet: yesterday's need still counts.
+        '2026-10-08': {'effort': <String, dynamic>{}},
+      }),
+      7.2,
+    );
+    expect(
+      latestSleepNeed({
+        '2026-10-08': {
+          'capacity': {'sleepNeed': 8, 'sleepNeedSettled': false},
+        },
+      }),
+      isNull,
+    );
+  });
+
   test('a clash names the exact start time', () {
     String t(String time) => time.replaceAll(' ', '\u202f');
     expect(
@@ -222,9 +243,43 @@ void main() {
     expect(textbook.first.at, DateTime(2026, 10, 8, 22));
     expect(
       textbook.first.body,
-      startsWith('Bed by ${t('11:00 PM')} for 8 h before ${t('7:00 AM')}.'),
+      startsWith(
+        'Bed by ${t('11:00 PM')} for 8 h before you wake at ${t('7:00 AM')}.',
+      ),
     );
     expect(textbook.first.body, contains("Tomorrow's peak is"));
+    // Someone who wakes at 7:30 hears their own wake time, not bed-by plus
+    // need; with the need still the 8 h placeholder it isn't "your need".
+    final lateRiser = windDownReminders(
+      today: day,
+      nights: [
+        for (var i = 0; i < 14; i++)
+          (
+            start: DateTime(2026, 10, 7 - i, 23),
+            end: DateTime(2026, 10, 8 - i, 7, 30),
+            asleepHours: null,
+          ),
+      ],
+      sleepNeedHours: 7,
+    );
+    expect(
+      lateRiser.first.body,
+      startsWith(
+        'Bed by ${t('11:00 PM')} for 7 h before you wake at ${t('7:30 AM')}.',
+      ),
+    );
+    final placeholder = windDownReminders(
+      today: day,
+      nights: [
+        for (var i = 0; i < 14; i++)
+          (
+            start: DateTime(2026, 10, 7 - i, 23),
+            end: DateTime(2026, 10, 8 - i, 7),
+            asleepHours: null,
+          ),
+      ],
+    );
+    expect(placeholder.first.body, contains('8 h of sleep before you wake'));
     expect(textbook.last.at, DateTime(2026, 10, 14, 22));
 
     // A 6:30 AM start tomorrow pulls only tonight earlier: 6:30 − 1 h prep

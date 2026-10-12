@@ -167,4 +167,6 @@ test("small shifts under the minimum meaningful change score zero", () => {
 test("the push names the areas that drifted", () => {
   assert.equal(warningBody({capacity: {elevated: true}, mood: {elevated: true}}),
       "Lower energy and lower mood than usual. Take a look at what's changed.");
+  assert.equal(warningBody({}),
+      "Your last two weeks look different from your usual. Take a look at what's changed.");
 });

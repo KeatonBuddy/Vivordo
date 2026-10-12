@@ -46,6 +46,35 @@ void main() {
     // Biggest weighted gaps first: cardio (45 × 20), then strength.
     expect(view.insights.first, startsWith('Brisk walks or runs of 20+'));
     expect(view.insights[1], startsWith('Strength is an easy win'));
+    expect(
+      view.heroLine,
+      'Short on cardio fitness and strength. Tap to see the easiest wins.',
+    );
+  });
+
+  test('the hero line follows the gaps', () {
+    Map<String, dynamic> parts(double sleep) => {
+      'physical': {
+        'score': 95,
+        'label': 'excellent',
+        'daysOfData': 28,
+        'parts': {
+          'activeMinutes': 100.0,
+          'movement': 99.0,
+          'strength': 100.0,
+          'cardio': 100.0,
+          'sleep': sleep,
+        },
+      },
+    };
+    expect(
+      PhysicalHealthView.fromDays({'2026-10-01': parts(75)})!.heroLine,
+      'On target except sleep habits. Tap to see the easiest win.',
+    );
+    expect(
+      PhysicalHealthView.fromDays({'2026-10-01': parts(96)})!.heroLine,
+      'You\'re meeting your activity, fitness and sleep targets.',
+    );
   });
 
   test('building shows progress and what is missing', () {

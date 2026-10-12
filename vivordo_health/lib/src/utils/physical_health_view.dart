@@ -40,6 +40,26 @@ class PhysicalHealthView {
   /// (day, score) oldest first, for the trend chart.
   final List<(DateTime, int)> trend;
 
+  /// The Metrics hero's line, following the actual gaps.
+  String get heroLine {
+    if (score == null) {
+      return 'Appears after 2 weeks of activity and sleep data.';
+    }
+    final short = _gaps(ingredients);
+    if (short.isEmpty) {
+      return 'You\'re meeting your activity, fitness and sleep targets.';
+    }
+    if (short.length == 1) {
+      return 'On target except ${short.single.name.toLowerCase()}. Tap to see '
+          'the easiest win.';
+    }
+    if (score! < 50) {
+      return 'Most targets are short. Tap to see where to start.';
+    }
+    return 'Short on ${_list([for (final i in short.take(2)) i.name.toLowerCase()])}. '
+        'Tap to see the easiest wins.';
+  }
+
   /// From scores_daily documents keyed by day (any order). Uses the latest
   /// day with a Physical Health record. Null when there is none.
   static PhysicalHealthView? fromDays(Map<String, Map<String, dynamic>> days) {
@@ -145,16 +165,7 @@ class PhysicalHealthView {
       ),
     ];
 
-    // The easiest wins: counted ingredients furthest below target, weighted.
-    final gaps =
-        [
-          for (final i in ingredients)
-            if (i.progress != null && i.progress! < 95) i,
-        ]..sort(
-          (a, b) => ((100 - b.progress!) * b.weight).compareTo(
-            (100 - a.progress!) * a.weight,
-          ),
-        );
+    final gaps = _gaps(ingredients);
     // While building there are no details yet, so name what's missing
     // instead of quoting gaps against empty data.
     final daysOfData = (latest['daysOfData'] as num? ?? 0).toInt();
@@ -214,6 +225,17 @@ class PhysicalHealthView {
     );
   }
 }
+
+/// The easiest wins: counted ingredients furthest below target, weighted.
+List<PhysicalIngredient> _gaps(List<PhysicalIngredient> ingredients) =>
+    [
+      for (final i in ingredients)
+        if (i.progress != null && i.progress! < 95) i,
+    ]..sort(
+      (a, b) => ((100 - b.progress!) * b.weight).compareTo(
+        (100 - a.progress!) * a.weight,
+      ),
+    );
 
 /// The weekly shortfall as minutes on weekdays, rounded up to 5.
 String _activeTip(int gap) {

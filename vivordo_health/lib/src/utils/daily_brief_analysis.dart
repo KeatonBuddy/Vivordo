@@ -34,28 +34,36 @@ double? sleepBaseline(Iterable<double> nights) {
   return values.length.isOdd ? values[m] : (values[m - 1] + values[m]) / 2;
 }
 
-String sleepComparison(double? today, double? baseline) {
-  if (today == null || !today.isFinite || today <= 0) {
-    return 'Sleep data unavailable.';
+/// Last night against the sleep need: Capacity's, the same one Home and
+/// the energy forecast use (docs/scores.md §4). [need] is null while it's
+/// still the 8 h placeholder, so a plain duration is shown instead.
+/// Without [tracksSleep] (no sleep in the last weeks) nothing is said, rather
+/// than "unavailable" every day.
+String sleepComparison(double? today, {double? need, bool tracksSleep = true}) {
+  String duration(int minutes) {
+    final h = minutes ~/ 60, m = minutes % 60;
+    return h == 0
+        ? '$m min'
+        : m == 0
+        ? '${h}h'
+        : '${h}h ${m}m';
   }
-  if (baseline == null) return 'Still learning your usual sleep.';
-  final difference = ((today - baseline) * 60).round();
-  if (difference.abs() < 45) return 'Slept about your usual.';
-  final minutes = math.min(difference.abs(), 1440);
-  final h = minutes ~/ 60, m = minutes % 60;
-  final amount = h == 0
-      ? '$m min'
-      : m == 0
-      ? '${h}h'
-      : '${h}h ${m}m';
-  return 'Slept $amount ${difference < 0 ? "less" : "more"} than usual.';
+
+  if (today == null || !today.isFinite || today <= 0) {
+    return tracksSleep ? "Last night's sleep hasn't synced yet." : '';
+  }
+  if (need == null) return 'Slept ${duration((today * 60).round())}.';
+  final difference = ((today - need) * 60).round();
+  if (difference.abs() <= 15) return 'Slept about your need.';
+  final amount = duration(math.min(difference.abs(), 1440));
+  return 'Slept $amount ${difference < 0 ? "under" : "over"} your need.';
 }
 
 /// What is left today, e.g. "3 events and 2 priorities left."
 String remainingToday(int events, int priorities) {
   if (events == 0 && priorities == 0) return 'Nothing else planned today.';
-  String count(int n, String one, String many) =>
-      '${n == 0 ? 'No' : n} ${n == 1 ? one : many}';
-  return '${count(events, 'event', 'events')} and '
+  String count(int n, String one, String many, {bool first = false}) =>
+      '${n == 0 ? (first ? 'No' : 'no') : n} ${n == 1 ? one : many}';
+  return '${count(events, 'event', 'events', first: true)} and '
       '${count(priorities, 'priority', 'priorities')} left.';
 }

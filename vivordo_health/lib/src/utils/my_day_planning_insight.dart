@@ -49,7 +49,7 @@ String myDayPlanningInsight({
     return 'No calendar events remain and you have no unfinished priorities today. Want help making a simple plan?';
   }
   final summary =
-      'You have $count calendar ${count == 1 ? 'event' : 'events'} remaining${allDayEvents > 0 ? ' (including $allDayEvents all-day)' : ''} and ${unfinished.length} unfinished ${unfinished.length == 1 ? 'priority' : 'priorities'} today.';
+      'You have ${count == 0 ? 'no' : count} calendar ${count == 1 ? 'event' : 'events'} remaining${allDayEvents > 0 ? ' (including $allDayEvents all-day)' : ''} and ${unfinished.isEmpty ? 'no' : unfinished.length} unfinished ${unfinished.length == 1 ? 'priority' : 'priorities'} today.';
   final workload = minutes > 0
       ? ' ${missingEstimates ? 'At least ' : ''}$minutes minutes of estimated priority work are not linked to calendar events.'
       : '';

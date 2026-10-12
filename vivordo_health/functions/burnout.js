@@ -411,9 +411,12 @@ function warningBody(areas) {
     areas?.effort?.elevated && "heavier days",
     areas?.mood?.elevated && "lower mood",
   ].filter(Boolean);
+  if (!words.length) {
+    return "Your last two weeks look different from your usual. " +
+      "Take a look at what's changed.";
+  }
   const list = words.length > 1 ?
-    `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : words[0] ??
-    "a change";
+    `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : words[0];
   return `${list[0].toUpperCase()}${list.slice(1)} than usual. ` +
     "Take a look at what's changed.";
 }

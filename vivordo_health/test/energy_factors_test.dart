@@ -134,5 +134,12 @@ void main() {
       tags: 'Alcohol and late meal last night',
     ));
     expect(energySleepLines(plain).tags, isNull);
+    // Without a settled need (the 8 h placeholder) it's just the hours.
+    final unsettled = forecastEnergy(day: today, nights: nights);
+    expect(energySleepLines(unsettled).sleep, '6 h 30 asleep');
+    expect(
+      energyReasons(unsettled).map((r) => r.$2),
+      isNot(contains(contains('sleep debt'))),
+    );
   });
 }

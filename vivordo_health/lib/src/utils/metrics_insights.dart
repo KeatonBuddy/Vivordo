@@ -45,11 +45,25 @@ List<MetricsInsight> metricsInsights(
   final concerns = <MetricsInsight>[];
   final good = <MetricsInsight>[];
 
-  // Sleep against the person's own need (Capacity's 90-day median).
+  // Sleep against the person's own need (Capacity's 90-day median), once
+  // it's settled: the 8 h placeholder isn't "your need".
   final sleep = values(week, 'capacity', 'sleepHours');
-  final need = [
-    for (final day in week) ?value(day, 'capacity', 'sleepNeed'),
+  final latest = [
+    for (final day in week) // today first
+      if (days[day]?['capacity'] case {'sleepNeed': num _} && final c) c,
   ].firstOrNull;
+  final need = latest?['sleepNeedSettled'] == false
+      ? null
+      : (latest?['sleepNeed'] as num?)?.toDouble();
+  if (sleep.length >= 4 && latest != null && need == null) {
+    good.add(
+      MetricsInsight(
+        MetricsInsightKind.sleep,
+        MetricsInsightTone.neutral,
+        'Sleep averaged ${_hoursMinutes(_mean(sleep))} this week.',
+      ),
+    );
+  }
   if (sleep.length >= 4 && need != null) {
     final average = _mean(sleep);
     final shortMinutes = ((need - average) * 60).round();

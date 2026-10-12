@@ -51,8 +51,9 @@ class EnergyFit {
   /// no other guests. Events with other people only get the note.
   final bool movable;
 
-  /// For a movable clash: the free start nearest its current time in your
-  /// peak (or else your second wind) on the same day. Null when there's none.
+  /// For a movable clash: the earliest free start where the whole item fits
+  /// in your peak or second wind, ending before wind-down and not already
+  /// offered to another clash. Null when there's none.
   final DateTime? suggestedStart;
 
   String get id => item.event.id;
@@ -73,6 +74,8 @@ List<EnergyFit> fitDayToEnergy({
   ];
   final clashes = <EnergyFit>[];
   final good = <EnergyFit>[];
+  // Slots already offered, so two clashes aren't sent to the same time.
+  final offered = <({DateTime start, DateTime end})>[];
   for (final item in busy) {
     if (item.done || !item.event.start.isAfter(now)) continue;
     final phase = forecast.phaseAt(_judgedAt(item));
@@ -80,15 +83,22 @@ List<EnergyFit> fitDayToEnergy({
     final hard = _isHard(item);
     if (hard && _lowPhases.contains(phase)) {
       final movable = _isMovable(item);
+      final slot = movable
+          ? _suggestSlot(forecast, item, busy, offered, now)
+          : null;
+      if (slot != null) {
+        offered.add((
+          start: slot,
+          end: slot.add(item.event.end.difference(item.event.start)),
+        ));
+      }
       clashes.add(
         EnergyFit(
           item: item,
           kind: EnergyFitKind.clash,
           phase: phase,
           movable: movable,
-          suggestedStart: movable
-              ? _suggestSlot(forecast, item, busy, now)
-              : null,
+          suggestedStart: slot,
         ),
       );
     } else if ((hard && _highPhases.contains(phase)) ||
@@ -148,6 +158,7 @@ DateTime? _suggestSlot(
   EnergyForecast forecast,
   EffortItem item,
   List<EffortItem> busy,
+  List<({DateTime start, DateTime end})> offered,
   DateTime now,
 ) {
   final length = item.event.end.difference(item.event.start);
@@ -157,30 +168,27 @@ DateTime? _suggestSlot(
     final end = start.add(length);
     if (start.isBefore(earliest)) return false;
     if (windDown != null && end.isAfter(windDown)) return false;
+    bool overlaps(DateTime from, DateTime to) =>
+        from.isBefore(end) && to.isAfter(start);
     return !busy.any(
-      (other) =>
-          other.event.id != item.event.id &&
-          other.event.start.isBefore(end) &&
-          other.event.end.isAfter(start),
-    );
+          (other) =>
+              other.event.id != item.event.id &&
+              overlaps(other.event.start, other.event.end),
+        ) &&
+        !offered.any((slot) => overlaps(slot.start, slot.end));
   }
 
-  for (final phase in [EnergyPhase.peak, EnergyPhase.secondWind]) {
-    final window = forecast.window(phase);
-    if (window == null) continue;
-    DateTime? best;
+  final windows =
+      forecast.windows.where((w) => _highPhases.contains(w.phase)).toList()
+        ..sort((a, b) => a.start.compareTo(b.start));
+  for (final window in windows) {
     for (
       var start = window.start;
-      start.isBefore(window.end);
+      !start.add(length).isAfter(window.end);
       start = start.add(_slotStep)
     ) {
-      if (!free(start)) continue;
-      final distance = start.difference(item.event.start).abs();
-      if (best == null || distance < best.difference(item.event.start).abs()) {
-        best = start;
-      }
+      if (free(start)) return start;
     }
-    if (best != null) return best;
   }
   return null;
 }

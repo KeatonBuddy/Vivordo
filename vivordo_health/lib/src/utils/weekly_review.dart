@@ -522,7 +522,11 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
         bigDays.length == 1
             ? 'A big day on ${_weekday(first)}'
             : '${bigDays.length} big days',
-        'Much more activity than your usual, which lowered the next mornings.',
+        bigDays.length == 1
+            ? 'Much more activity than your usual, which lowered the next few '
+                  'mornings.'
+            : 'Much more activity than your usual, which lowered the mornings '
+                  'after.',
       ),
     );
   }
@@ -601,6 +605,7 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
           case final String s)
         s,
   ].firstOrNull;
+  final trainingWord = _trainingWord(training);
   if (training == 'high' || training == 'strained') {
     drained.add(
       ReviewLine(
@@ -639,7 +644,8 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
   for (final d in dates) {
     final c = capacityOf(d);
     final hours = _num(c?['sleepHours']);
-    final need = _num(c?['sleepNeed']);
+    // The 8 h placeholder (under 14 nights) isn't their need.
+    final need = c?['sleepNeedSettled'] == false ? null : _num(c?['sleepNeed']);
     final score = _num(c?['score']);
     if (hours == null) continue;
     sleepHours.add(hours);
@@ -757,7 +763,11 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
     headline = 'A lighter, steadier week';
     why = 'No days above your Capacity, and Capacity stayed near your usual.';
   } else {
-    headline = 'A mixed week';
+    headline = heavy.isEmpty && capAvg >= usual + 5
+        ? 'A week with more energy than usual'
+        : capAvg <= usual - 5
+        ? 'A lower-energy week'
+        : 'A mixed week';
     why =
         '${heavy.isEmpty ? 'No heavy days' : '${heavy.length} heavy ${heavy.length == 1 ? 'day' : 'days'}'}'
         ', and Capacity averaged ${_vsUsual(capAvg, usual)}.';
@@ -787,13 +797,17 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
     (label: 'Capacity', value: _cap(_vsUsual(capAvg, usual))),
     if (done + left > 0)
       (label: 'Priorities', value: '$done of ${done + left} done'),
-    if (input.workouts > 0 || training != null)
+    // Training load comes from Health exercise too, so it can stand without
+    // logged workouts; "learning" has nothing to say yet.
+    if (input.workouts > 0)
       (
         label: 'Workouts',
         value:
             '${input.workouts}'
-            '${training == null ? '' : ' · training load ${_trainingWord(training)}'}',
-      ),
+            '${trainingWord == null ? '' : ' · training load $trainingWord'}',
+      )
+    else if (trainingWord != null)
+      (label: 'Training load', value: _cap(trainingWord)),
     if (moods.isNotEmpty) (label: 'Mood', value: 'Mostly ${_mode(moods)}'),
   ];
   final chips = [
@@ -885,12 +899,9 @@ String _vsUsual(double value, double usual) {
   return '${diff.abs()} ${diff < 0 ? 'lower' : 'higher'} than usual';
 }
 
-String _trainingWord(String state) => switch (state) {
-  'high' => 'high',
-  'strained' => 'strained',
-  'building' => 'building',
-  'lighter' => 'lighter',
-  _ => 'steady',
+String? _trainingWord(String? state) => switch (state) {
+  'high' || 'strained' || 'building' || 'lighter' || 'steady' => state,
+  _ => null,
 };
 
 String _moodLabel(double feel) => feel >= 80

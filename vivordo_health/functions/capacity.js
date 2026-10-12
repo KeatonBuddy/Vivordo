@@ -155,8 +155,9 @@ function bigDayEffect(recent, usual, minimum = BIG_DAY_MIN.minutes) {
  *   no measured body data and no check-in (never guessed).
  */
 function computeCapacity({today, history}) {
-  const need = sleepNeed(history.map((d) => d.sleepHours)
-      .filter((h) => finite(h) && h > 0));
+  const nights = history.map((d) => d.sleepHours)
+      .filter((h) => finite(h) && h > 0);
+  const need = sleepNeed(nights);
 
   let sleep = null;
   let bedtimeOffsetMin = null;
@@ -241,6 +242,9 @@ function computeCapacity({today, history}) {
     bodyMeasured,
     sleepHours: finite(today.sleepHours) ? today.sleepHours : null,
     sleepNeed: need,
+    // False while the need is still the 8 h placeholder (under 14 nights),
+    // so screens don't call it "your need" (docs/scores.md §4).
+    sleepNeedSettled: nights.length >= 14,
     bedtimeOffsetMin,
     hrv: finite(today.hrv) ? today.hrv : null,
     hrvKind: finite(today.hrv) ? today.hrvKind ?? null : null,

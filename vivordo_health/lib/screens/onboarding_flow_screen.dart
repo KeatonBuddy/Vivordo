@@ -657,7 +657,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         _ScoreStyleOption(
           title: 'Words',
           example:
-              '"A bit tense. Your usual energy, a light day." The same '
+              '"Steady. Your usual energy, a light day." The same '
               'insights, nothing to chase.',
           selected: !_showNumbers,
           onTap: () => setState(() => _showNumbers = false),

@@ -67,6 +67,46 @@ void main() {
     );
   });
 
+  test('more or less energy than usual, rather than "mixed"', () {
+    String headline(double capacity) => buildWeeklyReview(
+      WeeklyReviewInput(
+        weekStart: sunday,
+        scores: scores([for (var i = 0; i < 7; i++) day(capacity: capacity)]),
+      ),
+    )!.headline;
+    expect(headline(82), 'A week with more energy than usual');
+    expect(headline(69), 'A lower-energy week');
+    expect(headline(77), 'A lighter, steadier week');
+  });
+
+  test(
+    'training load stands without logged workouts; learning is left out',
+    () {
+      String? row(String state, {int workouts = 0}) {
+        final week = [for (var i = 0; i < 7; i++) day()];
+        week[6]['trainingLoad'] = {'state': state};
+        final review = buildWeeklyReview(
+          WeeklyReviewInput(
+            weekStart: sunday,
+            scores: scores(week),
+            workouts: workouts,
+          ),
+        )!;
+        final found = review.rows.where(
+          (r) => r.label == 'Workouts' || r.label == 'Training load',
+        );
+        return found.isEmpty
+            ? null
+            : '${found.single.label}: ${found.single.value}';
+      }
+
+      expect(row('building'), 'Training load: Building');
+      expect(row('learning'), isNull);
+      expect(row('learning', workouts: 2), 'Workouts: 2');
+      expect(row('steady', workouts: 3), 'Workouts: 3 · training load steady');
+    },
+  );
+
   test('a heavy week you handled well, and one that wore on you', () {
     final handled = buildWeeklyReview(
       WeeklyReviewInput(

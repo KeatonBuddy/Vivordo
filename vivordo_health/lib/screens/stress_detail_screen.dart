@@ -214,7 +214,10 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           _trend(days, todayDate),
           if (today.signals.isNotEmpty) ...[
             const SizedBox(height: 14),
-            _signalsToday(today),
+            _signalsToday(
+              today,
+              tracksSleep: days.any((d) => d.sleepHours != null),
+            ),
           ],
           const SizedBox(height: 14),
           _tunedToYou(days),
@@ -774,7 +777,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
 
   Widget _nextStep(StressDay today) {
     final colors = context.vivordoColors;
-    final step = stressNextStep(today.drivers);
+    final step = stressNextStep(today);
     return _card(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -1256,7 +1259,9 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
 
   // ── Signals today ──────────────────────────────────────────────────────────
 
-  Widget _signalsToday(StressDay today) {
+  /// [tracksSleep]: any sleep in the loaded days; without it the missing
+  /// sleep signal isn't "not synced yet", it just isn't tracked.
+  Widget _signalsToday(StressDay today, {required bool tracksSleep}) {
     final colors = context.vivordoColors;
     final signals = today.signals;
     final missing = {
@@ -1267,7 +1272,9 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
       if (missing.contains(StressSignalKind.feel))
         'Check in above to add how you feel.',
       if (missing.contains(StressSignalKind.sleep))
-        'Last night\'s sleep hasn\'t synced yet.',
+        tracksSleep
+            ? 'Last night\'s sleep hasn\'t synced yet.'
+            : 'Sleep isn\'t tracked, so the score uses your other signals.',
       if (missing.contains(StressSignalKind.heartRate))
         'Wearing your watch adds heart signals.'
       else if (missing.contains(StressSignalKind.hrv))

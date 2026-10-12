@@ -56,6 +56,17 @@ String energyWindowText(EnergyWindow window) {
 }
 
 /// "6 h 40", "45 min".
+/// Sleep that fits between [night]'s bed-by and when you wake: your need,
+/// or less when your usual wake comes sooner; "8 h of sleep" while the need
+/// is the placeholder.
+String _bedByHours(EnergyForecast night) {
+  final fits = night.wakeTarget.difference(night.bedBy).inMinutes / 60;
+  final hours = fits > 0 && fits < night.sleepNeedHours
+      ? fits
+      : night.sleepNeedHours;
+  return '${_hoursText(hours)}${night.needIsDefault ? ' of sleep' : ''}';
+}
+
 String _hoursText(double hours) {
   final minutes = (hours * 60).round();
   if (minutes < 60) return '$minutes min';
@@ -146,6 +157,8 @@ class EnergySleepLine extends StatelessWidget {
   return (
     sleep: forecast.estimated
         ? null
+        : forecast.needIsDefault
+        ? '${_hoursText(forecast.sleptHours)} asleep'
         : '${_hoursText(forecast.sleptHours)} asleep · '
               '${short >= 0.25
                   ? '${_hoursText(short)} under your need'
@@ -440,6 +453,8 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
           : forecast.estimated
           ? "Last night's sleep hasn't synced yet, so this uses your usual "
                 'pattern.'
+          : forecast.needIsDefault
+          ? 'You slept ${_hoursText(forecast.sleptHours)}.'
           : short >= 0.5
           ? 'You slept ${_hoursText(forecast.sleptHours)}, '
                 '${_hoursText(short)} under your need, so today\'s peak is a '
@@ -471,7 +486,7 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
               : 'about average'} '
           '(you sleep around a midpoint of $midTime).',
     ),
-    if (forecast.sleepDebtHours >= 1)
+    if (forecast.sleepDebtHours >= 1 && !forecast.needIsDefault)
       (
         Icons.hourglass_bottom_rounded,
         "You're carrying about ${_hoursText(forecast.sleepDebtHours)} of "
@@ -526,9 +541,6 @@ class EnergyEveningCard extends StatelessWidget {
     final remindAt = windDown == null
         ? null
         : DateFormat.jm().format(windDown.start);
-    final wakeBy = tonight.bedBy.add(
-      Duration(minutes: (tonight.sleepNeedHours * 60).round()),
-    );
     Widget tile(String label, String value, String detail, Color color) =>
         Expanded(
           child: Container(
@@ -643,21 +655,24 @@ class EnergyEveningCard extends StatelessWidget {
                   tile(
                     'Bed by',
                     DateFormat.jm().format(tonight.bedBy),
-                    '${_hoursText(tonight.sleepNeedHours)} before '
-                        '${DateFormat.jm().format(wakeBy)}',
+                    '${_bedByHours(tonight)} before '
+                        '${DateFormat.jm().format(tonight.wakeTarget)}',
                     const Color(0xFF7F77DD),
                   ),
-                  const SizedBox(width: 8),
-                  tile(
-                    'Sleep debt',
-                    tonight.sleepDebtHours < 0.25
-                        ? 'None'
-                        : _hoursText(tonight.sleepDebtHours),
-                    'over 7 nights',
-                    tonight.sleepDebtHours >= 1
-                        ? energyLow
-                        : colors.textPrimary,
-                  ),
+                  // Debt against the 8 h placeholder would be made up.
+                  if (!tonight.needIsDefault) ...[
+                    const SizedBox(width: 8),
+                    tile(
+                      'Sleep debt',
+                      tonight.sleepDebtHours < 0.25
+                          ? 'None'
+                          : _hoursText(tonight.sleepDebtHours),
+                      'over 7 nights',
+                      tonight.sleepDebtHours >= 1
+                          ? energyLow
+                          : colors.textPrimary,
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 14),
@@ -801,9 +816,6 @@ List<({DateTime at, String body})> windDownReminders({
     );
     final windDown = night.window(EnergyPhase.windDown);
     if (windDown == null) continue;
-    final wake = night.bedBy.add(
-      Duration(minutes: (night.sleepNeedHours * 60).round()),
-    );
     final peak = tomorrowEnergyForecast(
       tonight: night,
       today: day,
@@ -814,8 +826,8 @@ List<({DateTime at, String body})> windDownReminders({
       at: windDown.start,
       body: [
         'Bed by ${DateFormat.jm().format(night.bedBy)} for '
-            '${_hoursText(night.sleepNeedHours)} before '
-            '${DateFormat.jm().format(wake)}.',
+            '${_bedByHours(night)} before you wake at '
+            '${DateFormat.jm().format(night.wakeTarget)}.',
         if (peak != null) "Tomorrow's peak is ${energyWindowText(peak)}.",
       ].join(' '),
     ));

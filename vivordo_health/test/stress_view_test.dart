@@ -48,7 +48,7 @@ void main() {
       '5h 40m last night, less restful than usual',
     );
     expect(stressUsualHeadline(day.score!, day.usual), '4 above usual');
-    expect(stressNextStep(day.drivers).action, StressNextAction.windDown);
+    expect(stressNextStep(day).action, StressNextAction.windDown);
   });
 
   test('older records fall back to their top drivers', () {
@@ -64,7 +64,22 @@ void main() {
     expect(day.drivers.single.kind, StressSignalKind.sleep);
     expect(day.usual, 50);
     expect(stressUsualHeadline(49, 50), 'About usual');
-    expect(stressNextStep(day.drivers).title, contains('Nothing'));
+    expect(stressNextStep(day).title, contains('Nothing'));
+  });
+
+  test('a next step only while stress is above usual', () {
+    StressDay at(double score) => StressDay.fromDoc(today, {
+      'stress': {
+        'current': score,
+        'anchor': 50,
+        'signals': [
+          {'name': 'HRV', 'signal': 0.7, 'contribution': 1},
+        ],
+      },
+    });
+    expect(stressNextStep(at(62)).title, contains('hotter'));
+    expect(stressNextStep(at(51)).title, contains('Nothing'));
+    expect(stressNextStep(at(40)).title, contains('Nothing'));
   });
 
   test('the usual range is the middle half of the last 28 days', () {
