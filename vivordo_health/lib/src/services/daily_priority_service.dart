@@ -410,8 +410,10 @@ class DailyPriorityService {
           .whereType<String>()
           .where((s) => DateTime.tryParse(s) != null && s.compareTo(key) < 0),
     };
-    final result = <DailyPriority>[];
-    for (final source in keys) {
+    // One read per source day, all at once: a reminder can carry a priority
+    // from many earlier days, and reading them in turn added a round trip
+    // each. The result is sorted below, so arrival order doesn't matter.
+    Future<Iterable<DailyPriority>> read(String source) async {
       final items = user
           .collection('daily_priorities')
           .doc(source)
@@ -428,16 +430,18 @@ class DailyPriorityService {
                       ),
                     ))
               .get(options);
-      result.addAll(
-        snapshot.docs
-            .where(
-              (doc) =>
-                  doc.data()['habit'] != true &&
-                  visibleOnDay(doc.data(), source, key),
-            )
-            .map(DailyPriority.fromDocument),
-      );
+      return snapshot.docs
+          .where(
+            (doc) =>
+                doc.data()['habit'] != true &&
+                visibleOnDay(doc.data(), source, key),
+          )
+          .map(DailyPriority.fromDocument);
     }
+
+    final result = [
+      for (final items in await Future.wait(keys.map(read))) ...items,
+    ];
     if (_userDocument()?.path != user.path) {
       throw StateError('Account changed.');
     }

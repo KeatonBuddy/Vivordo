@@ -315,6 +315,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   DateTime? _effortContextDate;
   Future<({int minutes, DateTime? first})?>? _tomorrowPlanFuture;
   DateTime? _tomorrowPlanDate;
+  DateTime? _tomorrowPlanFailedAt;
   ActivityGoals _activityGoals = const ActivityGoals();
   StreamSubscription<ActivityGoals>? _activityGoalsSubscription;
   _HomeWidgetSnapshot? _latestHomeWidgetSnapshot;
@@ -2220,7 +2221,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               return _effortStat(
                                 'TOMORROW',
                                 plan == null
-                                    ? '…'
+                                    ? snapshot.connectionState ==
+                                              ConnectionState.done
+                                          ? 'Couldn\'t load'
+                                          : '…'
                                     : plan.minutes == 0
                                     ? 'Nothing planned yet'
                                     : '${_durationLabel(Duration(minutes: plan.minutes))} planned',
@@ -2637,12 +2641,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<({int minutes, DateTime? first})?> _getTomorrowPlanFuture(
     DateTime today,
   ) {
+    // A failed load is retried after a minute instead of kept all day.
+    final failedLongAgo =
+        _tomorrowPlanFailedAt != null &&
+        DateTime.now().difference(_tomorrowPlanFailedAt!) >
+            const Duration(minutes: 1);
     if (_tomorrowPlanFuture != null &&
-        DateUtils.isSameDay(_tomorrowPlanDate, today)) {
+        DateUtils.isSameDay(_tomorrowPlanDate, today) &&
+        !failedLongAgo) {
       return _tomorrowPlanFuture!;
     }
     _tomorrowPlanDate = today;
-    return _tomorrowPlanFuture = _loadTomorrowPlan(today);
+    _tomorrowPlanFailedAt = null;
+    return _tomorrowPlanFuture = _loadTomorrowPlan(today).then((plan) {
+      if (plan == null) _tomorrowPlanFailedAt = DateTime.now();
+      return plan;
+    });
   }
 
   /// Tomorrow's planned time (calendar events and timed priorities, overlaps
@@ -2652,49 +2666,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ) async {
     final start = DateTime(today.year, today.month, today.day + 1);
     final end = DateTime(today.year, today.month, today.day + 2);
-    final intervals = <(DateTime, DateTime)>[];
-    try {
-      if (await CalendarService.isSignedIn()) {
-        for (final event in await CalendarService.getEventsBetween(
-          start,
-          end,
-        )) {
-          final s = event.start?.dateTime?.toLocal();
-          final e = event.end?.dateTime?.toLocal();
-          if (s == null ||
-              e == null ||
-              event.status == 'cancelled' ||
-              event.transparency == 'transparent' ||
-              (event.attendees?.any(
-                    (a) => a.self == true && a.responseStatus == 'declined',
-                  ) ??
-                  false)) {
-            continue;
-          }
-          intervals.add((s, e));
-        }
-      }
-      if (await OutlookCalendarService.isSignedIn()) {
+    // Google, Outlook and priorities are read at once, not one after
+    // another; any failure (or 15 s without an answer) shows as unavailable.
+    Future<List<(DateTime, DateTime)>> google() async => [
+      if (await CalendarService.isSignedIn())
+        for (final event in await CalendarService.getEventsBetween(start, end))
+          if (event.start?.dateTime?.toLocal() case final s?)
+            if (event.end?.dateTime?.toLocal() case final e?)
+              if (event.status != 'cancelled' &&
+                  event.transparency != 'transparent' &&
+                  !(event.attendees?.any(
+                        (a) => a.self == true && a.responseStatus == 'declined',
+                      ) ??
+                      false))
+                (s, e),
+    ];
+    Future<List<(DateTime, DateTime)>> outlook() async => [
+      if (await OutlookCalendarService.isSignedIn())
         for (final event in await OutlookCalendarService.getEventsBetween(
           start,
           end,
-        )) {
-          if (!event.isAllDay) {
-            intervals.add((event.start.toLocal(), event.end.toLocal()));
-          }
-        }
-      }
+        ))
+          if (!event.isAllDay) (event.start.toLocal(), event.end.toLocal()),
+    ];
+    Future<List<(DateTime, DateTime)>> priorities() async => [
       for (final priority in await DailyPriorityService.forDay(
         start,
         includeCompleted: false,
         source: Source.serverAndCache,
-      )) {
+      ))
         if (!priority.isAllDay &&
             priority.sourceStart != null &&
-            DateUtils.isSameDay(priority.sourceStart, start)) {
-          intervals.add((priority.sourceStart!, priority.timelineEnd!));
-        }
-      }
+            DateUtils.isSameDay(priority.sourceStart, start))
+          (priority.sourceStart!, priority.timelineEnd!),
+    ];
+    final List<(DateTime, DateTime)> intervals;
+    try {
+      intervals = [
+        for (final part in await Future.wait([
+          google(),
+          outlook(),
+          priorities(),
+        ]).timeout(const Duration(seconds: 15)))
+          ...part,
+      ];
     } catch (error) {
       debugPrint('Home tomorrow plan failed: $error');
       return null;
