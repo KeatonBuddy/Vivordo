@@ -14,6 +14,20 @@ List<ExerciseSample> _minutes(String source, int hour, int minute, int count) =>
     ];
 
 void main() {
+  test('by hour: the same source and minutes, at the hours they happened', () {
+    final samples = [
+      ..._minutes('watch', 7, 40, 30), // 20 at 7, 10 at 8
+      ..._minutes('watch', 18, 0, 15),
+      ..._minutes('phone', 7, 40, 10),
+    ];
+    final hours = healthExerciseMinutesByHour(samples, const []);
+    expect(hours[7], 20);
+    expect(hours[8], 10);
+    expect(hours[18], 15);
+    expect(hours.fold(0.0, (a, b) => a + b), 45);
+    expect(healthExerciseMinutes(samples, const []), 45);
+  });
+
   test('adds one source\'s samples', () {
     expect(healthExerciseMinutes(_minutes('watch', 7, 0, 30), const []), 30);
   });

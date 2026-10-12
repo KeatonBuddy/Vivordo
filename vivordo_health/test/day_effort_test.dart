@@ -106,15 +106,68 @@ void main() {
   test('so far is a word against the usual by this time of day', () {
     // Usual: 2 points an hour from 9 AM, so 4 by 11 AM.
     final usualDay = [for (var h = 0; h < 24; h++) h < 9 ? 0 : (h - 8) * 2];
-    final past = List.filled(14, usualDay);
+    Map<DateTime, List<num>> days(int count, List<num> Function(DateTime) of) =>
+        {
+          for (var i = 1; i <= count; i++)
+            at(0).subtract(Duration(days: i)): of(
+              at(0).subtract(Duration(days: i)),
+            ),
+        };
+    final past = days(14, (_) => usualDay);
     String word(double soFar) =>
         effortSoFarWord(soFar: soFar, now: at(11), pastByHour: past);
     expect(word(4), 'About usual');
     expect(word(9), 'Heavier than usual');
     expect(word(0), 'Lighter than usual');
+    // 13 days: 9 weekdays is enough to compare weekdays with weekdays.
     expect(
-      effortSoFarWord(soFar: 9, now: at(11), pastByHour: past.sublist(1)),
+      effortSoFarWord(
+        soFar: 9,
+        now: at(11),
+        pastByHour: days(13, (_) => usualDay),
+      ),
+      'Heavier than usual',
+    );
+    expect(
+      effortSoFarWord(
+        soFar: 9,
+        now: at(11),
+        pastByHour: days(6, (_) => usualDay),
+      ),
       'Still learning your usual',
+    );
+  });
+
+  test('activity so far follows the server: minutes, else calories', () {
+    // A 45-minute run (15.75) plus 30 Health minutes (6).
+    expect(
+      physicalSoFar(workoutPoints: 15.75, healthMinutes: 30),
+      closeTo(21.75, 1e-9),
+    );
+    // No exercise: calories above the usual ÷ 50, none without a usual.
+    expect(
+      physicalSoFar(workoutPoints: 0, calories: 900, usualCalories: 500),
+      8,
+    );
+    expect(physicalSoFar(workoutPoints: 0, calories: 900), 0);
+    // Capped like the server.
+    expect(physicalSoFar(workoutPoints: 0, healthMinutes: 300), 25);
+  });
+
+  test('so far compares a weekday with weekdays, not quiet weekends', () {
+    // Weekdays: 8 points by 11 AM. Weekends: nothing.
+    final busy = [for (var h = 0; h < 24; h++) h < 9 ? 0 : (h - 8) * 4];
+    final quiet = List<num>.filled(24, 0);
+    final past = {
+      for (var i = 1; i <= 28; i++)
+        if (at(0).subtract(Duration(days: i)) case final d)
+          d: d.weekday >= DateTime.saturday ? quiet : busy,
+    };
+    // at(0) is a weekday: 8 by 11 AM is its usual, not "heavier".
+    expect(at(0).weekday, lessThan(DateTime.saturday));
+    expect(
+      effortSoFarWord(soFar: 8, now: at(11), pastByHour: past),
+      'About usual',
     );
     expect(workoutIntensity('Morning Run'), 0.35);
     expect(workoutIntensity('Workout Legs'), 0.2);

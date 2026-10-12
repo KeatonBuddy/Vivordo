@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 typedef ExerciseSample = ({
   String source,
   DateTime from,
@@ -23,8 +21,19 @@ typedef WorkoutWindow = ({DateTime start, DateTime end});
 double healthExerciseMinutes(
   Iterable<ExerciseSample> samples,
   Iterable<WorkoutWindow> workouts,
+) => healthExerciseMinutesByHour(
+  samples,
+  workouts,
+).fold(0.0, (sum, minutes) => sum + minutes);
+
+/// [healthExerciseMinutes] per local clock hour (24 values, by each
+/// sample's start), from the same source, so Effort can place the minutes
+/// at the hour they happened.
+List<double> healthExerciseMinutesByHour(
+  Iterable<ExerciseSample> samples,
+  Iterable<WorkoutWindow> workouts,
 ) {
-  final bySource = <String, double>{};
+  final bySource = <String, List<double>>{};
   // Health can return the same sample twice; count each one once.
   for (final sample in samples.toSet()) {
     final span = sample.to.difference(sample.from).inMilliseconds;
@@ -46,7 +55,16 @@ double healthExerciseMinutes(
     final kept = span <= 0
         ? (insideWorkout ? 0.0 : sample.minutes)
         : sample.minutes * (1 - (covered / span).clamp(0.0, 1.0));
-    bySource[sample.source] = (bySource[sample.source] ?? 0) + kept;
+    bySource.putIfAbsent(
+      sample.source,
+      () => List.filled(24, 0.0),
+    )[sample.from.toLocal().hour] += kept;
   }
-  return bySource.isEmpty ? 0 : bySource.values.reduce(math.max);
+  double total(List<double> hours) => hours.fold(0.0, (a, b) => a + b);
+  return bySource.values.fold<List<double>?>(
+        null,
+        (best, hours) =>
+            best == null || total(hours) > total(best) ? hours : best,
+      ) ??
+      List.filled(24, 0.0);
 }

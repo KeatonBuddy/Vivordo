@@ -1443,13 +1443,18 @@ class HealthService {
       if (def.type == HealthDataType.EXERCISE_TIME) {
         final existingExerciseTime =
             existingSnapshot.data()?['exercise_time'] as Map<String, dynamic>?;
-        final healthMinutes = healthExerciseMinutes(
+        final healthHours = healthExerciseMinutesByHour(
           exerciseSamplesByDay[day] ?? const [],
           workoutWindows,
         );
+        final healthMinutes = healthHours.fold(0.0, (a, b) => a + b);
         final workoutMinutes =
             (existingExerciseTime?['workoutMinutes'] as num?)?.toDouble() ?? 0;
         payload['healthSum'] = healthMinutes;
+        // When in the day they happened, for Effort's hour-by-hour totals.
+        payload['healthByHour'] = [
+          for (final m in healthHours) (m * 10).round() / 10,
+        ];
         payload['workoutMinutes'] = workoutMinutes;
         payload['sum'] = healthMinutes + workoutMinutes;
       }

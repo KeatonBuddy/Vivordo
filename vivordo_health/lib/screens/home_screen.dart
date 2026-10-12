@@ -823,6 +823,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         steps: 0,
         activeCalories: 0,
         exerciseMinutes: 0,
+        healthExerciseMinutes: null,
         metricsLoading: false,
         latestHeartRate: null,
         hrLoading: false,
@@ -963,6 +964,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 steps: steps ?? 0,
                 activeCalories: activeCalories,
                 exerciseMinutes: exerciseMinutes,
+                healthExerciseMinutes: (exerciseTimeMap?['healthSum'] as num?)
+                    ?.toDouble(),
                 metricsLoading: loading,
                 latestHeartRate: latestHeartRate,
                 hrLoading:
@@ -1158,6 +1161,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required int steps,
     required int activeCalories,
     required int exerciseMinutes,
+    required double? healthExerciseMinutes,
     required bool metricsLoading,
     required LatestHeartRateReading? latestHeartRate,
     required bool hrLoading,
@@ -1256,7 +1260,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ],
                       ),
-                      _buildDayLoad(sleepNights),
+                      _buildDayLoad(
+                        sleepNights,
+                        healthMinutes: healthExerciseMinutes,
+                        calories: activeCalories.toDouble(),
+                      ),
                       _buildMeetingPatterns(),
                     ],
                   ),
@@ -1972,7 +1980,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildDayLoad(List<SleepPeriod> sleepNights) {
+  Widget _buildDayLoad(
+    List<SleepPeriod> sleepNights, {
+    double? healthMinutes,
+    double? calories,
+  }) {
     final now = DateTime.now();
     final todayStart = DateUtils.dateOnly(now);
     final loading = _card(
@@ -2033,6 +2045,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               effortContext:
                                   contextSnapshot.data ??
                                   const _EffortContext(),
+                              healthMinutes: healthMinutes,
+                              calories: calories,
                             ),
                           ),
                     ),
@@ -2050,6 +2064,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required List<_ScheduleEvent>? events,
     required List<DailyPriority> priorities,
     required _EffortContext effortContext,
+    double? healthMinutes,
+    double? calories,
   }) {
     final colors = context.vivordoColors;
     final today = DateUtils.dateOnly(now);
@@ -2186,8 +2202,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ]);
     final nowFraction =
         now.difference(from).inMinutes / until.difference(from).inMinutes;
+    // Activity by the server's rules, so today matches the usual it's
+    // compared with (effort.byHour places activity when it happened).
     final soFar = effortSoFarWord(
-      soFar: effort.soFar,
+      soFar:
+          effort.soFar -
+          effort.workoutSoFar +
+          physicalSoFar(
+            workoutPoints: effort.workoutSoFar,
+            healthMinutes: healthMinutes,
+            calories: calories,
+            usualCalories: effortContext.usualCalories,
+          ),
       now: now,
       pastByHour: effortContext.pastByHour,
     );
@@ -2630,14 +2656,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
         ],
-        pastByHour: [
+        pastByHour: {
           for (final doc in scores.docs)
             if (doc.data()['effort'] case {
               'version': 1,
               'byHour': final List byHour,
             })
-              byHour.whereType<num>().toList(),
-        ],
+              ?DateTime.tryParse(doc.id): byHour.whereType<num>().toList(),
+        },
+        usualCalories:
+            [
+                  todayScores.data(),
+                  for (final doc in scores.docs.reversed) doc.data(),
+                ]
+                .map((d) => (d?['effort'] as Map?)?['usualCalories'])
+                .whereType<num>()
+                .firstOrNull
+                ?.toDouble(),
       );
     } catch (error) {
       debugPrint('Home Effort context failed: $error');
@@ -3674,7 +3709,8 @@ class _EffortContext {
   const _EffortContext({
     this.wrapUpMinutes = kDefaultDayWrapUpMinutes,
     this.workouts = const [],
-    this.pastByHour = const [],
+    this.pastByHour = const {},
+    this.usualCalories,
     this.sleepNeedHours,
     this.sleepSchedule,
   });
@@ -3687,7 +3723,11 @@ class _EffortContext {
   /// Today's sleep need from the server's Capacity, for the energy forecast.
   final double? sleepNeedHours;
   final List<({DateTime start, DateTime end, double intensity})> workouts;
-  final List<List<num>> pastByHour;
+  final Map<DateTime, List<num>> pastByHour;
+
+  /// The server's usual active calories (today's Effort, else the latest),
+  /// for the live "So far" when calories are the activity source.
+  final double? usualCalories;
 }
 
 class _ScheduleEvent {

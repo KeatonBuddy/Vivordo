@@ -47,6 +47,47 @@ test("the busy Thursday: 28.8 scheduled + 4 untimed, plus a 45-min run", () => {
   assert.equal(effort.byHour[23], effort.total);
 });
 
+test("byHour places Health minutes at the hours they happened", () => {
+  const hours = (pairs) => Array.from({length: 24}, (_, h) => pairs[h] ?? 0);
+  const base = {record: record([]), asOf: at(23)};
+  // 30 minutes at 7 AM, 20 at 6 PM: 50 × 0.2 = 10 points.
+  const timed = computeEffort({...base, healthMinutes: 50,
+    healthMinutesByHour: hours({7: 30, 18: 20})});
+  assert.equal(timed.physical, 10);
+  assert.equal(timed.byHour[6], 0);
+  assert.equal(timed.byHour[7], 6);
+  assert.equal(timed.byHour[17], 6);
+  assert.equal(timed.byHour[23], 10);
+  // A day synced before minutes had hours: the calorie curve instead.
+  const curve = computeEffort({...base, healthMinutes: 50,
+    caloriesByHour: hours({7: 300, 18: 100})});
+  assert.equal(curve.byHour[7], 7.5);
+  assert.equal(curve.byHour[23], 10);
+  // Neither: at the end of the day, as before.
+  const untimed = computeEffort({...base, healthMinutes: 50});
+  assert.equal(untimed.byHour[22], 0);
+  assert.equal(untimed.byHour[23], 10);
+});
+
+test("byHour counts calories above the usual from the hour the day passes it", () => {
+  const hours = (pairs) => Array.from({length: 24}, (_, h) => pairs[h] ?? 0);
+  // Usual 500; 400 by 9 AM, then 600 on a walk at 10 AM: 1,000 in all,
+  // 500 over = 10 points, all from 10 AM.
+  const effort = computeEffort({record: record([]), asOf: at(23),
+    activeCalories: 1000, usualCalories: 500,
+    caloriesByHour: hours({8: 400, 10: 600})});
+  assert.equal(effort.physicalSource, "calories");
+  assert.equal(effort.byHour[9], 0);
+  assert.equal(effort.byHour[10], 10);
+  assert.equal(effort.byHour[23], 10);
+});
+
+test("Effort recalculates when Health's hours change", () => {
+  const day = (byHour) => ({exercise_time: {healthSum: 30, healthByHour: byHour}});
+  assert.equal(effortInputsChanged(day(null), day([30])), true);
+  assert.equal(effortInputsChanged(day([30]), day([30])), false);
+});
+
 test("byHour places workouts and ticked-off priorities in their hour, within the cap", () => {
   const effort = computeEffort({
     record: record([], [{effort: "demanding", done: true, doneAt: at(10, 20)}]),

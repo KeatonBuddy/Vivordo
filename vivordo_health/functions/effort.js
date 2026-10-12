@@ -184,11 +184,16 @@ function physicalLoad({workouts = [], healthMinutes = null,
  *   in-app workouts.
  * @param {number|null} input.activeCalories The day's active calories.
  * @param {number|null} input.usualCalories 90-day median active calories.
+ * @param {number[]|null} input.healthMinutesByHour healthMinutes per local
+ *   clock hour (24 values), when the app recorded them.
+ * @param {number[]|null} input.caloriesByHour Active calories per local
+ *   clock hour (24 values).
  * @param {number} input.asOf Now (ms): events count only once they happen.
  * @return {object|null} The Effort record, or null without a day record.
  */
 function computeEffort({record, workouts = [], healthMinutes = null,
-  activeCalories = null, usualCalories = null, asOf}) {
+  activeCalories = null, usualCalories = null, healthMinutesByHour = null,
+  caloriesByHour = null, asOf}) {
   const dayStart = ms(record?.dayStart);
   const dayEnd = ms(record?.dayEnd);
   if (dayStart === null || dayEnd === null) return null;
@@ -253,17 +258,45 @@ function computeEffort({record, workouts = [], healthMinutes = null,
   const physical = Math.min(PHYSICAL_CAP, load.points);
 
   // Running total at the end of each hour of the day, for "usual by this
-  // time of day" on Home. Workouts count at the hour they started (scaled
-  // down with the cap), untimed priorities when ticked off; Health minutes
-  // and calories, which have no time of day, at the end. The last value is
-  // the day's total.
+  // time of day" on Home. Untimed priorities count when ticked off. Activity
+  // counts when it happened, by the source physicalLoad used: workouts at
+  // the hour they started, Health minutes by their hours (or the calorie
+  // curve for days synced before those were recorded), calories above the
+  // usual from the hour the day's total passes it. Anything without a time
+  // goes at the end. The last value is the day's total.
   const byHour = hours.map(() => 0);
   hourPoints.forEach((points, i) => byHour[i] += points);
   for (const [t, points] of untimedAt) byHour[hourOf(t)] += points;
-  const scale = physicalSource === "exercise" ?
-    physical / (workoutPoints + exercisePoints) : 0;
-  for (const [t, points] of workoutAt) byHour[hourOf(t)] += points * scale;
-  byHour[byHour.length - 1] += physical - workoutPoints * scale;
+  // ponytail: clock hour h is the h-th hour after midnight, so activity on
+  // the two daylight-saving days lands an hour off.
+  const clockHour = (h) => hourOf(dayStart + h * HOUR);
+  const validHours = (v) => Array.isArray(v) && v.length === 24 &&
+    v.every((x) => finite(x) && x >= 0);
+  const placed = hours.map(() => 0);
+  const spread = (points, weights) => {
+    const total = validHours(weights) ? weights.reduce((a, b) => a + b, 0) : 0;
+    if (!(total > 0)) return;
+    weights.forEach((w, h) => placed[clockHour(h)] += points * w / total);
+  };
+  if (physicalSource === "exercise") {
+    const scale = physical / (workoutPoints + exercisePoints);
+    for (const [t, points] of workoutAt) placed[hourOf(t)] += points * scale;
+    spread(exercisePoints * scale, validHours(healthMinutesByHour) &&
+      healthMinutesByHour.some((m) => m > 0) ?
+      healthMinutesByHour : caloriesByHour);
+  } else if (physicalSource === "calories" && validHours(caloriesByHour)) {
+    let burned = 0;
+    let before = 0;
+    caloriesByHour.forEach((calories, h) => {
+      burned += calories;
+      const points = Math.min(PHYSICAL_CAP,
+          Math.max(0, burned - usualCalories) / 50);
+      placed[clockHour(h)] += points - before;
+      before = points;
+    });
+  }
+  placed[placed.length - 1] += physical - placed.reduce((a, b) => a + b, 0);
+  placed.forEach((points, i) => byHour[i] += points);
   for (let i = 1; i < byHour.length; i++) byHour[i] += byHour[i - 1];
 
   return {
@@ -273,6 +306,8 @@ function computeEffort({record, workouts = [], healthMinutes = null,
     // Uncapped, for the evening's "big day" note (docs/scores.md §4).
     physicalLoad: round1(load.points),
     physicalSource,
+    // For Home's live "So far" when calories are the source.
+    usualCalories: finite(usualCalories) ? Math.round(usualCalories) : null,
     version: VERSION,
     busyMinutes: Math.round(totals.busy),
     afterHoursMinutes: Math.round(totals.after),
@@ -285,21 +320,16 @@ function computeEffort({record, workouts = [], healthMinutes = null,
 }
 
 /**
- * Recalculates and saves a day's Effort in users/{uid}/scores_daily/{day},
- * then the next 3 days' Capacity (Recovery reads their load). Locked
- * 2 days after the day ends, since day records can arrive late.
+ * A day's Effort from its stored inputs (day record, workouts, Health
+ * activity), without saving it.
  * @param {object} db Admin Firestore instance.
  * @param {string} uid Account ID.
  * @param {string} day Day key.
- * @param {Function} timestamp Server timestamp factory.
  * @param {Date} now Current time.
- * @param {boolean} cascade Also the next 3 days' Capacity; off for the
- *   history rebuild, which scores Capacity after every day's Effort.
- * @return {Promise<string>} Outcome.
+ * @return {Promise<object>} {effort, dayEnd}: the Effort (null without a
+ *   usable day record) and the day's end (ms).
  */
-async function refreshEffort(db, uid, day, timestamp, now = new Date(),
-    cascade = true) {
-  if (!validDay(day)) return "ignored";
+async function effortFor(db, uid, day, now = new Date()) {
   const user = db.doc(`users/${uid}`);
   const record = (await user.collection("effort_inputs").doc(day).get()).data();
   const tooBig = (record?.events?.length ?? 0) > MAX_ITEMS ||
@@ -339,10 +369,34 @@ async function refreshEffort(db, uid, day, timestamp, now = new Date(),
       })),
       healthMinutes: today?.exercise_time?.healthSum ?? null,
       activeCalories: today?.active_calories?.sum ?? null,
+      healthMinutesByHour: today?.exercise_time?.healthByHour ?? null,
+      caloriesByHour: today?.active_calories?.byHour ?? null,
       usualCalories: pastCalories.length >= 7 ? median(pastCalories) : null,
       asOf: now.getTime(),
     });
   }
+
+  return {effort, dayEnd};
+}
+
+/**
+ * Recalculates and saves a day's Effort in users/{uid}/scores_daily/{day},
+ * then the next 3 days' Capacity (Recovery reads their load). Locked
+ * 2 days after the day ends, since day records can arrive late.
+ * @param {object} db Admin Firestore instance.
+ * @param {string} uid Account ID.
+ * @param {string} day Day key.
+ * @param {Function} timestamp Server timestamp factory.
+ * @param {Date} now Current time.
+ * @param {boolean} cascade Also the next 3 days' Capacity; off for the
+ *   history rebuild, which scores Capacity after every day's Effort.
+ * @return {Promise<string>} Outcome.
+ */
+async function refreshEffort(db, uid, day, timestamp, now = new Date(),
+    cascade = true) {
+  if (!validDay(day)) return "ignored";
+  const user = db.doc(`users/${uid}`);
+  const {effort, dayEnd} = await effortFor(db, uid, day, now);
 
   const target = user.collection("scores_daily").doc(day);
   const deletionId = crypto.createHash("sha256").update(uid).digest("hex");
@@ -382,11 +436,14 @@ async function refreshEffort(db, uid, day, timestamp, now = new Date(),
  * @return {boolean} True when Effort should be recalculated.
  */
 function effortInputsChanged(before, after) {
+  const hours = (doc) => JSON.stringify([doc?.exercise_time?.healthByHour,
+    doc?.active_calories?.byHour]);
   return before?.exercise_time?.healthSum !== after?.exercise_time?.healthSum ||
-    before?.active_calories?.sum !== after?.active_calories?.sum;
+    before?.active_calories?.sum !== after?.active_calories?.sum ||
+    hours(before) !== hours(after);
 }
 
 module.exports = {
   VERSION, hourlyLoads, workoutIntensity, physicalLoad, computeEffort,
-  refreshEffort, effortInputsChanged,
+  effortFor, refreshEffort, effortInputsChanged,
 };

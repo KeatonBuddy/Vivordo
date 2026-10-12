@@ -54,9 +54,13 @@ class DayEffort {
     required this.aheadLevel,
     required this.nextStart,
     required this.demand,
+    this.workoutSoFar = 0,
   });
 
   final List<EffortHour> hours;
+
+  /// The in-app workouts' share of [soFar].
+  final double workoutSoFar;
 
   /// Effort points so far today (mental + workouts), the same scale as the
   /// server's daily Effort.
@@ -185,6 +189,7 @@ DayEffort buildDayEffort({
 
   final hours = <EffortHour>[];
   var soFar = 0.0;
+  var workoutSoFar = 0.0;
   var demand = 0.0;
   for (var i = 0; i < done.length; i++) {
     final start = from.add(Duration(hours: i));
@@ -210,6 +215,7 @@ DayEffort buildDayEffort({
       }
     }
     soFar += workoutPoints;
+    workoutSoFar += workoutPoints;
     hours.add(
       EffortHour(
         start: start,
@@ -257,27 +263,58 @@ DayEffort buildDayEffort({
         : dayLoadLevel(aheadDemand / aheadMinutes),
     nextStart: upcoming.firstOrNull,
     demand: demand,
+    workoutSoFar: workoutSoFar,
   );
+}
+
+/// Today's activity Effort so far, by the server's rules (physicalLoad in
+/// functions/effort.js): in-app workouts plus Health exercise minutes × 0.2,
+/// else active calories above the usual ÷ 50; capped at 25. Whatever Health
+/// has recorded has already happened, so this is the activity "by now".
+double physicalSoFar({
+  required double workoutPoints,
+  double? healthMinutes,
+  double? calories,
+  double? usualCalories,
+}) {
+  final exercise = workoutPoints + (healthMinutes ?? 0) * 0.2;
+  final points = exercise > 0
+      ? exercise
+      : calories != null && usualCalories != null
+      ? math.max(0.0, calories - usualCalories) / 50
+      : 0.0;
+  return math.min(25.0, points);
 }
 
 /// "So far" on Home: today's Effort compared with the usual by this time of
 /// day, the median of earlier days' running totals (`effort.byHour` from
-/// the server). A word only, never a number (docs/scores.md §3).
+/// the server, keyed by day). Weekdays are compared with weekdays and
+/// weekends with weekends once there are [_sameKindDays] of that kind;
+/// until then all days, once there are 14. A word only, never a number
+/// (docs/scores.md §3).
 String effortSoFarWord({
   required double soFar,
   required DateTime now,
-  required List<List<num>> pastByHour,
+  required Map<DateTime, List<num>> pastByHour,
 }) {
-  if (pastByHour.length < 14) return 'Still learning your usual';
   final hour = now.hour;
   final fraction = now.minute / 60;
-  final usualByNow = [
-    for (final day in pastByHour)
+  List<double> byNow(Iterable<List<num>> days) => [
+    for (final day in days)
       if (day.length > hour)
         (hour == 0 ? 0 : day[hour - 1].toDouble()) +
             (day[hour] - (hour == 0 ? 0 : day[hour - 1])) * fraction,
   ]..sort();
-  if (usualByNow.length < 14) return 'Still learning your usual';
+  bool weekend(DateTime d) => d.weekday >= DateTime.saturday;
+  final sameKind = byNow([
+    for (final MapEntry(:key, :value) in pastByHour.entries)
+      if (weekend(key) == weekend(now)) value,
+  ]);
+  final all = byNow(pastByHour.values);
+  final usualByNow = sameKind.length >= _sameKindDays ? sameKind : all;
+  if (usualByNow.length < (identical(usualByNow, all) ? 14 : _sameKindDays)) {
+    return 'Still learning your usual';
+  }
   final mid = usualByNow.length ~/ 2;
   final usual = usualByNow.length.isOdd
       ? usualByNow[mid]
@@ -288,3 +325,7 @@ String effortSoFarWord({
   if (soFar < usual * 0.8 - 2) return 'Lighter than usual';
   return 'About usual';
 }
+
+/// Days of the same kind (weekday or weekend) "So far" needs to compare
+/// like with like; Home's 28-day window holds 8 weekend days.
+const _sameKindDays = 8;

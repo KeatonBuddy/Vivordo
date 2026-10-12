@@ -203,9 +203,23 @@ day, or "Still learning your usual" until there are 14 days of Effort.
 **Still ahead** shows the planned time and how heavy it is, switching to
 **Tomorrow** after the last item. Implemented in `lib/src/utils/day_effort.dart`
 and Home's card: "usual by this time of day" is the median of the last 28
-days' `effort.byHour` at the current hour (from 14 days), and Home rates
+days' `effort.byHour` at the current hour, and Home rates
 events with the same Claude sorting as the day records. Tapping a bar and the "Open" row stay as
 they are.
+- **Like with like** (2026-10-12): a weekday is compared with weekdays
+  and a weekend day with weekends once there are 8 of that kind in the
+  28 days; until then all days, once there are 14.
+- **Activity when it happened:** `byHour` places activity by the source
+  `physicalLoad` used: in-app workouts at the hour they started, Health
+  exercise minutes by `exercise_time.healthByHour` (written by the app's
+  sync from the samples' hours; days synced before that use the
+  `active_calories.byHour` curve), and calories above the usual from the
+  hour the day's total passes it. Anything without a time goes at the end.
+  Today's "So far" adds the activity Health has recorded so far by the
+  same rules (`physicalSoFar`, with the server's `effort.usualCalories`),
+  so a big walk reads "Heavier than usual", like the big-day headline.
+  `functions/scripts/backfill_effort_by_hour.js` re-places the last 28
+  days' `byHour` once (locked totals untouched).
 
 Priorities on the chart:
 - **Untimed priorities** have no hour, so they don't get a bar. Their
