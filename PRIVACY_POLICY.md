@@ -55,7 +55,7 @@ Vivordo's use and transfer of information received from Google APIs adheres to t
 
 ### Apple Health information
 
-If you enable Apple Health access, Vivordo reads only the categories you authorize, which may include Cardio Fitness (VO₂ max) recorded by an Apple Watch. Vivordo only reads Apple Health information; it does not write to Apple Health. You can review or revoke those permissions in Apple Health or your device settings. Apple Health information is not used for advertising or sold to data brokers.
+If you enable Apple Health access, Vivordo reads only the categories you authorize, which may include Cardio Fitness (VO₂ max) recorded by an Apple Watch. Vivordo only reads Apple Health information; it does not write to Apple Health. The first time you connect, Vivordo imports up to your last 90 days of the categories you authorize (heart-rate readings, the last 30 days) and calculates your scores for those days, so your usual levels are ready from the start; after that it keeps your recent days in sync. You can review or revoke those permissions in Apple Health or your device settings. Apple Health information is not used for advertising or sold to data brokers.
 
 ### Camera-based pulse measurements
 

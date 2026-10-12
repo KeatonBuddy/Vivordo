@@ -520,12 +520,13 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     }
   }
 
-  /// Full 30-day sync triggered once per login session. Also the point where we
-  /// record the login and open the first analytics session for it.
+  /// Full 30-day sync triggered once per login session (90 days the first
+  /// time, HealthService.syncWithHistory). Also the point where we record the
+  /// login and open the first analytics session for it.
   void _triggerFullSync(String uid) {
     if (_lastSyncedUid == uid) return;
     _lastSyncedUid = uid;
-    HealthService().syncToFirestore(daysBack: 30).whenComplete(() async {
+    HealthService().syncWithHistory().whenComplete(() async {
       await FitbitService.instance.syncInBackground(daysBack: 30);
       await WhoopService.instance.syncInBackground(daysBack: 30);
     });

@@ -81,19 +81,30 @@ exports.computeDailyCapacity = onDocumentWritten(
       const after = event.data?.after?.data();
       const {capacityInputsChanged, refreshCapacity} = require("./capacity");
       const {effortInputsChanged, refreshEffort} = require("./effort");
+      const {heartRateChanged, refreshActivityLoad} =
+        require("./activity_load");
+      const {physicalInputsChanged, refreshPhysicalHealth} =
+        require("./physical_health");
       const timestamp = () => admin.firestore.FieldValue.serverTimestamp();
       const {uid, day} = event.params;
-      if (capacityInputsChanged(before, after)) {
+      const capacity = capacityInputsChanged(before, after);
+      const effort = effortInputsChanged(before, after);
+      const heart = heartRateChanged(before, after);
+      const physical = physicalInputsChanged(before, after);
+      if (!capacity && !effort && !heart && !physical) return;
+      // A history import writes old days in bulk; rebuildHistory scores
+      // them in order once it's done (functions/history_import.js).
+      const {leaveToImport} = require("./history_import");
+      if (await leaveToImport(admin.firestore(), uid, day)) return;
+      if (capacity) {
         await refreshCapacity(admin.firestore(), uid, day, timestamp);
       }
-      if (effortInputsChanged(before, after)) {
+      if (effort) {
         await refreshEffort(admin.firestore(), uid, day, timestamp);
       }
       // Heart-rate load (docs/scores.md §4) from the heart rate this event
       // already carries; a changed load moves the next 3 days' Recovery.
-      const {heartRateChanged, refreshActivityLoad} =
-        require("./activity_load");
-      if (heartRateChanged(before, after) &&
+      if (heart &&
           await refreshActivityLoad(admin.firestore(), uid, day, after,
               timestamp) === "written") {
         for (let k = 1; k <= 3; k++) {
@@ -103,11 +114,21 @@ exports.computeDailyCapacity = onDocumentWritten(
         }
       }
       // Physical Health (docs/scores.md §7): the 28 days ending on this day.
-      const {physicalInputsChanged, refreshPhysicalHealth} =
-        require("./physical_health");
-      if (physicalInputsChanged(before, after)) {
+      if (physical) {
         await refreshPhysicalHealth(admin.firestore(), uid, day, timestamp);
       }
+    },
+);
+
+// History import (docs/scores.md §4): the app calls this once its 90-day
+// Health import is written, and the imported days are scored oldest first.
+exports.rebuildHistory = onCall({timeoutSeconds: 540, memory: "512MiB"},
+    async (request) => {
+      const uid = request.auth?.uid;
+      if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
+      const {rebuildHistory} = require("./history_import");
+      return rebuildHistory(admin.firestore(), uid,
+          () => admin.firestore.FieldValue.serverTimestamp());
     },
 );
 

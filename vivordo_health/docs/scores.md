@@ -386,6 +386,17 @@ vs untagged nights, shown once a tag has 5 of each) need those days.
   done.
 - **Not enough data:** with no sleep, no overnight body data and no
   check-in, Capacity is shown as unavailable. It is never guessed.
+- **History import:** the first time Health is connected on an account,
+  the app imports 90 days (heart-rate samples, 30) instead of 30, so the
+  usuals exist on day one (`HealthService.syncWithHistory`). Old days lock
+  on their first calculation, and the import writes one metric at a time
+  across all days, so scoring as it went would lock most days before their
+  sleep arrived (23 of 30 in an emulator test). While `historyImport.state`
+  is `running` (and under an hour old), the metrics trigger leaves old days
+  alone; then `rebuildHistory` scores every imported day oldest first
+  (heart-rate load, Capacity, Physical Health), so each day's normal uses
+  only the days before it. Days already scored keep their score
+  (`functions/history_import.js`).
 - **Without HRV**, My Day's Capacity explanation says so and names what was
   used instead: resting heart rate, the lowest heart rate while asleep, or
   (with no overnight heart data) a normal night (`capacityBodyNote` in

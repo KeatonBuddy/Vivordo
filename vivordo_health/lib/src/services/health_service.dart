@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import '../utils/performance_trace.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -306,9 +309,50 @@ class HealthService {
       'healthKitConsent': consentMap,
     }, SetOptions(merge: true));
 
-    // Sync the last 30 days for all metrics.
-    await syncToFirestore(daysBack: 30);
+    // The last 30 days, or the first time on this account the history
+    // import, which can take a few minutes, so it isn't waited for.
+    unawaited(syncWithHistory());
     return granted;
+  }
+
+  /// Days of Health history imported once per account (docs/scores.md §4).
+  static const historyDays = 90;
+
+  /// The sign-in and first-connect sync: the last 30 days, or the first time
+  /// on this account the last [historyDays], after which the server scores
+  /// the imported days oldest first (functions/history_import.js), so the
+  /// usuals exist on day one. Without Health connected nothing is marked,
+  /// and an import the app didn't finish runs again next time.
+  Future<void> syncWithHistory() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final user = _db.collection('users').doc(uid);
+    final consent = await getConsent();
+    final run = (await user.get()).data()?['historyImport'];
+    if (!consent.containsValue(true) ||
+        (run is Map && run['state'] == 'done')) {
+      return syncToFirestore(daysBack: 30);
+    }
+    await user.set({
+      'historyImport': {
+        'state': 'running',
+        'startedAt': FieldValue.serverTimestamp(),
+      },
+    }, SetOptions(merge: true));
+    await syncToFirestore(daysBack: historyDays);
+    if (FirebaseAuth.instance.currentUser?.uid != uid) return;
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable(
+            'rebuildHistory',
+            options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
+          )
+          .call<void>();
+    } catch (error) {
+      debugPrint(
+        'HealthService: history rebuild failed, retried later: $error',
+      );
+    }
   }
 
   /// Request HealthKit permission for a single metric, then sync it.
@@ -386,6 +430,9 @@ class HealthService {
     if (refreshWearableConnections) await _refreshWearableConnections(uid);
     final def = kMetricByKey[metricKey];
     if (def == null) return;
+    // Heart-rate samples are the heavy part, and only big days and the
+    // sleeping heart rate use them: 30 days, even in a history import.
+    if (metricKey == 'heart_rate' && daysBack > 30) daysBack = 30;
 
     await _health.configure();
 
@@ -532,7 +579,6 @@ class HealthService {
     required DateTime end,
   }) async {
     final intervals = await _sleepIntervals(start, end);
-    final heartRate = await _sleepHeartRateReadings(start, end);
 
     final summaries = summarizeSleepByWakeDay(intervals).where((summary) {
       return !summary.date.isBefore(
@@ -566,7 +612,12 @@ class HealthService {
             .doc(day);
         final existing = await ref.get();
         if (_connectedWearableHasPriority(existing.data(), 'sleep')) continue;
-        final sleepingHr = sleepingHeartRate(summary, heartRate);
+        // One night at a time: 90 days of watch heart rate in one read would
+        // be over 100,000 samples.
+        final sleepingHr = sleepingHeartRate(
+          summary,
+          await _sleepHeartRateReadings(summary.bedtime, summary.wakeTime),
+        );
         batch.set(ref, {
           'sleeping_heart_rate': sleepingHr == null
               ? FieldValue.delete()
@@ -604,15 +655,15 @@ class HealthService {
     );
   }
 
-  /// Heart rate over the sleep window, for the night's sleeping heart rate.
-  /// A failed read leaves it out rather than stopping the sleep sync.
+  /// Heart rate over one night, for its sleeping heart rate. A failed read
+  /// leaves it out rather than stopping the sleep sync.
   Future<List<({DateTime time, double bpm})>> _sleepHeartRateReadings(
     DateTime start,
     DateTime end,
   ) async {
     try {
       final points = await _health.getHealthDataFromTypes(
-        startTime: start.subtract(const Duration(hours: 12)),
+        startTime: start,
         endTime: end,
         types: [HealthDataType.HEART_RATE],
       );
