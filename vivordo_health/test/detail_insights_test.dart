@@ -274,6 +274,32 @@ void main() {
     });
   });
 
+  test('Sleep detail\'s bar: the need, or progress towards it', () {
+    expect(sleepNeedBar(hours: 9, need: 7.2, nights: 40), (
+      label: 'Your need 7 h 12 m',
+      value: '1 h 48 m over',
+      progress: 1.0,
+      tone: SleepNeedTone.met,
+    ));
+    final short = sleepNeedBar(hours: 5.83, need: 7.05, nights: 40)!;
+    expect(short.value, '1 h 13 m short');
+    expect(short.tone, SleepNeedTone.short);
+    expect(
+      sleepNeedBar(hours: 7.1, need: 7.2, nights: 40)!.value,
+      'About your need',
+    );
+    // Under 14 nights the need is still the placeholder.
+    expect(sleepNeedBar(hours: 6.6, nights: 6), (
+      label: 'Learning your sleep need',
+      value: '6 of 14 nights',
+      progress: 6 / 14,
+      tone: SleepNeedTone.learning,
+    ));
+    // A need that hasn't loaded, or nothing slept: no bar.
+    expect(sleepNeedBar(hours: 7, nights: 30), isNull);
+    expect(sleepNeedBar(hours: 0, need: 7.2, nights: 30), isNull);
+  });
+
   group('heart rate', () {
     test('Day: resting against the normal', () {
       expect(

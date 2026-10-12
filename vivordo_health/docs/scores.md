@@ -826,7 +826,10 @@ Settings → Preferences → Show score numbers, and shared by
   "Typical range, last 4 weeks", not a second usual.
 - **Sleep:** hours are always compared with the sleep need (Capacity's,
   none while it's the placeholder), on every screen including Sleep
-  detail; "usual" is only used for bedtime.
+  detail; "usual" is only used for bedtime. Sleep detail's card bar and
+  chart line are the need too ("Your need 7 h 12 m · 31 m over"), not a
+  fixed 8 h goal; under 14 nights the bar shows "Learning your sleep need
+  · 6 of 14 nights".
 - **My Day:** the brief's Capacity and Demand rings become Energy (8 points
   either side of the usual Capacity, or its own bands without one) and
   Today's / Tomorrow's load (Light, Full or Heavy: Demand ±15 of the

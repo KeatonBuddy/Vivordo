@@ -407,7 +407,17 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
             const SizedBox(height: 18),
             _rangeSelector(),
             const SizedBox(height: 18),
-            _summaryCard(average, total, changeMinutes, latest),
+            _summaryCard(
+              average,
+              total,
+              changeMinutes,
+              latest,
+              sleepNeedBar(
+                hours: average,
+                need: _sleepNeed,
+                nights: byDay.length,
+              ),
+            ),
             const SizedBox(height: 24),
             Text(
               _rangeIndex == 0
@@ -569,8 +579,9 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     double total,
     int? changeMinutes,
     _SleepValue? latest,
+    ({String label, String value, double progress, SleepNeedTone tone})?
+    needBar,
   ) {
-    final progress = (average / 8).clamp(0.0, 1.0);
     return _card(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -633,25 +644,40 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
             ],
           ),
           const SizedBox(height: 20),
-          Divider(color: context.vivordoColors.border),
-          Row(
-            children: [
-              const Text('Sleep goal 8 h'),
-              const Spacer(),
-              Text('${(progress * 100).round()}%'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 9,
-              color: _purple,
-              backgroundColor: context.vivordoColors.cardMuted,
+          // Against the same sleep need as the insight, Home and My Day.
+          if (needBar != null) ...[
+            Divider(color: context.vivordoColors.border),
+            Row(
+              children: [
+                Expanded(child: Text(needBar.label)),
+                Text(
+                  needBar.value,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: switch (needBar.tone) {
+                      SleepNeedTone.met => const Color(0xFF20B26B),
+                      SleepNeedTone.short => const Color(0xFFF59E0B),
+                      SleepNeedTone.learning =>
+                        context.vivordoColors.textSecondary,
+                    },
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 18),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: needBar.progress,
+                minHeight: 9,
+                color: needBar.tone == SleepNeedTone.learning
+                    ? context.vivordoColors.textSecondary
+                    : _purple,
+                backgroundColor: context.vivordoColors.cardMuted,
+              ),
+            ),
+            const SizedBox(height: 18),
+          ],
           Divider(color: context.vivordoColors.border),
           Row(
             children: [
@@ -709,6 +735,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         values: days.map((day) => day.value?.hours ?? 0).toList(),
         labels: days.map((day) => _chartLabel(day.date)).toList(),
         dates: days.map((day) => day.date).toList(),
+        need: _sleepNeed,
       ),
     ),
   );
@@ -1450,11 +1477,15 @@ class _SleepBarChart extends StatefulWidget {
     required this.values,
     required this.labels,
     required this.dates,
+    this.need,
   });
 
   final List<double> values;
   final List<String> labels;
   final List<DateTime> dates;
+
+  /// The sleep need line; none while the need is the 8 h placeholder.
+  final double? need;
 
   @override
   State<_SleepBarChart> createState() => _SleepBarChartState();
@@ -1497,6 +1528,7 @@ class _SleepBarChartState extends State<_SleepBarChart> {
           values: widget.values,
           labels: widget.labels,
           dates: widget.dates,
+          need: widget.need,
           selected: selected,
           dark: Theme.of(context).brightness == Brightness.dark,
         ),
@@ -1510,12 +1542,14 @@ class _SleepBarPainter extends CustomPainter {
     required this.values,
     required this.labels,
     required this.dates,
+    required this.need,
     required this.selected,
     required this.dark,
   });
   final List<double> values;
   final List<String> labels;
   final List<DateTime> dates;
+  final double? need;
   final int? selected;
   final bool dark;
 
@@ -1535,14 +1569,43 @@ class _SleepBarPainter extends CustomPainter {
       Offset(size.width, top + height),
       axis,
     );
-    final goalY = top + height - 8 / maxY * height;
-    canvas.drawLine(
-      Offset(left, goalY),
-      Offset(size.width, goalY),
-      Paint()..color = _SleepDetailScreenState._purple.withValues(alpha: .65),
-    );
-    _text(canvas, 'Goal 8 h', Offset(size.width - 58, goalY - 16), 10);
-    if (values.isEmpty) return;
+    final needY = need == null ? null : top + height - need! / maxY * height;
+    if (needY != null) {
+      canvas.drawLine(
+        Offset(left, needY),
+        Offset(size.width, needY),
+        Paint()..color = _SleepDetailScreenState._purple.withValues(alpha: .65),
+      );
+    }
+    // Over the bars, on a backing, so a tall bar can't hide it.
+    void needLabel() {
+      if (needY == null) return;
+      final minutes = (need! * 60).round();
+      final painter = TextPainter(
+        text: TextSpan(
+          text:
+              'Need ${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')} m',
+          style: TextStyle(
+            fontSize: 10,
+            color: dark ? Colors.white70 : Colors.black54,
+          ),
+        ),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      final box = Rect.fromLTWH(
+        size.width - painter.width - 12,
+        needY - painter.height - 8,
+        painter.width + 10,
+        painter.height + 4,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(box, const Radius.circular(6)),
+        Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
+      );
+      painter.paint(canvas, Offset(box.left + 5, box.top + 2));
+    }
+
+    if (values.isEmpty) return needLabel();
     final slot = (size.width - left) / values.length;
     final barWidth = math.min(28.0, slot * .55);
     for (var i = 0; i < values.length; i++) {
@@ -1581,6 +1644,7 @@ class _SleepBarPainter extends CustomPainter {
         _center(canvas, labels[i], Offset(x, top + height + 8), 9);
       }
     }
+    needLabel();
 
     final index = selected;
     if (index != null && index < values.length && index < dates.length) {
@@ -1626,20 +1690,6 @@ class _SleepBarPainter extends CustomPainter {
     return '$wholeHours h $minutes min';
   }
 
-  void _text(Canvas canvas, String text, Offset offset, double size) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          fontSize: size,
-          color: dark ? Colors.white60 : Colors.black54,
-        ),
-      ),
-      textDirection: ui.TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas, offset);
-  }
-
   void _center(Canvas canvas, String text, Offset offset, double size) {
     final painter = TextPainter(
       text: TextSpan(
@@ -1659,6 +1709,7 @@ class _SleepBarPainter extends CustomPainter {
       !listEquals(oldDelegate.values, values) ||
       !listEquals(oldDelegate.labels, labels) ||
       !listEquals(oldDelegate.dates, dates) ||
+      oldDelegate.need != need ||
       oldDelegate.selected != selected ||
       oldDelegate.dark != dark;
 }

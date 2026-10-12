@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-
 /// The one-line insight on each metric detail screen, comparing the person
 /// with their own usual rather than population cut-offs.
 ///
@@ -324,6 +323,39 @@ DetailInsight sleepInsight({
   }
   final short = need != null && (need - average) * 60 >= 30;
   return DetailInsight(text, short ? InsightTone.concern : InsightTone.neutral);
+}
+
+/// How Sleep detail's summary card sets its bar.
+enum SleepNeedTone { met, short, learning }
+
+/// Sleep detail's bar: [hours] (last night, or the period's average)
+/// against the person's [need] (Capacity's; null while it's the 8 h
+/// placeholder). Without a need, progress towards the 14 [nights] the need
+/// takes. Null when there's nothing to show.
+({String label, String value, double progress, SleepNeedTone tone})?
+sleepNeedBar({required double hours, double? need, required int nights}) {
+  String spaced(int minutes) => minutes < 60
+      ? '$minutes m'
+      : '${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')} m';
+  if (need == null) {
+    if (nights >= 14) return null;
+    return (
+      label: 'Learning your sleep need',
+      value: '$nights of 14 nights',
+      progress: nights / 14,
+      tone: SleepNeedTone.learning,
+    );
+  }
+  if (hours <= 0) return null;
+  final difference = ((hours - need) * 60).round();
+  return (
+    label: 'Your need ${spaced((need * 60).round())}',
+    value: difference.abs() < 15
+        ? 'About your need'
+        : '${spaced(difference.abs())} ${difference < 0 ? 'short' : 'over'}',
+    progress: (hours / need).clamp(0.0, 1.0),
+    tone: difference <= -15 ? SleepNeedTone.short : SleepNeedTone.met,
+  );
 }
 
 // ── Heart rate ───────────────────────────────────────────────────────────────
