@@ -142,14 +142,15 @@ function bigDayEffect(recent, usual, minimum = BIG_DAY_MIN.minutes) {
 /**
  * Capacity for one day.
  * @param {object} input
- * @param {object} input.today {sleepHours, bedtimeMin, hrv, hrvKind,
+ * @param {object} input.today {sleepHours, bedtimeMin, wakeMin, hrv, hrvKind,
  *   restingHr, restingHrKind, yesterdayEffort, usualEffort, checkInFeel,
  *   checkInSleep,
  *   bigDay ({day, ratio, penalty} from bigDayEffect), activityUsual};
- *   any may be null. bedtimeMin is minutes after midnight in a fixed clock (UTC
- *   is fine: only gaps between bedtimes are used).
+ *   any may be null. bedtimeMin and wakeMin are minutes after midnight in
+ *   a fixed clock (UTC is fine: only gaps between them are used).
  * @param {object[]} input.history Earlier days in the last 90, any order:
- *   {sleepHours, bedtimeMin, hrv, restingHr}; hrv and restingHr of today's
+ *   {sleepHours, bedtimeMin, wakeMin, hrv, restingHr}; hrv and restingHr of
+ *   today's
  *   kind only (see pickHrv in hrv.js).
  * @return {object|null} Capacity record, or null when there is no sleep,
  *   no measured body data and no check-in (never guessed).
@@ -161,15 +162,27 @@ function computeCapacity({today, history}) {
 
   let sleep = null;
   let bedtimeOffsetMin = null;
+  let wakeOffsetMin = null;
   if (finite(today.sleepHours) && today.sleepHours > 0) {
     sleep = 100 * Math.min(1, today.sleepHours / need);
     if (today.sleepHours < 5) sleep *= 0.7;
-    const recentBedtimes = history.slice(-14).map((d) => d.bedtimeMin)
-        .filter(finite);
-    if (finite(today.bedtimeMin) && recentBedtimes.length >= 5) {
-      bedtimeOffsetMin = Math.round(
-          clockGap(today.bedtimeMin, usualClockTime(recentBedtimes)));
-      if (bedtimeOffsetMin > 60) sleep -= 10;
+    // How far a clock time is from its usual over the last 14 nights,
+    // signed (later is positive), around midnight.
+    const offset = (key) => {
+      const recent = history.slice(-14).map((d) => d[key]).filter(finite);
+      if (!finite(today[key]) || recent.length < 5) return null;
+      const diff = today[key] - usualClockTime(recent);
+      return Math.round(((diff % 1440) + 2160) % 1440 - 720);
+    };
+    const bedtimeSigned = offset("bedtimeMin");
+    bedtimeOffsetMin = bedtimeSigned === null ? null : Math.abs(bedtimeSigned);
+    // A lie-in shifts the body clock as much as a late night (social jet
+    // lag), and sleep capped at the need wouldn't show it otherwise. A
+    // late night and a lie-in count once. Signed, so a lie-in (positive)
+    // can be told from an early start.
+    wakeOffsetMin = offset("wakeMin");
+    if (Math.max(bedtimeOffsetMin ?? 0, Math.abs(wakeOffsetMin ?? 0)) > 60) {
+      sleep -= 10;
     }
     sleep = clamp(sleep);
   }
@@ -246,6 +259,7 @@ function computeCapacity({today, history}) {
     // so screens don't call it "your need" (docs/scores.md §4).
     sleepNeedSettled: nights.length >= 14,
     bedtimeOffsetMin,
+    wakeOffsetMin,
     hrv: finite(today.hrv) ? today.hrv : null,
     hrvKind: finite(today.hrv) ? today.hrvKind ?? null : null,
     hrvNormal,
@@ -267,16 +281,20 @@ function computeCapacity({today, history}) {
 /**
  * The inputs Capacity reads from a metrics_daily document.
  * @param {object} data metrics_daily document data.
- * @return {object} {sleepHours, bedtimeMin, hrvReadings, restingHrReadings,
+ * @return {object} {sleepHours, bedtimeMin, wakeMin, hrvReadings,
+ *   restingHrReadings,
  *   checkInFeel, checkInSleep}.
  */
 function capacityInputs(data) {
-  const bedtime = data?.sleep?.bedtime;
-  const date = typeof bedtime?.toDate === "function" ? bedtime.toDate() : null;
+  const clockMin = (time) => {
+    const date = typeof time?.toDate === "function" ? time.toDate() : null;
+    return date ? date.getUTCHours() * 60 + date.getUTCMinutes() : null;
+  };
   const checkIn = data?.morning_check_in;
   return {
     sleepHours: finite(data?.sleep?.avg) ? data.sleep.avg : null,
-    bedtimeMin: date ? date.getUTCHours() * 60 + date.getUTCMinutes() : null,
+    bedtimeMin: clockMin(data?.sleep?.bedtime),
+    wakeMin: clockMin(data?.sleep?.wakeTime),
     hrvReadings: hrvReadings(data),
     restingHrReadings: restingHrReadings(data),
     checkInFeel: finite(checkIn?.feel) ? checkIn.feel : null,

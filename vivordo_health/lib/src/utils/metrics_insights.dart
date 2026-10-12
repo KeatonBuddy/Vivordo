@@ -1,4 +1,5 @@
 import 'day_key.dart';
+import 'detail_insights.dart' show longSleepAverage, longSleepText;
 import 'physical_health_view.dart';
 
 enum MetricsInsightKind { sleep, energy, effort, afterHours, physical }
@@ -6,12 +7,16 @@ enum MetricsInsightKind { sleep, energy, effort, afterHours, physical }
 /// How an insight reads: worth a look, good news, or plain information.
 enum MetricsInsightTone { concern, good, neutral }
 
+/// A one-tap follow-up an insight offers.
+enum MetricsInsightAction { tagSick }
+
 class MetricsInsight {
-  const MetricsInsight(this.kind, this.tone, this.text);
+  const MetricsInsight(this.kind, this.tone, this.text, [this.action]);
 
   final MetricsInsightKind kind;
   final MetricsInsightTone tone;
   final String text;
+  final MetricsInsightAction? action;
 }
 
 /// The Metrics screen's insights, from the `scores_daily` documents it
@@ -64,7 +69,21 @@ List<MetricsInsight> metricsInsights(
       ),
     );
   }
-  if (sleep.length >= 4 && need != null) {
+  // A run of long sleep that isn't paying back debt.
+  final longSleep = longSleepAverage([
+    for (var i = 0; i < 14; i++)
+      value(localDayKey(_back(date, i)), 'capacity', 'sleepHours'),
+  ], need);
+  if (longSleep != null) {
+    concerns.add(
+      MetricsInsight(
+        MetricsInsightKind.sleep,
+        MetricsInsightTone.concern,
+        longSleepText(longSleep, need!),
+        MetricsInsightAction.tagSick,
+      ),
+    );
+  } else if (sleep.length >= 4 && need != null) {
     final average = _mean(sleep);
     final shortMinutes = ((need - average) * 60).round();
     if (shortMinutes >= 20) {

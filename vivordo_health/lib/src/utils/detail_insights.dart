@@ -233,10 +233,10 @@ DetailInsight moodInsight({
 // ── Sleep ────────────────────────────────────────────────────────────────────
 
 class SleepNight {
-  const SleepNight(this.hours, [this.bedtime]);
+  const SleepNight(this.hours, [this.bedtime, this.wakeTime]);
 
   final double hours;
-  final DateTime? bedtime;
+  final DateTime? bedtime, wakeTime;
 }
 
 /// Sleep hours against the person's [need] (Capacity's, null while it's
@@ -259,6 +259,14 @@ DetailInsight sleepInsight({
   ];
   final usualBedtime = bedtimes.length >= 5
       ? median(bedtimes.map((m) => m.toDouble()))
+      : null;
+  // Wake times the same way (minutes after midnight), for lie-ins.
+  final wakes = [
+    for (final n in between(1, 15))
+      if (n.wakeTime case final w?) _minutesOfDay(w),
+  ];
+  final usualWake = wakes.length >= 5
+      ? median(wakes.map((m) => m.toDouble()))
       : null;
 
   String versusNeed(double hours) {
@@ -295,6 +303,13 @@ DetailInsight sleepInsight({
             ' Bedtime was ${_duration(offset.abs())} ${offset > 0 ? 'later' : 'earlier'} than usual.';
       }
     }
+    if (night.wakeTime case final wake? when usualWake != null) {
+      final offset = _minutesOfDay(wake) - usualWake.round();
+      if (offset.abs() >= 45) {
+        text +=
+            ' You woke ${_duration(offset.abs())} ${offset > 0 ? 'later' : 'earlier'} than usual.';
+      }
+    }
     final short = need != null && (need - night.hours) * 60 >= 45;
     return DetailInsight(
       text,
@@ -321,9 +336,49 @@ DetailInsight sleepInsight({
     text +=
         ' Bedtime was within an hour of usual on $onTime of ${timed.length} nights.';
   }
+  final woke = [
+    for (final n in recent)
+      if (n.wakeTime case final w?) _minutesOfDay(w),
+  ];
+  if (usualWake != null && woke.length >= 3) {
+    final onTime = woke.where((m) => (m - usualWake).abs() <= 60).length;
+    text +=
+        ' Wake time was within an hour of usual on $onTime of ${woke.length} mornings.';
+  }
   final short = need != null && (need - average) * 60 >= 30;
+  if (rangeDays == 7) {
+    final long = longSleepAverage([
+      for (var i = 0; i < 14; i++)
+        nights[DateTime(day.year, day.month, day.day - i)]?.hours,
+    ], need);
+    if (long != null) {
+      return DetailInsight(longSleepText(long, need!), InsightTone.concern);
+    }
+  }
   return DetailInsight(text, short ? InsightTone.concern : InsightTone.neutral);
 }
+
+/// A run of long sleep not explained by recovery: [nights] are the last 14
+/// nights' hours, last night first (null for a missing night). At least 4
+/// of the last 7 at [need] + 1.5 h, and the 7 before averaging no more than
+/// 30 minutes under the need (otherwise it's paying back debt). Returns the
+/// last 7 nights' average, or null. Only with a settled need.
+double? longSleepAverage(List<double?> nights, double? need) {
+  if (need == null || nights.length < 14) return null;
+  final recent = nights.take(7).whereType<double>().toList();
+  final before = nights.skip(7).take(7).whereType<double>().toList();
+  if (before.length < 3) return null;
+  final long = recent.where((h) => h >= need + 1.5).length;
+  if (long < 4 || _mean(before) < need - 0.5) return null;
+  return _mean(recent);
+}
+
+/// The sentence for [longSleepAverage].
+String longSleepText(double average, double need) =>
+    'You\'ve slept a lot longer than usual this week: '
+    '${hoursMinutes(average)} on average against your need of '
+    '${hoursMinutes(need)}. That can be a sign you\'re run down or coming '
+    'down with something.';
 
 /// How Sleep detail's summary card sets its bar.
 enum SleepNeedTone { met, short, learning }
@@ -527,6 +582,9 @@ String _duration(int minutes) => minutes < 60
 
 /// Minutes after noon, so bedtimes either side of midnight compare simply.
 int _minutesFromNoon(DateTime t) => (t.hour * 60 + t.minute - 720) % 1440;
+
+/// Minutes after midnight, for wake times (mornings).
+int _minutesOfDay(DateTime t) => t.hour * 60 + t.minute;
 
 /// Values from [from] (inclusive) to [to] (exclusive) days before [day].
 List<double> _window(DayValues values, DateTime day, int from, int to) => [

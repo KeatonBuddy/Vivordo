@@ -469,6 +469,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                     ?DateTime.tryParse(key): SleepNight(
                       value.hours,
                       value.bedtime,
+                      value.wakeTime,
                     ),
                 },
                 today: DateTime.now(),

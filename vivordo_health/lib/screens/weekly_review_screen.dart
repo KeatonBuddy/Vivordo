@@ -39,6 +39,7 @@ IconData _icon(String kind) => switch (kind) {
   'bigDay' => Icons.bolt_rounded,
   'meeting' => Icons.groups_outlined,
   'lateNight' => Icons.nightlight_outlined,
+  'lieIn' => Icons.wb_twilight_outlined,
   'afterHours' => Icons.schedule_rounded,
   'training' => Icons.fitness_center_rounded,
   'priority' => Icons.flag_outlined,

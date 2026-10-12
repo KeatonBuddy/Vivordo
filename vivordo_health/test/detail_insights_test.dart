@@ -254,6 +254,56 @@ void main() {
       );
     });
 
+    test('a lie-in is named like a late bedtime', () {
+      // Usually 23:00 to 06:30; this morning up at 08:45.
+      final usual = {
+        for (var i = 1; i < 20; i++)
+          back(i): SleepNight(
+            7.5,
+            DateTime(2026, 10, 8 - i - 1, 23),
+            DateTime(2026, 10, 8 - i, 6, 30),
+          ),
+      };
+      final lieIn = {
+        ...usual,
+        back(0): SleepNight(
+          9.75,
+          DateTime(2026, 10, 7, 23),
+          DateTime(2026, 10, 8, 8, 45),
+        ),
+      };
+      expect(
+        sleepInsight(nights: lieIn, today: today, rangeDays: 1, need: 7.5).text,
+        endsWith('You woke 2h 15m later than usual.'),
+      );
+      expect(
+        sleepInsight(nights: lieIn, today: today, rangeDays: 7, need: 7.5).text,
+        contains('Wake time was within an hour of usual on 6 of 7 mornings.'),
+      );
+    });
+
+    test('a run of long sleep, but not when it pays back debt', () {
+      // A usual week at 7h 15m, then 5 of 7 nights over 9 hours.
+      DetailInsight week(double before) => sleepInsight(
+        nights: {
+          for (var i = 7; i < 14; i++) back(i): SleepNight(before),
+          for (var i = 0; i < 7; i++) back(i): SleepNight(i < 5 ? 9.25 : 7.5),
+        },
+        today: today,
+        rangeDays: 7,
+        need: 7.25,
+      );
+      expect(
+        week(7.25).text,
+        startsWith('You\'ve slept a lot longer than usual'),
+      );
+      expect(week(7.25).tone, InsightTone.concern);
+      // After a short week, the long nights are recovery.
+      expect(week(5.5).text, isNot(contains('a lot longer')));
+      // Not before the need is real.
+      expect(longSleepAverage(List.filled(14, 9.5), null), isNull);
+    });
+
     test('Week: average and bedtime regularity', () {
       final insight = sleepInsight(
         nights: {

@@ -450,3 +450,37 @@ double _median(List<double> values) {
       ? sorted[middle]
       : (sorted[middle - 1] + sorted[middle]) / 2;
 }
+
+/// How much later than your usual weekday wake you got up this weekend,
+/// shown on Sunday evening before the work week (social jet lag): the later
+/// of Saturday's and Sunday's wake against the median weekday wake of the
+/// last 14 nights (5 needed). Null under 90 minutes or on other days.
+Duration? weekendLieIn(List<SleepPeriod> nights, DateTime today) {
+  final day = DateTime(today.year, today.month, today.day);
+  if (day.weekday != DateTime.sunday) return null;
+  int minutes(DateTime t) => t.hour * 60 + t.minute;
+  bool sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+  final from = day.subtract(const Duration(days: 14));
+  final weekdays = [
+    for (final n in nights)
+      if (n.end.isAfter(from) &&
+          n.end.isBefore(day.subtract(const Duration(days: 1))) &&
+          n.end.weekday <= DateTime.friday)
+        minutes(n.end),
+  ]..sort();
+  if (weekdays.length < 5) return null;
+  final mid = weekdays.length ~/ 2;
+  final usual = weekdays.length.isOdd
+      ? weekdays[mid]
+      : (weekdays[mid - 1] + weekdays[mid]) / 2;
+  final weekend = [
+    for (final n in nights)
+      if (sameDay(n.end, day) ||
+          sameDay(n.end, day.subtract(const Duration(days: 1))))
+        minutes(n.end),
+  ];
+  if (weekend.isEmpty) return null;
+  final later = weekend.reduce(math.max) - usual;
+  return later >= 90 ? Duration(minutes: later.round()) : null;
+}

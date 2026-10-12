@@ -94,6 +94,23 @@ test("bedtimes are compared around midnight", () => {
   assert.equal(ok.parts.sleep, 100);
 });
 
+test("a lie-in counts like a late night, and both together count once", () => {
+  // Usually 23:00 to 06:30.
+  const days = history({wakeMin: 6 * 60 + 30});
+  const at = (bed, wake) => computeCapacity({history: days, today: {sleepHours: 7.5, bedtimeMin: bed, wakeMin: wake}});
+  const lieIn = at(23 * 60, 8 * 60 + 45); // up 2h 15m late
+  assert.equal(lieIn.wakeOffsetMin, 135);
+  assert.equal(lieIn.parts.sleep, 90);
+  assert.equal(at(23 * 60, 7 * 60 + 15).parts.sleep, 100, "45 min is fine");
+  assert.equal(at(23 * 60, 5 * 60).wakeOffsetMin, -90, "an early start is negative");
+  const both = at(60, 8 * 60 + 30); // late night and a lie-in
+  assert.equal(both.parts.sleep, 90);
+  // Without a wake time on record it's left out, as before.
+  assert.equal(computeCapacity({history: history(), today: {sleepHours: 7.5, bedtimeMin: 23 * 60, wakeMin: 9 * 60}}).wakeOffsetMin, null);
+  const wakeTime = {toDate: () => new Date("2026-09-30T13:30:00Z")};
+  assert.equal(capacityInputs({sleep: {avg: 7, wakeTime}}).wakeMin, 13 * 60 + 30);
+});
+
 test("only sleep, HRV, resting HR and check-in changes trigger a recalculation", () => {
   const base = {sleep: {avg: 7}, hrv: {avg: 50}, steps: {sum: 100}};
   assert.equal(capacityInputsChanged(base, {...base, steps: {sum: 900}}), false);

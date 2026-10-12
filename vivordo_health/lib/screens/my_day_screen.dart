@@ -1209,6 +1209,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           firstEventStart: first?.start,
           onTap: () => showEnergyForecastSheet(context, tonight),
           bigDayRatio: _capacitySnapshot.value.data?.todayBigDayRatio,
+          lieIn: weekendLieIn(
+            _briefSnapshot.value.data?.sleepNights ?? const [],
+            today,
+          ),
           reminder: _windDownReminder,
           onReminder: (on) => _setWindDownReminder(on, first?.start),
         ),

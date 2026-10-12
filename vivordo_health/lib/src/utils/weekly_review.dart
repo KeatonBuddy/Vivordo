@@ -53,7 +53,7 @@ class ReviewLine {
   const ReviewLine(this.kind, this.title, this.detail, {this.seriesKey});
 
   /// For the icon: sick, travel, heavyDay, bigDay, meeting, lateNight,
-  /// afterHours, training, priority, sleep, fixes, calm.
+  /// lieIn, afterHours, training, priority, sleep, fixes, calm.
   final String kind;
 
   /// For a meeting, empty: its name comes from the calendar ([seriesKey]),
@@ -563,6 +563,21 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
         'lateNight',
         'Late nights',
         'After ${lateLow.length} late nights, those mornings started lower.',
+      ),
+    );
+  }
+  // Sleeping in 90+ minutes past the usual wake time (social jet lag).
+  final lieIns = [
+    for (final d in dates)
+      if ((_num(capacityOf(d)?['wakeOffsetMin']) ?? 0) >= 90) d,
+  ];
+  if (lieIns.length >= 2) {
+    drained.add(
+      ReviewLine(
+        'lieIn',
+        'Lie-ins',
+        'You slept in 90 minutes or more on ${lieIns.length} mornings. A '
+            'steadier wake time keeps your body clock on track.',
       ),
     );
   }

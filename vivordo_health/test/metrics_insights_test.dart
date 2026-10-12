@@ -63,6 +63,17 @@ void main() {
     expect(insights[1].text, contains('your usual 78'));
   });
 
+  test('a week of long sleep is a concern, with a way to tag sick', () {
+    final insight = metricsInsights(
+      history(usualSleep: 7.5, recentSleep: 9.25),
+      today,
+    ).first;
+    expect(insight.kind, MetricsInsightKind.sleep);
+    expect(insight.tone, MetricsInsightTone.concern);
+    expect(insight.text, startsWith('You\'ve slept a lot longer than usual'));
+    expect(insight.action, MetricsInsightAction.tagSick);
+  });
+
   test('after-hours plans count only past two hours a week', () {
     expect(
       kinds(metricsInsights(history(recentAfterHours: 17), today)),

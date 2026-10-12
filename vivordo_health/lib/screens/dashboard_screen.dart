@@ -21,6 +21,7 @@ import 'mood_detail_screen.dart';
 import 'sleep_detail_screen.dart';
 import 'steps_detail_screen.dart';
 import 'physical_health_screen.dart';
+import '../src/services/daily_tags_service.dart';
 import '../src/utils/metrics_insights.dart';
 import '../src/utils/physical_health_view.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
@@ -1016,6 +1017,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   MetricsInsightTone.neutral => accentPurple,
                 },
                 text: insight.text,
+                action: switch (insight.action) {
+                  MetricsInsightAction.tagSick => (
+                    label: 'Tag sick',
+                    onTap: _tagSick,
+                  ),
+                  null => null,
+                },
               ),
           ];
     return Container(
@@ -1040,10 +1048,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  /// Tags last night sick (the energy forecast eases today for it).
+  Future<void> _tagSick() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final night = DateTime(today.year, today.month, today.day - 1);
+    try {
+      await DailyTagsService.save(night, {
+        ...await DailyTagsService.load(night),
+        'sick',
+      });
+      if (mounted) {
+        showToast(
+          context,
+          'Tagged sick for last night. Go easy today.',
+          kind: ToastKind.success,
+        );
+      }
+    } catch (error) {
+      debugPrint('Tag sick failed: $error');
+      if (mounted) {
+        showToast(
+          context,
+          "Couldn't save the tag. Try again.",
+          kind: ToastKind.error,
+        );
+      }
+    }
+  }
+
   Widget _insightRow({
     required IconData icon,
     required Color color,
     required String text,
+    ({String label, VoidCallback onTap})? action,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
@@ -1059,7 +1096,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Icon(icon, color: color, size: 21),
           ),
           const SizedBox(width: 12),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 15))),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(text, style: const TextStyle(fontSize: 15)),
+                if (action != null)
+                  TextButton(
+                    onPressed: action.onTap,
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 36),
+                      foregroundColor: accentPurple,
+                    ),
+                    child: Text(action.label),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );

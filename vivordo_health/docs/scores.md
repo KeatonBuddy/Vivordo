@@ -244,7 +244,7 @@ re-weighted, except overnight body data (see below).
 
 | Ingredient | Weight | Sub-score |
 |---|---|---|
-| Sleep | 45 | 100 × min(1, hours ÷ your need); below 5 h, × 0.7. −10 if bedtime is > 60 min off your 14-day median |
+| Sleep | 45 | 100 × min(1, hours ÷ your need); below 5 h, × 0.7. −10 if bedtime or wake time is > 60 min off its 14-day median (once, not each) |
 | Overnight body | 35 | Average of the available parts: HRV 70 + 100 × (HRV ÷ your 90-day HRV − 1); resting HR 70 − 6 × (bpm above your 90-day RHR) |
 | Recovery | 20 | 100 − the larger of (yesterday's Effort − your usual Effort, if above) and a big day's cost (below), floored at 0. Higher = less to recover from |
 | Morning check-in (optional) | +15 | Average of the parts answered: "How do you feel?" as a mood score (0–100, the same scale as mood check-ins) and "How did you sleep?" (Awful 0, Poor 25, Okay 50, Good 75, Great 100) |
@@ -415,6 +415,17 @@ vs untagged nights, shown once a tag has 5 of each) need those days.
 - **Without a wearable:** sleep from Health, recovery from yesterday, the
   morning check-in, and a morning camera heart scan (resting HR) if one was
   done.
+- **Wake time and long sleep** (2026-10-12): a lie-in shifts the body clock
+  like a late night (social jet lag), and sleep capped at the need would
+  otherwise hide it, so Capacity checks wake time too (`wakeOffsetMin`,
+  signed: later is positive). Sleep detail names a wake time 45+ min off
+  usual and counts on-time mornings; the weekly review lists "Lie-ins" (90+
+  min, 2 or more mornings); on Sunday evening My Day's evening card notes a
+  weekend lie-in of 90+ min against weekday wakes (`weekendLieIn`). A run
+  of long sleep (4 of the last 7 nights at need + 1.5 h, the 7 before no
+  more than 30 min under the need, settled need only; `longSleepAverage`)
+  is a Metrics insight with a "Tag sick" button, and Sleep detail's Week
+  view says the same. One long night is never penalised: it's recovery.
 - **Time in bed as sleep** (2026-10-12, iOS): a night with no asleep or
   stage data from any source uses Apple Health's "In bed" records, which
   the iPhone's Sleep schedule writes without a wearable, for its hours,
@@ -518,7 +529,7 @@ Capacity record.
 
 ```
 capacity: { score, final, version, provisional,
-            sleepHours, sleepNeed, bedtimeOffsetMin,
+            sleepHours, sleepNeed, bedtimeOffsetMin, wakeOffsetMin,
             hrv, hrvKind, hrvNormal, restingHr, restingHrNormal,
             checkInFeel, checkInSleep, yesterdayEffort, usualEffort }
 effort:   { total, mental, physical, physicalSource, final, version,

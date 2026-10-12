@@ -512,9 +512,14 @@ class EnergyEveningCard extends StatelessWidget {
     this.firstEventStart,
     this.onTap,
     this.bigDayRatio,
+    this.lieIn,
     this.reminder,
     this.onReminder,
   });
+
+  /// How far past your weekday wake you slept in this weekend
+  /// ([weekendLieIn]); Sunday evening only.
+  final Duration? lieIn;
 
   /// Today's activity against the usual when it's a big day (2× or more,
   /// docs/scores.md §4); shows "Keep tomorrow light". Null otherwise.
@@ -639,6 +644,38 @@ class EnergyEveningCard extends StatelessWidget {
                           'Big day today, about ${ratio.round()}× your usual '
                           'activity. Keep tomorrow light: your body will feel '
                           'it.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (lieIn case final late?) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7F77DD).withValues(alpha: .14),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.wb_twilight_rounded,
+                        size: 18,
+                        color: Color(0xFF7F77DD),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'You slept in about ${_lieInText(late)} this '
+                          'weekend. Bed at your usual time tonight makes '
+                          'tomorrow morning easier.',
                           style: TextStyle(
                             fontSize: 13,
                             color: colors.textPrimary,
@@ -911,4 +948,12 @@ String energyMoveHint(DateTime start, EnergyForecast forecast) {
   return phase == null
       ? 'Try $time'
       : 'Try $time, in ${energyPhasePhrase(phase)}';
+}
+
+/// "2 hours", "1½ hours": a lie-in to the nearest half hour.
+String _lieInText(Duration late) {
+  final halves = (late.inMinutes / 30).round();
+  final whole = halves ~/ 2;
+  final half = halves.isOdd ? '½' : '';
+  return '$whole$half ${halves == 2 ? 'hour' : 'hours'}';
 }
