@@ -231,7 +231,11 @@ class ActionCard extends StatelessWidget {
     final target = action['target_title'] as String?;
     if (action['type'] == 'calendar') {
       final head = switch (operation) {
-        'create' => 'Add “$title” to your calendar',
+        'create' => switch (action['calendar']) {
+          'outlook' => 'Add “$title” to Outlook',
+          'google' => 'Add “$title” to Google Calendar',
+          _ => 'Add “$title” to your calendar',
+        },
         'delete' => 'Delete “$target” from your calendar',
         _ => 'Change “$target” in your calendar',
       };
