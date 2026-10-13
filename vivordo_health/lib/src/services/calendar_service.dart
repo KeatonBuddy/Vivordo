@@ -38,8 +38,8 @@ class CalendarService {
     eventsChanged.value++;
   }
 
-  /// Whether [event] came from Outlook, which Vivordo can read but not yet
-  /// change.
+  /// Whether [event] came from Outlook; its changes go through
+  /// [OutlookCalendarService].
   static bool isOutlook(gcal.Event event) =>
       event.id?.startsWith('outlook:') == true;
 
@@ -47,15 +47,6 @@ class CalendarService {
   /// `google:<id>`, or Outlook's own `outlook:<id>`.
   static String eventKey(gcal.Event event) =>
       isOutlook(event) ? event.id! : 'google:${event.id}';
-
-  static void _requireGoogle(gcal.Event event) {
-    if (isOutlook(event)) {
-      throw StateError(
-        '“${event.summary ?? 'This event'}” is in Outlook, which Vivordo '
-        'can’t change yet. Edit it in Outlook.',
-      );
-    }
-  }
 
   /// Google or Outlook: some calendar to read.
   static Future<bool> isAnyConnected() async =>
@@ -128,7 +119,10 @@ class CalendarService {
   static String? _calendarIdFor(gcal.Event event) =>
       event.id == null ? null : _eventCalendarIds[event.id!];
 
-  static String? calendarIdForEvent(gcal.Event event) => _calendarIdFor(event);
+  /// The event's calendar: a Google calendar id, or `outlook:<id>`.
+  static String? calendarIdForEvent(gcal.Event event) => isOutlook(event)
+      ? OutlookCalendarService.calendarIdFor(event)
+      : _calendarIdFor(event);
 
   /// Records the account returned directly by an interactive Google sign-in.
   /// This avoids waiting for the asynchronous authentication event before
@@ -182,7 +176,16 @@ class CalendarService {
     gcal.Event event, {
     EventScope scope = EventScope.thisEvent,
   }) async {
-    _requireGoogle(event);
+    if (isOutlook(event)) {
+      return switch (scope) {
+        EventScope.thisAndFollowing when event.recurringEventId != null =>
+          OutlookCalendarService.endSeriesBefore(event),
+        EventScope.allEvents => OutlookCalendarService.deleteEvent(
+          event.recurringEventId ?? event.id!,
+        ),
+        _ => OutlookCalendarService.deleteEvent(event.id!),
+      };
+    }
     if (scope == EventScope.thisAndFollowing &&
         event.recurringEventId != null) {
       return _endSeriesBefore(event);
@@ -202,7 +205,31 @@ class CalendarService {
     invalidateEventCache();
   }
 
+  /// Google's and Outlook's calendars the user can add events to, Google's
+  /// primary first; Outlook's default counts as primary only without Google.
   static Future<List<WritableCalendar>> getWritableCalendars() async {
+    final googleOn = await hasCalendarAccess();
+    final (google, outlook) = await (
+      googleOn
+          ? _googleWritableCalendars()
+          : Future.value(const <WritableCalendar>[]),
+      OutlookCalendarService.getWritableCalendars(),
+    ).wait;
+    return [
+      ...google,
+      for (final calendar in outlook)
+        google.isEmpty
+            ? calendar
+            : WritableCalendar(
+                id: calendar.id,
+                name: calendar.name,
+                isPrimary: false,
+                colorHex: calendar.colorHex,
+              ),
+    ];
+  }
+
+  static Future<List<WritableCalendar>> _googleWritableCalendars() async {
     final calendarApi = await _authorizedCalendarApi();
     final calendars = <WritableCalendar>[];
     String? pageToken;
@@ -258,7 +285,7 @@ class CalendarService {
 
   /// The device's IANA zone. Google rejects repeating timed events whose
   /// start has no zone, and uses it to expand repeats across DST.
-  static Future<String?> _deviceTimeZone() async {
+  static Future<String?> deviceTimeZone() async {
     try {
       return (await FlutterTimezone.getLocalTimezone()).identifier;
     } catch (_) {
@@ -279,8 +306,24 @@ class CalendarService {
     if (!end.isAfter(start)) {
       throw ArgumentError('The end time must be after the start time.');
     }
+    // Outlook's calendars, or its default when Google isn't connected.
+    if (calendarId.startsWith('outlook:') ||
+        (calendarId == 'primary' &&
+            !await hasCalendarAccess() &&
+            await OutlookCalendarService.isSignedIn())) {
+      return OutlookCalendarService.createEvent(
+        title: title,
+        start: start,
+        end: end,
+        recurrence: recurrence,
+        allDay: isAllDay,
+        calendarId: calendarId,
+        isPriority: isPriority,
+        priorityReference: priorityReference,
+      );
+    }
 
-    final zone = isAllDay ? null : await _deviceTimeZone();
+    final zone = isAllDay ? null : await deviceTimeZone();
     final event = gcal.Event()
       ..summary = title
       ..start = (gcal.EventDateTime()
@@ -313,7 +356,15 @@ class CalendarService {
     required DateTime end,
     required String recurrence,
   }) async {
-    _requireGoogle(event);
+    if (isOutlook(event)) {
+      return OutlookCalendarService.updateEvent(
+        event,
+        start: start,
+        end: end,
+        allDay: false,
+        recurrence: recurrence,
+      );
+    }
     final calendarId = _calendarIdFor(event);
     final eventId = event.id;
     if (calendarId == null || eventId == null) {
@@ -325,7 +376,7 @@ class CalendarService {
       throw ArgumentError('The end time must be after the start time.');
     }
 
-    final zone = event.start?.timeZone ?? await _deviceTimeZone();
+    final zone = event.start?.timeZone ?? await deviceTimeZone();
     final updated = gcal.Event()
       ..start = (gcal.EventDateTime()
         ..dateTime = start.toUtc()
@@ -365,7 +416,7 @@ class CalendarService {
       ];
     if (!allDay && series.start?.timeZone == null) {
       // Google rejects a repeating timed event without a zone.
-      final zone = await _deviceTimeZone();
+      final zone = await deviceTimeZone();
       updated
         ..start = (gcal.EventDateTime()
           ..dateTime = series.start?.dateTime
@@ -391,6 +442,7 @@ class CalendarService {
   /// The repeating series [event] is one occurrence of, or null when it is
   /// not an occurrence. Occurrences do not carry the series' RRULE.
   static Future<gcal.Event?> seriesFor(gcal.Event event) async {
+    if (isOutlook(event)) return OutlookCalendarService.seriesFor(event);
     final seriesId = event.recurringEventId;
     final calendarId = _calendarIdFor(event);
     if (seriesId == null || calendarId == null) return null;
@@ -425,7 +477,6 @@ class CalendarService {
     bool? isAllDay,
     bool allEvents = false,
   }) async {
-    _requireGoogle(event);
     if (allEvents && event.recurringEventId != null) {
       final series = await seriesFor(event);
       final seriesStart = _startOf(series);
@@ -451,13 +502,6 @@ class CalendarService {
         isAllDay: isAllDay,
       );
     }
-    final sourceCalendarId = _calendarIdFor(event);
-    final eventId = event.id;
-    if (sourceCalendarId == null || eventId == null) {
-      throw StateError(
-        'This event cannot be edited because its calendar is unknown.',
-      );
-    }
     final originalIsAllDay =
         event.start?.dateTime == null && event.start?.date != null;
     final nextIsAllDay = isAllDay ?? originalIsAllDay;
@@ -470,6 +514,24 @@ class CalendarService {
     if (nextStart == null || nextEnd == null || !nextEnd.isAfter(nextStart)) {
       throw ArgumentError('The event must have a valid start and end time.');
     }
+    if (isOutlook(event)) {
+      return OutlookCalendarService.updateEvent(
+        event,
+        title: title,
+        start: nextStart,
+        end: nextEnd,
+        allDay: nextIsAllDay,
+        recurrence: recurrence,
+        calendarId: calendarId,
+      );
+    }
+    final sourceCalendarId = _calendarIdFor(event);
+    final eventId = event.id;
+    if (sourceCalendarId == null || eventId == null) {
+      throw StateError(
+        'This event cannot be edited because its calendar is unknown.',
+      );
+    }
     final updated = gcal.Event()
       ..summary = title?.trim().isNotEmpty == true ? title!.trim() : null;
     if (nextIsAllDay) {
@@ -479,7 +541,7 @@ class CalendarService {
         ..end = (gcal.EventDateTime()
           ..date = DateTime(nextEnd.year, nextEnd.month, nextEnd.day));
     } else {
-      final zone = event.start?.timeZone ?? await _deviceTimeZone();
+      final zone = event.start?.timeZone ?? await deviceTimeZone();
       updated
         ..start = (gcal.EventDateTime()
           ..dateTime = nextStart.toUtc()

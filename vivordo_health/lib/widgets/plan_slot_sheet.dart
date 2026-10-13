@@ -67,7 +67,7 @@ Future<String?> addPriorityCalendarEvent(
       priorityReference: reference.path,
     );
     await reference.update({
-      'sourceEventKey': 'google:${event.id}',
+      'sourceEventKey': CalendarService.eventKey(event),
       'linkedCalendarId': 'primary',
       'sourceEnd': Timestamp.fromDate(end),
     });
@@ -77,7 +77,7 @@ Future<String?> addPriorityCalendarEvent(
       await reference.parent.parent!.parent.parent!
           .collection('priority_templates')
           .doc(templateId)
-          .update({'sourceEventKey': 'google:${event.id}'});
+          .update({'sourceEventKey': CalendarService.eventKey(event)});
     }
     return null;
   } catch (error) {
@@ -85,7 +85,7 @@ Future<String?> addPriorityCalendarEvent(
   }
 }
 
-/// Creates the Google Calendar event in [draft].
+/// Creates the calendar event in [draft], in Google or Outlook.
 Future<void> saveEventDraft(CalendarEventDraft draft) =>
     CalendarService.createEvent(
       title: draft.title,

@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
+import 'package:vivordo_health/src/utils/event_repeat.dart';
 
 void main() {
   // As Graph sends them with `Prefer: outlook.timezone="UTC"`: no zone, seven
@@ -123,13 +127,124 @@ void main() {
     expect(own.me, 'me@contoso.com');
   });
 
-  test('Outlook events key and edit as Outlook', () async {
+  test('Outlook events key as Outlook', () {
     final event = OutlookCalendarService.toGoogleEvent(graphEvent())!;
     expect(CalendarService.isOutlook(event), isTrue);
     expect(CalendarService.eventKey(event), 'outlook:AAMk1');
-    await expectLater(
-      CalendarService.deleteEvent(event),
-      throwsA(isA<StateError>()),
+  });
+
+  test('repeats become Graph patterns', () {
+    final start = DateTime(2026, 10, 13, 9);
+    expect(OutlookCalendarService.graphRecurrence('none', start), isNull);
+    expect(
+      OutlookCalendarService.graphRecurrence(
+        'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;UNTIL=20261231T235959Z',
+        start,
+        zone: 'America/Edmonton',
+      ),
+      {
+        'pattern': {
+          'type': 'weekly',
+          'interval': 2,
+          'daysOfWeek': ['monday', 'wednesday'],
+          'firstDayOfWeek': 'sunday',
+        },
+        'range': {
+          'type': 'endDate',
+          'startDate': '2026-10-13',
+          'endDate': '2026-12-31',
+          'recurrenceTimeZone': 'America/Edmonton',
+        },
+      },
     );
+    // The names priorities use; weekly without days repeats on the start's.
+    expect(
+      OutlookCalendarService.graphRecurrence('weekly', start)!['pattern'],
+      {
+        'type': 'weekly',
+        'interval': 1,
+        'daysOfWeek': ['tuesday'],
+        'firstDayOfWeek': 'sunday',
+      },
+    );
+    expect(
+      OutlookCalendarService.graphRecurrence('monthly', start)!['pattern'],
+      {'type': 'absoluteMonthly', 'interval': 1, 'dayOfMonth': 13},
+    );
+  });
+
+  test('Graph patterns read back as the form edits them', () {
+    final lines = OutlookCalendarService.recurrenceLines({
+      'pattern': {
+        'type': 'weekly',
+        'interval': 2,
+        'daysOfWeek': ['monday', 'wednesday'],
+      },
+      'range': {
+        'type': 'endDate',
+        'startDate': '2026-10-13',
+        'endDate': '2026-12-31',
+      },
+    }, allDay: true);
+    final repeat = EventRepeat.parse(lines);
+    expect(repeat.unit, RepeatUnit.week);
+    expect(repeat.interval, 2);
+    expect(repeat.weekdays, {DateTime.monday, DateTime.wednesday});
+    expect(repeat.until, DateTime(2026, 12, 31));
+    expect(
+      OutlookCalendarService.recurrenceLines({
+        'pattern': {'type': 'daily', 'interval': 1},
+        'range': {'type': 'noEnd', 'startDate': '2026-10-13'},
+      }, allDay: false),
+      ['RRULE:FREQ=DAILY'],
+    );
+    expect(OutlookCalendarService.recurrenceLines(null, allDay: false), isNull);
+  });
+
+  test('priority links and occurrence starts carry over', () {
+    final event = OutlookCalendarService.toGoogleEvent({
+      ...graphEvent(series: 'AAMkS'),
+      'originalStart': '2026-10-13T15:00:00Z',
+      'singleValueExtendedProperties': [
+        {
+          'id':
+              'String {6f3c2d9e-5b1a-4c7e-9d2f-8a4b6c1e3f70} Name '
+              'vivordoPriority',
+          'value': 'users/u/daily_priorities/p1',
+        },
+      ],
+    })!;
+    expect(event.extendedProperties!.private, {
+      'vivordoPriority': 'true',
+      'vivordoPriorityReference': 'users/u/daily_priorities/p1',
+    });
+    expect(event.originalStartTime!.dateTime, DateTime.utc(2026, 10, 13, 15));
+  });
+
+  test('Graph gets at most 3 requests at once, and 429s are retried', () async {
+    var running = 0, most = 0;
+    final release = Completer<void>();
+    final calls = [
+      for (var i = 0; i < 6; i++)
+        OutlookCalendarService.throttled(() async {
+          most = (++running) > most ? running : most;
+          await release.future;
+          running--;
+          return http.Response('', 200);
+        }),
+    ];
+    await Future<void>.delayed(Duration.zero);
+    expect(running, 3);
+    release.complete();
+    await Future.wait(calls);
+    expect(most, 3);
+
+    var attempts = 0;
+    final response = await OutlookCalendarService.throttled(
+      () async => ++attempts == 1
+          ? http.Response('', 429, headers: {'retry-after': '1'})
+          : http.Response('ok', 200),
+    );
+    expect((attempts, response.body), (2, 'ok'));
   });
 }

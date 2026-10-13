@@ -141,7 +141,6 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
   }
 
   Future<void> _handleEventTap(_MonthEvent event) async {
-    final googleEvent = event.googleEvent;
     final action = await showCalendarEventSummarySheet(
       context,
       event: CalendarEventSummaryData(
@@ -153,17 +152,19 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
             event.event.recurringEventId != null ||
             event.event.recurrence?.isNotEmpty == true,
         color: event.color,
-        calendarName: googleEvent == null ? 'Outlook' : 'Google Calendar',
-        canEdit: googleEvent != null,
+        calendarName: CalendarService.isOutlook(event.event)
+            ? 'Outlook'
+            : 'Google Calendar',
+        canEdit: true,
       ),
     );
-    if (googleEvent == null || !mounted) return;
+    if (!mounted) return;
     switch (action) {
       case CalendarEventSummaryAction.edit:
-        await _editGoogleEvent(googleEvent);
+        await _editGoogleEvent(event.event);
         return;
       case CalendarEventSummaryAction.delete:
-        await _deleteGoogleEvent(googleEvent);
+        await _deleteGoogleEvent(event.event);
         return;
       case null:
         return;
@@ -268,7 +269,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
             _selectedDay = DateUtils.dateOnly(draft.date);
           });
           await _loadEvents(forceRefresh: true);
-          _showMessage('Event added to Google Calendar.');
+          _showMessage('Event added to your calendar.');
         } catch (error) {
           if (mounted) setState(() => _loading = false);
           debugPrint('Create calendar event failed: $error');
@@ -291,8 +292,8 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
         DateTime(start.year, start.month, start.day + i),
     ];
     final now = DateTime.now();
-    final hasGoogle = _events.any((e) => e.googleEvent != null);
-    final hasOutlook = _events.any((e) => e.googleEvent == null);
+    final hasOutlook = _events.any((e) => CalendarService.isOutlook(e.event));
+    final hasGoogle = _events.any((e) => !CalendarService.isOutlook(e.event));
 
     return Scaffold(
       backgroundColor: colors.page,
@@ -531,7 +532,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
           title: entry.item.title,
           detail: [
             formatSpan(entry.end.difference(entry.start)),
-            if (entry.item.googleEvent == null) 'Outlook',
+            if (CalendarService.isOutlook(entry.item.event)) 'Outlook',
           ].join(' · '),
           color: entry.item.color,
           past: past,
@@ -772,12 +773,8 @@ class _MonthEvent {
   final bool isAllDay;
   final Color color;
 
-  /// The calendar event, Google's or Outlook's, for reading.
+  /// The calendar event, Google's or Outlook's.
   final gcal.Event event;
-
-  /// [event] when Vivordo can change it: Outlook events are read-only.
-  gcal.Event? get googleEvent =>
-      CalendarService.isOutlook(event) ? null : event;
 
   /// A Google or Outlook event; null when cancelled or without times.
   static _MonthEvent? fromGoogle(gcal.Event event) {

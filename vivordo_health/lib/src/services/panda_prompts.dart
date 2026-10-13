@@ -476,9 +476,7 @@ class PandaPrompts {
                 '${endLocal.minute.toString().padLeft(2, '0')}';
       final title = (e.summary ?? 'event').trim();
       (byDay[dayKey] ??= []).add(
-        '$startHm$endHm ${title.isEmpty ? 'event' : title}'
-        // Vivordo can't change these yet, so Vivordo AI shouldn't offer to.
-        '${CalendarService.isOutlook(e) ? ' (Outlook, read-only)' : ''}',
+        '$startHm$endHm ${title.isEmpty ? 'event' : title}',
       );
       hasAny = true;
     }

@@ -228,7 +228,7 @@ Future<bool> showDayFixTimeSheet(
                 'A breather after ${fix.after}, so the run of meetings '
                     'gets a gap.',
               DayFixKind.addBreak =>
-                'A "Break" in your Google Calendar '
+                'A "Break" in your calendar '
                     '${fix.beforeRun ? 'before' : 'after'} ${fix.after}, so '
                     'the time stays free. Breaks don\'t count towards '
                     'Demand or Effort.',

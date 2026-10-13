@@ -2855,7 +2855,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         case CalendarEventDraft draft:
           await saveEventDraft(draft);
           _refreshHomeCalendarCards();
-          _showHomeCalendarMessage('Event added to Google Calendar.');
+          _showHomeCalendarMessage('Event added to your calendar.');
       }
     } catch (error) {
       debugPrint('Plan opening save failed: $error');
@@ -3135,7 +3135,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         calendarName: CalendarService.isOutlook(event)
             ? 'Outlook'
             : 'Google Calendar',
-        canEdit: !CalendarService.isOutlook(event),
+        canEdit: true,
       ),
     );
     if (!mounted || action == null) return;

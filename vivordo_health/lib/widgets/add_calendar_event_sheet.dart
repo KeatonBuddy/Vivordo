@@ -147,7 +147,7 @@ Future<EventScope?> confirmEventDelete(
   final confirmed = await confirmAction(
     context,
     title: 'Delete event?',
-    message: 'This deletes “$title” from Google Calendar.',
+    message: 'This deletes “$title” from your calendar.',
     confirmLabel: 'Delete',
   );
   return confirmed ? EventScope.thisEvent : null;
@@ -335,7 +335,18 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
 
   Future<void> _loadCalendars() async {
     try {
-      final calendars = await CalendarService.getWritableCalendars();
+      final initial = widget.initialCalendarId;
+      final calendars = [
+        for (final calendar in await CalendarService.getWritableCalendars())
+          // An event stays with its account: Google events move between
+          // Google calendars, Outlook ones stay where they are.
+          if (!widget.isEditing ||
+              initial == null ||
+              (initial.startsWith('outlook:')
+                  ? calendar.id == initial
+                  : !calendar.id.startsWith('outlook:')))
+            calendar,
+      ];
       if (!mounted) return;
       setState(() {
         _calendars = calendars;
