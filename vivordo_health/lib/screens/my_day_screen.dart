@@ -58,6 +58,7 @@ import '../src/utils/meeting_patterns.dart';
 import '../src/utils/training_load_view.dart';
 import '../src/utils/burnout_view.dart';
 import '../src/utils/day_fixes.dart';
+import '../src/utils/my_day_alerts.dart';
 import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
 import '../src/utils/sleep_schedule.dart';
@@ -1033,36 +1034,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 key: widget.briefKey,
                 child: _buildDayOutlookCard(timedEvents: timedEvents),
               ),
-              // Sundays, once the check-in is done: the week in review.
-              ValueListenableBuilder<AsyncSnapshot<WeeklyReviewCardState?>>(
-                valueListenable: _weeklyReviewSnapshot,
-                builder: (context, snapshot, _) => snapshot.data == null
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: WeeklyReviewCard(state: snapshot.data!),
-                      ),
-              ),
-              ValueListenableBuilder<AsyncSnapshot<BurnoutView?>>(
-                valueListenable: _burnoutSnapshot,
-                builder: (context, snapshot, _) => snapshot.data == null
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: BurnoutCard(view: snapshot.data!),
-                      ),
-              ),
-              // High or Strained only; Fitness shows every state.
-              ValueListenableBuilder<AsyncSnapshot<TrainingLoadView?>>(
-                valueListenable: _trainingLoadSnapshot,
-                builder: (context, snapshot, _) => snapshot.data?.alert != true
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: TrainingLoadAlert(view: snapshot.data!),
-                      ),
-              ),
-              _buildEnergyEvening(),
+              // What's on now comes straight after the brief: it changes
+              // hour to hour, the alerts below over days.
               const SizedBox(height: 24),
               KeyedSubtree(
                 key: widget.nowKey,
@@ -1075,6 +1048,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
+              _buildAlerts(),
               const SizedBox(height: 24),
               KeyedSubtree(
                 key: widget.prioritiesKey,
@@ -1212,41 +1186,145 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   /// After the end-of-day time: wind-down, bed-by and tomorrow's forecast.
-  Widget _buildEnergyEvening() => ListenableBuilder(
-    listenable: Listenable.merge([_briefSnapshot, _capacitySnapshot]),
+  /// The day "N more" was opened on; the extra alerts stay open that day.
+  String? _moreAlertsDay;
+
+  /// Burnout, training load and Sunday's review, most serious first
+  /// ([rankMyDayAlerts]): one card, then "N more" for the rest.
+  Widget _buildAlerts() => ListenableBuilder(
+    listenable: Listenable.merge([
+      _weeklyReviewSnapshot,
+      _burnoutSnapshot,
+      _trainingLoadSnapshot,
+    ]),
     builder: (context, _) {
-      final now = DateTime.now();
-      final today = DateUtils.dateOnly(now);
-      if (now.isBefore(today.add(Duration(minutes: _wrapUpMinutes)))) {
-        return const SizedBox.shrink();
-      }
-      final tonight = _energyForecast(today);
-      if (tonight == null) return const SizedBox.shrink();
-      final first = _tomorrowFirst();
-      return Padding(
+      final burnout = _burnoutSnapshot.value.data;
+      final load = _trainingLoadSnapshot.value.data;
+      final review = _weeklyReviewSnapshot.value.data;
+      final alerts = rankMyDayAlerts(
+        burnout: burnout?.level,
+        trainingLoad: load?.state,
+        weeklyReview: review != null,
+      );
+      if (alerts.isEmpty) return const SizedBox.shrink();
+      Widget card(MyDayAlert alert) => Padding(
         padding: const EdgeInsets.only(top: 12),
-        child: EnergyEveningCard(
-          tonight: tonight,
-          tomorrow: tomorrowEnergyForecast(
-            tonight: tonight,
-            today: today,
-            nights: _briefSnapshot.value.data?.sleepNights ?? const [],
-            schedule: _sleepSchedule,
-          ),
-          firstEventTitle: first?.title,
-          firstEventStart: first?.start,
-          onTap: () => showEnergyForecastSheet(context, tonight),
-          bigDayRatio: _capacitySnapshot.value.data?.todayBigDayRatio,
-          lieIn: weekendLieIn(
-            _briefSnapshot.value.data?.sleepNights ?? const [],
-            today,
-          ),
-          reminder: _windDownReminder,
-          onReminder: (on) => _setWindDownReminder(on, first?.start),
-        ),
+        child: switch (alert) {
+          MyDayAlert.burnout => BurnoutCard(view: burnout!),
+          MyDayAlert.trainingLoad => TrainingLoadAlert(view: load!),
+          MyDayAlert.weeklyReview => WeeklyReviewCard(state: review!),
+        },
+      );
+      final today = localDayKey(DateTime.now());
+      final rest = alerts.skip(1).toList();
+      final colors = context.vivordoColors;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 12),
+          card(alerts.first),
+          if (_moreAlertsDay == today)
+            for (final alert in rest) card(alert)
+          else if (rest.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Material(
+                color: colors.card,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(color: Colors.black.withValues(alpha: .07)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => setState(() => _moreAlertsDay = today),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 11,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.layers_outlined,
+                          size: 18,
+                          color: colors.textSecondary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '${rest.length} more: '
+                            '${rest.map((a) => a.label).join(', ')}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: colors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color: colors.textSecondary,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       );
     },
   );
+
+  /// Tonight in the evening brief: wind-down and bed-by (tap for the
+  /// forecast), and the wind-down reminder switch.
+  Widget _briefTonight(EnergyForecast tonight) {
+    final windDown = tonight.window(EnergyPhase.windDown);
+    final first = _tomorrowFirst();
+    final text = [
+      if (windDown != null)
+        'Wind down ${DateFormat.jm().format(windDown.start)}',
+      'Bed by ${DateFormat.jm().format(tonight.bedBy)}',
+    ].join(' · ');
+    return Material(
+      color: Colors.white.withValues(alpha: .12),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => showEnergyForecastSheet(context, tonight),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+          child: Row(
+            children: [
+              const Icon(Icons.bedtime_outlined, size: 18, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (windDown != null) ...[
+                const Text(
+                  'Remind me',
+                  style: TextStyle(color: Color(0xFFE8E0FF), fontSize: 12),
+                ),
+                Switch.adaptive(
+                  value: _windDownReminder == true,
+                  activeTrackColor: const Color(0xFFD0A5FF),
+                  onChanged: (on) => _setWindDownReminder(on, first?.start),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildDayOutlookCard({
     required List<_CalendarEvent> timedEvents,
@@ -1358,8 +1436,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 ? tomorrowHeavy
                       ? 'Tomorrow looks heavy'
                       : 'Today’s plan is done'
-                : _burnoutSnapshot.value.data?.level == 'warning'
-                ? 'Give yourself a little more room today'
                 : recovering
                 ? bigDayHeadline(bigDay, today)
                 : capacityScore == null || !ready
@@ -1375,6 +1451,75 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     briefPriorities.where((p) => !p.completed).length,
                   )
                 : 'Your plan isn’t fully loaded yet.';
+            // Ways to lighten today (docs/scores.md §2), when Demand
+            // outruns Capacity and the card isn't hidden for today.
+            // In the evening, the same card for tomorrow's plan.
+            final tomorrowEvents = [
+              for (final e in _tomorrowEvents)
+                if (!e.isAllDay) e,
+            ];
+            final fixes = evening
+                ? !tomorrowHeavy || _eveningFixesHiddenDay == localDayKey(today)
+                      ? const <DayFix>[]
+                      : _dayFixes(
+                          now,
+                          tomorrowEvents,
+                          tomorrowPriorities,
+                          day: tomorrow,
+                        )
+                : !ready ||
+                      capacityScore == null ||
+                      demandFit(demand, capacityScore) != DemandFit.over ||
+                      _fixesHiddenDay == localDayKey(today)
+                ? const <DayFix>[]
+                : _dayFixes(now, timedEvents, todayPriorities);
+            if (fixes.isNotEmpty) {
+              _logFixesShown(fixes, day: evening ? tomorrow : today);
+            }
+            // Past the end-of-day time: tonight's wind-down and bed-by,
+            // from the energy forecast.
+            final tonight =
+                now.isBefore(today.add(Duration(minutes: _wrapUpMinutes)))
+                ? null
+                : _energyForecast(today);
+            // The evening notes the energy card used to carry.
+            final bigDayRatio = server?.todayBigDayRatio;
+            final lieIn = tonight == null
+                ? null
+                : weekendLieIn(summary?.sleepNights ?? const [], today);
+            final tonightNote = tonight == null
+                ? ''
+                : [
+                    if (bigDayRatio != null)
+                      ' Big day today, about ${bigDayRatio.round()}× your '
+                          'usual activity: keep tomorrow light.',
+                    if (lieIn != null)
+                      ' You slept in this weekend; your usual bedtime makes '
+                          'tomorrow morning easier.',
+                  ].join();
+            final action = fixes.isEmpty && tonight == null
+                ? null
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (tonight != null) _briefTonight(tonight),
+                      if (tonight != null && fixes.isNotEmpty)
+                        const SizedBox(height: 8),
+                      if (fixes.isNotEmpty)
+                        BriefFix(
+                          fixes: fixes,
+                          tomorrow: evening,
+                          onOpen: (fix) => _openDayFix(
+                            fix,
+                            demand,
+                            evening ? tomorrowEvents : timedEvents,
+                            evening ? tomorrowPriorities : todayPriorities,
+                            day: evening ? tomorrow : today,
+                          ),
+                          onHide: evening ? _hideEveningFixes : _hideDayFixes,
+                        ),
+                    ],
+                  );
             String timeLabel(DateTime? t) =>
                 t == null ? 'unknown' : DateFormat('MMM d, h:mm a').format(t);
             if (ready) {
@@ -1398,10 +1543,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   selector: (_, c) => c.showScoreNumbers,
                   builder: (context, showNumbers, _) => DailyBriefCard(
                     headline: headline,
+                    action: action,
                     // Last night against the need Home and Capacity use;
                     // nothing about sleep for someone who doesn't track it.
                     summary:
-                        '${sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0, inBed: summary?.sleepInBed ?? false)} $calendarText'
+                        '${sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0, inBed: summary?.sleepInBed ?? false)} $calendarText$tonightNote'
                             .trim(),
                     // In the evening it sits beside tomorrow's Demand, so
                     // it shows what tomorrow is compared with.
@@ -1510,48 +1656,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 );
-            // Ways to lighten today (docs/scores.md §2), when Demand
-            // outruns Capacity and the card isn't hidden for today.
-            // In the evening, the same card for tomorrow's plan.
-            final tomorrowEvents = [
-              for (final e in _tomorrowEvents)
-                if (!e.isAllDay) e,
-            ];
-            final fixes = evening
-                ? !tomorrowHeavy || _eveningFixesHiddenDay == localDayKey(today)
-                      ? const <DayFix>[]
-                      : _dayFixes(
-                          now,
-                          tomorrowEvents,
-                          tomorrowPriorities,
-                          day: tomorrow,
-                        )
-                : !ready ||
-                      capacityScore == null ||
-                      demandFit(demand, capacityScore) != DemandFit.over ||
-                      _fixesHiddenDay == localDayKey(today)
-                ? const <DayFix>[]
-                : _dayFixes(now, timedEvents, todayPriorities);
-            if (fixes.isEmpty) return brief;
-            _logFixesShown(fixes, day: evening ? tomorrow : today);
-            return Column(
-              children: [
-                brief,
-                const SizedBox(height: 12),
-                DayFixesCard(
-                  fixes: fixes,
-                  tomorrow: evening,
-                  onOpen: (fix) => _openDayFix(
-                    fix,
-                    demand,
-                    evening ? tomorrowEvents : timedEvents,
-                    evening ? tomorrowPriorities : todayPriorities,
-                    day: evening ? tomorrow : today,
-                  ),
-                  onHide: evening ? _hideEveningFixes : _hideDayFixes,
-                ),
-              ],
-            );
+            return brief;
           },
         ),
       );
@@ -2110,6 +2215,46 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         .firstOrNull;
     final next = timedEvents.where((e) => e.start.isAfter(now)).firstOrNull;
     final noCalendar = !_calendarConnected;
+    // Past the end-of-day time with nothing left: one line, so the evening
+    // brief leads.
+    final today = DateUtils.dateOnly(now);
+    if (!noCalendar &&
+        current == null &&
+        next == null &&
+        !now.isBefore(today.add(Duration(minutes: _wrapUpMinutes)))) {
+      final first = _tomorrowFirst();
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                color: timelineDoneGreen,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Done for today',
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            if (first != null)
+              Text(
+                'Tomorrow ${formatClock(first.start)}',
+                style: TextStyle(color: colors.textSecondary, fontSize: 12),
+              ),
+          ],
+        ),
+      );
+    }
     final (title, detail) = noCalendar
         ? ('No calendar connected', 'Your events and openings show up here')
         : current != null

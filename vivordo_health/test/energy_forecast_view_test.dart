@@ -150,80 +150,6 @@ void main() {
     );
   });
 
-  testWidgets('the evening card shows bed-by and tomorrow\'s forecast', (
-    tester,
-  ) async {
-    final tonight = forecastEnergy(
-      day: day,
-      nights: nights(hours: 7),
-      sleepNeedHours: 7.5,
-      tomorrowFirstEvent: DateTime(2026, 10, 9, 7),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: VivordoTheme.light,
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: EnergyEveningCard(
-              tonight: tonight,
-              tomorrow: tomorrowEnergyForecast(
-                tonight: tonight,
-                today: day,
-                nights: nights(hours: 7),
-              ),
-              firstEventTitle: 'Client call',
-              firstEventStart: DateTime(2026, 10, 9, 7),
-            ),
-          ),
-        ),
-      ),
-    );
-    // DateFormat puts a narrow no-break space before AM/PM.
-    String t(String time) => time.replaceAll(' ', '\u202f');
-    // 7 AM − 1 h − 7.5 h = 10:30 PM, before the usual 11:30 PM.
-    expect(find.text('Wind down from ${t('9:30 PM')}'), findsOneWidget);
-    expect(find.text(t('10:30 PM')), findsOneWidget);
-    expect(
-      find.textContaining('Client call at ${t('7:00 AM')}'),
-      findsOneWidget,
-    );
-    expect(find.textContaining('Peak'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('a big day today says to keep tomorrow light', (tester) async {
-    final tonight = forecastEnergy(
-      day: day,
-      nights: nights(hours: 7),
-      sleepNeedHours: 7.5,
-    );
-    Future<void> show(double? ratio) => tester.pumpWidget(
-      MaterialApp(
-        theme: VivordoTheme.light,
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: EnergyEveningCard(
-              tonight: tonight,
-              tomorrow: tomorrowEnergyForecast(
-                tonight: tonight,
-                today: day,
-                nights: nights(hours: 7),
-              ),
-              bigDayRatio: ratio,
-            ),
-          ),
-        ),
-      ),
-    );
-    await show(null);
-    expect(find.textContaining('Big day today'), findsNothing);
-    await show(3.1);
-    expect(
-      find.textContaining('Big day today, about 3× your usual'),
-      findsOneWidget,
-    );
-  });
-
   test('wind-down reminders follow each night\'s forecast', () {
     String t(String time) => time.replaceAll(' ', '\u202f');
     // A Thursday; 11 PM–7 AM nights and an 8 h need.
@@ -301,44 +227,6 @@ void main() {
     // weekday one again.
     expect(early[1].at, DateTime(2026, 10, 9, 23, 30));
     expect(early[3].at, DateTime(2026, 10, 11, 22));
-  });
-
-  testWidgets('the evening card offers the reminder once', (tester) async {
-    String t(String time) => time.replaceAll(' ', '\u202f');
-    final tonight = forecastEnergy(
-      day: day,
-      nights: nights(),
-      sleepNeedHours: 8,
-    );
-    final answers = <bool>[];
-    Future<void> show(bool? reminder) => tester.pumpWidget(
-      MaterialApp(
-        theme: VivordoTheme.light,
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: EnergyEveningCard(
-              tonight: tonight,
-              tomorrow: tonight,
-              reminder: reminder,
-              onReminder: answers.add,
-            ),
-          ),
-        ),
-      ),
-    );
-
-    await show(null);
-    await tester.tap(find.text('Remind me at ${t('10:00 PM')}'));
-    await tester.tap(find.text('No thanks'));
-    expect(answers, [true, false]);
-
-    await show(true);
-    expect(find.text('Reminder at ${t('10:00 PM')}'), findsOneWidget);
-    await tester.tap(find.text('Turn off'));
-    expect(answers.last, isFalse);
-
-    await show(false);
-    expect(find.textContaining('Remind'), findsNothing);
   });
 
   test('Vivordo AI gets the day\'s windows, sleep and clashes', () {

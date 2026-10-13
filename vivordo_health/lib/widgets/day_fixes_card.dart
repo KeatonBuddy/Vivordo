@@ -85,40 +85,9 @@ class _FixRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    final (icon, tint, title, detail) = switch (fix.kind) {
-      DayFixKind.movePriority => (
-        Icons.event_repeat_rounded,
-        VivordoTheme.brand,
-        'Move "${fix.title}"',
-        'To a lighter day this week',
-      ),
-      DayFixKind.buffer => (
-        Icons.more_time_rounded,
-        const Color(0xFF378ADD),
-        '15-min buffer before ${fix.title}',
-        'Ends the back-to-back after ${fix.after}',
-      ),
-      DayFixKind.energySlot => (
-        Icons.bolt_rounded,
-        _green,
-        '${fix.title} at ${_time(fix.newStart!)}',
-        'Out of a low-energy window, into your best time',
-      ),
-      DayFixKind.addBreak => (
-        Icons.self_improvement_rounded,
-        const Color(0xFF0F6E56),
-        '15-min break at ${_time(fix.newStart!)}',
-        '${fix.beforeRun ? 'Before' : 'After'} ${_runText(fix.runMinutes)} '
-            'of back-to-back',
-      ),
-    };
+    final (icon, tint, title, detail) = _fixText(fix);
+    final label = _fixLabel(fix);
     final saved = fix.demandSaved.round();
-    // Fixes that don't take Demand off say what they do instead.
-    final label = saved >= 1
-        ? null
-        : fix.kind == DayFixKind.addBreak
-        ? 'Breather'
-        : 'Fits peak';
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
@@ -177,6 +146,154 @@ class _FixRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// What a fix says: icon, colour, title and detail.
+(IconData, Color, String, String) _fixText(DayFix fix) => switch (fix.kind) {
+  DayFixKind.movePriority => (
+    Icons.event_repeat_rounded,
+    VivordoTheme.brand,
+    'Move "${fix.title}"',
+    'To a lighter day this week',
+  ),
+  DayFixKind.buffer => (
+    Icons.more_time_rounded,
+    const Color(0xFF378ADD),
+    '15-min buffer before ${fix.title}',
+    'Ends the back-to-back after ${fix.after}',
+  ),
+  DayFixKind.energySlot => (
+    Icons.bolt_rounded,
+    _green,
+    '${fix.title} at ${_time(fix.newStart!)}',
+    'Out of a low-energy window, into your best time',
+  ),
+  DayFixKind.addBreak => (
+    Icons.self_improvement_rounded,
+    const Color(0xFF0F6E56),
+    '15-min break at ${_time(fix.newStart!)}',
+    '${fix.beforeRun ? 'Before' : 'After'} ${_runText(fix.runMinutes)} '
+        'of back-to-back',
+  ),
+};
+
+/// Fixes that don't take Demand off say what they do instead; null when
+/// it's the Demand saved.
+String? _fixLabel(DayFix fix) => fix.demandSaved.round() >= 1
+    ? null
+    : fix.kind == DayFixKind.addBreak
+    ? 'Breather'
+    : 'Fits peak';
+
+/// The top fix inside My Day's brief, under its headline: what to do and a
+/// "Do it". With more fixes, "+N more" opens them all; the X hides fixes
+/// until tomorrow (until morning, for tomorrow's).
+class BriefFix extends StatelessWidget {
+  const BriefFix({
+    super.key,
+    required this.fixes,
+    required this.onOpen,
+    required this.onHide,
+    this.tomorrow = false,
+  });
+
+  final List<DayFix> fixes;
+  final ValueChanged<DayFix> onOpen;
+  final VoidCallback onHide;
+  final bool tomorrow;
+
+  @override
+  Widget build(BuildContext context) {
+    final fix = fixes.first;
+    final (_, _, title, _) = _fixText(fix);
+    final tag = _fixLabel(fix) ?? '−${fix.demandSaved.round()}';
+    const ink = Color(0xFF26215C);
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFE6E1FF),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 4, 0, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$title · $tag',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => onOpen(fix),
+                style: TextButton.styleFrom(
+                  foregroundColor: VivordoTheme.brand,
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text(
+                  'Do it',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                tooltip: tomorrow
+                    ? 'Hide until morning'
+                    : 'Hide until tomorrow',
+                visualDensity: VisualDensity.compact,
+                onPressed: onHide,
+                icon: const Icon(Icons.close_rounded, size: 18, color: ink),
+              ),
+            ],
+          ),
+          if (fixes.length > 1)
+            InkWell(
+              onTap: () => showModalBottomSheet<void>(
+                context: context,
+                useRootNavigator: true,
+                backgroundColor: Colors.transparent,
+                builder: (sheetContext) => SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 84),
+                    child: DayFixesCard(
+                      fixes: fixes,
+                      tomorrow: tomorrow,
+                      onOpen: (fix) {
+                        Navigator.pop(sheetContext);
+                        onOpen(fix);
+                      },
+                      onHide: () {
+                        Navigator.pop(sheetContext);
+                        onHide();
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  '+${fixes.length - 1} more '
+                  '${fixes.length == 2 ? 'way' : 'ways'} to lighten '
+                  '${tomorrow ? 'tomorrow' : 'today'} ›',
+                  style: const TextStyle(
+                    color: VivordoTheme.brand,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -28,7 +28,12 @@ class DailyBriefCard extends StatelessWidget {
     this.onDetails,
     this.now,
     this.words,
+    this.action,
   });
+
+  /// Under the summary: the day's top fix, and in the evening tonight's
+  /// wind-down.
+  final Widget? action;
 
   final String headline, summary, capacityLabel, scheduleLabel, footer;
   final int? capacityScore, scheduleScore;
@@ -103,6 +108,10 @@ class DailyBriefCard extends StatelessWidget {
                   height: 1.45,
                 ),
               ),
+              if (action case final action?) ...[
+                const SizedBox(height: 12),
+                action,
+              ],
               const SizedBox(height: 16),
               const Divider(color: Colors.white24, height: 1),
               const SizedBox(height: 16),
