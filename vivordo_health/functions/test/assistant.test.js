@@ -396,6 +396,10 @@ test("propose_calendar_change checks creates and finds existing events in SCHEDU
   const r = req({context: {schedule}});
   assert.deepEqual(planCalendar({operation: "create", title: "Run", start: "2026-10-02T18:00", end: "2026-10-02T18:45"}, r).action,
       {type: "calendar", operation: "create", title: "Run", start: "2026-10-02T18:00", end: "2026-10-02T18:45"});
+  // Only when the user names one; the app adds it there instead of the default.
+  assert.deepEqual(planCalendar({operation: "create", title: "Run", start: "2026-10-02T18:00", end: "2026-10-02T18:45", calendar: "outlook"}, r).action,
+      {type: "calendar", operation: "create", title: "Run", start: "2026-10-02T18:00", end: "2026-10-02T18:45", calendar: "outlook"});
+  assert.match(planCalendar({operation: "create", title: "Run", start: "2026-10-02T18:00", end: "2026-10-02T18:45", calendar: "icloud"}, r).result, /google or outlook/);
   assert.match(planCalendar({operation: "create", title: "Run", start: "2026-10-02T18:00"}, r).result, /needs a title, start and end/);
   assert.match(planCalendar({operation: "create", title: "Run", start: "2026-10-02T18:00", end: "2026-10-02T17:00"}, r).result, /end must be after/);
   assert.deepEqual(planCalendar({operation: "update", target_title: "investor sync", start: "2026-10-02T11:00", end: "2026-10-02T12:00"}, r).action,

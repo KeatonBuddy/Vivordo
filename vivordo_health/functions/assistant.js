@@ -128,7 +128,7 @@ filled_slots holds only what the user said in THIS message (the app merges turns
 
 ACTIONS (the app asks the user to confirm each one; never claim a change is done)
 - Priorities, tasks and reminders: look them up with get_priorities (any date range; the result gives each one's id), then call propose_priority. "Remind me" and "set a reminder" create a priority, never a calendar event. create needs a title; update and delete need the target_id from get_priorities (fetch first; never guess). date is the NEW day; scheduled_at and reminder_at are local YYYY-MM-DDTHH:mm with no offset; omit fields that don't change. Undated priorities may omit date. Only single occurrences: ask before touching a recurring series. Reminders must fall on the priority's day, at or before its scheduled time, and in the future.
-- Calendar: propose_calendar_change {operation create|update|delete, title (new title), target_title (the existing event's exact title from SCHEDULE), start, end (local YYYY-MM-DDTHH:mm), recurrence}. Resolve relative dates from the local current date and SCHEDULE. Never guess a missing title, date or time; ask instead.
+- Calendar: propose_calendar_change {operation create|update|delete, title (new title), target_title (the existing event's exact title from SCHEDULE), start, end (local YYYY-MM-DDTHH:mm), recurrence, calendar}. Resolve relative dates from the local current date and SCHEDULE. Never guess a missing title, date or time; ask instead. New events go to the user's default calendar; set calendar (google or outlook) only when they say which one. SCHEDULE marks Outlook events "(Outlook)".
 - Each proposal appears as a card under your message with its own buttons; don't explain how to use it. Your earlier replies in this chat end with [Proposed changes: ...] saying whether each was done, cancelled or not confirmed. A change mentioned in RECENT CONVERSATIONS may not have happened, so before saying something is planned or done, check SCHEDULE or get_priorities.
 - If a proposal comes back "Not proposed", fix it or ask the user; don't tell them it's done. You may propose several changes in one turn. Finish a reminder or priority request before returning to check-in questions.
 - ${REMINDER_RULES}`;
@@ -223,6 +223,12 @@ const TOOLS = [
         start: {type: "string", description: "YYYY-MM-DDTHH:mm"},
         end: {type: "string", description: "YYYY-MM-DDTHH:mm"},
         recurrence: {type: "string"},
+        calendar: {
+          type: "string",
+          enum: ["google", "outlook"],
+          description: "Which account a new event goes in; only when the " +
+            "user names one",
+        },
       },
       required: ["operation"],
     },
@@ -923,6 +929,10 @@ function planCalendar(input, request) {
   const title = text(input.title);
   const target = text(input.target_title);
   const recurrence = text(input.recurrence);
+  const calendar = input.calendar ?? null;
+  if (calendar !== null && !["google", "outlook"].includes(calendar)) {
+    return no("calendar must be google or outlook.");
+  }
   for (const key of ["start", "end"]) {
     if (input[key] != null && !realTime(input[key])) {
       return no(`${key} must be a local YYYY-MM-DDTHH:mm time.`);
@@ -936,9 +946,11 @@ function planCalendar(input, request) {
     if (!title || !start || !end) {
       return no("a new event needs a title, start and end.");
     }
-    return {action: {type: "calendar", operation: op, ...fields},
-      result: `Proposed: add "${title}" at ${start}. The app will ask the ` +
-        "user to confirm."};
+    return {action: {type: "calendar", operation: op, ...fields,
+      ...(calendar && {calendar})},
+    result: `Proposed: add "${title}" at ${start}` +
+      `${calendar ? ` in ${calendar === "outlook" ? "Outlook" : "Google"}` :
+        ""}. The app will ask the user to confirm.`};
   }
   const schedule = request.context.schedule;
   if (!schedule) return no("the user's calendar isn't connected.");

@@ -189,7 +189,11 @@ Future<String> applyPriorityAction(
 /// One-line description of a proposed calendar change.
 String calendarActionSummary(PandaCalendarAction action) =>
     switch (action.operation) {
-      PandaCalendarOperation.create => 'Create “${action.title}”',
+      PandaCalendarOperation.create => switch (action.calendar) {
+        'outlook' => 'Create “${action.title}” in Outlook',
+        'google' => 'Create “${action.title}” in Google Calendar',
+        _ => 'Create “${action.title}”',
+      },
       PandaCalendarOperation.update => 'Edit “${action.targetTitle}”',
       PandaCalendarOperation.delete => 'Delete “${action.targetTitle}”',
     };
@@ -203,6 +207,12 @@ Future<void> applyCalendarAction(PandaCalendarAction action) async {
       start: action.start!,
       end: action.end!,
       recurrence: action.recurrence,
+      calendarId: switch (action.calendar) {
+        final String account => await CalendarService.defaultCalendarIdIn(
+          account,
+        ),
+        null => null,
+      },
     );
     return;
   }

@@ -307,6 +307,27 @@ class CalendarService {
     }
   }
 
+  /// Where a new event goes when the user names the account ('google' or
+  /// 'outlook'): their default calendar when it's in that account, else
+  /// that account's main calendar. Throws when it isn't connected.
+  static Future<String> defaultCalendarIdIn(String account) async {
+    final outlook = account == 'outlook';
+    if (!(outlook
+        ? await OutlookCalendarService.isSignedIn()
+        : await hasCalendarAccess())) {
+      throw StateError(
+        '${outlook ? 'Outlook' : 'Google Calendar'} isn’t connected. '
+        'Connect it in Settings.',
+      );
+    }
+    final chosen = await defaultCalendarId();
+    return chosen.startsWith('outlook:') == outlook
+        ? chosen
+        : outlook
+        ? OutlookCalendarService.mainCalendarId
+        : 'primary';
+  }
+
   /// The default calendar picked in Settings, unchecked; null when none.
   static Future<String?> savedDefaultCalendarId() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;

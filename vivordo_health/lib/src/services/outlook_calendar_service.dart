@@ -177,6 +177,9 @@ class OutlookCalendarService {
         text.contains('admin approval');
   }
 
+  /// The user's main Outlook calendar, wherever Outlook puts new events.
+  static const String mainCalendarId = 'outlook:main';
+
   /// Where an organisation's admin approves Vivordo for everyone in it.
   static const String adminConsentUrl =
       'https://login.microsoftonline.com/organizations/adminconsent'
@@ -701,7 +704,10 @@ class OutlookCalendarService {
     String? priorityReference,
   }) async {
     final zone = await CalendarService.deviceTimeZone();
-    final graphCalendar = calendarId == null || calendarId == 'primary'
+    final graphCalendar =
+        calendarId == null ||
+            calendarId == 'primary' ||
+            calendarId == mainCalendarId
         ? null
         : _graphId(calendarId);
     final json = await _send(

@@ -476,7 +476,8 @@ class PandaPrompts {
                 '${endLocal.minute.toString().padLeft(2, '0')}';
       final title = (e.summary ?? 'event').trim();
       (byDay[dayKey] ??= []).add(
-        '$startHm$endHm ${title.isEmpty ? 'event' : title}',
+        '$startHm$endHm ${title.isEmpty ? 'event' : title}'
+        '${CalendarService.isOutlook(e) ? ' (Outlook)' : ''}',
       );
       hasAny = true;
     }
@@ -922,6 +923,10 @@ class PandaPrompts {
       start: start,
       end: end,
       recurrence: raw['recurrence']?.toString().trim() ?? 'none',
+      calendar: switch (raw['calendar']) {
+        'google' || 'outlook' => raw['calendar'] as String,
+        _ => null,
+      },
     );
   }
 

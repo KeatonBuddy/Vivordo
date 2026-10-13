@@ -92,6 +92,7 @@ class PandaCalendarAction {
     this.start,
     this.end,
     this.recurrence = 'none',
+    this.calendar,
   });
 
   final PandaCalendarOperation operation;
@@ -100,6 +101,10 @@ class PandaCalendarAction {
   final DateTime? start;
   final DateTime? end;
   final String recurrence;
+
+  /// 'google' or 'outlook' when the user named the account a new event goes
+  /// in; null for their default calendar.
+  final String? calendar;
 }
 
 /// Full structured reply from a single dialogue turn.
