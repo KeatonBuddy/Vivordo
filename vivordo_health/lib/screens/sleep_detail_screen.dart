@@ -12,18 +12,14 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/fitbit_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/services/whoop_service.dart';
-import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/server_capacity.dart';
-import 'package:vivordo_health/src/utils/sleep_nights.dart';
-import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
-import 'package:vivordo_health/widgets/ios_pull_down_menu.dart';
-import 'package:vivordo_health/widgets/sleep_schedule_editor.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
+import 'sleep_preferences_screen.dart';
 
 bool hasRecordedSleep(Map<String, dynamic>? dailyMetrics) {
   final sleep = dailyMetrics?['sleep'];
@@ -79,13 +75,9 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   DateTime? _lastRefreshAt;
   bool _refreshingSleep = false;
 
-  /// `preferences.windDownReminder`, for the menu's switch.
-  bool _windDownReminder = false;
-
   @override
   void initState() {
     super.initState();
-    unawaited(_loadWindDownReminder());
     unawaited(_loadSleepNeed());
   }
 
@@ -116,39 +108,6 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
       if (mounted && need != _sleepNeed) setState(() => _sleepNeed = need);
     } catch (error) {
       debugPrint('Sleep need failed to load: $error');
-    }
-  }
-
-  Future<void> _loadWindDownReminder() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    try {
-      final user = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
-      final on = (user.data()?['preferences'] as Map?)?['windDownReminder'];
-      if (mounted) setState(() => _windDownReminder = on == true);
-    } catch (_) {
-      // Shows as off.
-    }
-  }
-
-  Future<void> _toggleWindDownReminder() async {
-    final on = !_windDownReminder;
-    setState(() => _windDownReminder = on);
-    try {
-      await WindDownReminders.setEnabled(on);
-      if (mounted) {
-        showToast(
-          context,
-          on
-              ? 'Wind-down reminder on. It follows your forecast each night.'
-              : 'Wind-down reminder off.',
-        );
-      }
-    } catch (_) {
-      if (mounted) setState(() => _windDownReminder = !on);
     }
   }
 
@@ -241,40 +200,6 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         .snapshots();
   }
 
-  Future<void> _editSleepSchedule() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    SleepSchedule? current;
-    try {
-      final user = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
-      current = SleepSchedule.fromPreferences(
-        user.data()?['preferences'] as Map?,
-      );
-      // Nothing saved yet: start from the last two weeks of tracked sleep.
-      if (current == null) {
-        final today = DateUtils.dateOnly(DateTime.now());
-        final days = await user.reference
-            .collection('metrics_daily')
-            .where(
-              FieldPath.documentId,
-              isGreaterThan: localDayKey(
-                today.subtract(const Duration(days: 14)),
-              ),
-            )
-            .get();
-        current = SleepSchedule.fromNights(
-          sleepNights([for (final day in days.docs) day.data()]),
-        );
-      }
-    } catch (_) {
-      // Starts from 11:30 PM–7 AM.
-    }
-    if (mounted) await showSleepScheduleSheet(context, current);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -292,24 +217,13 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         actions: [
-          IosPullDownMenu<bool>(
-            tooltip: 'Sleep options',
-            // true = wind-down reminder, false = usual sleep schedule.
-            onSelected: (reminder) =>
-                reminder ? _toggleWindDownReminder() : _editSleepSchedule(),
-            actions: [
-              const IosMenuAction(
-                value: false,
-                label: 'Usual sleep schedule',
-                icon: CupertinoIcons.bed_double,
-              ),
-              IosMenuAction(
-                value: true,
-                label: 'Wind-down reminder',
-                icon: CupertinoIcons.bell,
-                checked: _windDownReminder,
-              ),
-            ],
+          IconButton(
+            tooltip: 'Sleep preferences',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SleepPreferencesScreen()),
+            ),
+            icon: const Icon(CupertinoIcons.ellipsis_circle, color: _purple),
           ),
         ],
       ),
