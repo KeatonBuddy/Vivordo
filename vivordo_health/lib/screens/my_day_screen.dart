@@ -14,6 +14,7 @@ import '../src/services/calendar_cognitive_load_service.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/services/day_record_service.dart';
+import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
 import '../src/utils/body_reaction.dart';
 import '../src/utils/daily_brief_metrics.dart';
@@ -37,6 +38,7 @@ import '../widgets/plan_slot_sheet.dart';
 import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
 import 'all_priorities_screen.dart';
+import 'profile_screen.dart';
 import '../widgets/tomorrow_preview.dart';
 import '../widgets/daily_brief_card.dart';
 import '../src/utils/owned_stream_snapshot.dart';
@@ -128,6 +130,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   String? _calendarLoadError;
   int _loadGeneration = 0;
   bool _isLoading = true;
+
+  /// Whether Google or Outlook is connected. Starts true so the prompt
+  /// never flashes before the check.
+  bool _calendarConnected = true;
   DateTime? _calendarLoadedAt;
   bool _showCompleted = false;
   bool _showEarlier = false;
@@ -713,6 +719,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final dayEnd = DateTime(now.year, now.month, now.day + 1);
     final tomorrowEnd = DateTime(now.year, now.month, now.day + 2);
 
+    final connected = _anyCalendarConnected();
     late List<dynamic> results;
     try {
       results = await Future.wait([
@@ -734,6 +741,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
 
     final calendarEvents = results[0] as List<gcal.Event>;
+    final calendarConnected = await connected;
     MeetingPatternsService.rememberNames(calendarEvents);
     final allEvents =
         calendarEvents
@@ -753,6 +761,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     if (forceRefresh) unawaited(DayRecordService.sync());
     setState(() {
       _calendarLoadedAt = DateTime.now();
+      _calendarConnected = calendarConnected;
       _events = events;
       _tomorrowEvents = tomorrowEvents;
       unawaited(_rateEvents([...events, ...tomorrowEvents]));
@@ -785,8 +794,28 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Whether Google or Outlook is connected; true when the check fails, so
+  /// the connect prompt never shows by mistake.
+  static Future<bool> _anyCalendarConnected() async {
+    try {
+      return await CalendarService.hasCalendarAccess() ||
+          (OutlookCalendarService.enabled &&
+              await OutlookCalendarService.isSignedIn());
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Opens Settings, where Connections is, then reloads in case a calendar
+  /// was connected there.
+  Future<void> _openConnections() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
+    if (mounted) await _loadTodayEvents(forceRefresh: true);
+  }
+
   Future<void> _handleEventTap(_CalendarEvent event) async {
-    final googleEvent = event.googleEvent;
     if (!mounted) return;
     final action = await showModalBottomSheet<_EventSummaryAction>(
       context: context,
@@ -800,13 +829,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         onReaction: _showReaction,
       ),
     );
-    if (googleEvent == null || !mounted) return;
+    if (!mounted) return;
     switch (action) {
       case _EventSummaryAction.edit:
-        await _editGoogleEvent(googleEvent);
+        await _editGoogleEvent(event.event);
         return;
       case _EventSummaryAction.delete:
-        await _deleteGoogleEvent(googleEvent);
+        await _deleteGoogleEvent(event.event);
         return;
       case null:
         return;
@@ -891,7 +920,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       setState(() => _isLoading = true);
       await saveEventDraft(draft);
       await _loadTodayEvents();
-      _showMessage('Event added to Google Calendar.');
+      _showMessage('Event added to your calendar.');
     } catch (error) {
       if (mounted) setState(() => _isLoading = false);
       debugPrint('Create calendar event failed: $error');
@@ -1574,9 +1603,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     bool canMove(EffortItem item) {
       if (byPath[item.event.id] case final p?) return _priorityMovable(p);
       final event = byKey[item.event.id];
-      return event?.googleEvent != null &&
-          !event!.isPriorityLinked &&
-          !event.isAllDay;
+      return event != null && !event.isPriorityLinked && !event.isAllDay;
     }
 
     final tonight = _energyForecast(today);
@@ -1588,8 +1615,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             nights: _briefSnapshot.value.data?.sleepNights ?? const [],
             schedule: _sleepSchedule,
           );
-    // A break goes in Google Calendar, so it needs a connected one.
-    final calendar = events.any((e) => e.googleEvent != null);
+    // A break goes in the calendar, so it needs a connected one.
+    final calendar = events.isNotEmpty;
     final found = findDayFixes(
       now: from,
       items: items,
@@ -1820,8 +1847,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
     if (fix.kind == DayFixKind.addBreak) {
       await _addBreak(fix);
-    } else if (event?.googleEvent case final google?) {
-      await _moveEvent(google, fix);
+    } else if (event?.event case final calendarEvent?) {
+      await _moveEvent(calendarEvent, fix);
     } else if (priority != null) {
       await _retimePriority(priority, fix);
     }
@@ -2083,7 +2110,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         .where((e) => !e.start.isAfter(now) && e.end.isAfter(now))
         .firstOrNull;
     final next = timedEvents.where((e) => e.start.isAfter(now)).firstOrNull;
-    final (title, detail) = current != null
+    final noCalendar = !_calendarConnected;
+    final (title, detail) = noCalendar
+        ? ('No calendar connected', 'Your events and openings show up here')
+        : current != null
         ? (
             current.title,
             'Now · ends ${formatClock(current.end)} · ${formatSpan(current.end.difference(now))} left',
@@ -2111,7 +2141,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   width: 12,
                   height: 12,
                   decoration: BoxDecoration(
-                    color: current == null
+                    color: noCalendar
+                        ? colors.textSecondary
+                        : current == null
                         ? timelineDoneGreen
                         : const Color(0xFFFF9F0A),
                     shape: BoxShape.circle,
@@ -2158,7 +2190,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-                if (current == null) ...[
+                if (noCalendar) ...[
+                  const SizedBox(width: 8),
+                  TimelinePill(
+                    'Connect',
+                    color: VivordoTheme.brand,
+                    onTap: _openConnections,
+                  ),
+                ] else if (current == null) ...[
                   const SizedBox(width: 8),
                   TimelinePill(
                     'Plan it',
@@ -2388,14 +2427,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         recurrenceEnd: result.repeatEnd,
       );
       final linkedKey = _linkedKey(priority);
-      if (linkedKey != null && linkedKey.startsWith('google:')) {
+      if (linkedKey != null &&
+          (linkedKey.startsWith('google:') ||
+              linkedKey.startsWith('outlook:'))) {
         final linked = _events
             .where((e) => e.sourceEventKey == linkedKey)
             .firstOrNull;
-        if (linked?.googleEvent != null) {
+        if (linked != null) {
           final start = result.scheduledAt ?? DateUtils.dateOnly(result.date);
           await CalendarService.updateEvent(
-            linked!.googleEvent!,
+            linked.event,
             title: result.title,
             start: start,
             end: result.scheduledAt == null
@@ -2475,12 +2516,17 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   String? _linkedKey(DailyPriority priority) {
     for (final event in _events) {
-      final google = event.googleEvent;
+      final calendarEvent = event.event;
+      final series = calendarEvent.recurringEventId;
       if (event.sourceEventKey == priority.sourceEventKey ||
-          (google?.recurringEventId != null &&
-              'google:${google!.recurringEventId}' ==
+          (series != null &&
+              (CalendarService.isOutlook(calendarEvent)
+                      ? series
+                      : 'google:$series') ==
                   priority.sourceEventKey) ||
-          google?.extendedProperties?.private?['vivordoPriorityReference'] ==
+          calendarEvent
+                  .extendedProperties
+                  ?.private?['vivordoPriorityReference'] ==
               priority.reference.path) {
         return event.sourceEventKey;
       }
@@ -2622,9 +2668,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             fit.kind == EnergyFitKind.clash &&
             fit.movable &&
             suggested != null &&
-            (event != null
-                ? event.googleEvent != null && !event.isPriorityLinked
-                : !priority!.completed);
+            (event != null ? !event.isPriorityLinked : !priority!.completed);
         return TimelineRow(
           start: entry.start,
           title: event?.title ?? priority!.title,
@@ -3184,7 +3228,7 @@ class _EventSummarySheet extends StatelessWidget {
                         _SummaryDetailRow(
                           icon: Icons.calendar_month_rounded,
                           label: 'Calendar',
-                          value: event.googleEvent == null
+                          value: CalendarService.isOutlook(event.event)
                               ? 'Outlook'
                               : 'Google Calendar',
                           valueDotColor: event.color,
@@ -3197,60 +3241,39 @@ class _EventSummarySheet extends StatelessWidget {
                       width: double.infinity,
                       height: 54,
                       child: FilledButton(
-                        onPressed: event.googleEvent == null
-                            ? null
-                            : () => Navigator.pop(
-                                context,
-                                _EventSummaryAction.edit,
-                              ),
+                        onPressed: () =>
+                            Navigator.pop(context, _EventSummaryAction.edit),
                         style: FilledButton.styleFrom(
                           backgroundColor: MyDayScreen.purple,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        child: Text(
-                          event.googleEvent == null
-                              ? 'Outlook event · Read only'
-                              : 'Edit Event',
-                          style: const TextStyle(
+                        child: const Text(
+                          'Edit Event',
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                       ),
                     ),
-                    if (event.googleEvent != null) ...[
-                      const SizedBox(height: 12),
-                      Center(
-                        child: TextButton.icon(
-                          onPressed: () => Navigator.pop(
-                            context,
-                            _EventSummaryAction.delete,
+                    const SizedBox(height: 12),
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: () =>
+                            Navigator.pop(context, _EventSummaryAction.delete),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFFF453A),
+                          textStyle: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
                           ),
-                          style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFFFF453A),
-                            textStyle: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          icon: const Icon(Icons.delete_outline_rounded),
-                          label: const Text('Delete'),
                         ),
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        label: const Text('Delete'),
                       ),
-                    ],
-                    if (event.googleEvent == null) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        'Outlook events are currently read-only in Vivordo.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: colors.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                    ),
                   ],
                 ),
               ),
@@ -3409,12 +3432,8 @@ class _CalendarEvent {
   final IconData icon;
   final Color color;
 
-  /// The calendar event, Google's or Outlook's, for reading.
+  /// The calendar event, Google's or Outlook's.
   final gcal.Event event;
-
-  /// [event] when Vivordo can change it: Outlook events are read-only.
-  gcal.Event? get googleEvent =>
-      CalendarService.isOutlook(event) ? null : event;
 
   /// A Google or Outlook event; null when cancelled or without times.
   static _CalendarEvent? fromGoogle(gcal.Event event) {
