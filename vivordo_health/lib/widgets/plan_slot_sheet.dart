@@ -57,18 +57,20 @@ Future<String?> addPriorityCalendarEvent(
           Duration(minutes: (draft.planning['minutes'] as num?)?.toInt() ?? 60),
         );
   try {
+    final calendarId = await CalendarService.defaultCalendarId();
     final event = await CalendarService.createEvent(
       title: draft.title,
       start: start,
       end: end,
       recurrence: draft.calendarRecurrence,
       isAllDay: draft.scheduledAt == null,
+      calendarId: calendarId,
       isPriority: true,
       priorityReference: reference.path,
     );
     await reference.update({
       'sourceEventKey': CalendarService.eventKey(event),
-      'linkedCalendarId': 'primary',
+      'linkedCalendarId': calendarId,
       'sourceEnd': Timestamp.fromDate(end),
     });
     final saved = (await reference.get()).data();

@@ -330,6 +330,60 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  static String _shortName(String name) =>
+      name.length <= 18 ? name : '${name.substring(0, 17).trimRight()}…';
+
+  /// Picks the calendar new events, breaks and Vivordo AI's events go to.
+  Future<void> _pickDefaultCalendar(String? currentId) async {
+    final List<WritableCalendar> calendars;
+    try {
+      calendars = await CalendarService.getWritableCalendars();
+    } catch (_) {
+      if (mounted) {
+        showToast(
+          context,
+          "Couldn't load your calendars. Try again.",
+          kind: ToastKind.error,
+        );
+      }
+      return;
+    }
+    if (!mounted || calendars.isEmpty) return;
+    final current = CalendarService.pickDefaultCalendar(currentId, calendars);
+    final choice = await showAppleActionSheet<WritableCalendar>(
+      context,
+      title: 'Default calendar',
+      message:
+          'New events, breaks and Vivordo AI’s events go here. You can still '
+          'pick another when adding an event.',
+      actions: [
+        for (final calendar in calendars)
+          AppleSheetAction(
+            calendar.isPrimary ? '${calendar.name} · Primary' : calendar.name,
+            calendar,
+            selected: current == 'primary'
+                ? calendar.isPrimary
+                : calendar.id == current,
+          ),
+      ],
+    );
+    if (choice == null || !mounted) return;
+    try {
+      await CalendarService.setDefaultCalendar(
+        choice.id,
+        label: choice.isPrimary ? 'Primary' : choice.name,
+      );
+    } catch (_) {
+      if (mounted) {
+        showToast(
+          context,
+          "Couldn't save your default calendar. Try again.",
+          kind: ToastKind.error,
+        );
+      }
+    }
+  }
+
   Future<void> _refreshOutlookCalendarConnection() async {
     final isConnected = await OutlookCalendarService.isSignedIn();
     if (mounted) {
@@ -1170,6 +1224,25 @@ class _SettingsScreenState extends State<SettingsScreen>
                         busy: _isUpdatingOutlookCalendar,
                         onConnect: _updateOutlookCalendarConnection,
                         onDisconnect: _updateOutlookCalendarConnection,
+                      ),
+                    if (_isGoogleCalendarConnected ||
+                        _isOutlookCalendarConnected)
+                      _SettingsRow(
+                        leading: const _IconBadge(
+                          Icons.event_available_rounded,
+                          VivordoTheme.brand,
+                        ),
+                        title: 'Default calendar',
+                        subtitle: 'Where new events go',
+                        trailing: _ValueChevron(
+                          _shortName(
+                            rawData['defaultCalendarName'] as String? ??
+                                'Primary',
+                          ),
+                        ),
+                        onTap: () => _pickDefaultCalendar(
+                          rawData['defaultCalendarId'] as String?,
+                        ),
                       ),
                   ],
                 ),

@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
@@ -293,22 +295,70 @@ class CalendarService {
     }
   }
 
+  /// The calendar new events go to when none is chosen: the default picked
+  /// in Settings while it can still be written to, else the primary.
+  static Future<String> defaultCalendarId() async {
+    final saved = await savedDefaultCalendarId();
+    if (saved == null || saved == 'primary') return 'primary';
+    try {
+      return pickDefaultCalendar(saved, await getWritableCalendars());
+    } catch (_) {
+      return 'primary';
+    }
+  }
+
+  /// The default calendar picked in Settings, unchecked; null when none.
+  static Future<String?> savedDefaultCalendarId() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+    try {
+      final user = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      return user.data()?['defaultCalendarId'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Makes calendar [id] the one new events go to; [label] is what
+  /// Settings shows for it.
+  static Future<void> setDefaultCalendar(
+    String id, {
+    required String label,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      'defaultCalendarId': id,
+      'defaultCalendarName': label,
+    }, SetOptions(merge: true));
+  }
+
+  /// [saved] when it's still among [writable], else the primary.
+  static String pickDefaultCalendar(
+    String? saved,
+    List<WritableCalendar> writable,
+  ) => writable.any((c) => c.id == saved) ? saved! : 'primary';
+
   static Future<gcal.Event> createEvent({
     required String title,
     required DateTime start,
     required DateTime end,
     required String recurrence,
     bool isAllDay = false,
-    String calendarId = 'primary',
+    String? calendarId,
     bool isPriority = false,
     String? priorityReference,
   }) async {
     if (!end.isAfter(start)) {
       throw ArgumentError('The end time must be after the start time.');
     }
+    final target = calendarId ?? await defaultCalendarId();
     // Outlook's calendars, or its default when Google isn't connected.
-    if (calendarId.startsWith('outlook:') ||
-        (calendarId == 'primary' &&
+    if (target.startsWith('outlook:') ||
+        (target == 'primary' &&
             !await hasCalendarAccess() &&
             await OutlookCalendarService.isSignedIn())) {
       return OutlookCalendarService.createEvent(
@@ -317,7 +367,7 @@ class CalendarService {
         end: end,
         recurrence: recurrence,
         allDay: isAllDay,
-        calendarId: calendarId,
+        calendarId: target,
         isPriority: isPriority,
         priorityReference: priorityReference,
       );
@@ -344,8 +394,8 @@ class CalendarService {
           : null;
 
     final calendarApi = await _authorizedCalendarApi();
-    final result = await calendarApi.events.insert(event, calendarId);
-    if (result.id != null) _eventCalendarIds[result.id!] = calendarId;
+    final result = await calendarApi.events.insert(event, target);
+    if (result.id != null) _eventCalendarIds[result.id!] = target;
     invalidateEventCache();
     return result;
   }

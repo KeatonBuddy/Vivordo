@@ -336,6 +336,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   Future<void> _loadCalendars() async {
     try {
       final initial = widget.initialCalendarId;
+      final saved = await CalendarService.savedDefaultCalendarId();
       final calendars = [
         for (final calendar in await CalendarService.getWritableCalendars())
           // An event stays with its account: Google events move between
@@ -352,7 +353,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
         _calendars = calendars;
         if (calendars.isNotEmpty) {
           _selectedCalendar = calendars.firstWhere(
-            (calendar) => calendar.id == widget.initialCalendarId,
+            (calendar) => calendar.id == (initial ?? saved),
             orElse: () => calendars.firstWhere(
               (calendar) => calendar.isPrimary,
               orElse: () => calendars.first,
