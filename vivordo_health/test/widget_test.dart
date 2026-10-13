@@ -19,6 +19,8 @@ void main() {
     );
     expect(find.text('Get started'), findsOneWidget);
     expect(find.text('I have an account'), findsOneWidget);
+    // App Review rejects production apps that call themselves beta.
+    expect(find.textContaining('Beta'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -33,6 +35,14 @@ void main() {
       final google = tester.getTopLeft(find.text('Continue with Google')).dy;
       expect(create, lessThan(apple));
       expect(apple, lessThan(google));
+      // Everyone agrees to the Terms before an account exists.
+      await tester.ensureVisible(find.text('Privacy Policy'));
+      final agree = tester.getTopLeft(find.text('Terms')).dy;
+      expect(agree, greaterThan(google));
+      expect(
+        find.text('By continuing you agree to the ', findRichText: true),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),

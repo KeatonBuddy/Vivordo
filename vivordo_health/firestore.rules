@@ -328,6 +328,30 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && exists(/databases/$(database)/documents/users/$(request.resource.data.postOwnerUid)/circle_activity/$(request.resource.data.postId))
         && exists(/databases/$(database)/documents/users/$(request.resource.data.postOwnerUid)/circle/relationships/friends/$(request.auth.uid));
+      // A challenge's note or one of its comments, reported by another
+      // participant; the author must match what was written.
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'type', 'reporterUid', 'challengeId', 'commentId', 'authorUid',
+          'reason', 'details', 'status', 'createdAt'
+        ])
+        && request.resource.data.type in ['challenge', 'challenge_comment']
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.challengeId is string
+        && request.resource.data.authorUid is string
+        && request.resource.data.authorUid != request.auth.uid
+        && request.auth.uid in get(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId)).data.participantUids
+        && (request.resource.data.type == 'challenge'
+          ? !('commentId' in request.resource.data)
+            && get(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId)).data.creatorUid == request.resource.data.authorUid
+          : request.resource.data.commentId is string
+            && get(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId)/comments/$(request.resource.data.commentId)).data.authorUid == request.resource.data.authorUid)
+        && request.resource.data.reason in ['harassment', 'inappropriate_content', 'spam', 'privacy', 'other']
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 1000
+        && (request.resource.data.reason != 'other' || request.resource.data.details.size() > 0)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time;
       allow read, update, delete: if false;
     }
 

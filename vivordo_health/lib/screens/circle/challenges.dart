@@ -609,6 +609,13 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
                           _CreatorNoteCard(
                             membership: membership,
                             creator: _personFor(membership.creatorUid),
+                            onReport: membership.creatorUid == challenges.me.uid
+                                ? null
+                                : () => _reportChallenge(
+                                    context,
+                                    challengeId: membership.challengeId,
+                                    authorUid: membership.creatorUid,
+                                  ),
                           ),
                         ],
                         const SizedBox(height: 14),
@@ -868,6 +875,14 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
                   onDelete: comment.authorUid == challenges.me.uid
                       ? () => _deleteComment(comment)
                       : null,
+                  onReport: comment.authorUid == challenges.me.uid
+                      ? null
+                      : () => _reportChallenge(
+                          context,
+                          challengeId: membership.challengeId,
+                          authorUid: comment.authorUid,
+                          commentId: comment.id,
+                        ),
                 ),
           ],
         );
@@ -1011,10 +1026,17 @@ class _InfoCell extends StatelessWidget {
 }
 
 class _CreatorNoteCard extends StatelessWidget {
-  const _CreatorNoteCard({required this.membership, required this.creator});
+  const _CreatorNoteCard({
+    required this.membership,
+    required this.creator,
+    this.onReport,
+  });
 
   final CircleChallengeMembership membership;
   final CircleProfile? creator;
+
+  /// Someone else's note can be reported.
+  final VoidCallback? onReport;
 
   @override
   Widget build(BuildContext context) => _CircleCard(
@@ -1053,6 +1075,13 @@ class _CreatorNoteCard extends StatelessWidget {
             ],
           ),
         ),
+        if (onReport != null)
+          IconButton(
+            tooltip: 'Report note',
+            visualDensity: VisualDensity.compact,
+            onPressed: onReport,
+            icon: Icon(Icons.flag_outlined, size: 18, color: context.muted),
+          ),
       ],
     ),
   );
@@ -1203,6 +1232,44 @@ class _ContributionRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Reports a challenge's note ([commentId] null) or one of its comments, for
+/// review like feed reports.
+Future<void> _reportChallenge(
+  BuildContext context, {
+  required String challengeId,
+  required String authorUid,
+  String? commentId,
+}) async {
+  final sent = await showAppleSheet<bool>(
+    context,
+    builder: (_) => ReportPostSheet(
+      isComment: true,
+      onSubmit: (reason, details) async {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid == null) throw StateError('Sign in to report.');
+        await FirebaseFirestore.instance.collection('reports').add({
+          'type': commentId == null ? 'challenge' : 'challenge_comment',
+          'reporterUid': uid,
+          'challengeId': challengeId,
+          'commentId': ?commentId,
+          'authorUid': authorUid,
+          'reason': reason,
+          'details': details,
+          'status': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      },
+    ),
+  );
+  if (sent == true && context.mounted) {
+    _showSnack(
+      context,
+      'Report sent. Thanks for letting us know.',
+      kind: ToastKind.success,
     );
   }
 }

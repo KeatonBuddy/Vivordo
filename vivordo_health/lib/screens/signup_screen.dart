@@ -5,6 +5,7 @@ import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import 'onboarding_flow_screen.dart' show onboardingLight;
+import '../widgets/privacy_support_links.dart';
 
 /// Creating an account: email first, then Apple or Google. Everything after
 /// sign-in (email verification, then onboarding) is AuthGate's, so this
@@ -260,6 +261,8 @@ class _SignupScreenState extends State<SignupScreen> {
                   (v) => _googleLoading = v,
                 ),
               ),
+              const SizedBox(height: 20),
+              const TermsAgreement(),
             ],
           ),
         ),

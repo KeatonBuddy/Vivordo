@@ -59,25 +59,6 @@ class WelcomeBetaScreen extends StatelessWidget {
                         color: Color(0xFF8E8E93),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEEEDFE),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        'Beta · thanks for testing',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF3C3489),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),

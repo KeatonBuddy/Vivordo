@@ -39,8 +39,9 @@ const {buildTask, runTask} = require("./ai_tasks");
 const {
   challengeDeletionPlan,
   hasRecentAuthentication,
-  writeUnlessDeleting,
 } = require("./account_deletion");
+const nodemailer = require("nodemailer");
+const {REPORT_EMAIL, reportEmail} = require("./report_alert");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
@@ -2468,6 +2469,7 @@ async function deleteVivordoAccountData(uid) {
     db.recursiveDelete(db.collection("challenge_medal_awards").doc(uid)),
     db.recursiveDelete(db.collection("baas_state").doc(uid)),
     db.recursiveDelete(db.collection("baas_weights").doc(uid)),
+    db.recursiveDelete(db.collection("circle_blocks").doc(uid)),
     db.collection("founders").doc(uid).delete(),
     db.collection("ai_usage").doc(uid).delete(),
     db.collection("ai_usage").doc(`${uid}_planning`).delete(),
@@ -2565,335 +2567,24 @@ exports.disconnectFitbit = onCall(
 );
 /* eslint-enable require-jsdoc */
 
-// =============================================================================
-// Batch API helpers
-// Model: claude-haiku-4-5-20251001 (cheapest; batch gives additional 50% off)
-//
-// Workloads:
-//   1. weekly-trend-{userId}      nightly
-//      → users/{userId}/weekly_trends/{weekOf}
-//   2. insight-summary-{userId}   nightly
-//      → users/{userId}/insight_summaries/{weekOf}
-//   3. questionnaire-{insightId}  on submission
-//      → users/{userId}/insights/{insightId}
-//
-// All batch jobs tracked top-level in batch_jobs/{batchId} — a single nightly
-// batch spans many users, so job tracking isn't nested under any one user.
-// =============================================================================
+// Gmail app password for contact.vivordo@gmail.com (Google Account →
+// Security → App passwords), which sends report alerts to itself.
+const reportMailPassword = defineSecret("REPORT_MAIL_APP_PASSWORD");
 
-const _BATCH_MODEL = "claude-haiku-4-5-20251001";
-
-const _weeklyTrendSystem =
-    "You are a health data analyst for Vivordo. You will receive a user's " +
-    "heart rate, HRV, steps, and sleep data from the past 7 days as JSON. " +
-    "Return ONLY a valid JSON object with two keys: " +
-    "\"trend\" (2-3 sentence narrative of the week's patterns) and " +
-    "\"actionable\" (one specific, concrete suggestion). " +
-    "No prose outside JSON.";
-
-const _insightSummarySystem =
-    "You are Panda, a wellness companion. You will receive a user's " +
-    "completed wellness check-in sessions from the past 7 days as JSON. " +
-    "Return ONLY a valid JSON object with two keys: " +
-    "\"summary\" (2-3 sentence overview of recurring themes or patterns) and " +
-    "\"highlight\" (the single most significant insight from this week). " +
-    "No prose outside JSON.";
-
-// Interprets structured Q→A answers + wellness slots from a single session.
-// Output is written back to the originating insight document for the History
-// tab and recommendation engine to consume.
-const _questionnaireSystem =
-    "You are a clinical wellness analyst. You will receive the labeled Q→A " +
-    "answers and wellness entity slots from a single Vivordo Panda session. " +
-    "Return ONLY a valid JSON object with three keys: " +
-    "\"pattern\" (1 sentence — recurring trigger or behavioural pattern " +
-    "evident from the answers), " +
-    "\"insight\" (1-2 sentences — what the combination of stressor, emotion, " +
-    "and context suggests about the user's stress profile), " +
-    "\"recommendation\" (1 sentence — one concrete, actionable technique " +
-    "tailored to the stressor and intensity). " +
-    "No prose outside JSON.";
-
-// =============================================================================
-// pandaBatchNightly — workloads 1 & 2 (weekly trend + insight summary)
-// =============================================================================
-
-/**
- * Runs at 02:00 PT every night.
- * Queries insights created in the past 7 days, groups by userId, and submits
- * one weekly-trend + one insight-summary batch request per active user.
- * Results are written by pandaBatchPoller once the batch ends.
- */
-exports.pandaBatchNightly = onSchedule({
-  schedule: "0 2 * * *",
-  timeZone: "America/Los_Angeles",
-  memory: "256MiB",
-  secrets: [anthropicApiKey],
-}, async () => {
-  const db = admin.firestore();
-
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-  // insights now lives at users/{userId}/insights — collectionGroup() reaches
-  // every user's subcollection in one query.
-  const insightsSnap = await db.collectionGroup("insights")
-      .where("createdAt", ">=", sevenDaysAgo)
-      .get();
-
-  const userInsights = {};
-  insightsSnap.forEach((doc) => {
-    const data = doc.data();
-    if (!data.userId) return;
-    if (!userInsights[data.userId]) userInsights[data.userId] = [];
-    userInsights[data.userId].push({
-      createdAt: data.createdAt?.toDate?.()?.toISOString() ?? null,
-      pandaSlots: data.pandaSlots ?? {},
-      pandaLabeledAnswers: data.pandaLabeledAnswers ?? {},
-      sessionSummary: data.body ?? "",
-    });
+/** Emails each new Circle abuse report to the support inbox. */
+exports.reportAlert = onDocumentCreated({
+  document: "reports/{reportId}",
+  secrets: [reportMailPassword],
+}, async (event) => {
+  const report = event.data?.data();
+  if (!report) return;
+  const mail = nodemailer.createTransport({
+    service: "gmail",
+    auth: {user: REPORT_EMAIL, pass: reportMailPassword.value()},
   });
-
-  const userIds = Object.keys(userInsights);
-  if (userIds.length === 0) {
-    console.log("[pandaBatchNightly] No active users — skipping.");
-    return;
-  }
-
-  const requests = [];
-  for (const userId of userIds) {
-    const sessions = userInsights[userId];
-
-    requests.push({
-      custom_id: `weekly-trend-${userId}`,
-      params: {
-        model: _BATCH_MODEL,
-        max_tokens: 512,
-        system: [{type: "text", text: _weeklyTrendSystem}],
-        messages: [{
-          role: "user",
-          content: `Weekly sessions:\n${JSON.stringify(sessions, null, 2)}`,
-        }],
-      },
-    });
-
-    requests.push({
-      custom_id: `insight-summary-${userId}`,
-      params: {
-        model: _BATCH_MODEL,
-        max_tokens: 256,
-        system: [{type: "text", text: _insightSummarySystem}],
-        messages: [{
-          role: "user",
-          content: `Recent sessions:\n${JSON.stringify(sessions, null, 2)}`,
-        }],
-      },
-    });
-  }
-
-  const batch = await getAnthropicClient().messages.batches.create({requests});
-
-  await db.collection("batch_jobs").doc(batch.id).set({
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    status: "pending",
-    type: "nightly",
-    requestCount: requests.length,
-    userCount: userIds.length,
+  await mail.sendMail({
+    from: `Vivordo reports <${REPORT_EMAIL}>`,
+    to: REPORT_EMAIL,
+    ...reportEmail(event.params.reportId, report),
   });
-
-  console.log(
-      `[pandaBatchNightly] Submitted batch ${batch.id} — ` +
-      `${userIds.length} users, ${requests.length} requests.`,
-  );
-});
-
-// =============================================================================
-// pandaQuestionnaireBatch — workload 3 (on session submission)
-// =============================================================================
-
-/**
- * Fires when a new `users/{userId}/insights` document is created with
- * source == "panda" and at least one labeled answer present.
- * Submits a single-request Batch API job for deep questionnaire analysis;
- * the result is written back to the same document by pandaBatchPoller.
- */
-exports.pandaQuestionnaireBatch = onDocumentCreated(
-    {
-      document: "users/{userId}/insights/{insightId}",
-      secrets: [anthropicApiKey],
-    },
-    async (event) => {
-      const data = event.data?.data();
-      if (!data) return;
-
-      // Only process completed Panda sessions that have labeled Q→A answers.
-      if (data.source !== "panda") return;
-      const answers = data.pandaLabeledAnswers ?? {};
-      if (Object.keys(answers).length === 0) return;
-
-      const insightId = event.params.insightId;
-      const userId = event.params.userId;
-      const db = admin.firestore();
-
-      const payload = {
-        pandaSlots: data.pandaSlots ?? {},
-        pandaLabeledAnswers: answers,
-        sessionDate: data.sessionDate?.toDate?.()?.toISOString() ?? null,
-      };
-
-      const batch = await getAnthropicClient().messages.batches.create({
-        requests: [{
-          custom_id: `questionnaire-${insightId}`,
-          params: {
-            model: _BATCH_MODEL,
-            max_tokens: 384,
-            system: [{type: "text", text: _questionnaireSystem}],
-            messages: [{
-              role: "user",
-              content: `Session data:\n${JSON.stringify(payload, null, 2)}`,
-            }],
-          },
-        }],
-      });
-
-      // Track the batch so the poller can retrieve and write results.
-      await db.collection("batch_jobs").doc(batch.id).set({
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        status: "pending",
-        type: "questionnaire",
-        insightId,
-        userId,
-      });
-
-      // Stamp the insight doc so the UI can show "analysis pending".
-      await event.data.ref.update({
-        questionnaireBatchId: batch.id,
-        questionnaireAnalysisStatus: "pending",
-      });
-
-      console.log(
-          `[pandaQuestionnaireBatch] Submitted batch ${batch.id} ` +
-          `for insight ${insightId} (user ${userId}).`,
-      );
-    },
-);
-
-// =============================================================================
-// pandaBatchPoller — collects results for all three workloads
-// =============================================================================
-
-/**
- * Polls every 30 min for completed batch jobs and writes results to Firestore.
- *
- * Routing by custom_id prefix:
- *   weekly-trend-{userId}      → users/{userId}/weekly_trends/{weekOf}
- *   insight-summary-{userId}   → users/{userId}/insight_summaries/{weekOf}
- *   questionnaire-{insightId}
- *     → users/{userId}/insights/{insightId}.questionnaireAnalysis
- *     (userId for the questionnaire route comes from the batch_jobs doc
- *     itself, since unlike the other two, its custom_id only carries the
- *     insightId.)
- */
-exports.pandaBatchPoller = onSchedule({
-  schedule: "every 30 minutes",
-  timeZone: "America/Los_Angeles",
-  memory: "256MiB",
-  secrets: [anthropicApiKey],
-}, async () => {
-  const db = admin.firestore();
-
-  const pendingSnap = await db.collection("batch_jobs")
-      .where("status", "==", "pending")
-      .get();
-
-  if (pendingSnap.empty) return;
-
-  for (const jobDoc of pendingSnap.docs) {
-    const batchId = jobDoc.id;
-
-    let batch;
-    try {
-      batch = await getAnthropicClient().messages.batches.retrieve(batchId);
-    } catch (err) {
-      console.error(`[pandaBatchPoller] retrieve ${batchId} failed:`, err);
-      continue;
-    }
-
-    if (batch.processing_status !== "ended") {
-      console.log(
-          `[pandaBatchPoller] ${batchId} ` +
-          `(${batch.processing_status}) — not ready yet.`,
-      );
-      continue;
-    }
-
-    let written = 0;
-    const weekOf = new Date().toISOString().split("T")[0];
-    const ts = () => admin.firestore.FieldValue.serverTimestamp();
-    const jobData = jobDoc.data();
-
-    // Dispatch table — prefix → Firestore write spec.
-    // Adding a new batch type = one new entry here, nothing else to touch.
-    const routes = [
-      {
-        prefix: "weekly-trend-",
-        // rest = userId
-        write: (rest, text) =>
-          writeUnlessDeleting(db, rest,
-              db.collection("users").doc(rest).collection("weekly_trends")
-                  .doc(weekOf), {content: text, generatedAt: ts(), weekOf}),
-      },
-      {
-        prefix: "insight-summary-",
-        // rest = userId
-        write: (rest, text) =>
-          writeUnlessDeleting(db, rest,
-              db.collection("users").doc(rest).collection("insight_summaries")
-                  .doc(weekOf), {content: text, generatedAt: ts(), weekOf}),
-      },
-      {
-        prefix: "questionnaire-",
-        // rest = insightId; userId comes from the batch_jobs doc (the
-        // custom_id alone doesn't carry it for this workload).
-        write: (rest, text) =>
-          writeUnlessDeleting(db, jobData.userId,
-              db.collection("users").doc(jobData.userId)
-                  .collection("insights").doc(rest), {
-                questionnaireAnalysis: text,
-                questionnaireAnalysisStatus: "completed",
-                questionnaireAnalyzedAt: ts(),
-              }, true),
-      },
-    ];
-
-    try {
-      for await (const result of
-        await getAnthropicClient().messages.batches.results(batchId)) {
-        if (result.result.type !== "succeeded") {
-          console.warn(
-              `[pandaBatchPoller] ${result.custom_id} — ` +
-              `result type: ${result.result.type}`,
-          );
-          continue;
-        }
-
-        const text = result.result.message.content?.[0]?.text ?? "";
-        const route = routes.find((r) => result.custom_id.startsWith(r.prefix));
-        if (!route) continue;
-        const saved = await route.write(
-            result.custom_id.slice(route.prefix.length), text);
-        if (saved) written++;
-      }
-    } catch (err) {
-      console.error(
-          `[pandaBatchPoller] results read failed for ${batchId}:`, err,
-      );
-      continue;
-    }
-
-    await jobDoc.ref.update({status: "completed", resultsWritten: written});
-    console.log(
-        `[pandaBatchPoller] ${batchId} done — ${written} results written.`,
-    );
-  }
 });

@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/privacy_support_links.dart';
 import 'welcome_beta_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -563,7 +564,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
+                    // Apple and Google sign-in create an account too.
+                    TermsAgreement(color: textGrey),
+                    const SizedBox(height: 16),
 
                     // Privacy note
                     Center(
