@@ -155,20 +155,36 @@ class _SleepPreferencesScreenState extends State<SleepPreferencesScreen> {
                   "tracked. It's never counted as sleep.",
                 ),
                 const SizedBox(height: 18),
-                AppleFormGroup(
-                  header: 'Reminders',
-                  footer:
-                      'A nudge to start winding down before your usual '
-                      'bedtime. It follows your energy forecast each night.',
-                  children: [
-                    AppleFormRow(
-                      label: 'Wind-down reminder',
-                      trailing: AppSwitch(
-                        value: _windDown,
-                        onChanged: _setWindDown,
-                      ),
+                _header('Reminders'),
+                // Same card as the sleep times above.
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.card,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: colors.border),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Wind-down reminder',
+                            style: TextStyle(fontSize: 15),
+                          ),
+                        ),
+                        AppSwitch(value: _windDown, onChanged: _setWindDown),
+                      ],
                     ),
-                  ],
+                  ),
+                ),
+                _footer(
+                  'A nudge to start winding down before your usual bedtime. '
+                  'It follows your energy forecast each night.',
                 ),
               ],
             ),
