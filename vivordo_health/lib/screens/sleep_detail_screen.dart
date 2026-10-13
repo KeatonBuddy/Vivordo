@@ -470,6 +470,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                       value.hours,
                       value.bedtime,
                       value.wakeTime,
+                      value.inBed,
                     ),
                 },
                 today: DateTime.now(),

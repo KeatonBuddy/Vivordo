@@ -666,6 +666,8 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
     sleepHours.add(hours);
     sleepNights++;
     if (need == null) continue;
+    // Far over the need (a long-sleep run) isn't "on target" either.
+    if (hours >= need + 1.5) continue;
     final ok = hours >= need - .25;
     if (ok) nightsOnTarget++;
     if (score != null) (ok ? onTarget : short).add(score);
@@ -771,7 +773,7 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
               'mornings started lower as the week went on.'
         : 'Effort was above your Capacity on ${heavy.length} days, but your '
               'mornings bounced back each time.';
-  } else if (nightsOnTarget >= 5) {
+  } else if (nightsOnTarget >= 5 && lieIns.length < 2) {
     headline = 'A good week for sleep';
     why = 'You slept your need on $nightsOnTarget of 7 nights.';
   } else if (heavy.isEmpty && (capAvg - usual).abs() < 5) {

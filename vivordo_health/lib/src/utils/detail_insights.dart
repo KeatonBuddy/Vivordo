@@ -233,10 +233,18 @@ DetailInsight moodInsight({
 // ── Sleep ────────────────────────────────────────────────────────────────────
 
 class SleepNight {
-  const SleepNight(this.hours, [this.bedtime, this.wakeTime]);
+  const SleepNight(
+    this.hours, [
+    this.bedtime,
+    this.wakeTime,
+    this.inBed = false,
+  ]);
 
   final double hours;
   final DateTime? bedtime, wakeTime;
+
+  /// [hours] are time in bed (no wearable that night), not measured sleep.
+  final bool inBed;
 }
 
 /// Sleep hours against the person's [need] (Capacity's, null while it's
@@ -290,11 +298,11 @@ DetailInsight sleepInsight({
         '${need == null ? '' : ' Your need is ${hoursMinutes(need)}.'}',
       );
     }
-    var text =
-        '${hoursMinutes(night.hours)} last night${versusNeed(night.hours)}.';
+    final when = night.inBed ? 'in bed last night' : 'last night';
+    var text = '${hoursMinutes(night.hours)} $when${versusNeed(night.hours)}.';
     if (need == null) {
       text =
-          '${hoursMinutes(night.hours)} last night. Vivordo learns your sleep need after 2 weeks of nights.';
+          '${hoursMinutes(night.hours)} $when. Vivordo learns your sleep need after 2 weeks of nights.';
     }
     if (night.bedtime case final bedtime? when usualBedtime != null) {
       final offset = _minutesFromNoon(bedtime) - usualBedtime.round();

@@ -254,6 +254,18 @@ void main() {
       );
     });
 
+    test('a night from time in bed says so', () {
+      expect(
+        sleepInsight(
+          nights: {...nights, back(0): SleepNight(8.5, null, null, true)},
+          today: today,
+          rangeDays: 1,
+          need: 7.5,
+        ).text,
+        '8h 30m in bed last night, 1h 00m more than your need of 7h 30m.',
+      );
+    });
+
     test('a lie-in is named like a late bedtime', () {
       // Usually 23:00 to 06:30; this morning up at 08:45.
       final usual = {

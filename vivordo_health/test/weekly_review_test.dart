@@ -107,6 +107,18 @@ void main() {
     },
   );
 
+  test('a week of long sleep and lie-ins is not a good week for sleep', () {
+    final week = [for (var i = 0; i < 7; i++) day(sleep: 9.5, sleepNeed: 7.25)];
+    for (final d in week) {
+      (d['capacity'] as Map)['wakeOffsetMin'] = 120;
+    }
+    final review = buildWeeklyReview(
+      WeeklyReviewInput(weekStart: sunday, scores: scores(week)),
+    )!;
+    expect(review.headline, isNot('A good week for sleep'));
+    expect(review.chips, isNot(contains('sleep on target')));
+  });
+
   test('two or more lie-ins are named', () {
     final week = [for (var i = 0; i < 7; i++) day()];
     for (final i in [0, 6]) {

@@ -30,8 +30,14 @@ bool sameBriefDay(DateTime a, DateTime b) =>
 /// the energy forecast use (docs/scores.md §4). [need] is null while it's
 /// still the 8 h placeholder, so a plain duration is shown instead.
 /// Without [tracksSleep] (no sleep in the last weeks) nothing is said, rather
-/// than "unavailable" every day.
-String sleepComparison(double? today, {double? need, bool tracksSleep = true}) {
+/// than "unavailable" every day. With [inBed] the hours are time in bed (no
+/// wearable that night), so they're never called sleep.
+String sleepComparison(
+  double? today, {
+  double? need,
+  bool tracksSleep = true,
+  bool inBed = false,
+}) {
   String duration(int minutes) {
     final h = minutes ~/ 60, m = minutes % 60;
     return h == 0
@@ -44,11 +50,17 @@ String sleepComparison(double? today, {double? need, bool tracksSleep = true}) {
   if (today == null || !today.isFinite || today <= 0) {
     return tracksSleep ? "Last night's sleep hasn't synced yet." : '';
   }
-  if (need == null) return 'Slept ${duration((today * 60).round())}.';
+  final hours = duration((today * 60).round());
+  if (need == null) return inBed ? '$hours in bed.' : 'Slept $hours.';
   final difference = ((today - need) * 60).round();
-  if (difference.abs() <= 15) return 'Slept about your need.';
+  if (difference.abs() <= 15) {
+    return inBed ? '$hours in bed, about your need.' : 'Slept about your need.';
+  }
   final amount = duration(math.min(difference.abs(), 1440));
-  return 'Slept $amount ${difference < 0 ? "under" : "over"} your need.';
+  final side = difference < 0 ? 'under' : 'over';
+  return inBed
+      ? '$hours in bed, $amount $side your need.'
+      : 'Slept $amount $side your need.';
 }
 
 /// What is left today, e.g. "3 events and 2 priorities left."

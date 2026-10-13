@@ -145,7 +145,8 @@ Map<String, dynamic> projectScreenFields(
       'sleep': ['avg', 'bedtime', 'wakeTime'],
     },
     MetricsProjection.dailyBrief => const {
-      'sleep': ['avg', 'bedtime', 'wakeTime'],
+      // measure: 'inBed' when the night is time in bed (no wearable).
+      'sleep': ['avg', 'bedtime', 'wakeTime', 'measure'],
       'stress': ['current', 'avg', 'algorithm_version', 'computedAt'],
       'hrv': ['stressScore'],
     },

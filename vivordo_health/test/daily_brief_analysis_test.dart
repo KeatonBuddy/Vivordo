@@ -6,6 +6,12 @@ void main() {
     // A rough fortnight: 5 h 50 against a need of 7 h 03.
     expect(sleepComparison(5.83, need: 7.05), 'Slept 1h 13m under your need.');
     expect(sleepComparison(7.75, need: 7.5), 'Slept about your need.');
+    // Time in bed (no wearable) is never called sleep.
+    expect(
+      sleepComparison(9.7, need: 7.15, inBed: true),
+      '9h 42m in bed, 2h 33m over your need.',
+    );
+    expect(sleepComparison(8, inBed: true), '8h in bed.');
     expect(sleepComparison(8.5, need: 7.5), 'Slept 1h over your need.');
     // The 8 h placeholder isn't presented as theirs.
     expect(sleepComparison(7.25, need: null), 'Slept 7h 15m.');

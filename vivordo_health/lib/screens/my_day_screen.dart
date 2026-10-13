@@ -1373,7 +1373,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     // Last night against the need Home and Capacity use;
                     // nothing about sleep for someone who doesn't track it.
                     summary:
-                        '${sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0)} $calendarText'
+                        '${sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0, inBed: summary?.sleepInBed ?? false)} $calendarText'
                             .trim(),
                     // In the evening it sits beside tomorrow's Demand, so
                     // it shows what tomorrow is compared with.

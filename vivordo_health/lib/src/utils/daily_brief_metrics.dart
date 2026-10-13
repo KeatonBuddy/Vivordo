@@ -30,6 +30,7 @@ class DailyBriefMetrics {
     final data = todayDocuments.isEmpty ? null : todayDocuments.first.data;
     final previous = documents.where((d) => d.dayKey.compareTo(todayKey) < 0);
     final sleep = ((data?['sleep'] as Map?)?['avg'] as num?)?.toDouble();
+    final sleepInBed = (data?['sleep'] as Map?)?['measure'] == 'inBed';
     final stressMap = data?['stress'] as Map?;
     final hrvMap = data?['hrv'] as Map?;
     final stress =
@@ -126,6 +127,7 @@ class DailyBriefMetrics {
     _minute = minute;
     return _summary = DailyBriefMetricsSummary(
       sleep: sleep,
+      sleepInBed: sleepInBed,
       capacity: capacity,
       capacityNote: capacityNote,
       stale: stale,
@@ -143,6 +145,7 @@ class DailyBriefMetrics {
 class DailyBriefMetricsSummary {
   const DailyBriefMetricsSummary({
     required this.sleep,
+    this.sleepInBed = false,
     required this.capacity,
     required this.capacityNote,
     required this.stale,
@@ -153,6 +156,9 @@ class DailyBriefMetricsSummary {
     this.sleepNights = const [],
   });
   final double? sleep;
+
+  /// Last night's [sleep] is time in bed (no wearable), not measured sleep.
+  final bool sleepInBed;
   final DailyCapacityResult capacity;
   final String capacityNote;
   final bool stale;
