@@ -61,9 +61,11 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Vivordo uses Face ID to protect access to your private journal.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Vivordo Health reads your steps, heart rate, sleep, HRV, and cardio fitness (VO₂ max) to display personalized health insights. You control which data types are shared.</string>
+	<string>Vivordo reads the activity, heart, sleep, and body data you allow (such as steps, exercise, active energy, heart rate, resting heart rate, HRV, blood oxygen, breathing rate, sleep, VO₂ max, and weight) to calculate your scores and show personalized insights. You choose which types to share.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Vivordo Health only reads your Apple Health data and does not write to it. If a future feature saves data to Apple Health, you'll be asked first.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Vivordo doesn't record audio. Heart-rate scans use the camera and flash only.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Vivordo uses your photo library so you can choose a Circle profile picture.</string>
 	<key>NSSupportsLiveActivities</key>

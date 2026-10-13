@@ -702,7 +702,7 @@ class _ScanScreenState extends State<ScanScreen>
                 children: [
                   const Expanded(
                     child: Text(
-                      'Stress Scan',
+                      'Heart Scan',
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
@@ -1181,7 +1181,7 @@ class _ScanScreenState extends State<ScanScreen>
                 '4',
                 Icons.bar_chart_rounded,
                 'Get your results',
-                'Your heart rate and stress level are calculated and saved automatically.',
+                'Your heart rate is calculated and saved automatically, and counts towards your stress score.',
               ),
             ],
           ),
@@ -1226,7 +1226,7 @@ class _ScanScreenState extends State<ScanScreen>
   /// Method and accuracy disclosure App Review expects (guideline 1.4.1).
   Widget _buildDisclaimer() {
     return Text(
-      'Vivordo estimates heart rate and stress from small colour changes in '
+      'Vivordo estimates your heart rate from small colour changes in '
       'your fingertip seen by the camera. Movement, pressure and lighting '
       'affect the reading, and it can differ from a medical device. This is '
       'a wellness estimate, not a medical measurement or diagnosis. Talk to '
@@ -1372,12 +1372,14 @@ class _ScanScreenState extends State<ScanScreen>
 
   Widget _buildSuccess() {
     final bpm = _finalBpm.round();
-    final stressLabel = bpm < 65
-        ? 'Low Stress'
+    // One reading says how fast your heart is beating, not how stressed you
+    // are, so the label describes the heart rate (App Review 1.4.1).
+    final heartLabel = bpm < 65
+        ? 'Calm'
         : bpm < 80
-        ? 'Moderate'
+        ? 'Typical'
         : 'Elevated';
-    final stressColor = bpm < 65
+    final heartColor = bpm < 65
         ? greenColor
         : bpm < 80
         ? const Color(0xFFFF9500)
@@ -1462,13 +1464,13 @@ class _ScanScreenState extends State<ScanScreen>
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: stressColor,
+                        color: heartColor,
                         shape: BoxShape.circle,
                       ),
                     ),
                     const SizedBox(width: 7),
                     Text(
-                      stressLabel,
+                      heartLabel,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 13,
@@ -1506,10 +1508,10 @@ class _ScanScreenState extends State<ScanScreen>
             const SizedBox(width: 10),
             Expanded(
               child: _buildMetricCard(
-                Icons.psychology_outlined,
-                'Strain',
-                stressLabel,
-                stressColor,
+                Icons.favorite_border_rounded,
+                'Heart rate',
+                heartLabel,
+                heartColor,
               ),
             ),
           ],
@@ -1546,10 +1548,10 @@ class _ScanScreenState extends State<ScanScreen>
               const SizedBox(height: 8),
               Text(
                 bpm < 65
-                    ? 'Your heart rate is low and relaxed — great time for focused work or important conversations.'
+                    ? 'Your heart rate is calm right now.'
                     : bpm < 80
-                    ? 'Your heart rate looks healthy. Take a few deep breaths to keep stress balanced.'
-                    : 'Your heart rate is elevated. Consider a short break, breathing exercise, or a walk.',
+                    ? 'Your heart rate is in a typical resting range.'
+                    : 'Your heart rate is elevated right now. Caffeine, movement and stress can all raise it; a short break or a few slow breaths may help.',
                 style: TextStyle(
                   fontSize: 13,
                   color: context.vivordoColors.textSecondary,

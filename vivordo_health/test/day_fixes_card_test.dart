@@ -205,4 +205,31 @@ void main() {
     );
     expect(find.text("Tomorrow's Demand"), findsOneWidget);
   });
+
+  testWidgets('words mode shows no Demand numbers', (tester) async {
+    await tester.pumpWidget(
+      app(
+        Column(
+          children: [
+            BriefFix(
+              fixes: [move, energy],
+              onOpen: (_) {},
+              onHide: () {},
+              showNumbers: false,
+            ),
+            DayFixesCard(
+              fixes: [move, buffer, energy],
+              onOpen: (_) {},
+              onHide: () {},
+              showNumbers: false,
+            ),
+          ],
+        ),
+      ),
+    );
+    expect(find.textContaining('−'), findsNothing);
+    expect(find.text('Move "Finalize pitch deck" · Lighter'), findsOneWidget);
+    expect(find.text('Lighter'), findsNWidgets(2));
+    expect(find.text('Fits peak'), findsOneWidget);
+  });
 }

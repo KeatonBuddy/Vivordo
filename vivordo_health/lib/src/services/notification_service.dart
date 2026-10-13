@@ -495,7 +495,7 @@ class NotificationService {
 
       // Listen for token refresh
       _firebaseMessaging.onTokenRefresh.listen((newToken) async {
-        debugPrint('NotificationService: FCM Token refreshed: $newToken');
+        debugPrint('NotificationService: FCM token refreshed');
         try {
           await _persistFcmToken(newToken);
         } catch (error) {
@@ -512,7 +512,7 @@ class NotificationService {
             apnsToken = await _firebaseMessaging.getAPNSToken();
 
             if (apnsToken != null) {
-              debugPrint('NotificationService: APNs Token received: $apnsToken');
+              debugPrint('NotificationService: APNs token received');
               break;
             }
 
@@ -528,12 +528,12 @@ class NotificationService {
             );
           } else {
             final token = await _firebaseMessaging.getToken();
-            debugPrint('NotificationService: FCM Token: $token');
+            debugPrint('NotificationService: FCM token received');
             await _persistFcmToken(token);
           }
         } else {
           final token = await _firebaseMessaging.getToken();
-          debugPrint('NotificationService: FCM Token: $token');
+          debugPrint('NotificationService: FCM token received');
           await _persistFcmToken(token);
         }
       } catch (e) {

@@ -24,12 +24,16 @@ class DayFixesCard extends StatelessWidget {
     required this.onOpen,
     required this.onHide,
     this.tomorrow = false,
+    this.showNumbers = true,
   });
 
   final List<DayFix> fixes;
   final ValueChanged<DayFix> onOpen;
   final VoidCallback onHide;
   final bool tomorrow;
+
+  /// False in words mode: "Lighter" instead of the Demand saved.
+  final bool showNumbers;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +73,12 @@ class DayFixesCard extends StatelessWidget {
               ),
             ],
           ),
-          for (final fix in fixes) _FixRow(fix: fix, onTap: () => onOpen(fix)),
+          for (final fix in fixes)
+            _FixRow(
+              fix: fix,
+              showNumbers: showNumbers,
+              onTap: () => onOpen(fix),
+            ),
         ],
       ),
     );
@@ -77,17 +86,22 @@ class DayFixesCard extends StatelessWidget {
 }
 
 class _FixRow extends StatelessWidget {
-  const _FixRow({required this.fix, required this.onTap});
+  const _FixRow({
+    required this.fix,
+    required this.onTap,
+    required this.showNumbers,
+  });
 
   final DayFix fix;
   final VoidCallback onTap;
+  final bool showNumbers;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final (icon, tint, title, detail) = _fixText(fix);
     final label = _fixLabel(fix);
-    final saved = fix.demandSaved.round();
+    final tag = _fixTag(fix, showNumbers);
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
@@ -136,7 +150,7 @@ class _FixRow extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                label ?? '−$saved',
+                tag,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -188,6 +202,11 @@ String? _fixLabel(DayFix fix) => fix.demandSaved.round() >= 1
     ? 'Breather'
     : 'Fits peak';
 
+/// The fix's chip: what it does, or the Demand it saves ("Lighter" in words
+/// mode).
+String _fixTag(DayFix fix, bool showNumbers) =>
+    _fixLabel(fix) ?? (showNumbers ? '−${fix.demandSaved.round()}' : 'Lighter');
+
 /// The top fix inside My Day's brief, under its headline: what to do and a
 /// "Do it". With more fixes, "+N more" opens them all; the X hides fixes
 /// until tomorrow (until morning, for tomorrow's).
@@ -198,6 +217,7 @@ class BriefFix extends StatelessWidget {
     required this.onOpen,
     required this.onHide,
     this.tomorrow = false,
+    this.showNumbers = true,
   });
 
   final List<DayFix> fixes;
@@ -205,11 +225,14 @@ class BriefFix extends StatelessWidget {
   final VoidCallback onHide;
   final bool tomorrow;
 
+  /// False in words mode: "Lighter" instead of the Demand saved.
+  final bool showNumbers;
+
   @override
   Widget build(BuildContext context) {
     final fix = fixes.first;
     final (_, _, title, _) = _fixText(fix);
-    final tag = _fixLabel(fix) ?? '−${fix.demandSaved.round()}';
+    final tag = _fixTag(fix, showNumbers);
     const ink = Color(0xFF26215C);
     return Container(
       decoration: BoxDecoration(
@@ -267,6 +290,7 @@ class BriefFix extends StatelessWidget {
                     child: DayFixesCard(
                       fixes: fixes,
                       tomorrow: tomorrow,
+                      showNumbers: showNumbers,
                       onOpen: (fix) {
                         Navigator.pop(sheetContext);
                         onOpen(fix);

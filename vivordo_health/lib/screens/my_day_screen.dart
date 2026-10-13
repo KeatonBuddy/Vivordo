@@ -1509,6 +1509,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                         BriefFix(
                           fixes: fixes,
                           tomorrow: evening,
+                          showNumbers: context
+                              .watch<ThemeController>()
+                              .showScoreNumbers,
                           onOpen: (fix) => _openDayFix(
                             fix,
                             demand,
