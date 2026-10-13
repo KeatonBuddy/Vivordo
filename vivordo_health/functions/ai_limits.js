@@ -1,7 +1,10 @@
 "use strict";
 
-// Daily budget for the AI callables (assistant, aiTask, classifyPlanItems).
-const DAILY_CALL_LIMIT = 200; // a heavy chat day is well under 100 calls
+// Daily budgets for the AI callables. Chat has its own, so a heavy chat day
+// doesn't stop workout analysis or check-in questions (aiTask), and event
+// sorting (classifyPlanItems) has a third.
+const DAILY_CALL_LIMIT = 200;
+const DAILY_CHAT_LIMIT = 100; // Vivordo AI messages a day, a fair-use cap
 
 /**
  * Next daily usage record, or null when today's limit is spent.
@@ -16,4 +19,4 @@ function nextUsage(current, day, limit = DAILY_CALL_LIMIT) {
   return count >= limit ? null : {day, count: count + 1};
 }
 
-module.exports = {nextUsage, DAILY_CALL_LIMIT};
+module.exports = {nextUsage, DAILY_CALL_LIMIT, DAILY_CHAT_LIMIT};

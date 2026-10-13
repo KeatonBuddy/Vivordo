@@ -33,7 +33,11 @@ const {
   whoopVitals,
 } = require("./wearable_vitals");
 const {whoopDeletionPlan} = require("./whoop_deletion");
-const {nextUsage} = require("./ai_limits");
+const {
+  nextUsage,
+  DAILY_CALL_LIMIT,
+  DAILY_CHAT_LIMIT,
+} = require("./ai_limits");
 const {runAssistant, validateAssistantRequest} = require("./assistant");
 const {buildTask, runTask} = require("./ai_tasks");
 const {
@@ -775,12 +779,14 @@ exports.achievementUnlockNotification = onDocumentWritten(
  *
  * @param {string} uid The caller.
  */
-async function consumeAiQuota(uid) {
+async function consumeAiQuota(uid, {chat = false} = {}) {
   const db = admin.firestore();
-  const usageRef = db.collection("ai_usage").doc(uid);
+  const usageRef = db.collection("ai_usage").doc(chat ? uid : `${uid}_tasks`);
   const today = new Date().toISOString().slice(0, 10);
+  const limit = chat ? DAILY_CHAT_LIMIT : DAILY_CALL_LIMIT;
   const allowed = await db.runTransaction(async (transaction) => {
-    const next = nextUsage((await transaction.get(usageRef)).data(), today);
+    const next = nextUsage(
+        (await transaction.get(usageRef)).data(), today, limit);
     if (next) transaction.set(usageRef, next);
     return next !== null;
   });
@@ -806,7 +812,7 @@ exports.assistant = onCall(
       if (validated.error) {
         throw new HttpsError("invalid-argument", validated.error);
       }
-      await consumeAiQuota(uid);
+      await consumeAiQuota(uid, {chat: true});
       const {reply, usage, memoryChanges} = await runAssistant({
         client: getAnthropicClient(),
         db: admin.firestore(),
@@ -2473,6 +2479,7 @@ async function deleteVivordoAccountData(uid) {
     db.collection("founders").doc(uid).delete(),
     db.collection("ai_usage").doc(uid).delete(),
     db.collection("ai_usage").doc(`${uid}_planning`).delete(),
+    db.collection("ai_usage").doc(`${uid}_tasks`).delete(),
   ]);
   await admin.storage().bucket().deleteFiles({
     prefix: `circle_profiles/${uid}/`,
