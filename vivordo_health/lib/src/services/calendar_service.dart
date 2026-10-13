@@ -3,6 +3,7 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/utils/event_repeat.dart';
 import 'package:vivordo_health/src/utils/request_coalescer.dart';
 
@@ -33,16 +34,62 @@ class CalendarService {
   /// Drops cached ranges after a local edit, deletion or account change.
   static void invalidateEventCache() {
     _eventRequests.invalidateAll();
+    OutlookCalendarService.invalidateEventCache();
     eventsChanged.value++;
   }
+
+  /// Whether [event] came from Outlook, which Vivordo can read but not yet
+  /// change.
+  static bool isOutlook(gcal.Event event) =>
+      event.id?.startsWith('outlook:') == true;
+
+  /// The event's key in priorities, day records and reactions:
+  /// `google:<id>`, or Outlook's own `outlook:<id>`.
+  static String eventKey(gcal.Event event) =>
+      isOutlook(event) ? event.id! : 'google:${event.id}';
+
+  static void _requireGoogle(gcal.Event event) {
+    if (isOutlook(event)) {
+      throw StateError(
+        '“${event.summary ?? 'This event'}” is in Outlook, which Vivordo '
+        'can’t change yet. Edit it in Outlook.',
+      );
+    }
+  }
+
+  /// Google or Outlook: some calendar to read.
+  static Future<bool> isAnyConnected() async =>
+      await isSignedIn() || await OutlookCalendarService.isSignedIn();
 
   /// Bumped whenever the events may have changed, from any screen or Vivordo
   /// AI, so open screens can reload their schedule.
   static final ValueNotifier<int> eventsChanged = ValueNotifier<int>(0);
 
-  /// Silent, all-or-nothing fetch for scoring. Null means unavailable, while
-  /// an empty list means a successful fetch with no events.
+  /// Silent, all-or-nothing fetch for scoring, from every connected
+  /// calendar. Null means unavailable (nothing connected, or a connected
+  /// calendar couldn't be read), while an empty list means a successful
+  /// fetch with no events.
   static Future<List<gcal.Event>?> getScoringEvents(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final (googleOn, outlookOn) = await (
+      hasCalendarAccess(),
+      OutlookCalendarService.isSignedIn(),
+    ).wait;
+    if (!googleOn && !outlookOn) return null;
+    const none = <gcal.Event>[];
+    final (google, outlook) = await (
+      googleOn ? _googleScoringEvents(start, end) : Future.value(none),
+      outlookOn
+          ? OutlookCalendarService.getScoringEvents(start, end)
+          : Future.value(none),
+    ).wait;
+    if (google == null || outlook == null) return null;
+    return _byStart([...google, ...outlook]);
+  }
+
+  static Future<List<gcal.Event>?> _googleScoringEvents(
     DateTime start,
     DateTime end,
   ) async {
@@ -135,6 +182,7 @@ class CalendarService {
     gcal.Event event, {
     EventScope scope = EventScope.thisEvent,
   }) async {
+    _requireGoogle(event);
     if (scope == EventScope.thisAndFollowing &&
         event.recurringEventId != null) {
       return _endSeriesBefore(event);
@@ -265,6 +313,7 @@ class CalendarService {
     required DateTime end,
     required String recurrence,
   }) async {
+    _requireGoogle(event);
     final calendarId = _calendarIdFor(event);
     final eventId = event.id;
     if (calendarId == null || eventId == null) {
@@ -376,6 +425,7 @@ class CalendarService {
     bool? isAllDay,
     bool allEvents = false,
   }) async {
+    _requireGoogle(event);
     if (allEvents && event.recurringEventId != null) {
       final series = await seriesFor(event);
       final seriesStart = _startOf(series);
@@ -519,9 +569,9 @@ class CalendarService {
     forceRefresh: forceRefresh,
   );
 
-  /// Returns the user's visible Google Calendar events between [start] and [end]
-  /// (expanded recurrences, ordered by start time). Returns [] when the user
-  /// hasn't connected Google Calendar or on any auth/network error.
+  /// Returns the user's visible Google Calendar and Outlook events between
+  /// [start] and [end] (expanded recurrences, ordered by start time). A
+  /// calendar that isn't connected, or fails to load, adds nothing.
   ///
   /// Several screens and the home widget ask for the same range at once, so
   /// identical requests are coalesced and the result is reused briefly. Pass
@@ -530,11 +580,31 @@ class CalendarService {
     DateTime start,
     DateTime end, {
     bool forceRefresh = false,
-  }) => _eventRequests.run(
-    _eventCacheKey(start, end),
-    () => _fetchEventsBetween(start, end),
-    forceRefresh: forceRefresh,
-  );
+  }) async {
+    final (google, outlook) = await (
+      _eventRequests.run(
+        _eventCacheKey(start, end),
+        () => _fetchEventsBetween(start, end),
+        forceRefresh: forceRefresh,
+      ),
+      OutlookCalendarService.getEventsBetween(
+        start,
+        end,
+        forceRefresh: forceRefresh,
+      ),
+    ).wait;
+    return outlook.isEmpty ? google : _byStart([...google, ...outlook]);
+  }
+
+  static List<gcal.Event> _byStart(List<gcal.Event> events) =>
+      events..sort((a, b) {
+        final aStart = a.start?.dateTime ?? a.start?.date;
+        final bStart = b.start?.dateTime ?? b.start?.date;
+        if (aStart == null && bStart == null) return 0;
+        if (aStart == null) return 1;
+        if (bStart == null) return -1;
+        return aStart.compareTo(bStart);
+      });
 
   /// Cache key for a range, scoped to the signed-in Google account so one
   /// account can never be served another's events. The auth listener also
@@ -722,18 +792,7 @@ class CalendarService {
       }),
     );
 
-    final events = eventLists.expand((items) => items).toList();
-    events.sort((a, b) {
-      final aStart = a.start?.dateTime ?? a.start?.date;
-      final bStart = b.start?.dateTime ?? b.start?.date;
-
-      if (aStart == null && bStart == null) return 0;
-      if (aStart == null) return 1;
-      if (bStart == null) return -1;
-      return aStart.compareTo(bStart);
-    });
-
-    return events;
+    return _byStart(eventLists.expand((items) => items).toList());
   }
 }
 

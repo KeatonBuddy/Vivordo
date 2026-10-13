@@ -343,11 +343,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (_isOutlookCalendarConnected) {
         await OutlookCalendarService.signOut();
       } else {
-        final today = DateTime.now();
-        final weekStart = today.subtract(Duration(days: today.weekday - 1));
-        await OutlookCalendarService.connectAndGetWeekEvents(
-          DateTime(weekStart.year, weekStart.month, weekStart.day),
-        );
+        await OutlookCalendarService.connect();
       }
 
       final isConnected = await OutlookCalendarService.isSignedIn();

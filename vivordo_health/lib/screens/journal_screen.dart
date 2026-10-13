@@ -10,7 +10,6 @@ import '../src/services/achievement_service.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/journal_lock_service.dart';
 import '../src/services/metrics_service.dart';
-import '../src/services/outlook_calendar_service.dart';
 import '../src/services/weekly_review_service.dart';
 import '../src/utils/journal_summary.dart';
 import '../src/utils/weekly_review.dart';
@@ -99,23 +98,14 @@ class _JournalScreenState extends State<JournalScreen> {
     final now = DateTime.now();
     final finished = <({String title, DateTime end})>[];
     try {
-      final google = await CalendarService.getEventsBetween(
+      final events = await CalendarService.getEventsBetween(
         _today,
         now,
       ).timeout(const Duration(seconds: 6));
-      for (final e in google) {
+      for (final e in events) {
         final end = e.end?.dateTime?.toLocal();
         if (e.status == 'cancelled' || e.start?.dateTime == null) continue;
         if (end != null) finished.add((title: e.summary ?? '', end: end));
-      }
-    } catch (_) {}
-    try {
-      final outlook = await OutlookCalendarService.getEventsBetween(
-        _today,
-        now,
-      ).timeout(const Duration(seconds: 6));
-      for (final e in outlook) {
-        if (!e.isAllDay) finished.add((title: e.subject, end: e.end.toLocal()));
       }
     } catch (_) {}
     if (!mounted || finished.isEmpty) return;

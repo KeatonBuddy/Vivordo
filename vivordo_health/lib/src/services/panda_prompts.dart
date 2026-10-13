@@ -285,8 +285,8 @@ class PandaPrompts {
     );
   }
 
-  /// Fetches the Google Calendar schedule digest: the past 3 days and the
-  /// next week.
+  /// Fetches the Google Calendar and Outlook schedule digest: the past 3
+  /// days and the next week.
   ///
   /// Runs OFF the session-init critical path — the calendar needs auth, an
   /// enumeration of every calendar, and a fetch per calendar, which can take
@@ -460,7 +460,7 @@ class PandaPrompts {
     var hasAny = false;
     for (final e in events) {
       final startDt = e.start?.dateTime;
-      if (startDt == null) continue;
+      if (startDt == null || e.status == 'cancelled') continue;
       final localStart = startDt.toLocal();
       if (localStart.isBefore(dayStart) || !localStart.isBefore(windowEnd)) {
         continue;
@@ -476,7 +476,9 @@ class PandaPrompts {
                 '${endLocal.minute.toString().padLeft(2, '0')}';
       final title = (e.summary ?? 'event').trim();
       (byDay[dayKey] ??= []).add(
-        '$startHm$endHm ${title.isEmpty ? 'event' : title}',
+        '$startHm$endHm ${title.isEmpty ? 'event' : title}'
+        // Vivordo can't change these yet, so Vivordo AI shouldn't offer to.
+        '${CalendarService.isOutlook(e) ? ' (Outlook, read-only)' : ''}',
       );
       hasAny = true;
     }

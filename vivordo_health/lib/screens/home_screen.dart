@@ -19,7 +19,6 @@ import 'package:vivordo_health/src/services/wind_down_reminder.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
-import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
@@ -989,9 +988,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final events = await CalendarService.getWeekEvents(
         todayStart,
       ).timeout(const Duration(seconds: 15), onTimeout: () => <gcal.Event>[]);
-      // ponytail: Google events only; add Outlook's here if it's unbenched
-      // (OutlookCalendarService.enabled), or tonight's reminder can miss an
-      // early Outlook start until My Day reschedules it.
       // Keeps the next week of morning check-in reminders scheduled.
       unawaited(CheckInReminders.sync());
       unawaited(WeeklyReviewService.syncReminder());
@@ -1003,7 +999,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
       );
-      final signedIn = await CalendarService.isSignedIn();
+      final signedIn = await CalendarService.isAnyConnected();
       if (!signedIn) {
         await NotificationService().cancelCalendarCheckIn();
         return [];
@@ -1146,7 +1142,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   String _reachableEventKey(gcal.Event event, int index) =>
-      'google:${CalendarService.calendarIdForEvent(event) ?? ''}:'
+      '${CalendarService.isOutlook(event) ? 'outlook' : 'google:${CalendarService.calendarIdForEvent(event) ?? ''}'}:'
       '${event.id ?? event.iCalUID ?? index}:${event.start?.dateTime?.toUtc().toIso8601String()}';
 
   Widget _buildScaffold({
@@ -2708,10 +2704,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ) async {
     final start = DateTime(today.year, today.month, today.day + 1);
     final end = DateTime(today.year, today.month, today.day + 2);
-    // Google, Outlook and priorities are read at once, not one after
-    // another; any failure (or 15 s without an answer) shows as unavailable.
-    Future<List<(DateTime, DateTime)>> google() async => [
-      if (await CalendarService.isSignedIn())
+    // Calendars and priorities are read at once, not one after another;
+    // any failure (or 15 s without an answer) shows as unavailable.
+    Future<List<(DateTime, DateTime)>> calendar() async => [
+      if (await CalendarService.isAnyConnected())
         for (final event in await CalendarService.getEventsBetween(start, end))
           if (event.start?.dateTime?.toLocal() case final s?)
             if (event.end?.dateTime?.toLocal() case final e?)
@@ -2722,14 +2718,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ) ??
                       false))
                 (s, e),
-    ];
-    Future<List<(DateTime, DateTime)>> outlook() async => [
-      if (await OutlookCalendarService.isSignedIn())
-        for (final event in await OutlookCalendarService.getEventsBetween(
-          start,
-          end,
-        ))
-          if (!event.isAllDay) (event.start.toLocal(), event.end.toLocal()),
     ];
     Future<List<(DateTime, DateTime)>> priorities() async => [
       for (final priority in await DailyPriorityService.forDay(
@@ -2746,8 +2734,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       intervals = [
         for (final part in await Future.wait([
-          google(),
-          outlook(),
+          calendar(),
           priorities(),
         ]).timeout(const Duration(seconds: 15)))
           ...part,
@@ -2970,75 +2957,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final todayEnd = todayStart.add(const Duration(days: 1));
     final events = <_ScheduleEvent>[];
 
-    bool googleSignedIn = false;
-    bool outlookSignedIn = false;
-
+    bool signedIn = false;
     try {
-      googleSignedIn = await CalendarService.isSignedIn().timeout(
+      signedIn = await CalendarService.isAnyConnected().timeout(
         const Duration(seconds: 5),
         onTimeout: () => false,
       );
     } catch (_) {
-      googleSignedIn = false;
+      signedIn = false;
     }
+    if (!signedIn) return null;
 
     try {
-      outlookSignedIn = await OutlookCalendarService.isSignedIn().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => false,
+      final calendarEvents = await _getReachableWindowEventsFuture(todayStart);
+      events.addAll(
+        calendarEvents.where((event) => event.status != 'cancelled').map((
+          event,
+        ) {
+          final start = event.start?.dateTime?.toLocal();
+          final end = event.end?.dateTime?.toLocal();
+          if (start == null || end == null) return null;
+          return _ScheduleEvent(
+            title: event.summary?.trim().isNotEmpty == true
+                ? event.summary!.trim()
+                : 'Calendar event',
+            start: start,
+            end: end,
+            key: CalendarService.eventKey(event),
+          );
+        }).whereType<_ScheduleEvent>(),
       );
-    } catch (_) {
-      outlookSignedIn = false;
-    }
-
-    if (!googleSignedIn && !outlookSignedIn) return null;
-
-    if (googleSignedIn) {
-      try {
-        final googleEvents = await _getReachableWindowEventsFuture(todayStart);
-        events.addAll(
-          googleEvents.where((event) => event.status != 'cancelled').map((
-            event,
-          ) {
-            final start = event.start?.dateTime?.toLocal();
-            final end = event.end?.dateTime?.toLocal();
-            if (start == null || end == null) return null;
-            return _ScheduleEvent(
-              title: event.summary?.trim().isNotEmpty == true
-                  ? event.summary!.trim()
-                  : 'Calendar event',
-              start: start,
-              end: end,
-              key: 'google:${event.id}',
-            );
-          }).whereType<_ScheduleEvent>(),
-        );
-      } catch (e) {
-        debugPrint('Schedule insight Google load failed: $e');
-      }
-    }
-
-    if (outlookSignedIn) {
-      try {
-        final outlookEvents =
-            await OutlookCalendarService.getWeekEvents(todayStart).timeout(
-              const Duration(seconds: 8),
-              onTimeout: () => <OutlookEvent>[],
-            );
-        events.addAll(
-          outlookEvents.map((event) {
-            return _ScheduleEvent(
-              title: event.subject.trim().isNotEmpty
-                  ? event.subject.trim()
-                  : 'Calendar event',
-              start: event.start.toLocal(),
-              end: event.end.toLocal(),
-            );
-          }),
-        );
-      } catch (e) {
-        debugPrint('Schedule insight Outlook load failed: $e');
-      }
+    } catch (e) {
+      debugPrint('Schedule insight calendar load failed: $e');
     }
 
     final todayEvents = events.where((event) {
@@ -3179,9 +3129,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         isRecurring:
             event.recurringEventId != null ||
             event.recurrence?.isNotEmpty == true,
-        color: const Color(0xFF4285F4),
-        calendarName: 'Google Calendar',
-        canEdit: true,
+        color: CalendarService.isOutlook(event)
+            ? const Color(0xFFF4A62A)
+            : const Color(0xFF4285F4),
+        calendarName: CalendarService.isOutlook(event)
+            ? 'Outlook'
+            : 'Google Calendar',
+        canEdit: !CalendarService.isOutlook(event),
       ),
     );
     if (!mounted || action == null) return;

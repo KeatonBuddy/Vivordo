@@ -1,32 +1,20 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:msal_auth/msal_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/utils/request_coalescer.dart';
 
-class OutlookEvent {
-  const OutlookEvent({
-    required this.id,
-    required this.subject,
-    required this.start,
-    required this.end,
-    this.location,
-    this.isAllDay = false,
-  });
-
-  final String id;
-  final String subject;
-  final DateTime start;
-  final DateTime end;
-  final String? location;
-  final bool isAllDay;
-}
-
+/// Outlook (Microsoft 365 and Outlook.com) calendars through Microsoft Graph.
+///
+/// Events come back as [gcal.Event]s, ids prefixed `outlook:`, so everything
+/// that reads Google events reads these too; [CalendarService] merges both.
+/// Read-only for now: [CalendarService]'s edits refuse Outlook events.
 class OutlookCalendarService {
-  /// Outlook is temporarily benched. Keep the implementation in place so it
-  /// can be restored without another migration or reconnecting existing users.
-  static const bool enabled = false;
+  /// Off hides the Settings row and reads nothing.
+  static const bool enabled = true;
 
   static const String clientId = '07c05b6e-07ad-4ed3-bfd2-35af418decdf';
   static const String authority = 'https://login.microsoftonline.com/common';
@@ -35,8 +23,8 @@ class OutlookCalendarService {
   /// for the same range, short enough to stay close to the server.
   static const _eventCacheTtl = Duration(seconds: 30);
 
-  static final RequestCoalescer<List<OutlookEvent>> _eventRequests =
-      RequestCoalescer<List<OutlookEvent>>(ttl: _eventCacheTtl);
+  static final RequestCoalescer<List<gcal.Event>> _eventRequests =
+      RequestCoalescer<List<gcal.Event>>(ttl: _eventCacheTtl);
 
   /// Drops cached ranges after an edit, deletion or account change.
   static void invalidateEventCache() => _eventRequests.invalidateAll();
@@ -48,354 +36,335 @@ class OutlookCalendarService {
 
   static const String _graphHost = 'graph.microsoft.com';
 
+  /// Graph fields Vivordo reads; the rest (bodies, every attendee's
+  /// details) stays on Microsoft's side.
+  static const String _eventFields =
+      'id,subject,start,end,isAllDay,showAs,isCancelled,responseStatus,'
+      'attendees,organizer,isOrganizer,seriesMasterId,isOnlineMeeting,'
+      'onlineMeeting,location,bodyPreview,iCalUId';
+
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
-  static const String _accessTokenKey = 'outlook_access_token';
-  static const String _accessTokenExpiryKey = 'outlook_access_token_expiry';
   static const String _outlookSignedInKey = 'outlook_signed_in';
+  // Written by the first version, which kept its own copy of the token.
+  static const _legacyTokenKeys = [
+    'outlook_access_token',
+    'outlook_access_token_expiry',
+  ];
+
+  /// Whether an Outlook account is connected, for Settings and anything
+  /// else that shows it. Goes false when Microsoft wants the user to sign in
+  /// again.
+  static final ValueNotifier<bool> connectionNotifier = ValueNotifier<bool>(
+    false,
+  );
+  static bool? _signedIn;
 
   static SingleAccountPca? _pca;
 
-  static Future<SingleAccountPca> _getPca() async {
-    if (_pca != null) return _pca!;
-
-    debugPrint('Outlook MSAL: creating SingleAccountPca');
-    _pca = await SingleAccountPca.create(
-      clientId: clientId,
-      appleConfig: AppleConfig(
-        authority: authority,
-        authorityType: AuthorityType.aad,
-        broker: Broker.safariBrowser,
-      ),
-    );
-    debugPrint('Outlook MSAL: SingleAccountPca created');
-
-    return _pca!;
-  }
-
-  static Future<List<OutlookEvent>> getWeekEvents(
-    DateTime weekStart, {
-    bool forceRefresh = false,
-  }) {
-    return getEventsBetween(
-      weekStart,
-      weekStart.add(const Duration(days: 7)),
-      forceRefresh: forceRefresh,
-    );
-  }
-
-  /// Identical range requests are coalesced and reused briefly, since several
-  /// screens ask for the same window at once. Pass [forceRefresh] for a
-  /// pull-to-refresh, which always reaches Graph.
-  static Future<List<OutlookEvent>> getEventsBetween(
-    DateTime start,
-    DateTime end, {
-    bool forceRefresh = false,
-  }) {
-    if (!enabled) return Future.value(const <OutlookEvent>[]);
-    return _eventRequests.run(
-      '${start.toIso8601String()}|${end.toIso8601String()}',
-      () => _fetchEventsBetween(start, end),
-      forceRefresh: forceRefresh,
-    );
-  }
-
-  static Future<List<OutlookEvent>> _fetchEventsBetween(
-    DateTime start,
-    DateTime end,
-  ) async {
-    try {
-      final savedToken = await _getSavedAccessToken();
-      if (savedToken != null) {
-        debugPrint('Outlook MSAL: using saved access token');
-        return _fetchEvents(savedToken, start, end);
-      }
-
-      debugPrint('Outlook MSAL: getting token for Graph events');
-      final pca = await _getPca();
-      final result = await pca.acquireTokenSilent(
-        scopes: scopes,
-        authority: authority,
+  static Future<SingleAccountPca> _getPca() async =>
+      _pca ??= await SingleAccountPca.create(
+        clientId: clientId,
+        appleConfig: AppleConfig(
+          authority: authority,
+          authorityType: AuthorityType.aad,
+          broker: Broker.safariBrowser,
+        ),
       );
 
-      final accessToken = result.accessToken;
-      if (accessToken.isEmpty) {
-        debugPrint('Outlook MSAL: silent token was empty');
-        return [];
-      }
-
-      await _saveAuthResult(result);
-      return _fetchEvents(accessToken, start, end);
-    } on MsalException catch (e) {
-      debugPrint('Outlook MSAL silent token error: $e');
-      return [];
-    } catch (e, stackTrace) {
-      debugPrint('Outlook getEventsBetween error: $e');
-      debugPrint('$stackTrace');
-      return [];
-    }
+  static Future<bool> isSignedIn() async {
+    if (!enabled) return false;
+    _signedIn ??= await _secureStorage.read(key: _outlookSignedInKey) == 'true';
+    connectionNotifier.value = _signedIn!;
+    return _signedIn!;
   }
 
-  static Future<List<OutlookEvent>> connectAndGetWeekEvents(
-    DateTime weekStart,
-  ) async {
-    if (!enabled) return const <OutlookEvent>[];
+  static Future<void> _setSignedIn(bool signedIn) async {
+    _signedIn = signedIn;
+    connectionNotifier.value = signedIn;
+    if (signedIn) {
+      await _secureStorage.write(key: _outlookSignedInKey, value: 'true');
+    } else {
+      await _secureStorage.delete(key: _outlookSignedInKey);
+    }
+    // Screens reload: the merged calendar gained or lost these events.
+    CalendarService.invalidateEventCache();
+  }
 
+  /// Signs in interactively. True once connected; false when the user
+  /// cancelled. Other failures throw, for the caller to report.
+  static Future<bool> connect() async {
+    if (!enabled) return false;
     try {
-      debugPrint('Outlook MSAL: connecting and fetching week events');
-      final pca = await _getPca();
-      final result = await pca.acquireToken(
+      final result = await (await _getPca()).acquireToken(
         scopes: scopes,
         prompt: Prompt.selectAccount,
         authority: authority,
       );
-
-      final accessToken = result.accessToken;
-      if (accessToken.isEmpty) {
-        debugPrint('Outlook MSAL: interactive token was empty');
-        return [];
-      }
-
-      await _saveAuthResult(result);
-
-      return _fetchEvents(
-        accessToken,
-        weekStart,
-        weekStart.add(const Duration(days: 7)),
-      );
-    } on MsalException catch (e) {
-      debugPrint('Outlook MSAL connect events error: $e');
-      return [];
-    } catch (e, stackTrace) {
-      debugPrint('Outlook connectAndGetWeekEvents error: $e');
-      debugPrint('$stackTrace');
-      return [];
+      if (result.accessToken.isEmpty) return false;
+      await _setSignedIn(true);
+      return true;
+    } on MsalUserCancelException {
+      return false;
     }
-  }
-
-  static Future<String?> _getSavedAccessToken() async {
-    final token = await _secureStorage.read(key: _accessTokenKey);
-    final expiryText = await _secureStorage.read(key: _accessTokenExpiryKey);
-
-    if (token == null || token.isEmpty || expiryText == null) return null;
-
-    final expiry = DateTime.tryParse(expiryText);
-    if (expiry == null) return null;
-
-    final stillValid = DateTime.now().toUtc().isBefore(
-      expiry.toUtc().subtract(const Duration(minutes: 5)),
-    );
-
-    return stillValid ? token : null;
-  }
-
-  static Future<void> _saveAuthResult(dynamic result) async {
-    final accessToken = result.accessToken as String?;
-    if (accessToken == null || accessToken.isEmpty) return;
-
-    // A newly authenticated account must not read the previous one's events.
-    invalidateEventCache();
-
-    final dynamic rawExpiry = result.expiresOn;
-    final DateTime expiry = rawExpiry is DateTime
-        ? rawExpiry
-        : DateTime.now().toUtc().add(const Duration(minutes: 50));
-
-    await _secureStorage.write(key: _accessTokenKey, value: accessToken);
-    await _secureStorage.write(
-      key: _accessTokenExpiryKey,
-      value: expiry.toUtc().toIso8601String(),
-    );
-    await _secureStorage.write(key: _outlookSignedInKey, value: 'true');
-  }
-
-  static Future<bool> isSignedIn() async {
-    if (!enabled) return false;
-
-    final signedIn = await _secureStorage.read(key: _outlookSignedInKey);
-    return signedIn == 'true' && await _getSavedAccessToken() != null;
   }
 
   static Future<void> signOut() async {
     if (enabled) {
       try {
-        final pca = await _getPca();
-        await pca.signOut();
+        await (await _getPca()).signOut();
       } catch (e) {
         debugPrint('Outlook sign out error: $e');
       }
     }
-
-    invalidateEventCache();
-    await _secureStorage.delete(key: _accessTokenKey);
-    await _secureStorage.delete(key: _accessTokenExpiryKey);
-    await _secureStorage.delete(key: _outlookSignedInKey);
+    for (final key in _legacyTokenKeys) {
+      await _secureStorage.delete(key: key);
+    }
+    await _setSignedIn(false);
   }
 
-  static Future<List<OutlookEvent>> _fetchEvents(
-    String accessToken,
+  /// A Graph token from MSAL's cache, refreshed silently when it expired.
+  /// Null when it can't be had; when Microsoft needs the user to sign in
+  /// again, Outlook also shows as disconnected.
+  static Future<String?> _token() async {
+    try {
+      final result = await (await _getPca()).acquireTokenSilent(
+        scopes: scopes,
+        authority: authority,
+      );
+      return result.accessToken.isEmpty ? null : result.accessToken;
+    } on MsalUiRequiredException catch (e) {
+      debugPrint('Outlook needs signing in again: $e');
+      await _setSignedIn(false);
+      return null;
+    } catch (e) {
+      debugPrint('Outlook token error: $e');
+      return null;
+    }
+  }
+
+  static Future<List<gcal.Event>> getWeekEvents(
+    DateTime weekStart, {
+    bool forceRefresh = false,
+  }) => getEventsBetween(
+    weekStart,
+    weekStart.add(const Duration(days: 7)),
+    forceRefresh: forceRefresh,
+  );
+
+  /// Events between [start] and [end] from every calendar the user owns;
+  /// [] when Outlook isn't connected or can't be read. Identical range
+  /// requests are coalesced and reused briefly, since several screens ask
+  /// for the same window at once. Pass [forceRefresh] for a pull-to-refresh.
+  static Future<List<gcal.Event>> getEventsBetween(
     DateTime start,
-    DateTime end,
-  ) async {
-    final uri = Uri.https(_graphHost, '/v1.0/me/calendarView', {
-      'startDateTime': start.toUtc().toIso8601String(),
-      'endDateTime': end.toUtc().toIso8601String(),
-      r'$orderby': 'start/dateTime',
-      r'$top': '100',
-    });
-
-    debugPrint('Outlook Graph request: $uri');
-
-    final response = await http.get(
-      uri,
-      headers: {
-        'Authorization': 'Bearer $accessToken',
-        'Accept': 'application/json',
-        'Prefer': 'outlook.timezone="UTC"',
-      },
+    DateTime end, {
+    bool forceRefresh = false,
+  }) async {
+    if (!await isSignedIn()) return const <gcal.Event>[];
+    return _eventRequests.run(
+      '${start.toIso8601String()}|${end.toIso8601String()}',
+      () async => await _fetchEvents(start, end) ?? const <gcal.Event>[],
+      forceRefresh: forceRefresh,
     );
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      debugPrint(
-        'Outlook Graph error: ${response.statusCode} ${response.body}',
-      );
-      return [];
-    }
-
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-    final values = decoded['value'] as List<dynamic>? ?? [];
-    debugPrint('Outlook Graph returned ${values.length} raw events');
-
-    final events = values
-        .map((item) => _parseEvent(item as Map<String, dynamic>))
-        .whereType<OutlookEvent>()
-        .toList();
-
-    debugPrint('Outlook parsed ${events.length} events');
-    for (final event in events.take(5)) {
-      debugPrint(
-        'Outlook event: ${event.subject} | ${event.start.toIso8601String()} - ${event.end.toIso8601String()}',
-      );
-    }
-
-    return events;
   }
 
   /// Silent, all-or-nothing fetch for scoring, like
-  /// CalendarService.getScoringEvents: null when Outlook can't be read (no
-  /// token, an error, or a page that didn't load), an empty list when it
-  /// read fine and had no events. Follows every page, so a busy range isn't
-  /// cut off at Graph's first 100 events.
-  static Future<List<OutlookEvent>?> getScoringEvents(
+  /// CalendarService.getScoringEvents: null when Outlook can't be read (not
+  /// connected, no token, or any calendar or page that didn't load), an
+  /// empty list when it read fine and had no events.
+  static Future<List<gcal.Event>?> getScoringEvents(
     DateTime start,
     DateTime end,
   ) async {
-    if (!enabled) return null;
+    if (!await isSignedIn()) return null;
+    return _fetchEvents(start, end, requireComplete: true);
+  }
+
+  static Future<List<gcal.Event>?> _fetchEvents(
+    DateTime start,
+    DateTime end, {
+    bool requireComplete = false,
+  }) async {
+    final token = await _token();
+    if (token == null) return null;
     try {
-      var token = await _getSavedAccessToken();
-      if (token == null) {
-        final result = await (await _getPca()).acquireTokenSilent(
-          scopes: scopes,
-          authority: authority,
-        );
-        if (result.accessToken.isEmpty) return null;
-        await _saveAuthResult(result);
-        token = result.accessToken;
-      }
-      final events = <OutlookEvent>[];
-      Uri? page = Uri.https(_graphHost, '/v1.0/me/calendarView', {
-        'startDateTime': start.toUtc().toIso8601String(),
-        'endDateTime': end.toUtc().toIso8601String(),
-        r'$orderby': 'start/dateTime',
-        r'$top': '100',
-      });
-      while (page != null) {
-        final response = await http.get(
-          page,
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Accept': 'application/json',
-            'Prefer': 'outlook.timezone="UTC"',
-          },
-        );
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-          return null;
-        }
-        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-        for (final item in decoded['value'] as List? ?? const []) {
-          if (_parseEvent(item as Map<String, dynamic>) case final event?) {
-            events.add(event);
+      final (:me, :ids) = ownCalendars(
+        await _pages(
+          token,
+          Uri.https(_graphHost, '/v1.0/me/calendars', {
+            r'$select': 'id,owner,isDefaultCalendar',
+          }),
+        ),
+      );
+      final perCalendar = await Future.wait(
+        ids.map((id) async {
+          try {
+            return await _pages(
+              token,
+              Uri.https(_graphHost, '/v1.0/me/calendars/$id/calendarView', {
+                'startDateTime': start.toUtc().toIso8601String(),
+                'endDateTime': end.toUtc().toIso8601String(),
+                r'$select': _eventFields,
+                r'$top': '100',
+              }),
+            );
+          } catch (e) {
+            if (requireComplete) rethrow;
+            debugPrint('Outlook calendar skipped: $e');
+            return const <Map<String, dynamic>>[];
           }
-        }
-        final next = decoded['@odata.nextLink'];
-        page = next is String ? Uri.parse(next) : null;
-      }
-      return events;
-    } catch (error) {
-      debugPrint('Outlook scoring fetch failed: $error');
-      return null;
-    }
-  }
-
-  static OutlookEvent? _parseEvent(Map<String, dynamic> json) {
-    try {
-      final startJson = json['start'] as Map<String, dynamic>?;
-      final endJson = json['end'] as Map<String, dynamic>?;
-      final locationJson = json['location'] as Map<String, dynamic>?;
-
-      final startText = startJson?['dateTime'] as String?;
-      final endText = endJson?['dateTime'] as String?;
-
-      if (startText == null || endText == null) return null;
-
-      return OutlookEvent(
-        id: json['id'] as String? ?? '',
-        subject: json['subject'] as String? ?? 'Untitled Event',
-        start: DateTime.parse(startText).toLocal(),
-        end: DateTime.parse(endText).toLocal(),
-        location: locationJson?['displayName'] as String?,
-        isAllDay: json['isAllDay'] as bool? ?? false,
+        }),
       );
+      // Sorted by CalendarService, which merges these with Google's.
+      return [
+        for (final json in perCalendar.expand((items) => items))
+          ?toGoogleEvent(json, me: me),
+      ];
     } catch (e) {
-      debugPrint('Outlook event parse error: $e');
+      debugPrint('Outlook events error: $e');
       return null;
     }
   }
 
-  static Future<void> testLogin() async {
-    if (!enabled) {
-      debugPrint('Outlook MSAL: feature is currently disabled');
-      return;
+  /// Every item of a Graph collection, following `@odata.nextLink` so a busy
+  /// range isn't cut off at the first page. Throws on any failed page.
+  static Future<List<Map<String, dynamic>>> _pages(
+    String token,
+    Uri first,
+  ) async {
+    final items = <Map<String, dynamic>>[];
+    Uri? page = first;
+    while (page != null) {
+      final response = await http.get(
+        page,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+          // Times come back in UTC, written without a zone.
+          'Prefer': 'outlook.timezone="UTC"',
+        },
+      );
+      if (response.statusCode == 401) await _setSignedIn(false);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw http.ClientException(
+          'Graph ${response.statusCode}: ${response.body}',
+          page,
+        );
+      }
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      items.addAll(
+        (decoded['value'] as List? ?? const []).cast<Map<String, dynamic>>(),
+      );
+      final next = decoded['@odata.nextLink'];
+      page = next is String ? Uri.parse(next) : null;
+    }
+    return items;
+  }
+
+  /// The user's address (their default calendar's owner) and the ids of the
+  /// calendars they own. Colleagues' calendars shared with them are left
+  /// out, or someone else's meetings would count as theirs.
+  @visibleForTesting
+  static ({String? me, List<String> ids}) ownCalendars(
+    List<Map<String, dynamic>> calendars,
+  ) {
+    String? ownerOf(Map<String, dynamic> calendar) =>
+        ((calendar['owner'] as Map?)?['address'] as String?)?.toLowerCase();
+    final me = calendars
+        .where((calendar) => calendar['isDefaultCalendar'] == true)
+        .map(ownerOf)
+        .firstOrNull;
+    return (
+      me: me,
+      ids: [
+        for (final calendar in calendars)
+          if (calendar['isDefaultCalendar'] == true ||
+              (me != null && ownerOf(calendar) == me))
+            calendar['id'] as String,
+      ],
+    );
+  }
+
+  /// A Graph event as the Google event the rest of the app reads. Null when
+  /// it has no times. [me] is the user's address, to find them among the
+  /// invitees.
+  @visibleForTesting
+  static gcal.Event? toGoogleEvent(Map<String, dynamic> json, {String? me}) {
+    final startText = (json['start'] as Map?)?['dateTime'] as String?;
+    final endText = (json['end'] as Map?)?['dateTime'] as String?;
+    final id = json['id'] as String?;
+    if (startText == null || endText == null || id == null) return null;
+    final allDay = json['isAllDay'] == true;
+    // Asked for in UTC, which Graph writes without a zone. All-day events
+    // are dates, whatever the zone.
+    gcal.EventDateTime time(String text) {
+      final utc = DateTime.parse(text.endsWith('Z') ? text : '${text}Z');
+      return allDay
+          ? (gcal.EventDateTime()
+              ..date = DateTime(utc.year, utc.month, utc.day))
+          : (gcal.EventDateTime()..dateTime = utc);
     }
 
-    try {
-      debugPrint('Outlook MSAL: starting');
-      final pca = await _getPca();
-
-      debugPrint('Outlook MSAL: acquiring token');
-      final result = await pca.acquireToken(
-        scopes: scopes,
-        prompt: Prompt.selectAccount,
-        authority: authority,
-      );
-
-      debugPrint('Outlook MSAL: auth completed');
-      debugPrint('Access token present: ${result.accessToken.isNotEmpty}');
-      debugPrint('Account username: ${result.account.username}');
-      debugPrint('Expires on: ${result.expiresOn}');
-      await _saveAuthResult(result);
-      final now = DateTime.now();
-      final events = await _fetchEvents(
-        result.accessToken,
-        now,
-        now.add(const Duration(days: 7)),
-      );
-      debugPrint('Outlook MSAL: test fetched ${events.length} events');
-    } on MsalException catch (e, stackTrace) {
-      debugPrint('Outlook MSAL error: $e');
-      debugPrint('$stackTrace');
-    } catch (e, stackTrace) {
-      debugPrint('Outlook unexpected error: $e');
-      debugPrint('$stackTrace');
-    }
+    final response =
+        (json['responseStatus'] as Map?)?['response'] as String? ?? 'none';
+    final organizer = (json['organizer'] as Map?)?['emailAddress'] as Map?;
+    final isOrganizer = json['isOrganizer'] == true;
+    final invitees = [
+      for (final attendee in json['attendees'] as List? ?? const [])
+        if (((attendee as Map)['emailAddress'] as Map?)?['address']
+            case final String address
+            when address.toLowerCase() != me?.toLowerCase())
+          gcal.EventAttendee()
+            ..email = address
+            ..optional = attendee['type'] == 'optional',
+    ];
+    final showAs = json['showAs'] as String?;
+    final summary = (json['subject'] as String?)?.trim();
+    return gcal.Event()
+      ..id = 'outlook:$id'
+      ..iCalUID = json['iCalUId'] as String?
+      ..summary = summary == null || summary.isEmpty ? null : summary
+      ..description = json['bodyPreview'] as String?
+      ..location = (json['location'] as Map?)?['displayName'] as String?
+      ..start = time(startText)
+      ..end = time(endText)
+      ..status = json['isCancelled'] == true ? 'cancelled' : 'confirmed'
+      ..transparency = showAs == 'free' || showAs == 'workingElsewhere'
+          ? 'transparent'
+          : 'opaque'
+      ..recurringEventId = switch (json['seriesMasterId']) {
+        final String series => 'outlook:$series',
+        _ => null,
+      }
+      ..organizer = (gcal.EventOrganizer()
+        ..self = isOrganizer
+        ..email = organizer?['address'] as String?
+        ..displayName = organizer?['name'] as String?)
+      ..hangoutLink = (json['onlineMeeting'] as Map?)?['joinUrl'] as String?
+      ..conferenceData = json['isOnlineMeeting'] == true
+          ? gcal.ConferenceData()
+          : null
+      // Graph lists only the invitees, the user among them when someone else
+      // organised it, with no `self`. Listed the way Google does instead:
+      // the organizer, everyone else, then the user with their reply.
+      ..attendees = invitees.isEmpty && isOrganizer && response != 'declined'
+          ? null
+          : [
+              if (!isOrganizer && organizer?['address'] is String)
+                gcal.EventAttendee()
+                  ..email = organizer!['address'] as String
+                  ..organizer = true
+                  ..responseStatus = 'accepted',
+              ...invitees,
+              gcal.EventAttendee()
+                ..self = true
+                ..organizer = isOrganizer
+                ..responseStatus = switch (response) {
+                  'accepted' || 'organizer' => 'accepted',
+                  'tentativelyAccepted' => 'tentative',
+                  'declined' => 'declined',
+                  _ => 'needsAction',
+                },
+            ];
   }
 }

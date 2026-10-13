@@ -472,18 +472,9 @@ class HomeWidgetService {
       final end = monday.add(
         Duration(days: now.weekday == DateTime.sunday ? 8 : 7),
       );
-      final googleFuture = CalendarService.getEventsBetween(monday, end);
-      final outlookFuture = OutlookCalendarService.getEventsBetween(
-        monday,
-        end,
-      );
-      final googleEvents = await googleFuture;
-      final outlookEvents = await outlookFuture;
+      final events = await CalendarService.getEventsBetween(monday, end);
       if (generation != _accountGeneration) return;
-      await publishCalendarEvents(
-        googleEvents: googleEvents,
-        outlookEvents: outlookEvents,
-      );
+      await publishCalendarEvents(events);
     } catch (error) {
       debugPrint('Calendar widget refresh failed: $error');
     } finally {
@@ -491,14 +482,12 @@ class HomeWidgetService {
     }
   }
 
-  static Future<void> publishCalendarEvents({
-    required List<gcal.Event> googleEvents,
-    required List<OutlookEvent> outlookEvents,
-  }) async {
+  /// Google and Outlook events, as CalendarService merges them.
+  static Future<void> publishCalendarEvents(List<gcal.Event> calendar) async {
     if (!Platform.isIOS) return;
 
     final events = <Map<String, Object>>[];
-    for (final event in googleEvents) {
+    for (final event in calendar) {
       if (event.status == 'cancelled') continue;
       final DateTime? timedStart = event.start?.dateTime?.toLocal();
       final DateTime? allDayStart = event.start?.date?.toLocal();
@@ -514,19 +503,6 @@ class HomeWidgetService {
           start: start,
           end: end,
           isAllDay: timedStart == null,
-        ),
-      );
-    }
-
-    for (final event in outlookEvents) {
-      events.add(
-        _calendarEventMap(
-          title: event.subject.trim().isNotEmpty
-              ? event.subject.trim()
-              : 'Calendar event',
-          start: event.start.toLocal(),
-          end: event.end.toLocal(),
-          isAllDay: event.isAllDay,
         ),
       );
     }

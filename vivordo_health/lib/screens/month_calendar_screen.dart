@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/calendar_service.dart';
-import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/day_agenda.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
@@ -71,11 +70,6 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
           end,
           forceRefresh: forceRefresh,
         ).timeout(const Duration(seconds: 10)),
-        OutlookCalendarService.getEventsBetween(
-          start,
-          end,
-          forceRefresh: forceRefresh,
-        ).timeout(const Duration(seconds: 10)),
       ]);
     } catch (error) {
       // A failed load must not look like an empty calendar.
@@ -89,12 +83,12 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
     }
 
     if (!mounted || generation != _loadGeneration) return;
-    final googleEvents = results[0] as List<gcal.Event>;
-    final outlookEvents = results[1] as List<OutlookEvent>;
-    final events = <_MonthEvent>[
-      ...googleEvents.map(_MonthEvent.fromGoogle).whereType<_MonthEvent>(),
-      ...outlookEvents.map(_MonthEvent.fromOutlook),
-    ]..sort((a, b) => a.start.compareTo(b.start));
+    final events =
+        (results[0] as List<gcal.Event>)
+            .map(_MonthEvent.fromGoogle)
+            .whereType<_MonthEvent>()
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
 
     setState(() {
       _events = events;
@@ -156,8 +150,8 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
         end: event.end,
         isAllDay: event.isAllDay,
         isRecurring:
-            googleEvent?.recurringEventId != null ||
-            googleEvent?.recurrence?.isNotEmpty == true,
+            event.event.recurringEventId != null ||
+            event.event.recurrence?.isNotEmpty == true,
         color: event.color,
         calendarName: googleEvent == null ? 'Outlook' : 'Google Calendar',
         canEdit: googleEvent != null,
@@ -769,7 +763,7 @@ class _MonthEvent {
     required this.end,
     required this.isAllDay,
     required this.color,
-    this.googleEvent,
+    required this.event,
   });
 
   final String title;
@@ -777,9 +771,17 @@ class _MonthEvent {
   final DateTime end;
   final bool isAllDay;
   final Color color;
-  final gcal.Event? googleEvent;
 
+  /// The calendar event, Google's or Outlook's, for reading.
+  final gcal.Event event;
+
+  /// [event] when Vivordo can change it: Outlook events are read-only.
+  gcal.Event? get googleEvent =>
+      CalendarService.isOutlook(event) ? null : event;
+
+  /// A Google or Outlook event; null when cancelled or without times.
   static _MonthEvent? fromGoogle(gcal.Event event) {
+    if (event.status == 'cancelled') return null;
     final start =
         event.start?.dateTime?.toLocal() ?? event.start?.date?.toLocal();
     final end = event.end?.dateTime?.toLocal() ?? event.end?.date?.toLocal();
@@ -791,18 +793,10 @@ class _MonthEvent {
       start: start,
       end: end,
       isAllDay: event.start?.dateTime == null,
-      color: _MonthCalendarScreenState._googleBlue,
-      googleEvent: event,
+      color: CalendarService.isOutlook(event)
+          ? _MonthCalendarScreenState._outlookOrange
+          : _MonthCalendarScreenState._googleBlue,
+      event: event,
     );
   }
-
-  factory _MonthEvent.fromOutlook(OutlookEvent event) => _MonthEvent(
-    title: event.subject.trim().isEmpty
-        ? 'Untitled event'
-        : event.subject.trim(),
-    start: event.start.toLocal(),
-    end: event.end.toLocal(),
-    isAllDay: event.isAllDay,
-    color: _MonthCalendarScreenState._outlookOrange,
-  );
 }

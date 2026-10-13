@@ -290,33 +290,18 @@ class DayRecordService {
     DateTime until,
   ) async {
     final (:google, :outlook) = await _connected();
-    const limit = Duration(seconds: 20);
-    final googleEvents = google
-        ? await CalendarService.getScoringEvents(from, until).timeout(limit)
-        : const <gcal.Event>[];
-    final outlookEvents = outlook
-        ? await OutlookCalendarService.getScoringEvents(
+    // Google's and Outlook's, merged.
+    final events = google || outlook
+        ? await CalendarService.getScoringEvents(
             from,
             until,
-          ).timeout(limit)
-        : const <OutlookEvent>[];
-    if (googleEvents == null || outlookEvents == null) {
-      throw StateError('The calendar could not be read.');
-    }
+          ).timeout(const Duration(seconds: 20))
+        : const <gcal.Event>[];
+    if (events == null) throw StateError('The calendar could not be read.');
     final inputs = <(CalendarCognitiveEvent, String?)>[
-      for (final event in googleEvents)
-        if (_fromGoogle(event) case final input?) (input, 'google:${event.id}'),
-      for (final event in outlookEvents)
-        (
-          CalendarCognitiveEvent(
-            id: 'outlook:${event.id}',
-            title: event.subject,
-            start: event.start.toLocal(),
-            end: event.end.toLocal(),
-            isAllDay: event.isAllDay,
-          ),
-          null,
-        ),
+      for (final event in events)
+        if (_fromGoogle(event) case final input?)
+          (input, CalendarService.eventKey(event)),
     ];
     // Claude sorts what the local rules can't, with the user's AI consent.
     // In twenties: each call sorts at most 20 uncertain events and rates
@@ -356,7 +341,7 @@ class DayRecordService {
     final end = event.end?.dateTime;
     if (start == null || end == null) return null;
     return CalendarCognitiveEvent(
-      id: 'google:${event.id}:${start.toUtc().toIso8601String()}',
+      id: '${CalendarService.eventKey(event)}:${start.toUtc().toIso8601String()}',
       title: event.summary ?? '',
       description: event.description ?? '',
       start: start.toLocal(),

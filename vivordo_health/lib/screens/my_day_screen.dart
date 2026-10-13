@@ -14,7 +14,6 @@ import '../src/services/calendar_cognitive_load_service.dart';
 import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/services/day_record_service.dart';
-import '../src/services/outlook_calendar_service.dart';
 import '../src/utils/back_to_back_events.dart';
 import '../src/utils/body_reaction.dart';
 import '../src/utils/daily_brief_metrics.dart';
@@ -299,14 +298,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       CalendarCognitiveEvent(
         id: e.sourceEventKey,
         title: e.title,
-        description: e.googleEvent?.description ?? '',
+        description: e.event.description ?? '',
         start: e.start,
         end: e.end,
         attendeeCount: e.attendeeCount,
-        isOrganizer: e.googleEvent?.organizer?.self == true,
-        showsAsFree: e.googleEvent?.transparency == 'transparent',
+        isOrganizer: e.event.organizer?.self == true,
+        showsAsFree: e.event.transparency == 'transparent',
         isDeclined:
-            e.googleEvent?.attendees?.any(
+            e.event.attendees?.any(
               (a) => a.self == true && a.responseStatus == 'declined',
             ) ??
             false,
@@ -423,17 +422,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             .doc(localDayKey(from))
             .get(),
         CalendarService.getEventsBetween(from, until),
-        OutlookCalendarService.getEventsBetween(from, until),
       ]).timeout(const Duration(seconds: 15));
       final saved =
           (results[0] as DocumentSnapshot<Map<String, dynamic>>).data() ??
           const {};
-      final events = [
-        ...(results[1] as List<gcal.Event>)
-            .map(_CalendarEvent.fromGoogle)
-            .whereType<_CalendarEvent>(),
-        ...(results[2] as List<OutlookEvent>).map(_CalendarEvent.fromOutlook),
-      ];
+      final events = (results[1] as List<gcal.Event>)
+          .map(_CalendarEvent.fromGoogle)
+          .whereType<_CalendarEvent>();
       var added = false;
       for (final e in events) {
         // Declined, free and all-day events: not time you spent in them.
@@ -509,7 +504,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   ) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final series = e.googleEvent?.recurringEventId;
+    final series = e.event.recurringEventId;
     try {
       await FirebaseFirestore.instance
           .collection('users')
@@ -726,11 +721,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           tomorrowEnd,
           forceRefresh: forceRefresh,
         ).timeout(const Duration(seconds: 8)),
-        OutlookCalendarService.getEventsBetween(
-          dayStart,
-          tomorrowEnd,
-          forceRefresh: forceRefresh,
-        ).timeout(const Duration(seconds: 8)),
       ]);
     } catch (error) {
       if (mounted && generation == _loadGeneration) {
@@ -743,15 +733,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       return;
     }
 
-    final googleEvents = results[0] as List<gcal.Event>;
-    final outlookEvents = results[1] as List<OutlookEvent>;
-    MeetingPatternsService.rememberNames(googleEvents);
-    final allEvents = <_CalendarEvent>[
-      ...googleEvents
-          .map(_CalendarEvent.fromGoogle)
-          .whereType<_CalendarEvent>(),
-      ...outlookEvents.map(_CalendarEvent.fromOutlook),
-    ].toList()..sort((a, b) => a.start.compareTo(b.start));
+    final calendarEvents = results[0] as List<gcal.Event>;
+    MeetingPatternsService.rememberNames(calendarEvents);
+    final allEvents =
+        calendarEvents
+            .map(_CalendarEvent.fromGoogle)
+            .whereType<_CalendarEvent>()
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
     final events = allEvents
         .where((e) => e.start.isBefore(dayEnd) && e.end.isAfter(dayStart))
         .toList();
@@ -1095,11 +1084,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       today: todaysPatternMeetings(
                         patterns: _patterns,
                         now: DateTime.now(),
-                        events: patternEventsFrom(
-                          _events
-                              .map((e) => e.googleEvent)
-                              .whereType<gcal.Event>(),
-                        ),
+                        events: patternEventsFrom(_events.map((e) => e.event)),
                       ),
                     ),
                   ],
@@ -2630,9 +2615,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 event == null ||
                 !_cognitiveInput(event).contributesToSchedule
             ? null
-            : _patterns.bySeries[seriesKeyFor(
-                event.googleEvent?.recurringEventId,
-              )];
+            : _patterns.bySeries[seriesKeyFor(event.event.recurringEventId)];
         // A clash Vivordo can move: one tap opens the confirm sheet.
         final canMove =
             fit != null &&
@@ -3412,7 +3395,7 @@ class _CalendarEvent {
     required this.isPriorityLinked,
     required this.icon,
     required this.color,
-    this.googleEvent,
+    required this.event,
   });
 
   final String title;
@@ -3425,8 +3408,15 @@ class _CalendarEvent {
   final bool isPriorityLinked;
   final IconData icon;
   final Color color;
-  final gcal.Event? googleEvent;
 
+  /// The calendar event, Google's or Outlook's, for reading.
+  final gcal.Event event;
+
+  /// [event] when Vivordo can change it: Outlook events are read-only.
+  gcal.Event? get googleEvent =>
+      CalendarService.isOutlook(event) ? null : event;
+
+  /// A Google or Outlook event; null when cancelled or without times.
   static _CalendarEvent? fromGoogle(gcal.Event event) {
     if (event.status == 'cancelled') return null;
     final start =
@@ -3440,8 +3430,9 @@ class _CalendarEvent {
       start: start,
       end: end,
       isAllDay: event.start?.dateTime == null,
-      sourceEventKey:
-          'google:${event.id ?? event.iCalUID ?? '${event.summary}:$start'}',
+      sourceEventKey: event.id == null
+          ? 'google:${event.iCalUID ?? '${event.summary}:$start'}'
+          : CalendarService.eventKey(event),
       isRecurring:
           event.recurringEventId != null ||
           event.recurrence?.isNotEmpty == true,
@@ -3449,25 +3440,12 @@ class _CalendarEvent {
       isPriorityLinked:
           event.extendedProperties?.private?['vivordoPriority'] == 'true',
       icon: Icons.event_rounded,
-      color: const Color(0xFF3978F6),
-      googleEvent: event,
+      color: CalendarService.isOutlook(event)
+          ? MyDayScreen.purple
+          : const Color(0xFF3978F6),
+      event: event,
     );
   }
-
-  factory _CalendarEvent.fromOutlook(OutlookEvent event) => _CalendarEvent(
-    title: event.subject.trim().isEmpty
-        ? 'Untitled event'
-        : event.subject.trim(),
-    start: event.start.toLocal(),
-    end: event.end.toLocal(),
-    isAllDay: event.isAllDay,
-    sourceEventKey: 'outlook:${event.id}',
-    isRecurring: false,
-    attendeeCount: 0,
-    isPriorityLinked: false,
-    icon: Icons.event_rounded,
-    color: MyDayScreen.purple,
-  );
 
   String get timeLabel =>
       isAllDay ? 'All day' : DateFormat('h:mm a').format(start);

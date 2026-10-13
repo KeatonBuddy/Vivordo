@@ -20,6 +20,7 @@
 	<array>
 		<string>$(AppIdentifierPrefix)com.vivordo.health</string>
 		<string>$(AppIdentifierPrefix)com.vivordo.health 1</string>
+		<string>$(AppIdentifierPrefix)com.microsoft.adalcache</string>
 	</array>
 </dict>
 </plist>
