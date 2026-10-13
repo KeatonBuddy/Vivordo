@@ -1076,7 +1076,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(height: 24),
-              _buildHabits(),
               KeyedSubtree(
                 key: widget.prioritiesKey,
                 child: _buildPriorities(),
@@ -2214,102 +2213,176 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildPriorities() =>
-      ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
-        valueListenable: _prioritySnapshot,
-        builder: (context, snapshot, _) {
-          final colors = context.vivordoColors;
-          final priorities = snapshot.data ?? const <DailyPriority>[];
-          final open = priorities.where((p) => !p.completed).toList();
-          final done = priorities.where((p) => p.completed).toList();
-          Widget row(DailyPriority priority) => _PriorityRow(
-            key: ValueKey(priority.reference.path),
-            priority: priority,
-            onToggle: () => _togglePriority(priority),
-            onDelete: () => _deletePriority(priority),
-            onEdit: () => _editPriority(priority),
-          );
-          const divider = Divider(height: 1, indent: 54, endIndent: 16);
+  /// Open priorities shown before "N more".
+  static const _shownPriorities = 4;
 
-          final Widget body;
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            body = const SizedBox(
-              height: 72,
-              child: Center(child: CircularProgressIndicator()),
-            );
-          } else if (snapshot.hasError) {
-            body = Padding(
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                'Could not load today’s priorities',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: colors.textSecondary),
+  /// Today's plan: habits as a strip of chips, then the first few open
+  /// priorities, with the rest a tap away.
+  Widget _buildPriorities() => ListenableBuilder(
+    listenable: Listenable.merge([
+      _prioritySnapshot,
+      _habitSnapshot,
+      _templateSnapshot,
+    ]),
+    builder: (context, _) {
+      final colors = context.vivordoColors;
+      final snapshot = _prioritySnapshot.value;
+      final habits = _habitSnapshot.value.data ?? const <DailyPriority>[];
+      final priorities = snapshot.data ?? const <DailyPriority>[];
+      final open = priorities.where((p) => !p.completed).toList();
+      final done = priorities.where((p) => p.completed).toList();
+      final hidden = open.length - _shownPriorities;
+      Widget row(DailyPriority priority) => _PriorityRow(
+        key: ValueKey(priority.reference.path),
+        priority: priority,
+        onToggle: () => _togglePriority(priority),
+        onDelete: () => _deletePriority(priority),
+        onEdit: () => _editPriority(priority),
+      );
+      const divider = Divider(height: 1, indent: 54, endIndent: 16);
+
+      final Widget body;
+      if (snapshot.connectionState == ConnectionState.waiting &&
+          !snapshot.hasData) {
+        body = const SizedBox(
+          height: 72,
+          child: Center(child: CircularProgressIndicator()),
+        );
+      } else if (snapshot.hasError) {
+        body = Padding(
+          padding: const EdgeInsets.all(20),
+          child: Text(
+            'Could not load today’s priorities',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: colors.textSecondary),
+          ),
+        );
+      } else {
+        body = Column(
+          children: [
+            for (final priority in open.take(_shownPriorities)) ...[
+              row(priority),
+              divider,
+            ],
+            if (hidden > 0) ...[
+              _ListAction(
+                icon: Icons.more_horiz_rounded,
+                label: '$hidden more',
+                muted: true,
+                onTap: _openAllPriorities,
               ),
-            );
-          } else {
-            body = Column(
-              children: [
-                for (final priority in open) ...[row(priority), divider],
-                _ListAction(
-                  icon: Icons.add_rounded,
-                  label: 'Add a priority',
-                  onTap: _addManualPriority,
-                ),
-                if (done.isNotEmpty) ...[
-                  const Divider(height: 1),
-                  _ListAction(
-                    icon: _showCompleted
-                        ? Icons.expand_more_rounded
-                        : Icons.chevron_right_rounded,
-                    label: '${done.length} completed',
-                    muted: true,
-                    onTap: () =>
-                        setState(() => _showCompleted = !_showCompleted),
-                  ),
-                  if (_showCompleted)
-                    for (final priority in done) ...[divider, row(priority)],
-                ],
-              ],
-            );
-          }
+              const Divider(height: 1),
+            ],
+            _ListAction(
+              icon: Icons.add_rounded,
+              label: 'Add a priority',
+              onTap: _addManualPriority,
+            ),
+            if (done.isNotEmpty) ...[
+              const Divider(height: 1),
+              _ListAction(
+                icon: _showCompleted
+                    ? Icons.expand_more_rounded
+                    : Icons.chevron_right_rounded,
+                label: '${done.length} completed',
+                muted: true,
+                onTap: () => setState(() => _showCompleted = !_showCompleted),
+              ),
+              if (_showCompleted)
+                for (final priority in done) ...[divider, row(priority)],
+            ],
+          ],
+        );
+      }
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
+              const Expanded(child: _SectionLabel('TODAY’S PLAN')),
+              TextButton(
+                onPressed: _openAllPriorities,
+                child: const Text('View all'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          _SectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (habits.isNotEmpty) ...[
+                  _habitStrip(habits),
+                  const Divider(height: 1),
+                ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 16, 2),
+                  child: Row(
+                    children: [
+                      const Expanded(child: _SubLabel('PRIORITIES')),
+                      if (priorities.isNotEmpty)
+                        Text(
+                          '${done.length} of ${priorities.length}',
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                body,
+              ],
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  /// Habits as one row of chips, labelled; the label opens them for editing.
+  Widget _habitStrip(List<DailyPriority> habits) {
+    final done = habits.where((h) => h.completed).length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 0, 10),
+      child: Row(
+        children: [
+          Semantics(
+            button: true,
+            label: 'Habits, $done of ${habits.length} done. Edit habits',
+            excludeSemantics: true,
+            child: InkWell(
+              onTap: () => _openAllPriorities(repeating: true),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: _SectionLabel(
-                      priorities.isEmpty
-                          ? 'PRIORITIES'
-                          : 'PRIORITIES · ${done.length} OF ${priorities.length}',
+                  const _SubLabel('HABITS'),
+                  Text(
+                    '$done of ${habits.length}',
+                    style: TextStyle(
+                      color: context.vivordoColors.textSecondary,
+                      fontSize: 12,
                     ),
                   ),
-                  TextButton(
-                    onPressed: _openAllPriorities,
-                    child: const Text('View all'),
-                  ),
                 ],
               ),
-              if (priorities.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(99),
-                  child: LinearProgressIndicator(
-                    value: done.length / priorities.length,
-                    minHeight: 4,
-                    color: timelineDoneGreen,
-                    backgroundColor: colors.border,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 10),
-              _SectionCard(child: body),
-            ],
-          );
-        },
-      );
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: HabitChips(
+              habits: habits,
+              templates: _templateSnapshot.value.data ?? const {},
+              today: _priorityDay,
+              onChanged: _setHabitCount,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _openAllPriorities({bool repeating = false}) =>
       Navigator.of(context).push(
@@ -2323,42 +2396,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           ),
         ),
       );
-
-  /// Today's habits as chips; nothing until there are some.
-  Widget _buildHabits() => ListenableBuilder(
-    listenable: Listenable.merge([_habitSnapshot, _templateSnapshot]),
-    builder: (context, _) {
-      final habits = _habitSnapshot.value.data ?? const <DailyPriority>[];
-      if (habits.isEmpty) return const SizedBox.shrink();
-      final done = habits.where((h) => h.completed).length;
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _SectionLabel('HABITS · $done OF ${habits.length}'),
-                ),
-                TextButton(
-                  onPressed: () => _openAllPriorities(repeating: true),
-                  child: const Text('Edit'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            HabitChips(
-              habits: habits,
-              templates: _templateSnapshot.value.data ?? const {},
-              today: _priorityDay,
-              onChanged: _setHabitCount,
-            ),
-          ],
-        ),
-      );
-    },
-  );
 
   Future<void> _setHabitCount(DailyPriority habit, int count) async {
     try {
@@ -2867,6 +2904,22 @@ class _ListAction extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A label inside a card, smaller than [_SectionLabel].
+class _SubLabel extends StatelessWidget {
+  const _SubLabel(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.2,
+      color: context.vivordoColors.textSecondary,
+    ),
+  );
 }
 
 class _SectionLabel extends StatelessWidget {

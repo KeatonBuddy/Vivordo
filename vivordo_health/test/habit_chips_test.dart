@@ -59,6 +59,10 @@ void main() {
     );
 
     expect(find.text('3/8'), findsOneWidget);
+    // Done habits go to the end of the row.
+    double x(String title) => tester.getTopLeft(find.text(title)).dx;
+    expect(x('Walk'), lessThan(x('Meds')));
+    expect(x('Water'), lessThan(x('Meds')));
     expect(find.text('3'), findsOneWidget); // Meds streak
     await tester.tap(find.text('Water'));
     await tester.tap(find.text('Walk'));
