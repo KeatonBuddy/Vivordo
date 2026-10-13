@@ -1,10 +1,10 @@
 # Vivordo Privacy Policy
 
-**Last updated: October 10, 2026**
+**Last updated: October 13, 2026**
 
 ## Introduction
 
-Vivordo ("Vivordo," "we," "us," or "our") is a wellness application focused on stress, recovery, fitness, and performance. This Privacy Policy explains what information we collect, how and why we use it, when we disclose it, how long we keep it, and the choices available to you.
+Vivordo is a wellness application focused on stress, recovery, fitness, and performance, operated by VIVORDO INC., an Alberta, Canada corporation ("Vivordo," "we," "us," or "our"). This Privacy Policy explains what information we collect, how and why we use it, when we disclose it, how long we keep it, and the choices available to you.
 
 This Policy applies to Vivordo users in the United States, Canada, and other jurisdictions where Vivordo is available. Some features are optional and collect information only after you enable the feature and grant the requested permission.
 
@@ -30,7 +30,7 @@ With your permission, Vivordo may collect or import health and fitness informati
 - heart-rate variability and related cardiovascular measurements;
 - blood oxygen (SpO₂) and breathing rate;
 - cardio fitness (VO₂ max);
-- sleep duration, sleep timing, sleep stages, sleep efficiency, and sleep-performance information;
+- sleep duration, sleep timing, sleep stages, sleep efficiency, time in bed, and sleep-performance information;
 - steps, distance, floors climbed, exercise time, workouts, active energy, and related activity information;
 - weight and other body measurements; and
 - source, measurement, and synchronization timestamps.
@@ -55,7 +55,7 @@ Vivordo's use and transfer of information received from Google APIs adheres to t
 
 ### Apple Health information
 
-If you enable Apple Health access, Vivordo reads only the categories you authorize, which may include Cardio Fitness (VO₂ max) recorded by an Apple Watch. Vivordo only reads Apple Health information; it does not write to Apple Health. The first time you connect, Vivordo imports up to your last 90 days of the categories you authorize (heart-rate readings, the last 30 days) and calculates your scores for those days, so your usual levels are ready from the start; after that it keeps your recent days in sync. You can review or revoke those permissions in Apple Health or your device settings. Apple Health information is not used for advertising or sold to data brokers.
+If you enable Apple Health access, Vivordo reads only the categories you authorize, which may include Cardio Fitness (VO₂ max) recorded by an Apple Watch and time in bed. When no wearable recorded your sleep, Vivordo uses time in bed to show your night, labelled as time in bed rather than sleep. Vivordo only reads Apple Health information; it does not write to Apple Health. The first time you connect, Vivordo imports up to your last 90 days of the categories you authorize (heart-rate readings, the last 30 days) and calculates your scores for those days, so your usual levels are ready from the start; after that it keeps your recent days in sync. You can review or revoke those permissions in Apple Health or your device settings. Apple Health information is not used for advertising or sold to data brokers.
 
 ### Camera-based pulse measurements
 
@@ -75,11 +75,15 @@ Onboarding and the Sleep screen also ask when you usually go to bed and wake up,
 
 ### Calendar information
 
-If you connect Google Calendar or Outlook Calendar, Vivordo may access calendar names, event titles, descriptions, locations, attendees, start and end times, availability, and identifiers needed to synchronize changes. Vivordo uses calendar information to show your schedule, estimate availability or workload, provide schedule-related insights, and—when you choose an applicable action—create, edit, or delete calendar events. Vivordo does not modify an event without a user-initiated action or another clearly disclosed feature you enable.
+If you connect Google Calendar or Outlook Calendar, Vivordo may access calendar names, event titles, descriptions, locations, attendees, start and end times, availability, and identifiers needed to synchronize changes. Vivordo uses calendar information to show your schedule, estimate availability or workload, provide schedule-related insights, and—when you choose an applicable action—create, edit, or delete calendar events. Vivordo does not modify an event without a user-initiated action or another clearly disclosed feature you enable. Outlook first gives Vivordo read-only access; it asks Microsoft for permission to change events the first time you edit, move, or create one.
+
+Vivordo AI can propose adding, changing, or deleting a calendar event; the change happens only after you confirm it. New events go to the default calendar you choose in Settings, unless you ask for a specific account. Vivordo stores that choice (the calendar's identifier and name) in your account.
+
+Your Google Calendar and Outlook sign-ins are kept on your device, in the device's secure storage, and are not stored on Vivordo's servers.
 
 ### Daily records for Your Day
 
-To calculate how demanding your day is (Demand) and what it took (Effort), the app saves a daily record to your Vivordo account. It contains each calendar event's start and end times and how demanding it is, your priorities' times, effort, expected duration, and when you completed them, and your end-of-day time. It does not contain event or priority titles, notes, or calendar event identifiers.
+To calculate how demanding your day is (Demand) and what it took (Effort), the app saves a daily record to your Vivordo account. It contains each calendar event's start and end times and how demanding it is, your priorities' times, effort, expected duration, and when you completed them, and your end-of-day time. It does not contain event or priority titles, notes, or calendar event identifiers. The first time you connect a calendar, Vivordo also saves records for your last four weeks, so Effort has your usual from the start.
 
 To keep these records complete, Vivordo stores your device's notification token together with the hour that is 11 PM in your device's time zone. Each night, Vivordo sends a silent notification at that hour, which you do not see, so the app can update the day's record in the background.
 
@@ -89,7 +93,7 @@ If your Apple Watch or another wearable records your heart rate through the day,
 
 ### AI interaction and insight information
 
-We collect prompts, chat messages, answers, feedback, and generated responses when you use AI-assisted features. To provide personalized responses, Vivordo may send the content you submit and the minimum relevant account, health, fitness, journal, or calendar context to AI service providers acting on our behalf, which currently may include Anthropic and Google. These providers process the information to return the requested feature output and under their applicable service terms and data-processing commitments.
+We collect prompts, chat messages, answers, feedback, and generated responses when you use AI-assisted features. To provide personalized responses, Vivordo may send the content you submit and the minimum relevant account, health, fitness, journal, or calendar context to AI service providers acting on our behalf, which is currently Anthropic. These providers process the information to return the requested feature output and under their applicable service terms and data-processing commitments.
 
 Vivordo AI uses Anthropic's Claude and asks for your consent before sending anything. That consent covers chat and the sorting of your calendar events and priorities:
 
@@ -105,7 +109,7 @@ Vivordo does not sell personal information or use WHOOP, Fitbit, Google Health, 
 
 ### Device, diagnostics, and usage information
 
-We may collect device type, operating-system version, app version, language, time zone, approximate region derived from technical information, app-specific identifiers, feature interactions, diagnostic logs, crash information, performance information, and push-notification tokens. We use this information to operate, secure, troubleshoot, and improve Vivordo. We do not use health information for targeted advertising.
+We may collect device type, operating-system version, app version, language, time zone, push-notification tokens, and how you use the app (such as sessions, screens opened, and notifications tapped), which Vivordo records in your account. If you allow Apple to share crash reports with developers, we may also receive crash and performance information from Apple. We use this information to operate, secure, troubleshoot, and improve Vivordo. Vivordo does not use third-party analytics or advertising SDKs and does not track you across other companies' apps or websites. We do not use health information for targeted advertising.
 
 ### Scores and the burnout check
 
@@ -122,6 +126,12 @@ Vivordo also forecasts your energy through the day—when you're likely to be at
 Each Sunday, Vivordo also prepares a **weekly review** of the week just ended: what drained you, what helped, and how demanding next week looks. It's made on your device from your scores, daily records, event reactions, night tags, suggestion history, workouts, priorities, and next week's calendar, and saved in your account. It doesn't store event titles; meetings it mentions are named from your calendar when you open it. If you tell it what else was going on that week (for example, travel or a short note of your own), that's saved with the review and mentioned in the next one. If you ask Vivordo AI to plan your next week, the review's summary, including that answer and the names of meetings it mentions, is sent with your message. Vivordo also schedules a weekly review reminder on your device for Sundays, unless you turn it off in Settings, and saves only whether it's on.
 
 These are wellness signals, not medical assessments or diagnoses.
+
+### Stress score
+
+Vivordo calculates your stress score on its own scoring service, hosted for us by Render in the United States. To do this, the app sends the service your account identifier, age, sex, and time zone, recent heart-rate, heart-rate-variability, sleep, step, and fingertip-scan readings, and how demanding your calendar has been (a load figure, never event titles). The service returns the score and keeps your personal scoring state, which is stored in your Vivordo account and deleted with it.
+
+When you answer the daily "how do you feel" check-in, Vivordo also sends that answer with the day's readings, so the service can learn which signals best match how you actually felt and tune your score to you. These answers and readings are also used, with your account identifier, to improve how Vivordo calculates stress. They are not used for advertising or shared with anyone else.
 
 ### Widgets and Siri
 
@@ -159,7 +169,7 @@ We may disclose information in these limited circumstances:
 
 ### Service providers
 
-We use providers that process information on our behalf to operate Vivordo, including Google Firebase and Google Cloud for authentication, databases, hosting, functions, analytics, and app reliability, and Anthropic or Google for enabled AI features (including, with your AI consent, sorting calendar events and estimating priorities as described above). We provide only information reasonably necessary for the relevant service and require providers to protect it through applicable agreements and controls.
+We use providers that process information on our behalf to operate Vivordo, including Google Firebase and Google Cloud for authentication, databases, file storage, hosting, functions, and notifications, Render for hosting the stress-scoring service, and Anthropic for enabled AI features (including, with your AI consent, sorting calendar events and estimating priorities as described above). We provide only information reasonably necessary for the relevant service and require providers to protect it through applicable agreements and controls.
 
 ### Connected services
 
@@ -168,6 +178,12 @@ When you connect or interact with Apple, Google, Fitbit, WHOOP, Microsoft, or an
 ### Other users and user-directed sharing
 
 Information is shared with other users only when you intentionally use a sharing, circle, challenge, messaging, or similar feature and as shown in that feature. Do not include sensitive information in content you do not want recipients to see.
+
+If you set up a Circle profile, your friends in Circle can see your username, bio, and profile photo; each day's steps, active calories, and exercise minutes and your goals for them; workouts and journal entries you choose to share; your posts, comments, and likes; and your progress in challenges you join, with any challenge note you write.
+
+### Reports and support
+
+If you report a post, comment, profile, or challenge in Circle, Vivordo stores the report (who reported it, what was reported and who wrote it, the reason, and any details you add) and emails it to our support inbox, which is hosted by Google (Gmail), so we can review it within 24 hours. If you send a bug report from Settings, we store it with your email address so we can reply.
 
 ### Legal, safety, and corporate events
 
@@ -187,7 +203,7 @@ When you disconnect WHOOP, Vivordo lets you choose whether to retain previously 
 
 Vivordo stores information using service providers that may process it in the United States and other countries. This means information may be transferred outside your province, state, or country and may be subject to the laws of the place where it is processed.
 
-We use safeguards designed to protect information, including encrypted network connections, access controls, server-side storage of connected-account credentials, and encryption at rest provided by our infrastructure providers. OAuth client secrets are not embedded in the app, and connected-service access and refresh tokens are not made available through the app's client database rules. No method of storage or transmission is completely secure.
+We use safeguards designed to protect information, including encrypted network connections, access controls, server-side storage of WHOOP and Fitbit/Google Health credentials, on-device secure storage of Google Calendar and Outlook sign-ins, and encryption at rest provided by our infrastructure providers. OAuth client secrets are not embedded in the app, and connected-service access and refresh tokens are not made available through the app's client database rules. No method of storage or transmission is completely secure.
 
 If we discover a security incident, we will investigate and provide notices to affected users, regulators, connected-service providers, or others when required by law or applicable platform terms.
 
@@ -195,9 +211,9 @@ If we discover a security incident, we will investigate and provide notices to a
 
 We retain account information and user content while your account is active and as reasonably necessary to provide Vivordo. Imported WHOOP, Fitbit/Google Health, Apple Health, Bluetooth wearable, and other health information is generally retained until you delete the applicable information, delete your account, or ask us to delete it. OAuth credentials are retained only while the relevant connection remains authorized and are deleted when you disconnect it.
 
-You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; daily records, suggestion history, event reactions, and weekly reviews; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, comments, likes, activity, and challenge participation; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
+You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; daily records, suggestion history, event reactions, and weekly reviews; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, block list, comments, likes, activity, and challenge participation; your personal stress-scoring state; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
 
-After a verified deletion request, we delete or de-identify information under our control within the period required by applicable law, except information we must retain for legal compliance, fraud prevention, dispute resolution, security, or enforcement. Information may remain temporarily in encrypted backups until those backups are overwritten through their ordinary lifecycle. We do not use backup copies for ordinary product purposes.
+After a verified deletion request, we delete or de-identify information under our control within the period required by applicable law, except information we must retain for legal compliance, fraud prevention, dispute resolution, security, or enforcement. This includes Circle reports you filed or that were filed about you, which we keep to enforce our community rules. Information may remain temporarily in encrypted backups until those backups are overwritten through their ordinary lifecycle. We do not use backup copies for ordinary product purposes.
 
 Deleting information from Vivordo does not delete the original information held by Apple, Google, Fitbit, WHOOP, Microsoft, another connected service, or another user. You must use that service's controls to delete information it controls.
 
@@ -236,5 +252,5 @@ We may update this Policy as Vivordo, connected services, and legal requirements
 
 For privacy questions, requests, or complaints, contact:
 
-**Vivordo**  
+**VIVORDO INC.** (Alberta, Canada)  
 **Email: contact.vivordo@gmail.com**
