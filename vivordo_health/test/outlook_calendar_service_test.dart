@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:msal_auth/msal_auth.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/utils/event_repeat.dart';
@@ -246,5 +247,42 @@ void main() {
           : http.Response('ok', 200),
     );
     expect((attempts, response.body), (2, 'ok'));
+  });
+
+  test('admin-approval refusals are told apart from other sign-in errors', () {
+    bool needs(MsalException e) => OutlookCalendarService.needsAdminApproval(e);
+    expect(
+      needs(
+        const MsalClientException(
+          errorCode: 'server_error',
+          message: 'AADSTS90094: The grant requires admin permission.',
+          correlationId: null,
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      needs(
+        const MsalUiRequiredException(
+          oauthError: 'access_denied',
+          oauthErrorDescription:
+              'AADSTS90095: An administrator must approve this app.',
+          oauthSubErrorCode: null,
+          message: 'Interaction required',
+          correlationId: null,
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      needs(
+        const MsalClientException(
+          errorCode: 'network',
+          message: 'The Internet connection appears to be offline.',
+          correlationId: null,
+        ),
+      ),
+      isFalse,
+    );
   });
 }

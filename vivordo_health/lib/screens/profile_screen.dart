@@ -20,6 +20,7 @@ import 'login_screen.dart';
 import 'blocked_users_screen.dart';
 import '../widgets/app_tour.dart';
 import '../widgets/privacy_support_links.dart';
+import '../widgets/outlook_connect.dart';
 import '../src/services/ai_consent.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -394,14 +395,16 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _updateOutlookCalendarConnection() async {
     setState(() => _isUpdatingOutlookCalendar = true);
     try {
-      if (_isOutlookCalendarConnected) {
+      final wasConnected = _isOutlookCalendarConnected;
+      if (wasConnected) {
         await OutlookCalendarService.signOut();
       } else {
-        await OutlookCalendarService.connect();
+        await connectOutlook(context);
       }
 
       final isConnected = await OutlookCalendarService.isSignedIn();
-      if (mounted) {
+      // Cancelled, or waiting for IT's approval: nothing changed to report.
+      if (mounted && isConnected != wasConnected) {
         setState(() => _isOutlookCalendarConnected = isConnected);
         showToast(
           context,

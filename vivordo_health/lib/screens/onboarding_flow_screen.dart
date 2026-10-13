@@ -14,6 +14,7 @@ import '../src/services/day_record_service.dart';
 import '../src/services/fitbit_service.dart';
 import '../src/services/health_service.dart';
 import '../src/services/notification_service.dart';
+import '../src/services/outlook_calendar_service.dart';
 import '../src/services/personal_profile_service.dart';
 import '../src/services/user_service.dart';
 import '../src/services/whoop_service.dart';
@@ -23,6 +24,7 @@ import '../src/utils/history_findings.dart';
 import '../src/utils/sleep_schedule.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/birth_year_picker.dart';
+import '../widgets/outlook_connect.dart';
 import '../widgets/privacy_support_links.dart';
 import '../widgets/sleep_schedule_editor.dart';
 import 'personal_profile_screen.dart' show MeasurementEditorSheet;
@@ -117,6 +119,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   late bool _showNumbers =
       (widget.userDoc?['preferences'] as Map?)?['showScoreNumbers'] != false;
   bool _google = false;
+  bool _outlook = false;
   bool _aiOn = false;
 
   /// The history step: whether a calendar is connected (null until
@@ -168,11 +171,13 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     final results = await Future.wait([
       CalendarService.hasCalendarAccess(),
       AiConsent.granted(_uid),
+      OutlookCalendarService.isSignedIn(),
     ]);
     if (!mounted) return;
     setState(() {
       _google = results[0];
       _aiOn = results[1];
+      _outlook = results[2];
     });
   }
 
@@ -598,6 +603,20 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                       }
                     }),
             ),
+            if (OutlookCalendarService.enabled) ...[
+              const Divider(height: 1, color: _line),
+              _Row(
+                label: 'Outlook',
+                value: _outlook ? 'Connected' : null,
+                placeholder: 'Connect',
+                onTap: _outlook
+                    ? null
+                    : () => _connect(() async {
+                        final connected = await connectOutlook(context);
+                        if (mounted) setState(() => _outlook = connected);
+                      }),
+              ),
+            ],
           ],
         ),
       ],

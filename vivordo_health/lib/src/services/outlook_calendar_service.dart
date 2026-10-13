@@ -11,6 +11,12 @@ import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/utils/event_repeat.dart';
 import 'package:vivordo_health/src/utils/request_coalescer.dart';
 
+/// Thrown by [OutlookCalendarService.connect] when the account's
+/// organisation only lets its IT admins approve apps like Vivordo.
+class OutlookNeedsAdminApproval implements Exception {
+  const OutlookNeedsAdminApproval();
+}
+
 /// Outlook (Microsoft 365 and Outlook.com) calendars through Microsoft Graph.
 ///
 /// Events come back as [gcal.Event]s, ids prefixed `outlook:`, so everything
@@ -128,7 +134,9 @@ class OutlookCalendarService {
   }
 
   /// Signs in interactively. True once connected; false when the user
-  /// cancelled. Other failures throw, for the caller to report.
+  /// cancelled. Throws [OutlookNeedsAdminApproval] when their organisation
+  /// has to approve Vivordo first; other failures throw, for the caller to
+  /// report.
   static Future<bool> connect() async {
     if (!enabled) return false;
     try {
@@ -142,8 +150,37 @@ class OutlookCalendarService {
       return true;
     } on MsalUserCancelException {
       return false;
+    } on MsalException catch (e) {
+      if (needsAdminApproval(e)) throw const OutlookNeedsAdminApproval();
+      rethrow;
     }
   }
+
+  /// Whether Microsoft refused because only an admin may approve Vivordo
+  /// for this organisation (AADSTS90094 / 90095), or wants admin consent.
+  @visibleForTesting
+  static bool needsAdminApproval(MsalException error) {
+    final text = [
+      error.message,
+      if (error case MsalUiRequiredException(
+        :final oauthError,
+        :final oauthErrorDescription,
+      )) ...[
+        ?oauthError,
+        ?oauthErrorDescription,
+      ],
+    ].join(' ').toLowerCase();
+    return text.contains('aadsts90094') ||
+        text.contains('aadsts90095') ||
+        text.contains('admin_consent') ||
+        text.contains('admin consent') ||
+        text.contains('admin approval');
+  }
+
+  /// Where an organisation's admin approves Vivordo for everyone in it.
+  static const String adminConsentUrl =
+      'https://login.microsoftonline.com/organizations/adminconsent'
+      '?client_id=$clientId';
 
   static Future<void> signOut() async {
     if (enabled) {
