@@ -36,7 +36,7 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
       ),
     );
     return Scaffold(
-      appBar: AppBar(title: const Text('Meeting patterns')),
+      appBar: AppBar(title: const Text('Event patterns')),
       body: FutureBuilder(
         future: _load,
         builder: (context, snapshot) {
@@ -61,7 +61,7 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Learning which meetings get to you',
+                        'Learning which events get to you',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -72,8 +72,8 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
                       Text(
                         'Vivordo needs your watch\'s heart rate during a few '
                         'weeks of events before it can say anything honest. '
-                        'A repeating meeting needs 4 measured times; a kind '
-                        'of meeting needs 8.',
+                        'A repeating event needs 4 measured times; a kind '
+                        'of event needs 8.',
                         style: secondary(),
                       ),
                       const SizedBox(height: 12),
@@ -104,7 +104,7 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
                 section('KEEP IT LOWEST'),
                 _Card(child: _PatternList(p.calm)),
               ],
-              section('HEAVY MEETING DAYS'),
+              section('HEAVY CALENDAR DAYS'),
               _Card(child: _HeavyDaysView(data.heavy)),
               const SizedBox(height: 18),
               Text(

@@ -36,7 +36,7 @@ void main() {
     expect(p.high, isTrue);
     expect(p.countLabel, '4 of 4 times');
     expect(p.liftLabel, '21% over your usual');
-    expect(p.label, startsWith('A repeating meeting · Wed 11 AM'));
+    expect(p.label, startsWith('A repeating event · Wed 11 AM'));
   });
 
   test('mixed or small changes make no pattern', () {
@@ -235,7 +235,7 @@ void main() {
       await show(tester, learning, const []);
       expect(find.byType(InkWell), findsNothing);
       await show(tester, learning, const [], at: DateTime(2026, 10, 5, 9));
-      expect(find.text('Learning which meetings get to you'), findsOneWidget);
+      expect(find.text('Learning which events get to you'), findsOneWidget);
     });
   });
 

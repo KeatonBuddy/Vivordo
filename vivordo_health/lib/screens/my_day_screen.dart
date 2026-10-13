@@ -1087,6 +1087,21 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 4),
                     _buildTimeline(),
+                    // Which of today's events usually raise or lower your
+                    // heart rate, or how far it is from knowing.
+                    MeetingPatternsRow(
+                      patterns: _patterns,
+                      now: DateTime.now(),
+                      today: todaysPatternMeetings(
+                        patterns: _patterns,
+                        now: DateTime.now(),
+                        events: patternEventsFrom(
+                          _events
+                              .map((e) => e.googleEvent)
+                              .whereType<gcal.Event>(),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),

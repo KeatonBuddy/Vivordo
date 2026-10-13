@@ -718,9 +718,9 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
     helped.add(
       ReviewLine(
         'calm',
-        focus * 2 >= calm.length ? 'Focus blocks' : 'Calmer meetings',
+        focus * 2 >= calm.length ? 'Focus blocks' : 'Calmer events',
         focus * 2 >= calm.length
-            ? 'They kept your heart rate lower than your meetings did.'
+            ? 'They kept your heart rate lower than your other events did.'
             : '${calm.length} events kept your heart rate under your usual.',
       ),
     );
@@ -898,7 +898,7 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
         offDays.isEmpty ||
             !input.reactions.any((r) => offKeys.contains(localDayKey(r.day)))
         ? null
-        : 'Your heart rate was up all day ${dayList(offDays)}, so meetings '
+        : 'Your heart rate was up all day ${dayList(offDays)}, so events '
               'then aren\'t counted against them.',
     burnout: burnout,
     nextWeek: next,

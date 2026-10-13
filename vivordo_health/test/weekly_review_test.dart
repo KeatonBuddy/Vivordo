@@ -212,7 +212,7 @@ void main() {
       contains('resting heart rate was up about 6 bpm'),
     );
     expect(review.drained.any((l) => l.kind == 'meeting'), isFalse);
-    expect(review.offDayNote, contains('meetings then'));
+    expect(review.offDayNote, contains('events then'));
     expect(review.days[2].sick, isTrue);
   });
 

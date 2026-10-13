@@ -137,7 +137,7 @@ Future<void> showMeetingPatternSheet(
           ),
           const SizedBox(height: 12),
           Text(
-            'Your heart rate during this meeting against your usual at that '
+            'Your heart rate during this event against your usual at that '
             'time of day. A wellness estimate, not a measure of stress.',
             style: TextStyle(
               fontSize: 13,
@@ -154,7 +154,7 @@ Future<void> showMeetingPatternSheet(
                   openMeetingPatterns(context);
                 },
                 style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                child: const Text('All meeting patterns ›'),
+                child: const Text('All event patterns ›'),
               ),
             ),
           ),
@@ -208,8 +208,8 @@ class MeetingPatternsRow extends StatelessWidget {
         );
       } else {
         title = first.pattern.high
-            ? '${shown.length} of today\'s meetings usually raise your heart rate'
-            : '${shown.length} of today\'s meetings usually keep it lower';
+            ? '${shown.length} of today\'s events usually raise your heart rate'
+            : '${shown.length} of today\'s events usually keep it lower';
         subtitle = shown.map((m) => m.title).join(', ');
         onTap = () => openMeetingPatterns(context);
       }
@@ -218,7 +218,7 @@ class MeetingPatternsRow extends StatelessWidget {
         now.weekday == DateTime.monday) {
       icon = Icons.insights_rounded;
       accent = const Color(0xFF7F77DD);
-      title = 'Learning which meetings get to you';
+      title = 'Learning which events get to you';
       subtitle =
           '${patterns.measured} of about ${MeetingPatterns.learningTarget} '
           'events measured';
@@ -309,7 +309,7 @@ List<({String? series, String title, DateTime start})> patternEventsFrom(
           series: seriesKeyFor(e.recurringEventId),
           title: e.summary?.trim().isNotEmpty == true
               ? e.summary!.trim()
-              : 'A meeting',
+              : 'An event',
           start: start,
         ),
 ];

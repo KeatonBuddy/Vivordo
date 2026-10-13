@@ -165,7 +165,7 @@ List<(String, String)> _kindsOf(MeetingReaction r) => [
   if (r.guests >= 6) ('size:large', 'Meetings with 6+ people'),
   if (r.startHour < 10) ('time:early', 'Anything before 10 AM'),
   if (r.startHour >= 16) ('time:late', 'Anything after 4 PM'),
-  if (r.minutes >= 90) ('long', 'Meetings of 90+ minutes'),
+  if (r.minutes >= 90) ('long', 'Events of 90+ minutes'),
 ];
 
 const _categoryLabels = {
@@ -173,7 +173,7 @@ const _categoryLabels = {
   'social': 'Social plans',
   'collaboration': 'Working sessions',
   'focused-work': 'Focus blocks',
-  'high-consequence': 'High-stakes meetings',
+  'high-consequence': 'High-stakes events',
 };
 
 double _median(List<double> values) {
@@ -227,7 +227,7 @@ String seriesDescription(List<MeetingReaction> events) {
   final when =
       '${_weekdays[last.day.weekday - 1]} $hour ${last.startHour < 12 ? 'AM' : 'PM'}';
   return [
-    'A repeating meeting',
+    'A repeating event',
     when,
     if (last.guests >= 2) '${last.guests} people',
   ].join(' · ');

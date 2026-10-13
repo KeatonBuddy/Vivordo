@@ -1265,7 +1265,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         healthMinutes: healthExerciseMinutes,
                         calories: activeCalories.toDouble(),
                       ),
-                      _buildMeetingPatterns(),
+                      _publishPatternEvents(),
                     ],
                   ),
                 ),
@@ -1943,10 +1943,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Today's repeating meetings that usually raise or lower your heart rate;
-  /// nothing on days without one. Both futures are cached, so rebuilds don't
-  /// refetch.
-  Widget _buildMeetingPatterns() {
+  /// Publishes today's repeating events that usually raise or lower your
+  /// heart rate for Siri; shows nothing (the row is on My Day, under the
+  /// timeline). Both futures are cached, so rebuilds don't refetch.
+  Widget _publishPatternEvents() {
     final now = DateTime.now();
     return FutureBuilder(
       future: MeetingPatternsService.load(),
@@ -1974,7 +1974,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
             ]),
           );
-          return MeetingPatternsRow(patterns: loaded, now: now, today: today);
+          return const SizedBox.shrink();
         },
       ),
     );
