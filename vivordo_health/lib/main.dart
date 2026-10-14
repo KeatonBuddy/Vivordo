@@ -21,6 +21,7 @@ import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/version_gate_service.dart';
+import 'package:vivordo_health/src/services/subscription_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/achievement_unlocked_dialog.dart';
 import 'screens/login_screen.dart';
@@ -37,6 +38,7 @@ import 'screens/heart_rate_detail_screen.dart';
 import 'screens/steps_detail_screen.dart';
 import 'screens/month_calendar_screen.dart';
 import 'screens/whats_new_screen.dart';
+import 'screens/paywall_screen.dart';
 
 // Change this identifier whenever a new release should display a fresh
 // What's New screen. It is stored per user in Firestore.
@@ -532,6 +534,11 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     });
     NotificationService().configureForUser(uid);
     unawaited(ExerciseCatalogService.prefetch());
+    unawaited(
+      SubscriptionService.signIn(uid).catchError((Object error) {
+        debugPrint('RevenueCat setup failed: $error');
+      }),
+    );
     unawaited(HomeWidgetService.refreshCalendarSnapshot(force: true));
     AnalyticsService().logLogin();
   }
@@ -611,11 +618,13 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
 
         final seenRelease = preferences?['whatsNewSeenRelease'] as String?;
         final dismissedLocally = _locallyDismissedWhatsNewUid == user.uid;
-        if (!dismissedLocally && seenRelease != _whatsNewReleaseId) {
-          return WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid));
-        }
-        return MainNavigationScreen(
-          seenTours: data?['tours'] as Map<String, dynamic>?,
+        return PremiumGate(
+          uid: user.uid,
+          child: !dismissedLocally && seenRelease != _whatsNewReleaseId
+              ? WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid))
+              : MainNavigationScreen(
+                  seenTours: data?['tours'] as Map<String, dynamic>?,
+                ),
         );
       },
     );

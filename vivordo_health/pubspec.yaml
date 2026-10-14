@@ -65,6 +65,7 @@ dependencies:
   firebase_storage: ^13.4.6
   image_picker: ^1.2.3
   liquid_glass_renderer: ^0.2.0-dev.4
+  purchases_flutter: ^10.16.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
