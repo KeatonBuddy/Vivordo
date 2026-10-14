@@ -200,6 +200,8 @@ class ClaudeService {
       'now': now.toIso8601String(),
       'utcOffsetMinutes': now.timeZoneOffset.inMinutes,
       'workoutCoach': workoutCoach,
+      // This build can show and save a Vivordo AI routine card.
+      'capabilities': const ['workout'],
     });
     return PandaPrompts.parseTurnReply(jsonEncode(result.data));
   }

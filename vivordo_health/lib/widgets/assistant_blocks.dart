@@ -226,6 +226,11 @@ class ActionCard extends StatelessWidget {
       ).format(parsed);
     }
 
+    if (action['type'] == 'workout') {
+      final count = (action['exercises'] as List? ?? const []).length;
+      return 'Save “${action['name']}” · $count '
+          '${count == 1 ? 'exercise' : 'exercises'}';
+    }
     final operation = action['operation'];
     final title = action['title'] as String?;
     final target = action['target_title'] as String?;
@@ -261,6 +266,7 @@ class ActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final calendar = action['type'] == 'calendar';
+    final workout = action['type'] == 'workout';
     final (IconData icon, String label, Color color) = switch (status) {
       ActionStatus.done => (Icons.check_circle_rounded, 'Done', Colors.green),
       ActionStatus.cancelled => (
@@ -279,8 +285,16 @@ class ActionCard extends StatelessWidget {
         colors.textSecondary,
       ),
       _ => (
-        calendar ? Icons.calendar_month_rounded : Icons.check_box_outlined,
-        calendar ? 'Calendar' : 'Priority',
+        workout
+            ? Icons.fitness_center_rounded
+            : calendar
+            ? Icons.calendar_month_rounded
+            : Icons.check_box_outlined,
+        workout
+            ? 'Saved workout'
+            : calendar
+            ? 'Calendar'
+            : 'Priority',
         _brand,
       ),
     };
@@ -309,14 +323,17 @@ class ActionCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text(
-            describe(action),
-            style: TextStyle(
-              color: colors.textPrimary,
-              fontWeight: FontWeight.w600,
-              height: 1.4,
+          if (workout)
+            _RoutineDetails(action: action)
+          else
+            Text(
+              describe(action),
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+              ),
             ),
-          ),
           if (note != null) ...[
             const SizedBox(height: 6),
             Text(
@@ -334,15 +351,100 @@ class ActionCard extends StatelessWidget {
               children: [
                 FilledButton(
                   onPressed: onConfirm,
-                  child: Text(calendar ? 'Confirm' : 'Review'),
+                  child: Text(
+                    workout
+                        ? 'Save workout'
+                        : calendar
+                        ? 'Confirm'
+                        : 'Review',
+                  ),
                 ),
                 const SizedBox(width: 8),
-                TextButton(onPressed: onCancel, child: const Text('Cancel')),
+                TextButton(
+                  onPressed: onCancel,
+                  child: Text(workout ? 'Not now' : 'Cancel'),
+                ),
               ],
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// A proposed routine: its name, length, and each exercise's target.
+class _RoutineDetails extends StatelessWidget {
+  const _RoutineDetails({required this.action});
+
+  final Map<String, dynamic> action;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final exercises = [
+      for (final raw in action['exercises'] as List? ?? const [])
+        if (raw is Map) raw,
+    ];
+    final minutes = action['minutes'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${action['name']}',
+          style: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Text(
+          [
+            '${exercises.length} ${exercises.length == 1 ? 'exercise' : 'exercises'}',
+            if (minutes is num) 'about ${minutes.round()} min',
+          ].join(' · '),
+          style: TextStyle(color: colors.textSecondary, fontSize: 13),
+        ),
+        const SizedBox(height: 6),
+        for (var i = 0; i < exercises.length; i++)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            decoration: BoxDecoration(
+              border: i == exercises.length - 1
+                  ? null
+                  : Border(bottom: BorderSide(color: colors.border)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${exercises[i]['name']}',
+                    style: TextStyle(color: colors.textPrimary, fontSize: 14),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _brand.withValues(alpha: .14),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    '${exercises[i]['sets']} × ${exercises[i]['reps']}',
+                    style: const TextStyle(
+                      color: _brand,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

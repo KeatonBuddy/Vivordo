@@ -135,6 +135,14 @@ ACTIONS (the app asks the user to confirm each one; never claim a change is done
 
 const WORKOUT_COACH_PROMPT = `This conversation was opened from a saved workout summary (WORKOUT in CONTEXT). Act as a supportive, practical fitness coach: ground observations in its recorded sets, reps, weights, duration and previous-performance comparisons, and clearly separate recorded facts from suggestions. For progression or next-session advice, ask about goals, experience, perceived effort or discomfort when needed. Don't assume every workout needs more weight or volume. Don't infer technique, fatigue, recovery, injury or medical causes from numbers alone, and never encourage training through pain. weightLbs is pounds and distanceKm is kilometres. If the user changes topic, follow them.`;
 
+const WORKOUT_ROUTINE_PROMPT = `WORKOUT ROUTINES
+- When the user asks for a workout, routine or training plan, propose it with propose_workout so they can save it to their workouts; the card shows the exercises, so keep your message to one or two sentences about the plan (focus, rest between sets).
+- Before proposing, you need the goal (e.g. push day, full body, legs, strength, toning) and what equipment they have; ask for whichever is missing in one short question, unless WHAT YOU REMEMBER or the conversation already says. Assume about 45 minutes unless they give a time.
+- Ground it in get_workouts when they train already: build on recent exercises and weights, and don't repeat yesterday's muscles.
+- Use only exercises from the app's library: if one comes back "not in the library", pick from the closest names offered. 3-8 exercises, compound lifts first. sets is a number; reps is a number or a range like "8-10".
+- If they ask for changes ("shorter", "no machines"), propose the revised routine again rather than describing edits.
+- Never encourage training through pain, and suggest easier options when Capacity is low or the burnout check says watch or warning.`;
+
 /* eslint-enable max-len */
 
 const DATE = {type: "string", description: "YYYY-MM-DD (user's local date)"};
@@ -263,6 +271,33 @@ const TOOLS = [
     },
   },
   {
+    name: "propose_workout",
+    description:
+      "Propose a workout routine the user can save to their workouts. The " +
+      "server checks each exercise against the app's library and the app " +
+      "asks the user to confirm.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: {type: "string", description: "Short name, e.g. Push day"},
+        minutes: {type: "integer", description: "Rough length in minutes"},
+        exercises: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: {type: "string", description: "Exact library name"},
+              sets: {type: "integer", description: "1-10"},
+              reps: {type: "string", description: "e.g. 8 or 8-10"},
+            },
+            required: ["name", "sets", "reps"],
+          },
+        },
+      },
+      required: ["name", "exercises"],
+    },
+  },
+  {
     name: "reply",
     description:
       "Your answer to the user. Call this exactly once to end every turn.",
@@ -358,6 +393,10 @@ function validateAssistantRequest(data) {
       data.askedFrom.trim().slice(0, 80) : null,
     // New app builds send no history: the server keeps the thread.
     serverHistory: !Array.isArray(data?.history),
+    // Builds that can show and save a routine card; older ones would show
+    // it as a broken priority, so they never get propose_workout.
+    canSaveWorkouts: Array.isArray(data?.capabilities) &&
+      data.capabilities.includes("workout"),
   };
 }
 
@@ -826,6 +865,112 @@ function realTime(value) {
     Number(value.slice(11, 13)) < 24 && Number(value.slice(14, 16)) < 60;
 }
 
+const REPS_RE = /^(\d{1,3})(?:-(\d{1,3}))?$/;
+
+/**
+ * Normalised exercise name for matching: lower case, punctuation as spaces.
+ *
+ * @param {string} name exercise name
+ * @return {string} key
+ */
+function exerciseKey(name) {
+  return String(name).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * The exercise library (exercise_catalog/current), by normalised name.
+ *
+ * @param {Object} db Firestore
+ * @return {Promise<Map<string, {name: string, category: string}>>} library
+ */
+async function loadExerciseLibrary(db) {
+  const doc = await db.collection("exercise_catalog").doc("current").get();
+  const library = new Map();
+  for (const entry of doc.data()?.exercises ?? []) {
+    if (typeof entry?.n !== "string" || !entry.n.trim()) continue;
+    library.set(exerciseKey(entry.n),
+        {name: entry.n.trim(), category: entry.c || "Other"});
+  }
+  return library;
+}
+
+/**
+ * Up to 5 library names sharing the most words with [name], so the model
+ * can correct an exercise it guessed.
+ *
+ * @param {Map} library loadExerciseLibrary result
+ * @param {string} name the unknown name
+ * @return {string[]} closest names
+ */
+function closestExercises(library, name) {
+  const words = new Set(exerciseKey(name).split(" ").filter(Boolean));
+  return [...library.values()]
+      .map((entry) => ({
+        name: entry.name,
+        shared: exerciseKey(entry.name).split(" ")
+            .filter((w) => words.has(w)).length,
+      }))
+      .filter((entry) => entry.shared > 0)
+      .sort((a, b) => b.shared - a.shared || a.name.length - b.name.length)
+      .slice(0, 5)
+      .map((entry) => entry.name);
+}
+
+/**
+ * Checks a propose_workout call: a named routine of 1-12 library exercises,
+ * each with 1-10 sets and reps like "8" or "8-10".
+ *
+ * @param {Object} db Firestore
+ * @param {Object} input tool input
+ * @param {Object} cache per-turn {library} so retries read it once
+ * @return {Promise<Object>} {action (absent when rejected), result}
+ */
+async function planWorkout(db, input, cache = {}) {
+  const no = (why) => ({result: `Not proposed: ${why}`});
+  const name = typeof input?.name === "string" ? input.name.trim() : "";
+  if (!name || name.length > 40) return no("name must be 1-40 characters.");
+  const list = Array.isArray(input.exercises) ? input.exercises : [];
+  if (list.length < 1 || list.length > 12) {
+    return no("a routine needs 1-12 exercises.");
+  }
+  if (!cache.library) cache.library = await loadExerciseLibrary(db);
+  const library = cache.library;
+  const exercises = [];
+  const seen = new Set();
+  for (const item of list) {
+    const entry = library.get(exerciseKey(item?.name ?? ""));
+    if (!entry) {
+      const close = closestExercises(library, item?.name ?? "");
+      return no(`"${item?.name}" is not in the library.` + (close.length ?
+        ` Closest: ${close.join("; ")}.` : " Use a common name."));
+    }
+    if (seen.has(entry.name)) return no(`${entry.name} is listed twice.`);
+    seen.add(entry.name);
+    const sets = Number(item.sets);
+    if (!Number.isInteger(sets) || sets < 1 || sets > 10) {
+      return no(`sets for ${entry.name} must be a whole number 1-10.`);
+    }
+    const reps = String(item.reps ?? "").trim();
+    const match = REPS_RE.exec(reps);
+    if (!match || Number(match[1]) < 1 || Number(match[1]) > 100 ||
+        (match[2] && (Number(match[2]) <= Number(match[1]) ||
+          Number(match[2]) > 100))) {
+      return no(`reps for ${entry.name} must be like 8 or 8-10 (1-100).`);
+    }
+    exercises.push({name: entry.name, category: entry.category, sets, reps});
+  }
+  const minutes = Number(input.minutes);
+  return {
+    action: {
+      type: "workout", name, exercises,
+      ...(Number.isInteger(minutes) && minutes > 0 && minutes <= 240 &&
+        {minutes}),
+    },
+    result: `Proposed: "${name}" with ${exercises.length} exercises. The ` +
+      "app will ask the user to save it.",
+  };
+}
+
 /**
  * Checks a propose_priority call against the user's data and the same rules
  * the app applies (PandaPriorityAction, _handlePriorityAction), so mistakes
@@ -1009,8 +1154,10 @@ function outcomes(message) {
   const words = {done: "done", cancelled: "cancelled by the user",
     failed: "failed"};
   const notes = actions.map((action, i) => {
-    const what = `${action.operation} ${action.type} ` +
-      `"${action.target_title ?? action.title ?? ""}"`;
+    const what = action.type === "workout" ?
+      `save workout "${action.name ?? ""}"` :
+      `${action.operation} ${action.type} ` +
+        `"${action.target_title ?? action.title ?? ""}"`;
     return `${what}: ${words[message.actionStatus?.[i]] ?? "not confirmed"}`;
   });
   return `\n[Proposed changes: ${notes.join("; ")}]`;
@@ -1330,6 +1477,12 @@ async function runAssistant({client, db, uid, request: input, now,
   if (request.workoutCoach) {
     system.push({type: "text", text: WORKOUT_COACH_PROMPT});
   }
+  if (request.canSaveWorkouts) {
+    system.push({type: "text", text: WORKOUT_ROUTINE_PROMPT});
+  }
+  const tools = request.canSaveWorkouts ? TOOLS :
+    TOOLS.filter((tool) => tool.name !== "propose_workout");
+  const workoutCache = {};
   const memory = await loadMemory(db, uid, request.conversationId,
       request.utcOffsetMinutes);
   const messages = buildMessages(request, memory);
@@ -1352,6 +1505,11 @@ async function runAssistant({client, db, uid, request: input, now,
     },
     propose_calendar_change: async (input) => {
       const {action, result} = planCalendar(input, request);
+      if (action) actions.push(action);
+      return result;
+    },
+    propose_workout: async (input) => {
+      const {action, result} = await planWorkout(db, input, workoutCache);
       if (action) actions.push(action);
       return result;
     },
@@ -1378,11 +1536,14 @@ async function runAssistant({client, db, uid, request: input, now,
     const proposed = reply.crisis ? [] : actions;
     if (proposed.length) {
       reply.actions = proposed;
-      // Older app builds read one action from these fields.
-      const first = proposed[0];
-      const {type, ...legacy} = first;
-      reply.intent = `${type}_action`;
-      reply[`${type}_action`] = legacy;
+      // Older app builds read one priority or calendar action from these
+      // fields; they never get workouts (see canSaveWorkouts).
+      const first = proposed.find((a) => a.type !== "workout");
+      if (first) {
+        const {type, ...legacy} = first;
+        reply.intent = `${type}_action`;
+        reply[`${type}_action`] = legacy;
+      }
     }
     reply.suggestions = reply.crisis ? [] :
       (Array.isArray(reply.suggestions) ? reply.suggestions : [])
@@ -1410,7 +1571,7 @@ async function runAssistant({client, db, uid, request: input, now,
       fallbacks: "default",
       output_config: {effort: "low"},
       system,
-      tools: TOOLS,
+      tools,
       messages,
     });
     usage.push(response.usage);
@@ -1492,6 +1653,7 @@ module.exports = {
   getPriorities,
   planPriority,
   planCalendar,
+  planWorkout,
   visibleOnDay,
   saveMemory,
   SYSTEM_PROMPT,

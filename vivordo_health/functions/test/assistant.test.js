@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const {
   runAssistant, validateAssistantRequest, buildMessages, metricValue, dayRange,
   scoreLine, getScores, planMemoryChange, loadThread, getPriorities, planPriority,
-  planCalendar, visibleOnDay, chartBlock, sourceBlocks, SYSTEM_PROMPT, TOOLS, saveMessages,
+  planCalendar, planWorkout, visibleOnDay, chartBlock, sourceBlocks, SYSTEM_PROMPT, TOOLS, saveMessages,
 } = require("../assistant");
 
 const base = {message: "How did I sleep?", today: "2026-10-01", now: "2026-10-01T09:30:00", utcOffsetMinutes: -360};
@@ -82,6 +82,8 @@ test("validates and trims the request", () => {
   assert.deepEqual(ok.history, [{role: "assistant", text: "Hi"}]);
   assert.deepEqual(ok.context, {schedule: "Mon: free"});
   assert.equal(ok.workoutCoach, false);
+  assert.equal(ok.canSaveWorkouts, false);
+  assert.equal(validateAssistantRequest({...base, capabilities: ["workout"]}).canSaveWorkouts, true);
 });
 
 test("conversation starts with a user turn and ends with context + message", () => {
@@ -138,11 +140,12 @@ test("fetches metrics, then replies; the tool result reaches the model", async (
 
 test("request shape: cached system prompt, all tools, fallback opt-in, low effort", async () => {
   const client = fakeClient([{stop_reason: "tool_use", usage: {}, content: [toolUse("r", "reply", {message: "Hi", intent: "chitchat", crisis: false})]}]);
-  await runAssistant({client, db: fakeDb(), uid: "u1", request: validateAssistantRequest({...base, workoutCoach: true})});
+  await runAssistant({client, db: fakeDb(), uid: "u1", request: validateAssistantRequest({...base, workoutCoach: true, capabilities: ["workout"]})});
   const params = client.requests[0];
   assert.equal(params.model, "claude-sonnet-5-5");
   assert.deepEqual(params.system[0], {type: "text", text: SYSTEM_PROMPT, cache_control: {type: "ephemeral"}});
   assert.match(params.system[1].text, /fitness coach/);
+  assert.match(params.system[2].text, /WORKOUT ROUTINES/);
   assert.deepEqual(params.tools.map((t) => t.name), TOOLS.map((t) => t.name));
   assert.equal(params.fallbacks, "default");
   assert.deepEqual(params.betas, ["server-side-fallback-2026-07-01"]);
@@ -569,11 +572,12 @@ test("the thread tells the model what became of earlier proposals", async () => 
     {id: "a", data: {role: "assistant", text: "Here's the plan.", conversationId: "c", t: 2, actionStatus: {0: "done"},
       blocks: [{type: "text", text: "Here's the plan."},
         {type: "action", action: {type: "priority", operation: "create", title: "Stretch"}},
-        {type: "action", action: {type: "calendar", operation: "create", title: "Run"}}]}},
+        {type: "action", action: {type: "calendar", operation: "create", title: "Run"}},
+        {type: "action", action: {type: "workout", name: "Push day", exercises: []}}]}},
     {id: "u", data: {role: "user", text: "Plan Saturday", conversationId: "c", t: 1}},
   ]});
   const {history} = await loadThread(db, "u", req(), 3);
-  assert.equal(history[1].text, "Here's the plan.\n[Proposed changes: create priority \"Stretch\": done; create calendar \"Run\": not confirmed]");
+  assert.equal(history[1].text, "Here's the plan.\n[Proposed changes: create priority \"Stretch\": done; create calendar \"Run\": not confirmed; save workout \"Push day\": not confirmed]");
   assert.equal(history[0].text, "Plan Saturday");
 });
 
@@ -596,4 +600,64 @@ test("the current message carries its insight note to the model", () => {
   const request = validateAssistantRequest({...base, message: "What can I do about it?", askedFrom: "Daily sleep"});
   const last = buildMessages(request, {facts: [], summaries: []}).at(-1);
   assert.equal(last.content.at(-1).text, "[Asked from the \"Daily sleep\" insight] What can I do about it?");
+});
+
+// The exercise library as exercise_catalog/current stores it.
+const catalog = {"exercise_catalog/current": {version: 3, exercises: [
+  {n: "Bench Press", c: "Chest"}, {n: "Incline Dumbbell Press", c: "Chest"},
+  {n: "Cable Fly", c: "Chest"}, {n: "Triceps Pushdown", c: "Arms"}, {n: "Run", c: "Cardio"},
+]}};
+
+test("planWorkout matches library names and checks sets and reps", async () => {
+  const db = fakeDb({docs: catalog});
+  const ok = await planWorkout(db, {name: " Push day ", minutes: 45, exercises: [
+    {name: "bench press", sets: 4, reps: "6-8"}, {name: "Cable fly", sets: 3, reps: "12"},
+  ]});
+  assert.deepEqual(ok.action, {type: "workout", name: "Push day", minutes: 45, exercises: [
+    {name: "Bench Press", category: "Chest", sets: 4, reps: "6-8"},
+    {name: "Cable Fly", category: "Chest", sets: 3, reps: "12"},
+  ]});
+  assert.match(ok.result, /2 exercises/);
+
+  const unknown = await planWorkout(db, {name: "Push", exercises: [{name: "Dumbbell bench press", sets: 3, reps: "10"}]});
+  assert.equal(unknown.action, undefined);
+  assert.match(unknown.result, /not in the library\. Closest: Bench Press; Incline Dumbbell Press/);
+
+  for (const [exercises, pattern] of [
+    [[], /1-12 exercises/],
+    [[{name: "Run", sets: 0, reps: "1"}], /sets for Run/],
+    [[{name: "Run", sets: 2.5, reps: "1"}], /sets for Run/],
+    [[{name: "Run", sets: 3, reps: "10-8"}], /reps for Run/],
+    [[{name: "Run", sets: 3, reps: "lots"}], /reps for Run/],
+    [[{name: "Run", sets: 3, reps: "5"}, {name: "run", sets: 3, reps: "5"}], /listed twice/],
+  ]) {
+    const {action, result} = await planWorkout(db, {name: "x", exercises});
+    assert.equal(action, undefined);
+    assert.match(result, pattern);
+  }
+  assert.match((await planWorkout(db, {name: "", exercises: [{name: "Run", sets: 1, reps: "1"}]})).result, /name must be/);
+  assert.equal((await planWorkout(db, {name: "x", minutes: 999, exercises: [{name: "Run", sets: 1, reps: "1"}]})).action.minutes, undefined);
+});
+
+test("routines are only offered to builds that can save them", async () => {
+  const proposal = {name: "Push day", exercises: [{name: "Bench Press", sets: 3, reps: "8"}]};
+  const run = (capabilities) => {
+    const client = fakeClient([
+      {stop_reason: "tool_use", usage: {}, content: [toolUse("w", "propose_workout", proposal)]},
+      {stop_reason: "tool_use", usage: {}, content: [toolUse("r", "reply", {message: "Here's a push day.", intent: "chitchat", crisis: false})]},
+    ]);
+    return runAssistant({client, db: fakeDb({docs: catalog}), uid: "u", request: validateAssistantRequest({...base, capabilities})})
+        .then(({reply}) => ({reply, client}));
+  };
+
+  const {reply} = await run(["workout"]);
+  assert.deepEqual(reply.actions, [{type: "workout", name: "Push day",
+    exercises: [{name: "Bench Press", category: "Chest", sets: 3, reps: "8"}]}]);
+  assert.deepEqual(reply.blocks[1], {type: "action", action: reply.actions[0]});
+  assert.equal(reply.workout_action, undefined, "never in the legacy single-action fields");
+  assert.equal(reply.intent, "chitchat");
+
+  const old = await run(undefined);
+  assert.ok(!old.client.requests[0].tools.some((t) => t.name === "propose_workout"));
+  assert.ok(!old.client.requests[0].system.some((block) => /WORKOUT ROUTINES/.test(block.text)));
 });

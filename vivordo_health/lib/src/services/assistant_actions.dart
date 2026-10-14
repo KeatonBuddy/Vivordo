@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../widgets/apple_ui.dart';
 
 import 'calendar_service.dart';
+import 'workout_service.dart';
 import 'daily_priority_service.dart';
 import 'panda_priority_action.dart';
 import 'panda_types.dart';
@@ -183,6 +184,42 @@ Future<String> applyPriorityAction(
       RegExp(r'^(Bad state|FormatException): '),
       '',
     );
+  }
+}
+
+/// Saves a Vivordo AI routine to the user's saved workouts. The server
+/// matched each exercise to the library; this re-checks the shape. Returns
+/// what to tell the user; never throws.
+Future<String> applyWorkoutAction(Map<String, dynamic> action) async {
+  try {
+    final name = (action['name'] as String?)?.trim() ?? '';
+    final exercises = [
+      for (final raw in action['exercises'] as List? ?? const [])
+        if (raw is Map &&
+            raw['name'] is String &&
+            (raw['name'] as String).trim().isNotEmpty)
+          WorkoutTemplateExercise(
+            name: (raw['name'] as String).trim(),
+            category: raw['category'] as String? ?? 'Other',
+            sets: switch (raw['sets']) {
+              final num sets when sets >= 1 && sets <= 10 => sets.toInt(),
+              _ => null,
+            },
+            reps: raw['reps'] as String?,
+          ),
+    ];
+    if (name.isEmpty || exercises.isEmpty) {
+      return 'That routine is incomplete. Ask Vivordo AI to suggest it again.';
+    }
+    await WorkoutService.saveTemplate(
+      name: name,
+      exercises: exercises,
+      fromVivordoAi: true,
+    );
+    return 'Saved to your workouts.';
+  } catch (error) {
+    debugPrint('[Assistant] saving workout failed: $error');
+    return 'Couldn’t save the workout. Try again.';
   }
 }
 
