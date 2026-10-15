@@ -1357,6 +1357,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             // fallback (and calculateDailyCapacity) after the rollout.
             final server = serverSnapshot.data;
             final capacityScore = server?.score ?? capacity?.score;
+            final beforeSleep =
+                capacityScore == null &&
+                beforeTonightsSleep(
+                  now,
+                  sleepRecorded: sleep != null,
+                  schedule: _sleepSchedule,
+                );
             final capacityStale = server != null ? server.provisional : stale;
             final briefEvents = timedEvents
                 .map(
@@ -1552,7 +1559,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     // Last night against the need Home and Capacity use;
                     // nothing about sleep for someone who doesn't track it.
                     summary:
-                        '${sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0, inBed: summary?.sleepInBed ?? false)} $calendarText$tonightNote'
+                        '${beforeSleep ? '' : sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0, inBed: summary?.sleepInBed ?? false)} $calendarText$tonightNote'
                             .trim(),
                     // In the evening it sits beside tomorrow's Demand, so
                     // it shows what tomorrow is compared with.
@@ -1566,7 +1573,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                         : server != null
                         ? server.note
                         : capacity?.score == null
-                        ? 'Needs health data'
+                        ? beforeSleep
+                              ? 'Ready after you sleep'
+                              : 'Needs health data'
                         : capacityNote,
                     scheduleScore: ready ? demand.round().clamp(0, 100) : null,
                     scheduleLabel: !ready
@@ -1584,6 +1593,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                               capacity: capacityScore,
                               usual: usualCapacity,
                               recovering: recovering,
+                              beforeSleep: beforeSleep,
                             ),
                             loadTitle: evening
                                 ? "Tomorrow's load"

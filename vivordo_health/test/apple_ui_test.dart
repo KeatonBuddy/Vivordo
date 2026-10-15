@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
@@ -184,5 +185,29 @@ void main() {
     await tester.pumpAndSettle();
     expect(range, '6M');
     expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+  });
+
+  testWidgets('a long info sheet closes when pulled down from the top', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    final context = await pumpApp(tester);
+    showInfoSheet(
+      context,
+      icon: Icons.info_outline,
+      title: 'Daily Brief data',
+      items: [
+        for (var i = 0; i < 30; i++) AppleInfoItem('Row $i', 'Detail $i'),
+      ],
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Daily Brief data'), findsOneWidget);
+    // Taller than the screen, so the content scrolls.
+    expect(find.text('Row 29').hitTestable(), findsNothing);
+
+    await tester.drag(find.text('Row 2'), const Offset(0, 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Daily Brief data'), findsNothing);
+    debugDefaultTargetPlatformOverride = null;
   });
 }

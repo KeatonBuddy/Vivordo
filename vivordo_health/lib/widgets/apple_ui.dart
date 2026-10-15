@@ -398,6 +398,38 @@ Future<T?> showAppleSheet<T>(
   ),
 );
 
+/// Closes a sheet pulled down from the top of its scrolling content. A
+/// scroll view otherwise takes the drag, so a sheet taller than the screen
+/// couldn't be swiped away.
+class _PullDownToClose extends StatefulWidget {
+  const _PullDownToClose({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_PullDownToClose> createState() => _PullDownToCloseState();
+}
+
+class _PullDownToCloseState extends State<_PullDownToClose> {
+  bool _closing = false;
+
+  @override
+  Widget build(BuildContext context) =>
+      NotificationListener<ScrollUpdateNotification>(
+        onNotification: (update) {
+          // iOS lets the content bounce past the top while it's dragged.
+          if (!_closing &&
+              update.dragDetails != null &&
+              update.metrics.pixels < -60) {
+            _closing = true;
+            Navigator.of(context).pop();
+          }
+          return false;
+        },
+        child: widget.child,
+      );
+}
+
 class _Grabber extends StatelessWidget {
   const _Grabber();
 
@@ -779,114 +811,116 @@ Future<void> showInfoSheet(
     final tint = _tint(sheetContext);
     return SafeArea(
       top: false,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const _Grabber(),
-            const SizedBox(height: 10),
-            Center(
-              child: Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: tint.withValues(alpha: .14),
-                  borderRadius: BorderRadius.circular(13),
+      child: _PullDownToClose(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _Grabber(),
+              const SizedBox(height: 10),
+              Center(
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: tint.withValues(alpha: .14),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(icon, color: tint, size: 26),
                 ),
-                child: Icon(icon, color: tint, size: 26),
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: colors.textPrimary,
-              ),
-            ),
-            if (summary != null) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 10),
               Text(
-                summary,
+                title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 14,
-                  height: 1.4,
-                  color: colors.textSecondary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: colors.textPrimary,
+                ),
+              ),
+              if (summary != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  summary,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.4,
+                    color: colors.textSecondary,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              if (items.isNotEmpty)
+                AppleFormGroup(
+                  children: [
+                    for (final item in items)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 11,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (item.icon != null) ...[
+                              Icon(item.icon, size: 20, color: tint),
+                              const SizedBox(width: 12),
+                            ],
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.title,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: colors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    item.detail,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      height: 1.35,
+                                      color: colors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ?body,
+              const SizedBox(height: 4),
+              FilledButton(
+                onPressed: () => Navigator.pop(sheetContext),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _purple,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  buttonLabel,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
-            const SizedBox(height: 16),
-            if (items.isNotEmpty)
-              AppleFormGroup(
-                children: [
-                  for (final item in items)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 11,
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (item.icon != null) ...[
-                            Icon(item.icon, size: 20, color: tint),
-                            const SizedBox(width: 12),
-                          ],
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.title,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: colors.textPrimary,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  item.detail,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    height: 1.35,
-                                    color: colors.textSecondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ?body,
-            const SizedBox(height: 4),
-            FilledButton(
-              onPressed: () => Navigator.pop(sheetContext),
-              style: FilledButton.styleFrom(
-                backgroundColor: _purple,
-                foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(48),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Text(
-                buttonLabel,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

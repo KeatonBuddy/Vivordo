@@ -206,9 +206,13 @@ BriefState briefEnergyState({
   required int? capacity,
   required int? usual,
   required bool recovering,
+  bool beforeSleep = false,
 }) {
   if (capacity == null) {
-    return (word: 'Needs health data', tone: BriefTone.usual);
+    return (
+      word: beforeSleep ? 'After you sleep' : 'Needs health data',
+      tone: BriefTone.usual,
+    );
   }
   if (recovering) return (word: 'Recovering', tone: BriefTone.low);
   if (usual != null) {

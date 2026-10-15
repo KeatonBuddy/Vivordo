@@ -60,6 +60,19 @@ void main() {
       briefEnergyState(capacity: 74, usual: 72, recovering: true).word,
       'Recovering',
     );
+    expect(
+      briefEnergyState(capacity: null, usual: 72, recovering: false).word,
+      'Needs health data',
+    );
+    expect(
+      briefEnergyState(
+        capacity: null,
+        usual: 72,
+        recovering: false,
+        beforeSleep: true,
+      ).word,
+      'After you sleep',
+    );
     expect(briefLoadState(demand: 40, capacity: 70).word, 'Light');
     expect(briefLoadState(demand: 70, capacity: 70).word, 'Full');
     expect(briefLoadState(demand: 90, capacity: 70).word, 'Heavy');
