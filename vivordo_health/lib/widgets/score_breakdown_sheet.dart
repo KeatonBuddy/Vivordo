@@ -25,6 +25,9 @@ Future<void> showScoreBreakdown(
   context,
   builder: (sheetContext) {
     final colors = sheetContext.vivordoColors;
+    final whole = signed
+        ? const <BreakdownRow, int>{}
+        : wholePoints([for (final section in sections) ...section.rows], score);
     return SafeArea(
       top: false,
       child: ConstrainedBox(
@@ -83,7 +86,11 @@ Future<void> showScoreBreakdown(
                       ),
                     ),
                   for (final row in section.rows)
-                    _BreakdownRowView(row: row, signed: signed),
+                    _BreakdownRowView(
+                      row: row,
+                      signed: signed,
+                      whole: whole[row],
+                    ),
                 ],
               const SizedBox(height: 12),
               Text(
@@ -102,16 +109,48 @@ Future<void> showScoreBreakdown(
   },
 );
 
+/// Each counted row's points as a whole number, rounded so they add up to
+/// [score]: the rows with the biggest fractions round up (largest
+/// remainder). Plain rounding when [score] isn't within reach of the rows.
+Map<BreakdownRow, int> wholePoints(List<BreakdownRow> rows, int score) {
+  final counted = [
+    for (final row in rows)
+      if (!row.leftOut && row.points != null) row,
+  ];
+  final floors = {for (final row in counted) row: row.points!.floor()};
+  final short = score - floors.values.fold(0, (a, b) => a + b);
+  if (short < 0 || short > counted.length) {
+    return {for (final row in counted) row: row.points!.round()};
+  }
+  final byFraction = [...counted]
+    ..sort(
+      (a, b) => (b.points! - b.points!.floor()).compareTo(
+        a.points! - a.points!.floor(),
+      ),
+    );
+  return {
+    for (final row in counted)
+      row: floors[row]! + (byFraction.indexOf(row) < short ? 1 : 0),
+  };
+}
+
 class _BreakdownRowView extends StatelessWidget {
-  const _BreakdownRowView({required this.row, required this.signed});
+  const _BreakdownRowView({
+    required this.row,
+    required this.signed,
+    this.whole,
+  });
 
   final BreakdownRow row;
   final bool signed;
 
+  /// This row's points as a whole number from [wholePoints].
+  final int? whole;
+
   String get _points {
     final points = row.points;
     if (points == null) return '—';
-    if (!signed) return points.toStringAsFixed(1);
+    if (!signed) return '${whole ?? points.round()}';
     final rounded = points.round();
     return rounded > 0
         ? '+$rounded'

@@ -2330,8 +2330,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               if (physical > 0)
                 BreakdownRow(
                   'Workouts and exercise',
-                  'Workouts, exercise minutes or extra calories · up to 25 a '
-                      'day',
+                  'Extra calories count when there\'s no exercise · up to 25 '
+                      'a day',
                   points: physical,
                 ),
             ],
@@ -2756,7 +2756,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
             if (usual != null)
-              Text('usual by now ${usual.round()}', style: caption),
+              Text('usual by now: ${usual.round()}', style: caption),
           ],
         ),
         const SizedBox(height: 4),

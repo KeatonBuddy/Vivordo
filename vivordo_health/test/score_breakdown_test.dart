@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'package:vivordo_health/src/utils/day_effort.dart';
 import 'package:vivordo_health/src/utils/score_breakdown.dart';
+import 'package:vivordo_health/widgets/score_breakdown_sheet.dart';
 
 void main() {
   DateTime at(int hour, [int minute = 0]) =>
@@ -203,5 +204,26 @@ void main() {
     );
     final mental = result.mental.fold<double>(0, (s, r) => s + r.points!);
     expect(mental + result.physical, closeTo(result.total, 1e-9));
+  });
+
+  test('whole-number points add up to the score', () {
+    List<int?> whole(List<double?> points, int score, {bool leftOut = false}) {
+      final rows = [
+        for (final p in points) BreakdownRow('', '', points: p),
+        if (leftOut) BreakdownRow('', '', leftOut: true),
+      ];
+      final map = wholePoints(rows, score);
+      return [for (final row in rows) map[row]];
+    }
+
+    // Schedule 18 and Activity 10.5 make 29: the half rounds up.
+    expect(whole([18, 10.5], 29), [18, 11]);
+    // Three 3.4s show as 10, not 9.
+    final threes = whole([3.4, 3.4, 3.4], 10);
+    expect(threes.fold<int>(0, (a, b) => a + b!), 10);
+    // Left-out rows and rows without points get no number.
+    expect(whole([5.6, null], 6, leftOut: true), [6, null, null]);
+    // A score the rows can't reach: plain rounding.
+    expect(whole([2.4, 2.4], 20), [2, 2]);
   });
 }
