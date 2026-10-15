@@ -32,6 +32,7 @@ String _imperialHeight(double? centimeters) {
 }
 
 enum _ProfileRange {
+  week('1W'),
   month('1M'),
   threeMonths('3M'),
   sixMonths('6M'),
@@ -54,6 +55,7 @@ enum _ProfileMetric {
 }
 
 String _rangePhrase(_ProfileRange range) => switch (range) {
+  _ProfileRange.week => 'the past week',
   _ProfileRange.month => 'the past month',
   _ProfileRange.threeMonths => 'the past 3 months',
   _ProfileRange.sixMonths => 'the past 6 months',
@@ -280,13 +282,17 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
     if (selectedRange == _ProfileRange.all) return points;
     final now = DateTime.now();
     final months = switch (selectedRange) {
+      _ProfileRange.week => 0,
       _ProfileRange.month => 1,
       _ProfileRange.threeMonths => 3,
       _ProfileRange.sixMonths => 6,
       _ProfileRange.year => 12,
       _ProfileRange.all => 1200,
     };
-    final start = _subtractCalendarMonths(now, months);
+    // The week: today and the 6 days before it, from midnight.
+    final start = selectedRange == _ProfileRange.week
+        ? DateTime(now.year, now.month, now.day - 6)
+        : _subtractCalendarMonths(now, months);
     return points
         .where(
           (point) => !point.date.isBefore(start) && !point.date.isAfter(now),
@@ -811,39 +817,54 @@ class _TrendCard extends StatelessWidget {
                   ),
           ),
           if (points.any((p) => p.trend != null)) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: metric.color, width: 1.5),
+                  width: 16,
+                  height: 2,
+                  color: metric.color.withValues(alpha: .45),
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'Scale weight',
+                  style: TextStyle(fontSize: 12, color: _muted),
+                ),
+                const SizedBox(width: 18),
+                SizedBox(
+                  width: 18,
+                  height: 10,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(height: 2.5, color: metric.color),
+                      Container(
+                        width: 9,
+                        height: 9,
+                        decoration: BoxDecoration(
+                          color: context.vivordoColors.card,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: metric.color, width: 2),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 6),
                 const Text(
-                  'Scale',
+                  'Trend weight',
                   style: TextStyle(fontSize: 12, color: _muted),
                 ),
-                const SizedBox(width: 14),
-                Container(
-                  width: 14,
-                  height: 3,
-                  decoration: BoxDecoration(
-                    color: metric.color,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                const Expanded(
-                  child: Text(
-                    'Trend: evens out daily swings',
-                    style: TextStyle(fontSize: 12, color: _muted),
-                  ),
-                ),
               ],
+            ),
+            const SizedBox(height: 4),
+            const Center(
+              child: Text(
+                'The trend evens out day-to-day water and food swings',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: _muted),
+              ),
             ),
           ],
           const SizedBox(height: 12),
@@ -920,6 +941,7 @@ class _InteractiveTrendChartState extends State<_InteractiveTrendChart> {
           suffix: widget.suffix,
           selectedIndex: selectedIndex,
           dark: Theme.of(context).brightness == Brightness.dark,
+          background: context.vivordoColors.card,
         ),
         child: const SizedBox.expand(),
       ),
@@ -934,12 +956,16 @@ class _TrendPainter extends CustomPainter {
     required this.suffix,
     this.selectedIndex,
     required this.dark,
+    required this.background,
   });
   final List<_ChartPoint> points;
   final Color color;
   final String suffix;
   final int? selectedIndex;
   final bool dark;
+
+  /// The card behind the chart: fills the trend's rings.
+  final Color background;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -993,48 +1019,51 @@ class _TrendPainter extends CustomPainter {
       left + width * point.date.difference(firstDate).inMilliseconds / dateSpan,
       top + height * (maxValue - point.value) / (maxValue - minValue),
     );
-    Offset trendLocation(_ChartPoint point) =>
-        location(_ChartPoint(point.date, point.steady));
-    // With a trend, the line and fill follow it and the scale readings are
-    // dots around it.
-    final locations = points
-        .map(hasTrend ? trendLocation : location)
-        .toList(growable: false);
-    final path = smoothChartPath(locations);
-    final fill = Path.from(path)
-      ..lineTo(locations.last.dx, top + height)
-      ..lineTo(locations.first.dx, top + height)
-      ..close();
-    canvas.drawPath(
-      fill,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [color.withValues(alpha: .18), color.withValues(alpha: 0)],
-        ).createShader(Rect.fromLTWH(left, top, width, height)),
-    );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-    for (final point in points) {
-      final offset = location(point);
-      if (hasTrend) {
-        canvas.drawCircle(
-          offset,
-          3.5,
-          Paint()
-            ..color = color.withValues(alpha: .6)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5,
-        );
-      } else {
+    Paint stroke(Color c, double w) => Paint()
+      ..color = c
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    if (hasTrend) {
+      // Two lines, as MacroFactor draws them: the scale readings as a thin,
+      // dimmer line, and the trend as the main line with a ring at each
+      // weigh-in.
+      final scale = points.map(location).toList(growable: false);
+      final trend = [
+        for (final point in points)
+          location(_ChartPoint(point.date, point.steady)),
+      ];
+      canvas.drawPath(
+        smoothChartPath(scale),
+        stroke(color.withValues(alpha: .45), 2),
+      );
+      canvas.drawPath(smoothChartPath(trend), stroke(color, 2.5));
+      final ringFill = Paint()..color = background;
+      // Smaller rings once they'd crowd (more than two weeks of points).
+      final ring = trend.length > 14 ? 2.8 : 4.0;
+      for (final offset in trend) {
+        canvas.drawCircle(offset, ring, ringFill);
+        canvas.drawCircle(offset, ring, stroke(color, ring > 3 ? 2 : 1.6));
+      }
+    } else {
+      final locations = points.map(location).toList(growable: false);
+      final path = smoothChartPath(locations);
+      final fill = Path.from(path)
+        ..lineTo(locations.last.dx, top + height)
+        ..lineTo(locations.first.dx, top + height)
+        ..close();
+      canvas.drawPath(
+        fill,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [color.withValues(alpha: .18), color.withValues(alpha: 0)],
+          ).createShader(Rect.fromLTWH(left, top, width, height)),
+      );
+      canvas.drawPath(path, stroke(color, 3));
+      for (final offset in locations) {
         canvas.drawCircle(offset, 4.5, Paint()..color = color);
         canvas.drawCircle(offset, 2.5, Paint()..color = Colors.white);
       }
@@ -1042,11 +1071,18 @@ class _TrendPainter extends CustomPainter {
     final labels = points.length <= 4
         ? points
         : [points.first, points[points.length ~/ 2], points.last];
+    // Weekdays for a week, dates for a month or two, months beyond.
+    final spanDays = lastDate.difference(firstDate).inDays;
+    final labelFormat = spanDays <= 7
+        ? DateFormat('EEE')
+        : spanDays <= 62
+        ? DateFormat('MMM d')
+        : DateFormat('MMM');
     for (final point in labels) {
       final offset = location(point);
       _drawText(
         canvas,
-        DateFormat('MMM').format(point.date),
+        labelFormat.format(point.date),
         Offset(offset.dx - 11, top + height + 7),
         11,
         dark ? Colors.white54 : Colors.black45,
@@ -1133,7 +1169,8 @@ class _TrendPainter extends CustomPainter {
       oldDelegate.color != color ||
       oldDelegate.suffix != suffix ||
       oldDelegate.selectedIndex != selectedIndex ||
-      oldDelegate.dark != dark;
+      oldDelegate.dark != dark ||
+      oldDelegate.background != background;
 }
 
 class _Panel extends StatelessWidget {
