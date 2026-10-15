@@ -13,18 +13,22 @@ const HIGH = 1.5; // this week ÷ the usual week
 const BUILDING = 1.3;
 const LIGHTER = 0.8;
 const HIGH_HARD_DAYS = 3;
-// The usual week is the 4 weeks before this one (days 8–35), so this week
-// doesn't raise its own bar. It needs most of those days on record and at
-// least an ordinary active day a week.
-const MIN_COVERED_DAYS = 21;
+// The usual week is the weeks before this one, never this week itself:
+// the week before (days 8–14) once that's on record, then the 2 weeks
+// before, and so on up to 4 (days 8–35). Each needs 3 in 4 of its days on
+// record and at least an ordinary active day a week.
+const MAX_USUAL_WEEKS = 4;
+const MIN_COVERAGE = 0.75;
 const MIN_USUAL_WEEK = 1;
 // The body agrees on a morning when HRV is 5% under its normal or resting
 // heart rate is 3 bpm over; Strained needs 2 of the last 3 mornings.
 const HRV_DROP = 0.05;
 const RESTING_RISE = 3;
 const DAY_MS = 86400000;
-// One push when Strained starts, never within a week of the last.
+// One push when Strained starts, never within a week of the last, and not
+// against a single week's usual (one light week makes any week look big).
 const NOTIFY_GAP_DAYS = 7;
+const NOTIFY_MIN_WEEKS = 2;
 
 const finite = (value) => typeof value === "number" && Number.isFinite(value);
 const round = (value, places) => {
@@ -70,11 +74,31 @@ function trainingLoadFor({day, loads, mornings = [], hrvNormal = null,
   const key = (k) => new Date(Date.parse(`${day}T00:00:00Z`) - k * DAY_MS)
       .toISOString().slice(0, 10);
   const usualDays = [];
-  for (let k = 8; k <= 35; k++) usualDays.push(relativeDay(key(k), loads));
-  const covered = usualDays.filter(Boolean).length;
-  const usualWeek = usualDays.reduce((sum, d) => sum + (d?.value ?? 0), 0) / 4;
-  if (covered < MIN_COVERED_DAYS || usualWeek < MIN_USUAL_WEEK) {
-    return {version: VERSION, state: "learning", coveredDays: covered};
+  for (let k = 8; k < 8 + 7 * MAX_USUAL_WEEKS; k++) {
+    usualDays.push(relativeDay(key(k), loads));
+  }
+  // The most weeks back that are well enough covered.
+  let usualWeeks = 0;
+  for (let n = MAX_USUAL_WEEKS; n >= 1; n--) {
+    const covered = usualDays.slice(0, 7 * n).filter(Boolean).length;
+    if (covered >= Math.ceil(MIN_COVERAGE * 7 * n)) {
+      usualWeeks = n;
+      break;
+    }
+  }
+  const usualWeek = usualWeeks === 0 ? 0 : usualDays.slice(0, 7 * usualWeeks)
+      .reduce((sum, d) => sum + (d?.value ?? 0), 0) / usualWeeks;
+  if (usualWeeks === 0 || usualWeek < MIN_USUAL_WEEK) {
+    // Days of activity on record so far, and roughly how long until the
+    // week before this one is covered (2 weeks from the first day).
+    let first = 0;
+    for (let k = 1; k < 8 + 7 * MAX_USUAL_WEEKS; k++) {
+      if (relativeDay(key(k), loads)) first = k;
+    }
+    return {version: VERSION, state: "learning",
+      coveredDays: usualDays.filter(Boolean).length,
+      daysToGo: first === 0 || usualWeeks > 0 ? null :
+        Math.max(1, 14 - first)};
   }
 
   const week = [];
@@ -115,7 +139,8 @@ function trainingLoadFor({day, loads, mornings = [], hrvNormal = null,
     ratio < LIGHTER ? "lighter" : "steady";
   return {
     version: VERSION, state, ratio: round(ratio, 2),
-    thisWeek: round(thisWeek, 1), usualWeek: round(usualWeek, 1), hardDays,
+    thisWeek: round(thisWeek, 1), usualWeek: round(usualWeek, 1), usualWeeks,
+    hardDays,
     kind: kinds.size === 0 ? null : kinds.size === 1 ? [...kinds][0] : "mixed",
     days: week, body,
   };
@@ -123,7 +148,8 @@ function trainingLoadFor({day, loads, mornings = [], hrvNormal = null,
 
 /**
  * Whether a newly calculated record should send the Strained push: it's
- * Strained, yesterday wasn't, and the last push was a week or more ago.
+ * Strained against at least 2 weeks' usual, yesterday wasn't, and the last
+ * push was a week or more ago.
  * @param {object|null} record Today's trainingLoadFor result.
  * @param {string|null} previousState Yesterday's state.
  * @param {string|null} lastNotified Day key of the last push.
@@ -131,7 +157,8 @@ function trainingLoadFor({day, loads, mornings = [], hrvNormal = null,
  * @return {boolean} True to send it.
  */
 function shouldNotify(record, previousState, lastNotified, day) {
-  if (record?.state !== "strained" || previousState === "strained") {
+  if (record?.state !== "strained" || previousState === "strained" ||
+      (record.usualWeeks ?? MAX_USUAL_WEEKS) < NOTIFY_MIN_WEEKS) {
     return false;
   }
   return !lastNotified || (Date.parse(`${day}T00:00:00Z`) -

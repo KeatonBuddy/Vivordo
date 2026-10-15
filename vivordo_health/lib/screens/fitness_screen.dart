@@ -1190,32 +1190,71 @@ class _TrainingLoadSection extends StatefulWidget {
 }
 
 class _TrainingLoadSectionState extends State<_TrainingLoadSection> {
-  late final Stream<TrainingLoadView?> _load = watchTrainingLoad(
-    DateTime.now(),
-  );
+  late final _load = watchTrainingLoadRecord(DateTime.now());
 
   @override
-  Widget build(BuildContext context) => VisibleStreamBuilder<TrainingLoadView?>(
-    stream: _load,
-    builder: (context, snapshot) {
-      final view = snapshot.data;
-      if (view == null) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.only(top: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionHeader('TRAINING LOAD'),
-            const SizedBox(height: 6),
-            TrainingLoadCard(
-              view: view,
-              onTap: () => showTrainingLoadDetails(context, view),
+  Widget build(BuildContext context) =>
+      VisibleStreamBuilder<({TrainingLoadView? view, int? learningDaysToGo})?>(
+        stream: _load,
+        builder: (context, snapshot) {
+          final view = snapshot.data?.view;
+          final daysToGo = snapshot.data?.learningDaysToGo;
+          if (view == null && daysToGo == null) {
+            return const SizedBox.shrink();
+          }
+          final colors = context.vivordoColors;
+          return Padding(
+            padding: const EdgeInsets.only(top: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _SectionHeader('TRAINING LOAD'),
+                const SizedBox(height: 6),
+                if (view != null)
+                  TrainingLoadCard(
+                    view: view,
+                    onTap: () => showTrainingLoadDetails(context, view),
+                  )
+                else
+                  // Still building a usual week to compare with.
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: colors.card,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: colors.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Learning your usual week',
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'About $daysToGo ${daysToGo == 1 ? 'day' : 'days'} '
+                          'to go. Then each week is compared with the ones '
+                          'before it.',
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 13,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       );
-    },
-  );
 }
 
 class _WeekDayBar extends StatelessWidget {

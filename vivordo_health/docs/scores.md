@@ -325,19 +325,28 @@ morning (even when Capacity itself can't be) and saved as
   heart-rate load ÷ its base when measured, minutes ÷ the minutes base
   otherwise, so 1.0 is an ordinary active day; a rest day is 0.
 - **This week** is the sum of the last 7 complete days; **the usual week**
-  is the sum of days 8–35 ÷ 4, so this week never raises its own bar. The
-  ratio is this week ÷ the usual week. A **hard day** is 1.5× or more.
-- **Learning** (hidden) until 21 of those 28 days have a load and the usual
-  week is at least 1 (an ordinary active day a week).
+  is the average week before it, so this week never raises its own bar:
+  the week before (days 8–14) as soon as that's on record, then the 2
+  weeks before, up to the 4 weeks before (days 8–35), whichever is the
+  most weeks with 3 in 4 days on record (2026-10-15; it was 4 weeks only).
+  Saved as `usualWeeks`. The ratio is this week ÷ the usual week. A **hard
+  day** is 1.5× or more.
+- **Learning** until the week before is covered and the usual week is at
+  least 1 (an ordinary active day a week): about 2 weeks from the first
+  day of activity, or none with the Health import. Saved with `daysToGo`
+  (null when it isn't a matter of time); Fitness shows "Learning your usual
+  week · About N days to go".
+- **The Strained push** needs at least 2 weeks' usual: one light week makes
+  any week look big.
 - **States:** Lighter under 0.8; Steady 0.8–1.3; Building 1.3 or more;
   **High** 1.5 or more with at least 3 hard days; **Strained** is High
   while the body agrees: HRV more than 5% under its 90-day median or
   resting heart rate at least 3 bpm over it, on 2 of the last 3 mornings.
   High and Strained hold until the ratio drops under 1.3.
-- Saved: `{version, state, ratio, thisWeek, usualWeek, hardDays, kind
+- Saved: `{version, state, ratio, thisWeek, usualWeek, usualWeeks, hardDays, kind
   (heart, minutes or mixed), days: [{day, value, kind}] oldest first,
   body: {mornings, hrvLow, restingHigh, restingHrChange, agrees}}`, or
-  `{version, state: "learning", coveredDays}`.
+  `{version, state: "learning", coveredDays, daysToGo}`.
 - **One push when Strained starts** (yesterday wasn't Strained, and none
   in the last 7 days; only for a day still under way): "You've trained a
   lot more than usual", naming the multiple and HRV or resting HR. Sent

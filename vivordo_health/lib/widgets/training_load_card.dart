@@ -23,7 +23,14 @@ Color _stateColor(String state) => switch (state) {
 
 /// The latest training load: it's calculated with Capacity each morning, so
 /// look back a few days for a morning nothing synced.
-Stream<TrainingLoadView?> watchTrainingLoad(DateTime day) {
+Stream<TrainingLoadView?> watchTrainingLoad(DateTime day) =>
+    watchTrainingLoadRecord(day).map((r) => r?.view);
+
+/// The latest record in the last 3 days, read as a view, or while it's
+/// still learning as the days until there's a usual week (null when that
+/// isn't a matter of time, e.g. too little activity).
+Stream<({TrainingLoadView? view, int? learningDaysToGo})?>
+watchTrainingLoadRecord(DateTime day) {
   final uid = FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return const Stream.empty();
   return FirebaseFirestore.instance
@@ -41,7 +48,13 @@ Stream<TrainingLoadView?> watchTrainingLoad(DateTime day) {
       .map((snapshot) {
         for (final doc in snapshot.docs.reversed) {
           final raw = doc.data()['trainingLoad'];
-          if (raw != null) return TrainingLoadView.fromMap(raw, doc.id);
+          if (raw == null) continue;
+          return (
+            view: TrainingLoadView.fromMap(raw, doc.id),
+            learningDaysToGo: raw is Map && raw['state'] == 'learning'
+                ? (raw['daysToGo'] as num?)?.toInt()
+                : null,
+          );
         }
         return null;
       });
@@ -150,7 +163,8 @@ class TrainingLoadCard extends StatelessWidget {
                 row(body.label, body.value, off: body.off),
               const SizedBox(height: 12),
               Text(
-                '${view.measuredBy} · line: your average day',
+                '${view.measuredBy} · line: your average day over '
+                '${view.usualSpan}',
                 style: TextStyle(fontSize: 11, color: colors.textSecondary),
               ),
             ],
