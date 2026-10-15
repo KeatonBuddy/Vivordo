@@ -69,10 +69,24 @@ void main() {
         capacity: null,
         usual: 72,
         recovering: false,
-        beforeSleep: true,
+        emptyWord: 'After you sleep',
       ).word,
       'After you sleep',
     );
+    // Why Capacity is empty, in order of what's true.
+    String label({
+      bool before = false,
+      bool slept = false,
+      bool tracks = false,
+    }) => capacityEmptyState(
+      beforeSleep: before,
+      sleepRecorded: slept,
+      tracksSleep: tracks,
+    ).label;
+    expect(label(before: true, tracks: true), 'Ready after you sleep');
+    expect(label(slept: true, tracks: true), 'Working it out');
+    expect(label(tracks: true), 'Waiting for sleep · check in now');
+    expect(label(), 'Connect Health or check in');
     expect(briefLoadState(demand: 40, capacity: 70).word, 'Light');
     expect(briefLoadState(demand: 70, capacity: 70).word, 'Full');
     expect(briefLoadState(demand: 90, capacity: 70).word, 'Heavy');

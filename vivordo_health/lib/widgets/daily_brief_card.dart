@@ -29,6 +29,7 @@ class DailyBriefCard extends StatelessWidget {
     this.now,
     this.words,
     this.action,
+    this.capacityEmptyIcon,
   });
 
   /// Under the summary: the day's top fix, and in the evening tonight's
@@ -37,6 +38,9 @@ class DailyBriefCard extends StatelessWidget {
 
   final String headline, summary, capacityLabel, scheduleLabel, footer;
   final int? capacityScore, scheduleScore;
+
+  /// Inside the Capacity ring while it's empty (capacityEmptyState).
+  final IconData? capacityEmptyIcon;
 
   /// Words mode: state rows instead of the score rings.
   final BriefWords? words;
@@ -131,6 +135,7 @@ class DailyBriefCard extends StatelessWidget {
                       semanticTitle: 'Daily capacity',
                       score: capacityScore,
                       label: capacityLabel,
+                      emptyIcon: capacityEmptyIcon,
                     );
                     final schedule = _BriefScore(
                       title: 'DEMAND',
@@ -195,6 +200,37 @@ class DailyBriefCard extends StatelessWidget {
 
 enum BriefTone { good, usual, low }
 
+/// Why today's Capacity is empty, and what fills it: the icon in its ring,
+/// the label beside it and the words-mode word.
+({IconData icon, String label, String word}) capacityEmptyState({
+  required bool beforeSleep,
+  required bool sleepRecorded,
+  required bool tracksSleep,
+}) => beforeSleep
+    ? (
+        icon: Icons.bedtime_rounded,
+        label: 'Ready after you sleep',
+        word: 'After you sleep',
+      )
+    : sleepRecorded
+    // Last night arrived; the server's Capacity follows in a moment.
+    ? (
+        icon: Icons.hourglass_top_rounded,
+        label: 'Working it out',
+        word: 'Working it out',
+      )
+    : tracksSleep
+    ? (
+        icon: Icons.sync_rounded,
+        label: 'Waiting for sleep · check in now',
+        word: 'Waiting for sleep',
+      )
+    : (
+        icon: Icons.favorite_border_rounded,
+        label: 'Connect Health or check in',
+        word: 'Connect Health',
+      );
+
 typedef BriefState = ({String word, BriefTone tone});
 
 /// Words mode's brief: Energy and today's (or tomorrow's) load as states.
@@ -206,13 +242,10 @@ BriefState briefEnergyState({
   required int? capacity,
   required int? usual,
   required bool recovering,
-  bool beforeSleep = false,
+  String? emptyWord,
 }) {
   if (capacity == null) {
-    return (
-      word: beforeSleep ? 'After you sleep' : 'Needs health data',
-      tone: BriefTone.usual,
-    );
+    return (word: emptyWord ?? 'Needs health data', tone: BriefTone.usual);
   }
   if (recovering) return (word: 'Recovering', tone: BriefTone.low);
   if (usual != null) {
@@ -294,9 +327,11 @@ class _BriefScore extends StatelessWidget {
     required this.semanticTitle,
     required this.score,
     required this.label,
+    this.emptyIcon,
   });
   final String title, semanticTitle, label;
   final int? score;
+  final IconData? emptyIcon;
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -320,19 +355,22 @@ class _BriefScore extends StatelessWidget {
                     valueColor: const AlwaysStoppedAnimation(Color(0xFFD0A5FF)),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(9),
-                  child: FittedBox(
-                    child: Text(
-                      score == null ? '—' : '$score',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
+                if (score == null && emptyIcon != null)
+                  Icon(emptyIcon, color: Colors.white, size: 20)
+                else
+                  Padding(
+                    padding: const EdgeInsets.all(9),
+                    child: FittedBox(
+                      child: Text(
+                        score == null ? '—' : '$score',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

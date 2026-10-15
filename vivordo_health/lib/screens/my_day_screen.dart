@@ -1364,6 +1364,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   sleepRecorded: sleep != null,
                   schedule: _sleepSchedule,
                 );
+            final capacityEmpty = capacityScore != null
+                ? null
+                : capacityEmptyState(
+                    beforeSleep: beforeSleep,
+                    sleepRecorded: sleep != null,
+                    tracksSleep: (summary?.priorNights ?? 0) > 0,
+                  );
             final capacityStale = server != null ? server.provisional : stale;
             final briefEvents = timedEvents
                 .map(
@@ -1572,11 +1579,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                         ? 'Recovering'
                         : server != null
                         ? server.note
-                        : capacity?.score == null
-                        ? beforeSleep
-                              ? 'Ready after you sleep'
-                              : 'Needs health data'
-                        : capacityNote,
+                        : capacityEmpty?.label ?? capacityNote,
+                    capacityEmptyIcon: capacityEmpty?.icon,
                     scheduleScore: ready ? demand.round().clamp(0, 100) : null,
                     scheduleLabel: !ready
                         ? 'Plan unavailable'
@@ -1593,7 +1597,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                               capacity: capacityScore,
                               usual: usualCapacity,
                               recovering: recovering,
-                              beforeSleep: beforeSleep,
+                              emptyWord: capacityEmpty?.word,
                             ),
                             loadTitle: evening
                                 ? "Tomorrow's load"

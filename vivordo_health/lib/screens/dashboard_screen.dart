@@ -24,6 +24,7 @@ import 'physical_health_screen.dart';
 import '../src/services/daily_tags_service.dart';
 import '../src/utils/metrics_insights.dart';
 import '../src/utils/physical_health_view.dart';
+import '../widgets/building_ring_centre.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 
@@ -669,14 +670,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       spacing: 10,
                       runSpacing: 8,
                       children: [
-                        Text(
-                          score == null ? '--' : score.round().toString(),
-                          style: const TextStyle(
-                            fontSize: 46,
-                            height: 1,
-                            fontWeight: FontWeight.w900,
+                        // While building, the ring shows how far along.
+                        if (view?.building == null)
+                          Text(
+                            score == null ? '--' : score.round().toString(),
+                            style: const TextStyle(
+                              fontSize: 46,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
-                        ),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 10,
@@ -730,21 +733,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   alignment: Alignment.center,
                   children: [
                     CircularProgressIndicator(
-                      value: score == null ? 0 : score / 100,
+                      value: score != null
+                          ? score / 100
+                          : view?.building == null
+                          ? 0
+                          : buildingProgress(view!.building!) / 100,
                       strokeWidth: 10,
                       strokeCap: StrokeCap.round,
                       color: color,
                       backgroundColor: context.vivordoColors.cardMuted,
                     ),
-                    Container(
-                      width: 45,
-                      height: 45,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: color.withValues(alpha: .1),
+                    if (view?.building case final building?)
+                      BuildingRingCentre(building, width: 60)
+                    else
+                      Container(
+                        width: 45,
+                        height: 45,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: color.withValues(alpha: .1),
+                        ),
+                        child: Icon(Icons.directions_run_rounded, color: color),
                       ),
-                      child: Icon(Icons.directions_run_rounded, color: color),
-                    ),
                   ],
                 ),
               ),
