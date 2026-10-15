@@ -230,6 +230,20 @@ void main() {
     expect(result.single.source, 'rules');
   });
 
+  test('school days are recognised without AI', () {
+    String category(String title) =>
+        CalendarCognitiveLoadService.scoreLocally(event(title: title)).category;
+    expect(category('Biology lecture'), 'collaboration');
+    expect(category('Chemistry lab'), 'collaboration');
+    expect(category('Tutorial'), 'collaboration');
+    expect(category('MATH 101 class'), 'collaboration');
+    expect(category('Focus time: write Q4 report'), 'focused-work');
+    // Longer, more specific terms still win.
+    expect(category('Lab report'), 'focused-work');
+    expect(category('Chemistry midterm exam'), 'high-consequence');
+    expect(category('Yoga class'), 'routine');
+  });
+
   group('a type the person picked', () {
     tearDown(() => CalendarCognitiveLoadService.debugChosenTypes = {});
 

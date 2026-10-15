@@ -494,6 +494,13 @@ class CalendarCognitiveLoadService {
       'stretching',
       'yoga',
       'pilates',
+      // Exercise classes, so "class" alone doesn't make them school.
+      'yoga class',
+      'pilates class',
+      'spin class',
+      'fitness class',
+      'dance class',
+      'cooking class',
       'meditation',
     ])
       _DemandRule(term, 'routine', 15),
@@ -620,6 +627,15 @@ class CalendarCognitiveLoadService {
       'networking',
       'webinar',
       'seminar',
+      // School: attending a class counts like a meeting ("Meeting or
+      // class"); exams, lab reports and studying have their own terms.
+      'lecture',
+      'class',
+      'lab',
+      'tutorial',
+      'lesson',
+      'recitation',
+      'practicum',
     ])
       _DemandRule(term, 'collaboration', 40),
     for (final term in _highLoadTerms.where(
@@ -627,6 +643,8 @@ class CalendarCognitiveLoadService {
     ))
       _DemandRule(term, 'focused-work', 55),
     for (final term in [
+      'focus time',
+      'focus session',
       'studying',
       'study',
       'writing',
