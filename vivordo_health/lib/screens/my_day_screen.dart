@@ -29,6 +29,7 @@ import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/event_type_section.dart';
+import '../widgets/score_breakdown_sheet.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/body_reaction_view.dart';
 import '../widgets/day_timeline.dart';
@@ -59,6 +60,7 @@ import '../src/utils/meeting_patterns.dart';
 import '../src/utils/training_load_view.dart';
 import '../src/utils/burnout_view.dart';
 import '../src/utils/day_fixes.dart';
+import '../src/utils/score_breakdown.dart';
 import '../src/utils/my_day_alerts.dart';
 import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
@@ -1584,6 +1586,21 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                         ? server.note
                         : capacityEmpty?.label ?? capacityNote,
                     capacityEmptyIcon: capacityEmpty?.icon,
+                    onCapacityTap: server == null
+                        ? null
+                        : () => _showCapacityBreakdown(server),
+                    onScheduleTap: !ready
+                        ? null
+                        : () => _showDemandBreakdown(
+                            now: now,
+                            evening: evening,
+                            todayEvents: timedEvents,
+                            todayPriorities: todayPriorities,
+                            tomorrowPriorities: tomorrowPriorities,
+                            capacity: evening
+                                ? tomorrowCapacity
+                                : capacityScore,
+                          ),
                     scheduleScore: ready ? demand.round().clamp(0, 100) : null,
                     scheduleLabel: !ready
                         ? planFailed
@@ -1703,6 +1720,110 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       );
     },
   );
+
+  /// Why today's Capacity is what it is: each part against your usual.
+  void _showCapacityBreakdown(ServerCapacity server) {
+    final usual = server.usual?.round();
+    final diff = usual == null ? 0 : server.score - usual;
+    showScoreBreakdown(
+      context,
+      kicker: 'CAPACITY TODAY',
+      score: server.score,
+      summary: usual == null
+          ? 'Still learning your usual'
+          : diff == 0
+          ? 'About your usual of $usual'
+          : '${diff.abs()} ${diff < 0 ? 'below' : 'above'} your usual of $usual',
+      sections: [(heading: null, rows: server.breakdown)],
+      signed: true,
+      footer:
+          'Each line is how much that part moved today\'s Capacity compared '
+          'with a usual day for you. Sleep counts most (45%), then your '
+          'overnight body (35%), your recent load (20%) and the morning '
+          'check-in (15%).',
+    );
+  }
+
+  /// Why Demand is what it is: each event and priority still ahead with its
+  /// points, and today's events that don't count, with why.
+  void _showDemandBreakdown({
+    required DateTime now,
+    required bool evening,
+    required List<_CalendarEvent> todayEvents,
+    required List<DailyPriority> todayPriorities,
+    required List<DailyPriority> tomorrowPriorities,
+    required int? capacity,
+  }) {
+    final today = DateUtils.dateOnly(now);
+    final day = evening ? today.add(const Duration(days: 1)) : today;
+    final result = demandBreakdown(
+      now: evening ? day : now,
+      from: day,
+      until: day.add(const Duration(days: 1)),
+      wrapUp: day.add(Duration(minutes: _wrapUpMinutes)),
+      items: evening
+          ? _effortItems(day, [
+              for (final e in _tomorrowEvents)
+                if (!e.isAllDay) e,
+            ], tomorrowPriorities)
+          : _effortItems(today, todayEvents, todayPriorities),
+      untimedOpen: _untimedOpen(
+        day,
+        evening ? tomorrowPriorities : todayPriorities,
+      ),
+    );
+    final leftOut = [
+      for (final e in evening ? _tomorrowEvents : _events)
+        if (e.end.isAfter(now))
+          if (e.isAllDay ? null : _cognitiveInput(e) case final input
+              when input == null || !input.contributesToSchedule)
+            BreakdownRow(
+              e.title.isEmpty ? 'Untitled' : e.title,
+              input == null
+                  ? 'All-day event'
+                  : input.isDeclined
+                  ? 'You declined it'
+                  : input.showsAsFree
+                  ? 'Marked Free in your calendar · tap to count it'
+                  : 'Not counted',
+              leftOut: true,
+              item: input == null
+                  ? null
+                  : (
+                      event: input,
+                      score: CalendarCognitiveLoadService.scoreLocally(input),
+                      done: false,
+                      open: false,
+                    ),
+            ),
+    ];
+    final fit = capacity == null
+        ? null
+        : switch (demandFit(result.total, capacity)) {
+            DemandFit.roomToSpare => 'room to spare',
+            DemandFit.full => 'a full day',
+            DemandFit.over => 'more than you\'ve got',
+          };
+    showScoreBreakdown(
+      context,
+      kicker: evening ? 'TOMORROW\'S DEMAND' : 'DEMAND STILL AHEAD',
+      empty: evening
+          ? 'Nothing planned for tomorrow yet.'
+          : 'Nothing left on your plan today.',
+      score: result.total.round(),
+      summary: fit == null
+          ? 'Capacity isn\'t in yet'
+          : 'Against ${evening ? 'your usual' : 'your'} Capacity of $capacity · $fit',
+      sections: [
+        (heading: null, rows: result.rows),
+        if (leftOut.isNotEmpty) (heading: 'NOT COUNTED', rows: leftOut),
+      ],
+      footer:
+          'Each event\'s points on its own; back-to-backs and long runs are '
+          'on their own line. Tap an event to change its type. Not counted: '
+          'Free, declined and all-day events, and anything already done.',
+    );
+  }
 
   /// Today's Demand as [buildDayEffort] prices it, for trying fixes.
   double _demandToday(

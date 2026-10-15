@@ -31,6 +31,8 @@ class DailyBriefCard extends StatelessWidget {
     this.action,
     this.capacityEmptyIcon,
     this.scheduleEmptyIcon,
+    this.onCapacityTap,
+    this.onScheduleTap,
   });
 
   /// Under the summary: the day's top fix, and in the evening tonight's
@@ -45,6 +47,17 @@ class DailyBriefCard extends StatelessWidget {
 
   /// Inside the Demand ring while the plan is loading or didn't load.
   final IconData? scheduleEmptyIcon;
+
+  /// Open why Capacity and Demand are what they are (score_breakdown).
+  final VoidCallback? onCapacityTap, onScheduleTap;
+
+  static Widget _tappable(Widget child, VoidCallback? onTap) => onTap == null
+      ? child
+      : InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: child,
+        );
 
   /// Words mode: state rows instead of the score rings.
   final BriefWords? words;
@@ -126,27 +139,39 @@ class DailyBriefCard extends StatelessWidget {
               if (words case final words?)
                 Column(
                   children: [
-                    _BriefStateRow('Energy', words.energy),
+                    _tappable(
+                      _BriefStateRow('Energy', words.energy),
+                      onCapacityTap,
+                    ),
                     const SizedBox(height: 8),
-                    _BriefStateRow(words.loadTitle, words.load),
+                    _tappable(
+                      _BriefStateRow(words.loadTitle, words.load),
+                      onScheduleTap,
+                    ),
                   ],
                 )
               else
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final capacity = _BriefScore(
-                      title: 'CAPACITY',
-                      semanticTitle: 'Daily capacity',
-                      score: capacityScore,
-                      label: capacityLabel,
-                      emptyIcon: capacityEmptyIcon,
+                    final capacity = _tappable(
+                      _BriefScore(
+                        title: 'CAPACITY',
+                        semanticTitle: 'Daily capacity',
+                        score: capacityScore,
+                        label: capacityLabel,
+                        emptyIcon: capacityEmptyIcon,
+                      ),
+                      onCapacityTap,
                     );
-                    final schedule = _BriefScore(
-                      title: 'DEMAND',
-                      semanticTitle: 'Schedule demand',
-                      score: scheduleScore,
-                      label: scheduleLabel,
-                      emptyIcon: scheduleEmptyIcon,
+                    final schedule = _tappable(
+                      _BriefScore(
+                        title: 'DEMAND',
+                        semanticTitle: 'Schedule demand',
+                        score: scheduleScore,
+                        label: scheduleLabel,
+                        emptyIcon: scheduleEmptyIcon,
+                      ),
+                      onScheduleTap,
                     );
                     if (constraints.maxWidth < 280 ||
                         MediaQuery.textScalerOf(context).scale(12) > 19) {

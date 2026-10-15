@@ -53,6 +53,8 @@ import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'package:vivordo_health/src/utils/activity_source.dart';
+import 'package:vivordo_health/src/utils/score_breakdown.dart';
+import 'package:vivordo_health/widgets/score_breakdown_sheet.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'sleep_detail_screen.dart';
@@ -2285,19 +2287,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         now.difference(from).inMinutes / until.difference(from).inMinutes;
     // Activity by the server's rules, so today matches the usual it's
     // compared with (effort.byHour places activity when it happened).
+    final physical = physicalSoFar(
+      workoutPoints: effort.workoutSoFar,
+      healthMinutes: healthMinutes,
+      calories: calories,
+      usualCalories: effortContext.usualCalories,
+    );
     final soFar = effortSoFarWord(
-      soFar:
-          effort.soFar -
-          effort.workoutSoFar +
-          physicalSoFar(
-            workoutPoints: effort.workoutSoFar,
-            healthMinutes: healthMinutes,
-            calories: calories,
-            usualCalories: effortContext.usualCalories,
-          ),
+      soFar: effort.soFar - effort.workoutSoFar + physical,
       now: now,
       pastByHour: effortContext.pastByHour,
     );
+    // Why Effort is what it is: what each item took, and activity.
+    void showEffort() {
+      final result = effortBreakdown(
+        now: now,
+        from: from,
+        until: until,
+        wrapUp: today.add(Duration(minutes: effortContext.wrapUpMinutes)),
+        items: items,
+        untimedDone: untimedDone,
+        physical: physical,
+      );
+      final mental = result.total - physical;
+      showScoreBreakdown(
+        context,
+        kicker: 'EFFORT SO FAR',
+        empty: 'Nothing has taken effort yet today.',
+        score: result.total.round(),
+        summary: soFar,
+        sections: [
+          (heading: 'MENTAL · ${mental.round()}', rows: result.mental),
+          (
+            heading: 'PHYSICAL · ${physical.round()}',
+            rows: [
+              if (physical > 0)
+                BreakdownRow(
+                  'Activity',
+                  'Workouts, exercise minutes or extra calories · up to 25 a '
+                      'day',
+                  points: physical,
+                ),
+            ],
+          ),
+        ],
+        footer:
+            'Mental is what your events and priorities took, each on its '
+            'own, with back-to-backs and long runs on their own line. Tap an '
+            'event to change its type.',
+      );
+    }
 
     return _card(
       child: Padding(
@@ -2309,7 +2348,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _effortStat('SO FAR', soFar, null)),
+                  Expanded(
+                    child: InkWell(
+                      onTap: showEffort,
+                      borderRadius: BorderRadius.circular(10),
+                      child: _effortStat('SO FAR', soFar, 'See what it took ›'),
+                    ),
+                  ),
                   VerticalDivider(width: 24, color: colors.border),
                   Expanded(
                     child: effort.aheadMinutes > 0
