@@ -30,6 +30,7 @@ class DailyBriefCard extends StatelessWidget {
     this.words,
     this.action,
     this.capacityEmptyIcon,
+    this.scheduleEmptyIcon,
   });
 
   /// Under the summary: the day's top fix, and in the evening tonight's
@@ -41,6 +42,9 @@ class DailyBriefCard extends StatelessWidget {
 
   /// Inside the Capacity ring while it's empty (capacityEmptyState).
   final IconData? capacityEmptyIcon;
+
+  /// Inside the Demand ring while the plan is loading or didn't load.
+  final IconData? scheduleEmptyIcon;
 
   /// Words mode: state rows instead of the score rings.
   final BriefWords? words;
@@ -142,6 +146,7 @@ class DailyBriefCard extends StatelessWidget {
                       semanticTitle: 'Schedule demand',
                       score: scheduleScore,
                       label: scheduleLabel,
+                      emptyIcon: scheduleEmptyIcon,
                     );
                     if (constraints.maxWidth < 280 ||
                         MediaQuery.textScalerOf(context).scale(12) > 19) {
@@ -201,8 +206,8 @@ class DailyBriefCard extends StatelessWidget {
 enum BriefTone { good, usual, low }
 
 /// Why today's Capacity is empty, and what fills it: the icon in its ring,
-/// the label beside it and the words-mode word.
-({IconData icon, String label, String word}) capacityEmptyState({
+/// the label beside it, the words-mode word and the brief's data footer.
+({IconData icon, String label, String word, String footer}) capacityEmptyState({
   required bool beforeSleep,
   required bool sleepRecorded,
   required bool tracksSleep,
@@ -211,6 +216,7 @@ enum BriefTone { good, usual, low }
         icon: Icons.bedtime_rounded,
         label: 'Ready after you sleep',
         word: 'After you sleep',
+        footer: "Today's sleep is still ahead",
       )
     : sleepRecorded
     // Last night arrived; the server's Capacity follows in a moment.
@@ -218,17 +224,20 @@ enum BriefTone { good, usual, low }
         icon: Icons.hourglass_top_rounded,
         label: 'Working it out',
         word: 'Working it out',
+        footer: "Updating with last night's sleep",
       )
     : tracksSleep
     ? (
         icon: Icons.sync_rounded,
         label: 'Waiting for sleep · check in now',
         word: 'Waiting for sleep',
+        footer: "Waiting for last night's sleep",
       )
     : (
         icon: Icons.favorite_border_rounded,
         label: 'Connect Health or check in',
         word: 'Connect Health',
+        footer: 'No health data yet',
       );
 
 typedef BriefState = ({String word, BriefTone tone});
@@ -264,8 +273,17 @@ BriefState briefEnergyState({
 
 /// Demand against the Capacity it's set beside, as the headline
 /// ([demandFit]).
-BriefState briefLoadState({required double? demand, required int? capacity}) {
-  if (demand == null) return (word: 'Plan unavailable', tone: BriefTone.usual);
+BriefState briefLoadState({
+  required double? demand,
+  required int? capacity,
+  bool planFailed = false,
+}) {
+  if (demand == null) {
+    return (
+      word: planFailed ? "Didn't load" : 'Loading',
+      tone: BriefTone.usual,
+    );
+  }
   if (capacity == null) {
     return (word: demand < 40 ? 'Light' : 'Full', tone: BriefTone.usual);
   }

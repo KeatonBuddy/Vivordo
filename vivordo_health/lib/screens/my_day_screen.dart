@@ -1399,6 +1399,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 .toList();
             final ready =
                 calendarReady && priorities.hasData && !priorities.hasError;
+            // Not loading any more, just failed: pull to refresh retries.
+            final planFailed =
+                !ready && (_calendarLoadError != null || priorities.hasError);
             // Demand: Effort still ahead today (docs/scores.md §2). In
             // the evening, once nothing is left, tomorrow's expected
             // Demand instead.
@@ -1583,13 +1586,29 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     capacityEmptyIcon: capacityEmpty?.icon,
                     scheduleScore: ready ? demand.round().clamp(0, 100) : null,
                     scheduleLabel: !ready
-                        ? 'Plan unavailable'
+                        ? planFailed
+                              ? "Didn't load · pull to retry"
+                              : 'Loading your plan'
                         : evening
                         ? 'Expected tomorrow'
                         : 'Remaining today',
-                    footer: capacityStale || !ready
-                        ? 'Limited data'
-                        : 'Available data',
+                    // What's missing, by name; tapping it opens the data
+                    // sheet.
+                    scheduleEmptyIcon: ready
+                        ? null
+                        : planFailed
+                        ? Icons.cloud_off_rounded
+                        : Icons.hourglass_top_rounded,
+                    footer: !ready
+                        ? planFailed
+                              ? "Your plan didn't load"
+                              : 'Your plan is still loading'
+                        : capacityEmpty?.footer ??
+                              (!capacityStale
+                                  ? 'Available data'
+                                  : server != null
+                                  ? "Waiting for last night's sleep"
+                                  : "Health data hasn't synced recently"),
                     words: showNumbers
                         ? null
                         : (
@@ -1607,6 +1626,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                               capacity: evening
                                   ? tomorrowCapacity
                                   : capacityScore,
+                              planFailed: planFailed,
                             ),
                           ),
                     onDetails: () => showInfoSheet(

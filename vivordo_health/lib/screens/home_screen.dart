@@ -46,6 +46,7 @@ import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/src/utils/home_metrics_summary.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/widgets/energy_forecast_view.dart';
+import 'sleep_preferences_screen.dart';
 import 'package:vivordo_health/widgets/hourly_heart_insight_card.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
@@ -2338,6 +2339,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               EnergySleepLine(
                 forecast: energy,
                 onTap: () => showEnergyForecastSheet(context, energy),
+              ),
+            ] else ...[
+              // No sleep tracked and no usual times: say what draws the
+              // energy line instead of leaving it out unexplained.
+              const SizedBox(height: 12),
+              EnergyLineInvite(
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SleepPreferencesScreen(),
+                    ),
+                  );
+                  if (mounted) _refreshHomeCalendarCards();
+                },
               ),
             ],
             const SizedBox(height: 16),
