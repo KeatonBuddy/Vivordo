@@ -250,7 +250,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                   runSpacing: 4,
                   children: [
                     Text(
-                      'Updated ${DateFormat('h:mm a').format(DateTime.now())}',
+                      storedReadings.isEmpty
+                          ? 'Not synced yet'
+                          : 'Updated ${DateFormat('h:mm a').format(DateTime.now())}',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                       ),

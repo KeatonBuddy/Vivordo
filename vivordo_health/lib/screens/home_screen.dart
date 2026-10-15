@@ -51,6 +51,7 @@ import 'package:vivordo_health/widgets/home_stress_card.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
+import 'package:vivordo_health/src/utils/activity_source.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'sleep_detail_screen.dart';
@@ -751,10 +752,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  String _getFirstName() {
-    final user = FirebaseAuth.instance.currentUser;
-    final displayName = user?.displayName ?? 'Alex';
-    return displayName.split(' ').first;
+  /// The first name from sign-in or onboarding; null when none was given
+  /// (email sign-up without a name, Apple's hidden name).
+  String? _firstName() {
+    final name = FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
+    return name.isEmpty ? null : name.split(RegExp(r'\s+')).first;
   }
 
   String _todayPeriod() {
@@ -822,6 +824,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         steps: 0,
         activeCalories: 0,
         exerciseMinutes: 0,
+        noActivitySource: false,
         healthExerciseMinutes: null,
         metricsLoading: false,
         latestHeartRate: null,
@@ -914,6 +917,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 metricsSummary.stressAnchor ??
                 50;
             final stressDrivers = homeStressDrivers(stressMap?['top_drivers']);
+            // Nothing supplying activity this past week: show a way to
+            // connect instead of zeros that look like a still day.
+            final noActivitySource =
+                scanSnap.hasData &&
+                !hasActivityData([data, ...scanSnap.data!.days.values]);
             final stressStillLoading =
                 loading ||
                 (stressScore == null &&
@@ -963,6 +971,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 steps: steps ?? 0,
                 activeCalories: activeCalories,
                 exerciseMinutes: exerciseMinutes,
+                noActivitySource: noActivitySource,
                 healthExerciseMinutes: (exerciseTimeMap?['healthSum'] as num?)
                     ?.toDouble(),
                 metricsLoading: loading,
@@ -1159,6 +1168,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required int steps,
     required int activeCalories,
     required int exerciseMinutes,
+    required bool noActivitySource,
     required double? healthExerciseMinutes,
     required bool metricsLoading,
     required LatestHeartRateReading? latestHeartRate,
@@ -1205,6 +1215,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           sleepIsWhoop ||
                           latestHeartRate?.source == 'whoop_ble',
                       showNumbers: showNumbers,
+                      onScanTap: widget.onScanTap,
                     ),
                   ),
                 ),
@@ -1221,11 +1232,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                 ),
                 const SizedBox(height: 12),
-                _buildActivityCard(
-                  steps: steps,
-                  activeCalories: activeCalories,
-                  exerciseMinutes: exerciseMinutes,
-                ),
+                noActivitySource
+                    ? _connectActivityCard()
+                    : _buildActivityCard(
+                        steps: steps,
+                        activeCalories: activeCalories,
+                        exerciseMinutes: exerciseMinutes,
+                      ),
                 const SizedBox(height: 12),
                 KeyedSubtree(key: widget.circleKey, child: _buildCircleCard()),
                 KeyedSubtree(
@@ -1362,6 +1375,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildHeader() {
     final colors = context.vivordoColors;
+    final now = DateTime.now();
+    final name = _firstName();
+    // Without a name the greeting takes its place.
+    final date = DateFormat('EEE, MMM d').format(now);
     return Row(
       children: [
         Expanded(
@@ -1369,8 +1386,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${DateFormat('EEE, MMM d').format(DateTime.now())} · '
-                '${timeOfDayGreeting(DateTime.now())}',
+                name == null ? date : '$date · ${timeOfDayGreeting(now)}',
                 style: TextStyle(
                   color: colors.textSecondary,
                   fontSize: 13,
@@ -1379,7 +1395,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 2),
               Text(
-                _getFirstName(),
+                name ?? timeOfDayGreeting(now),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -1594,6 +1610,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return minutes % 60 == 0
         ? '${minutes ~/ 60}h'
         : '${minutes ~/ 60}h ${minutes % 60}m';
+  }
+
+  /// In place of the activity card when nothing supplies activity.
+  Widget _connectActivityCard() {
+    final colors = context.vivordoColors;
+    return _card(
+      onTap: () => _push(const SettingsScreen()),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: colors.cardMuted, width: 6),
+              ),
+              child: Icon(
+                Icons.directions_walk_rounded,
+                color: colors.textSecondary,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Connect Apple Health',
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'To see your steps, calories and exercise',
+                    style: TextStyle(color: colors.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildActivityCard({

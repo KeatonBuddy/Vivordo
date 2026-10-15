@@ -189,7 +189,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
         children: [
           Center(
             child: Text(
-              'Updated $updated',
+              total == 0 ? 'No steps synced yet' : 'Updated $updated',
               style: TextStyle(color: context.vivordoColors.textSecondary),
             ),
           ),

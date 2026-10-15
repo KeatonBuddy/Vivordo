@@ -318,7 +318,10 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _lastUpdatedStatus(hasWhoopSleepData: hasWhoopSleepData),
+            _lastUpdatedStatus(
+              hasWhoopSleepData: hasWhoopSleepData,
+              synced: recorded.isNotEmpty,
+            ),
             const SizedBox(height: 18),
             _rangeSelector(),
             const SizedBox(height: 18),
@@ -406,7 +409,12 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     );
   }
 
-  Widget _lastUpdatedStatus({required bool hasWhoopSleepData}) {
+  /// "Updated" only once something has synced; never the current time
+  /// for a screen with no sleep.
+  Widget _lastUpdatedStatus({
+    required bool hasWhoopSleepData,
+    required bool synced,
+  }) {
     final user = FirebaseAuth.instance.currentUser;
     return Center(
       child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -425,7 +433,9 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
             runSpacing: 2,
             children: [
               Text(
-                'Updated ${DateFormat('h:mm a').format(_lastRefreshAt ?? DateTime.now())}',
+                synced
+                    ? 'Updated ${DateFormat('h:mm a').format(_lastRefreshAt ?? DateTime.now())}'
+                    : 'Not synced yet',
                 style: TextStyle(color: context.vivordoColors.textSecondary),
               ),
               if (whoopConnected && hasWhoopSleepData) ...[

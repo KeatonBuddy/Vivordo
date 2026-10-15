@@ -123,7 +123,7 @@ void main() {
         },
       },
     })!;
-    expect(view.note, '2 of the 3 ingredients it needs so far');
+    expect(view.note, '2 of 5 ingredients so far; it needs 3');
     expect(view.insights, [
       'Your score starts once 3 of the 5 ingredients have data. Still '
           'missing: strength, cardio fitness and sleep habits.',

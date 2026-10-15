@@ -87,7 +87,7 @@ class PhysicalHealthView {
       final counted = parts.values.where((v) => v != null).length;
       note = daysOfData < 14
           ? 'Based on $daysOfData of 14 days so far'
-          : '$counted of the 3 ingredients it needs so far';
+          : '$counted of 5 ingredients so far; it needs 3';
     } else {
       final latestDay = DateTime.parse(latestKey);
       final then = trend

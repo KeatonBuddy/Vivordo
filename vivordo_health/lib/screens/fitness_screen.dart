@@ -31,10 +31,12 @@ import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import '../src/utils/day_key.dart';
 import '../src/utils/home_metrics_summary.dart' show durationUntilNextLocalDay;
+import '../src/utils/activity_source.dart';
 import '../src/utils/fitness_goal_insight.dart';
 import '../src/services/metrics_repository.dart';
 import 'exercise_detail_screen.dart';
 import 'personal_profile_screen.dart';
+import 'profile_screen.dart' show SettingsScreen;
 import 'workout_summary_screen.dart';
 
 const _purple = Color(0xFF6B5CE7);
@@ -585,6 +587,10 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                 if (progress[i] < 1) i,
             ]..sort((a, b) => progress[b].compareTo(progress[a]));
             final next = open.isEmpty ? null : rings[open.first];
+            // Nothing supplying activity in the loaded window: a way to
+            // connect, not empty rings that look like a still day.
+            final noSource =
+                snapshot.hasData && !hasActivityData(history.values);
             return Material(
               color: Colors.transparent,
               borderRadius: BorderRadius.circular(24),
@@ -602,7 +608,13 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                   ),
                 ),
                 child: InkWell(
-                  onTap: widget.onTap,
+                  onTap: noSource
+                      ? () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const SettingsScreen(),
+                          ),
+                        )
+                      : widget.onTap,
                   child: Padding(
                     padding: const EdgeInsets.all(18),
                     child: Column(
@@ -640,7 +652,9 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${3 - open.length} of 3 closed',
+                                    noSource
+                                        ? 'Connect Apple Health'
+                                        : '${3 - open.length} of 3 closed',
                                     style: const TextStyle(
                                       fontSize: 25,
                                       fontWeight: FontWeight.w800,
@@ -649,7 +663,9 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    next == null
+                                    noSource
+                                        ? 'To track your steps, calories and exercise'
+                                        : next == null
                                         ? 'Every goal reached today.'
                                         : '${number.format(next.$2 - next.$1)} ${next.$3} to your next ring',
                                     style: const TextStyle(
@@ -686,7 +702,9 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                     color: i == 0
                                         ? Colors.white
                                         : ActivityRingsPainter.ringColors[i],
-                                    value: number.format(rings[i].$1),
+                                    value: noSource
+                                        ? '—'
+                                        : number.format(rings[i].$1),
                                     detail:
                                         '/ ${number.format(rings[i].$2)} ${rings[i].$3}',
                                   ),

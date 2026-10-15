@@ -1533,7 +1533,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     ],
                   );
             String timeLabel(DateTime? t) =>
-                t == null ? 'unknown' : DateFormat('MMM d, h:mm a').format(t);
+                t == null ? 'Not yet' : DateFormat('MMM d, h:mm a').format(t);
             if (ready) {
               latestDemand = (
                 demand: demand,
@@ -1614,7 +1614,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       items: [
                         AppleInfoItem(
                           'Calendar loaded',
-                          '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
+                          _calendarLoadedAt == null
+                              ? 'Not yet.'
+                              : '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
                           icon: CupertinoIcons.calendar,
                         ),
                         AppleInfoItem(

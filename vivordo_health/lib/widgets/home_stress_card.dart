@@ -20,6 +20,7 @@ class HomeStressCard extends StatefulWidget {
     required this.onInfoTap,
     this.showWhoopBadge = false,
     this.showNumbers = true,
+    this.onScanTap,
   });
 
   final double? score;
@@ -39,6 +40,9 @@ class HomeStressCard extends StatefulWidget {
   /// and percentage.
   final bool showNumbers;
 
+  /// Opens a heart scan: offered when there's no reading at all.
+  final VoidCallback? onScanTap;
+
   @override
   State<HomeStressCard> createState() => _HomeStressCardState();
 }
@@ -55,6 +59,9 @@ class _HomeStressCardState extends State<HomeStressCard>
   Brightness? _brightness;
 
   double get _visibleScore => widget.revealScore ? widget.score ?? 0 : 0;
+
+  /// No reading and no usual to stand in for one: no watch heart data yet.
+  bool get _noReading => widget.score == null && !widget.loading;
 
   @override
   void initState() {
@@ -200,8 +207,13 @@ class _HomeStressCardState extends State<HomeStressCard>
                         Expanded(child: _summary(displayedScore)),
                       ],
                     ),
-                  const SizedBox(height: 14),
-                  _action(action),
+                  if (!_noReading) ...[
+                    const SizedBox(height: 14),
+                    _action(action),
+                  ] else if (widget.onScanTap case final onScan?) ...[
+                    const SizedBox(height: 14),
+                    _scanButton(onScan),
+                  ],
                   const SizedBox(height: 12),
                   _footer(),
                 ],
@@ -269,6 +281,23 @@ class _HomeStressCardState extends State<HomeStressCard>
               color: Colors.white,
             ),
           )
+        : _noReading
+        ? const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.monitor_heart_outlined, color: Colors.white, size: 28),
+              SizedBox(height: 4),
+              Text(
+                'NO READING',
+                style: TextStyle(
+                  color: _label,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          )
         : Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -313,7 +342,7 @@ class _HomeStressCardState extends State<HomeStressCard>
           (widget.showNumbers
                   ? homeStressLevel(displayedScore)
                   : homeStressSentence(displayedScore, usual: widget.usual)) ??
-              'No score yet',
+              'No stress reading yet',
           style: const TextStyle(
             color: Colors.white,
             fontSize: 22,
@@ -324,12 +353,18 @@ class _HomeStressCardState extends State<HomeStressCard>
       const SizedBox(height: 3),
       Row(
         children: [
-          Icon(_comparisonIcon(), color: _palePurple, size: 16),
+          Icon(
+            _noReading ? Icons.watch_outlined : _comparisonIcon(),
+            color: _palePurple,
+            size: 16,
+          ),
           const SizedBox(width: 5),
           Expanded(
             child: Text(
               switch (widget.score) {
-                null => 'Learning your usual.',
+                null =>
+                  'Wear a watch or ring that syncs heart rate, or take a '
+                      'heart scan.',
                 final score when widget.showNumbers => stressUsualHeadline(
                   score,
                   widget.usual,
@@ -392,6 +427,33 @@ class _HomeStressCardState extends State<HomeStressCard>
     ),
   );
 
+  Widget _scanButton(VoidCallback onScan) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(16),
+    child: InkWell(
+      onTap: onScan,
+      borderRadius: BorderRadius.circular(16),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.fingerprint_rounded, color: Color(0xFF3C3489), size: 18),
+            SizedBox(width: 8),
+            Text(
+              'Take a heart scan',
+              style: TextStyle(
+                color: Color(0xFF3C3489),
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
   Widget _footer() => Row(
     children: [
       if (widget.updating) ...[
@@ -428,7 +490,11 @@ class _HomeStressCardState extends State<HomeStressCard>
   String _updatedLabel() {
     if (widget.updating) return 'Updating';
     final updatedAt = widget.updatedAt;
-    if (updatedAt == null) return 'Waiting for data';
+    if (updatedAt == null) {
+      return _noReading
+          ? 'Readings come from your heart rate and HRV'
+          : 'Waiting for data';
+    }
     final elapsed = DateTime.now().difference(updatedAt);
     if (elapsed.isNegative || elapsed.inMinutes < 1) return 'Updated now';
     if (elapsed.inMinutes < 60) return 'Updated ${elapsed.inMinutes}m ago';
