@@ -2436,11 +2436,20 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         );
       } else if (snapshot.hasError) {
         body = Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(
-            'Could not load today’s priorities',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: colors.textSecondary),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+          child: Column(
+            children: [
+              Text(
+                'Could not load today’s priorities',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: colors.textSecondary),
+              ),
+              // Reconnects the priority listeners.
+              TextButton(
+                onPressed: _connectPriorities,
+                child: const Text('Try again'),
+              ),
+            ],
           ),
         );
       } else {

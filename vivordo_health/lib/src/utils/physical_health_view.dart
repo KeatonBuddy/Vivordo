@@ -1,8 +1,21 @@
 import 'dart:math' as math;
 
 /// One ingredient of Physical Health, as the detail screen shows it.
+/// Where to fix a missing ingredient: the Body profile (age, height and
+/// weight) or Fitness (strength workouts).
+enum PhysicalFix { profile, fitness }
+
 class PhysicalIngredient {
-  const PhysicalIngredient(this.name, this.weight, this.detail, this.progress);
+  const PhysicalIngredient(
+    this.name,
+    this.weight,
+    this.detail,
+    this.progress, {
+    this.fix,
+  });
+
+  /// Set when [detail] says what to add; the row opens it.
+  final PhysicalFix? fix;
 
   final String name;
 
@@ -167,6 +180,7 @@ class PhysicalHealthView {
             ? 'Log strength workouts in Fitness to count them'
             : '${_trim(strength)} of 2 sessions a week',
         part('strength'),
+        fix: strength == null ? PhysicalFix.fitness : null,
       ),
       PhysicalIngredient(
         'Cardio fitness',
@@ -178,6 +192,7 @@ class PhysicalHealthView {
             : 'VO₂ max ${vo2.round()}${details['vo2Source'] == 'estimate' ? ' (estimated)' : ''}'
                   '${vo2Normal == null ? '' : ' · ${level(vo2, vo2Normal)}'}',
         part('cardio'),
+        fix: vo2 == null ? PhysicalFix.profile : null,
       ),
       PhysicalIngredient(
         'Sleep habits',

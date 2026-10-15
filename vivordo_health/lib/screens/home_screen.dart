@@ -1613,6 +1613,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         : '${minutes ~/ 60}h ${minutes % 60}m';
   }
 
+  /// A small text button for an empty state's one-tap fix.
+  Widget _insightAction(String label, VoidCallback onTap) => TextButton(
+    onPressed: onTap,
+    style: TextButton.styleFrom(
+      foregroundColor: accentPurple,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      minimumSize: const Size(0, 34),
+      backgroundColor: accentPurple.withValues(alpha: .08),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+    ),
+  );
+
   /// In place of the activity card when nothing supplies activity.
   Widget _connectActivityCard() {
     final colors = context.vivordoColors;
@@ -2482,10 +2498,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ],
             if (events == null) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Connect a calendar in My Day to include your events.',
-                style: TextStyle(fontSize: 12, color: colors.textSecondary),
+              const SizedBox(height: 6),
+              // No calendar: open Connections in Settings from here.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _insightAction(
+                  'Connect a calendar to include your events',
+                  () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SettingsScreen(),
+                      ),
+                    );
+                    if (mounted) _refreshHomeCalendarCards();
+                  },
+                ),
               ),
             ],
             Divider(height: 28, color: colors.border),
@@ -3010,13 +3037,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (hasHeartRate)
         HourlyHeartInsightCard(key: _hourlyHeartKey, isActive: widget.isActive),
       if (sleepHours == null && !hasHeartRate)
-        const HomeInsightRow(
+        HomeInsightRow(
           icon: Icons.info_outline_rounded,
           color: textGrey,
           title: 'No sleep or heart data yet',
           subtitle:
               'A watch or ring synced to Apple Health, or a heart scan, adds '
               'these.',
+          actions: [
+            _insightAction(
+              'Connect Health',
+              () => _push(const SettingsScreen()),
+            ),
+            if (widget.onScanTap case final onScan?)
+              _insightAction('Take a heart scan', onScan),
+          ],
         ),
     ];
     return _card(

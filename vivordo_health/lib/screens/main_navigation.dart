@@ -161,6 +161,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       onExpand: () => setState(() => _chatSheet.value = false),
     );
     _insights.onAsk = _askAbout;
+    // A detail screen's one-tap fix: back to the tabs, then there.
+    _insights.onOpen = (screen) {
+      _contentNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+      unawaited(_openFromAssistant(screen));
+    };
     _pandaHasBeenOpened = widget.initialIndex == 5;
     _chatRevealController = AnimationController(
       vsync: this,
