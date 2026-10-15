@@ -31,6 +31,17 @@ hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
   Whatever is still unknown
   ("Busy", "Hold", private events, offline) counts as 30 and lowers the
   day's confidence. Nothing is treated as free time.
+- **Your own type** (2026-10-15): an event's details ("Event type")
+  show its type in plain words (High stakes, Focused work, Meeting or
+  class, Social, Errands and routine, Break; "Not sure" for unknown) and
+  where it came from (set by you, Vivordo's guess, Vivordo AI) with its
+  load in My Day's words ("Heavy load on your day"). Picking one
+  applies to every event with that title (case, spacing and notes
+  ignored) and beats the rules and Claude, which is never asked about that
+  title again. Saved on the account as `users/{uid}.eventTypes` (hashed
+  title → category, no titles), so it follows the person to a new phone.
+  Home, My Day and today's day record re-sort straight away; finished days
+  keep their Effort. "Use Vivordo's guess" removes it.
 - Pressure: +10 while events overlap (overlapping demand is not summed),
   and a continuous-run ramp: nothing for the first 60 min, rising to +5
   at 120 min. **Gaps under 15 min don't reset the run**, so a chain of

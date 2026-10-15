@@ -300,7 +300,7 @@ class DayRecordService {
     if (events == null) throw StateError('The calendar could not be read.');
     final inputs = <(CalendarCognitiveEvent, String?)>[
       for (final event in events)
-        if (_fromGoogle(event) case final input?)
+        if (CalendarCognitiveEvent.fromCalendar(event) case final input?)
           (input, CalendarService.eventKey(event)),
     ];
     // Claude sorts what the local rules can't, with the user's AI consent.
@@ -335,26 +335,4 @@ class DayRecordService {
         .timeout(const Duration(seconds: 5), onTimeout: () => false)
         .catchError((_) => false),
   );
-
-  static CalendarCognitiveEvent? _fromGoogle(gcal.Event event) {
-    final start = event.start?.dateTime;
-    final end = event.end?.dateTime;
-    if (start == null || end == null) return null;
-    return CalendarCognitiveEvent(
-      id: '${CalendarService.eventKey(event)}:${start.toUtc().toIso8601String()}',
-      title: event.summary ?? '',
-      description: event.description ?? '',
-      start: start.toLocal(),
-      end: end.toLocal(),
-      attendeeCount: event.attendees?.length ?? 0,
-      isOrganizer: event.organizer?.self == true,
-      showsAsFree: event.transparency == 'transparent',
-      isCancelled: event.status == 'cancelled',
-      isDeclined:
-          event.attendees?.any(
-            (a) => a.self == true && a.responseStatus == 'declined',
-          ) ??
-          false,
-    );
-  }
 }

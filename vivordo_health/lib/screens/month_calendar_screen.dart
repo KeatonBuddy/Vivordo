@@ -3,6 +3,7 @@ import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
+import '../src/services/calendar_cognitive_load_service.dart';
 import '../src/services/calendar_service.dart';
 import '../src/utils/day_agenda.dart';
 import '../widgets/add_calendar_event_sheet.dart';
@@ -156,6 +157,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
             ? 'Outlook'
             : 'Google Calendar',
         canEdit: true,
+        typeEvent: CalendarCognitiveEvent.fromCalendar(event.event),
       ),
     );
     if (!mounted) return;

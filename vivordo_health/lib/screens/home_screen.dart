@@ -3136,6 +3136,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ? 'Outlook'
             : 'Google Calendar',
         canEdit: true,
+        typeEvent: CalendarCognitiveEvent.fromCalendar(event),
       ),
     );
     if (!mounted || action == null) return;

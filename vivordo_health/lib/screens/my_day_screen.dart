@@ -28,6 +28,7 @@ import '../src/utils/my_day_planning_insight.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
+import '../widgets/event_type_section.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/body_reaction_view.dart';
 import '../widgets/day_timeline.dart';
@@ -826,6 +827,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       backgroundColor: Colors.transparent,
       builder: (context) => _EventSummarySheet(
         event: event,
+        typeEvent: event.isAllDay ? null : _cognitiveInput(event),
         reaction: _reactions[event.sourceEventKey],
         onReaction: _showReaction,
       ),
@@ -3233,11 +3235,13 @@ enum _EventSummaryAction { edit, delete }
 class _EventSummarySheet extends StatelessWidget {
   const _EventSummarySheet({
     required this.event,
+    this.typeEvent,
     this.reaction,
     required this.onReaction,
   });
 
   final _CalendarEvent event;
+  final CalendarCognitiveEvent? typeEvent;
   final BodyReaction? reaction;
   final void Function(_CalendarEvent, BodyReaction) onReaction;
 
@@ -3420,6 +3424,10 @@ class _EventSummarySheet extends StatelessWidget {
                           ),
                         ],
                       ),
+                    ],
+                    if (typeEvent case final typeEvent?) ...[
+                      const SizedBox(height: 24),
+                      EventTypeSection(event: typeEvent),
                     ],
                     const SizedBox(height: 24),
                     const _SummarySectionLabel('CALENDAR'),

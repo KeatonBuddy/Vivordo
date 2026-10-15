@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
+import 'package:vivordo_health/widgets/event_type_section.dart';
 
 void main() {
   CalendarCognitiveEvent event({
@@ -227,5 +228,77 @@ void main() {
     ]);
     expect(result.single.score, 55);
     expect(result.single.source, 'rules');
+  });
+
+  group('a type the person picked', () {
+    tearDown(() => CalendarCognitiveLoadService.debugChosenTypes = {});
+
+    test('beats the rules for every event with that title', () {
+      CalendarCognitiveLoadService.debugChosenTypes = {
+        CalendarCognitiveLoadService.titleKey('Team sync'): 'focused-work',
+      };
+      // Case, spacing and notes don't matter; the title does.
+      final chosen = CalendarCognitiveLoadService.scoreLocally(
+        CalendarCognitiveEvent(
+          id: 'a',
+          title: '  team   SYNC ',
+          description: 'Agenda: roadmap',
+          start: DateTime(2026, 10, 15, 9),
+          end: DateTime(2026, 10, 15, 10),
+        ),
+      );
+      expect(chosen.category, 'focused-work');
+      expect(chosen.score, 55);
+      expect(chosen.chosen, isTrue);
+      expect(chosen.isKnown, isTrue);
+      expect(eventTypeCaption(chosen), 'Set by you · Heavy load on your day');
+
+      final other = CalendarCognitiveLoadService.scoreLocally(
+        event(title: 'Team sync prep'),
+      );
+      expect(other.chosen, isFalse);
+    });
+
+    test('a break takes no part in the day', () {
+      CalendarCognitiveLoadService.debugChosenTypes = {
+        CalendarCognitiveLoadService.titleKey('Lunch with Sam'): 'rest',
+      };
+      final result = CalendarCognitiveLoadService.scoreLocally(
+        event(title: 'Lunch with Sam'),
+      );
+      expect(result.category, 'rest');
+      expect(result.score, 0);
+      expect(eventTypeCaption(result), "Set by you · Doesn't add to your day");
+    });
+  });
+
+  test('captions say where the type came from', () {
+    expect(
+      eventTypeCaption(
+        CalendarCognitiveLoadService.scoreLocally(event(title: 'Busy')),
+      ),
+      "Vivordo can't tell · Medium load until you choose",
+    );
+    expect(
+      eventTypeCaption(
+        CalendarCognitiveLoadService.scoreLocally(
+          event(title: 'Quarterly results presentation'),
+        ),
+      ),
+      "Vivordo's guess · Heaviest load on your day",
+    );
+    expect(
+      eventTypeCaption(
+        const CognitiveLoadScore(
+          eventId: 'x',
+          score: 40,
+          category: 'collaboration',
+          reason: 'Sorted by Vivordo AI',
+          usedAi: true,
+          confidence: .6,
+        ),
+      ),
+      'Sorted by Vivordo AI · Medium load on your day',
+    );
   });
 }
