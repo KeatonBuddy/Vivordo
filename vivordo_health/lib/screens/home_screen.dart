@@ -1088,9 +1088,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     DateTime todayStart,
   ) async {
     final events = await _getReachableWindowEventsFuture(todayStart);
+    await CalendarCognitiveLoadService.loadChosenTypes();
     final timedEvents = events.where((event) {
       return event.status != 'cancelled' &&
-          event.transparency != 'transparent' &&
+          (event.transparency != 'transparent' ||
+              CalendarCognitiveLoadService.hasChosenType(event.summary)) &&
           !(event.attendees?.any(
                 (a) => a.self == true && a.responseStatus == 'declined',
               ) ??
@@ -2706,19 +2708,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final end = DateTime(today.year, today.month, today.day + 2);
     // Calendars and priorities are read at once, not one after another;
     // any failure (or 15 s without an answer) shows as unavailable.
-    Future<List<(DateTime, DateTime)>> calendar() async => [
-      if (await CalendarService.isAnyConnected())
-        for (final event in await CalendarService.getEventsBetween(start, end))
+    Future<List<(DateTime, DateTime)>> calendar() async {
+      if (!await CalendarService.isAnyConnected()) return [];
+      final events = await CalendarService.getEventsBetween(start, end);
+      // Free events count once a type is picked for them.
+      await CalendarCognitiveLoadService.loadChosenTypes();
+      return [
+        for (final event in events)
           if (event.start?.dateTime?.toLocal() case final s?)
             if (event.end?.dateTime?.toLocal() case final e?)
               if (event.status != 'cancelled' &&
-                  event.transparency != 'transparent' &&
+                  (event.transparency != 'transparent' ||
+                      CalendarCognitiveLoadService.hasChosenType(
+                        event.summary,
+                      )) &&
                   !(event.attendees?.any(
                         (a) => a.self == true && a.responseStatus == 'declined',
                       ) ??
                       false))
                 (s, e),
-    ];
+      ];
+    }
+
     Future<List<(DateTime, DateTime)>> priorities() async => [
       for (final priority in await DailyPriorityService.forDay(
         start,

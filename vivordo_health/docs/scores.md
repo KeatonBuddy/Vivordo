@@ -42,6 +42,11 @@ hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
   title → category, no titles), so it follows the person to a new phone.
   Home, My Day and today's day record re-sort straight away; finished days
   keep their Effort. "Use Vivordo's guess" removes it.
+  Events marked Free in the calendar don't count (reminders, holds,
+  events only followed), except once a type is picked for their title:
+  then they count like any other (2026-10-15; class timetables imported
+  as Free). Their row says "Marked Free in your calendar, so it isn't
+  counted. Choose a type to count it." until then.
 - Pressure: +10 while events overlap (overlapping demand is not summed),
   and a continuous-run ramp: nothing for the first 60 min, rising to +5
   at 120 min. **Gaps under 15 min don't reset the run**, so a chain of

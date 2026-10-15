@@ -47,11 +47,13 @@ class CalendarCognitiveEvent {
   final bool isDeclined;
   final bool isAllDay;
 
+  /// Free events don't count, unless the person picked a type for the
+  /// title: a class timetable imported as Free still counts once they do.
   bool get contributesToSchedule =>
       !isCancelled &&
       !isDeclined &&
       !isAllDay &&
-      !showsAsFree &&
+      (!showsAsFree || CalendarCognitiveLoadService.hasChosenType(title)) &&
       end.isAfter(start);
 
   int get durationMinutes => end.difference(start).inMinutes.clamp(0, 1440);
@@ -137,7 +139,7 @@ class CalendarCognitiveLoadService {
     bool allowAi = false,
   }) async {
     if (events.isEmpty) return const [];
-    await _loadChosen();
+    await loadChosenTypes();
 
     final local = events.map(scoreLocally).toList();
     if (!allowAi) return local;
@@ -330,7 +332,7 @@ class CalendarCognitiveLoadService {
   static Map<String, String> _chosen = {};
   static String? _chosenUid;
 
-  static Future<void> _loadChosen() async {
+  static Future<void> loadChosenTypes() async {
     if (Firebase.apps.isEmpty) return; // tests
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -355,7 +357,7 @@ class CalendarCognitiveLoadService {
   /// Sets the type of every event called [title], or with null goes back
   /// to Vivordo's own sorting. Callers refresh the calendar afterwards.
   static Future<void> setType(String title, String? category) async {
-    await _loadChosen();
+    await loadChosenTypes();
     final uid = FirebaseAuth.instance.currentUser!.uid;
     final key = titleKey(title);
     await FirebaseFirestore.instance.collection('users').doc(uid).set({
@@ -365,6 +367,10 @@ class CalendarCognitiveLoadService {
     _chosen = {..._chosen}..remove(key);
     if (category != null) _chosen[key] = category;
   }
+
+  /// Whether the person picked a type for events called [title].
+  static bool hasChosenType(String? title) =>
+      _chosen.containsKey(titleKey(title ?? ''));
 
   @visibleForTesting
   static set debugChosenTypes(Map<String, String> types) => _chosen = types;

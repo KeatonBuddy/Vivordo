@@ -122,14 +122,8 @@ List<EnergyFit> fitDayToEnergy({
   return [...clashes.take(_maxClashes), ...good];
 }
 
-/// Items that take up time: not cancelled, declined, all-day or shown as
-/// free.
-bool _counts(EffortItem i) =>
-    !i.event.isCancelled &&
-    !i.event.isDeclined &&
-    !i.event.isAllDay &&
-    !i.event.showsAsFree &&
-    i.event.end.isAfter(i.event.start);
+/// Items that take up time (CalendarCognitiveEvent.contributesToSchedule).
+bool _counts(EffortItem i) => i.event.contributesToSchedule;
 
 bool _isPriority(EffortItem i) => i.score.category == 'priority';
 

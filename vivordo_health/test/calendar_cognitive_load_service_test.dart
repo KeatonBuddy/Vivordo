@@ -259,6 +259,35 @@ void main() {
       expect(other.chosen, isFalse);
     });
 
+    test('a Free event counts once its type is picked', () {
+      final lab = CalendarCognitiveEvent(
+        id: 'lab',
+        title: 'PLSC 214 LAB',
+        start: DateTime(2026, 10, 15, 13),
+        end: DateTime(2026, 10, 15, 14),
+        showsAsFree: true,
+      );
+      final guess = CalendarCognitiveLoadService.scoreLocally(lab);
+      expect(lab.contributesToSchedule, isFalse);
+      expect(
+        eventTypeCaption(guess, free: true),
+        "Marked Free in your calendar, so it isn't counted. "
+        'Choose a type to count it.',
+      );
+
+      CalendarCognitiveLoadService.debugChosenTypes = {
+        CalendarCognitiveLoadService.titleKey('PLSC 214 LAB'): 'collaboration',
+      };
+      expect(lab.contributesToSchedule, isTrue);
+      expect(
+        eventTypeCaption(
+          CalendarCognitiveLoadService.scoreLocally(lab),
+          free: true,
+        ),
+        'Set by you · Medium load on your day',
+      );
+    });
+
     test('a break takes no part in the day', () {
       CalendarCognitiveLoadService.debugChosenTypes = {
         CalendarCognitiveLoadService.titleKey('Lunch with Sam'): 'rest',

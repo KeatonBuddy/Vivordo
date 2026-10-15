@@ -29,8 +29,13 @@ String eventTypeWeight(String category) => switch (category) {
   _ => 'Light load on your day',
 };
 
-/// Where the type came from, then how much it adds.
-String eventTypeCaption(CognitiveLoadScore score) {
+/// Where the type came from, then how much it adds. A [free] event (Free
+/// in the calendar) only counts once the person picks its type.
+String eventTypeCaption(CognitiveLoadScore score, {bool free = false}) {
+  if (free && !score.chosen) {
+    return "Marked Free in your calendar, so it isn't counted. "
+        'Choose a type to count it.';
+  }
   final from = score.chosen
       ? 'Set by you'
       : score.category == 'unknown'
@@ -79,7 +84,8 @@ class _EventTypeSectionState extends State<EventTypeSection> {
       title: 'What kind of event is this?',
       message:
           'Applies to all events called "${title.isEmpty ? 'Untitled' : title}". '
-          'Heavier types count more towards your day.',
+          'Heavier types count more towards your day.'
+          '${widget.event.showsAsFree && !score.chosen ? " It's marked Free in your calendar, so choosing a type also counts it." : ''}',
       actions: [
         for (final MapEntry(key: category, value: label)
             in eventTypeLabels.entries)
@@ -197,7 +203,7 @@ class _EventTypeSectionState extends State<EventTypeSection> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
-              eventTypeCaption(score),
+              eventTypeCaption(score, free: widget.event.showsAsFree),
               style: TextStyle(
                 color: colors.textSecondary,
                 fontSize: 12,
