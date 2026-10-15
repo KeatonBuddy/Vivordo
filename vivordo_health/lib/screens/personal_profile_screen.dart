@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../src/services/personal_profile_service.dart';
 import '../src/utils/smooth_chart_path.dart';
+import '../src/utils/trend_weight.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/birth_year_picker.dart';
 import '../widgets/vivordo_time_picker.dart';
@@ -128,10 +129,22 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
               final bmi = _bmi(height, weight);
               final updatedAt = profile.updatedAt ?? latest?.date;
 
-              final weightSeries = _series(visible, (point) {
-                final kilograms = point.weight;
-                return kilograms == null ? null : _kilogramsToPounds(kilograms);
-              });
+              double? pounds(_ProfilePoint point) => point.weight == null
+                  ? null
+                  : _kilogramsToPounds(point.weight!);
+              // The trend runs over every weigh-in, so a range doesn't
+              // restart it from its first point.
+              final allWeights = _series(points, pounds);
+              final trends = trendWeights([
+                for (final p in allWeights) (date: p.date, value: p.value),
+              ]);
+              final trendAt = {
+                for (final (i, p) in allWeights.indexed) p.date: trends[i],
+              };
+              final weightSeries = [
+                for (final p in _series(visible, pounds))
+                  _ChartPoint(p.date, p.value, trend: trendAt[p.date]),
+              ];
               final metricSeries = switch (selectedMetric) {
                 _ProfileMetric.weight => weightSeries,
                 _ProfileMetric.bmi => _series(visible, (point) => point.bmi),
@@ -424,15 +437,15 @@ class _ProfileHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final change = weightSeries.length > 1
-        ? weightSeries.last.value - weightSeries.first.value
+        ? weightSeries.last.steady - weightSeries.first.steady
         : null;
+    final trend = weightSeries.isEmpty ? null : weightSeries.last.trend;
     final changeText = weight == null
         ? 'Add your first measurement to start tracking.'
         : change == null
         ? 'Add another measurement to see your trend.'
-        : change.abs() < .05
-        ? 'No change over ${_rangePhrase(range)}'
-        : '${change < 0 ? '↓' : '↑'} ${change.abs().toStringAsFixed(1)} lbs over ${_rangePhrase(range)}';
+        : '${trend == null ? '' : 'Trend ${trend.toStringAsFixed(1)} lbs · '}'
+              '${change.abs() < .05 ? 'No change over ${_rangePhrase(range)}' : '${change < 0 ? '↓' : '↑'} ${change.abs().toStringAsFixed(1)} lbs over ${_rangePhrase(range)}'}';
     const subtle = Color(0xFFE8E0FF);
     final divider = Container(
       width: 1,
@@ -706,9 +719,15 @@ class _HistoryRow extends StatelessWidget {
 }
 
 class _ChartPoint {
-  const _ChartPoint(this.date, this.value);
+  const _ChartPoint(this.date, this.value, {this.trend});
   final DateTime date;
   final double value;
+
+  /// Weight only: the trend weight at this weigh-in (trendWeights).
+  final double? trend;
+
+  /// What changes are measured on: the trend when there is one.
+  double get steady => trend ?? value;
 }
 
 class _TrendCard extends StatelessWidget {
@@ -728,7 +747,7 @@ class _TrendCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final delta = points.length > 1
-        ? points.last.value - points.first.value
+        ? points.last.steady - points.first.steady
         : null;
     final change = delta == null || delta.abs() < .05 ? null : delta;
     final favorable = change != null && change <= 0;
@@ -791,6 +810,42 @@ class _TrendCard extends StatelessWidget {
                     suffix: metric.suffix,
                   ),
           ),
+          if (points.any((p) => p.trend != null)) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: metric.color, width: 1.5),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'Scale',
+                  style: TextStyle(fontSize: 12, color: _muted),
+                ),
+                const SizedBox(width: 14),
+                Container(
+                  width: 14,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: metric.color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Trend: evens out daily swings',
+                    style: TextStyle(fontSize: 12, color: _muted),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           AppSegmented<_ProfileRange>(
             segments: {for (final r in _ProfileRange.values) r: r.label},
@@ -894,7 +949,10 @@ class _TrendPainter extends CustomPainter {
     const bottom = 24.0;
     final width = size.width - left - right;
     final height = size.height - top - bottom;
-    final values = points.map((point) => point.value);
+    final hasTrend = points.any((point) => point.trend != null);
+    final values = [
+      for (final point in points) ...[point.value, ?point.trend],
+    ];
     final dataMin = values.reduce(math.min);
     final dataMax = values.reduce(math.max);
     final dataRange = dataMax - dataMin;
@@ -935,11 +993,17 @@ class _TrendPainter extends CustomPainter {
       left + width * point.date.difference(firstDate).inMilliseconds / dateSpan,
       top + height * (maxValue - point.value) / (maxValue - minValue),
     );
-    final locations = points.map(location).toList(growable: false);
+    Offset trendLocation(_ChartPoint point) =>
+        location(_ChartPoint(point.date, point.steady));
+    // With a trend, the line and fill follow it and the scale readings are
+    // dots around it.
+    final locations = points
+        .map(hasTrend ? trendLocation : location)
+        .toList(growable: false);
     final path = smoothChartPath(locations);
     final fill = Path.from(path)
-      ..lineTo(location(points.last).dx, top + height)
-      ..lineTo(location(points.first).dx, top + height)
+      ..lineTo(locations.last.dx, top + height)
+      ..lineTo(locations.first.dx, top + height)
       ..close();
     canvas.drawPath(
       fill,
@@ -961,8 +1025,19 @@ class _TrendPainter extends CustomPainter {
     );
     for (final point in points) {
       final offset = location(point);
-      canvas.drawCircle(offset, 4.5, Paint()..color = color);
-      canvas.drawCircle(offset, 2.5, Paint()..color = Colors.white);
+      if (hasTrend) {
+        canvas.drawCircle(
+          offset,
+          3.5,
+          Paint()
+            ..color = color.withValues(alpha: .6)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5,
+        );
+      } else {
+        canvas.drawCircle(offset, 4.5, Paint()..color = color);
+        canvas.drawCircle(offset, 2.5, Paint()..color = Colors.white);
+      }
     }
     final labels = points.length <= 4
         ? points
@@ -994,7 +1069,9 @@ class _TrendPainter extends CustomPainter {
       final tooltip = TextPainter(
         text: TextSpan(
           text:
-              '${point.value.toStringAsFixed(1)}$suffix  ·  ${DateFormat('MMM d, y').format(point.date)}',
+              '${point.value.toStringAsFixed(1)}$suffix'
+              '${point.trend == null ? '' : '  ·  trend ${point.trend!.toStringAsFixed(1)}'}'
+              '  ·  ${DateFormat('MMM d, y').format(point.date)}',
           style: TextStyle(
             color: dark ? Colors.white : Colors.black,
             fontSize: 11,
