@@ -5,7 +5,7 @@ import '../src/utils/score_breakdown.dart';
 import 'apple_ui.dart';
 import 'event_type_section.dart';
 
-/// A group of breakdown rows under an optional heading ("MENTAL · 14").
+/// A group of breakdown rows under an optional heading ("SCHEDULE · 14").
 typedef BreakdownSection = ({String? heading, List<BreakdownRow> rows});
 
 /// Why a score is what it is: the score, a line on how it compares, then

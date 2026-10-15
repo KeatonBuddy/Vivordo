@@ -301,14 +301,12 @@ double physicalSoFar({
   return math.min(25.0, points);
 }
 
-/// "So far" on Home: today's Effort compared with the usual by this time of
-/// day, the median of earlier days' running totals (`effort.byHour` from
-/// the server, keyed by day). Weekdays are compared with weekdays and
-/// weekends with weekends once there are [_sameKindDays] of that kind;
-/// until then all days, once there are 14. A word only, never a number
-/// (docs/scores.md §3).
-String effortSoFarWord({
-  required double soFar,
+/// Your usual Effort by this time of day, the median of earlier days'
+/// running totals (`effort.byHour` from the server, keyed by day), or null
+/// while still learning. Weekdays are compared with weekdays and weekends
+/// with weekends once there are [_sameKindDays] of that kind; until then
+/// all days, once there are 14.
+double? usualEffortByNow({
   required DateTime now,
   required Map<DateTime, List<num>> pastByHour,
 }) {
@@ -328,12 +326,23 @@ String effortSoFarWord({
   final all = byNow(pastByHour.values);
   final usualByNow = sameKind.length >= _sameKindDays ? sameKind : all;
   if (usualByNow.length < (identical(usualByNow, all) ? 14 : _sameKindDays)) {
-    return 'Still learning your usual';
+    return null;
   }
   final mid = usualByNow.length ~/ 2;
-  final usual = usualByNow.length.isOdd
+  return usualByNow.length.isOdd
       ? usualByNow[mid]
       : (usualByNow[mid - 1] + usualByNow[mid]) / 2;
+}
+
+/// "So far" on Home as a word: today's Effort against
+/// [usualEffortByNow] (docs/scores.md §3).
+String effortSoFarWord({
+  required double soFar,
+  required DateTime now,
+  required Map<DateTime, List<num>> pastByHour,
+}) {
+  final usual = usualEffortByNow(now: now, pastByHour: pastByHour);
+  if (usual == null) return 'Still learning your usual';
   // A margin of 20% and at least 2 points, so a quiet morning isn't
   // "heavier" over a point or two.
   if (soFar > usual * 1.2 + 2) return 'Heavier than usual';

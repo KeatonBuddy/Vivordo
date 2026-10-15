@@ -221,6 +221,11 @@ workouts in their own colour) and after now are Demand (outlined). A
 summary shows **So far** as a word only: "Heavier than usual", "About
 usual" or "Lighter than usual" against your usual Effort by this time of
 day, or "Still learning your usual" until there are 14 days of Effort.
+With score numbers on (2026-10-15), So far is a number instead: Effort so
+far on a bar (mental, then physical), a tick at your usual by now, and the
+word under it; Still ahead moves below. Words view keeps the word only.
+On screen, mental is called **Schedule** and physical **Activity**
+("mental" read badly to users); the stored fields keep their names.
 **Still ahead** shows the planned time and how heavy it is, switching to
 **Tomorrow** after the last item. Implemented in `lib/src/utils/day_effort.dart`
 and Home's card: "usual by this time of day" is the median of the last 28

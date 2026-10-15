@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:async';
 import 'package:provider/provider.dart';
 import '../widgets/visible_stream_builder.dart';
@@ -2293,8 +2294,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       calories: calories,
       usualCalories: effortContext.usualCalories,
     );
+    final effortSoFar = effort.soFar - effort.workoutSoFar + physical;
     final soFar = effortSoFarWord(
-      soFar: effort.soFar - effort.workoutSoFar + physical,
+      soFar: effortSoFar,
+      now: now,
+      pastByHour: effortContext.pastByHour,
+    );
+    final usualByNow = usualEffortByNow(
       now: now,
       pastByHour: effortContext.pastByHour,
     );
@@ -2317,13 +2323,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         score: result.total.round(),
         summary: soFar,
         sections: [
-          (heading: 'MENTAL · ${mental.round()}', rows: result.mental),
+          (heading: 'SCHEDULE · ${mental.round()}', rows: result.mental),
           (
-            heading: 'PHYSICAL · ${physical.round()}',
+            heading: 'ACTIVITY · ${physical.round()}',
             rows: [
               if (physical > 0)
                 BreakdownRow(
-                  'Activity',
+                  'Workouts and exercise',
                   'Workouts, exercise minutes or extra calories · up to 25 a '
                       'day',
                   points: physical,
@@ -2332,11 +2338,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
         footer:
-            'Mental is what your events and priorities took, each on its '
+            'Schedule is what your events and priorities took, each on its '
             'own, with back-to-backs and long runs on their own line. Tap an '
             'event to change its type.',
       );
     }
+
+    final ahead = effort.aheadMinutes > 0
+        ? _effortStat(
+            'STILL AHEAD',
+            '${_durationLabel(Duration(minutes: effort.aheadMinutes))} planned',
+            [
+              switch (effort.aheadLevel) {
+                DayLoadLevel.heavy => 'Mostly heavy',
+                DayLoadLevel.focused => 'Mostly focused',
+                _ => 'Mostly light',
+              },
+              if (effort.nextStart case final next?)
+                'next ${DateFormat.jm().format(next).replaceAll(':00', '')}',
+            ].join(' · '),
+          )
+        : FutureBuilder<({int minutes, DateTime? first})?>(
+            future: _getTomorrowPlanFuture(today),
+            builder: (context, snapshot) {
+              final plan = snapshot.data;
+              return _effortStat(
+                'TOMORROW',
+                plan == null
+                    ? snapshot.connectionState == ConnectionState.done
+                          ? 'Couldn\'t load'
+                          : '…'
+                    : plan.minutes == 0
+                    ? 'Nothing planned yet'
+                    : '${_durationLabel(Duration(minutes: plan.minutes))} planned',
+                plan?.first == null
+                    ? null
+                    : 'First at ${DateFormat.jm().format(plan!.first!)}',
+              );
+            },
+          );
 
     return _card(
       child: Padding(
@@ -2344,56 +2384,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: showEffort,
-                      borderRadius: BorderRadius.circular(10),
-                      child: _effortStat('SO FAR', soFar, 'See what it took ›'),
-                    ),
-                  ),
-                  VerticalDivider(width: 24, color: colors.border),
-                  Expanded(
-                    child: effort.aheadMinutes > 0
-                        ? _effortStat(
-                            'STILL AHEAD',
-                            '${_durationLabel(Duration(minutes: effort.aheadMinutes))} planned',
-                            [
-                              switch (effort.aheadLevel) {
-                                DayLoadLevel.heavy => 'Mostly heavy',
-                                DayLoadLevel.focused => 'Mostly focused',
-                                _ => 'Mostly light',
-                              },
-                              if (effort.nextStart case final next?)
-                                'next ${DateFormat.jm().format(next).replaceAll(':00', '')}',
-                            ].join(' · '),
-                          )
-                        : FutureBuilder<({int minutes, DateTime? first})?>(
-                            future: _getTomorrowPlanFuture(today),
-                            builder: (context, snapshot) {
-                              final plan = snapshot.data;
-                              return _effortStat(
-                                'TOMORROW',
-                                plan == null
-                                    ? snapshot.connectionState ==
-                                              ConnectionState.done
-                                          ? 'Couldn\'t load'
-                                          : '…'
-                                    : plan.minutes == 0
-                                    ? 'Nothing planned yet'
-                                    : '${_durationLabel(Duration(minutes: plan.minutes))} planned',
-                                plan?.first == null
-                                    ? null
-                                    : 'First at ${DateFormat.jm().format(plan!.first!)}',
-                              );
-                            },
+            Selector<ThemeController, bool>(
+              selector: (_, c) => c.showScoreNumbers,
+              // Numbers: Effort so far on a bar against your usual by now.
+              // Words: the word beside what's still ahead.
+              builder: (context, showNumbers, _) => showNumbers
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        InkWell(
+                          onTap: showEffort,
+                          borderRadius: BorderRadius.circular(10),
+                          child: _effortSoFarBar(
+                            total: effortSoFar,
+                            physical: physical,
+                            usual: usualByNow,
+                            word: soFar,
                           ),
-                  ),
-                ],
-              ),
+                        ),
+                        Divider(height: 24, color: colors.border),
+                        ahead,
+                      ],
+                    )
+                  : IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: showEffort,
+                              borderRadius: BorderRadius.circular(10),
+                              child: _effortStat(
+                                'SO FAR',
+                                soFar,
+                                'See what it took ›',
+                              ),
+                            ),
+                          ),
+                          VerticalDivider(width: 24, color: colors.border),
+                          Expanded(child: ahead),
+                        ],
+                      ),
+                    ),
             ),
             if (energy != null) ...[
               const SizedBox(height: 12),
@@ -2599,6 +2631,143 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             style: TextStyle(fontSize: 12, color: colors.textSecondary),
           ),
         ],
+      ],
+    );
+  }
+
+  /// Effort so far as a number and a bar, schedule then activity, with a
+  /// tick at your usual by now (none while still learning it).
+  Widget _effortSoFarBar({
+    required double total,
+    required double physical,
+    required double? usual,
+    required String word,
+  }) {
+    final colors = context.vivordoColors;
+    // Room past whichever is bigger, so neither the bar nor the tick sits
+    // at the very end.
+    final scale = math.max(20.0, math.max(total, usual ?? 0) * 1.25);
+    final mental = math.max(0.0, total - physical);
+    final caption = TextStyle(fontSize: 12, color: colors.textSecondary);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Expanded(
+              child: Text(
+                'EFFORT SO FAR',
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: .6,
+                  color: colors.textSecondary,
+                ),
+              ),
+            ),
+            Text(
+              '${total.round()}',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: colors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 10,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: colors.cardMuted,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: width * mental / scale,
+                          color: accentPurple,
+                        ),
+                        Container(
+                          width: width * physical / scale,
+                          color: _exerciseGreen,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (usual != null)
+                    Positioned(
+                      left: width * usual / scale - 1,
+                      top: -4,
+                      bottom: -4,
+                      child: Container(
+                        width: 2,
+                        decoration: BoxDecoration(
+                          color: colors.textPrimary,
+                          borderRadius: BorderRadius.circular(1),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              // A square in each part's bar colour, like the legend below,
+              // says which is which.
+              child: Wrap(
+                spacing: 12,
+                children: [
+                  for (final (label, value, color) in [
+                    ('Schedule', mental, accentPurple),
+                    if (physical > 0) ('Activity', physical, _exerciseGreen),
+                  ])
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: color,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text('$label: ${value.round()}', style: caption),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+            if (usual != null)
+              Text('usual by now ${usual.round()}', style: caption),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$word ›',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: colors.textPrimary,
+          ),
+        ),
       ],
     );
   }
