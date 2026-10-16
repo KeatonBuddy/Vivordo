@@ -36,6 +36,7 @@ import '../widgets/day_timeline.dart';
 import '../widgets/swipe_to_delete.dart';
 import '../widgets/habit_chips.dart';
 import '../src/utils/priority_schedule.dart';
+import '../widgets/plan_my_day_sheet.dart';
 import '../widgets/plan_slot_sheet.dart';
 import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
@@ -60,6 +61,7 @@ import '../src/utils/meeting_patterns.dart';
 import '../src/utils/training_load_view.dart';
 import '../src/utils/burnout_view.dart';
 import '../src/utils/day_fixes.dart';
+import '../src/utils/plan_my_day.dart';
 import '../src/utils/score_breakdown.dart';
 import '../src/utils/my_day_alerts.dart';
 import '../src/utils/energy_fit.dart';
@@ -2228,6 +2230,99 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Today's plan for [untimed] priorities (plan_my_day.dart).
+  ({List<PlannedSlot> placed, List<UnplacedTask> unplaced}) _planFor(
+    List<DailyPriority> untimed,
+    DateTime now,
+  ) {
+    final today = DateUtils.dateOnly(now);
+    return planMyDay(
+      now: now,
+      wrapUp: today.add(Duration(minutes: _wrapUpMinutes)),
+      items: _effortItems(today, [
+        for (final e in _events)
+          if (!e.isAllDay) e,
+      ], _prioritySnapshot.value.data ?? const []),
+      tasks: [
+        for (final p in untimed)
+          (
+            id: p.reference.path,
+            title: p.title,
+            minutes: switch ((p.planning['minutes'] as num?)?.toInt()) {
+              final minutes? when minutes > 0 => minutes,
+              _ => 30,
+            },
+            effort: p.planning['effort'] as String?,
+          ),
+      ],
+      forecast: _energyForecast(today),
+    );
+  }
+
+  /// Plan my day: times for [untimed] priorities around today's events and
+  /// energy (plan_my_day.dart), shown to keep, retime or skip. Times stay in
+  /// Vivordo, like a time set by hand; what doesn't fit can go to tomorrow.
+  Future<void> _planMyDay(
+    List<DailyPriority> untimed,
+    ({List<PlannedSlot> placed, List<UnplacedTask> unplaced}) plan,
+  ) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final byId = {for (final p in untimed) p.reference.path: p};
+    final choice = await showPlanMyDaySheet(
+      context,
+      placed: plan.placed,
+      unplaced: plan.unplaced,
+    );
+    if (choice == null || !mounted) return;
+    final tomorrow = today.add(const Duration(days: 1));
+    Future<void> place(DailyPriority p, DateTime date, DateTime? start) =>
+        DailyPriorityService.editPriority(
+          p,
+          title: p.title,
+          date: date,
+          scheduledAt: start,
+          completed: p.completed,
+          reminderMinutes: p.reminderMinutes,
+          reminderTimeMinutes: p.reminderTimeMinutes,
+        );
+    final moves = [
+      for (final slot in choice.slots)
+        if (byId[slot.task.id] case final p?)
+          (p: p, date: today, start: slot.start),
+      for (final task in choice.tomorrow)
+        if (byId[task.id] case final p?) (p: p, date: tomorrow, start: null),
+    ];
+    if (moves.isEmpty) return;
+    try {
+      for (final m in moves) {
+        await place(m.p, m.date, m.start);
+      }
+    } catch (_) {
+      _showMessage("Couldn't set the times.", error: true);
+      return;
+    }
+    final set = choice.slots.length;
+    final moved = choice.tomorrow.length;
+    final undo = await _showUndo(
+      [
+        if (set > 0) set == 1 ? '1 time set' : '$set times set',
+        if (moved > 0) '$moved moved to tomorrow',
+      ].join(' · '),
+    );
+    if (!undo) return;
+    try {
+      for (final m in moves) {
+        // Back to its own day and time (an overdue one to its old day).
+        final current = await _priorityOn(m.date, m.p.id);
+        if (current != null) {
+          await place(current, m.p.date ?? today, m.p.sourceStart);
+        }
+      }
+    } catch (_) {
+      _showMessage("Couldn't undo the plan.", error: true);
+    }
+  }
+
   /// A priority to another day, keeping its time of day if it has one.
   Future<void> _movePriority(
     DailyPriority p,
@@ -2571,6 +2666,26 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       final open = priorities.where((p) => !p.completed).toList();
       final done = priorities.where((p) => p.completed).toList();
       final hidden = open.length - _shownPriorities;
+      // Plan my day: open priorities with no time today (overdue ones
+      // included), while there's still day before the wrap-up time.
+      final now = DateTime.now();
+      final untimed = [
+        for (final p in open)
+          if (!p.habit &&
+              !p.isAllDay &&
+              (p.sourceStart == null ||
+                  !DateUtils.isSameDay(p.sourceStart, now)))
+            p,
+      ];
+      // Only when at least one of them fits today.
+      final plan =
+          untimed.isEmpty ||
+              !now.isBefore(
+                DateUtils.dateOnly(now).add(Duration(minutes: _wrapUpMinutes)),
+              )
+          ? null
+          : _planFor(untimed, now);
+      final canPlan = plan != null && plan.placed.isNotEmpty;
       Widget row(DailyPriority priority) => _PriorityRow(
         key: ValueKey(priority.reference.path),
         priority: priority,
@@ -2618,6 +2733,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 label: '$hidden more',
                 muted: true,
                 onTap: _openAllPriorities,
+              ),
+              const Divider(height: 1),
+            ],
+            if (canPlan) ...[
+              _ListAction(
+                icon: Icons.event_available_rounded,
+                label: 'Plan my day · ${untimed.length} without a time',
+                // Planned again from the moment it's opened.
+                onTap: () =>
+                    _planMyDay(untimed, _planFor(untimed, DateTime.now())),
               ),
               const Divider(height: 1),
             ],
