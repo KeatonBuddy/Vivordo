@@ -257,12 +257,27 @@ class StressScoreService {
     }
   }
 
+  /// JSON plus the signed-in user's Firebase ID token: the scoring service
+  /// only acts for the account the token belongs to (Vivordo_BaaS auth.py).
+  static Future<Map<String, String>> _headers() async {
+    String? token;
+    try {
+      token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    } catch (e) {
+      debugPrint('StressScoreService: no ID token: $e');
+    }
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
   static Future<bool> _postFeedback(Map<String, dynamic> payload) async {
     try {
       final res = await http
           .post(
             Uri.parse(kFeedbackUrl),
-            headers: {'Content-Type': 'application/json'},
+            headers: await _headers(),
             body: jsonEncode(payload),
           )
           .timeout(const Duration(seconds: _timeoutSeconds));
@@ -786,11 +801,7 @@ class StressScoreService {
     for (int attempt = 0; attempt <= retries; attempt++) {
       try {
         final response = await http
-            .post(
-              Uri.parse(kApiUrl),
-              headers: {'Content-Type': 'application/json'},
-              body: body,
-            )
+            .post(Uri.parse(kApiUrl), headers: await _headers(), body: body)
             .timeout(const Duration(seconds: _timeoutSeconds));
 
         if (response.statusCode == 200) {
