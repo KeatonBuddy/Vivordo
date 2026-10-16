@@ -57,7 +57,7 @@ class PremiumPlan {
 /// result to `subscriptions/{uid}`, which unlocks the app.
 class SubscriptionService {
   /// RevenueCat's public iOS key ("appl_…"). Not a secret.
-  static const appleApiKey = '';
+  static const appleApiKey = 'appl_WngvVygZUiJqbPFRnhdBAIkkPsu';
 
   /// RevenueCat's Test Store key: pretend purchases of the dashboard's
   /// products, no App Store needed. Debug builds only; RevenueCat refuses
