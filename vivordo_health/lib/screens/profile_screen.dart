@@ -1164,7 +1164,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       status: (
                         selectedMetricCount > 0,
                         selectedMetricCount > 0
-                            ? '$selectedMetricCount of ${kHealthMetrics.length} metrics'
+                            ? '$selectedMetricCount of ${kAvailableHealthMetrics.length} metrics'
                             : 'Off',
                       ),
                       trailing: const _Chevron(),
@@ -2052,7 +2052,7 @@ Map<String, bool> _healthConsent(Map<String, dynamic> userData) =>
 
 int _selectedHealthMetrics(Map<String, dynamic> userData) {
   final consent = _healthConsent(userData);
-  return kHealthMetrics.where((metric) => consent[metric.key] == true).length;
+  return kAvailableHealthMetrics.where((metric) => consent[metric.key] == true).length;
 }
 
 /// Which Apple Health metrics Vivordo syncs, one switch each.
@@ -2134,7 +2134,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
         final data = snapshot.data?.data() ?? const <String, dynamic>{};
         final consent = _healthConsent(data);
         final selected = _selectedHealthMetrics(data);
-        final allOn = selected == kHealthMetrics.length;
+        final allOn = selected == kAvailableHealthMetrics.length;
         return Scaffold(
           backgroundColor: colors.page,
           body: SafeArea(
@@ -2154,7 +2154,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                       status: (
                         selected > 0,
                         selected > 0
-                            ? '$selected of ${kHealthMetrics.length} metrics'
+                            ? '$selected of ${kAvailableHealthMetrics.length} metrics'
                             : 'No metrics selected',
                       ),
                     ),
@@ -2202,7 +2202,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                 ),
                 _SettingsCard(
                   children: [
-                    for (final metric in kHealthMetrics)
+                    for (final metric in kAvailableHealthMetrics)
                       _metricRow(metric, enabled: consent[metric.key] == true),
                   ],
                 ),

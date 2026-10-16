@@ -31,7 +31,27 @@ class HealthMetricDef {
     required this.label,
     required this.description,
   });
+
+  /// The type to request on this platform; null when Health Connect has no
+  /// equivalent (the metric is then hidden on Android).
+  HealthDataType? get platformType =>
+      defaultTargetPlatform == TargetPlatform.android &&
+          _androidTypeOverrides.containsKey(key)
+      ? _androidTypeOverrides[key]
+      : type;
 }
+
+// HealthKit types Health Connect lacks; null = no equivalent.
+// shortcut: Android HRV is RMSSD, not SDNN; stress thresholds were tuned on SDNN, recalibrate if Android stress scores look off.
+const Map<String, HealthDataType?> _androidTypeOverrides = {
+  'distance': HealthDataType.DISTANCE_DELTA,
+  'hrv': HealthDataType.HEART_RATE_VARIABILITY_RMSSD,
+  'exercise_time': null,
+};
+
+/// Metrics readable on the current platform.
+List<HealthMetricDef> get kAvailableHealthMetrics =>
+    kHealthMetrics.where((m) => m.platformType != null).toList();
 
 /// Full list of HealthKit metrics the app can read.
 /// The only requirement to activate these is purchasing the HealthKit
@@ -185,7 +205,7 @@ class HealthService {
   }
 
   List<HealthDataType> get _authorizationTypes => [
-    ...kHealthMetrics.map((metric) => metric.type),
+    ...kAvailableHealthMetrics.map((metric) => metric.platformType!),
     ...kSleepStageTypes,
     ..._inBedTypes,
   ];
@@ -312,7 +332,7 @@ class HealthService {
     // intent while the actual charts still depend on real HealthKit data reads.
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return granted;
-    final consentMap = {for (final m in kHealthMetrics) m.key: true};
+    final consentMap = {for (final m in kAvailableHealthMetrics) m.key: true};
     await _db.collection('users').doc(uid).set({
       'healthKitConsent': consentMap,
     }, SetOptions(merge: true));
@@ -491,7 +511,7 @@ class HealthService {
     if (uid == null) return;
     if (refreshWearableConnections) await _refreshWearableConnections(uid);
     final def = kMetricByKey[metricKey];
-    if (def == null) return;
+    if (def == null || def.platformType == null) return;
     // Heart-rate samples are the heavy part, and only big days and the
     // sleeping heart rate use them: 30 days, even in a history import.
     if (metricKey == 'heart_rate' && daysBack > 30) daysBack = 30;
@@ -525,7 +545,7 @@ class HealthService {
         final dataPoints = await _health.getHealthIntervalDataFromTypes(
           startDate: start,
           endDate: now,
-          types: [def.type],
+          types: [def.platformType!],
           interval: hourly
               ? const Duration(hours: 1).inSeconds
               : const Duration(days: 1).inSeconds,
@@ -559,7 +579,7 @@ class HealthService {
       final dataPoints = await _health.getHealthDataFromTypes(
         startTime: start,
         endTime: now,
-        types: [def.type],
+        types: [def.platformType!],
       );
 
       if (metricKey == 'steps') {
@@ -805,7 +825,7 @@ class HealthService {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) await _refreshWearableConnections(uid);
-    for (final m in kHealthMetrics) {
+    for (final m in kAvailableHealthMetrics) {
       if (consent[m.key] == true) {
         try {
           await PerformanceTrace.async(
@@ -985,7 +1005,7 @@ class HealthService {
 
     for (final entry in _baasRawMetrics.entries) {
       final def = kMetricByKey[entry.key];
-      if (def == null) continue;
+      if (def == null || def.platformType == null) continue;
       if (consent[entry.key] != true) continue;
 
       List<HealthDataPoint> points;
@@ -995,7 +1015,7 @@ class HealthService {
           endTime: now,
           types: entry.key == 'sleep'
               ? [HealthDataType.SLEEP_ASLEEP, ...kSleepStageTypes]
-              : [def.type],
+              : [def.platformType!],
         );
       } catch (e) {
         // One metric failing must not cost us the rest of the payload.
