@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/foundation.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/src/utils/score_breakdown.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/score_breakdown_sheet.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 
 void main() {
@@ -208,6 +210,35 @@ void main() {
     await tester.drag(find.text('Row 2'), const Offset(0, 300));
     await tester.pumpAndSettle();
     expect(find.text('Daily Brief data'), findsNothing);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('any sheet with scrolling content closes when pulled down', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    final context = await pumpApp(tester);
+    // The Effort breakdown: short, but its content is a scroll view, which
+    // took the drag before.
+    showScoreBreakdown(
+      context,
+      kicker: 'EFFORT SO FAR',
+      score: 18,
+      summary: 'Heavier than usual',
+      sections: [
+        (
+          heading: 'SCHEDULE · 18',
+          rows: [BreakdownRow('3 priorities ticked off', '', points: 18)],
+        ),
+      ],
+      footer: 'Schedule is what your events and priorities took.',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('EFFORT SO FAR'), findsOneWidget);
+
+    await tester.drag(find.text('Heavier than usual'), const Offset(0, 300));
+    await tester.pumpAndSettle();
+    expect(find.text('EFFORT SO FAR'), findsNothing);
     debugDefaultTargetPlatformOverride = null;
   });
 }
