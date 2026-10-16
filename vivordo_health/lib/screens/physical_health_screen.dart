@@ -5,7 +5,10 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/utils/day_key.dart';
 import '../src/utils/physical_health_view.dart';
+import 'personal_profile_screen.dart';
 import '../widgets/apple_ui.dart';
+import '../widgets/building_ring_centre.dart';
+import '../widgets/contextual_insight_bar.dart' show vivordoScreenOpener;
 import '../widgets/visible_stream_builder.dart';
 
 const _green = Color(0xFF1D9E75);
@@ -94,7 +97,7 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
               _Card(
                 child: Row(
                   children: [
-                    _Ring(score: view.score, size: 92),
+                    _Ring(score: view.score, size: 92, building: view.building),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
@@ -207,6 +210,17 @@ class _IngredientRow extends StatelessWidget {
 
   final PhysicalIngredient ingredient;
 
+  VoidCallback? _fix(BuildContext context) => switch (ingredient.fix) {
+    PhysicalFix.profile => () => Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const PersonalProfileScreen()),
+    ),
+    PhysicalFix.fitness => switch (vivordoScreenOpener(context)) {
+      final open? => () => open('fitness'),
+      null => null,
+    },
+    null => null,
+  };
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
@@ -229,10 +243,36 @@ class _IngredientRow extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 2),
-        Text(
-          ingredient.detail,
-          style: TextStyle(fontSize: 13, color: colors.textSecondary),
-        ),
+        if (_fix(context) case final onFix?)
+          // Missing: the detail says what to add, and opens where to add it.
+          InkWell(
+            onTap: onFix,
+            borderRadius: BorderRadius.circular(6),
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    ingredient.detail,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: VivordoTheme.brand,
+                    ),
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: VivordoTheme.brand,
+                ),
+              ],
+            ),
+          )
+        else
+          Text(
+            ingredient.detail,
+            style: TextStyle(fontSize: 13, color: colors.textSecondary),
+          ),
         const SizedBox(height: 6),
         ClipRRect(
           borderRadius: BorderRadius.circular(3),
@@ -249,10 +289,11 @@ class _IngredientRow extends StatelessWidget {
 }
 
 class _Ring extends StatelessWidget {
-  const _Ring({required this.score, required this.size});
+  const _Ring({required this.score, required this.size, this.building});
 
   final int? score;
   final double size;
+  final (int, int, String)? building;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -263,17 +304,23 @@ class _Ring extends StatelessWidget {
       children: [
         SizedBox.expand(
           child: CircularProgressIndicator(
-            value: (score ?? 0) / 100,
+            value:
+                (score?.toDouble() ??
+                    (building == null ? 0 : buildingProgress(building!))) /
+                100,
             strokeWidth: 10,
             strokeCap: StrokeCap.round,
             color: physicalHealthColor(context, score?.toDouble()),
             backgroundColor: context.vivordoColors.cardMuted,
           ),
         ),
-        Text(
-          score == null ? '--' : '$score',
-          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
-        ),
+        if (score == null && building != null)
+          BuildingRingCentre(building!, width: size - 32)
+        else
+          Text(
+            score == null ? '--' : '$score',
+            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+          ),
       ],
     ),
   );

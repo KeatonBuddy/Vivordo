@@ -15,6 +15,7 @@ class TrainingLoadView {
     required this.hrvLow,
     required this.restingHigh,
     required this.restingHrChange,
+    this.usualWeeks = 4,
   });
 
   static const version = 1;
@@ -28,6 +29,14 @@ class TrainingLoadView {
   final double ratio;
   final double thisWeek;
   final double usualWeek;
+
+  /// How many weeks before this one the usual week comes from: the week
+  /// before while history builds, up to 4.
+  final int usualWeeks;
+
+  /// "the week before", "the 2 weeks before"...
+  String get usualSpan =>
+      usualWeeks == 1 ? 'the week before' : 'the $usualWeeks weeks before';
   final int hardDays;
 
   /// heart, minutes, mixed or null.
@@ -56,6 +65,7 @@ class TrainingLoadView {
       ratio: ratio,
       thisWeek: (raw['thisWeek'] as num?)?.toDouble() ?? 0,
       usualWeek: (raw['usualWeek'] as num?)?.toDouble() ?? 0,
+      usualWeeks: (raw['usualWeeks'] as num?)?.toInt() ?? 4,
       hardDays: (raw['hardDays'] as num?)?.toInt() ?? 0,
       kind: raw['kind'] as String?,
       days: [
@@ -174,7 +184,7 @@ class TrainingLoadView {
   /// What Vivordo AI is told when asked to plan an easier week.
   String get chatContext => [
     'Training load: $label. The last 7 days were ${ratio.toStringAsFixed(2)}× '
-        'the usual week (the 4 weeks before), with $hardDays hard days '
+        'the usual week ($usualSpan), with $hardDays hard days '
         '(1.5× an ordinary active day or more). $measuredBy.',
     'Each day against an ordinary active day (1.0): '
         '${days.map((d) => '${d.day} ${d.value.toStringAsFixed(1)}').join(', ')}.',

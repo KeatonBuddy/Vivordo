@@ -419,9 +419,10 @@ private struct FitnessRingWidgetView: View {
       ProgressBar(progress: progress(entry.steps, entry.stepsGoal), color: VivordoWidgetPalette.purple)
         .padding(.top, 6)
       HStack {
-        Text("\(entry.hasMetrics ? entry.calories : 0) / \(entry.caloriesGoal) cal")
+        // "—" like steps until today's numbers arrive, never a false 0.
+        Text("\(entry.hasMetrics ? entry.calories.formatted() : "—") / \(entry.caloriesGoal) cal")
         Spacer(minLength: 4)
-        Text("\(entry.hasMetrics ? entry.exerciseMinutes : 0) / \(entry.exerciseGoal) min")
+        Text("\(entry.hasMetrics ? entry.exerciseMinutes.formatted() : "—") / \(entry.exerciseGoal) min")
       }
       .font(.caption2)
       .foregroundStyle(.secondary)

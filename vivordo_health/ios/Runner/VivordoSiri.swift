@@ -309,7 +309,7 @@ struct VivordoSiriQueryService {
       )
     case .trainingLoad:
       guard !snapshot.trainingState.isEmpty else {
-        return Self.missing(metric, dialog: "Vivordo is still learning your usual week of activity. Training load needs about four weeks.")
+        return Self.missing(metric, dialog: "Vivordo is still learning your usual week of activity. Training load starts after about two weeks of activity.")
       }
       let percent = Int((((snapshot.trainingRatio ?? 1) - 1) * 100).rounded())
       let vsUsual = abs(percent) < 5 ? "about your usual" :

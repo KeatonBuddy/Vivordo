@@ -461,7 +461,15 @@ class _AssistantScreenState extends State<AssistantScreen> {
     final key = '${doc.id}:$index';
     setState(() => _runningActions.add(key));
     try {
-      if (action['type'] == 'calendar') {
+      if (action['type'] == 'workout') {
+        final result = await applyWorkoutAction(action);
+        await _setActionStatus(
+          doc,
+          index,
+          result.startsWith('Saved') ? 'done' : 'failed',
+          result,
+        );
+      } else if (action['type'] == 'calendar') {
         final calendar = PandaPrompts.calendarActionFrom(action);
         if (calendar == null) throw StateError('That change is incomplete.');
         await applyCalendarAction(calendar);
@@ -882,6 +890,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
         'What\'s behind this?',
         'What should I change this week?',
         'Help me lighten my week',
+      ],
+      'workout_routine' => [
+        'Build me a push day',
+        'A full-body workout',
+        'A leg day',
       ],
       'training_load' => [
         'Plan an easier week',

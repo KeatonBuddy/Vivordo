@@ -84,12 +84,26 @@ class WorkoutExerciseRecord {
 }
 
 class WorkoutTemplateExercise {
-  const WorkoutTemplateExercise({required this.name, required this.category});
+  const WorkoutTemplateExercise({
+    required this.name,
+    required this.category,
+    this.sets,
+    this.reps,
+  });
 
   final String name;
   final String category;
 
-  Map<String, dynamic> toMap() => {'name': name, 'category': category};
+  /// Optional targets, e.g. 3 sets of "8-10" reps (Vivordo AI routines).
+  final int? sets;
+  final String? reps;
+
+  Map<String, dynamic> toMap() => {
+    'name': name,
+    'category': category,
+    'sets': ?sets,
+    'reps': ?reps,
+  };
 }
 
 class WorkoutTemplate {
@@ -98,12 +112,23 @@ class WorkoutTemplate {
     required this.name,
     required this.exercises,
     required this.createdAt,
+    this.fromVivordoAi = false,
   });
 
   final String id;
   final String name;
   final List<WorkoutTemplateExercise> exercises;
   final DateTime? createdAt;
+
+  /// Suggested by Vivordo AI rather than saved from a workout.
+  final bool fromVivordoAi;
+
+  /// Total target sets, or null when no exercise has targets.
+  int? get targetSets {
+    final targeted = exercises.where((e) => e.sets != null);
+    if (targeted.isEmpty) return null;
+    return targeted.fold<int>(0, (total, e) => total + e.sets!);
+  }
 
   factory WorkoutTemplate.fromDocument(
     DocumentSnapshot<Map<String, dynamic>> document,
@@ -115,6 +140,14 @@ class WorkoutTemplate {
           (exercise) => WorkoutTemplateExercise(
             name: exercise['name'] as String? ?? '',
             category: exercise['category'] as String? ?? 'Other',
+            sets: switch (exercise['sets']) {
+              final num sets when sets >= 1 && sets <= 10 => sets.toInt(),
+              _ => null,
+            },
+            reps: switch (exercise['reps']) {
+              final String reps when reps.trim().isNotEmpty => reps.trim(),
+              _ => null,
+            },
           ),
         )
         .where((exercise) => exercise.name.trim().isNotEmpty)
@@ -124,6 +157,7 @@ class WorkoutTemplate {
       name: data['name'] as String? ?? 'Saved Workout',
       exercises: exercises,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+      fromVivordoAi: data['source'] == 'vivordo_ai',
     );
   }
 }
@@ -655,6 +689,7 @@ class WorkoutService {
   static Future<String> saveTemplate({
     required String name,
     required List<WorkoutTemplateExercise> exercises,
+    bool fromVivordoAi = false,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in before saving a workout.');
@@ -676,6 +711,7 @@ class WorkoutService {
         'exercises': exercises
             .map((exercise) => exercise.toMap())
             .toList(growable: false),
+        if (fromVivordoAi) 'source': 'vivordo_ai',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }),

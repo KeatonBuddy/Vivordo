@@ -1,6 +1,21 @@
+import 'dart:math' as math;
+
 /// One ingredient of Physical Health, as the detail screen shows it.
+/// Where to fix a missing ingredient: the Body profile (age, height and
+/// weight) or Fitness (strength workouts).
+enum PhysicalFix { profile, fitness }
+
 class PhysicalIngredient {
-  const PhysicalIngredient(this.name, this.weight, this.detail, this.progress);
+  const PhysicalIngredient(
+    this.name,
+    this.weight,
+    this.detail,
+    this.progress, {
+    this.fix,
+  });
+
+  /// Set when [detail] says what to add; the row opens it.
+  final PhysicalFix? fix;
 
   final String name;
 
@@ -16,6 +31,11 @@ class PhysicalIngredient {
 
 /// What Metrics shows for Physical Health, from `scores_daily/{day}.physical`
 /// (functions/physical_health.js).
+/// The ring's fill while building: how far along, 0–100.
+double buildingProgress((int, int, String) building) => building.$2 <= 0
+    ? 0
+    : 100 * building.$1.clamp(0, building.$2) / building.$2;
+
 class PhysicalHealthView {
   const PhysicalHealthView({
     required this.score,
@@ -24,10 +44,15 @@ class PhysicalHealthView {
     required this.ingredients,
     required this.insights,
     required this.trend,
+    this.building,
   });
 
   /// Null while building.
   final int? score;
+
+  /// While building, how far along: (6, 14, 'DAYS') in the first 2 weeks,
+  /// then (2, 3, 'NEEDED') until 3 ingredients have data. Shown in the ring.
+  final (int done, int of, String unit)? building;
 
   /// "Excellent", "Good", "Fair", "Needs attention" or "Building".
   final String status;
@@ -42,6 +67,17 @@ class PhysicalHealthView {
 
   /// The Metrics hero's line, following the actual gaps.
   String get heroLine {
+    if (building case (final done, final of, final unit)) {
+      if (unit == 'DAYS') {
+        final left = of - done;
+        return 'Your score appears in $left ${left == 1 ? 'day' : 'days'}.';
+      }
+      final missing = [
+        for (final i in ingredients)
+          if (i.progress == null) i.name.toLowerCase(),
+      ];
+      if (missing.isNotEmpty) return 'Still missing ${_list(missing)}.';
+    }
     if (score == null) {
       return 'Appears after 2 weeks of activity and sleep data.';
     }
@@ -82,12 +118,16 @@ class PhysicalHealthView {
           if (DateTime.tryParse(k) case final d?) (d, s.round()),
     ];
     String note;
+    (int, int, String)? building;
     if (score == null) {
       final daysOfData = (latest['daysOfData'] as num? ?? 0).toInt();
       final counted = parts.values.where((v) => v != null).length;
+      building = daysOfData < 14
+          ? (daysOfData, 14, 'DAYS')
+          : (math.min(counted, 3), 3, 'NEEDED');
       note = daysOfData < 14
           ? 'Based on $daysOfData of 14 days so far'
-          : '$counted of the 3 ingredients it needs so far';
+          : '$counted of 5 ingredients so far; it needs 3';
     } else {
       final latestDay = DateTime.parse(latestKey);
       final then = trend
@@ -140,6 +180,7 @@ class PhysicalHealthView {
             ? 'Log strength workouts in Fitness to count them'
             : '${_trim(strength)} of 2 sessions a week',
         part('strength'),
+        fix: strength == null ? PhysicalFix.fitness : null,
       ),
       PhysicalIngredient(
         'Cardio fitness',
@@ -151,6 +192,7 @@ class PhysicalHealthView {
             : 'VO₂ max ${vo2.round()}${details['vo2Source'] == 'estimate' ? ' (estimated)' : ''}'
                   '${vo2Normal == null ? '' : ' · ${level(vo2, vo2Normal)}'}',
         part('cardio'),
+        fix: vo2 == null ? PhysicalFix.profile : null,
       ),
       PhysicalIngredient(
         'Sleep habits',
@@ -225,6 +267,7 @@ class PhysicalHealthView {
       ingredients: ingredients,
       insights: insights,
       trend: trend,
+      building: building,
     );
   }
 }

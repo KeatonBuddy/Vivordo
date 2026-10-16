@@ -1,8 +1,13 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:googleapis/calendar/v3.dart' as gcal;
 
+import 'calendar_service.dart';
 import 'plan_classifier.dart';
 
 /// Calendar metadata used to estimate how mentally demanding an event is.
@@ -42,14 +47,39 @@ class CalendarCognitiveEvent {
   final bool isDeclined;
   final bool isAllDay;
 
+  /// Free events don't count, unless the person picked a type for the
+  /// title: a class timetable imported as Free still counts once they do.
   bool get contributesToSchedule =>
       !isCancelled &&
       !isDeclined &&
       !isAllDay &&
-      !showsAsFree &&
+      (!showsAsFree || CalendarCognitiveLoadService.hasChosenType(title)) &&
       end.isAfter(start);
 
   int get durationMinutes => end.difference(start).inMinutes.clamp(0, 1440);
+
+  /// A Google or Outlook event; null for all-day events, which don't count.
+  static CalendarCognitiveEvent? fromCalendar(gcal.Event event) {
+    final start = event.start?.dateTime;
+    final end = event.end?.dateTime;
+    if (start == null || end == null) return null;
+    return CalendarCognitiveEvent(
+      id: '${CalendarService.eventKey(event)}:${start.toUtc().toIso8601String()}',
+      title: event.summary ?? '',
+      description: event.description ?? '',
+      start: start.toLocal(),
+      end: end.toLocal(),
+      attendeeCount: event.attendees?.length ?? 0,
+      isOrganizer: event.organizer?.self == true,
+      showsAsFree: event.transparency == 'transparent',
+      isCancelled: event.status == 'cancelled',
+      isDeclined:
+          event.attendees?.any(
+            (a) => a.self == true && a.responseStatus == 'declined',
+          ) ??
+          false,
+    );
+  }
 }
 
 enum CognitiveLoadLevel { low, moderate, high }
@@ -62,6 +92,7 @@ class CognitiveLoadScore {
     required this.reason,
     required this.usedAi,
     this.confidence = 0,
+    this.chosen = false,
   });
 
   final String eventId;
@@ -70,6 +101,9 @@ class CognitiveLoadScore {
   final String reason;
   final bool usedAi;
   final double confidence;
+
+  /// The person picked this type for the event's title.
+  final bool chosen;
   String get source => usedAi ? 'ai' : 'rules';
   bool get isKnown => category != 'unknown' && confidence > 0;
 
@@ -105,6 +139,7 @@ class CalendarCognitiveLoadService {
     bool allowAi = false,
   }) async {
     if (events.isEmpty) return const [];
+    await loadChosenTypes();
 
     final local = events.map(scoreLocally).toList();
     if (!allowAi) return local;
@@ -165,6 +200,18 @@ class CalendarCognitiveLoadService {
   }
 
   static CognitiveLoadScore scoreLocally(CalendarCognitiveEvent event) {
+    // The person's own choice beats the rules and Claude.
+    if (_chosen[titleKey(event.title)] case final category?) {
+      return CognitiveLoadScore(
+        eventId: event.id,
+        score: _categoryScores[category] ?? 0,
+        category: category,
+        reason: 'Set by you',
+        usedAi: false,
+        confidence: 1,
+        chosen: true,
+      );
+    }
     // Prefer title evidence over incidental words in notes. Within a title,
     // the most specific phrase wins; tied conflicting categories stay unknown.
     final title = _normalize(event.title);
@@ -279,6 +326,58 @@ class CalendarCognitiveLoadService {
       debugPrint('Calendar cognitive-load cache write failed: $error');
     }
   }
+
+  /// Types the person picked, by [titleKey], from `users/{uid}.eventTypes`
+  /// (hashed titles only). Loaded once per account.
+  static Map<String, String> _chosen = {};
+  static String? _chosenUid;
+
+  static Future<void> loadChosenTypes() async {
+    if (Firebase.apps.isEmpty) return; // tests
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null || uid == _chosenUid) return;
+      final data =
+          (await FirebaseFirestore.instance.collection('users').doc(uid).get())
+              .data();
+      _chosen = {
+        for (final MapEntry(:key, :value)
+            in ((data?['eventTypes'] as Map?) ?? const {}).entries)
+          if (key is String &&
+              value is String &&
+              _categoryScores[value] != null)
+            key: value,
+      };
+      _chosenUid = uid;
+    } catch (error) {
+      debugPrint('Event types load failed: $error');
+    }
+  }
+
+  /// Sets the type of every event called [title], or with null goes back
+  /// to Vivordo's own sorting. Callers refresh the calendar afterwards.
+  static Future<void> setType(String title, String? category) async {
+    await loadChosenTypes();
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final key = titleKey(title);
+    await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      'eventTypes': {key: category ?? FieldValue.delete()},
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    _chosen = {..._chosen}..remove(key);
+    if (category != null) _chosen[key] = category;
+  }
+
+  /// Whether the person picked a type for events called [title].
+  static bool hasChosenType(String? title) =>
+      _chosen.containsKey(titleKey(title ?? ''));
+
+  @visibleForTesting
+  static set debugChosenTypes(Map<String, String> types) => _chosen = types;
+
+  /// The same for every event with this title, whatever its notes.
+  static String titleKey(String title) =>
+      _fnv1a(title.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim());
 
   static String _signature(CalendarCognitiveEvent event) {
     final normalized = [
@@ -395,6 +494,13 @@ class CalendarCognitiveLoadService {
       'stretching',
       'yoga',
       'pilates',
+      // Exercise classes, so "class" alone doesn't make them school.
+      'yoga class',
+      'pilates class',
+      'spin class',
+      'fitness class',
+      'dance class',
+      'cooking class',
       'meditation',
     ])
       _DemandRule(term, 'routine', 15),
@@ -521,6 +627,15 @@ class CalendarCognitiveLoadService {
       'networking',
       'webinar',
       'seminar',
+      // School: attending a class counts like a meeting ("Meeting or
+      // class"); exams, lab reports and studying have their own terms.
+      'lecture',
+      'class',
+      'lab',
+      'tutorial',
+      'lesson',
+      'recitation',
+      'practicum',
     ])
       _DemandRule(term, 'collaboration', 40),
     for (final term in _highLoadTerms.where(
@@ -528,6 +643,8 @@ class CalendarCognitiveLoadService {
     ))
       _DemandRule(term, 'focused-work', 55),
     for (final term in [
+      'focus time',
+      'focus session',
       'studying',
       'study',
       'writing',

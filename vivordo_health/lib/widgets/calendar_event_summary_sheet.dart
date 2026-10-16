@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
+import '../src/services/calendar_cognitive_load_service.dart';
+import 'event_type_section.dart';
+
 const _summaryPurple = Color(0xFF6B5CE7);
 
 enum CalendarEventSummaryAction { edit, delete }
@@ -16,6 +19,7 @@ class CalendarEventSummaryData {
     required this.color,
     required this.calendarName,
     required this.canEdit,
+    this.typeEvent,
   });
 
   final String title;
@@ -26,6 +30,9 @@ class CalendarEventSummaryData {
   final Color color;
   final String calendarName;
   final bool canEdit;
+
+  /// Shows "How it counts" for a timed event.
+  final CalendarCognitiveEvent? typeEvent;
 
   String get durationLabel {
     if (isAllDay) return 'All-day event';
@@ -212,6 +219,10 @@ class _CalendarEventSummarySheet extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (event.typeEvent case final typeEvent?) ...[
+                      const SizedBox(height: 24),
+                      EventTypeSection(event: typeEvent),
+                    ],
                     const SizedBox(height: 24),
                     const _SummarySectionLabel('CALENDAR'),
                     const SizedBox(height: 10),

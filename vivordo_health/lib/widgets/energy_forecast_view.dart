@@ -145,6 +145,56 @@ class EnergySleepLine extends StatelessWidget {
   }
 }
 
+/// In the sleep line's place when there's no sleep and no usual sleep
+/// times, so nothing draws the energy line yet.
+class EnergyLineInvite extends StatelessWidget {
+  const EnergyLineInvite({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return Material(
+      color: _energyWindDown.withValues(alpha: .10),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.bedtime_outlined,
+                size: 18,
+                color: _energyWindDown,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Add your usual sleep times to see your energy through '
+                  'the day',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: colors.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// "5 h 18 asleep · 2 h 10 under your need" and "Alcohol last night".
 @visibleForTesting
 ({String? sleep, String? tags}) energySleepLines(EnergyForecast forecast) {

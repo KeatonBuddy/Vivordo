@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:async';
 import 'package:provider/provider.dart';
 import '../widgets/visible_stream_builder.dart';
@@ -46,11 +47,16 @@ import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/src/utils/home_metrics_summary.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/widgets/energy_forecast_view.dart';
+import 'sleep_preferences_screen.dart';
 import 'package:vivordo_health/widgets/hourly_heart_insight_card.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
+import 'package:vivordo_health/src/utils/activity_source.dart';
+import 'package:vivordo_health/src/utils/score_breakdown.dart';
+import 'package:vivordo_health/widgets/daily_brief_card.dart' show BriefTone;
+import 'package:vivordo_health/widgets/score_breakdown_sheet.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'sleep_detail_screen.dart';
@@ -751,10 +757,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  String _getFirstName() {
-    final user = FirebaseAuth.instance.currentUser;
-    final displayName = user?.displayName ?? 'Alex';
-    return displayName.split(' ').first;
+  /// The first name from sign-in or onboarding; null when none was given
+  /// (email sign-up without a name, Apple's hidden name).
+  String? _firstName() {
+    final name = FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
+    return name.isEmpty ? null : name.split(RegExp(r'\s+')).first;
   }
 
   String _todayPeriod() {
@@ -822,6 +829,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         steps: 0,
         activeCalories: 0,
         exerciseMinutes: 0,
+        noActivitySource: false,
         healthExerciseMinutes: null,
         metricsLoading: false,
         latestHeartRate: null,
@@ -914,6 +922,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 metricsSummary.stressAnchor ??
                 50;
             final stressDrivers = homeStressDrivers(stressMap?['top_drivers']);
+            // Nothing supplying activity this past week: show a way to
+            // connect instead of zeros that look like a still day.
+            final noActivitySource =
+                scanSnap.hasData &&
+                !hasActivityData([data, ...scanSnap.data!.days.values]);
             final stressStillLoading =
                 loading ||
                 (stressScore == null &&
@@ -963,6 +976,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 steps: steps ?? 0,
                 activeCalories: activeCalories,
                 exerciseMinutes: exerciseMinutes,
+                noActivitySource: noActivitySource,
                 healthExerciseMinutes: (exerciseTimeMap?['healthSum'] as num?)
                     ?.toDouble(),
                 metricsLoading: loading,
@@ -1088,9 +1102,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     DateTime todayStart,
   ) async {
     final events = await _getReachableWindowEventsFuture(todayStart);
+    await CalendarCognitiveLoadService.loadChosenTypes();
     final timedEvents = events.where((event) {
       return event.status != 'cancelled' &&
-          event.transparency != 'transparent' &&
+          (event.transparency != 'transparent' ||
+              CalendarCognitiveLoadService.hasChosenType(event.summary)) &&
           !(event.attendees?.any(
                 (a) => a.self == true && a.responseStatus == 'declined',
               ) ??
@@ -1157,6 +1173,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required int steps,
     required int activeCalories,
     required int exerciseMinutes,
+    required bool noActivitySource,
     required double? healthExerciseMinutes,
     required bool metricsLoading,
     required LatestHeartRateReading? latestHeartRate,
@@ -1203,6 +1220,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           sleepIsWhoop ||
                           latestHeartRate?.source == 'whoop_ble',
                       showNumbers: showNumbers,
+                      onScanTap: widget.onScanTap,
                     ),
                   ),
                 ),
@@ -1219,11 +1237,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                 ),
                 const SizedBox(height: 12),
-                _buildActivityCard(
-                  steps: steps,
-                  activeCalories: activeCalories,
-                  exerciseMinutes: exerciseMinutes,
-                ),
+                noActivitySource
+                    ? _connectActivityCard()
+                    : _buildActivityCard(
+                        steps: steps,
+                        activeCalories: activeCalories,
+                        exerciseMinutes: exerciseMinutes,
+                      ),
                 const SizedBox(height: 12),
                 KeyedSubtree(key: widget.circleKey, child: _buildCircleCard()),
                 KeyedSubtree(
@@ -1360,6 +1380,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildHeader() {
     final colors = context.vivordoColors;
+    final now = DateTime.now();
+    final name = _firstName();
+    // Without a name the greeting takes its place.
+    final date = DateFormat('EEE, MMM d').format(now);
     return Row(
       children: [
         Expanded(
@@ -1367,8 +1391,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${DateFormat('EEE, MMM d').format(DateTime.now())} · '
-                '${timeOfDayGreeting(DateTime.now())}',
+                name == null ? date : '$date · ${timeOfDayGreeting(now)}',
                 style: TextStyle(
                   color: colors.textSecondary,
                   fontSize: 13,
@@ -1377,7 +1400,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 2),
               Text(
-                _getFirstName(),
+                name ?? timeOfDayGreeting(now),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -1592,6 +1615,72 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return minutes % 60 == 0
         ? '${minutes ~/ 60}h'
         : '${minutes ~/ 60}h ${minutes % 60}m';
+  }
+
+  /// A small text button for an empty state's one-tap fix.
+  Widget _insightAction(String label, VoidCallback onTap) => TextButton(
+    onPressed: onTap,
+    style: TextButton.styleFrom(
+      foregroundColor: accentPurple,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      minimumSize: const Size(0, 34),
+      backgroundColor: accentPurple.withValues(alpha: .08),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+    ),
+  );
+
+  /// In place of the activity card when nothing supplies activity.
+  Widget _connectActivityCard() {
+    final colors = context.vivordoColors;
+    return _card(
+      onTap: () => _push(const SettingsScreen()),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: colors.cardMuted, width: 6),
+              ),
+              child: Icon(
+                Icons.directions_walk_rounded,
+                color: colors.textSecondary,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Connect Apple Health',
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'To see your steps, calories and exercise',
+                    style: TextStyle(color: colors.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildActivityCard({
@@ -2200,19 +2289,111 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         now.difference(from).inMinutes / until.difference(from).inMinutes;
     // Activity by the server's rules, so today matches the usual it's
     // compared with (effort.byHour places activity when it happened).
+    final physical = physicalSoFar(
+      workoutPoints: effort.workoutSoFar,
+      healthMinutes: healthMinutes,
+      calories: calories,
+      usualCalories: effortContext.usualCalories,
+    );
+    final effortSoFar = effort.soFar - effort.workoutSoFar + physical;
     final soFar = effortSoFarWord(
-      soFar:
-          effort.soFar -
-          effort.workoutSoFar +
-          physicalSoFar(
-            workoutPoints: effort.workoutSoFar,
-            healthMinutes: healthMinutes,
-            calories: calories,
-            usualCalories: effortContext.usualCalories,
-          ),
+      soFar: effortSoFar,
       now: now,
       pastByHour: effortContext.pastByHour,
     );
+    final usualByNow = usualEffortByNow(
+      now: now,
+      pastByHour: effortContext.pastByHour,
+    );
+    // Why Effort is what it is: what each item took, and activity.
+    // [words]: words view, with states instead of numbers.
+    void showEffort({bool words = false}) {
+      final result = effortBreakdown(
+        now: now,
+        from: from,
+        until: until,
+        wrapUp: today.add(Duration(minutes: effortContext.wrapUpMinutes)),
+        items: items,
+        untimedDone: untimedDone,
+        physical: physical,
+      );
+      final mental = result.total - physical;
+      showScoreBreakdown(
+        context,
+        kicker: 'EFFORT SO FAR',
+        empty: 'Nothing has taken effort yet today.',
+        score: result.total.round(),
+        summary: words ? 'For this time of day' : soFar,
+        words: words
+            ? (
+                word: soFar,
+                tone: soFar.startsWith('Heavier')
+                    ? BriefTone.low
+                    : soFar.startsWith('Lighter')
+                    ? BriefTone.good
+                    : BriefTone.usual,
+              )
+            : null,
+        sections: [
+          (
+            heading: words ? 'YOUR SCHEDULE' : 'SCHEDULE · ${mental.round()}',
+            rows: result.mental,
+          ),
+          (
+            heading: words ? 'YOUR ACTIVITY' : 'ACTIVITY · ${physical.round()}',
+            rows: [
+              if (physical > 0)
+                BreakdownRow(
+                  'Workouts and exercise',
+                  words
+                      ? 'Extra calories count when there\'s no exercise'
+                      : 'Extra calories count when there\'s no exercise · '
+                            'up to 25 a day',
+                  points: physical,
+                ),
+            ],
+          ),
+        ],
+        footer:
+            'Schedule is what your events and priorities took, each on its '
+            'own, with back-to-backs and long runs on their own line. Tap an '
+            'event to change its type.',
+      );
+    }
+
+    final ahead = effort.aheadMinutes > 0
+        ? _effortStat(
+            'STILL AHEAD',
+            '${_durationLabel(Duration(minutes: effort.aheadMinutes))} planned',
+            [
+              switch (effort.aheadLevel) {
+                DayLoadLevel.heavy => 'Mostly heavy',
+                DayLoadLevel.focused => 'Mostly focused',
+                _ => 'Mostly light',
+              },
+              if (effort.nextStart case final next?)
+                'next ${DateFormat.jm().format(next).replaceAll(':00', '')}',
+            ].join(' · '),
+          )
+        : FutureBuilder<({int minutes, DateTime? first})?>(
+            future: _getTomorrowPlanFuture(today),
+            builder: (context, snapshot) {
+              final plan = snapshot.data;
+              return _effortStat(
+                'TOMORROW',
+                plan == null
+                    ? snapshot.connectionState == ConnectionState.done
+                          ? 'Couldn\'t load'
+                          : '…'
+                    : plan.minutes == 0
+                    ? 'Nothing planned yet'
+                    : '${_durationLabel(Duration(minutes: plan.minutes))} planned',
+                plan?.first == null
+                    ? null
+                    : 'First at ${DateFormat.jm().format(plan!.first!)}',
+              );
+            },
+          );
 
     return _card(
       child: Padding(
@@ -2220,56 +2401,68 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _effortStat('SO FAR', soFar, null)),
-                  VerticalDivider(width: 24, color: colors.border),
-                  Expanded(
-                    child: effort.aheadMinutes > 0
-                        ? _effortStat(
-                            'STILL AHEAD',
-                            '${_durationLabel(Duration(minutes: effort.aheadMinutes))} planned',
-                            [
-                              switch (effort.aheadLevel) {
-                                DayLoadLevel.heavy => 'Mostly heavy',
-                                DayLoadLevel.focused => 'Mostly focused',
-                                _ => 'Mostly light',
-                              },
-                              if (effort.nextStart case final next?)
-                                'next ${DateFormat.jm().format(next).replaceAll(':00', '')}',
-                            ].join(' · '),
-                          )
-                        : FutureBuilder<({int minutes, DateTime? first})?>(
-                            future: _getTomorrowPlanFuture(today),
-                            builder: (context, snapshot) {
-                              final plan = snapshot.data;
-                              return _effortStat(
-                                'TOMORROW',
-                                plan == null
-                                    ? snapshot.connectionState ==
-                                              ConnectionState.done
-                                          ? 'Couldn\'t load'
-                                          : '…'
-                                    : plan.minutes == 0
-                                    ? 'Nothing planned yet'
-                                    : '${_durationLabel(Duration(minutes: plan.minutes))} planned',
-                                plan?.first == null
-                                    ? null
-                                    : 'First at ${DateFormat.jm().format(plan!.first!)}',
-                              );
-                            },
+            Selector<ThemeController, bool>(
+              selector: (_, c) => c.showScoreNumbers,
+              // Numbers: Effort so far on a bar against your usual by now.
+              // Words: the word beside what's still ahead.
+              builder: (context, showNumbers, _) => showNumbers
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        InkWell(
+                          onTap: showEffort,
+                          borderRadius: BorderRadius.circular(10),
+                          child: _effortSoFarBar(
+                            total: effortSoFar,
+                            physical: physical,
+                            usual: usualByNow,
+                            word: soFar,
                           ),
-                  ),
-                ],
-              ),
+                        ),
+                        Divider(height: 24, color: colors.border),
+                        ahead,
+                      ],
+                    )
+                  : IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => showEffort(words: true),
+                              borderRadius: BorderRadius.circular(10),
+                              child: _effortStat(
+                                'SO FAR',
+                                soFar,
+                                'See what it took ›',
+                              ),
+                            ),
+                          ),
+                          VerticalDivider(width: 24, color: colors.border),
+                          Expanded(child: ahead),
+                        ],
+                      ),
+                    ),
             ),
             if (energy != null) ...[
               const SizedBox(height: 12),
               EnergySleepLine(
                 forecast: energy,
                 onTap: () => showEnergyForecastSheet(context, energy),
+              ),
+            ] else ...[
+              // No sleep tracked and no usual times: say what draws the
+              // energy line instead of leaving it out unexplained.
+              const SizedBox(height: 12),
+              EnergyLineInvite(
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SleepPreferencesScreen(),
+                    ),
+                  );
+                  if (mounted) _refreshHomeCalendarCards();
+                },
               ),
             ],
             const SizedBox(height: 16),
@@ -2399,10 +2592,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ],
             if (events == null) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Connect a calendar in My Day to include your events.',
-                style: TextStyle(fontSize: 12, color: colors.textSecondary),
+              const SizedBox(height: 6),
+              // No calendar: open Connections in Settings from here.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _insightAction(
+                  'Connect a calendar to include your events',
+                  () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SettingsScreen(),
+                      ),
+                    );
+                    if (mounted) _refreshHomeCalendarCards();
+                  },
+                ),
               ),
             ],
             Divider(height: 28, color: colors.border),
@@ -2444,6 +2648,143 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             style: TextStyle(fontSize: 12, color: colors.textSecondary),
           ),
         ],
+      ],
+    );
+  }
+
+  /// Effort so far as a number and a bar, schedule then activity, with a
+  /// tick at your usual by now (none while still learning it).
+  Widget _effortSoFarBar({
+    required double total,
+    required double physical,
+    required double? usual,
+    required String word,
+  }) {
+    final colors = context.vivordoColors;
+    // Room past whichever is bigger, so neither the bar nor the tick sits
+    // at the very end.
+    final scale = math.max(20.0, math.max(total, usual ?? 0) * 1.25);
+    final mental = math.max(0.0, total - physical);
+    final caption = TextStyle(fontSize: 12, color: colors.textSecondary);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Expanded(
+              child: Text(
+                'EFFORT SO FAR',
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: .6,
+                  color: colors.textSecondary,
+                ),
+              ),
+            ),
+            Text(
+              '${total.round()}',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: colors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 10,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: colors.cardMuted,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: width * mental / scale,
+                          color: accentPurple,
+                        ),
+                        Container(
+                          width: width * physical / scale,
+                          color: _exerciseGreen,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (usual != null)
+                    Positioned(
+                      left: width * usual / scale - 1,
+                      top: -4,
+                      bottom: -4,
+                      child: Container(
+                        width: 2,
+                        decoration: BoxDecoration(
+                          color: colors.textPrimary,
+                          borderRadius: BorderRadius.circular(1),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              // A square in each part's bar colour, like the legend below,
+              // says which is which.
+              child: Wrap(
+                spacing: 12,
+                children: [
+                  for (final (label, value, color) in [
+                    ('Schedule', mental, accentPurple),
+                    if (physical > 0) ('Activity', physical, _exerciseGreen),
+                  ])
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: color,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text('$label: ${value.round()}', style: caption),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+            if (usual != null)
+              Text('usual by now: ${usual.round()}', style: caption),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$word ›',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: colors.textPrimary,
+          ),
+        ),
       ],
     );
   }
@@ -2706,19 +3047,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final end = DateTime(today.year, today.month, today.day + 2);
     // Calendars and priorities are read at once, not one after another;
     // any failure (or 15 s without an answer) shows as unavailable.
-    Future<List<(DateTime, DateTime)>> calendar() async => [
-      if (await CalendarService.isAnyConnected())
-        for (final event in await CalendarService.getEventsBetween(start, end))
+    Future<List<(DateTime, DateTime)>> calendar() async {
+      if (!await CalendarService.isAnyConnected()) return [];
+      final events = await CalendarService.getEventsBetween(start, end);
+      // Free events count once a type is picked for them.
+      await CalendarCognitiveLoadService.loadChosenTypes();
+      return [
+        for (final event in events)
           if (event.start?.dateTime?.toLocal() case final s?)
             if (event.end?.dateTime?.toLocal() case final e?)
               if (event.status != 'cancelled' &&
-                  event.transparency != 'transparent' &&
+                  (event.transparency != 'transparent' ||
+                      CalendarCognitiveLoadService.hasChosenType(
+                        event.summary,
+                      )) &&
                   !(event.attendees?.any(
                         (a) => a.self == true && a.responseStatus == 'declined',
                       ) ??
                       false))
                 (s, e),
-    ];
+      ];
+    }
+
     Future<List<(DateTime, DateTime)>> priorities() async => [
       for (final priority in await DailyPriorityService.forDay(
         start,
@@ -2918,13 +3268,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (hasHeartRate)
         HourlyHeartInsightCard(key: _hourlyHeartKey, isActive: widget.isActive),
       if (sleepHours == null && !hasHeartRate)
-        const HomeInsightRow(
+        HomeInsightRow(
           icon: Icons.info_outline_rounded,
           color: textGrey,
           title: 'No sleep or heart data yet',
           subtitle:
               'A watch or ring synced to Apple Health, or a heart scan, adds '
               'these.',
+          actions: [
+            _insightAction(
+              'Connect Health',
+              () => _push(const SettingsScreen()),
+            ),
+            if (widget.onScanTap case final onScan?)
+              _insightAction('Take a heart scan', onScan),
+          ],
         ),
     ];
     return _card(
@@ -3136,6 +3494,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ? 'Outlook'
             : 'Google Calendar',
         canEdit: true,
+        typeEvent: CalendarCognitiveEvent.fromCalendar(event),
       ),
     );
     if (!mounted || action == null) return;

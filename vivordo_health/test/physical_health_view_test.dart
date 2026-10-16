@@ -123,7 +123,19 @@ void main() {
         },
       },
     })!;
-    expect(view.note, '2 of the 3 ingredients it needs so far');
+    expect(view.note, '2 of 5 ingredients so far; it needs 3');
+    // The ring shows how far along; the hero names what's missing.
+    expect(view.building, (2, 3, 'NEEDED'));
+    expect(buildingProgress(view.building!), closeTo(66.7, .1));
+    expect(
+      view.heroLine,
+      'Still missing strength, cardio fitness and sleep habits.',
+    );
+    // Missing rows open where to fix them.
+    final fixes = {for (final i in view.ingredients) i.name: i.fix};
+    expect(fixes['Strength'], PhysicalFix.fitness);
+    expect(fixes['Cardio fitness'], PhysicalFix.profile);
+    expect(fixes['Active minutes'], isNull);
     expect(view.insights, [
       'Your score starts once 3 of the 5 ingredients have data. Still '
           'missing: strength, cardio fitness and sleep habits.',

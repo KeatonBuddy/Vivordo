@@ -143,6 +143,10 @@ Map<String, dynamic> projectScreenFields(
       'stress': ['anchor', 'current', 'avg'],
       // Bedtime, wake time and hours asleep for the energy forecast.
       'sleep': ['avg', 'bedtime', 'wakeTime'],
+      // Whether anything supplies activity (hasActivityData).
+      'steps': ['sum'],
+      'active_calories': ['sum'],
+      'exercise_time': ['sum'],
     },
     MetricsProjection.dailyBrief => const {
       // measure: 'inBed' when the night is time in bed (no wearable).

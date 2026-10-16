@@ -31,10 +31,12 @@ import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import '../src/utils/day_key.dart';
 import '../src/utils/home_metrics_summary.dart' show durationUntilNextLocalDay;
+import '../src/utils/activity_source.dart';
 import '../src/utils/fitness_goal_insight.dart';
 import '../src/services/metrics_repository.dart';
 import 'exercise_detail_screen.dart';
 import 'personal_profile_screen.dart';
+import 'profile_screen.dart' show SettingsScreen;
 import 'workout_summary_screen.dart';
 
 const _purple = Color(0xFF6B5CE7);
@@ -373,6 +375,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
                   ],
                 ),
               ),
+              const _SuggestRoutineRow(),
               const SizedBox(height: 24),
               KeyedSubtree(
                 key: widget.weekKey,
@@ -584,6 +587,10 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                 if (progress[i] < 1) i,
             ]..sort((a, b) => progress[b].compareTo(progress[a]));
             final next = open.isEmpty ? null : rings[open.first];
+            // Nothing supplying activity in the loaded window: a way to
+            // connect, not empty rings that look like a still day.
+            final noSource =
+                snapshot.hasData && !hasActivityData(history.values);
             return Material(
               color: Colors.transparent,
               borderRadius: BorderRadius.circular(24),
@@ -601,7 +608,13 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                   ),
                 ),
                 child: InkWell(
-                  onTap: widget.onTap,
+                  onTap: noSource
+                      ? () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const SettingsScreen(),
+                          ),
+                        )
+                      : widget.onTap,
                   child: Padding(
                     padding: const EdgeInsets.all(18),
                     child: Column(
@@ -639,7 +652,9 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${3 - open.length} of 3 closed',
+                                    noSource
+                                        ? 'Connect Apple Health'
+                                        : '${3 - open.length} of 3 closed',
                                     style: const TextStyle(
                                       fontSize: 25,
                                       fontWeight: FontWeight.w800,
@@ -648,7 +663,9 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    next == null
+                                    noSource
+                                        ? 'To track your steps, calories and exercise'
+                                        : next == null
                                         ? 'Every goal reached today.'
                                         : '${number.format(next.$2 - next.$1)} ${next.$3} to your next ring',
                                     style: const TextStyle(
@@ -685,7 +702,9 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                     color: i == 0
                                         ? Colors.white
                                         : ActivityRingsPainter.ringColors[i],
-                                    value: number.format(rings[i].$1),
+                                    value: noSource
+                                        ? '—'
+                                        : number.format(rings[i].$1),
                                     detail:
                                         '/ ${number.format(rings[i].$2)} ${rings[i].$3}',
                                   ),
@@ -1085,6 +1104,84 @@ class _ThisWeekCardState extends State<_ThisWeekCard> {
 }
 
 /// This week against the usual one; hidden while it's still learning.
+/// Opens Vivordo AI to build a routine and save it to the user's workouts;
+/// hidden where there's no chat (e.g. in tests).
+class _SuggestRoutineRow extends StatelessWidget {
+  const _SuggestRoutineRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final ask = vivordoAiAsker(context);
+    if (ask == null) return const SizedBox.shrink();
+    final colors = context.vivordoColors;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Material(
+        color: colors.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: _purple.withValues(alpha: .35)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => ask(
+            const ScreenInsight(
+              'workout_routine',
+              'Workout routine',
+              'I can build a routine and save it to your workouts. What\'s '
+                  'the goal, and what equipment do you have?',
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _purple.withValues(alpha: .14),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: _purple,
+                    size: 19,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Suggest a routine',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: colors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Vivordo AI builds one for your goal',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TrainingLoadSection extends StatefulWidget {
   const _TrainingLoadSection();
 
@@ -1093,32 +1190,71 @@ class _TrainingLoadSection extends StatefulWidget {
 }
 
 class _TrainingLoadSectionState extends State<_TrainingLoadSection> {
-  late final Stream<TrainingLoadView?> _load = watchTrainingLoad(
-    DateTime.now(),
-  );
+  late final _load = watchTrainingLoadRecord(DateTime.now());
 
   @override
-  Widget build(BuildContext context) => VisibleStreamBuilder<TrainingLoadView?>(
-    stream: _load,
-    builder: (context, snapshot) {
-      final view = snapshot.data;
-      if (view == null) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.only(top: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionHeader('TRAINING LOAD'),
-            const SizedBox(height: 6),
-            TrainingLoadCard(
-              view: view,
-              onTap: () => showTrainingLoadDetails(context, view),
+  Widget build(BuildContext context) =>
+      VisibleStreamBuilder<({TrainingLoadView? view, int? learningDaysToGo})?>(
+        stream: _load,
+        builder: (context, snapshot) {
+          final view = snapshot.data?.view;
+          final daysToGo = snapshot.data?.learningDaysToGo;
+          if (view == null && daysToGo == null) {
+            return const SizedBox.shrink();
+          }
+          final colors = context.vivordoColors;
+          return Padding(
+            padding: const EdgeInsets.only(top: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _SectionHeader('TRAINING LOAD'),
+                const SizedBox(height: 6),
+                if (view != null)
+                  TrainingLoadCard(
+                    view: view,
+                    onTap: () => showTrainingLoadDetails(context, view),
+                  )
+                else
+                  // Still building a usual week to compare with.
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: colors.card,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: colors.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Learning your usual week',
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'About $daysToGo ${daysToGo == 1 ? 'day' : 'days'} '
+                          'to go. Then each week is compared with the ones '
+                          'before it.',
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 13,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       );
-    },
-  );
 }
 
 class _WeekDayBar extends StatelessWidget {
@@ -2346,6 +2482,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             (exercise) => _ExerciseDefinition(
               name: exercise.name,
               category: exercise.category,
+              targetSets: exercise.sets,
+              targetReps: exercise.reps,
             ),
           )
           .toList(growable: false),
@@ -3028,17 +3166,42 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    template.name,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: context.vivordoColors.textPrimary,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          template.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: context.vivordoColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                      if (template.fromVivordoAi) ...[
+                        const SizedBox(width: 5),
+                        const Tooltip(
+                          message: 'Suggested by Vivordo AI',
+                          child: Icon(
+                            Icons.auto_awesome_rounded,
+                            size: 15,
+                            color: _purple,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${template.exercises.length} ${template.exercises.length == 1 ? 'exercise' : 'exercises'} · ${template.exercises.map((exercise) => exercise.name).join(', ')}',
+                    [
+                      '${template.exercises.length} ${template.exercises.length == 1 ? 'exercise' : 'exercises'}',
+                      if (template.targetSets case final sets?) '$sets sets',
+                      template.exercises
+                          .map((exercise) => exercise.name)
+                          .join(', '),
+                    ].join(' · '),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: _muted, height: 1.3),
@@ -3076,10 +3239,17 @@ class _ExerciseDefinition {
     required this.name,
     required this.category,
     this.isCustom = false,
+    this.targetSets,
+    this.targetReps,
   });
 
   final String name;
   final String category;
+
+  /// From a saved workout with targets: how many set rows to start with and
+  /// the reps to hint in them.
+  final int? targetSets;
+  final String? targetReps;
 
   /// True for exercises the user created, false for catalog defaults.
   /// Derived from the source the exercise was loaded from, never persisted on
@@ -3120,8 +3290,8 @@ class _WorkoutExercise {
     List<WorkoutSetRecord> previousSets = const [],
   }) : previousSets = List.of(previousSets),
        sets = [
-         _WorkoutSet(previous: previousSets.firstOrNull),
-         _WorkoutSet(previous: previousSets.elementAtOrNull(1)),
+         for (var i = 0; i < (definition.targetSets ?? 2); i++)
+           _WorkoutSet(previous: previousSets.elementAtOrNull(i)),
        ];
 
   final _ExerciseDefinition definition;
@@ -3142,12 +3312,19 @@ class _WorkoutExercise {
   String distanceKm = '';
 
   String get name => definition.name;
+
+  /// "Target 4 × 6-8", or null without targets.
+  String? get targetLabel => definition.targetSets == null
+      ? null
+      : 'Target ${definition.targetSets} × ${definition.targetReps ?? '—'}';
   bool get isDistanceExercise => definition.category == 'Cardio';
   bool get isSportsExercise => definition.category == 'Sports';
 
   Map<String, dynamic> toJson() => {
     'name': definition.name,
     'category': definition.category,
+    'targetSets': ?definition.targetSets,
+    'targetReps': ?definition.targetReps,
     'distanceKm': distanceKm,
     'historyLoaded': historyLoaded,
     'previousSets': previousSets.map((s) => s.toMap()).toList(),
@@ -3159,6 +3336,8 @@ class _WorkoutExercise {
       _ExerciseDefinition(
         name: json['name'] as String? ?? 'Exercise',
         category: json['category'] as String? ?? 'Other',
+        targetSets: (json['targetSets'] as num?)?.toInt(),
+        targetReps: json['targetReps'] as String?,
       ),
       previousSets: (json['previousSets'] as List? ?? [])
           .map(_previousSetFromJson)
@@ -3260,6 +3439,29 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
+                  if (exercise.targetLabel case final target?
+                      when !exercise.isDistanceExercise &&
+                          !exercise.isSportsExercise) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _purple.withValues(alpha: .14),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        target,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: _purple,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -3407,6 +3609,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               key: ObjectKey(exercise.sets[index]),
               number: index + 1,
               set: exercise.sets[index],
+              repsHint: exercise.definition.targetReps,
               onChanged: onChanged,
               onRemove: () {
                 exercise.sets.removeAt(index);
@@ -3449,10 +3652,14 @@ class _WorkoutSetRow extends StatelessWidget {
     required this.set,
     required this.onChanged,
     required this.onRemove,
+    this.repsHint,
   });
 
   final int number;
   final _WorkoutSet set;
+
+  /// The routine's target reps, shown until the user types their own.
+  final String? repsHint;
   final VoidCallback onChanged;
   final VoidCallback onRemove;
 
@@ -3504,9 +3711,11 @@ class _WorkoutSetRow extends StatelessWidget {
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.done,
           textAlign: TextAlign.center,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             isDense: true,
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
+            hintText: repsHint,
+            hintStyle: const TextStyle(color: _muted),
           ),
           onChanged: (value) {
             set.reps = value;

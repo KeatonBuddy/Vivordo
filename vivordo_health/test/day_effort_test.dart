@@ -117,6 +117,13 @@ void main() {
     String word(double soFar) =>
         effortSoFarWord(soFar: soFar, now: at(11), pastByHour: past);
     expect(word(4), 'About usual');
+    // The number behind the word, shown as the tick in numbers view.
+    expect(usualEffortByNow(now: at(11), pastByHour: past), 4);
+    expect(usualEffortByNow(now: at(11, 30), pastByHour: past), 5);
+    expect(
+      usualEffortByNow(now: at(11), pastByHour: days(6, (_) => usualDay)),
+      isNull,
+    );
     expect(word(9), 'Heavier than usual');
     expect(word(0), 'Lighter than usual');
     // 13 days: 9 weekdays is enough to compare weekdays with weekdays.

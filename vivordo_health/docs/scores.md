@@ -31,6 +31,22 @@ hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
   Whatever is still unknown
   ("Busy", "Hold", private events, offline) counts as 30 and lowers the
   day's confidence. Nothing is treated as free time.
+- **Your own type** (2026-10-15): an event's details ("Event type")
+  show its type in plain words (High stakes, Focused work, Meeting or
+  class, Social, Errands and routine, Break; "Not sure" for unknown) and
+  where it came from (set by you, Vivordo's guess, Vivordo AI) with its
+  load in My Day's words ("Heavy load on your day"). Picking one
+  applies to every event with that title (case, spacing and notes
+  ignored) and beats the rules and Claude, which is never asked about that
+  title again. Saved on the account as `users/{uid}.eventTypes` (hashed
+  title → category, no titles), so it follows the person to a new phone.
+  Home, My Day and today's day record re-sort straight away; finished days
+  keep their Effort. "Use Vivordo's guess" removes it.
+  Events marked Free in the calendar don't count (reminders, holds,
+  events only followed), except once a type is picked for their title:
+  then they count like any other (2026-10-15; class timetables imported
+  as Free). Their row says "Marked Free in your calendar, so it isn't
+  counted. Choose a type to count it." until then.
 - Pressure: +10 while events overlap (overlapping demand is not summed),
   and a continuous-run ramp: nothing for the first 60 min, rising to +5
   at 120 min. **Gaps under 15 min don't reset the run**, so a chain of
@@ -205,6 +221,11 @@ workouts in their own colour) and after now are Demand (outlined). A
 summary shows **So far** as a word only: "Heavier than usual", "About
 usual" or "Lighter than usual" against your usual Effort by this time of
 day, or "Still learning your usual" until there are 14 days of Effort.
+With score numbers on (2026-10-15), So far is a number instead: Effort so
+far on a bar (mental, then physical), a tick at your usual by now, and the
+word under it; Still ahead moves below. Words view keeps the word only.
+On screen, mental is called **Schedule** and physical **Activity**
+("mental" read badly to users); the stored fields keep their names.
 **Still ahead** shows the planned time and how heavy it is, switching to
 **Tomorrow** after the last item. Implemented in `lib/src/utils/day_effort.dart`
 and Home's card: "usual by this time of day" is the median of the last 28
@@ -309,19 +330,28 @@ morning (even when Capacity itself can't be) and saved as
   heart-rate load ÷ its base when measured, minutes ÷ the minutes base
   otherwise, so 1.0 is an ordinary active day; a rest day is 0.
 - **This week** is the sum of the last 7 complete days; **the usual week**
-  is the sum of days 8–35 ÷ 4, so this week never raises its own bar. The
-  ratio is this week ÷ the usual week. A **hard day** is 1.5× or more.
-- **Learning** (hidden) until 21 of those 28 days have a load and the usual
-  week is at least 1 (an ordinary active day a week).
+  is the average week before it, so this week never raises its own bar:
+  the week before (days 8–14) as soon as that's on record, then the 2
+  weeks before, up to the 4 weeks before (days 8–35), whichever is the
+  most weeks with 3 in 4 days on record (2026-10-15; it was 4 weeks only).
+  Saved as `usualWeeks`. The ratio is this week ÷ the usual week. A **hard
+  day** is 1.5× or more.
+- **Learning** until the week before is covered and the usual week is at
+  least 1 (an ordinary active day a week): about 2 weeks from the first
+  day of activity, or none with the Health import. Saved with `daysToGo`
+  (null when it isn't a matter of time); Fitness shows "Learning your usual
+  week · About N days to go".
+- **The Strained push** needs at least 2 weeks' usual: one light week makes
+  any week look big.
 - **States:** Lighter under 0.8; Steady 0.8–1.3; Building 1.3 or more;
   **High** 1.5 or more with at least 3 hard days; **Strained** is High
   while the body agrees: HRV more than 5% under its 90-day median or
   resting heart rate at least 3 bpm over it, on 2 of the last 3 mornings.
   High and Strained hold until the ratio drops under 1.3.
-- Saved: `{version, state, ratio, thisWeek, usualWeek, hardDays, kind
+- Saved: `{version, state, ratio, thisWeek, usualWeek, usualWeeks, hardDays, kind
   (heart, minutes or mixed), days: [{day, value, kind}] oldest first,
   body: {mornings, hrvLow, restingHigh, restingHrChange, agrees}}`, or
-  `{version, state: "learning", coveredDays}`.
+  `{version, state: "learning", coveredDays, daysToGo}`.
 - **One push when Strained starts** (yesterday wasn't Strained, and none
   in the last 7 days; only for a day still under way): "You've trained a
   lot more than usual", naming the multiple and HRV or resting HR. Sent

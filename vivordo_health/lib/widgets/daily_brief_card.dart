@@ -29,6 +29,10 @@ class DailyBriefCard extends StatelessWidget {
     this.now,
     this.words,
     this.action,
+    this.capacityEmptyIcon,
+    this.scheduleEmptyIcon,
+    this.onCapacityTap,
+    this.onScheduleTap,
   });
 
   /// Under the summary: the day's top fix, and in the evening tonight's
@@ -37,6 +41,23 @@ class DailyBriefCard extends StatelessWidget {
 
   final String headline, summary, capacityLabel, scheduleLabel, footer;
   final int? capacityScore, scheduleScore;
+
+  /// Inside the Capacity ring while it's empty (capacityEmptyState).
+  final IconData? capacityEmptyIcon;
+
+  /// Inside the Demand ring while the plan is loading or didn't load.
+  final IconData? scheduleEmptyIcon;
+
+  /// Open why Capacity and Demand are what they are (score_breakdown).
+  final VoidCallback? onCapacityTap, onScheduleTap;
+
+  static Widget _tappable(Widget child, VoidCallback? onTap) => onTap == null
+      ? child
+      : InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: child,
+        );
 
   /// Words mode: state rows instead of the score rings.
   final BriefWords? words;
@@ -118,25 +139,39 @@ class DailyBriefCard extends StatelessWidget {
               if (words case final words?)
                 Column(
                   children: [
-                    _BriefStateRow('Energy', words.energy),
+                    _tappable(
+                      _BriefStateRow('Energy', words.energy),
+                      onCapacityTap,
+                    ),
                     const SizedBox(height: 8),
-                    _BriefStateRow(words.loadTitle, words.load),
+                    _tappable(
+                      _BriefStateRow(words.loadTitle, words.load),
+                      onScheduleTap,
+                    ),
                   ],
                 )
               else
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final capacity = _BriefScore(
-                      title: 'CAPACITY',
-                      semanticTitle: 'Daily capacity',
-                      score: capacityScore,
-                      label: capacityLabel,
+                    final capacity = _tappable(
+                      _BriefScore(
+                        title: 'CAPACITY',
+                        semanticTitle: 'Daily capacity',
+                        score: capacityScore,
+                        label: capacityLabel,
+                        emptyIcon: capacityEmptyIcon,
+                      ),
+                      onCapacityTap,
                     );
-                    final schedule = _BriefScore(
-                      title: 'DEMAND',
-                      semanticTitle: 'Schedule demand',
-                      score: scheduleScore,
-                      label: scheduleLabel,
+                    final schedule = _tappable(
+                      _BriefScore(
+                        title: 'DEMAND',
+                        semanticTitle: 'Schedule demand',
+                        score: scheduleScore,
+                        label: scheduleLabel,
+                        emptyIcon: scheduleEmptyIcon,
+                      ),
+                      onScheduleTap,
                     );
                     if (constraints.maxWidth < 280 ||
                         MediaQuery.textScalerOf(context).scale(12) > 19) {
@@ -195,7 +230,49 @@ class DailyBriefCard extends StatelessWidget {
 
 enum BriefTone { good, usual, low }
 
+/// Why today's Capacity is empty, and what fills it: the icon in its ring,
+/// the label beside it, the words-mode word and the brief's data footer.
+({IconData icon, String label, String word, String footer}) capacityEmptyState({
+  required bool beforeSleep,
+  required bool sleepRecorded,
+  required bool tracksSleep,
+}) => beforeSleep
+    ? (
+        icon: Icons.bedtime_rounded,
+        label: 'Ready after you sleep',
+        word: 'After you sleep',
+        footer: "Today's sleep is still ahead",
+      )
+    : sleepRecorded
+    // Last night arrived; the server's Capacity follows in a moment.
+    ? (
+        icon: Icons.hourglass_top_rounded,
+        label: 'Working it out',
+        word: 'Working it out',
+        footer: "Updating with last night's sleep",
+      )
+    : tracksSleep
+    ? (
+        icon: Icons.sync_rounded,
+        label: 'Waiting for sleep · check in now',
+        word: 'Waiting for sleep',
+        footer: "Waiting for last night's sleep",
+      )
+    : (
+        icon: Icons.favorite_border_rounded,
+        label: 'Connect Health or check in',
+        word: 'Connect Health',
+        footer: 'No health data yet',
+      );
+
 typedef BriefState = ({String word, BriefTone tone});
+
+/// A state chip's background and text colours.
+(Color, Color) briefToneColors(BriefTone tone) => switch (tone) {
+  BriefTone.good => (const Color(0xFFE1F5EE), const Color(0xFF085041)),
+  BriefTone.low => (const Color(0xFFFAEEDA), const Color(0xFF633806)),
+  BriefTone.usual => (const Color(0xFFEEEDFE), const Color(0xFF3C3489)),
+};
 
 /// Words mode's brief: Energy and today's (or tomorrow's) load as states.
 typedef BriefWords = ({BriefState energy, String loadTitle, BriefState load});
@@ -206,9 +283,10 @@ BriefState briefEnergyState({
   required int? capacity,
   required int? usual,
   required bool recovering,
+  String? emptyWord,
 }) {
   if (capacity == null) {
-    return (word: 'Needs health data', tone: BriefTone.usual);
+    return (word: emptyWord ?? 'Needs health data', tone: BriefTone.usual);
   }
   if (recovering) return (word: 'Recovering', tone: BriefTone.low);
   if (usual != null) {
@@ -227,8 +305,17 @@ BriefState briefEnergyState({
 
 /// Demand against the Capacity it's set beside, as the headline
 /// ([demandFit]).
-BriefState briefLoadState({required double? demand, required int? capacity}) {
-  if (demand == null) return (word: 'Plan unavailable', tone: BriefTone.usual);
+BriefState briefLoadState({
+  required double? demand,
+  required int? capacity,
+  bool planFailed = false,
+}) {
+  if (demand == null) {
+    return (
+      word: planFailed ? "Didn't load" : 'Loading',
+      tone: BriefTone.usual,
+    );
+  }
   if (capacity == null) {
     return (word: demand < 40 ? 'Light' : 'Full', tone: BriefTone.usual);
   }
@@ -247,11 +334,7 @@ class _BriefStateRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (background, foreground) = switch (state.tone) {
-      BriefTone.good => (const Color(0xFFE1F5EE), const Color(0xFF085041)),
-      BriefTone.low => (const Color(0xFFFAEEDA), const Color(0xFF633806)),
-      BriefTone.usual => (const Color(0xFFEEEDFE), const Color(0xFF3C3489)),
-    };
+    final (background, foreground) = briefToneColors(state.tone);
     return Semantics(
       label: '$title: ${state.word}',
       excludeSemantics: true,
@@ -290,9 +373,11 @@ class _BriefScore extends StatelessWidget {
     required this.semanticTitle,
     required this.score,
     required this.label,
+    this.emptyIcon,
   });
   final String title, semanticTitle, label;
   final int? score;
+  final IconData? emptyIcon;
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -316,19 +401,22 @@ class _BriefScore extends StatelessWidget {
                     valueColor: const AlwaysStoppedAnimation(Color(0xFFD0A5FF)),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(9),
-                  child: FittedBox(
-                    child: Text(
-                      score == null ? '—' : '$score',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
+                if (score == null && emptyIcon != null)
+                  Icon(emptyIcon, color: Colors.white, size: 20)
+                else
+                  Padding(
+                    padding: const EdgeInsets.all(9),
+                    child: FittedBox(
+                      child: Text(
+                        score == null ? '—' : '$score',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

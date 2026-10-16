@@ -35,6 +35,10 @@ class ScreenInsightController extends ChangeNotifier {
   /// main navigation.
   void Function(ScreenInsight insight)? onAsk;
 
+  /// Goes to a tab or screen by name ('fitness', 'sleep'…), as Vivordo AI's
+  /// links do; set by the main navigation.
+  void Function(String screen)? onOpen;
+
   ScreenInsight? get current {
     for (final entry in _sources.values.toList().reversed) {
       if (entry.$1 == route &&
@@ -100,6 +104,14 @@ void Function(ScreenInsight insight)? vivordoAiAsker(BuildContext context) =>
         .getInheritedWidgetOfExactType<ScreenInsightScope>()
         ?.controller
         .onAsk;
+
+/// Goes to a main tab or screen by name from a screen inside the tabs, or
+/// null where there are none.
+void Function(String screen)? vivordoScreenOpener(BuildContext context) =>
+    context
+        .getInheritedWidgetOfExactType<ScreenInsightScope>()
+        ?.controller
+        .onOpen;
 
 extension ContextualInsightWidget on Widget {
   Widget withScreenInsight(ScreenInsight insight) =>

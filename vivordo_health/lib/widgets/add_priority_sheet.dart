@@ -21,7 +21,7 @@ class PriorityDraft {
     required this.repeat,
     required this.selectedWeekdays,
     required this.repeatEnd,
-    this.reminderMinutes = 60,
+    this.reminderMinutes,
     this.reminderTimeMinutes,
     this.completed = false,
     this.deleteRequested = false,
@@ -38,7 +38,9 @@ class PriorityDraft {
   final PriorityRepeat repeat;
   final Set<int> selectedWeekdays;
   final DateTime? repeatEnd;
-  final int reminderMinutes;
+
+  /// Null: no notification unless one is chosen.
+  final int? reminderMinutes;
   final int? reminderTimeMinutes;
   final bool completed;
   final bool deleteRequested;
@@ -153,7 +155,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   PriorityRepeat _repeat = PriorityRepeat.once;
   late Set<int> _selectedWeekdays;
   DateTime? _repeatEnd;
-  int _reminderMinutes = 60;
+  int? _reminderMinutes;
   TimeOfDay? _reminderTime;
   bool _completed = false;
   late Map<String, dynamic> _planning;
@@ -177,7 +179,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     _completed = initial?.completed ?? false;
     _habit = initial?.habit ?? false;
     _target = initial?.target ?? 1;
-    _reminderMinutes = initial?.reminderMinutes ?? 60;
+    _reminderMinutes = initial?.reminderMinutes;
     final reminder = initial?.reminderTimeMinutes;
     _reminderTime = reminder == null
         ? null
@@ -615,7 +617,9 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             value: _time == null
                                 ? (_reminderTime?.format(context) ??
                                       'Choose reminder time')
-                                : priorityReminderLabel(_reminderMinutes),
+                                : _reminderMinutes == null
+                                ? 'None'
+                                : priorityReminderLabel(_reminderMinutes!),
                             onTap: () async {
                               if (_time == null) return _pickReminderTime();
                               final value = await showPriorityReminderPicker(
@@ -623,7 +627,9 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                                 _reminderMinutes,
                               );
                               if (value != null && mounted) {
-                                setState(() => _reminderMinutes = value);
+                                setState(
+                                  () => _reminderMinutes = value.minutes,
+                                );
                               }
                             },
                           ),
