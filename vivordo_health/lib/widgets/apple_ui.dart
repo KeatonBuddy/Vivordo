@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart' show VelocityTracker;
 import 'package:flutter/material.dart';
 
 import '../theme/vivordo_theme.dart';
@@ -394,43 +397,124 @@ Future<T?> showAppleSheet<T>(
     padding: EdgeInsets.only(
       bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
     ),
-    child: isDismissible
-        ? _PullDownToClose(child: builder(sheetContext))
-        : builder(sheetContext),
+    child: builder(sheetContext),
   ),
 );
 
-/// Closes a sheet pulled down from the top of its scrolling content. A
-/// scroll view otherwise takes the drag, so a sheet with scrolling content
-/// couldn't be swiped away. Every dismissible [showAppleSheet] has it.
-class _PullDownToClose extends StatefulWidget {
-  const _PullDownToClose({required this.child});
+/// Closes a bottom sheet the way iOS does. Flutter's sheet only closes when
+/// dragged past half its height or flicked hard, so it springs back from a
+/// normal swipe; here a pull of a quarter of its height, or a quicker flick,
+/// closes it. A sheet whose content scrolls doesn't move at all (the scroll
+/// view takes the drag), so it also closes when its content is pulled down
+/// past the top. It wraps the whole app (MaterialApp.builder, with
+/// [observer] on the navigator), so it covers every sheet that can be swiped
+/// away (isDismissible and enableDrag), however it was opened, and only
+/// sheets: a full-screen page pulled down stays put. Not while typing, so a
+/// pull in a form doesn't throw away what's being written.
+class PullDownToCloseSheets extends StatefulWidget {
+  const PullDownToCloseSheets({super.key, required this.child});
 
   final Widget child;
 
+  /// Knows the top route of the app's navigator, so a touch can be matched
+  /// to the sheet it lands on.
+  static final observer = _TopRouteObserver();
+
   @override
-  State<_PullDownToClose> createState() => _PullDownToCloseState();
+  State<PullDownToCloseSheets> createState() => _PullDownToCloseSheetsState();
 }
 
-class _PullDownToCloseState extends State<_PullDownToClose> {
-  bool _closing = false;
+class _TopRouteObserver extends NavigatorObserver {
+  Route<dynamic>? top;
 
   @override
-  Widget build(BuildContext context) =>
-      NotificationListener<ScrollUpdateNotification>(
-        onNotification: (update) {
-          // iOS lets the content bounce past the top while it's dragged.
-          if (!_closing &&
-              update.dragDetails != null &&
-              update.metrics.axis == Axis.vertical &&
-              update.metrics.pixels < -60) {
-            _closing = true;
-            Navigator.of(context).pop();
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      top = route;
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      top = previousRoute;
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route == top) top = previousRoute;
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (oldRoute == top) top = newRoute;
+  }
+}
+
+class _PullDownToCloseSheetsState extends State<PullDownToCloseSheets> {
+  ModalBottomSheetRoute<dynamic>? _sheet;
+  int? _pointer;
+  VelocityTracker? _velocity;
+
+  static bool _swipeable(Route<dynamic>? route) =>
+      route is ModalBottomSheetRoute &&
+      route.isCurrent &&
+      route.isDismissible &&
+      route.enableDrag &&
+      FocusManager.instance.primaryFocus?.context
+              ?.findAncestorWidgetOfExactType<EditableText>() ==
+          null;
+
+  void _close(ModalBottomSheetRoute<dynamic> sheet) {
+    // isCurrent turns false once popped, so one swipe closes one sheet.
+    if (sheet.isCurrent) sheet.navigator?.pop();
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (event) {
+      if (_pointer != null) return;
+      final top = PullDownToCloseSheets.observer.top;
+      _sheet = _swipeable(top) ? top as ModalBottomSheetRoute : null;
+      _pointer = event.pointer;
+      _velocity = VelocityTracker.withKind(event.kind)
+        ..addPosition(event.timeStamp, event.position);
+    },
+    onPointerMove: (event) {
+      if (event.pointer == _pointer) {
+        _velocity?.addPosition(event.timeStamp, event.position);
+      }
+    },
+    onPointerUp: (event) {
+      if (event.pointer != _pointer) return;
+      final sheet = _sheet;
+      final speed = _velocity?.getVelocity().pixelsPerSecond.dy ?? 0;
+      _sheet = _pointer = _velocity = null;
+      if (sheet == null || !_swipeable(sheet)) return;
+      // How far the sheet itself was dragged down (content scrolling
+      // doesn't move it).
+      final pulled = 1 - (sheet.animation?.value ?? 1);
+      if (pulled > .25 || (pulled > .05 && speed > 300)) {
+        // After the sheet's own drag end, which would spring it back.
+        scheduleMicrotask(() => _close(sheet));
+      }
+    },
+    onPointerCancel: (event) {
+      if (event.pointer == _pointer) _sheet = _pointer = _velocity = null;
+    },
+    child: NotificationListener<ScrollUpdateNotification>(
+      onNotification: (update) {
+        final source = update.context;
+        // iOS lets the content bounce past the top while it's dragged.
+        if (source != null &&
+            update.dragDetails != null &&
+            update.metrics.axis == Axis.vertical &&
+            update.metrics.pixels < -60) {
+          final route = ModalRoute.of(source);
+          if (route is ModalBottomSheetRoute && _swipeable(route)) {
+            _close(route);
           }
-          return false;
-        },
-        child: widget.child,
-      );
+        }
+        return false;
+      },
+      child: widget.child,
+    ),
+  );
 }
 
 class _Grabber extends StatelessWidget {

@@ -23,6 +23,7 @@ import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/version_gate_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/achievement_unlocked_dialog.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_flow_screen.dart';
@@ -372,6 +373,7 @@ class _MyAppState extends State<MyApp> {
     final themeController = context.watch<ThemeController>();
     return MaterialApp(
       navigatorKey: navigatorKey,
+      navigatorObservers: [PullDownToCloseSheets.observer],
       title: 'Vivordo Health',
       debugShowCheckedModeBanner: false,
       builder: (context, child) => Actions(
@@ -384,7 +386,7 @@ class _MyAppState extends State<MyApp> {
                 },
               ),
         },
-        child: child ?? const SizedBox.shrink(),
+        child: PullDownToCloseSheets(child: child ?? const SizedBox.shrink()),
       ),
       theme: VivordoTheme.light,
       darkTheme: VivordoTheme.dark,
