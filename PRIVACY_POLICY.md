@@ -1,6 +1,6 @@
 # Vivordo Privacy Policy
 
-**Last updated: October 13, 2026**
+**Last updated: October 16, 2026**
 
 ## Introduction
 
@@ -17,6 +17,14 @@ For privacy questions or requests, contact **contact.vivordo@gmail.com**.
 ### Account information
 
 We collect information needed to create and manage your account, such as your name, email address, authentication identifiers, and account settings. Authentication is provided through Firebase Authentication and supported sign-in providers. Vivordo does not receive your password when authentication is handled by one of those providers.
+
+### Subscriptions and purchases
+
+Vivordo is a paid subscription, sold through Apple's App Store. Apple handles payment: Vivordo never receives your card or other payment details. To confirm your subscription, Vivordo uses RevenueCat, a subscription service provider. Vivordo identifies you to RevenueCat by your Vivordo account identifier, not your name or email address, and RevenueCat receives your purchase information from Apple, such as the plan, price and currency, purchase, renewal, and expiry dates, your App Store country, whether you're in a free trial, refunds, and billing problems.
+
+Vivordo stores your current subscription status in your account: whether it's active, which plan, whether you're in a free trial, when it renews or ends, whether it will renew, whether Apple reported a billing problem, and which store it came from. Vivordo uses this to unlock the app, show your plan in **Settings → Plan and billing**, and decide whether Vivordo AI is available. Vivordo also counts your Vivordo AI messages each day to apply the fair-use limit described in our Terms.
+
+Vivordo gives its own team free access. When you sign in, Vivordo's servers check whether your verified email address is on that team list, which only Vivordo can see; if it is, they record the free access with RevenueCat.
 
 ### Profile and body information
 
@@ -78,6 +86,8 @@ Onboarding and the Sleep screen also ask when you usually go to bed and wake up,
 If you connect Google Calendar or Outlook Calendar, Vivordo may access calendar names, event titles, descriptions, locations, attendees, start and end times, availability, and identifiers needed to synchronize changes. Vivordo uses calendar information to show your schedule, estimate availability or workload, provide schedule-related insights, and—when you choose an applicable action—create, edit, or delete calendar events. Vivordo does not modify an event without a user-initiated action or another clearly disclosed feature you enable. Outlook first gives Vivordo read-only access; it asks Microsoft for permission to change events the first time you edit, move, or create one.
 
 Vivordo AI can propose adding, changing, or deleting a calendar event; the change happens only after you confirm it. New events go to the default calendar you choose in Settings, unless you ask for a specific account. Vivordo stores that choice (the calendar's identifier and name) in your account.
+
+If you set an event's type (for example, "Focused work" or "Free time"), Vivordo applies it to every event with the same title and stores your choice in your account under a code derived from the title, never the title itself.
 
 Your Google Calendar and Outlook sign-ins are kept on your device, in the device's secure storage, and are not stored on Vivordo's servers.
 
@@ -144,6 +154,7 @@ When you ask Siri about Vivordo (for example, "What's my capacity in Vivordo?"),
 We use personal information to:
 
 - create, authenticate, maintain, and secure your account;
+- confirm your subscription, unlock the app, and apply the Vivordo AI fair-use limit;
 - provide the features you request and synchronize connected services;
 - display health, fitness, sleep, calendar, journal, and activity information;
 - calculate and explain Vivordo stress, Capacity, Demand, Effort, Physical Health, heart-health, activity, and related scores, and run the burnout check;
@@ -169,7 +180,7 @@ We may disclose information in these limited circumstances:
 
 ### Service providers
 
-We use providers that process information on our behalf to operate Vivordo, including Google Firebase and Google Cloud for authentication, databases, file storage, hosting, functions, and notifications, Render for hosting the stress-scoring service, and Anthropic for enabled AI features (including, with your AI consent, sorting calendar events and estimating priorities as described above). We provide only information reasonably necessary for the relevant service and require providers to protect it through applicable agreements and controls.
+We use providers that process information on our behalf to operate Vivordo, including Google Firebase and Google Cloud for authentication, databases, file storage, hosting, functions, and notifications, Render for hosting the stress-scoring service, RevenueCat for confirming and managing subscriptions (with Apple processing payments), and Anthropic for enabled AI features (including, with your AI consent, sorting calendar events and estimating priorities as described above). We provide only information reasonably necessary for the relevant service and require providers to protect it through applicable agreements and controls.
 
 ### Connected services
 
@@ -211,9 +222,11 @@ If we discover a security incident, we will investigate and provide notices to a
 
 We retain account information and user content while your account is active and as reasonably necessary to provide Vivordo. Imported WHOOP, Fitbit/Google Health, Apple Health, Bluetooth wearable, and other health information is generally retained until you delete the applicable information, delete your account, or ask us to delete it. OAuth credentials are retained only while the relevant connection remains authorized and are deleted when you disconnect it.
 
-You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; daily records, suggestion history, event reactions, and weekly reviews; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, block list, comments, likes, activity, and challenge participation; your personal stress-scoring state; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
+You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; your subscription status and Vivordo AI usage count; daily records, suggestion history, event reactions, and weekly reviews; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, block list, comments, likes, activity, and challenge participation; your personal stress-scoring state; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
 
 After a verified deletion request, we delete or de-identify information under our control within the period required by applicable law, except information we must retain for legal compliance, fraud prevention, dispute resolution, security, or enforcement. This includes Circle reports you filed or that were filed about you, which we keep to enforce our community rules. Information may remain temporarily in encrypted backups until those backups are overwritten through their ordinary lifecycle. We do not use backup copies for ordinary product purposes.
+
+**Deleting your account does not cancel your subscription.** Cancel it in your device's Settings → [your name] → Subscriptions. Records of your purchases held by Apple and RevenueCat are not deleted with your Vivordo account; they keep them as needed for billing, refunds, tax, and accounting, under their own policies. To ask RevenueCat to delete its record of your account, contact us.
 
 Deleting information from Vivordo does not delete the original information held by Apple, Google, Fitbit, WHOOP, Microsoft, another connected service, or another user. You must use that service's controls to delete information it controls.
 
