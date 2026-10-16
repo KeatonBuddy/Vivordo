@@ -124,6 +124,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// day_fixes/{tomorrow}.eveningHidden); it comes back as the morning card.
   String? _eveningFixesHiddenDay;
 
+  /// The day "Plan my day" was swiped away, and the priorities it was
+  /// hidden for (day_fixes/{day}.planHidden): it comes back tomorrow, or
+  /// when a priority without a time is added.
+  String? _planHiddenDay;
+  Set<String> _planHiddenIds = const {};
+
   /// The day the fix being applied belongs to, for logging it.
   DateTime? _openFixDay;
 
@@ -2022,6 +2028,37 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Swiped away: "Plan my day" hidden for today, for these [untimed]
+  /// priorities, with Undo.
+  Future<void> _hidePlanMyDay(List<DailyPriority> untimed) async {
+    final day = localDayKey(DateTime.now());
+    final ids = {for (final p in untimed) p.reference.path};
+    setState(() {
+      _planHiddenDay = day;
+      _planHiddenIds = ids;
+    });
+    Future<void> save(Object value) async {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('day_fixes')
+            .doc(day)
+            .set({'planHidden': value}, SetOptions(merge: true));
+      } catch (_) {
+        // Still hidden (or shown) for this session.
+      }
+    }
+
+    unawaited(save(ids.toList()));
+    if (await _showUndo('Plan my day hidden until tomorrow')) {
+      if (mounted) setState(() => _planHiddenDay = null);
+      await save(FieldValue.delete());
+    }
+  }
+
   /// The X on the evening card: hidden until morning, when tomorrow's own
   /// card takes over.
   Future<void> _hideEveningFixes() async {
@@ -2080,6 +2117,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 (day: date, data: doc.data()),
         ];
         if (todays?['hidden'] == true) _fixesHiddenDay = day;
+        if (todays?['planHidden'] case final List ids) {
+          _planHiddenDay = day;
+          _planHiddenIds = {...ids.whereType<String>()};
+        }
         if (tomorrows?['eveningHidden'] == true) _eveningFixesHiddenDay = day;
         for (final (key, data) in [(day, todays), (tomorrow, tomorrows)]) {
           for (final kind in ((data?['kinds'] as Map?) ?? const {}).keys) {
@@ -2685,7 +2726,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               )
           ? null
           : _planFor(untimed, now);
-      final canPlan = plan != null && plan.placed.isNotEmpty;
+      final hiddenToday =
+          _planHiddenDay == localDayKey(now) &&
+          untimed.every((p) => _planHiddenIds.contains(p.reference.path));
+      final canPlan = plan != null && plan.placed.isNotEmpty && !hiddenToday;
       Widget row(DailyPriority priority) => _PriorityRow(
         key: ValueKey(priority.reference.path),
         priority: priority,
@@ -2737,12 +2781,20 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               const Divider(height: 1),
             ],
             if (canPlan) ...[
-              _ListAction(
-                icon: Icons.event_available_rounded,
-                label: 'Plan my day · ${untimed.length} without a time',
-                // Planned again from the moment it's opened.
-                onTap: () =>
-                    _planMyDay(untimed, _planFor(untimed, DateTime.now())),
+              // Swipe left to hide it for today.
+              SwipeToDelete(
+                actionLabel: 'Hide',
+                actionIcon: Icons.visibility_off_outlined,
+                actionColor: const Color(0xFF8E8E93),
+                confirmTitle: null,
+                onDelete: () => _hidePlanMyDay(untimed),
+                child: _ListAction(
+                  icon: Icons.event_available_rounded,
+                  label: 'Plan my day · ${untimed.length} without a time',
+                  // Planned again from the moment it's opened.
+                  onTap: () =>
+                      _planMyDay(untimed, _planFor(untimed, DateTime.now())),
+                ),
               ),
               const Divider(height: 1),
             ],

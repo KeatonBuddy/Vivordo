@@ -4,7 +4,9 @@ import '../theme/vivordo_theme.dart';
 import 'apple_ui.dart';
 
 /// A row that slides left to reveal Delete. Deleting asks first; [onDelete]
-/// runs only once confirmed. A tap on the row calls [onTap].
+/// runs only once confirmed. A tap on the row calls [onTap]. For a gentler
+/// action (Hide) pass [actionLabel], [actionIcon] and [actionColor], and no
+/// [confirmTitle] to skip the question.
 class SwipeToDelete extends StatefulWidget {
   const SwipeToDelete({
     super.key,
@@ -13,11 +15,17 @@ class SwipeToDelete extends StatefulWidget {
     required this.confirmTitle,
     this.confirmMessage,
     this.onTap,
+    this.actionLabel = 'Delete',
+    this.actionIcon = Icons.delete_outline_rounded,
+    this.actionColor = const Color(0xFFE5484D),
   });
 
   final Widget child;
   final Future<void> Function() onDelete;
-  final String confirmTitle;
+  final String? confirmTitle;
+  final String actionLabel;
+  final IconData actionIcon;
+  final Color actionColor;
   final String? confirmMessage;
   final VoidCallback? onTap;
 
@@ -42,7 +50,7 @@ class _SwipeToDeleteState extends State<SwipeToDelete> {
             child: SizedBox(
               width: _actionWidth,
               child: Material(
-                color: const Color(0xFFE5484D),
+                color: widget.actionColor,
                 child: InkWell(
                   onTap: _deleting ? null : _delete,
                   child: Center(
@@ -55,18 +63,18 @@ class _SwipeToDeleteState extends State<SwipeToDelete> {
                               color: Colors.white,
                             ),
                           )
-                        : const Column(
+                        : Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
-                                Icons.delete_outline_rounded,
+                                widget.actionIcon,
                                 color: Colors.white,
                                 size: 22,
                               ),
-                              SizedBox(height: 2),
+                              const SizedBox(height: 2),
                               Text(
-                                'Delete',
-                                style: TextStyle(
+                                widget.actionLabel,
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -119,12 +127,15 @@ class _SwipeToDeleteState extends State<SwipeToDelete> {
     if (_deleting || _confirming) return;
     _confirming = true;
     try {
-      final confirmed = await confirmAction(
-        context,
-        title: widget.confirmTitle,
-        message: widget.confirmMessage,
-        confirmLabel: 'Delete',
-      );
+      final title = widget.confirmTitle;
+      final confirmed =
+          title == null ||
+          await confirmAction(
+            context,
+            title: title,
+            message: widget.confirmMessage,
+            confirmLabel: widget.actionLabel,
+          );
       if (confirmed && mounted) {
         setState(() => _deleting = true);
         await widget.onDelete();
