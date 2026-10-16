@@ -3,6 +3,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/utils/score_breakdown.dart';
 import 'apple_ui.dart';
+import 'daily_brief_card.dart';
 import 'event_type_section.dart';
 
 /// A group of breakdown rows under an optional heading ("SCHEDULE · 14").
@@ -11,7 +12,9 @@ typedef BreakdownSection = ({String? heading, List<BreakdownRow> rows});
 /// Why a score is what it is: the score, a line on how it compares, then
 /// each part with the points it adds or (for Capacity, [signed]) how much
 /// it moved the score against your usual. A row for an event opens its
-/// Event type, so a wrong number can be fixed from here.
+/// Event type, so a wrong number can be fixed from here. In words view
+/// ([words] is the score's state) the score is that word and each row a
+/// state chip from [breakdownWords], biggest first.
 Future<void> showScoreBreakdown(
   BuildContext context, {
   required String kicker,
@@ -21,13 +24,23 @@ Future<void> showScoreBreakdown(
   required String footer,
   bool signed = false,
   String empty = 'Nothing to count yet.',
+  BriefState? words,
 }) => showAppleSheet<void>(
   context,
   builder: (sheetContext) {
     final colors = sheetContext.vivordoColors;
+    final allRows = [for (final section in sections) ...section.rows];
     final whole = signed
         ? const <BreakdownRow, int>{}
-        : wholePoints([for (final section in sections) ...section.rows], score);
+        : wholePoints(allRows, score);
+    final states = words == null
+        ? null
+        : breakdownWords(allRows, signed: signed);
+    // Words view lists the biggest first; numbers keep the day's order.
+    List<BreakdownRow> ordered(List<BreakdownRow> rows) => states == null
+        ? rows
+        : ([...rows]
+            ..sort((a, b) => _size(b, signed).compareTo(_size(a, signed))));
     return SafeArea(
       top: false,
       child: ConstrainedBox(
@@ -51,9 +64,9 @@ Future<void> showScoreBreakdown(
               ),
               const SizedBox(height: 2),
               Text(
-                '$score',
+                words?.word ?? '$score',
                 style: TextStyle(
-                  fontSize: 38,
+                  fontSize: words == null ? 38 : 28,
                   fontWeight: FontWeight.w800,
                   color: colors.textPrimary,
                 ),
@@ -85,11 +98,12 @@ Future<void> showScoreBreakdown(
                         ),
                       ),
                     ),
-                  for (final row in section.rows)
+                  for (final row in ordered(section.rows))
                     _BreakdownRowView(
                       row: row,
                       signed: signed,
                       whole: whole[row],
+                      state: states?[row],
                     ),
                 ],
               const SizedBox(height: 12),
@@ -134,11 +148,91 @@ Map<BreakdownRow, int> wholePoints(List<BreakdownRow> rows, int score) {
   };
 }
 
+double _size(BreakdownRow row, bool signed) => row.leftOut || row.points == null
+    ? -1
+    : signed
+    ? row.points!.abs()
+    : row.points!;
+
+/// Words view: each counted row's points as a state. [signed] (Capacity):
+/// Helped or Held it back, with "most" on the row that moved it most, and
+/// No change under half a point. Otherwise (Demand, Effort) the row's
+/// share of the day's total, so a row never argues with the headline: a
+/// light day's only row is "All of it", not "Heavy".
+Map<BreakdownRow, BriefState> breakdownWords(
+  List<BreakdownRow> rows, {
+  required bool signed,
+}) {
+  final counted = [
+    for (final row in rows)
+      if (!row.leftOut && row.points != null) row,
+  ];
+  if (counted.isEmpty) return {};
+  final biggest = counted.reduce(
+    (a, b) => _size(b, signed) > _size(a, signed) ? b : a,
+  );
+  final total = counted.fold<double>(0, (sum, row) => sum + row.points!);
+  BriefState wordFor(BreakdownRow row) {
+    final points = row.points!;
+    if (signed) {
+      // "Most" only means something with more than one to compare.
+      final most = row == biggest && counted.length > 1;
+      if (points.round() == 0) {
+        return (word: 'No change', tone: BriefTone.usual);
+      }
+      return points > 0
+          ? (word: most ? 'Helped most' : 'Helped', tone: BriefTone.good)
+          : (
+              word: most ? 'Held it back most' : 'Held it back',
+              tone: BriefTone.low,
+            );
+    }
+    if (counted.length == 1) return (word: 'All of it', tone: BriefTone.usual);
+    final share = total <= 0 ? 0 : points / total;
+    return switch (share) {
+      >= .6 => (word: 'Most of it', tone: BriefTone.low),
+      >= .4 => (word: 'About half', tone: BriefTone.low),
+      >= .2 => (word: 'A good part', tone: BriefTone.usual),
+      >= .1 => (word: 'Some', tone: BriefTone.good),
+      _ => (word: 'A little', tone: BriefTone.good),
+    };
+  }
+
+  return {for (final row in counted) row: wordFor(row)};
+}
+
+class _StateChip extends StatelessWidget {
+  const _StateChip(this.state);
+
+  final BriefState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final (background, foreground) = briefToneColors(state.tone);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        state.word,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: foreground,
+        ),
+      ),
+    );
+  }
+}
+
 class _BreakdownRowView extends StatelessWidget {
   const _BreakdownRowView({
     required this.row,
     required this.signed,
     this.whole,
+    this.state,
   });
 
   final BreakdownRow row;
@@ -146,6 +240,9 @@ class _BreakdownRowView extends StatelessWidget {
 
   /// This row's points as a whole number from [wholePoints].
   final int? whole;
+
+  /// Words view: shown instead of the points.
+  final BriefState? state;
 
   String get _points {
     final points = row.points;
@@ -223,19 +320,22 @@ class _BreakdownRowView extends StatelessWidget {
               ),
             ],
             const SizedBox(width: 10),
-            SizedBox(
-              width: 42,
-              child: Text(
-                _points,
-                textAlign: TextAlign.end,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  color: pointsColor,
+            if (state case final state?)
+              _StateChip(state)
+            else
+              SizedBox(
+                width: 42,
+                child: Text(
+                  _points,
+                  textAlign: TextAlign.end,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    color: pointsColor,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),

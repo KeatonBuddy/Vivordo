@@ -55,6 +55,7 @@ import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'package:vivordo_health/src/utils/activity_source.dart';
 import 'package:vivordo_health/src/utils/score_breakdown.dart';
+import 'package:vivordo_health/widgets/daily_brief_card.dart' show BriefTone;
 import 'package:vivordo_health/widgets/score_breakdown_sheet.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
@@ -2305,7 +2306,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       pastByHour: effortContext.pastByHour,
     );
     // Why Effort is what it is: what each item took, and activity.
-    void showEffort() {
+    // [words]: words view, with states instead of numbers.
+    void showEffort({bool words = false}) {
       final result = effortBreakdown(
         now: now,
         from: from,
@@ -2321,17 +2323,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         kicker: 'EFFORT SO FAR',
         empty: 'Nothing has taken effort yet today.',
         score: result.total.round(),
-        summary: soFar,
+        summary: words ? 'For this time of day' : soFar,
+        words: words
+            ? (
+                word: soFar,
+                tone: soFar.startsWith('Heavier')
+                    ? BriefTone.low
+                    : soFar.startsWith('Lighter')
+                    ? BriefTone.good
+                    : BriefTone.usual,
+              )
+            : null,
         sections: [
-          (heading: 'SCHEDULE · ${mental.round()}', rows: result.mental),
           (
-            heading: 'ACTIVITY · ${physical.round()}',
+            heading: words ? 'YOUR SCHEDULE' : 'SCHEDULE · ${mental.round()}',
+            rows: result.mental,
+          ),
+          (
+            heading: words ? 'YOUR ACTIVITY' : 'ACTIVITY · ${physical.round()}',
             rows: [
               if (physical > 0)
                 BreakdownRow(
                   'Workouts and exercise',
-                  'Extra calories count when there\'s no exercise · up to 25 '
-                      'a day',
+                  words
+                      ? 'Extra calories count when there\'s no exercise'
+                      : 'Extra calories count when there\'s no exercise · '
+                            'up to 25 a day',
                   points: physical,
                 ),
             ],
@@ -2412,7 +2429,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         children: [
                           Expanded(
                             child: InkWell(
-                              onTap: showEffort,
+                              onTap: () => showEffort(words: true),
                               borderRadius: BorderRadius.circular(10),
                               child: _effortStat(
                                 'SO FAR',

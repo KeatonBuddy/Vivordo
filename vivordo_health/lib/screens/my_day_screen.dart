@@ -1565,138 +1565,151 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             final brief =
                 Selector<ThemeController, bool>(
                   selector: (_, c) => c.showScoreNumbers,
-                  builder: (context, showNumbers, _) => DailyBriefCard(
-                    headline: headline,
-                    action: action,
-                    // Last night against the need Home and Capacity use;
-                    // nothing about sleep for someone who doesn't track it.
-                    summary:
-                        '${beforeSleep ? '' : sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0, inBed: summary?.sleepInBed ?? false)} $calendarText$tonightNote'
-                            .trim(),
-                    // In the evening it sits beside tomorrow's Demand, so
-                    // it shows what tomorrow is compared with.
-                    capacityScore: evening && usualCapacity != null
-                        ? usualCapacity
-                        : capacityScore,
-                    capacityLabel: evening && usualCapacity != null
-                        ? 'Your usual'
-                        : recovering
-                        ? 'Recovering'
-                        : server != null
-                        ? server.note
-                        : capacityEmpty?.label ?? capacityNote,
-                    capacityEmptyIcon: capacityEmpty?.icon,
-                    onCapacityTap: server == null
+                  builder: (context, showNumbers, _) {
+                    // Words view: the states the brief and its breakdowns
+                    // show instead of numbers.
+                    final energyWords = showNumbers
                         ? null
-                        : () => _showCapacityBreakdown(server),
-                    onScheduleTap: !ready
+                        : briefEnergyState(
+                            capacity: capacityScore,
+                            usual: usualCapacity,
+                            recovering: recovering,
+                            emptyWord: capacityEmpty?.word,
+                          );
+                    final loadWords = showNumbers
                         ? null
-                        : () => _showDemandBreakdown(
-                            now: now,
-                            evening: evening,
-                            todayEvents: timedEvents,
-                            todayPriorities: todayPriorities,
-                            tomorrowPriorities: tomorrowPriorities,
+                        : briefLoadState(
+                            demand: ready ? demand : null,
                             capacity: evening
                                 ? tomorrowCapacity
                                 : capacityScore,
-                          ),
-                    scheduleScore: ready ? demand.round().clamp(0, 100) : null,
-                    scheduleLabel: !ready
-                        ? planFailed
-                              ? "Didn't load · pull to retry"
-                              : 'Loading your plan'
-                        : evening
-                        ? 'Expected tomorrow'
-                        : 'Remaining today',
-                    // What's missing, by name; tapping it opens the data
-                    // sheet.
-                    scheduleEmptyIcon: ready
-                        ? null
-                        : planFailed
-                        ? Icons.cloud_off_rounded
-                        : Icons.hourglass_top_rounded,
-                    footer: !ready
-                        ? planFailed
-                              ? "Your plan didn't load"
-                              : 'Your plan is still loading'
-                        : capacityEmpty?.footer ??
-                              (!capacityStale
-                                  ? 'Available data'
-                                  : server != null
-                                  ? "Waiting for last night's sleep"
-                                  : "Health data hasn't synced recently"),
-                    words: showNumbers
-                        ? null
-                        : (
-                            energy: briefEnergyState(
-                              capacity: capacityScore,
-                              usual: usualCapacity,
-                              recovering: recovering,
-                              emptyWord: capacityEmpty?.word,
-                            ),
-                            loadTitle: evening
-                                ? "Tomorrow's load"
-                                : "Today's load",
-                            load: briefLoadState(
-                              demand: ready ? demand : null,
+                            planFailed: planFailed,
+                          );
+                    return DailyBriefCard(
+                      headline: headline,
+                      action: action,
+                      // Last night against the need Home and Capacity use;
+                      // nothing about sleep for someone who doesn't track it.
+                      summary:
+                          '${beforeSleep ? '' : sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0, inBed: summary?.sleepInBed ?? false)} $calendarText$tonightNote'
+                              .trim(),
+                      // In the evening it sits beside tomorrow's Demand, so
+                      // it shows what tomorrow is compared with.
+                      capacityScore: evening && usualCapacity != null
+                          ? usualCapacity
+                          : capacityScore,
+                      capacityLabel: evening && usualCapacity != null
+                          ? 'Your usual'
+                          : recovering
+                          ? 'Recovering'
+                          : server != null
+                          ? server.note
+                          : capacityEmpty?.label ?? capacityNote,
+                      capacityEmptyIcon: capacityEmpty?.icon,
+                      onCapacityTap: server == null
+                          ? null
+                          : () => _showCapacityBreakdown(server, energyWords),
+                      onScheduleTap: !ready
+                          ? null
+                          : () => _showDemandBreakdown(
+                              now: now,
+                              evening: evening,
+                              todayEvents: timedEvents,
+                              todayPriorities: todayPriorities,
+                              tomorrowPriorities: tomorrowPriorities,
                               capacity: evening
                                   ? tomorrowCapacity
                                   : capacityScore,
-                              planFailed: planFailed,
+                              words: loadWords,
                             ),
+                      scheduleScore: ready
+                          ? demand.round().clamp(0, 100)
+                          : null,
+                      scheduleLabel: !ready
+                          ? planFailed
+                                ? "Didn't load · pull to retry"
+                                : 'Loading your plan'
+                          : evening
+                          ? 'Expected tomorrow'
+                          : 'Remaining today',
+                      // What's missing, by name; tapping it opens the data
+                      // sheet.
+                      scheduleEmptyIcon: ready
+                          ? null
+                          : planFailed
+                          ? Icons.cloud_off_rounded
+                          : Icons.hourglass_top_rounded,
+                      footer: !ready
+                          ? planFailed
+                                ? "Your plan didn't load"
+                                : 'Your plan is still loading'
+                          : capacityEmpty?.footer ??
+                                (!capacityStale
+                                    ? 'Available data'
+                                    : server != null
+                                    ? "Waiting for last night's sleep"
+                                    : "Health data hasn't synced recently"),
+                      words: energyWords == null || loadWords == null
+                          ? null
+                          : (
+                              energy: energyWords,
+                              loadTitle: evening
+                                  ? "Tomorrow's load"
+                                  : "Today's load",
+                              load: loadWords,
+                            ),
+                      onDetails: () => showInfoSheet(
+                        context,
+                        icon: CupertinoIcons.info_circle,
+                        title: 'Daily Brief data',
+                        summary:
+                            'Where today\'s numbers come from. These are wellness estimates, not clinical assessments.',
+                        items: [
+                          AppleInfoItem(
+                            'Calendar loaded',
+                            _calendarLoadedAt == null
+                                ? 'Not yet.'
+                                : '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
+                            icon: CupertinoIcons.calendar,
                           ),
-                    onDetails: () => showInfoSheet(
-                      context,
-                      icon: CupertinoIcons.info_circle,
-                      title: 'Daily Brief data',
-                      summary:
-                          'Where today\'s numbers come from. These are wellness estimates, not clinical assessments.',
-                      items: [
-                        AppleInfoItem(
-                          'Calendar loaded',
-                          _calendarLoadedAt == null
-                              ? 'Not yet.'
-                              : '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
-                          icon: CupertinoIcons.calendar,
-                        ),
-                        AppleInfoItem(
-                          'Heart rate measured',
-                          '${timeLabel(healthTime)}.',
-                          icon: CupertinoIcons.heart,
-                        ),
-                        AppleInfoItem(
-                          'Stress calculated',
-                          '${timeLabel(stressTime)}.',
-                          icon: CupertinoIcons.waveform_path,
-                        ),
-                        if (summary?.isFromCache == true)
+                          AppleInfoItem(
+                            'Heart rate measured',
+                            '${timeLabel(healthTime)}.',
+                            icon: CupertinoIcons.heart,
+                          ),
+                          AppleInfoItem(
+                            'Stress calculated',
+                            '${timeLabel(stressTime)}.',
+                            icon: CupertinoIcons.waveform_path,
+                          ),
+                          if (summary?.isFromCache == true)
+                            const AppleInfoItem(
+                              'Health data',
+                              'From the local cache.',
+                              icon: CupertinoIcons.tray,
+                            ),
+                          AppleInfoItem(
+                            'Sleep baseline',
+                            '${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.',
+                            icon: CupertinoIcons.moon,
+                          ),
+                          AppleInfoItem(
+                            'Capacity',
+                            server != null
+                                ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.${server.bodyNote == null ? '' : ' ${server.bodyNote}'}'
+                                : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
+                            icon: CupertinoIcons.battery_75_percent,
+                          ),
                           const AppleInfoItem(
-                            'Health data',
-                            'From the local cache.',
-                            icon: CupertinoIcons.tray,
+                            'Demand',
+                            'The Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work doesn\'t block a specific opening.',
+                            icon: CupertinoIcons.chart_bar,
                           ),
-                        AppleInfoItem(
-                          'Sleep baseline',
-                          '${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.',
-                          icon: CupertinoIcons.moon,
-                        ),
-                        AppleInfoItem(
-                          'Capacity',
-                          server != null
-                              ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.${server.bodyNote == null ? '' : ' ${server.bodyNote}'}'
-                              : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
-                          icon: CupertinoIcons.battery_75_percent,
-                        ),
-                        const AppleInfoItem(
-                          'Demand',
-                          'The Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work doesn\'t block a specific opening.',
-                          icon: CupertinoIcons.chart_bar,
-                        ),
-                      ],
-                      buttonLabel: 'Close',
-                    ),
-                  ),
+                        ],
+                        buttonLabel: 'Close',
+                      ),
+                    );
+                  },
                 ).withScreenInsight(
                   ScreenInsight(
                     'my_day',
@@ -1722,25 +1735,39 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   );
 
   /// Why today's Capacity is what it is: each part against your usual.
-  void _showCapacityBreakdown(ServerCapacity server) {
+  /// [words]: words view's Energy state, shown instead of numbers.
+  void _showCapacityBreakdown(ServerCapacity server, [BriefState? words]) {
     final usual = server.usual?.round();
     final diff = usual == null ? 0 : server.score - usual;
     showScoreBreakdown(
       context,
       kicker: 'CAPACITY TODAY',
       score: server.score,
+      words: words,
       summary: usual == null
           ? 'Still learning your usual'
+          : words != null
+          ? switch (diff) {
+              <= -8 => 'Well below your usual',
+              <= -3 => 'A bit below your usual',
+              >= 8 => 'Well above your usual',
+              >= 3 => 'A bit above your usual',
+              _ => 'About your usual',
+            }
           : diff == 0
           ? 'About your usual of $usual'
           : '${diff.abs()} ${diff < 0 ? 'below' : 'above'} your usual of $usual',
       sections: [(heading: null, rows: server.breakdown)],
       signed: true,
-      footer:
-          'Each line is how much that part moved today\'s Capacity compared '
-          'with a usual day for you. Sleep counts most (45%), then your '
-          'overnight body (35%), your recent load (20%) and the morning '
-          'check-in (15%).',
+      footer: words != null
+          ? 'Each line is whether that part helped or held back today\'s '
+                'Capacity compared with a usual day for you. Sleep counts '
+                'most, then your overnight body, your recent load and the '
+                'morning check-in.'
+          : 'Each line is how much that part moved today\'s Capacity compared '
+                'with a usual day for you. Sleep counts most (45%), then your '
+                'overnight body (35%), your recent load (20%) and the morning '
+                'check-in (15%).',
     );
   }
 
@@ -1753,6 +1780,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     required List<DailyPriority> todayPriorities,
     required List<DailyPriority> tomorrowPriorities,
     required int? capacity,
+    BriefState? words,
   }) {
     final today = DateUtils.dateOnly(now);
     final day = evening ? today.add(const Duration(days: 1)) : today;
@@ -1811,17 +1839,21 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           ? 'Nothing planned for tomorrow yet.'
           : 'Nothing left on your plan today.',
       score: result.total.round(),
+      words: words,
       summary: fit == null
           ? 'Capacity isn\'t in yet'
+          : words != null
+          ? 'Against ${evening ? 'your usual' : 'your'} Capacity · $fit'
           : 'Against ${evening ? 'your usual' : 'your'} Capacity of $capacity · $fit',
       sections: [
         (heading: null, rows: result.rows),
         if (leftOut.isNotEmpty) (heading: 'NOT COUNTED', rows: leftOut),
       ],
       footer:
-          'Each event\'s points on its own; back-to-backs and long runs are '
-          'on their own line. Tap an event to change its type. Not counted: '
-          'Free, declined and all-day events, and anything already done.',
+          '${words != null ? 'Heaviest first, each event on its own' : 'Each event\'s points on its own'}; '
+          'back-to-backs and long runs are on their own line. Tap an event to '
+          'change its type. Not counted: Free, declined and all-day events, '
+          'and anything already done.',
     );
   }
 

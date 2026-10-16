@@ -267,6 +267,13 @@ enum BriefTone { good, usual, low }
 
 typedef BriefState = ({String word, BriefTone tone});
 
+/// A state chip's background and text colours.
+(Color, Color) briefToneColors(BriefTone tone) => switch (tone) {
+  BriefTone.good => (const Color(0xFFE1F5EE), const Color(0xFF085041)),
+  BriefTone.low => (const Color(0xFFFAEEDA), const Color(0xFF633806)),
+  BriefTone.usual => (const Color(0xFFEEEDFE), const Color(0xFF3C3489)),
+};
+
 /// Words mode's brief: Energy and today's (or tomorrow's) load as states.
 typedef BriefWords = ({BriefState energy, String loadTitle, BriefState load});
 
@@ -327,11 +334,7 @@ class _BriefStateRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (background, foreground) = switch (state.tone) {
-      BriefTone.good => (const Color(0xFFE1F5EE), const Color(0xFF085041)),
-      BriefTone.low => (const Color(0xFFFAEEDA), const Color(0xFF633806)),
-      BriefTone.usual => (const Color(0xFFEEEDFE), const Color(0xFF3C3489)),
-    };
+    final (background, foreground) = briefToneColors(state.tone);
     return Semantics(
       label: '$title: ${state.word}',
       excludeSemantics: true,

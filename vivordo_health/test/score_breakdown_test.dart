@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'package:vivordo_health/src/utils/day_effort.dart';
 import 'package:vivordo_health/src/utils/score_breakdown.dart';
+import 'package:vivordo_health/widgets/daily_brief_card.dart';
 import 'package:vivordo_health/widgets/score_breakdown_sheet.dart';
 
 void main() {
@@ -225,5 +226,34 @@ void main() {
     expect(whole([5.6, null], 6, leftOut: true), [6, null, null]);
     // A score the rows can't reach: plain rounding.
     expect(whole([2.4, 2.4], 20), [2, 2]);
+  });
+
+  test('words view: a state for each row instead of its points', () {
+    List<String?> words(List<double?> points, {bool signed = false}) {
+      final rows = [for (final p in points) BreakdownRow('', '', points: p)];
+      final map = breakdownWords(rows, signed: signed);
+      return [for (final row in rows) map[row]?.word];
+    }
+
+    // Capacity: the part that moved it most says so.
+    expect(words([6, -5, -5.4, .2], signed: true), [
+      'Helped most',
+      'Held it back',
+      'Held it back',
+      'No change',
+    ]);
+    expect(words([-8, 3], signed: true), ['Held it back most', 'Helped']);
+    // Demand and Effort: each row's share of the day.
+    expect(words([12, 7, 4, 2, null]), [
+      'About half',
+      'A good part',
+      'Some',
+      'A little',
+      null,
+    ]);
+    expect(words([19, 1]), ['Most of it', 'A little']);
+    // A lone row is the whole day, however big.
+    expect(words([8]), ['All of it']);
+    expect(words([-5], signed: true), ['Held it back']);
   });
 }

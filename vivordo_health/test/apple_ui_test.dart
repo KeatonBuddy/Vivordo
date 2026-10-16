@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/score_breakdown.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/daily_brief_card.dart';
 import 'package:vivordo_health/widgets/score_breakdown_sheet.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 
@@ -337,5 +338,41 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Training load'), findsNothing);
+  });
+
+  testWidgets('words view breakdown shows states, not numbers', (tester) async {
+    final context = await pumpApp(tester);
+    showScoreBreakdown(
+      context,
+      kicker: 'CAPACITY TODAY',
+      score: 78,
+      words: (word: 'Recovering', tone: BriefTone.low),
+      summary: 'A bit below your usual',
+      signed: true,
+      sections: [
+        (
+          heading: null,
+          rows: [
+            BreakdownRow('Recent load', 'A big day on Monday', points: 6),
+            BreakdownRow('Morning check-in', 'Felt good', points: -5),
+            BreakdownRow('Not in today', 'Sleep', points: -5.4),
+          ],
+        ),
+      ],
+      footer: 'Sleep counts most.',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Recovering'), findsOneWidget);
+    expect(find.text('78'), findsNothing);
+    expect(find.text('Helped most'), findsOneWidget);
+    expect(find.text('Held it back'), findsNWidgets(2));
+    expect(find.text('+6'), findsNothing);
+    // Biggest first.
+    final y = tester.getTopLeft(find.text('Recent load')).dy;
+    expect(y, lessThan(tester.getTopLeft(find.text('Not in today')).dy));
+    expect(
+      tester.getTopLeft(find.text('Not in today')).dy,
+      lessThan(tester.getTopLeft(find.text('Morning check-in')).dy),
+    );
   });
 }
