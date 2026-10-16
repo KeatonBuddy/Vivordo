@@ -160,7 +160,7 @@ class SubscriptionService {
       }
       rethrow;
     }
-    await _refresh();
+    await refresh();
     return true;
   }
 
@@ -169,7 +169,7 @@ class SubscriptionService {
   static Future<bool> restore(String uid) async {
     await signIn(uid);
     final info = await Purchases.restorePurchases();
-    await _refresh();
+    await refresh();
     return info.entitlements.active.containsKey(entitlement);
   }
 
@@ -180,8 +180,10 @@ class SubscriptionService {
     await Purchases.presentCodeRedemptionSheet();
   }
 
-  // The webhook does this too; calling it now unlocks without waiting.
-  static Future<void> _refresh() async {
+  /// Asks the server to re-read RevenueCat (the webhook does this too), so
+  /// a purchase unlocks without waiting, and a staff email on the list is
+  /// granted access. Never throws.
+  static Future<void> refresh() async {
     try {
       await FirebaseFunctions.instance
           .httpsCallable('refreshSubscription')

@@ -7,6 +7,8 @@ const {
   hasPremium,
   webhookUserIds,
   refreshFromRevenueCat,
+  isStaff,
+  grantStaffAccess,
 } = require("../subscription");
 
 const NOW = Date.parse("2026-11-01T12:00:00Z");
@@ -103,4 +105,51 @@ test("refreshing stores what RevenueCat says", async () => {
 
   await assert.rejects(refreshFromRevenueCat(db, "x", "k",
       async () => ({ok: false, status: 500})), /RevenueCat 500/);
+});
+
+test("staff are verified emails on the list, any case", () => {
+  const list = ["Alex@Example.com", " sam@example.com "];
+  assert.equal(isStaff({email: "alex@example.com", email_verified: true},
+      list), true);
+  assert.equal(isStaff({email: "SAM@example.com", email_verified: true},
+      list), true);
+  // Unverified, not on the list, no email, no list.
+  assert.equal(isStaff({email: "alex@example.com", email_verified: false},
+      list), false);
+  assert.equal(isStaff({email: "kim@example.com", email_verified: true},
+      list), false);
+  assert.equal(isStaff({email_verified: true}, list), false);
+  assert.equal(isStaff({email: "alex@example.com", email_verified: true},
+      undefined), false);
+  assert.equal(isStaff(undefined, list), false);
+});
+
+test("staff access is a promotional grant in RevenueCat", async () => {
+  const writes = [];
+  const db = {collection: (name) => ({doc: (id) => ({
+    set: async (data) => writes.push({name, id, data}),
+  })})};
+  let asked;
+  const fetchImpl = async (url, options) => {
+    asked = {url, ...options};
+    return {ok: true, json: async () => ({
+      subscriber: {entitlements: {vivordo_premium: {
+        expires_date: "2100-01-01T00:00:00Z",
+        product_identifier: "rc_promo_vivordo_premium_custom",
+      }}},
+    })};
+  };
+  const status = await grantStaffAccess(db, "uid1", "sk_test", fetchImpl);
+  assert.equal(asked.url, "https://api.revenuecat.com/v1/subscribers/uid1/" +
+      "entitlements/vivordo_premium/promotional");
+  assert.equal(asked.method, "POST");
+  assert.equal(asked.headers.Authorization, "Bearer sk_test");
+  assert.deepEqual(JSON.parse(asked.body),
+      {end_time_ms: Date.parse("2100-01-01T00:00:00Z")});
+  assert.equal(status.active, true);
+  assert.equal(writes[0].id, "uid1");
+  assert.equal(writes[0].data.active, true);
+
+  await assert.rejects(grantStaffAccess(db, "x", "k",
+      async () => ({ok: false, status: 403})), /RevenueCat 403/);
 });

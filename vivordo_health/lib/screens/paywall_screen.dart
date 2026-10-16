@@ -30,6 +30,23 @@ class PremiumGate extends StatefulWidget {
 }
 
 class _PremiumGateState extends State<PremiumGate> {
+  // Before the paywall first shows for an account, the server is asked once
+  // (refreshSubscription): staff on the list are unlocked there, and a
+  // purchase whose webhook hasn't arrived yet is picked up.
+  String? _checkedUid;
+  Future<void>? _check;
+
+  Future<void> _checkOnce() {
+    if (_checkedUid != widget.uid) {
+      _checkedUid = widget.uid;
+      _check = SubscriptionService.refresh().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {},
+      );
+    }
+    return _check!;
+  }
+
   final _config = FirebaseFirestore.instance
       .collection('app_config')
       .doc('premium')
@@ -74,13 +91,21 @@ class _PremiumGateState extends State<PremiumGate> {
             now: DateTime.now(),
           );
           if (!locked) return widget.child;
-          return PaywallScreen(
-            uid: widget.uid,
-            ended: switch (data?['period']) {
-              null when data == null => null,
-              'trial' => PremiumEnded.trial,
-              _ => PremiumEnded.subscription,
-            },
+          // If the server unlocks the account, the stream rebuilds this
+          // before the paywall is ever shown.
+          return FutureBuilder(
+            future: _checkOnce(),
+            builder: (context, check) =>
+                check.connectionState != ConnectionState.done
+                ? const _Loading()
+                : PaywallScreen(
+                    uid: widget.uid,
+                    ended: switch (data?['period']) {
+                      null when data == null => null,
+                      'trial' => PremiumEnded.trial,
+                      _ => PremiumEnded.subscription,
+                    },
+                  ),
           );
         },
       );

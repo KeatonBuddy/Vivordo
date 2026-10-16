@@ -50,6 +50,8 @@ const {
   hasPremium,
   webhookUserIds,
   refreshFromRevenueCat,
+  isStaff,
+  grantStaffAccess,
 } = require("./subscription");
 
 admin.initializeApp();
@@ -2661,14 +2663,23 @@ exports.revenueCatWebhook = onRequest({
 
 /**
  * The app calls this right after a purchase or restore, so Premium unlocks
- * without waiting for the webhook. Returns the stored status.
+ * without waiting for the webhook, and before showing the paywall. A
+ * verified email on the staff list (staff_access/list.emails, edited in the
+ * console) without a subscription is granted one in RevenueCat, so staff go
+ * straight in. Returns the stored status.
  */
 exports.refreshSubscription = onCall({
   secrets: [revenueCatApiKey],
 }, async (request) => {
   const uid = requireAuth(request);
-  const status = await refreshFromRevenueCat(
-      admin.firestore(), uid, revenueCatApiKey.value());
+  const db = admin.firestore();
+  let status = await refreshFromRevenueCat(db, uid, revenueCatApiKey.value());
+  if (!status.active) {
+    const staff = await db.collection("staff_access").doc("list").get();
+    if (isStaff(request.auth.token, staff.get("emails"))) {
+      status = await grantStaffAccess(db, uid, revenueCatApiKey.value());
+    }
+  }
   return {
     active: status.active,
     period: status.period,
