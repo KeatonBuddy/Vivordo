@@ -273,7 +273,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           rangeSelector(),
           const SizedBox(height: 18),
           // Hidden until the saved collapsed state loads, so it doesn't jump.
-          if (hasConnectedWearable && _wearableCollapsed != null) ...[
+          if (WhoopBleHeartRateService.isSupported &&
+              hasConnectedWearable &&
+              _wearableCollapsed != null) ...[
             ValueListenableBuilder<WhoopBleState>(
               valueListenable: WhoopBleHeartRateService.instance.state,
               builder: (context, bleState, _) => wearableLiveCard(bleState),

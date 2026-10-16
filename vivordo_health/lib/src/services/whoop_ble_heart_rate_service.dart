@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -71,6 +70,9 @@ class WhoopBleHeartRateService {
   WhoopBleHeartRateService._();
 
   static final WhoopBleHeartRateService instance = WhoopBleHeartRateService._();
+
+  /// Live Bluetooth heart rate is iPhone-only for now; Android hides it.
+  static bool get isSupported => defaultTargetPlatform == TargetPlatform.iOS;
 
   static const freshReadingWindow = Duration(minutes: 5);
   static const _flushInterval = Duration(minutes: 5);
@@ -271,6 +273,7 @@ class WhoopBleHeartRateService {
 
   /// Reconnects a previously selected wearable without prompting for access.
   Future<void> startIfPaired() async {
+    if (!isSupported) return;
     final pendingStart = _startFuture;
     if (pendingStart != null) {
       await pendingStart;
@@ -715,7 +718,7 @@ class WhoopBleHeartRateService {
   }
 
   void _ensurePlatformSupport() {
-    if (!Platform.isIOS) {
+    if (!isSupported) {
       throw StateError(
         'Live wearable Bluetooth monitoring is currently available on iPhone only.',
       );
