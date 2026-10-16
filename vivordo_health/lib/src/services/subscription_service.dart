@@ -59,13 +59,26 @@ class SubscriptionService {
   /// RevenueCat's public iOS key ("appl_…"). Not a secret.
   static const appleApiKey = '';
 
+  /// RevenueCat's Test Store key: pretend purchases of the dashboard's
+  /// products, no App Store needed. Debug builds only; RevenueCat refuses
+  /// Test Store purchases in a release.
+  // ponytail: debug builds always use the Test Store; switch to
+  // appleApiKey here to test StoreKit sandbox purchases from Xcode.
+  static const _testStoreKey = 'test_PuLaSpEkCSqWpxIJcxaCLWrNYyC';
+
+  static String get _apiKey => kDebugMode ? _testStoreKey : appleApiKey;
+
+  /// The entitlement's identifier in RevenueCat, as in functions/
+  /// subscription.js.
+  static const entitlement = 'vivordo_premium';
+
   static String? _uid;
   static Future<void>? _setup;
 
   /// Configures RevenueCat for [uid] once per signed-in account, so StoreKit
   /// renewals and codes redeemed outside the app reach RevenueCat.
   static Future<void> signIn(String uid) {
-    if (appleApiKey.isEmpty) {
+    if (_apiKey.isEmpty) {
       return Future.error(StateError('RevenueCat key not set'));
     }
     if (_uid != uid) {
@@ -83,7 +96,7 @@ class SubscriptionService {
       await Purchases.logIn(uid);
     } else {
       await Purchases.configure(
-        PurchasesConfiguration(appleApiKey)..appUserID = uid,
+        PurchasesConfiguration(_apiKey)..appUserID = uid,
       );
     }
   }
@@ -157,7 +170,7 @@ class SubscriptionService {
     await signIn(uid);
     final info = await Purchases.restorePurchases();
     await _refresh();
-    return info.entitlements.active.containsKey('premium');
+    return info.entitlements.active.containsKey(entitlement);
   }
 
   /// Apple's offer code sheet. The redemption arrives through RevenueCat's

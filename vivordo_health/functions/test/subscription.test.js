@@ -11,7 +11,7 @@ const {
 
 const NOW = Date.parse("2026-11-01T12:00:00Z");
 const subscriber = (expires, extra = {}) => ({
-  entitlements: {premium: {
+  entitlements: {vivordo_premium: {
     expires_date: expires,
     product_identifier: "vivordo_premium_yearly",
   }},

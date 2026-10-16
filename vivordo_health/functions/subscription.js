@@ -6,7 +6,9 @@
 // store what it says, so every event type (renewal, cancellation, billing
 // issue, refund, transfer) is handled the same way.
 
-const ENTITLEMENT = "premium";
+// The entitlement's identifier in RevenueCat (Product catalog →
+// Entitlements), which can't be renamed there.
+const ENTITLEMENT = "vivordo_premium";
 const REVENUECAT_API = "https://api.revenuecat.com/v1/subscribers/";
 
 /**
