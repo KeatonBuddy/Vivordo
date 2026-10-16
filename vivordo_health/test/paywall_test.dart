@@ -82,7 +82,7 @@ void main() {
     tester,
   ) async {
     await show(tester, [yearly, monthly]);
-    expect(find.text('Try Vivordo Premium free for a month'), findsOneWidget);
+    expect(find.text('Try Vivordo free for a month'), findsOneWidget);
     expect(find.textContaining('Save 42%'), findsOneWidget);
     expect(find.text(r'$69.99/year ($5.83/month)'), findsOneWidget);
     expect(find.text('Start free month'), findsOneWidget);

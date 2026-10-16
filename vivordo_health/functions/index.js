@@ -791,7 +791,7 @@ async function requirePremium(uid) {
   if (!hasPremium(status.data(), Date.now())) {
     throw new HttpsError(
         "permission-denied",
-        "Vivordo Premium is needed for this.",
+        "A Vivordo subscription is needed for this.",
     );
   }
 }

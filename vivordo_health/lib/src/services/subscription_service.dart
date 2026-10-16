@@ -52,7 +52,7 @@ class PremiumPlan {
   final Package? package;
 }
 
-/// Vivordo Premium through RevenueCat. The app user id is the Firebase uid,
+/// The Vivordo subscription through RevenueCat. The app user id is the Firebase uid,
 /// so RevenueCat's webhook and the refreshSubscription function write the
 /// result to `subscriptions/{uid}`, which unlocks the app.
 class SubscriptionService {

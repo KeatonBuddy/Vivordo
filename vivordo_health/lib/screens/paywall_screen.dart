@@ -15,7 +15,7 @@ const _grey = Color(0xFF8E8E93);
 const _line = Color(0xFFE5E5EA);
 const _green = Color(0xFF0F6E56);
 
-/// Shows [child] unless Vivordo Premium is required and this account doesn't
+/// Shows [child] unless a subscription is required and this account doesn't
 /// have it, in which case it shows the paywall (premiumLocked). The
 /// subscription document is written by the server, so the gate opens by
 /// itself once a purchase, restore or code reaches it.
@@ -96,7 +96,7 @@ class _Loading extends StatelessWidget {
       const Scaffold(body: Center(child: CircularProgressIndicator()));
 }
 
-/// What ran out, for someone who had Premium before.
+/// What ran out, for someone who was subscribed before.
 enum PremiumEnded { trial, subscription }
 
 /// The hard paywall: after onboarding for new accounts ([ended] null), and
@@ -148,7 +148,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
   Future<void> _restore() => _run(() async {
     final restored = await SubscriptionService.restore(widget.uid);
     if (!restored && mounted) {
-      showToast(context, 'No Vivordo Premium purchase found on this Apple ID.');
+      showToast(context, 'No Vivordo subscription found on this Apple ID.');
     }
   }, "Couldn't restore purchases. Try again.");
 
@@ -235,8 +235,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
       ),
       null => (
         selected?.freeTrial == null
-            ? 'Get Vivordo Premium'
-            : 'Try Vivordo Premium free for ${_trialLength(selected!.freeTrial!, article: true)}',
+            ? 'Subscribe to Vivordo'
+            : 'Try Vivordo free for ${_trialLength(selected!.freeTrial!, article: true)}',
         'Everything Vivordo does, from day one.',
       ),
     };
