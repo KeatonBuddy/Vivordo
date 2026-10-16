@@ -18,6 +18,7 @@ import 'package:vivordo_health/src/services/account_deletion_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'blocked_users_screen.dart';
+import 'subscription_settings_screen.dart';
 import '../widgets/app_tour.dart';
 import '../widgets/privacy_support_links.dart';
 import '../widgets/outlook_connect.dart';
@@ -1154,6 +1155,31 @@ class _SettingsScreenState extends State<SettingsScreen>
                   const SizedBox(height: 10),
                   _pendingEmailBanner(pendingEmail),
                 ],
+
+                const _SectionLabel('Subscription'),
+                _SettingsCard(
+                  children: [
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.workspace_premium_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Plan and billing',
+                      subtitle: 'Your plan, renewal and purchases',
+                      trailing: const _Chevron(),
+                      onTap: () {
+                        final uid = FirebaseAuth.instance.currentUser?.uid;
+                        if (uid == null) return;
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                SubscriptionSettingsScreen(uid: uid),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
 
                 const _SectionLabel('Connections'),
                 _SettingsCard(

@@ -2,7 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Whether Vivordo is locked behind the paywall for this account.
 ///
@@ -22,6 +24,44 @@ bool premiumLocked({
   if (subscription['active'] != true) return true;
   final expires = (subscription['expiresAt'] as Timestamp?)?.toDate();
   return expires != null && !expires.isAfter(now);
+}
+
+/// What Settings → Subscription says about `subscriptions/{uid}` ([data]):
+/// a title and the lines under it. [price] is the plan's store price, like
+/// "CA\$69.99", when known. A promotional grant (staff, or given in
+/// RevenueCat) is "Free access".
+({String title, List<String> lines}) subscriptionSummary(
+  Map<String, dynamic>? data, {
+  required DateTime now,
+  String? price,
+}) {
+  final expires = (data?['expiresAt'] as Timestamp?)?.toDate();
+  final active =
+      data?['active'] == true && (expires == null || expires.isAfter(now));
+  if (!active) return (title: 'Not subscribed', lines: const []);
+  final product = data!['productId'] as String? ?? '';
+  if (product.startsWith('rc_promo')) {
+    return (title: 'Free access', lines: const ['Given by Vivordo']);
+  }
+  final yearly = product.contains('year') || product.contains('annual');
+  final per = yearly ? 'year' : 'month';
+  final date = expires == null ? null : DateFormat.MMMd().format(expires);
+  final renews = data['willRenew'] == true;
+  final lines = <String>[
+    if (data['period'] == 'trial' && date != null) ...[
+      'Free trial ends $date',
+      renews
+          ? 'Then ${price ?? 'the plan price'} a $per, renews $date'
+          : "Won't renew · access ends $date",
+    ] else if (date != null)
+      renews
+          ? 'Renews $date${price == null ? '' : ' · $price a $per'}'
+          : 'Cancelled · access until $date',
+    if (data['billingIssue'] == true)
+      "Apple couldn't charge your payment method. Update it in Settings → "
+          'Apple ID → Subscriptions.',
+  ];
+  return (title: 'Vivordo · ${yearly ? 'Yearly' : 'Monthly'}', lines: lines);
 }
 
 /// One plan on the paywall, in the store's own currency.
@@ -178,6 +218,35 @@ class SubscriptionService {
   static Future<void> redeemCode(String uid) async {
     await signIn(uid);
     await Purchases.presentCodeRedemptionSheet();
+  }
+
+  /// The store price of [productId], like "CA\$69.99", or null if the
+  /// plans can't be loaded.
+  static Future<String?> priceOf(String uid, String productId) async {
+    try {
+      return (await plans(uid))
+          .where((p) => p.package?.storeProduct.identifier == productId)
+          .firstOrNull
+          ?.price;
+    } catch (error) {
+      debugPrint('Plan price failed: $error');
+      return null;
+    }
+  }
+
+  /// Apple's subscription page, where the plan is changed or cancelled.
+  static Future<void> manage(String uid) async {
+    String? url;
+    try {
+      await signIn(uid);
+      url = (await Purchases.getCustomerInfo()).managementURL;
+    } catch (error) {
+      debugPrint('Management URL failed: $error');
+    }
+    await launchUrl(
+      Uri.parse(url ?? 'https://apps.apple.com/account/subscriptions'),
+      mode: LaunchMode.externalApplication,
+    );
   }
 
   /// Asks the server to re-read RevenueCat (the webhook does this too), so
