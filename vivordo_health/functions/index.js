@@ -38,6 +38,7 @@ const {
   DAILY_CALL_LIMIT,
   DAILY_CHAT_LIMIT,
 } = require("./ai_limits");
+const {aiConsentAllows} = require("./ai_consent");
 const {runAssistant, validateAssistantRequest} = require("./assistant");
 const {buildTask, runTask} = require("./ai_tasks");
 const {
@@ -780,6 +781,27 @@ exports.achievementUnlockNotification = onDocumentWritten(
 // =============================================================================
 
 /**
+ * Throws unless the account has consented to Vivordo AI (ai_consent.js). A
+ * withdrawn consent always refuses; an account with no record yet is served
+ * until app_config/ai has requireConsent: true.
+ * @param {string} uid Account ID.
+ */
+async function requireAiConsent(uid) {
+  const db = admin.firestore();
+  const [user, config] = await Promise.all([
+    db.collection("users").doc(uid).get(),
+    db.collection("app_config").doc("ai").get(),
+  ]);
+  if (!aiConsentAllows(user.get("aiConsent"),
+      config.get("requireConsent") === true)) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Vivordo AI is off for your account. Turn it on in Settings.",
+    );
+  }
+}
+
+/**
  * Throws unless the account may use a paid feature. Premium is required only
  * once app_config/premium has required: true (switched on at launch), so
  * this can be deployed before the paywall ships.
@@ -839,6 +861,7 @@ exports.assistant = onCall(
       if (validated.error) {
         throw new HttpsError("invalid-argument", validated.error);
       }
+      await requireAiConsent(uid);
       await requirePremium(uid);
       await consumeAiQuota(uid, {chat: true});
       const {reply, usage, memoryChanges} = await runAssistant({
@@ -871,6 +894,7 @@ exports.aiTask = onCall({secrets: [anthropicApiKey]}, async (request) => {
   const uid = requireAuth(request);
   const call = buildTask(request.data);
   if (call.error) throw new HttpsError("invalid-argument", call.error);
+  await requireAiConsent(uid);
   await requirePremium(uid);
   await consumeAiQuota(uid);
   const {text, usage} = await runTask(getAnthropicClient(), call);
@@ -899,6 +923,7 @@ exports.classifyPlanItems = onCall({secrets: [anthropicApiKey]},
       if (validated.error) {
         throw new HttpsError("invalid-argument", validated.error);
       }
+      await requireAiConsent(request.auth.uid);
       await requirePremium(request.auth.uid);
       // Its own daily budget, so it never uses up Vivordo AI chat's.
       const db = admin.firestore();
