@@ -33,7 +33,7 @@ void main() {
   testWidgets('custom wheels restore and save hours and minutes', (
     tester,
   ) async {
-    int? result;
+    ({int? minutes})? result;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -66,12 +66,20 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    expect(result, 125);
+    expect(result?.minutes, 125);
+
+    // None is a choice of its own, not the same as dismissing.
+    await tester.tap(find.text('Reminder'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('None'));
+    await tester.pumpAndSettle();
+    expect(result, isNotNull);
+    expect(result!.minutes, isNull);
   });
   final now = DateTime(2026, 9, 8, 8);
   final start = DateTime(2026, 9, 9, 1);
   DateTime? reminder(
-    int minutes, {
+    int? minutes, {
     bool completed = false,
     bool allDay = false,
     DateTime? at,
@@ -87,6 +95,8 @@ void main() {
       expect(reminder(minutes), start.subtract(Duration(minutes: minutes)));
     }
     expect(reminder(360), DateTime(2026, 9, 8, 19));
+    // A timed priority has no notification unless one was chosen.
+    expect(reminder(null), isNull);
   });
   test('completed, untimed, all-day and past reminders do not schedule', () {
     expect(reminder(60, completed: true), isNull);

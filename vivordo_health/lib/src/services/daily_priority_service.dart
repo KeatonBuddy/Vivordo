@@ -41,7 +41,7 @@ class DailyPriority {
     required this.source,
     this.sourceStart,
     this.sourceEnd,
-    this.reminderMinutes = 60,
+    this.reminderMinutes,
     this.reminderTimeMinutes,
     this.date,
     this.templateId,
@@ -66,7 +66,9 @@ class DailyPriority {
   final String source;
   final DateTime? sourceStart;
   final DateTime? sourceEnd;
-  final int reminderMinutes;
+
+  /// Minutes before [sourceStart] to notify; null is no notification.
+  final int? reminderMinutes;
   final int? reminderTimeMinutes;
   final DateTime? date;
   final String? templateId;
@@ -94,7 +96,7 @@ class DailyPriority {
       source: data['source'] as String? ?? 'manual',
       sourceStart: (data['sourceStart'] as Timestamp?)?.toDate(),
       sourceEnd: (data['sourceEnd'] as Timestamp?)?.toDate(),
-      reminderMinutes: (data['reminderMinutes'] as num?)?.toInt() ?? 60,
+      reminderMinutes: (data['reminderMinutes'] as num?)?.toInt(),
       reminderTimeMinutes: (data['reminderTimeMinutes'] as num?)?.toInt(),
       reference: document.reference,
       date: DateTime.tryParse(document.reference.parent.parent?.id ?? ''),
@@ -595,7 +597,7 @@ class DailyPriorityService {
     Set<int> selectedWeekdays = const {},
     DateTime? recurrenceEnd,
     Map<String, dynamic> planning = const {},
-    int reminderMinutes = 60,
+    int? reminderMinutes,
     int? reminderTimeMinutes,
     bool habit = false,
     int target = 1,
@@ -697,7 +699,7 @@ class DailyPriorityService {
           if ((data['planning'] as Map?)?['plannedDay'] != null)
             'plannedDay': localDayKey(date),
         },
-        'reminderMinutes': data['reminderMinutes'] ?? 60,
+        'reminderMinutes': data['reminderMinutes'],
         'reminderTimeMinutes': data['reminderTimeMinutes'],
         'completed': false,
         'dismissed': false,
@@ -727,7 +729,7 @@ class DailyPriorityService {
     required String title,
     DateTime? scheduledAt,
     Map<String, dynamic> planning = const {},
-    int reminderMinutes = 60,
+    int? reminderMinutes,
     int? reminderTimeMinutes,
   }) async {
     final collection = _collection(date);
@@ -939,7 +941,7 @@ class DailyPriorityService {
   static Future<void> editReminder(
     DailyPriority priority,
     String title,
-    int minutes,
+    int? minutes,
     int? reminderTimeMinutes,
   ) async {
     await priority.reference.update({
@@ -957,7 +959,7 @@ class DailyPriorityService {
     required DateTime date,
     required DateTime? scheduledAt,
     required bool completed,
-    required int reminderMinutes,
+    required int? reminderMinutes,
     required int? reminderTimeMinutes,
     Map<String, dynamic>? planning,
     String recurrence = 'none',
@@ -1112,7 +1114,7 @@ class DailyPriorityService {
         ? null
         : priorityReminderTime(
             start: (data['sourceStart'] as Timestamp?)?.toDate(),
-            minutesBefore: (data['reminderMinutes'] as num?)?.toInt() ?? 60,
+            minutesBefore: (data['reminderMinutes'] as num?)?.toInt(),
             completed: data['completed'] == true,
             allDay: data['isAllDay'] == true,
             now: DateTime.now(),
