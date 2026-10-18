@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/screens/workout_summary_screen.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
+import 'package:vivordo_health/src/utils/personal_best.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 Future<void> _pumpSummary(WidgetTester tester, SavedWorkout workout) async {
@@ -79,5 +80,91 @@ void main() {
         tester.widget<Text>(find.text(text)).style?.color;
     expect(colorOf('155 lb'), const Color(0xFFB45309)); // light theme
     expect(colorOf('135 lb'), isNot(const Color(0xFFB45309)));
+  });
+
+  testWidgets('the summary names every exercise\'s change, not "N more"', (
+    tester,
+  ) async {
+    WorkoutExerciseRecord lift(
+      String name,
+      ExerciseAttemptTrend trend, {
+      required double weight,
+      required double previousWeight,
+      required int reps,
+      required int previousReps,
+    }) => WorkoutExerciseRecord(
+      name: name,
+      category: 'Arms',
+      sets: [WorkoutSetRecord(weightLbs: weight, reps: reps)],
+      attemptTrend: trend,
+      currentAttemptWeightLbs: weight,
+      previousAttemptWeightLbs: previousWeight,
+      currentAttemptReps: reps,
+      previousAttemptReps: previousReps,
+    );
+    await _pumpSummary(
+      tester,
+      SavedWorkout(
+        id: 'arms',
+        completedAt: DateTime(2026, 10, 17, 7),
+        durationSeconds: 2496,
+        exerciseCount: 5,
+        setCount: 5,
+        exercises: [
+          lift(
+            'Overhead extension',
+            ExerciseAttemptTrend.declined,
+            weight: 30,
+            previousWeight: 30,
+            reps: 8,
+            previousReps: 10,
+          ),
+          lift(
+            'EZ bar extension',
+            ExerciseAttemptTrend.declined,
+            weight: 49,
+            previousWeight: 50,
+            reps: 10,
+            previousReps: 10,
+          ),
+          lift(
+            'Hammer curl',
+            ExerciseAttemptTrend.declined,
+            weight: 25,
+            previousWeight: 30,
+            reps: 10,
+            previousReps: 10,
+          ),
+          lift(
+            'Preacher curl',
+            ExerciseAttemptTrend.improved,
+            weight: 40,
+            previousWeight: 35,
+            reps: 10,
+            previousReps: 10,
+          ),
+          lift(
+            'Cable curl',
+            ExerciseAttemptTrend.maintained,
+            weight: 20,
+            previousWeight: 20,
+            reps: 12,
+            previousReps: 12,
+          ),
+        ],
+      ),
+    );
+    final summary = find.textContaining('Compared with your previous');
+    final text = tester.widget<Text>(summary).data!;
+    expect(text, isNot(contains('more exercise')));
+    expect(
+      text,
+      contains(
+        'Compared with your previous attempts, Preacher curl increased by '
+        '5 lb; Overhead extension completed 2 fewer reps at the same weight; '
+        'EZ bar extension used 1 lb less; Hammer curl used 5 lb less; '
+        'Cable curl matched the previous attempt.',
+      ),
+    );
   });
 }

@@ -916,28 +916,15 @@ String _exerciseComparisonSentence({
   required List<WorkoutExerciseRecord> declined,
   required List<WorkoutExerciseRecord> maintained,
 }) {
-  if (improved.isEmpty && declined.isEmpty && maintained.isEmpty) return '';
-  final details = <String>[];
-  for (final exercise in improved.take(2)) {
-    details.add(_exerciseDifferenceSentence(exercise));
-  }
-  if (improved.length > 2) {
-    details.add(
-      '${improved.length - 2} more ${improved.length - 2 == 1 ? 'exercise improved' : 'exercises improved'}',
-    );
-  }
-  for (final exercise in declined.take(2)) {
-    details.add(_exerciseDifferenceSentence(exercise));
-  }
-  if (declined.length > 2) {
-    details.add(
-      '${declined.length - 2} more ${declined.length - 2 == 1 ? 'exercise was lower' : 'exercises were lower'}',
-    );
-  }
-  if (details.isEmpty && maintained.isNotEmpty) {
-    return ' Compared with your previous attempt, ${maintained.length == 1 ? maintained.first.name : '${maintained.length} exercises'} stayed consistent.';
-  }
-  return ' Compared with your previous attempts, ${details.join('; ')}.';
+  // Every exercise with a previous attempt is named: better first, then
+  // lower, then the ones that held steady.
+  final details = [
+    for (final exercise in [...improved, ...declined, ...maintained])
+      _exerciseDifferenceSentence(exercise),
+  ];
+  if (details.isEmpty) return '';
+  return ' Compared with your previous '
+      '${details.length == 1 ? 'attempt' : 'attempts'}, ${details.join('; ')}.';
 }
 
 String _formatNumber(double value) =>
