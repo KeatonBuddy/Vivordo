@@ -185,6 +185,8 @@ Map<String, dynamic> projectScreenFields(
       'sleep': ['avg', 'bedtime', 'wakeTime', 'measure'],
       'stress': ['current', 'avg', 'algorithm_version', 'computedAt'],
       'hrv': ['stressScore'],
+      // For the Sunday weekly review card (WeeklyReviewService.watchCard).
+      'morning_check_in': ['feel', 'sleep', 'dismissed'],
     },
     MetricsProjection.activity => throw ArgumentError(
       'Use activity projection',

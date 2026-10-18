@@ -557,4 +557,22 @@ void main() {
     expect(identical(values.last.days, before.days), isTrue);
     await sub.cancel();
   });
+
+  test("the daily brief carries the morning check-in for My Day's Sunday "
+      'card', () async {
+    final values = <MetricWindow>[];
+    final sub = watch(
+      start: '2026-09-20',
+      projection: MetricsProjection.dailyBrief,
+    ).listen(values.add);
+    await settle();
+    Map? checkIn() => values.last.days[day]?['morning_check_in'] as Map?;
+    expect(checkIn()?['feel'], isNull);
+    await db.doc('users/a/metrics_daily/$day').update({
+      'morning_check_in': {'feel': 3, 'sleep': 2, 'note': 'not carried'},
+    });
+    await settle();
+    expect(checkIn(), {'feel': 3, 'sleep': 2, 'dismissed': null});
+    await sub.cancel();
+  });
 }

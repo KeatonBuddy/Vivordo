@@ -220,7 +220,12 @@ class WeeklyReviewService {
   /// My Day's card on Sundays ([day]), once the morning check-in is
   /// answered or dismissed (or from noon, when its pop-up stops, for anyone
   /// who skips it), until hidden for the day; null otherwise.
-  static Stream<WeeklyReviewCardState?> watchCard(DateTime day) {
+  /// [checkIns] is that day's `morning_check_in`, from My Day's own metrics
+  /// window, so the day's full document isn't streamed a second time.
+  static Stream<WeeklyReviewCardState?> watchCard(
+    DateTime day, {
+    required Stream<Map?> checkIns,
+  }) {
     final user = _user;
     if (user == null || day.weekday != DateTime.sunday) {
       return Stream.value(null);
@@ -275,8 +280,9 @@ class WeeklyReviewService {
             }, onError: controller.addError),
           )
           ..add(
-            user.collection('metrics_daily').doc(key).snapshots().listen((doc) {
-              checkIn = doc.data()?['morning_check_in'] as Map?;
+            checkIns.listen((value) {
+              if (checkInLoaded && mapEquals(value, checkIn)) return;
+              checkIn = value;
               checkInLoaded = true;
               unawaited(emit());
             }, onError: controller.addError),

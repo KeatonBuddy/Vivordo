@@ -225,7 +225,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _burnoutSnapshot.connect(_burnoutStreamFor(day));
     _trainingLoadSnapshot.connect(watchTrainingLoad(day));
     _weeklyReviewSnapshot.connectFactory(
-      () => WeeklyReviewService.watchCard(day),
+      () => WeeklyReviewService.watchCard(
+        day,
+        // The same shared window as the brief below: no second listener.
+        checkIns: (_metricsStreamFor(day) ?? const Stream.empty()).map((w) {
+          if (w.error != null && w.days.isEmpty) throw w.error!;
+          return w.days[localDayKey(day)]?['morning_check_in'] as Map?;
+        }),
+      ),
     );
     _loadEnergyFactors(day);
     final stream = _metricsStreamFor(day);
