@@ -337,6 +337,8 @@ class HealthService {
   /// as it's connected. The server then scores the imported days in order
   /// (functions/history_import.js), so the usuals exist on day one. A part
   /// is marked done only once it's scored; an unfinished one runs again.
+  /// A calendar that came back empty or failed is retried once a day (see
+  /// [calendarHistoryDue]), and with nothing recorded nothing is rescored.
   /// Calls queue behind each other, so onboarding's call after the calendar
   /// connects picks up what the earlier one (from Health) couldn't.
   /// [recent] off skips the usual 30-day sync when there's no Health to
@@ -367,33 +369,60 @@ class HealthService {
         (run['health'] == 'done' ||
             (run['health'] == null && run['state'] == 'done'));
     final importHealth = !healthDone && consent.containsValue(true);
+    final today = localDayKey(DateTime.now());
     final importCalendar =
-        !(run is Map && run['calendar'] == 'done') &&
-        (allowCalendar || data?['onboardingCompleted'] == true) &&
+        calendarHistoryDue(
+          run,
+          explicit: allowCalendar,
+          onboarded: data?['onboardingCompleted'] == true,
+          today: today,
+        ) &&
         await DayRecordService.calendarConnected();
     if (!importHealth && !importCalendar) {
       if (recent) await syncToFirestore(daysBack: 30);
       return;
     }
-    await user.set({
-      'historyImport': {
-        'state': 'running',
-        'startedAt': FieldValue.serverTimestamp(),
-      },
-    }, SetOptions(merge: true));
-    historyStep.value = importHealth ? 'health' : 'calendar';
-    if (importHealth || recent) {
-      await syncToFirestore(daysBack: importHealth ? historyDays : 30);
+    // Marked only once something will be imported: while it's running the
+    // server leaves old days to rebuildHistory, which then rescores them all.
+    var running = false;
+    Future<void> markRunning() async {
+      running = true;
+      await user.set({
+        'historyImport': {
+          'state': 'running',
+          'startedAt': FieldValue.serverTimestamp(),
+        },
+      }, SetOptions(merge: true));
+    }
+
+    if (importHealth) {
+      await markRunning();
+      historyStep.value = 'health';
+      await syncToFirestore(daysBack: historyDays);
     }
     var calendar = false;
     if (importCalendar) {
       historyStep.value = 'calendar';
       try {
-        calendar = await DayRecordService.syncHistory();
+        calendar = await DayRecordService.syncHistory(
+          beforeWrite: running ? null : markRunning,
+        );
       } catch (error) {
         debugPrint('HealthService: calendar history failed: $error');
       }
+      if (!calendar) {
+        await user.set({
+          'historyImport': {'calendarTriedOn': today},
+        }, SetOptions(merge: true));
+      }
     }
+    if (!running) {
+      // The calendar had nothing to record: just the usual sync.
+      if (recent) await syncToFirestore(daysBack: 30);
+      historyStep.value = 'done';
+      return;
+    }
+    if (!importHealth && recent) await syncToFirestore(daysBack: 30);
     if (FirebaseAuth.instance.currentUser?.uid != uid) return;
     historyStep.value = 'scoring';
     try {
@@ -415,6 +444,21 @@ class HealthService {
       );
     }
     historyStep.value = 'done';
+  }
+
+  /// Whether to read the calendar's history now: until it's recorded, when
+  /// onboarding asks ([explicit]), or after onboarding at most once a day,
+  /// so an empty or unreadable calendar isn't fetched on every launch.
+  @visibleForTesting
+  static bool calendarHistoryDue(
+    Object? run, {
+    required bool explicit,
+    required bool onboarded,
+    required String today,
+  }) {
+    if (run is Map && run['calendar'] == 'done') return false;
+    if (explicit) return true;
+    return onboarded && !(run is Map && run['calendarTriedOn'] == today);
   }
 
   /// Request HealthKit permission for a single metric, then sync it.

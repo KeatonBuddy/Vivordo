@@ -151,7 +151,10 @@ class DayRecordService {
   /// Records the last [historyDays] days for the history import. False,
   /// with nothing written, when no calendar is connected or the read came
   /// back empty: those days would be recorded as quiet ones for good.
-  static Future<bool> syncHistory() async {
+  /// [beforeWrite] runs once there are events to record, before any is.
+  static Future<bool> syncHistory({
+    Future<void> Function()? beforeWrite,
+  }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || !await calendarConnected()) return false;
     final now = DateTime.now();
@@ -161,6 +164,7 @@ class DayRecordService {
     // A failed read throws; four weeks read fine but with no events at all
     // is still likelier a wrong calendar than a real month, so not recorded.
     if (calendar.events.isEmpty) return false;
+    await beforeWrite?.call();
     await _sync(historyDays, true);
     return true;
   }
