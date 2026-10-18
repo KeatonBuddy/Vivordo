@@ -29,6 +29,7 @@ class HomeWidgetService {
   static bool _publishing = false;
   static bool _publishingCalendar = false;
   static DateTime? _lastCalendarRefresh;
+  static MoodSnapshotPublished? _moodPublished;
   static String? _siriUid;
   static String? _siriGeneration;
 
@@ -243,7 +244,7 @@ class HomeWidgetService {
         await _channel.invokeMethod<void>('removeMoodCheckIns', [checkIn.id]);
       }
       // Saving a check-in already refreshes the widget.
-      if (queued.isEmpty) await publishMoodSnapshot();
+      if (queued.isEmpty) await publishMoodSnapshot(onlyIfStale: true);
     } on MissingPluginException {
       // The native widget is available after installing an iOS build.
     } on PlatformException catch (error) {
@@ -258,13 +259,24 @@ class HomeWidgetService {
   /// Tells the Mood widget who is signed in, how many check-ins today has
   /// and the latest one. One read rather than a listener: day documents
   /// carry large heart-rate arrays, and a listener re-sends the whole day on
-  /// every health write.
-  static Future<void> publishMoodSnapshot() async {
+  /// every health write. [onlyIfStale] (on resume) skips the read when
+  /// [moodSnapshotCurrent].
+  static Future<void> publishMoodSnapshot({bool onlyIfStale = false}) async {
     if (!Platform.isIOS) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final generation = _accountGeneration;
-    final today = localDayKey(DateTime.now());
+    final now = DateTime.now();
+    final today = localDayKey(now);
+    if (onlyIfStale &&
+        moodSnapshotCurrent(
+          _moodPublished,
+          uid: user.uid,
+          day: today,
+          now: now,
+        )) {
+      return;
+    }
     try {
       final day = await FirebaseFirestore.instance
           .collection('users')
@@ -278,6 +290,7 @@ class HomeWidgetService {
         'moodDay': today,
         ...moodWidgetValues(day.data()?['mood']),
       });
+      _moodPublished = (uid: user.uid, day: today, at: now);
     } on MissingPluginException {
       // The native widget is available after installing an iOS build.
     } catch (error) {
@@ -298,6 +311,7 @@ class HomeWidgetService {
     _lastDemandSignature = null;
     _lastMeetingsSignature = null;
     _lastCalendarRefresh = null;
+    _moodPublished = null;
     _siriUid = null;
     _siriGeneration = null;
     if (!Platform.isIOS) return;

@@ -70,3 +70,21 @@ Map<String, Object> moodWidgetValues(Object? mood) {
     'moodLastAt': lastAt?.millisecondsSinceEpoch ?? 0,
   };
 }
+
+/// The Mood widget's last update: for which account and day, and when.
+typedef MoodSnapshotPublished = ({String uid, String day, DateTime at});
+
+/// Whether the Mood widget is current enough to skip rereading today's day
+/// document when the app resumes: updated for this account today within
+/// the last hour. Every in-app mood check-in updates it right away, so this
+/// only bounds how late one made on another device shows up.
+bool moodSnapshotCurrent(
+  MoodSnapshotPublished? last, {
+  required String uid,
+  required String day,
+  required DateTime now,
+}) =>
+    last != null &&
+    last.uid == uid &&
+    last.day == day &&
+    now.difference(last.at) < const Duration(hours: 1);
