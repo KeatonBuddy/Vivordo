@@ -13,6 +13,38 @@ typedef MetricFieldReader = Object? Function(String path);
 const preparedHeartKey = '_preparedHeart';
 const preparedStressKey = '_preparedStress';
 
+/// [DayHeartReadings] for My Day's event reactions, on the daily-brief
+/// window's days from [reactionHeartDays] before its last day.
+const reactionHeartKey = '_reactionHeart';
+const reactionHeartDays = 14;
+
+/// A day's merged heart-rate readings (mergedHeartRateHistory, no daily
+/// fallback). Equal when the readings are, so a write that doesn't touch
+/// heart rate doesn't rebuild the screen.
+class DayHeartReadings {
+  const DayHeartReadings(this.readings);
+  final List<HeartRateHistoryReading> readings;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! DayHeartReadings) return false;
+    if (identical(readings, other.readings)) return true;
+    if (readings.length != other.readings.length) return false;
+    for (var i = 0; i < readings.length; i++) {
+      final a = readings[i], b = other.readings[i];
+      if (a.bpm != b.bpm ||
+          a.timestamp != b.timestamp ||
+          a.source != b.source) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => readings.length;
+}
+
 /// Small, immutable candidates. Selection stays clock-dependent so a cached
 /// Bluetooth value stops overriding newer readings when it is no longer live.
 class PreparedHeartRate {

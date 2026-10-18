@@ -46,6 +46,7 @@ import '../widgets/tomorrow_preview.dart';
 import '../widgets/daily_brief_card.dart';
 import '../src/utils/owned_stream_snapshot.dart';
 import '../src/utils/server_capacity.dart';
+import '../src/utils/screen_metric_projection.dart';
 import '../src/services/metrics_repository.dart';
 import '../src/utils/day_key.dart';
 import '../widgets/burnout_card.dart';
@@ -240,6 +241,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           isFromCache: snapshot.isFromCache || snapshot.error != null,
         );
         _briefMetrics = metrics;
+        _takeHeart(snapshot.days, day);
         return metrics.summarize(DateTime.now());
       }),
     );
@@ -354,7 +356,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   List<HeartRateHistoryReading> _heartToday = const [];
   List<HeartRateHistoryReading> _heartHistory = const [];
   String? _heartHistoryDay;
-  DateTime? _heartLoadedAt;
 
   /// Today's past events with enough heart rate to judge, by sourceEventKey.
   Map<String, BodyReaction> _reactions = const {};
@@ -371,49 +372,32 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// saved again only when late-syncing samples or the event's rating change.
   final _reactionsSaved = <String, String>{};
 
-  Future<void> _loadHeart() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final day = _priorityDay;
+  /// The brief window's days last read for heart readings.
+  Map<String, Map<String, dynamic>>? _heartDays;
+
+  /// Today's heart readings and the [reactionHeartDays] before, from My
+  /// Day's own metrics window, which already listens to those days; updated
+  /// whenever new heart rate syncs.
+  void _takeHeart(Map<String, Map<String, dynamic>> days, DateTime day) {
+    if (identical(days, _heartDays) ||
+        !DateUtils.isSameDay(day, _priorityDay)) {
+      return;
+    }
+    _heartDays = days;
     final key = localDayKey(day);
-    _heartLoadedAt = DateTime.now();
-    final days = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('metrics_daily');
-    List<HeartRateHistoryReading> readings(
-      String id,
-      Map<String, dynamic>? data,
-    ) => data == null
-        ? const []
-        : mergedHeartRateHistory(
-            data,
-            fallbackDate: DateTime.parse(id),
-            includeDailyFallback: false,
-          );
-    try {
-      var history = _heartHistory;
-      if (_heartHistoryDay != key) {
-        final docs = await days
-            .orderBy(FieldPath.documentId)
-            .startAt([localDayKey(DateTime(day.year, day.month, day.day - 14))])
-            .endBefore([key])
-            .get();
-        history = [
-          for (final doc in docs.docs) ...readings(doc.id, doc.data()),
-        ];
-      }
-      final today = await days.doc(key).get();
-      if (!mounted || !DateUtils.isSameDay(day, _priorityDay)) return;
-      _heartHistory = history;
-      _heartHistoryDay = key;
-      _heartToday = readings(key, today.data());
-      _updateReactions();
-      if (DateUtils.isSameDay(day, DateTime.now())) {
-        unawaited(_catchUpYesterday(day));
-      }
-    } catch (error) {
-      debugPrint('Could not load heart rate for event reactions: $error');
+    List<HeartRateHistoryReading> of(String id) =>
+        (days[id]?[reactionHeartKey] as DayHeartReadings?)?.readings ??
+        const [];
+    _heartHistory = [
+      for (final id
+          in (days.keys.where((id) => id.compareTo(key) < 0).toList()..sort()))
+        ...of(id),
+    ];
+    _heartToday = of(key);
+    _heartHistoryDay = key;
+    if (mounted) _updateReactions();
+    if (DateUtils.isSameDay(day, DateTime.now())) {
+      unawaited(_catchUpYesterday(day));
     }
   }
 
@@ -652,11 +636,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       if (!_handleDayRollover()) {
         _refreshBriefClock();
         setState(() {});
-        final loaded = _heartLoadedAt;
-        if (loaded != null &&
-            DateTime.now().difference(loaded) > const Duration(minutes: 15)) {
-          unawaited(_loadHeart());
-        }
       }
     });
   }
@@ -784,7 +763,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       _calendarLoadError = null;
       _isLoading = false;
     });
-    unawaited(_loadHeart());
     unawaited(_loadPatterns());
     try {
       await DailyPriorityService.materializeRecurring(dayStart);

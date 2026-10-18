@@ -4,6 +4,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/services/metrics_repository.dart';
 import 'package:vivordo_health/src/utils/daily_brief_metrics.dart';
+import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/home_metrics_summary.dart';
 import 'package:vivordo_health/src/utils/screen_metric_projection.dart';
 
@@ -499,5 +500,61 @@ void main() {
     for (final sub in subs) {
       await sub.cancel();
     }
+  });
+
+  test('the daily brief carries 15 days of heart readings for event '
+      'reactions, the same as reading the days directly, and a write that '
+      "doesn't touch heart rate leaves them as they were", () async {
+    Map<String, dynamic> heart(String key, int bpm) => {
+      'steps': {'sum': bpm},
+      'heart_rate': {
+        'source': 'apple_health',
+        'entries': [
+          for (var m = 0; m < 3; m++)
+            {
+              'bpm': bpm + m,
+              'timestamp': Timestamp.fromDate(
+                DateTime.parse(key).add(Duration(hours: 9, minutes: m)),
+              ),
+            },
+        ],
+      },
+    };
+    final keys = ['2026-09-09', '2026-09-10', '2026-09-20', day];
+    for (final (i, key) in keys.indexed) {
+      await db.doc('users/a/metrics_daily/$key').set(heart(key, 60 + i));
+    }
+    final values = <MetricWindow>[];
+    final sub = watch(
+      start: '2026-08-27',
+      projection: MetricsProjection.dailyBrief,
+    ).listen(values.add);
+    await settle();
+    List<String> readings(String key) => [
+      for (final r
+          in (values.last.days[key]?[reactionHeartKey] as DayHeartReadings?)
+                  ?.readings ??
+              const <HeartRateHistoryReading>[])
+        '${r.timestamp.toIso8601String()} ${r.bpm} ${r.source}',
+    ];
+    // 2026-09-09 is 15 days before; 2026-09-10 is the first of the 14.
+    expect(readings('2026-09-09'), isEmpty);
+    for (final key in keys.skip(1)) {
+      final direct = mergedHeartRateHistory(
+        (await db.doc('users/a/metrics_daily/$key').get()).data()!,
+        fallbackDate: DateTime.parse(key),
+        includeDailyFallback: false,
+      );
+      expect(readings(key), [
+        for (final r in direct)
+          '${r.timestamp.toIso8601String()} ${r.bpm} ${r.source}',
+      ]);
+      expect(readings(key), hasLength(3));
+    }
+    final before = values.last;
+    await db.doc('users/a/metrics_daily/$day').update({'other': 1});
+    await settle();
+    expect(identical(values.last.days, before.days), isTrue);
+    await sub.cancel();
   });
 }
