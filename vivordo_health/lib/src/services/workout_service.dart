@@ -351,11 +351,32 @@ Future<DocumentSnapshot<Map<String, dynamic>>?> _readOrNull(
   }
 }
 
+/// Whether an account's personal bests and "vs last time" comparisons must
+/// be rebuilt from its workout history: on a new rebuild version, or after
+/// a save that couldn't look up the previous lifts (offline), stamped
+/// `personalBestsStaleAt`, newer than the last rebuild.
+///
+/// ponytail: a stale workout that syncs while a rebuild is between reading
+/// and committing gets a stamp just before `personalBestBackfilledAt` and is
+/// missed until the next stale save; record the rebuild's read time if
+/// that ever shows up.
+@visibleForTesting
+bool personalBestsNeedRebuild(Map<String, dynamic>? user, int version) {
+  final done = (user?['personalBestBackfillVersion'] as num?)?.toInt() ?? 0;
+  if (done < version) return true;
+  final stale = user?['personalBestsStaleAt'];
+  if (stale is! Timestamp) return false;
+  final rebuilt = user?['personalBestBackfilledAt'];
+  return rebuilt is! Timestamp || stale.compareTo(rebuilt) > 0;
+}
+
 class WorkoutService {
   const WorkoutService._();
 
   static const int _legacyExerciseMinutesMigrationVersion = 1;
-  static const int _personalBestBackfillVersion = 3;
+  // 4: rebuild once for workouts saved offline before stale saves were
+  // stamped, which have no comparisons or personal bests.
+  static const int _personalBestBackfillVersion = 4;
 
   static Future<int>? _legacyExerciseMinutesMigration;
   static String? _legacyExerciseMinutesMigrationUserId;
@@ -386,18 +407,22 @@ class WorkoutService {
   static Future<int> _backfillPersonalBests(String userId) async {
     final db = FirebaseFirestore.instance;
     final userReference = db.collection('users').doc(userId);
-    final userSnapshot = await userReference.get();
-    if (((userSnapshot.data()?['personalBestBackfillVersion'] as num?)
-                ?.toInt() ??
-            0) >=
-        _personalBestBackfillVersion) {
+    // Server only: offline, the phone's cache can hold part of the history,
+    // and rebuilding from that would erase real bests. It throws instead and
+    // is retried next time.
+    const server = GetOptions(source: Source.server);
+    final userSnapshot = await userReference.get(server);
+    if (!personalBestsNeedRebuild(
+      userSnapshot.data(),
+      _personalBestBackfillVersion,
+    )) {
       return 0;
     }
 
     final workouts = await userReference
         .collection('workouts')
         .orderBy('completedAt')
-        .get();
+        .get(server);
     final currentRecords = <String, _StoredPersonalBest>{};
     final latestAttempts = <String, _StoredExerciseAttempt>{};
     final workoutUpdates = <_PersonalBestWorkoutUpdate>[];
@@ -1015,6 +1040,20 @@ class WorkoutService {
         .map((exercise) => _withoutPersonalBestMetadata(exercise.toMap()))
         .toList(growable: false);
     var personalBestCount = 0;
+    // Offline without the phone having a copy, the previous lift and best
+    // can't be read, so this workout gets no comparison or personal best.
+    // Stamp the account so the next online start rebuilds them from history.
+    final lookupsMissing = personalBestCandidates.keys.any(
+      (name) =>
+          personalBestSnapshots[name] == null ||
+          latestAttemptSnapshots[name] == null,
+    );
+    if (lookupsMissing) {
+      batch.set(db.collection('users').doc(user.uid), {
+        'personalBestsStaleAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      _personalBestBackfill = null;
+    }
 
     for (final entry in personalBestCandidates.entries) {
       final candidate = entry.value;
