@@ -1620,9 +1620,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           ? server.note
                           : capacityEmpty?.label ?? capacityNote,
                       capacityEmptyIcon: capacityEmpty?.icon,
-                      onCapacityTap: server == null
-                          ? null
-                          : () => _showCapacityBreakdown(server, energyWords),
+                      onCapacityTap: server != null
+                          ? () => _showCapacityBreakdown(server, energyWords)
+                          // No server Capacity yet (the phone's estimate, or
+                          // none before sleep): no breakdown, but past days'
+                          // history is still worth seeing.
+                          : () => _showCapacityEstimate(
+                              capacityScore,
+                              capacityEmpty?.word,
+                              capacityEmpty?.footer,
+                            ),
                       onScheduleTap: !ready
                           ? null
                           : () => _showDemandBreakdown(
@@ -1750,6 +1757,26 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   /// Why today's Capacity is what it is: each part against your usual.
   /// [words]: words view's Energy state, shown instead of numbers.
+  void _showCapacityEstimate(int? score, String? emptyWord, String? why) =>
+      showScoreBreakdown(
+        context,
+        kicker: 'CAPACITY TODAY',
+        score: score ?? 0,
+        // Nothing to score yet: the empty state's word stands in.
+        words: score == null
+            ? (word: emptyWord ?? 'Not yet', tone: BriefTone.usual)
+            : null,
+        summary: score == null
+            ? why ?? 'Not worked out yet'
+            : 'Estimated on this phone',
+        sections: const [],
+        empty:
+            'Today\'s breakdown appears once last night\'s sleep syncs and '
+            'Vivordo works out your Capacity.',
+        footer: 'History shows the Capacity saved for earlier days.',
+        history: const ScoreHistory(kind: ScoreHistoryKind.capacity),
+      );
+
   void _showCapacityBreakdown(ServerCapacity server, [BriefState? words]) {
     final usual = server.usual?.round();
     final diff = usual == null ? 0 : server.score - usual;
