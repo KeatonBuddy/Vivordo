@@ -137,6 +137,11 @@ Future<String?> _firestoreEarliest(String collection) async {
 /// One day's values on the chart.
 typedef _Day = ({DateTime day, double? value, double? planned, String detail});
 
+/// A day took well over its plan. Days with nothing planned never count:
+/// any effort at all would be "over" nothing.
+bool _ranOver(double planned, double took) =>
+    planned > 0 && took > planned * 1.25;
+
 const _purple = Color(0xFF7F77DD);
 const _line = Color(0xFFA99BFF);
 const _orange = Color(0xFFF08A5D);
@@ -641,7 +646,7 @@ class _ChartPainter extends CustomPainter {
               const Radius.circular(2),
             ),
             Paint()
-              ..color = (took > plan * 1.25 ? _orange : _line).withValues(
+              ..color = (_ranOver(plan, took) ? _orange : _line).withValues(
                 alpha: i == selected ? 1 : .85,
               ),
           );
@@ -723,13 +728,20 @@ class _Detail extends StatelessWidget {
         for (final d in days)
           if (d.value != null) d,
       ];
+      final planned = [
+        for (final d in counted)
+          if ((d.planned ?? 0) > 0) d,
+      ];
       title = switch (kind) {
         ScoreHistoryKind.plannedVsActual =>
-          counted.isEmpty
-              ? 'Planned vs actual'
+          planned.isEmpty
+              ? counted.isEmpty
+                    ? 'Planned vs actual'
+                    : 'Nothing planned on these days'
               : 'Ran over the plan on '
-                    '${counted.where((d) => d.value! > d.planned! * 1.25).length} '
-                    'of ${counted.length} days',
+                    '${planned.where((d) => _ranOver(d.planned!, d.value!)).length} '
+                    'of ${planned.length} '
+                    '${planned.length == 1 ? 'day' : 'days'}',
         _ when counted.isEmpty => 'No days saved here',
         _ =>
           'Average ${(counted.fold<double>(0, (s, d) => s + d.value!) / counted.length).round()}'
@@ -737,7 +749,8 @@ class _Detail extends StatelessWidget {
       };
       body = switch (kind) {
         ScoreHistoryKind.plannedVsActual =>
-          'Grey: planned that day · purple: what it took',
+          'Grey: planned that day · purple: what it took'
+              '${planned.length < counted.length ? ' · days with nothing planned aren\'t counted' : ''}',
         _ => 'Tap a day to see why.',
       };
     }

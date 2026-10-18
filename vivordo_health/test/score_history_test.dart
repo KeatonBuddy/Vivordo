@@ -170,4 +170,30 @@ void main() {
     );
     expect(find.text('Ran over the plan on 1 of 2 days'), findsOneWidget);
   });
+
+  testWidgets('days with nothing planned are not counted as over', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      {
+        '2026-10-16': {
+          'effort': {'total': 20},
+        },
+        '2026-10-17': {
+          'effort': {'total': 8},
+        },
+      },
+      kind: ScoreHistoryKind.plannedVsActual,
+      planned: {
+        '2026-10-16': {'points': 30},
+        '2026-10-17': {'points': 0},
+      },
+    );
+    expect(find.text('Ran over the plan on 0 of 1 day'), findsOneWidget);
+    expect(
+      find.textContaining('days with nothing planned aren\'t counted'),
+      findsOneWidget,
+    );
+  });
 }
