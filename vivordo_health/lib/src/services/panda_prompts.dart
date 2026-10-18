@@ -300,10 +300,10 @@ class PandaPrompts {
       final dayStart = DateTime(now.year, now.month, now.day - 3);
       final events = await CalendarService.getEventsBetween(
         dayStart,
-        dayStart.add(const Duration(days: _scheduleDays + 1)),
+        dayStart.add(const Duration(days: _laterDays + 1)),
       ).timeout(const Duration(seconds: 12), onTimeout: () => <gcal.Event>[]);
-      final digest = _buildScheduleDigest(events, dayStart);
-      return digest.isEmpty ? null : digest;
+      final context = scheduleContext(events, dayStart);
+      return context.isEmpty ? null : context;
     } catch (e) {
       if (kDebugMode) debugPrint('[schedule] background fetch failed: $e');
       return null;
@@ -442,6 +442,48 @@ class PandaPrompts {
   }
 
   static const _scheduleDays = 10; // 3 days back + today + 6 ahead
+  // Further ahead, events are listed one per line so Vivordo AI can find an
+  // appointment weeks away ("when is my car service in November?").
+  static const _laterDays = 93; // about 3 months
+  // The assistant function keeps 8000 characters of each context item.
+  static const _scheduleChars = 7800;
+
+  /// The SCHEDULE sent to Vivordo AI: the day-by-day digest, then later
+  /// events one per line, cut at [_scheduleChars] with a note saying so.
+  @visibleForTesting
+  static String scheduleContext(List<gcal.Event> events, DateTime dayStart) {
+    final digest = _buildScheduleDigest(events, dayStart);
+    final laterStart = dayStart.add(const Duration(days: _scheduleDays));
+    final laterEnd = dayStart.add(const Duration(days: _laterDays));
+    final later = <(DateTime, String)>[];
+    for (final e in events) {
+      final start = e.start?.dateTime?.toLocal();
+      if (start == null || e.status == 'cancelled') continue;
+      if (start.isBefore(laterStart) || !start.isBefore(laterEnd)) continue;
+      final title = (e.summary ?? '').trim();
+      later.add((
+        start,
+        '${_weekdayAbbr[start.weekday - 1]} ${localDayKey(start)} '
+            '${start.hour.toString().padLeft(2, '0')}:'
+            '${start.minute.toString().padLeft(2, '0')} '
+            '${title.isEmpty ? 'event' : title}'
+            '${CalendarService.isOutlook(e) ? ' (Outlook)' : ''}',
+      ));
+    }
+    if (later.isEmpty) return digest;
+    later.sort((a, b) => a.$1.compareTo(b.$1));
+    final out = StringBuffer(digest.isEmpty ? '' : '$digest\n')
+      ..write('Later, through ${localDayKey(laterEnd)}:');
+    for (var i = 0; i < later.length; i++) {
+      final line = '\n${later[i].$2}';
+      if (out.length + line.length > _scheduleChars - 40) {
+        out.write('\n(${later.length - i} later events not shown)');
+        break;
+      }
+      out.write(line);
+    }
+    return out.toString();
+  }
 
   /// Builds a per-day schedule digest for [_scheduleDays] days from
   /// [dayStart] (inclusive) in local time, e.g.:
