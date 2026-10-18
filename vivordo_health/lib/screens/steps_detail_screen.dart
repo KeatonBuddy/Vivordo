@@ -34,6 +34,9 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     _ => 'Monthly',
   };
 
+  // Made once: a new stream on each rebuild re-sent the whole range.
+  late final _steps = _stepsStream();
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _stepsStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -120,7 +123,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _stepsStream(),
+        stream: _steps,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {

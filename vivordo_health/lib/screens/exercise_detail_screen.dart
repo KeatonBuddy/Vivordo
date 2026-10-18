@@ -38,6 +38,10 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     _ => 'Monthly',
   };
 
+  // Made once: a new stream on each rebuild re-sent the whole range.
+  late final _metrics = _metricsStream();
+  late final _workouts = WorkoutService.watchAll();
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _metricsStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -74,14 +78,14 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _metricsStream(),
+        stream: _metrics,
         builder: (context, metricsSnapshot) {
           if (!metricsSnapshot.hasData &&
               metricsSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           return StreamBuilder<List<SavedWorkout>>(
-            stream: WorkoutService.watchAll(),
+            stream: _workouts,
             initialData: const [],
             builder: (context, workoutSnapshot) {
               return StreamBuilder<ActivityGoals>(

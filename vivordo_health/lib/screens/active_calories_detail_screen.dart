@@ -36,6 +36,9 @@ class _ActiveCaloriesDetailScreenState
     _ => 'Monthly',
   };
 
+  // Made once: a new stream on each rebuild re-sent the whole range.
+  late final _calories = _caloriesStream();
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _caloriesStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -123,7 +126,7 @@ class _ActiveCaloriesDetailScreenState
         ),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _caloriesStream(),
+        stream: _calories,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {

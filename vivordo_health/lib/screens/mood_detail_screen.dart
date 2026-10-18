@@ -33,6 +33,9 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     _ => 'Monthly',
   };
 
+  // Made once: a new stream on each rebuild re-sent the whole range.
+  late final _mood = _moodStream();
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _moodStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -147,7 +150,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _moodStream(),
+        stream: _mood,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {

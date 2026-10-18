@@ -31,6 +31,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   int rangeIndex = 0;
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _heartDataStream;
 
+  // Made once: a new stream on each rebuild resubscribed the user document.
+  late final _userStream = () {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return uid == null
+        ? null
+        : FirebaseFirestore.instance.collection('users').doc(uid).snapshots();
+  }();
+
   static const _storage = FlutterSecureStorage();
   static const _wearableCollapsedKey = 'heart_wearable_card_collapsed';
   // Kept for the app session so reopening the screen doesn't wait on storage.
@@ -168,10 +176,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           final uid = FirebaseAuth.instance.currentUser?.uid;
           if (uid == null) return const SizedBox.shrink();
           return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('users')
-                .doc(uid)
-                .snapshots(),
+            stream: _userStream,
             builder: (context, userSnapshot) {
               final user = userSnapshot.data?.data();
               final hasConnectedWearable =

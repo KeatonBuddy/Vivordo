@@ -75,6 +75,10 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   DateTime? _lastRefreshAt;
   bool _refreshingSleep = false;
 
+  // Made once: a new stream on each rebuild re-sent all 60 days.
+  late final _sleep = _sleepStream();
+  late final _user = _userStream();
+
   @override
   void initState() {
     super.initState();
@@ -182,6 +186,13 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     }
   }
 
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _userStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return uid == null
+        ? null
+        : FirebaseFirestore.instance.collection('users').doc(uid).snapshots();
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _sleepStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -228,7 +239,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         ],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _sleepStream(),
+        stream: _sleep,
         builder: (context, snapshot) {
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
@@ -418,12 +429,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     final user = FirebaseAuth.instance.currentUser;
     return Center(
       child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: user == null
-            ? null
-            : FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(user.uid)
-                  .snapshots(),
+        stream: _user,
         builder: (context, snapshot) {
           final whoopConnected = hasConnectedWhoop(snapshot.data?.data());
           return Wrap(
