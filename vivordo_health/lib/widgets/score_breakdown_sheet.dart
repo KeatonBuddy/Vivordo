@@ -25,6 +25,7 @@ Future<void> showScoreBreakdown(
   bool signed = false,
   String empty = 'Nothing to count yet.',
   BriefState? words,
+  Widget? history,
 }) => showAppleSheet<void>(
   context,
   builder: (sheetContext) {
@@ -75,6 +76,7 @@ Future<void> showScoreBreakdown(
                 summary,
                 style: TextStyle(fontSize: 14, color: colors.textSecondary),
               ),
+              ?history,
               if (sections.every((section) => section.rows.isEmpty)) ...[
                 const SizedBox(height: 14),
                 Text(

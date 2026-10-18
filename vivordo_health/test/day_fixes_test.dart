@@ -67,6 +67,29 @@ void main() {
       if (breaks || fix.kind != DayFixKind.addBreak) fix,
   ];
 
+  test('planned Demand is the whole plan, done or not', () {
+    final morning = [item('standup', at(9), 30), item('review', at(14), 60)];
+    final full = plannedDemand(
+      day: at(0),
+      wrapUp: at(17),
+      items: morning,
+      untimed: const ['demanding'],
+    );
+    // Late in the day, with the morning ticked off, the plan is unchanged.
+    final evening = plannedDemand(
+      day: at(20),
+      wrapUp: at(17),
+      items: [
+        for (final i in morning)
+          (event: i.event, score: i.score, done: true, open: false),
+      ],
+      untimed: const ['demanding'],
+    );
+    expect(full, greaterThan(0));
+    expect(evening, closeTo(full, 1e-9));
+    expect(full, closeTo(demandOf(morning, const ['demanding']), 1e-9));
+  });
+
   test('a buffer opens a gap in a back-to-back run, priced for real', () {
     final day = [
       item('standup', at(12), 30),

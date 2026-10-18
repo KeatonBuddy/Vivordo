@@ -270,6 +270,29 @@ DayEffort buildDayEffort({
 /// How a day's Demand sits against Capacity (docs/scores.md §2).
 enum DemandFit { roomToSpare, full, over }
 
+/// The whole day's plan as Demand, for planned-vs-actual history: every
+/// timed item counts as ahead from the start of [day], ticked off or not,
+/// and every untimed priority's effort ([untimed]) is added.
+double plannedDemand({
+  required DateTime day,
+  required DateTime wrapUp,
+  required List<EffortItem> items,
+  required List<Object?> untimed,
+}) {
+  final start = DateTime(day.year, day.month, day.day);
+  return buildDayEffort(
+    now: start,
+    from: start,
+    until: DateTime(day.year, day.month, day.day + 1),
+    wrapUp: wrapUp,
+    items: [
+      for (final item in items)
+        (event: item.event, score: item.score, done: false, open: true),
+    ],
+    untimedOpen: untimed,
+  ).demand;
+}
+
 /// Over when Demand is above Capacity, the same line the weekly review
 /// uses for a heavy day; full within [_fullBand] below it; else room.
 /// Demand runs lower than Capacity's 0-100, so a margin above Capacity

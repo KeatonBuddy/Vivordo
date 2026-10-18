@@ -57,6 +57,7 @@ import 'package:vivordo_health/src/utils/activity_source.dart';
 import 'package:vivordo_health/src/utils/score_breakdown.dart';
 import 'package:vivordo_health/widgets/daily_brief_card.dart' show BriefTone;
 import 'package:vivordo_health/widgets/score_breakdown_sheet.dart';
+import 'package:vivordo_health/widgets/score_history.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'sleep_detail_screen.dart';
@@ -2321,6 +2322,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       showScoreBreakdown(
         context,
         kicker: 'EFFORT SO FAR',
+        history: const ScoreHistory(kind: ScoreHistoryKind.effort),
         empty: 'Nothing has taken effort yet today.',
         score: result.total.round(),
         summary: words ? 'For this time of day' : soFar,

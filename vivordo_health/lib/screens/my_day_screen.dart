@@ -30,6 +30,8 @@ import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/event_type_section.dart';
 import '../widgets/score_breakdown_sheet.dart';
+import '../widgets/score_history.dart';
+import '../src/services/planned_demand_service.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/body_reaction_view.dart';
 import '../widgets/day_timeline.dart';
@@ -1411,6 +1413,25 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               items: _effortItems(today, timedEvents, todayPriorities),
               untimedOpen: _untimedOpen(today, todayPriorities),
             );
+            // The day's whole plan, saved once for the Demand sheet's
+            // planned-vs-actual history.
+            if (ready && !PlannedDemandService.savedThisSession(today)) {
+              final planned = plannedDemand(
+                day: today,
+                wrapUp: today.add(Duration(minutes: _wrapUpMinutes)),
+                items: _effortItems(today, timedEvents, todayPriorities),
+                untimed: [
+                  for (final p in todayPriorities)
+                    if (p.isAllDay ||
+                        p.sourceStart == null ||
+                        !DateUtils.isSameDay(p.sourceStart, today))
+                      p.planning['effort'],
+                ],
+              );
+              WidgetsBinding.instance.addPostFrameCallback(
+                (_) => PlannedDemandService.saveOnce(today, planned),
+              );
+            }
             // Evening: past the end-of-day time with nothing timed left.
             // Open untimed priorities carry over, so they count towards
             // tomorrow rather than holding off the evening view.
@@ -1737,6 +1758,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       kicker: 'CAPACITY TODAY',
       score: server.score,
       words: words,
+      history: ScoreHistory(
+        kind: ScoreHistoryKind.capacity,
+        usual: server.usual,
+      ),
       summary: usual == null
           ? 'Still learning your usual'
           : words != null
@@ -1828,6 +1853,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     showScoreBreakdown(
       context,
       kicker: evening ? 'TOMORROW\'S DEMAND' : 'DEMAND STILL AHEAD',
+      history: const ScoreHistory(kind: ScoreHistoryKind.plannedVsActual),
       empty: evening
           ? 'Nothing planned for tomorrow yet.'
           : 'Nothing left on your plan today.',
