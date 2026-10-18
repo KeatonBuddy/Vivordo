@@ -110,7 +110,7 @@ class WorkoutSummaryScreen extends StatelessWidget {
                 const SizedBox(height: 20),
                 _HeroStats(workout: workout, overview: overview),
                 const SizedBox(height: 14),
-                _SummaryCard(overview: overview),
+                _SummaryCard(overview: overview, workout: workout),
                 const SizedBox(height: 28),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -343,9 +343,10 @@ class _HeroStat extends StatelessWidget {
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.overview});
+  const _SummaryCard({required this.overview, required this.workout});
 
   final _WorkoutOverview overview;
+  final SavedWorkout workout;
 
   @override
   Widget build(BuildContext context) {
@@ -387,6 +388,7 @@ class _SummaryCard extends StatelessWidget {
               height: 1.45,
             ),
           ),
+          _TrendBreakdown(workout: workout),
           if (overview.chips.isNotEmpty) ...[
             const SizedBox(height: 16),
             Wrap(
@@ -394,12 +396,9 @@ class _SummaryCard extends StatelessWidget {
               runSpacing: 8,
               children: overview.chips
                   .map((chip) {
-                    final color = switch (chip[0]) {
-                      '★' => _personalBestColor(context),
-                      '↑' => _improvedColor(context),
-                      '↓' => _declinedColor(context),
-                      _ => _summaryPurple,
-                    };
+                    final color = chip.startsWith('★')
+                        ? _personalBestColor(context)
+                        : _summaryPurple;
                     return Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -428,6 +427,253 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
+/// Each strength exercise against its last attempt: a split bar of how
+/// many went up, held or dropped, then rows grouped that way with the best
+/// set last time → today. Hidden when nothing has a previous attempt.
+class _TrendBreakdown extends StatelessWidget {
+  const _TrendBreakdown({required this.workout});
+
+  final SavedWorkout workout;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    List<WorkoutExerciseRecord> where(ExerciseAttemptTrend? trend) => [
+      for (final exercise in workout.exercises)
+        if (exercise.attemptTrend == trend &&
+            (trend != null ||
+                (exercise.sets.isNotEmpty &&
+                    exercise.category != 'Cardio' &&
+                    exercise.category != 'Sports')))
+          exercise,
+    ];
+    final up = where(ExerciseAttemptTrend.improved);
+    final same = where(ExerciseAttemptTrend.maintained);
+    final down = where(ExerciseAttemptTrend.declined);
+    if (up.isEmpty && same.isEmpty && down.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final fresh = where(null);
+    final groups = [
+      ('UP', 'up', up, _improvedColor(context)),
+      ('SAME', 'same', same, _summaryPurple),
+      ('LOWER', 'lower', down, _declinedColor(context)),
+      ('NEW', 'new', fresh, colors.textSecondary),
+    ].where((group) => group.$3.isNotEmpty).toList(growable: false);
+    final compared = groups.where((group) => group.$2 != 'new').toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        Semantics(
+          label: compared
+              .map((group) => '${group.$3.length} ${group.$2}')
+              .join(', '),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: SizedBox(
+              height: 9,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < compared.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 2),
+                    Expanded(
+                      flex: compared[i].$3.length,
+                      child: ColoredBox(color: compared[i].$4),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        ExcludeSemantics(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (final group in compared)
+                Text(
+                  '${group.$3.length} ${group.$2}',
+                  style: TextStyle(
+                    color: group.$4,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        for (final group in groups) ...[
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: group.$4,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                group.$1,
+                style: TextStyle(
+                  color: group.$4,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ],
+          ),
+          for (var i = 0; i < group.$3.length; i++)
+            _TrendRow(
+              exercise: group.$3[i],
+              color: group.$4,
+              divider: i < group.$3.length - 1,
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _TrendRow extends StatelessWidget {
+  const _TrendRow({
+    required this.exercise,
+    required this.color,
+    required this.divider,
+  });
+
+  final WorkoutExerciseRecord exercise;
+  final Color color;
+  final bool divider;
+
+  static String _set(double? weight, int? reps) => weight == null || weight <= 0
+      ? '${reps ?? 0} reps'
+      : '${_formatNumber(weight)} × ${reps ?? 0}';
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final best = exercise.sets.fold<WorkoutSetRecord?>(
+      null,
+      (best, set) =>
+          best == null ||
+              set.weightLbs > best.weightLbs ||
+              (set.weightLbs == best.weightLbs && set.reps > best.reps)
+          ? set
+          : best,
+    );
+    final today = _set(
+      exercise.currentAttemptWeightLbs ?? best?.weightLbs,
+      exercise.currentAttemptReps ?? best?.reps,
+    );
+    final isNew = exercise.attemptTrend == null;
+    final weightChange =
+        (exercise.currentAttemptWeightLbs ?? 0) -
+        (exercise.previousAttemptWeightLbs ?? 0);
+    final repChange =
+        (exercise.currentAttemptReps ?? 0) -
+        (exercise.previousAttemptReps ?? 0);
+    String signed(num value, String unit) =>
+        '${value > 0 ? '+' : '−'}${value is double ? _formatNumber(value.abs()) : value.abs()} $unit';
+    final changes = [
+      if (weightChange.abs() >= .05) signed(weightChange, 'lb'),
+      if (repChange != 0)
+        signed(repChange, repChange.abs() == 1 ? 'rep' : 'reps'),
+    ];
+    final chip = isNew
+        ? 'First time'
+        : changes.isEmpty
+        ? 'Matched'
+        : changes.join(' · ');
+    final muted = TextStyle(color: colors.textSecondary, fontSize: 13);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(
+        border: divider
+            ? Border(bottom: BorderSide(color: colors.border))
+            : null,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: exercise.name),
+                      if (exercise.personalBest)
+                        TextSpan(
+                          text: '  ★ PB',
+                          style: TextStyle(
+                            color: _personalBestColor(context),
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      if (!isNew) ...[
+                        TextSpan(
+                          text: _set(
+                            exercise.previousAttemptWeightLbs,
+                            exercise.previousAttemptReps,
+                          ),
+                        ),
+                        TextSpan(
+                          text: '  →  ',
+                          style: TextStyle(color: color),
+                        ),
+                      ],
+                      TextSpan(
+                        text: today,
+                        style: TextStyle(color: colors.textPrimary),
+                      ),
+                    ],
+                  ),
+                  style: muted,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Text(
+              chip,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ExerciseSummaryCard extends StatelessWidget {
   const _ExerciseSummaryCard({required this.number, required this.exercise});
 
@@ -438,19 +684,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final recommendWeightIncrease =
-        exercise.category != 'Cardio' &&
-        exercise.category != 'Sports' &&
-        exercise.currentAttemptWeightLbs != null &&
-        exercise.previousAttemptWeightLbs != null &&
-        exercise.currentAttemptReps != null &&
-        exercise.previousAttemptReps != null &&
-        shouldRecommendWeightIncrease(
-          currentWeightLbs: exercise.currentAttemptWeightLbs!,
-          previousWeightLbs: exercise.previousAttemptWeightLbs!,
-          currentReps: exercise.currentAttemptReps!,
-          previousReps: exercise.previousAttemptReps!,
-        );
+    final recommendWeightIncrease = _readyForMoreWeight(exercise);
     return _SurfaceCard(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Column(
@@ -838,11 +1072,16 @@ class _WorkoutOverview {
     final detail = totalDistance > 0
         ? ' You covered ${_formatNumber(totalDistance)} km during the session.'
         : '';
-    final comparison = _exerciseComparisonSentence(
-      improved: improved,
-      declined: declined,
-      maintained: maintained,
-    );
+    // The trend rows under this text show each exercise's change; the text
+    // keeps the advice.
+    final ready = [
+      for (final exercise in workout.exercises)
+        if (_readyForMoreWeight(exercise)) exercise.name,
+    ];
+    final overload = ready.isEmpty
+        ? ''
+        : ' ${_nameList(ready)} ${ready.length == 1 ? 'is' : 'are'} ready '
+              'for a small weight increase next session.';
     final advice = isStrength
         ? ' Give the trained areas time to recover before your next hard session.'
         : isCardio || isSport
@@ -854,21 +1093,37 @@ class _WorkoutOverview {
         '${_formatNumber(totalDistance)} km',
       if (workout.personalBestCount > 0)
         '★ ${workout.personalBestCount} personal ${workout.personalBestCount == 1 ? 'best' : 'bests'}',
-      if (improved.isNotEmpty)
-        '↑ ${improved.length} ${improved.length == 1 ? 'exercise' : 'exercises'} improved',
-      if (declined.isNotEmpty)
-        '↓ ${declined.length} ${declined.length == 1 ? 'exercise' : 'exercises'} lower',
     ];
     return _WorkoutOverview(
       title: title,
       headline: headline,
-      summary: '$base$detail$comparison$advice',
+      summary: '$base$detail$overload$advice',
       chips: chips,
       totalReps: totalReps,
       totalDistance: totalDistance,
     );
   }
 }
+
+/// Progressive overload: more reps than last time at the same weight.
+bool _readyForMoreWeight(WorkoutExerciseRecord exercise) =>
+    exercise.category != 'Cardio' &&
+    exercise.category != 'Sports' &&
+    exercise.currentAttemptWeightLbs != null &&
+    exercise.previousAttemptWeightLbs != null &&
+    exercise.currentAttemptReps != null &&
+    exercise.previousAttemptReps != null &&
+    shouldRecommendWeightIncrease(
+      currentWeightLbs: exercise.currentAttemptWeightLbs!,
+      previousWeightLbs: exercise.previousAttemptWeightLbs!,
+      currentReps: exercise.currentAttemptReps!,
+      previousReps: exercise.previousAttemptReps!,
+    );
+
+/// "A", "A and B", "A, B and C".
+String _nameList(List<String> names) => names.length < 3
+    ? names.join(' and ')
+    : '${names.take(names.length - 1).join(', ')} and ${names.last}';
 
 int? _personalBestSetIndex(WorkoutExerciseRecord exercise) {
   final weight = exercise.personalBestWeightLbs;
@@ -911,22 +1166,6 @@ String _durationSentence(int seconds) {
   return '$minutes min $remaining sec';
 }
 
-String _exerciseComparisonSentence({
-  required List<WorkoutExerciseRecord> improved,
-  required List<WorkoutExerciseRecord> declined,
-  required List<WorkoutExerciseRecord> maintained,
-}) {
-  // Every exercise with a previous attempt is named: better first, then
-  // lower, then the ones that held steady.
-  final details = [
-    for (final exercise in [...improved, ...declined, ...maintained])
-      _exerciseDifferenceSentence(exercise),
-  ];
-  if (details.isEmpty) return '';
-  return ' Compared with your previous '
-      '${details.length == 1 ? 'attempt' : 'attempts'}, ${details.join('; ')}.';
-}
-
 String _formatNumber(double value) =>
     value % 1 == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
 
@@ -950,40 +1189,4 @@ String _exerciseDifferenceLabel(WorkoutExerciseRecord exercise) {
     }
   }
   return 'Matched last time';
-}
-
-String _exerciseDifferenceSentence(WorkoutExerciseRecord exercise) {
-  final currentWeight = exercise.currentAttemptWeightLbs;
-  final previousWeight = exercise.previousAttemptWeightLbs;
-  final currentReps = exercise.currentAttemptReps;
-  final previousReps = exercise.previousAttemptReps;
-  final weightDifference = currentWeight != null && previousWeight != null
-      ? currentWeight - previousWeight
-      : null;
-  final repDifference = currentReps != null && previousReps != null
-      ? currentReps - previousReps
-      : null;
-
-  if (weightDifference != null && weightDifference.abs() >= .05) {
-    final weight = '${_formatNumber(weightDifference.abs())} lb';
-    if (weightDifference > 0) {
-      if (exercise.attemptTrend == ExerciseAttemptTrend.declined &&
-          repDifference != null &&
-          repDifference < 0) {
-        return '${exercise.name} used $weight more but completed ${repDifference.abs()} fewer ${repDifference.abs() == 1 ? 'rep' : 'reps'}';
-      }
-      return '${exercise.name} increased by $weight';
-    }
-    if (exercise.attemptTrend == ExerciseAttemptTrend.improved &&
-        repDifference != null &&
-        repDifference > 0) {
-      return '${exercise.name} completed $repDifference more ${repDifference == 1 ? 'rep' : 'reps'} while using $weight less';
-    }
-    return '${exercise.name} used $weight less';
-  }
-  if (repDifference != null && repDifference != 0) {
-    final direction = repDifference > 0 ? 'more' : 'fewer';
-    return '${exercise.name} completed ${repDifference.abs()} $direction ${repDifference.abs() == 1 ? 'rep' : 'reps'} at the same weight';
-  }
-  return '${exercise.name} matched the previous attempt';
 }

@@ -82,34 +82,38 @@ void main() {
     expect(colorOf('135 lb'), isNot(const Color(0xFFB45309)));
   });
 
-  testWidgets('the summary names every exercise\'s change, not "N more"', (
+  testWidgets('trends show as grouped rows; the text keeps the advice', (
     tester,
   ) async {
     WorkoutExerciseRecord lift(
       String name,
-      ExerciseAttemptTrend trend, {
+      ExerciseAttemptTrend? trend, {
       required double weight,
-      required double previousWeight,
+      double? previousWeight,
       required int reps,
-      required int previousReps,
+      int? previousReps,
+      bool personalBest = false,
     }) => WorkoutExerciseRecord(
       name: name,
       category: 'Arms',
       sets: [WorkoutSetRecord(weightLbs: weight, reps: reps)],
       attemptTrend: trend,
+      personalBest: personalBest,
       currentAttemptWeightLbs: weight,
       previousAttemptWeightLbs: previousWeight,
       currentAttemptReps: reps,
       previousAttemptReps: previousReps,
     );
+    tester.view.physicalSize = const Size(1200, 6000);
+    addTearDown(tester.view.reset);
     await _pumpSummary(
       tester,
       SavedWorkout(
         id: 'arms',
         completedAt: DateTime(2026, 10, 17, 7),
         durationSeconds: 2496,
-        exerciseCount: 5,
-        setCount: 5,
+        exerciseCount: 6,
+        setCount: 6,
         exercises: [
           lift(
             'Overhead extension',
@@ -128,43 +132,59 @@ void main() {
             previousReps: 10,
           ),
           lift(
-            'Hammer curl',
-            ExerciseAttemptTrend.declined,
-            weight: 25,
-            previousWeight: 30,
-            reps: 10,
-            previousReps: 10,
-          ),
-          lift(
             'Preacher curl',
             ExerciseAttemptTrend.improved,
             weight: 40,
             previousWeight: 35,
             reps: 10,
             previousReps: 10,
+            personalBest: true,
           ),
           lift(
             'Cable curl',
-            ExerciseAttemptTrend.maintained,
+            ExerciseAttemptTrend.improved,
             weight: 20,
             previousWeight: 20,
             reps: 12,
-            previousReps: 12,
+            previousReps: 10,
           ),
+          lift(
+            'Hammer curl',
+            ExerciseAttemptTrend.maintained,
+            weight: 25,
+            previousWeight: 25,
+            reps: 10,
+            previousReps: 10,
+          ),
+          lift('Wrist curl', null, weight: 15, reps: 15),
         ],
       ),
     );
-    final summary = find.textContaining('Compared with your previous');
-    final text = tester.widget<Text>(summary).data!;
-    expect(text, isNot(contains('more exercise')));
+    for (final label in ['2 up', '1 same', '2 lower', 'UP', 'SAME', 'LOWER']) {
+      expect(find.text(label), findsOneWidget, reason: label);
+    }
+    expect(find.text('NEW'), findsOneWidget);
+    for (final chip in ['+5 lb', '+2 reps', 'Matched', '−1 lb', '−2 reps']) {
+      expect(find.text(chip), findsOneWidget, reason: chip);
+    }
+    expect(find.text('First time'), findsOneWidget);
+    expect(
+      find.text('35 × 10  →  40 × 10', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Preacher curl  ★ PB', findRichText: true),
+      findsOneWidget,
+    );
+
+    final text = tester
+        .widget<Text>(find.textContaining('You completed'))
+        .data!;
+    expect(text, isNot(contains('Compared with')), reason: 'rows show it');
     expect(
       text,
-      contains(
-        'Compared with your previous attempts, Preacher curl increased by '
-        '5 lb; Overhead extension completed 2 fewer reps at the same weight; '
-        'EZ bar extension used 1 lb less; Hammer curl used 5 lb less; '
-        'Cable curl matched the previous attempt.',
-      ),
+      contains('Cable curl is ready for a small weight increase next session.'),
     );
+    expect(text, contains('Give the trained areas time to recover'));
   });
 }
