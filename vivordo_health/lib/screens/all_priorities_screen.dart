@@ -399,6 +399,9 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     key: ValueKey(p.reference.path),
     onTap: () => widget.onEdit(context, p),
     onDelete: () => _delete(p),
+    onDeleteAll: p.templateId == null
+        ? null
+        : () => _deleteSchedule(p.templateId!),
     confirmTitle: 'Delete priority?',
     confirmMessage: priorityDeleteMessage(
       p.title,

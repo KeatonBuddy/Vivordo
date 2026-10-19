@@ -2773,6 +2773,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         priority: priority,
         onToggle: () => _togglePriority(priority),
         onDelete: () => _deletePriority(priority),
+        onDeleteAll: priority.templateId == null
+            ? null
+            : () => _deleteRepeats(priority.templateId!),
         onEdit: () => _editPriority(priority),
       );
       const divider = Divider(height: 1, indent: 54, endIndent: 16);
@@ -2987,6 +2990,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Stops a repeating priority, removing its copies from today on.
+  Future<void> _deleteRepeats(String templateId) async {
+    try {
+      await DailyPriorityService.deleteSchedule(templateId);
+    } catch (error) {
+      debugPrint('Delete repeating priority failed: $error');
+      _showMessage("Couldn't delete the priority. Try again.", error: true);
+    }
+  }
+
   Future<void> _editPriority(
     DailyPriority priority, {
     BuildContext? sheetContext,
@@ -2997,11 +3010,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
     if (result == null || !mounted) return;
     try {
+      final templateId = priority.templateId;
       if (result.deleteRequested) {
-        await DailyPriorityService.delete(priority);
+        await (result.deleteAll && templateId != null
+            ? DailyPriorityService.deleteSchedule(templateId)
+            : DailyPriorityService.delete(priority));
         return;
       }
-      final templateId = priority.templateId;
       if (result.habit && templateId != null) {
         // Made a habit: that changes the whole schedule, not this day.
         await DailyPriorityService.updateSchedule(
@@ -3533,12 +3548,16 @@ class _PriorityRow extends StatelessWidget {
     required this.priority,
     required this.onToggle,
     required this.onDelete,
+    this.onDeleteAll,
     this.onEdit,
   });
 
   final DailyPriority priority;
   final VoidCallback onToggle;
   final Future<void> Function() onDelete;
+
+  /// Stops a repeating priority; null for one that doesn't repeat.
+  final Future<void> Function()? onDeleteAll;
   final VoidCallback? onEdit;
 
   String? get _timeLabel {
@@ -3562,6 +3581,7 @@ class _PriorityRow extends StatelessWidget {
     return SwipeToDelete(
       onTap: onEdit,
       onDelete: onDelete,
+      onDeleteAll: onDeleteAll,
       confirmTitle: 'Delete priority?',
       confirmMessage: priorityDeleteMessage(
         priority.title,

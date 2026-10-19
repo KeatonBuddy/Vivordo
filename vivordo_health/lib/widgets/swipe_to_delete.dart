@@ -6,7 +6,8 @@ import 'apple_ui.dart';
 /// A row that slides left to reveal Delete. Deleting asks first; [onDelete]
 /// runs only once confirmed. A tap on the row calls [onTap]. For a gentler
 /// action (Hide) pass [actionLabel], [actionIcon] and [actionColor], and no
-/// [confirmTitle] to skip the question.
+/// [confirmTitle] to skip the question. With [onDeleteAll] (a repeating
+/// priority) it asks "just this one or all repeats" instead.
 class SwipeToDelete extends StatefulWidget {
   const SwipeToDelete({
     super.key,
@@ -15,6 +16,7 @@ class SwipeToDelete extends StatefulWidget {
     required this.confirmTitle,
     this.confirmMessage,
     this.onTap,
+    this.onDeleteAll,
     this.actionLabel = 'Delete',
     this.actionIcon = Icons.delete_outline_rounded,
     this.actionColor = const Color(0xFFE5484D),
@@ -22,6 +24,7 @@ class SwipeToDelete extends StatefulWidget {
 
   final Widget child;
   final Future<void> Function() onDelete;
+  final Future<void> Function()? onDeleteAll;
   final String? confirmTitle;
   final String actionLabel;
   final IconData actionIcon;
@@ -128,17 +131,25 @@ class _SwipeToDeleteState extends State<SwipeToDelete> {
     _confirming = true;
     try {
       final title = widget.confirmTitle;
-      final confirmed =
-          title == null ||
-          await confirmAction(
-            context,
-            title: title,
-            message: widget.confirmMessage,
-            confirmLabel: widget.actionLabel,
-          );
-      if (confirmed && mounted) {
+      final all = widget.onDeleteAll;
+      final Future<void> Function()? action;
+      if (all != null) {
+        final choice = await askRepeatingDelete(context);
+        action = choice == null ? null : (choice ? all : widget.onDelete);
+      } else {
+        final confirmed =
+            title == null ||
+            await confirmAction(
+              context,
+              title: title,
+              message: widget.confirmMessage,
+              confirmLabel: widget.actionLabel,
+            );
+        action = confirmed ? widget.onDelete : null;
+      }
+      if (action != null && mounted) {
         setState(() => _deleting = true);
-        await widget.onDelete();
+        await action();
       }
     } finally {
       _confirming = false;
@@ -156,3 +167,17 @@ class _SwipeToDeleteState extends State<SwipeToDelete> {
 String priorityDeleteMessage(String title, {required bool manual}) =>
     'Remove “$title” from your priorities?'
     '${manual ? '' : "\n\nThis won't delete the original calendar event or recurring schedule."}';
+
+/// Asks whether to delete one repeat of a priority or all of them: true for
+/// all (it stops repeating; days already done are kept), false for just
+/// this one, null when cancelled.
+Future<bool?> askRepeatingDelete(BuildContext context) =>
+    showAppleActionSheet<bool>(
+      context,
+      title: 'Delete repeating priority?',
+      message: 'Days you already did are kept.',
+      actions: const [
+        AppleSheetAction('Just this one', false, destructive: true),
+        AppleSheetAction('All repeats', true, destructive: true),
+      ],
+    );

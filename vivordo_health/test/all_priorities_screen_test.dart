@@ -194,4 +194,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(deletedSchedule, 'a');
   });
+
+  testWidgets('a repeating priority asks: just this one or all repeats', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final deleted = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.dark,
+        home: AllPrioritiesScreen(
+          priorities: Stream.value([
+            priority('Stretch', 0, template: 'daily'),
+            priority('Water plants', 0, template: 'weekly'),
+          ]),
+          onAdd: (_) async {},
+          onEdit: (_, _) async {},
+          onDelete: (p) async => deleted.add('one ${p.id}'),
+          onDeleteSchedule: (id) async => deleted.add('all $id'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Future<void> swipeAndPick(String title, String choice) async {
+      await tester.drag(find.text(title), const Offset(-120, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(title),
+            matching: find.byType(SwipeToDelete),
+          ),
+          matching: find.text('Delete'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Delete repeating priority?'), findsOneWidget);
+      await tester.tap(find.text(choice));
+      await tester.pumpAndSettle();
+    }
+
+    await swipeAndPick('Stretch', 'Just this one');
+    await swipeAndPick('Water plants', 'All repeats');
+    expect(deleted, ['one Stretch', 'all weekly']);
+  });
 }

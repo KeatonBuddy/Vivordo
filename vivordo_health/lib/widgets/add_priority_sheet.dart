@@ -7,6 +7,7 @@ import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'apple_ui.dart';
 import 'priority_reminder_picker.dart';
 import 'priority_duration_picker.dart';
+import 'swipe_to_delete.dart';
 
 const _purple = Color(0xFF6254F4);
 
@@ -25,6 +26,7 @@ class PriorityDraft {
     this.reminderTimeMinutes,
     this.completed = false,
     this.deleteRequested = false,
+    this.deleteAll = false,
     this.planning = const {},
     this.habit = false,
     this.target = 1,
@@ -44,6 +46,9 @@ class PriorityDraft {
   final int? reminderTimeMinutes;
   final bool completed;
   final bool deleteRequested;
+
+  /// With [deleteRequested]: every repeat, not just this one.
+  final bool deleteAll;
 
   /// A daily habit, done [target] times a day.
   final bool habit;
@@ -267,7 +272,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     }
   }
 
-  void _submit({bool deleteRequested = false}) {
+  void _submit({bool deleteRequested = false, bool deleteAll = false}) {
     final title = _controller.text.trim();
     if (!deleteRequested && title.isEmpty) return;
     if (!deleteRequested &&
@@ -297,6 +302,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
         reminderMinutes: _reminderMinutes,
         completed: _completed,
         deleteRequested: deleteRequested,
+        deleteAll: deleteAll,
         reminderTimeMinutes: _reminderTime == null
             ? null
             : _reminderTime!.hour * 60 + _reminderTime!.minute,
@@ -775,6 +781,16 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                                 : 'Delete Priority',
                           ),
                           onPressed: () async {
+                            // One day's copy of a repeating priority.
+                            if (_editing &&
+                                widget.habitSwitch &&
+                                !widget.forSchedule) {
+                              final all = await askRepeatingDelete(context);
+                              if (all != null && mounted) {
+                                _submit(deleteRequested: true, deleteAll: all);
+                              }
+                              return;
+                            }
                             final confirmed = await confirmAction(
                               context,
                               title: widget.forSchedule
