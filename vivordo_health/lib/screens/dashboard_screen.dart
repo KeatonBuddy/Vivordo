@@ -471,22 +471,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             QuerySnapshot<Map<String, dynamic>>
                           >(
                             stream: _allMetricsStream,
-                            builder: (context, snapshot) => Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 7,
-                              runSpacing: 4,
-                              children: [
-                                Text(
-                                  '${_lastManualHealthRefresh == null ? 'Synced automatically' : _manualRefreshLabel().replaceFirst('Updated', 'Synced')}${_hasVisibleWhoopData(snapshot.data) ? ' · Data includes' : ''}',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    color: context.vivordoColors.textSecondary,
+                            builder: (context, snapshot) {
+                              final style = TextStyle(
+                                fontSize: 15,
+                                color: context.vivordoColors.textSecondary,
+                              );
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _lastManualHealthRefresh == null
+                                        ? 'Synced automatically'
+                                        : _manualRefreshLabel().replaceFirst(
+                                            'Updated',
+                                            'Synced',
+                                          ),
+                                    style: style,
                                   ),
-                                ),
-                                if (_hasVisibleWhoopData(snapshot.data))
-                                  const WhoopSourceBadge(compact: true),
-                              ],
-                            ),
+                                  // Its own line, under the sync time.
+                                  if (_hasVisibleWhoopData(snapshot.data)) ...[
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Text('Data includes', style: style),
+                                        const SizedBox(width: 7),
+                                        const WhoopSourceBadge(compact: true),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              );
+                            },
                           ),
                         ],
                       ),
