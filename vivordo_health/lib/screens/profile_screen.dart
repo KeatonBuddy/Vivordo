@@ -207,14 +207,19 @@ class _SettingsScreenState extends State<SettingsScreen>
             final colors = context.vivordoColors;
             return AppleAlert(
               title: 'Permanently delete account?',
+              maxWidth: 340,
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Bounded so the alert fits above the keyboard on small
-                  // phones.
+                  // In full, bounded only while the keyboard is up so the
+                  // alert still fits above it on small phones.
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 140),
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.viewInsetsOf(context).bottom > 0
+                          ? 140
+                          : double.infinity,
+                    ),
                     child: SingleChildScrollView(
                       child: Text(
                         'This permanently deletes your Vivordo profile, health '

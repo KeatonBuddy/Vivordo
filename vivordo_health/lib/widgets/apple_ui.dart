@@ -47,12 +47,16 @@ class AppleAlert extends StatelessWidget {
     this.message,
     this.content,
     required this.buttons,
+    this.maxWidth = 290,
   });
 
   final String title;
   final String? message;
   final Widget? content;
   final List<AppleAlertButton> buttons;
+
+  /// iOS's alert width; wider for an alert with a lot to say.
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +92,7 @@ class AppleAlert extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 290),
+        constraints: BoxConstraints(maxWidth: maxWidth),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
