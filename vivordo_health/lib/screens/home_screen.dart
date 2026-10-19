@@ -311,6 +311,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _streamsDayKey;
   String? _streamsUid;
   Timer? _dayRolloverTimer;
+
+  /// Ticks once a minute while Home is on screen and the app is open, so the
+  /// Effort card counts events as they happen; only that card listens.
+  final _clock = ValueNotifier(DateTime.now());
+  Timer? _clockTimer;
+  bool _onScreen = false;
+  bool _appOpen = true;
   HomeMetricsSummaryCache _metricsSummaryCache = HomeMetricsSummaryCache();
   Future<List<gcal.Event>>? _reachableWindowEventsFuture;
   DateTime? _reachableWindowEventsDate;
@@ -408,6 +415,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _prioritySnapshot.setActive(active);
     _friendsSnapshot.setActive(active);
     _engagementSnapshot.setActive(active);
+    if (active != _onScreen) {
+      _onScreen = active;
+      _updateClock();
+    }
+  }
+
+  void _updateClock() {
+    _clockTimer?.cancel();
+    _clockTimer = null;
+    if (!_onScreen || !_appOpen) return;
+    _clock.value = DateTime.now();
+    _clockTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _clock.value = DateTime.now(),
+    );
   }
 
   @override
@@ -420,6 +442,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _friendsSnapshot.dispose();
     _engagementSnapshot.dispose();
     _dayRolloverTimer?.cancel();
+    _clockTimer?.cancel();
+    _clock.dispose();
     _activityGoalsSubscription?.cancel();
     super.dispose();
   }
@@ -430,6 +454,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // day and account they were built for, so a day that turned over — or an
     // account that changed — while the app was away needs fresh queries.
     if (state == AppLifecycleState.resumed) _reconnectMetricStreamsIfStale();
+    final open = state == AppLifecycleState.resumed;
+    if (open != _appOpen) {
+      _appOpen = open;
+      _updateClock();
+    }
   }
 
   /// Fires at the next local midnight so a session left open across the date
@@ -2103,42 +2132,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     return FutureBuilder<List<_ScoredReachableEvent>>(
       future: _getReachableWindowScoresFuture(todayStart),
-      builder: (context, scoresSnapshot) =>
-          FutureBuilder<List<_ScheduleEvent>?>(
-            future: _getScheduleEventsFuture(todayStart),
-            builder: (context, eventsSnapshot) {
-              if (scoresSnapshot.connectionState == ConnectionState.waiting ||
-                  eventsSnapshot.connectionState == ConnectionState.waiting) {
-                return loading;
-              }
-              return FutureBuilder<_EffortContext>(
-                future: _getEffortContextFuture(todayStart),
-                builder: (context, contextSnapshot) =>
-                    ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
-                      valueListenable: _prioritySnapshot,
-                      builder: (context, prioritySnapshot, _) =>
-                          FutureBuilder<List<EnergyFactor>>(
-                            future: DailyTagsService.energyFactorsFor(
-                              todayStart,
+      builder: (context, scoresSnapshot) => FutureBuilder<List<_ScheduleEvent>?>(
+        future: _getScheduleEventsFuture(todayStart),
+        builder: (context, eventsSnapshot) {
+          if (scoresSnapshot.connectionState == ConnectionState.waiting ||
+              eventsSnapshot.connectionState == ConnectionState.waiting) {
+            return loading;
+          }
+          return FutureBuilder<_EffortContext>(
+            future: _getEffortContextFuture(todayStart),
+            builder: (context, contextSnapshot) =>
+                ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+                  valueListenable: _prioritySnapshot,
+                  builder: (context, prioritySnapshot, _) =>
+                      FutureBuilder<List<EnergyFactor>>(
+                        future: DailyTagsService.energyFactorsFor(todayStart),
+                        builder: (context, factors) =>
+                            ValueListenableBuilder<DateTime>(
+                              valueListenable: _clock,
+                              // The later of the tick and the build's time,
+                              // but not past midnight: the loaded events are
+                              // today's until the day rollover reloads them.
+                              builder: (context, clock, _) => _dayLoadCard(
+                                now:
+                                    clock.isAfter(now) &&
+                                        DateUtils.isSameDay(clock, now)
+                                    ? clock
+                                    : now,
+                                sleepNights: sleepNights,
+                                energyFactors: factors.data ?? const [],
+                                scored: scoresSnapshot.data ?? const [],
+                                events: eventsSnapshot.data,
+                                priorities: prioritySnapshot.data ?? const [],
+                                effortContext:
+                                    contextSnapshot.data ??
+                                    const _EffortContext(),
+                                healthMinutes: healthMinutes,
+                                calories: calories,
+                              ),
                             ),
-                            builder: (context, factors) => _dayLoadCard(
-                              now: now,
-                              sleepNights: sleepNights,
-                              energyFactors: factors.data ?? const [],
-                              scored: scoresSnapshot.data ?? const [],
-                              events: eventsSnapshot.data,
-                              priorities: prioritySnapshot.data ?? const [],
-                              effortContext:
-                                  contextSnapshot.data ??
-                                  const _EffortContext(),
-                              healthMinutes: healthMinutes,
-                              calories: calories,
-                            ),
-                          ),
-                    ),
-              );
-            },
-          ),
+                      ),
+                ),
+          );
+        },
+      ),
     );
   }
 
