@@ -514,6 +514,31 @@ class DailyPriorityService {
     };
   }
 
+  /// What to change on an imported calendar priority now that its event is
+  /// [there] or isn't, or null for nothing. One whose event is gone
+  /// (deleted, or moved to another day) is removed and marked, so it comes
+  /// back if the event does, e.g. after a calendar read that came back
+  /// empty. Ticked-off ones stay, and so do ones the user removed.
+  @visibleForTesting
+  static Map<String, Object>? calendarPresenceChanges(
+    Map<String, dynamic> data, {
+    required bool there,
+  }) {
+    if (data['source'] != 'calendar') return null;
+    final removedWithEvent = data['removedWithEvent'] == true;
+    if (there) {
+      return removedWithEvent
+          ? {'dismissed': false, 'removedWithEvent': false}
+          : null;
+    }
+    if (removedWithEvent ||
+        data['dismissed'] == true ||
+        data['completed'] == true) {
+      return null;
+    }
+    return {'dismissed': true, 'removedWithEvent': true};
+  }
+
   static Future<void> seedFromCalendar(
     DateTime day,
     Iterable<CalendarPriorityCandidate> candidates,
@@ -533,8 +558,10 @@ class DailyPriorityService {
       writes = 0;
     }
 
+    final seen = <String>{};
     for (final candidate in candidates) {
       final id = _calendarDocumentId(candidate.sourceEventKey);
+      seen.add(id);
       final existingDocument = existingById[id];
       if (!_shouldSuggest(candidate)) {
         final data = existingDocument?.data();
@@ -554,9 +581,14 @@ class DailyPriorityService {
         // The event moved (in the app, a day fix or Google Calendar): keep
         // its priority, and so its reminder, at the new time.
         final moved = calendarTimeChanges(existingDocument.data(), candidate);
-        if (moved != null) {
+        final back = calendarPresenceChanges(
+          existingDocument.data(),
+          there: true,
+        );
+        if (moved != null || back != null) {
           batch.update(existingDocument.reference, {
-            ...moved,
+            ...?moved,
+            ...?back,
             'updatedAt': FieldValue.serverTimestamp(),
           });
           writes++;
@@ -575,6 +607,18 @@ class DailyPriorityService {
         'isAllDay': candidate.isAllDay,
         'score': _score(candidate),
         'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      writes++;
+      await flushIfFull();
+    }
+    // Events no longer on this day take their priorities with them.
+    for (final document in existing.docs) {
+      if (seen.contains(document.id)) continue;
+      final gone = calendarPresenceChanges(document.data(), there: false);
+      if (gone == null) continue;
+      batch.update(document.reference, {
+        ...gone,
         'updatedAt': FieldValue.serverTimestamp(),
       });
       writes++;
