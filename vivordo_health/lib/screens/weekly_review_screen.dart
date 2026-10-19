@@ -32,6 +32,15 @@ String reviewLineName(ReviewLine line) => line.seriesKey == null
     ? line.title
     : MeetingPatternsService.names[line.seriesKey] ?? 'A recurring meeting';
 
+/// A line's detail with its events named, from the calendar
+/// (MeetingPatternsService.loadWeekNames).
+String reviewLineDetailNamed(ReviewLine line) => reviewLineDetail(
+  line,
+  (e) =>
+      MeetingPatternsService.eventNames[e.key] ??
+      MeetingPatternsService.names[e.series],
+);
+
 IconData _icon(String kind) => switch (kind) {
   'sick' => Icons.sick_outlined,
   'travel' => Icons.flight_rounded,
@@ -299,7 +308,18 @@ class WeeklyReviewScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(line.detail, style: secondary.copyWith(fontSize: 13)),
+                    if (line.events.isEmpty)
+                      Text(line.detail, style: secondary.copyWith(fontSize: 13))
+                    else
+                      FutureBuilder(
+                        future: MeetingPatternsService.loadWeekNames(
+                          DateTime.parse(review.weekStart),
+                        ),
+                        builder: (context, _) => Text(
+                          reviewLineDetailNamed(line),
+                          style: secondary.copyWith(fontSize: 13),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -485,7 +505,10 @@ class WeeklyReviewScreen extends StatelessWidget {
                       'weekly_review',
                       'Weekly review',
                       '${review.headline}. ${review.why}',
-                      context: review.chatContext(reviewLineName),
+                      context: review.chatContext(
+                        reviewLineName,
+                        detail: reviewLineDetailNamed,
+                      ),
                     ),
                   );
                 },
