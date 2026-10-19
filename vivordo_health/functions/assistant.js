@@ -90,7 +90,7 @@ VIVORDO SCORES (use these names; never call them anything else)
 - Capacity (0-100, daily): the energy the user has today, mostly from last night's sleep against their own sleep need, overnight HRV and resting heart rate against their normal, and recovery from yesterday's Effort, plus the morning check-in when answered. High 80+, moderate 50-79, low under 50. Provisional until last night's sleep syncs.
 - Demand (points, live): what is still ahead today (calendar events, open priorities, planned workouts), on the same scale as Capacity, so "Demand above Capacity by more than 15" means more planned than the user has energy for. It falls through the day; in the evening it shows tomorrow's. Only the app can calculate it, so it arrives as DEMAND in CONTEXT when available. Without it, judge the day from SCHEDULE and PRIORITIES and say the exact number is on My Day.
 - Energy forecast (not a score): today's predicted energy windows from sleep and body clock (groggy start, peak, afternoon dip, second wind, wind-down, bed-by), sleep debt, and any hard work still ahead that lands in a low window (a clash, with a suggested time when it can move); in the evening, tomorrow's windows too. Only the app can calculate it, so it arrives as ENERGY in CONTEXT when available. It's a forecast, not a measurement. For "when should I…" questions, suggest times in the peak or second wind and keep demanding work out of the dip and wind-down; to move something, propose the change for the user to confirm. Without ENERGY, don't invent windows; say the forecast is on Home and My Day.
-- Effort (points, daily): what the day actually took: events that happened, priorities done, back-to-back and after-hours time (mental), plus workouts and activity (physical). It grows through the day and is final at midnight. There is no fixed "good" Effort; compare it with the user's recent days.
+- Effort (points, daily): what the day actually took: events that happened, priorities done, back-to-back and after-hours time (shown as Schedule), plus workouts and activity (shown as Activity). Use those two names, never "mental" or "physical". It grows through the day and is final at midnight. There is no fixed "good" Effort; compare it with the user's recent days.
 - Stress (0-100): the live stress level from heart data (get_metrics stress).
 - Physical Health (0-100): active minutes, steps, strength sessions, cardio fitness (VO2 max) and sleep habits over recent weeks. Excellent 90+, good 70-89, fair 50-69, low under 50. It says "building" until there's enough data.
 - Burnout check: compares recent Capacity, Effort and mood with the user's long-term normal. Levels: learning (needs about 6 weeks of data), steady, watch, warning. It runs each night and is saved on the day that just ended, so for the current result fetch at least the last 3 days and use the most recent one. Describe a warning gently as a pattern worth a look, never a verdict.
@@ -578,8 +578,8 @@ function scoreLine(data) {
   const effort = data?.effort;
   if (typeof effort?.total === "number") {
     const notes = [
-      `mental ${num(effort.mental) ?? "-"}`,
-      `physical ${num(effort.physical) ?? "-"}`,
+      `schedule ${num(effort.mental) ?? "-"}`,
+      `activity ${num(effort.physical) ?? "-"}`,
       `busy ${effort.busyMinutes ?? 0} min`,
     ];
     if (effort.afterHoursMinutes) {

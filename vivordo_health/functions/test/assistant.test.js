@@ -202,7 +202,7 @@ test("score lines read the stored Capacity, Effort, Physical Health and burnout 
     effort: {total: 26.6, mental: 20, physical: 6.6, busyMinutes: 240, afterHoursMinutes: 30, backToBack: 3, prioritiesDone: 2, unfinishedPriorities: 1},
     physical: {score: 72, label: "good", daysOfData: 30},
     burnout: {level: "watch", areas: {capacity: {elevated: true}, effort: {elevated: false}, mood: {elevated: true}}},
-  }), "capacity=81 (high, sleep 7.1h vs need 7.5h, HRV 44.6, resting HR 58) | effort=26.6 (mental 20, physical 6.6, busy 240 min, after hours 30 min, 3 back-to-back, 2 priorities done, 1 unfinished) | physical_health=72 (good) | burnout_check=watch (strained: capacity, mood)");
+  }), "capacity=81 (high, sleep 7.1h vs need 7.5h, HRV 44.6, resting HR 58) | effort=26.6 (schedule 20, activity 6.6, busy 240 min, after hours 30 min, 3 back-to-back, 2 priorities done, 1 unfinished) | physical_health=72 (good) | burnout_check=watch (strained: capacity, mood)");
   assert.equal(scoreLine({capacity: {score: 55, label: "moderate", provisional: true, sleepHours: null}}), "capacity=55 (moderate, provisional)");
   assert.equal(scoreLine({physical: {score: null, label: "building", daysOfData: 5}, burnout: {level: "learning", learningDays: 12}}), "physical_health=building (5 days of data) | burnout_check=learning (12 days of history)");
   assert.equal(scoreLine({capacity: null, effort: null}), null);
@@ -215,7 +215,7 @@ test("get_scores reads scores_daily, not metrics_daily", async () => {
     scores: {"2026-09-30": {effort: {total: 12, mental: 12, physical: 0, busyMinutes: 60}}, "2026-10-01": {capacity: {score: 81, label: "high"}}},
   });
   assert.equal(await getScores(db, "u", {start_date: "2026-09-29", end_date: "2026-10-01"}),
-      "2026-09-30: effort=12 (mental 12, physical 0, busy 60 min)\n2026-10-01: capacity=81 (high)");
+      "2026-09-30: effort=12 (schedule 12, activity 0, busy 60 min)\n2026-10-01: capacity=81 (high)");
   assert.match(await getScores(db, "u", {start_date: "2026-01-01", end_date: "2026-01-02"}), /^No scores/);
   await assert.rejects(getScores(db, "u", {start_date: "2026-01-02", end_date: "2026-01-01"}), /^Error: Invalid range/);
 });

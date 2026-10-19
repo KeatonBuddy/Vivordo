@@ -279,8 +279,8 @@ class _ScoreHistoryState extends State<ScoreHistory> {
           detail: effort == null
               ? ''
               : [
-                  'Mental ${((effort['mental'] as num?) ?? 0).round()}',
-                  'physical ${((effort['physical'] as num?) ?? 0).round()}',
+                  'Schedule: ${((effort['mental'] as num?) ?? 0).round()}',
+                  'Activity: ${((effort['physical'] as num?) ?? 0).round()}',
                   if (after > 0) '$after min after hours',
                 ].join(' · '),
         );
