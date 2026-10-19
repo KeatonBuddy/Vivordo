@@ -10,6 +10,8 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/calendar_service.dart';
+import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/exercise_catalog_service.dart';
 import 'package:vivordo_health/src/services/achievement_unlock_service.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
@@ -553,6 +555,11 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       if (_lastSyncedUid != null) {
         NotificationService().clearUserReminders();
         unawaited(WhoopBleHeartRateService.instance.handleSignedOut());
+        // Google and Outlook sign-ins belong to the phone, not the Vivordo
+        // account: left connected, the next account read this one's
+        // calendar.
+        unawaited(CalendarService.signOut().catchError((Object _) {}));
+        unawaited(OutlookCalendarService.signOut().catchError((Object _) {}));
       }
       _lastSyncedUid = null;
       _userDocUid = null;

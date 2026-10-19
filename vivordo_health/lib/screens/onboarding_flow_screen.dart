@@ -790,6 +790,20 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       );
     }
     final found = _findings;
+    // Nothing to show yet (a new phone, or too little history): no "found".
+    if (found == null || (found.insight == null && found.usuals.isEmpty)) {
+      return _StepLayout(
+        kicker: 'ALL SET',
+        title: "You're all set",
+        body: _healthConnected
+            ? 'Vivordo is reading your $_healthName data and will learn your '
+                  'usual over the next couple of weeks. Your first Capacity '
+                  'arrives tomorrow.'
+            : 'Vivordo will learn your usual over the next couple of weeks.',
+        primary: 'Show me my day',
+        onPrimary: _busy ? null : () => _next(),
+      );
+    }
     return _StepLayout(
       kicker: 'ALL SET',
       title: "Here's what we found",
