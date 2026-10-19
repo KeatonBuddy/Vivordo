@@ -1,6 +1,6 @@
 # Vivordo Privacy Policy
 
-**Last updated: October 16, 2026**
+**Last updated: October 19, 2026**
 
 ## Introduction
 
@@ -89,7 +89,7 @@ Vivordo AI can propose adding, changing, or deleting a calendar event; the chang
 
 If you set an event's type (for example, "Focused work" or "Free time"), Vivordo applies it to every event with the same title and stores your choice in your account under a code derived from the title, never the title itself.
 
-Your Google Calendar and Outlook sign-ins are kept on your device, in the device's secure storage, and are not stored on Vivordo's servers.
+Your Google Calendar and Outlook sign-ins are kept on your device, in the device's secure storage, and are not stored on Vivordo's servers. Signing out of Vivordo also signs you out of Google Calendar and Outlook on that device, so the next person to sign in there can't see your calendar.
 
 ### Daily records for Your Day
 
