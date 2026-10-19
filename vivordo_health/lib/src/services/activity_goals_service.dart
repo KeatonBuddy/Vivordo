@@ -70,7 +70,9 @@ class ActivityGoalsService {
           .asyncMap((snapshot) async {
             final data = snapshot.data();
             final preferences = data?['preferences'] as Map?;
-            if (preferences?['activityGoals'] is! Map) {
+            // Saved only onto an existing account: a deleted one's document
+            // vanishing must not be written back.
+            if (preferences?['activityGoals'] is! Map && snapshot.exists) {
               const defaults = ActivityGoals();
               await save(defaults);
               return defaults;
@@ -90,7 +92,7 @@ class ActivityGoalsService {
         .get();
     final data = snapshot.data();
     final preferences = data?['preferences'] as Map?;
-    if (preferences?['activityGoals'] is! Map) {
+    if (preferences?['activityGoals'] is! Map && snapshot.exists) {
       const defaults = ActivityGoals();
       await save(defaults);
       return defaults;
@@ -121,7 +123,7 @@ class ActivityGoalsService {
         .get();
     final data = snapshot.data();
     final preferences = data?['preferences'] as Map?;
-    if (preferences?['strengthGoals'] is! Map) {
+    if (preferences?['strengthGoals'] is! Map && snapshot.exists) {
       await saveStrengthGoals(kDefaultStrengthGoals);
       return Map.of(kDefaultStrengthGoals);
     }
