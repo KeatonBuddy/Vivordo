@@ -28,4 +28,39 @@ void main() {
   test('no samples is no data, not zero', () {
     expect(largestSourceStepTotal(const []), isNull);
   });
+
+  test("a day's steps come from Health's hourly totals, so a sample begun "
+      'before midnight still counts its share of today', () {
+    // 2026-10-19: hours summed to 6,152 (the Health app's number) while the
+    // plugin's day total, counting only samples begun that day, gave 4,604.
+    final hours = [
+      539,
+      539,
+      470,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      30,
+      1023,
+      0,
+      1017,
+      123,
+      800,
+      1611,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ];
+    expect(dayStepTotal(hours), 6152);
+    expect(dayStepTotal(List.filled(24, 0)), isNull);
+    expect(dayStepTotal(null), isNull);
+  });
 }

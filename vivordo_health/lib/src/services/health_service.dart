@@ -1234,7 +1234,11 @@ class HealthService {
     for (var i = 0; i < daysBack; i++) {
       final day = today.subtract(Duration(days: i));
       final end = i == 0 ? now : day.add(const Duration(days: 1));
-      var total = (await _health.getTotalStepsInInterval(day, end))?.toDouble();
+      final dayKey = localDayKey(day);
+      final dayHours = hours[dayKey];
+      var total =
+          dayStepTotal(dayHours) ??
+          (await _health.getTotalStepsInInterval(day, end))?.toDouble();
 
       // The plugin reports "no statistics" as 0, not null, and on this device
       // it returned 0 for days Apple Health shows steps for. Writing that 0
@@ -1253,14 +1257,12 @@ class HealthService {
         }
       }
 
-      final dayKey = localDayKey(day);
       daysWithData.add(dayKey);
       final ref = _db
           .collection('users')
           .doc(uid)
           .collection('metrics_daily')
           .doc(dayKey);
-      final dayHours = hours[dayKey];
       batch.set(ref, {
         'steps': {
           'sum': total,
