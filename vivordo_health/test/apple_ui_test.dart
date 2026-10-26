@@ -375,4 +375,38 @@ void main() {
       lessThan(tester.getTopLeft(find.text('Morning check-in')).dy),
     );
   });
+
+  testWidgets('two short buttons sit side by side; long ones stack, with '
+      'cancel at the bottom', (tester) async {
+    final context = await pumpApp(tester);
+    confirmAction(
+      context,
+      title: 'Delete this workout?',
+      confirmLabel: 'Delete',
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getCenter(find.text('Cancel')).dy,
+      tester.getCenter(find.text('Delete')).dy,
+    );
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    confirmAction(
+      context,
+      title: 'Cancel workout?',
+      message: 'This discards the workout and everything entered in it.',
+      confirmLabel: 'Cancel workout',
+      cancelLabel: 'Keep workout',
+    );
+    await tester.pumpAndSettle();
+    final keep = tester.getRect(find.text('Keep workout'));
+    final cancel = tester.getRect(find.text('Cancel workout'));
+    expect(keep.top, greaterThan(cancel.bottom));
+    // Each label on one line: no wrapping inside a 46-point button.
+    expect(keep.height, lessThan(30));
+    expect(cancel.height, lessThan(30));
+    await tester.tap(find.text('Keep workout'));
+    await tester.pumpAndSettle();
+  });
 }

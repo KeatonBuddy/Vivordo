@@ -62,19 +62,20 @@ class AppleAlert extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final divider = colors.textSecondary.withValues(alpha: .28);
+    TextStyle labelStyle(AppleAlertButton b) => TextStyle(
+      fontSize: 17,
+      fontWeight: b.bold ? FontWeight.w600 : FontWeight.w400,
+    );
     Widget button(AppleAlertButton b) => InkWell(
       onTap: b.onPressed,
       child: Container(
-        height: 46,
+        constraints: const BoxConstraints(minHeight: 46),
         alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 11),
         child: Text(
           b.label,
           textAlign: TextAlign.center,
-          maxLines: 2,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: b.bold ? FontWeight.w600 : FontWeight.w400,
+          style: labelStyle(b).copyWith(
             color: b.onPressed == null
                 ? colors.textSecondary.withValues(alpha: .5)
                 : b.destructive
@@ -130,21 +131,54 @@ class AppleAlert extends StatelessWidget {
               ),
             ),
             Divider(height: .5, thickness: .5, color: divider),
-            if (buttons.length == 2)
-              IntrinsicHeight(
-                child: Row(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Side by side only when both labels fit on one line, as
+                // iOS does; otherwise stacked, the first (cancel) button at
+                // the bottom.
+                // With room to spare, so a label never runs to the edges.
+                final half = (constraints.maxWidth - .5) / 2 - 32;
+                // Measured in the dialog's own text style, as drawn.
+                final base = DefaultTextStyle.of(context).style;
+                bool fits(AppleAlertButton b) => !(TextPainter(
+                  text: TextSpan(
+                    text: b.label,
+                    style: base.merge(labelStyle(b)),
+                  ),
+                  maxLines: 1,
+                  textDirection: Directionality.of(context),
+                  textScaler: MediaQuery.textScalerOf(context),
+                )..layout(maxWidth: half)).didExceedMaxLines;
+                if (buttons.length == 2 && buttons.every(fits)) {
+                  return IntrinsicHeight(
+                    child: Row(
+                      children: [
+                        Expanded(child: button(buttons[0])),
+                        VerticalDivider(
+                          width: .5,
+                          thickness: .5,
+                          color: divider,
+                        ),
+                        Expanded(child: button(buttons[1])),
+                      ],
+                    ),
+                  );
+                }
+                final stacked = buttons.length == 2
+                    ? buttons.reversed.toList()
+                    : buttons;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(child: button(buttons[0])),
-                    VerticalDivider(width: .5, thickness: .5, color: divider),
-                    Expanded(child: button(buttons[1])),
+                    for (var i = 0; i < stacked.length; i++) ...[
+                      if (i > 0)
+                        Divider(height: .5, thickness: .5, color: divider),
+                      button(stacked[i]),
+                    ],
                   ],
-                ),
-              )
-            else
-              for (var i = 0; i < buttons.length; i++) ...[
-                if (i > 0) Divider(height: .5, thickness: .5, color: divider),
-                button(buttons[i]),
-              ],
+                );
+              },
+            ),
           ],
         ),
       ),
