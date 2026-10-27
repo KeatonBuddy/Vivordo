@@ -6,6 +6,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/ai_consent.dart';
@@ -386,8 +387,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               label: 'Height and weight',
               value: _profile.heightCm == null || _profile.weightKg == null
                   ? null
-                  : '${_feetInches(_profile.heightCm!)} · '
-                        '${(_profile.weightKg! * 2.2046226218).round()} lbs',
+                  : '${context.watch<ThemeController>().units.formatHeight(_profile.heightCm!)} · '
+                        '${context.watch<ThemeController>().units.formatBodyWeight(_profile.weightKg!, decimals: 0)}',
               placeholder: 'Add',
               onTap: _editMeasurements,
             ),
@@ -1067,11 +1068,6 @@ Widget onboardingLight(Widget child) => AnnotatedRegion<SystemUiOverlayStyle>(
     ),
   ),
 );
-
-String _feetInches(double cm) {
-  final inches = (cm / 2.54).round();
-  return '${inches ~/ 12}′ ${inches % 12}″';
-}
 
 class _StepLayout extends StatelessWidget {
   const _StepLayout({

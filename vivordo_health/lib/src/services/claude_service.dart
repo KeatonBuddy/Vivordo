@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'ai_consent.dart';
 import 'panda_prompts.dart';
 
@@ -28,7 +29,10 @@ class ClaudeService {
     if (context.length > 20000) {
       throw StateError('Workout is too large for analysis.');
     }
-    final text = await _task('workout_insight', {'context': context});
+    final text = await _task('workout_insight', {
+      'context': context,
+      'units': ThemeController.current.toMap(),
+    });
     if (text.isEmpty) throw StateError('No workout insight returned.');
     return text;
   }
@@ -200,6 +204,8 @@ class ClaudeService {
       'now': now.toIso8601String(),
       'utcOffsetMinutes': now.timeZoneOffset.inMinutes,
       'workoutCoach': workoutCoach,
+      // Settings → Units, so replies use them.
+      'units': ThemeController.current.toMap(),
       // This build can show and save a Vivordo AI routine card.
       'capabilities': const ['workout'],
     });

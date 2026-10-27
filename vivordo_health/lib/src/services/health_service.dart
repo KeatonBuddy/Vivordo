@@ -61,7 +61,7 @@ const List<HealthMetricDef> kHealthMetrics = [
     key: 'distance',
     type: HealthDataType.DISTANCE_WALKING_RUNNING,
     label: 'Distance',
-    description: 'Distance walked or run (in km)',
+    description: 'Distance walked or run',
   ),
   // ── Heart ───────────────────────────────────────────────────────────────────
   HealthMetricDef(

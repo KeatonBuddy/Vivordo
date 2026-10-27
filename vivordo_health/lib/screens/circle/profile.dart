@@ -747,7 +747,7 @@ class _ProfileActivityRow extends StatelessWidget {
     };
     final details = activity.kind == 'journal'
         ? activity.mood ?? 'Shared reflection'
-        : _activityDetails(activity);
+        : _activityDetails(activity, context.watch<ThemeController>().units);
     return _CircleCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       onTap: () => _openActivityDetails(context, activity),

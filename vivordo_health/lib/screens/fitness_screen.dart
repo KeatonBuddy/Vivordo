@@ -15,6 +15,7 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
 
@@ -1057,7 +1058,7 @@ class _ThisWeekCardState extends State<_ThisWeekCard> {
                         ),
                         Expanded(
                           child: _ActivityStat(
-                            value: '${km.toStringAsFixed(1)} km',
+                            value: _units(context).formatDistance(km),
                             label: 'Distance',
                           ),
                         ),
@@ -1591,7 +1592,7 @@ class _BodyCardState extends State<_BodyCard> {
                               label: 'WEIGHT',
                               value: weight == null
                                   ? '--'
-                                  : '${_number(weight * 2.2046226218)} lbs',
+                                  : _units(context).formatBodyWeight(weight),
                             ),
                           ),
                           const _ProfileDivider(),
@@ -1660,7 +1661,7 @@ class _RecentWorkoutRow extends StatelessWidget {
               if (workout.setCount > 0) '${workout.setCount} sets',
               if (workout.primaryCardioOrSportExercise?.distanceKm
                   case final km? when km > 0)
-                '${km.toStringAsFixed(1)} km',
+                _units(context).formatDistance(km),
             ].join(' · '),
           ),
           trailing: const Icon(Icons.chevron_right_rounded, color: _muted),
@@ -1707,7 +1708,7 @@ class _RecentActivityRow extends StatelessWidget {
       '${_recentDayLabel(activity.day)} · ${activity.minutes} min',
     ];
     if (activity.km != null) {
-      details.add('${activity.km!.toStringAsFixed(1)} km');
+      details.add(_units(context).formatDistance(activity.km!));
     }
     if (activity.sets != null) details.add('${activity.sets} sets');
     final hasSets = activity.sets != null;
@@ -1758,15 +1759,19 @@ class _LogActivityDialogState extends State<_LogActivityDialog> {
     final kmText = _km.text;
     final setsText = _sets.text;
     final minutes = int.tryParse(_minutes.text);
-    final km = kmText.trim().isEmpty ? null : double.tryParse(kmText);
+    final typed = kmText.trim().isEmpty ? null : double.tryParse(kmText);
+    // Typed in Settings → Units, saved in km.
+    final km = typed == null
+        ? null
+        : context.read<ThemeController>().units.distanceToKm(typed);
     final sets = setsText.trim().isEmpty ? null : int.tryParse(setsText);
     if (name.trim().isEmpty || minutes == null || minutes <= 0) {
       setState(() => _error = 'Enter a name and valid number of minutes.');
       return;
     }
-    if ((kmText.trim().isNotEmpty && km == null) ||
+    if ((kmText.trim().isNotEmpty && typed == null) ||
         (setsText.trim().isNotEmpty && sets == null)) {
-      setState(() => _error = 'Enter valid numbers for kilometres and sets.');
+      setState(() => _error = 'Enter valid numbers for distance and sets.');
       return;
     }
     setState(() {
@@ -1845,7 +1850,7 @@ class _LogActivityDialogState extends State<_LogActivityDialog> {
           AppleFormTextRow(
             label: 'Distance',
             controller: _km,
-            placeholder: 'km',
+            placeholder: _units(context).distanceLabel,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
           AppleFormTextRow(
@@ -2492,6 +2497,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Future<void> _finishWorkout() async {
+    final units = context.read<ThemeController>().units;
     if (exercises.isEmpty) {
       showToast(context, 'Add at least one exercise first.');
       return;
@@ -2543,7 +2549,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           );
           return;
         }
-        sets.add(WorkoutSetRecord(weightLbs: weight, reps: reps));
+        // Typed in Settings → Units, saved in lb (weightLbs).
+        sets.add(
+          WorkoutSetRecord(weightLbs: units.liftToLbs(weight), reps: reps),
+        );
       }
       records.add(
         WorkoutExerciseRecord(
@@ -3257,9 +3266,6 @@ class _ExerciseDefinition {
   final bool isCustom;
 }
 
-String _compactWorkoutNumber(double value) =>
-    value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
-
 class _WorkoutSet {
   _WorkoutSet({this.previous});
 
@@ -3533,7 +3539,9 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                         Text(
                           distance.km == null
                               ? 'Tracking distance automatically'
-                              : '${distance.km!.toStringAsFixed(2)} km',
+                              : _units(
+                                  context,
+                                ).formatDistance(distance.km!, decimals: 2),
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 2),
@@ -3553,9 +3561,9 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
             ),
           )
         else ...[
-          const Row(
+          Row(
             children: [
-              SizedBox(
+              const SizedBox(
                 width: 70,
                 child: Text(
                   'PREVIOUS',
@@ -3566,7 +3574,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                   ),
                 ),
               ),
-              SizedBox(
+              const SizedBox(
                 width: 38,
                 child: Text(
                   'SET',
@@ -3579,9 +3587,9 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               ),
               Expanded(
                 child: Text(
-                  'LBS',
+                  _units(context).liftLabel.toUpperCase(),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     color: _muted,
@@ -3671,7 +3679,7 @@ class _WorkoutSetRow extends StatelessWidget {
         child: Text(
           set.previous == null
               ? '—'
-              : '${_compactWorkoutNumber(set.previous!.weightLbs)} × ${set.previous!.reps}',
+              : '${_units(context).liftNumber(set.previous!.weightLbs)} × ${set.previous!.reps}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: _muted, fontSize: 12),
@@ -5040,3 +5048,6 @@ class _CustomExerciseBadge extends StatelessWidget {
     ),
   );
 }
+
+/// The user's Settings → Units, rebuilding when they change.
+Units _units(BuildContext context) => context.watch<ThemeController>().units;

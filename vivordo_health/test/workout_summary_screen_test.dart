@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/screens/workout_summary_screen.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/personal_best.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 Future<void> _pumpSummary(WidgetTester tester, SavedWorkout workout) async {
+  // Canada: lb for lifts, km for distance, whatever the machine running the tests.
+  tester.platformDispatcher.localeTestValue = const Locale('en', 'CA');
+  addTearDown(tester.platformDispatcher.clearLocaleTestValue);
   await tester.pumpWidget(
     MaterialApp(
+      builder: (_, child) => ChangeNotifierProvider(
+        create: (_) => ThemeController(),
+        child: child,
+      ),
       theme: VivordoTheme.light,
       home: WorkoutSummaryScreen(workout: workout),
     ),
@@ -78,8 +86,8 @@ void main() {
 
     Color? colorOf(String text) =>
         tester.widget<Text>(find.text(text)).style?.color;
-    expect(colorOf('155 lb'), const Color(0xFFB45309)); // light theme
-    expect(colorOf('135 lb'), isNot(const Color(0xFFB45309)));
+    expect(colorOf('155 lbs'), const Color(0xFFB45309)); // light theme
+    expect(colorOf('135 lbs'), isNot(const Color(0xFFB45309)));
   });
 
   testWidgets('trends show as grouped rows; the text keeps the advice', (
@@ -164,7 +172,7 @@ void main() {
       expect(find.text(label), findsOneWidget, reason: label);
     }
     expect(find.text('NEW'), findsOneWidget);
-    for (final chip in ['+5 lb', '+2 reps', 'Matched', '−1 lb', '−2 reps']) {
+    for (final chip in ['+5 lbs', '+2 reps', 'Matched', '−1 lbs', '−2 reps']) {
       expect(find.text(chip), findsOneWidget, reason: chip);
     }
     expect(find.text('First time'), findsOneWidget);

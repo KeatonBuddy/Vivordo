@@ -1505,6 +1505,66 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ],
                 ),
 
+                const _SectionLabel('Units'),
+                _SettingsCard(
+                  children: [
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.monitor_weight_outlined,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Body weight',
+                      trailing: _UnitToggle<MassUnit>(
+                        options: const {MassUnit.kg: 'kg', MassUnit.lb: 'lbs'},
+                        read: (u) => u.bodyWeight,
+                        write: (u, v) => u.copyWith(bodyWeight: v),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.fitness_center_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Lifting weight',
+                      trailing: _UnitToggle<MassUnit>(
+                        options: const {MassUnit.kg: 'kg', MassUnit.lb: 'lbs'},
+                        read: (u) => u.liftWeight,
+                        write: (u, v) => u.copyWith(liftWeight: v),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.straighten_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Distance',
+                      trailing: _UnitToggle<DistanceUnit>(
+                        options: const {
+                          DistanceUnit.km: 'km',
+                          DistanceUnit.mi: 'mi',
+                        },
+                        read: (u) => u.distance,
+                        write: (u, v) => u.copyWith(distance: v),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.height_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Height',
+                      trailing: _UnitToggle<HeightUnit>(
+                        options: const {
+                          HeightUnit.cm: 'cm',
+                          HeightUnit.ftIn: 'ft·in',
+                        },
+                        read: (u) => u.height,
+                        write: (u, v) => u.copyWith(height: v),
+                      ),
+                    ),
+                  ],
+                ),
+
                 const _SectionLabel('Privacy'),
                 _SettingsCard(
                   children: [
@@ -2654,6 +2714,63 @@ class _AppearanceToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<ThemeController>();
+    return _PillToggle(
+      options: const {
+        ThemeMode.system: 'System',
+        ThemeMode.light: 'Light',
+        ThemeMode.dark: 'Dark',
+      },
+      value: controller.mode,
+      semanticsSuffix: 'appearance',
+      onChanged: controller.setMode,
+    );
+  }
+}
+
+/// A Units row's choice, saved straight away.
+class _UnitToggle<T extends Object> extends StatelessWidget {
+  const _UnitToggle({
+    required this.options,
+    required this.read,
+    required this.write,
+  });
+
+  final Map<T, String> options;
+  final T Function(Units units) read;
+  final Units Function(Units units, T value) write;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<ThemeController>();
+    return _PillToggle(
+      options: options,
+      value: read(controller.units),
+      semanticsSuffix: 'units',
+      // Equal segments so the four unit toggles line up.
+      segmentWidth: 54,
+      onChanged: (value) => controller.setUnits(write(controller.units, value)),
+    );
+  }
+}
+
+/// A compact segmented choice for a settings row's trailing edge.
+class _PillToggle<T extends Object> extends StatelessWidget {
+  const _PillToggle({
+    required this.options,
+    required this.value,
+    required this.semanticsSuffix,
+    required this.onChanged,
+    this.segmentWidth = 0,
+  });
+
+  final Map<T, String> options;
+  final T value;
+  final String semanticsSuffix;
+  final ValueChanged<T> onChanged;
+  final double segmentWidth;
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     return Container(
       padding: const EdgeInsets.all(3),
@@ -2664,37 +2781,35 @@ class _AppearanceToggle extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final (mode, label) in const [
-            (ThemeMode.system, 'System'),
-            (ThemeMode.light, 'Light'),
-            (ThemeMode.dark, 'Dark'),
-          ])
+          for (final MapEntry(key: option, value: label) in options.entries)
             Semantics(
               button: true,
-              selected: controller.mode == mode,
-              label: '$label appearance',
+              selected: value == option,
+              label: '$label $semanticsSuffix',
               excludeSemantics: true,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => controller.setMode(mode),
+                onTap: () => onChanged(option),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
+                  constraints: BoxConstraints(minWidth: segmentWidth),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
-                    color: controller.mode == mode
+                    color: value == option
                         ? VivordoTheme.brand
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(9),
                   ),
                   child: Text(
                     label,
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: controller.mode == mode
+                      color: value == option
                           ? Colors.white
                           : colors.textSecondary,
                     ),

@@ -5,6 +5,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
+import '../src/utils/units.dart';
+
+export '../src/utils/units.dart';
+
 /// Semantic colors used by Vivordo surfaces.
 ///
 /// Screens should use these roles (or [ThemeData.colorScheme]) instead of
@@ -230,11 +234,13 @@ abstract final class VivordoTheme {
   }
 }
 
-/// Keeps the selected appearance, and whether scores show as numbers or
-/// words, in the signed-in user's Firestore profile.
+/// Keeps the selected appearance, whether scores show as numbers or words,
+/// and the units measurements show in, in the signed-in user's Firestore
+/// profile.
 class ThemeController extends ChangeNotifier {
   ThemeMode _mode = ThemeMode.system;
   bool _showScoreNumbers = true;
+  Units _units = _deviceUnits;
   String? _boundUid;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
 
@@ -244,6 +250,18 @@ class ThemeController extends ChangeNotifier {
   /// switched off): scores show as sentences and state chips. Measurements
   /// (sleep, heart rate, steps) always show.
   bool get showScoreNumbers => _showScoreNumbers;
+
+  /// Settings → Units (`preferences.units`), each measure defaulting to the
+  /// device region's (Units.forCountry) until chosen.
+  Units get units => _units;
+
+  /// The signed-in user's units for code without a BuildContext (the AI
+  /// requests); the latest any controller has seen.
+  static Units current = _deviceUnits;
+
+  static Units get _deviceUnits => Units.forCountry(
+    WidgetsBinding.instance.platformDispatcher.locale.countryCode,
+  );
 
   String get modeLabel => switch (_mode) {
     ThemeMode.system => 'System Default',
@@ -260,6 +278,7 @@ class ThemeController extends ChangeNotifier {
     if (user == null) {
       _setMode(ThemeMode.system);
       _setShowScoreNumbers(true);
+      _setUnits(_deviceUnits);
       return;
     }
 
@@ -285,6 +304,7 @@ class ThemeController extends ChangeNotifier {
           };
           _setMode(nextMode);
           _setShowScoreNumbers(preferences?['showScoreNumbers'] != false);
+          _setUnits(Units.fromPreferences(preferences?['units'], _deviceUnits));
         });
   }
 
@@ -300,6 +320,22 @@ class ThemeController extends ChangeNotifier {
   void _setShowScoreNumbers(bool show) {
     if (_showScoreNumbers == show) return;
     _showScoreNumbers = show;
+    notifyListeners();
+  }
+
+  Future<void> setUnits(Units units) async {
+    _setUnits(units);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      'preferences.units': units.toMap(),
+    });
+  }
+
+  void _setUnits(Units units) {
+    current = units;
+    if (_units == units) return;
+    _units = units;
     notifyListeners();
   }
 

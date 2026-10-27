@@ -5,6 +5,8 @@
 // and the model fetches health data itself through tools instead of the app
 // guessing which metrics a message needs from keywords.
 
+const {cleanUnits, unitsInstruction} = require("./units");
+
 const MODEL = "claude-sonnet-5-5";
 const MAX_ROUNDS = 5; // model calls per turn; data lookups rarely need > 2
 const MAX_METRIC_DAYS = 92;
@@ -397,6 +399,8 @@ function validateAssistantRequest(data) {
     // it as a broken priority, so they never get propose_workout.
     canSaveWorkouts: Array.isArray(data?.capabilities) &&
       data.capabilities.includes("workout"),
+    // Settings → Units; older builds send none.
+    units: cleanUnits(data?.units),
   };
 }
 
@@ -1480,6 +1484,8 @@ async function runAssistant({client, db, uid, request: input, now,
   if (request.canSaveWorkouts) {
     system.push({type: "text", text: WORKOUT_ROUTINE_PROMPT});
   }
+  const units = unitsInstruction(request.units);
+  if (units) system.push({type: "text", text: units});
   const tools = request.canSaveWorkouts ? TOOLS :
     TOOLS.filter((tool) => tool.name !== "propose_workout");
   const workoutCache = {};

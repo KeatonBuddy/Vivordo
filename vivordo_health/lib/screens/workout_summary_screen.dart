@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/personal_best.dart';
 import 'package:vivordo_health/src/utils/workout_activity_visual.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 const _summaryPurple = Color(0xFF6B5CE7);
@@ -41,7 +42,7 @@ class WorkoutSummaryScreen extends StatelessWidget {
       workout.displayName,
       category: workout.displayCategory,
     );
-    final overview = _WorkoutOverview.fromWorkout(workout);
+    final overview = _WorkoutOverview.fromWorkout(workout, _units(context));
 
     return WorkoutAiInsight(
       key: ValueKey(workout),
@@ -264,7 +265,11 @@ class _HeroStats extends StatelessWidget {
       if (overview.totalReps > 0)
         ('${overview.totalReps}', null, 'reps')
       else if (overview.totalDistance > 0)
-        (_formatNumber(overview.totalDistance), 'km', 'distance')
+        (
+          _formatNumber(_units(context).distanceValue(overview.totalDistance)),
+          _units(context).distanceLabel,
+          'distance',
+        )
       else
         ('${workout.exerciseCount}', null, 'exercises'),
     ];
@@ -552,9 +557,10 @@ class _TrendRow extends StatelessWidget {
   final Color color;
   final bool divider;
 
-  static String _set(double? weight, int? reps) => weight == null || weight <= 0
+  static String _set(Units units, double? weightLbs, int? reps) =>
+      weightLbs == null || weightLbs <= 0
       ? '${reps ?? 0} reps'
-      : '${_formatNumber(weight)} × ${reps ?? 0}';
+      : '${units.liftNumber(weightLbs)} × ${reps ?? 0}';
 
   @override
   Widget build(BuildContext context) {
@@ -569,6 +575,7 @@ class _TrendRow extends StatelessWidget {
           : best,
     );
     final today = _set(
+      _units(context),
       exercise.currentAttemptWeightLbs ?? best?.weightLbs,
       exercise.currentAttemptReps ?? best?.reps,
     );
@@ -582,7 +589,11 @@ class _TrendRow extends StatelessWidget {
     String signed(num value, String unit) =>
         '${value > 0 ? '+' : '−'}${value is double ? _formatNumber(value.abs()) : value.abs()} $unit';
     final changes = [
-      if (weightChange.abs() >= .05) signed(weightChange, 'lb'),
+      if (weightChange.abs() >= .05)
+        signed(
+          _units(context).liftValue(weightChange),
+          _units(context).liftLabel,
+        ),
       if (repChange != 0)
         signed(repChange, repChange.abs() == 1 ? 'rep' : 'reps'),
     ];
@@ -632,6 +643,7 @@ class _TrendRow extends StatelessWidget {
                       if (!isNew) ...[
                         TextSpan(
                           text: _set(
+                            _units(context),
                             exercise.previousAttemptWeightLbs,
                             exercise.previousAttemptReps,
                           ),
@@ -755,7 +767,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
                 Icon(Icons.route_rounded, color: colors.textSecondary),
                 const SizedBox(width: 10),
                 Text(
-                  '${_formatNumber(exercise.distanceKm!)} km',
+                  _units(context).formatDistance(exercise.distanceKm!),
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
@@ -781,7 +793,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
                 highlight: index == _personalBestSetIndex(exercise),
                 set: '${index + 1}',
                 weight: exercise.sets[index].weightLbs > 0
-                    ? '${_formatNumber(exercise.sets[index].weightLbs)} lb'
+                    ? _units(context).formatLift(exercise.sets[index].weightLbs)
                     : '—',
                 reps: exercise.sets[index].reps > 0
                     ? '${exercise.sets[index].reps}'
@@ -805,7 +817,9 @@ class _ProgressiveOverloadRecommendation extends StatelessWidget {
   Widget build(BuildContext context) {
     final repIncrease =
         exercise.currentAttemptReps! - exercise.previousAttemptReps!;
-    final weight = _formatNumber(exercise.currentAttemptWeightLbs!);
+    final weight = _units(
+      context,
+    ).formatLift(exercise.currentAttemptWeightLbs!);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -825,7 +839,7 @@ class _ProgressiveOverloadRecommendation extends StatelessWidget {
           const SizedBox(width: 9),
           Expanded(
             child: Text(
-              'You completed $repIncrease more ${repIncrease == 1 ? 'rep' : 'reps'} at $weight lb. Consider increasing the weight by the smallest available increment next session.',
+              'You completed $repIncrease more ${repIncrease == 1 ? 'rep' : 'reps'} at $weight. Consider increasing the weight by the smallest available increment next session.',
               style: const TextStyle(
                 color: _summaryPurple,
                 fontSize: 13,
@@ -880,7 +894,7 @@ class _ExerciseComparisonBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trend = exercise.attemptTrend!;
-    final differenceLabel = _exerciseDifferenceLabel(exercise);
+    final differenceLabel = _exerciseDifferenceLabel(exercise, _units(context));
     final (icon, label, color) = switch (trend) {
       ExerciseAttemptTrend.improved => (
         Icons.trending_up_rounded,
@@ -1014,7 +1028,7 @@ class _WorkoutOverview {
   final int totalReps;
   final double totalDistance;
 
-  factory _WorkoutOverview.fromWorkout(SavedWorkout workout) {
+  factory _WorkoutOverview.fromWorkout(SavedWorkout workout, Units units) {
     final categories = workout.exercises
         .map((exercise) => exercise.category)
         .toSet();
@@ -1070,7 +1084,7 @@ class _WorkoutOverview {
         ? 'You completed ${workout.setCount} working sets across ${workout.exerciseCount} ${workout.exerciseCount == 1 ? 'exercise' : 'exercises'} in $duration.'
         : 'You completed this session in $duration.';
     final detail = totalDistance > 0
-        ? ' You covered ${_formatNumber(totalDistance)} km during the session.'
+        ? ' You covered ${units.formatDistance(totalDistance)} during the session.'
         : '';
     // The trend rows under this text show each exercise's change; the text
     // keeps the advice.
@@ -1090,7 +1104,7 @@ class _WorkoutOverview {
     final chips = <String>[
       // Reps, or distance when there are no reps, lead the hero card.
       if (totalReps > 0 && totalDistance > 0)
-        '${_formatNumber(totalDistance)} km',
+        units.formatDistance(totalDistance),
       if (workout.personalBestCount > 0)
         '★ ${workout.personalBestCount} personal ${workout.personalBestCount == 1 ? 'best' : 'bests'}',
     ];
@@ -1169,14 +1183,14 @@ String _durationSentence(int seconds) {
 String _formatNumber(double value) =>
     value % 1 == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
 
-String _exerciseDifferenceLabel(WorkoutExerciseRecord exercise) {
+String _exerciseDifferenceLabel(WorkoutExerciseRecord exercise, Units units) {
   final currentWeight = exercise.currentAttemptWeightLbs;
   final previousWeight = exercise.previousAttemptWeightLbs;
   if (currentWeight != null && previousWeight != null) {
     final difference = currentWeight - previousWeight;
     if (difference.abs() >= .05) {
       final sign = difference > 0 ? '+' : '-';
-      return '$sign${_formatNumber(difference.abs())} lb vs last time';
+      return '$sign${units.liftNumber(difference.abs())} ${units.liftLabel} vs last time';
     }
   }
   final currentReps = exercise.currentAttemptReps;
@@ -1190,3 +1204,6 @@ String _exerciseDifferenceLabel(WorkoutExerciseRecord exercise) {
   }
   return 'Matched last time';
 }
+
+/// The user's Settings → Units, rebuilding when they change.
+Units _units(BuildContext context) => context.watch<ThemeController>().units;

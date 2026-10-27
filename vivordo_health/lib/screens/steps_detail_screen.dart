@@ -9,6 +9,7 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 class StepsDetailScreen extends StatefulWidget {
@@ -426,7 +427,10 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${distanceKm.toStringAsFixed(decimals)} km',
+                  context.watch<ThemeController>().units.formatDistance(
+                    distanceKm,
+                    decimals: decimals,
+                  ),
                   style: const TextStyle(
                     fontSize: 25,
                     fontWeight: FontWeight.w900,

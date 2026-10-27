@@ -1,5 +1,7 @@
 "use strict";
 
+const {unitsInstruction} = require("./units");
+
 // One-shot AI tasks for the app (check-in questions, chat summaries, workout
 // analysis). The prompts live here: the app sends only its data, so it can no
 // longer have Claude run instructions of its own.
@@ -263,7 +265,9 @@ const TASKS = {
     return {
       model: SONNET, maxTokens: 2000,
       system: `${WORKOUT_COACH}\nGive one grounded observation and ` +
-        "one practical suggestion in at most 80 words. Return plain text.",
+        "one practical suggestion in at most 80 words. Return plain text." +
+        (unitsInstruction(input?.units) ?
+          `\n${unitsInstruction(input.units)}` : ""),
       user: context,
     };
   },

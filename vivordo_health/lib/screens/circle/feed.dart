@@ -861,9 +861,10 @@ class _ActivityFeedState extends State<_ActivityFeed> {
 bool _isMine(CircleActivity activity) =>
     activity.profile.uid == FirebaseAuth.instance.currentUser?.uid;
 
-String _activityDetails(CircleActivity activity) => [
+/// Distances are stored in km and shown in each viewer's own units.
+String _activityDetails(CircleActivity activity, Units units) => [
   if (activity.minutes > 0) '${activity.minutes} min',
-  if (activity.km != null) '${activity.km!.toStringAsFixed(1)} km',
+  if (activity.km != null) units.formatDistance(activity.km!),
   if (activity.sets != null && activity.sets! > 0) '${activity.sets} sets',
 ].join(' · ');
 
@@ -909,7 +910,10 @@ class _ActivityPostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    final details = _activityDetails(activity);
+    final details = _activityDetails(
+      activity,
+      context.watch<ThemeController>().units,
+    );
     final (verb, subject) = switch (activity.kind) {
       'journal' => ('shared a', 'Journal Entry'),
       'achievement' => (
@@ -1381,7 +1385,10 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
                           _StatChip(label: '${activity.minutes} min'),
                         if (activity.km != null)
                           _StatChip(
-                            label: '${activity.km!.toStringAsFixed(1)} km',
+                            label: context
+                                .watch<ThemeController>()
+                                .units
+                                .formatDistance(activity.km!),
                           ),
                         if (activity.sets != null && activity.sets! > 0)
                           _StatChip(label: '${activity.sets} sets'),

@@ -436,6 +436,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Weight's label and values follow Settings → Units.
+    context.select<ThemeController, Units>((c) => c.units);
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
       body: SafeArea(
@@ -1204,7 +1206,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'sleep':
         return 'Sleep (hours)';
       case 'weight':
-        return 'Weight (kg)';
+        return 'Weight (${context.read<ThemeController>().units.bodyWeightLabel})';
       case 'body_fat':
         return 'Body Fat (%)';
       case 'vo2max':
@@ -1475,7 +1477,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'sleep':
         return '${number(decimals: 1)}h';
       case 'weight':
-        return '${number(decimals: 1)} kg';
+        return context.read<ThemeController>().units.formatBodyWeight(value);
       case 'body_fat':
         return '${number(decimals: 1)}%';
       case 'vo2max':

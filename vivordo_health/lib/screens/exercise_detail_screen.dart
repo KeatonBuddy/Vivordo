@@ -11,6 +11,7 @@ import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../widgets/apple_ui.dart';
@@ -505,7 +506,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
           Text(
             change == 0
                 ? 'Same weight across ${visible.length} sessions'
-                : '${change > 0 ? '↑' : '↓'} ${_number(change.abs())} lb across ${visible.length} sessions',
+                : '${change > 0 ? '↑' : '↓'} ${context.watch<ThemeController>().units.formatLift(change.abs())} across ${visible.length} sessions',
             style: TextStyle(
               color: change == 0
                   ? context.vivordoColors.textSecondary
@@ -520,6 +521,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             height: 190,
             child: CustomPaint(
               painter: _WeightChartPainter(
+                units: context.watch<ThemeController>().units,
                 points: visible,
                 dark: Theme.of(context).brightness == Brightness.dark,
               ),
@@ -585,8 +587,6 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   String _duration(int minutes) => minutes >= 60
       ? '${minutes ~/ 60} h${minutes % 60 == 0 ? '' : ' ${minutes % 60} m'}'
       : '$minutes min';
-  String _number(double value) => value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
-
   Widget _card({required Widget child, required EdgeInsets padding}) =>
       Container(
         width: double.infinity,
@@ -990,9 +990,16 @@ class _ExerciseBarPainter extends CustomPainter {
 }
 
 class _WeightChartPainter extends CustomPainter {
-  const _WeightChartPainter({required this.points, required this.dark});
+  const _WeightChartPainter({
+    required this.points,
+    required this.dark,
+    required this.units,
+  });
   final List<_WeightPoint> points;
   final bool dark;
+
+  /// Settings → Units, for the point labels (weights are stored in lb).
+  final Units units;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1030,7 +1037,7 @@ class _WeightChartPainter extends CustomPainter {
       );
       _center(
         canvas,
-        '${points[i].weight.round()} lb',
+        '${units.liftValue(points[i].weight).round()} ${units.liftLabel}',
         Offset(offsets[i].dx, offsets[i].dy - 20),
         9,
       );
@@ -1059,5 +1066,7 @@ class _WeightChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _WeightChartPainter oldDelegate) =>
-      !listEquals(oldDelegate.points, points) || oldDelegate.dark != dark;
+      !listEquals(oldDelegate.points, points) ||
+      oldDelegate.dark != dark ||
+      oldDelegate.units != units;
 }
