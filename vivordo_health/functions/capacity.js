@@ -378,7 +378,7 @@ async function physicalLoads(user, metricsDocs, start, day) {
   const heartUsual = heartActive.length >= MIN_ACTIVE_DAYS ?
     median(heartActive) : null;
 
-  const {physicalLoad} = require("./effort");
+  const {physicalLoad, loggedWorkouts} = require("./effort");
   const workouts = await user.collection("workouts")
       .where("exerciseGoalDay", ">=", start)
       .where("exerciseGoalDay", "<", day)
@@ -397,6 +397,19 @@ async function physicalLoads(user, metricsDocs, start, day) {
       minutes: doc.get("durationMinutes"),
     });
   }
+  // Logged activities (Log activity) count like workouts, less what Health
+  // already recorded that day (loggedWorkouts).
+  const logged = await user.collection("recent_activities")
+      .where("exerciseGoalDay", ">=", start)
+      .where("exerciseGoalDay", "<", day)
+      .select("name", "minutes", "exerciseGoalDay")
+      .get();
+  const loggedByDay = new Map();
+  for (const doc of logged.docs) {
+    const key = doc.get("exerciseGoalDay");
+    if (!loggedByDay.has(key)) loggedByDay.set(key, []);
+    loggedByDay.get(key).push(doc.data());
+  }
   const earlier = metricsDocs.filter((d) => validDay(d.id) && d.id < day);
   const calories = earlier.map((d) => d.get("active_calories")?.sum)
       .filter((v) => finite(v) && v > 0);
@@ -406,18 +419,21 @@ async function physicalLoads(user, metricsDocs, start, day) {
   // sign of strain (a long walk), so never a big day.
   const caloriesOnly = new Set();
   for (const doc of earlier) {
+    const healthMinutes = doc.get("exercise_time")?.healthSum ?? null;
     const load = physicalLoad({
-      workouts: byDay.get(doc.id) ?? [],
-      healthMinutes: doc.get("exercise_time")?.healthSum ?? null,
+      workouts: [...byDay.get(doc.id) ?? [],
+        ...loggedWorkouts(loggedByDay.get(doc.id) ?? [], healthMinutes)],
+      healthMinutes,
       activeCalories: doc.get("active_calories")?.sum ?? null,
       usualCalories,
     });
     loadOn.set(doc.id, load.points);
     if (load.source === "calories") caloriesOnly.add(doc.id);
   }
-  for (const [key, list] of byDay) {
+  for (const key of new Set([...byDay.keys(), ...loggedByDay.keys()])) {
     if (!loadOn.has(key)) {
-      loadOn.set(key, physicalLoad({workouts: list}).points);
+      loadOn.set(key, physicalLoad({workouts: [...byDay.get(key) ?? [],
+        ...loggedWorkouts(loggedByDay.get(key) ?? [], null)]}).points);
     }
   }
   const active = [...loadOn.values()].filter((v) => v > 0);
