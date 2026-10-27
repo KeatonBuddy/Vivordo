@@ -189,6 +189,23 @@ test("workouts are dated in the user's timezone", async () => {
   assert.equal(client.requests[1].messages.at(-1).content[0].content, "2026-09-30 | 45 min | Bench=135lb×8/145.5lb×6; Run=3.2km");
 });
 
+test("workouts and metrics come back in the user's units", async () => {
+  const completed = new Date("2026-10-01T03:00:00Z");
+  const db = fakeDb({workouts: [{completedAt: {toDate: () => completed}, durationSeconds: 2700, exercises: [
+    {name: "Squat", sets: [{weightLbs: 185, reps: 8}]},
+    {name: "Run", distanceKm: 6.1, sets: []},
+  ]}]});
+  const client = fakeClient([
+    {stop_reason: "tool_use", usage: {}, content: [toolUse("w", "get_workouts", {limit: 3})]},
+    {stop_reason: "tool_use", usage: {}, content: [toolUse("r", "reply", {message: "Nice.", intent: "chitchat", crisis: false})]},
+  ]);
+  const request = validateAssistantRequest({...base, units: {liftWeight: "kg", distance: "mi"}});
+  await runAssistant({client, db, uid: "u", request});
+  assert.equal(client.requests[1].messages.at(-1).content[0].content, "2026-09-30 | 45 min | Squat=83.9kg×8; Run=3.8mi");
+  assert.match(client.requests[0].system.at(-1).text, /lifting weights in kg/);
+  assert.equal(metricValue("distance", {sum: 6.1}, (km) => km / 1.609344), "3.8");
+});
+
 test("the prompt carries the safety and reminder rules", () => {
   assert.match(SYSTEM_PROMPT, /set crisis: true/);
   assert.match(SYSTEM_PROMPT, /"remind me to pay internet bill on Oct 1"/);

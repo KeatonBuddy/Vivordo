@@ -5,7 +5,7 @@
 // and the model fetches health data itself through tools instead of the app
 // guessing which metrics a message needs from keywords.
 
-const {cleanUnits, unitsInstruction} = require("./units");
+const {cleanUnits, unitsInstruction, unitConverter} = require("./units");
 
 const MODEL = "claude-sonnet-5-5";
 const MAX_ROUNDS = 5; // model calls per turn; data lookups rarely need > 2
@@ -264,7 +264,8 @@ const TOOLS = [
     name: "get_workouts",
     description:
       "The user's most recent saved workouts, newest first: date, minutes, " +
-      "and exercises with sets (weight lb x reps) or distance in km.",
+      "and exercises with sets (weight x reps) or distance, in the user's " +
+      "units.",
     input_schema: {
       type: "object",
       properties: {
@@ -497,9 +498,10 @@ const round = (value) =>
  *
  * @param {string} metric metric key
  * @param {*} raw stored value
+ * @param {function(number): number} convert into the user's units
  * @return {string|null}
  */
-function metricValue(metric, raw) {
+function metricValue(metric, raw, convert = (value) => value) {
   if (metric === "sleep" && raw && typeof raw === "object") {
     const hours = typeof raw.avg === "number" ? round(raw.avg) + "h" : null;
     const stages = raw.stages && typeof raw.stages === "object" ?
@@ -516,7 +518,7 @@ function metricValue(metric, raw) {
     value = [preferred, raw.avg, raw.sum, raw.max]
         .find((v) => typeof v === "number") ?? null;
   }
-  return value === null ? null : round(value);
+  return value === null ? null : round(convert(value));
 }
 
 /**
@@ -525,9 +527,10 @@ function metricValue(metric, raw) {
  * @param {Object} db Firestore
  * @param {string} uid user id
  * @param {Object} input tool input
+ * @param {Object} units the request's units
  * @return {Promise<string>}
  */
-async function getMetrics(db, uid, input) {
+async function getMetrics(db, uid, input, units) {
   const days = dayRange(input?.start_date, input?.end_date);
   if (!days) {
     throw new ToolInputError();
@@ -537,14 +540,18 @@ async function getMetrics(db, uid, input) {
   const user = db.collection("users").doc(uid);
   const snapshots = await db.getAll(
       ...days.map((day) => user.collection("metrics_daily").doc(day)));
+  const to = unitConverter(units);
+  const convert = {distance: to.distance, weight: to.bodyWeight};
+  const label = {distance: to.distanceLabel, weight: to.bodyWeightLabel};
   const lines = [];
   snapshots.forEach((snapshot, i) => {
     const data = snapshot.data();
     if (!data) return;
     const values = wanted
-        .map((metric) => [metric, metricValue(metric, data[metric])])
+        .map((metric) => [metric,
+          metricValue(metric, data[metric], convert[metric])])
         .filter(([, value]) => value !== null)
-        .map(([metric, value]) => `${metric}=${value}`);
+        .map(([metric, value]) => `${metric}=${value}${label[metric] ?? ""}`);
     if (values.length) lines.push(`${days[i]}: ${values.join(", ")}`);
   });
   return lines.length ?
@@ -647,13 +654,15 @@ async function getScores(db, uid, input) {
  * @param {string} uid user id
  * @param {Object} input tool input
  * @param {number} offsetMinutes user's UTC offset
+ * @param {Object} units the request's units
  * @return {Promise<string>}
  */
-async function getWorkouts(db, uid, input, offsetMinutes) {
+async function getWorkouts(db, uid, input, offsetMinutes, units) {
   const limit = Math.min(Math.max(Number(input?.limit) || 8, 1), 20);
   const snapshot = await db.collection("users").doc(uid)
       .collection("workouts").orderBy("completedAt", "desc").limit(limit).get();
   if (snapshot.empty) return "No saved workouts.";
+  const to = unitConverter(units);
   const lines = snapshot.docs.map((doc) => {
     const data = doc.data();
     const completed = data.completedAt?.toDate?.();
@@ -667,11 +676,13 @@ async function getWorkouts(db, uid, input, offsetMinutes) {
         .slice(0, 8)
         .map((e) => {
           if (typeof e.distanceKm === "number") {
-            return `${e.name.trim()}=${round(e.distanceKm)}km`;
+            return `${e.name.trim()}=` +
+              `${round(to.distance(e.distanceKm))}${to.distanceLabel}`;
           }
           const sets = (Array.isArray(e.sets) ? e.sets : []).slice(0, 6)
               .map((s) =>
-                `${round(Number(s?.weightLbs) || 0)}lb×${Number(s?.reps) || 0}`)
+                `${round(to.lift(Number(s?.weightLbs) || 0))}` +
+                `${to.liftLabel}×${Number(s?.reps) || 0}`)
               .join("/");
           return sets ? `${e.name.trim()}=${sets}` : e.name.trim();
         });
@@ -693,13 +704,14 @@ async function getWorkouts(db, uid, input, offsetMinutes) {
 async function runTool(db, uid, block, request) {
   try {
     const content = block.name === "get_metrics" ?
-      await getMetrics(db, uid, block.input) :
+      await getMetrics(db, uid, block.input, request.units) :
       block.name === "get_scores" ?
       await getScores(db, uid, block.input) :
       block.name === "get_priorities" ?
       await getPriorities(db, uid, block.input, request.utcOffsetMinutes) :
       block.name === "get_workouts" ?
-      await getWorkouts(db, uid, block.input, request.utcOffsetMinutes) :
+      await getWorkouts(db, uid, block.input, request.utcOffsetMinutes,
+          request.units) :
       null;
     if (content === null) {
       return {type: "tool_result", tool_use_id: block.id, is_error: true,
@@ -1362,9 +1374,10 @@ function cleanReply(input) {
  * @param {Object} db Firestore
  * @param {string} uid user id
  * @param {Object} chart {metric, start_date, end_date}
+ * @param {Object} units the request's units
  * @return {Promise<Object|null>} metric block, or null with < 2 points
  */
-async function chartBlock(db, uid, chart) {
+async function chartBlock(db, uid, chart, units) {
   const metric = chart?.metric;
   const days = dayRange(chart?.start_date, chart?.end_date);
   if (!days || ![...METRICS, ...SCORE_SERIES].includes(metric)) return null;
@@ -1372,6 +1385,9 @@ async function chartBlock(db, uid, chart) {
   const user = db.collection("users").doc(uid);
   const snapshots = await db.getAll(...days.map((day) =>
     user.collection(score ? "scores_daily" : "metrics_daily").doc(day)));
+  const to = unitConverter(units);
+  const convert = {distance: to.distance, weight: to.bodyWeight};
+  const unit = {distance: to.distanceLabel, weight: to.bodyWeightLabel};
   const points = [];
   snapshots.forEach((snapshot, i) => {
     const data = snapshot.data();
@@ -1379,7 +1395,7 @@ async function chartBlock(db, uid, chart) {
       metric === "effort" ? data?.effort?.total :
       metric === "physical_health" ? data?.physical?.score :
       metric === "sleep" ? data?.sleep?.avg :
-      Number(metricValue(metric, data?.[metric]));
+      Number(metricValue(metric, data?.[metric], convert[metric]));
     if (typeof value === "number" && Number.isFinite(value)) {
       points.push({day: days[i], value: Math.round(value * 10) / 10});
     }
@@ -1387,7 +1403,8 @@ async function chartBlock(db, uid, chart) {
   if (points.length < 2) return null;
   const average = points.reduce((sum, p) => sum + p.value, 0) / points.length;
   return {
-    type: "metric", metric, label: LABELS[metric], unit: UNITS[metric] ?? null,
+    type: "metric", metric, label: LABELS[metric],
+    unit: unit[metric] ?? UNITS[metric] ?? null,
     screen: SCREENS[metric], points,
     average: Math.round(average * 10) / 10,
   };
@@ -1444,14 +1461,15 @@ function sourceBlocks(lookups) {
  * @param {string} uid user id
  * @param {Object} reply cleaned reply (with actions)
  * @param {Array<Object>} lookups successful data tool calls
+ * @param {Object} units the request's units
  * @return {Promise<Array<Object>>}
  */
-async function replyBlocks(db, uid, reply, lookups) {
+async function replyBlocks(db, uid, reply, lookups, units) {
   const blocks = [{type: "text", text: reply.message}];
   if (reply.crisis) return blocks;
   if (reply.chart) {
     try {
-      const chart = await chartBlock(db, uid, reply.chart);
+      const chart = await chartBlock(db, uid, reply.chart, units);
       if (chart) blocks.push(chart);
     } catch (error) {
       console.error("[assistant] chart failed", error);
@@ -1555,7 +1573,7 @@ async function runAssistant({client, db, uid, request: input, now,
       (Array.isArray(reply.suggestions) ? reply.suggestions : [])
           .filter((t) => typeof t === "string" && t.trim())
           .map((t) => t.trim().slice(0, 60)).slice(0, 3);
-    reply.blocks = await replyBlocks(db, uid, reply, lookups);
+    reply.blocks = await replyBlocks(db, uid, reply, lookups, request.units);
     delete reply.chart;
     try {
       await saveMemory(db, uid, request, memoryState.pending, reply, now,

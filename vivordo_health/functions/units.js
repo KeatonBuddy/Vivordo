@@ -43,9 +43,37 @@ function unitsInstruction(value) {
     units.height && `height in ${WORDS[units.height]}`,
   ].filter(Boolean);
   return `The user's units: ${parts.join(", ")}. Always reply in these ` +
-    "units. Workout data stores lifting weights as weightLbs (pounds) and " +
-    "distances in km, and body weight is stored in kg: convert before you " +
-    "quote them, rounding lifts to the nearest 0.5 kg or 1 lb.";
+    "units. Numbers from your data tools are already in them. Raw fields " +
+    "keep their stored units (weightLbs is pounds, distanceKm is " +
+    "kilometres, body weight is kg): convert those before you quote them, " +
+    "rounding lifts to the nearest 0.5 kg or 1 lb.";
 }
 
-module.exports = {cleanUnits, unitsInstruction};
+const KG_PER_LB = 0.45359237;
+const KM_PER_MILE = 1.609344;
+
+/**
+ * Converters from stored values (lifts in lb, distance in km, body weight
+ * in kg) to the user's units, with their labels. Data tools write numbers
+ * already converted: the model copies a labelled number over any
+ * instruction. No units (older builds) keeps the stored units.
+ * @param {*} value The request's units.
+ * @return {Object} {lift, liftLabel, distance, distanceLabel, bodyWeight,
+ *   bodyWeightLabel}
+ */
+function unitConverter(value) {
+  const units = cleanUnits(value) ?? {};
+  const kgLifts = units.liftWeight === "kg";
+  const miles = units.distance === "mi";
+  const lbBody = units.bodyWeight === "lb";
+  return {
+    lift: (lbs) => kgLifts ? lbs * KG_PER_LB : lbs,
+    liftLabel: kgLifts ? "kg" : "lb",
+    distance: (km) => miles ? km / KM_PER_MILE : km,
+    distanceLabel: miles ? "mi" : "km",
+    bodyWeight: (kg) => lbBody ? kg / KG_PER_LB : kg,
+    bodyWeightLabel: lbBody ? "lb" : "kg",
+  };
+}
+
+module.exports = {cleanUnits, unitsInstruction, unitConverter};
