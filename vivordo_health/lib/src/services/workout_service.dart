@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -172,6 +173,7 @@ class SavedWorkout {
     required this.setCount,
     this.activityName,
     this.activityCategory,
+    this.customName,
   });
 
   final String id;
@@ -183,6 +185,9 @@ class SavedWorkout {
   final String? activityName;
   final String? activityCategory;
 
+  /// The name the user gave it (Rename in the summary), over any other.
+  final String? customName;
+
   WorkoutExerciseRecord? get primaryCardioOrSportExercise {
     for (final exercise in exercises) {
       if (exercise.category == 'Cardio' || exercise.category == 'Sports') {
@@ -193,15 +198,31 @@ class SavedWorkout {
   }
 
   String get displayName {
+    final custom = customName?.trim();
+    if (custom?.isNotEmpty == true) return custom!;
     final savedName = activityName?.trim();
     if (savedName?.isNotEmpty == true && savedName != 'Workout') {
       return savedName!;
     }
-    return primaryCardioOrSportExercise?.name ?? 'Workout';
+    return primaryCardioOrSportExercise?.name ??
+        strengthWorkoutName(exercises) ??
+        'Workout';
   }
 
   String? get displayCategory =>
       activityCategory ?? primaryCardioOrSportExercise?.category;
+
+  SavedWorkout withCustomName(String? name) => SavedWorkout(
+    id: id,
+    completedAt: completedAt,
+    durationSeconds: durationSeconds,
+    exercises: exercises,
+    exerciseCount: exerciseCount,
+    setCount: setCount,
+    activityName: activityName,
+    activityCategory: activityCategory,
+    customName: name,
+  );
 
   List<String> get exerciseNames =>
       exercises.map((exercise) => exercise.name).toList(growable: false);
@@ -278,8 +299,76 @@ class SavedWorkout {
       setCount: (data['setCount'] as num?)?.round() ?? calculatedSets,
       activityName: data['activityName'] as String?,
       activityCategory: data['activityCategory'] as String?,
+      customName: data['customName'] as String?,
     );
   }
+}
+
+/// A strength workout's name from what was trained, each exercise's muscle
+/// group weighted by its sets: one group ("Chest", "Biceps"), Push, Pull,
+/// Arms, Upper Body, Legs or Lower Body, or two joined ("Chest and Legs").
+/// Worked out when shown, so older workouts are named too. Null without
+/// strength exercises, so cardio and sports keep their activity names.
+String? strengthWorkoutName(List<WorkoutExerciseRecord> exercises) {
+  final sets = <String, int>{};
+  for (final exercise in exercises) {
+    final group = _muscleGroup(exercise);
+    if (group == null) continue;
+    sets[group] = (sets[group] ?? 0) + math.max(exercise.sets.length, 1);
+  }
+  int count(List<String> groups) =>
+      groups.fold(0, (total, group) => total + (sets[group] ?? 0));
+  // A group "makes" the workout at 70% of its sets.
+  bool most(int part, int whole) => part >= whole * .7;
+  final legs = count(['Legs']);
+  final core = count(['Core']);
+  final upper = count([
+    'Chest',
+    'Back',
+    'Shoulders',
+    'Biceps',
+    'Triceps',
+    'Arms',
+  ]);
+  if (upper + legs == 0) return core > 0 ? 'Core' : null;
+
+  String upperName() {
+    for (final group in ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps']) {
+      if (most(sets[group] ?? 0, upper)) return group;
+    }
+    if (most(count(['Biceps', 'Triceps', 'Arms']), upper)) return 'Arms';
+    if (most(count(['Chest', 'Shoulders', 'Triceps']), upper)) return 'Push';
+    if (most(count(['Back', 'Biceps']), upper)) return 'Pull';
+    return 'Upper Body';
+  }
+
+  // Core work alongside legs (a third of those sets or more) makes it a
+  // lower-body day; with upper-body work it doesn't change the name.
+  final lowerName = core * 3 >= legs + core ? 'Lower Body' : 'Legs';
+  if (upper == 0 || most(legs, upper + legs)) return lowerName;
+  if (legs == 0 || most(upper, upper + legs)) return upperName();
+  return '${upperName()} and Legs';
+}
+
+/// The library files curls and triceps work alike under "Arms", so the name
+/// tells them apart; forearm and grip work stays "Arms".
+String? _muscleGroup(WorkoutExerciseRecord exercise) {
+  switch (exercise.category) {
+    case 'Chest' || 'Back' || 'Shoulders' || 'Legs' || 'Core':
+      return exercise.category;
+    case 'Arms':
+      final name = exercise.name.toLowerCase();
+      if (RegExp('wrist|forearm|finger|gripper|pinch|roller').hasMatch(name)) {
+        return 'Arms';
+      }
+      if (RegExp(
+        r'tricep|pushdown|skull|kickback|dip\b|close[ -]?grip|jm press|diamond',
+      ).hasMatch(name)) {
+        return 'Triceps';
+      }
+      return RegExp('curl|chin').hasMatch(name) ? 'Biceps' : 'Arms';
+  }
+  return null;
 }
 
 /// A day's `exercise_time` with [deltaMinutes] of app-recorded time (workouts
@@ -902,6 +991,36 @@ class WorkoutService {
   }
 
   /// False when deleted on the phone but still waiting to sync.
+  /// Saves the name the user typed for a workout; an empty one goes back to
+  /// the generated name. A workout shared to Circle shows it there too.
+  /// Returns whether it reached the server (false: queued offline).
+  static Future<bool> rename(String workoutId, String name) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError('Sign in before renaming a workout.');
+    final db = FirebaseFirestore.instance;
+    final userReference = db.collection('users').doc(user.uid);
+    final workoutReference = userReference
+        .collection('workouts')
+        .doc(workoutId);
+    final snapshot = await _readOrNull(workoutReference);
+    final clean = name.trim();
+    final batch = db.batch()
+      ..update(workoutReference, {
+        'customName': clean.isEmpty ? FieldValue.delete() : clean,
+      });
+    if (snapshot?.data()?['shareToCircle'] == true) {
+      final shown = clean.isNotEmpty
+          ? clean
+          : SavedWorkout.fromDocument(
+              snapshot!,
+            ).withCustomName(null).displayName;
+      batch.update(userReference.collection('circle_activity').doc(workoutId), {
+        'name': shown,
+      });
+    }
+    return syncedOrQueued(batch.commit());
+  }
+
   static Future<bool> delete(String workoutId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in before deleting a workout.');
@@ -993,7 +1112,11 @@ class WorkoutService {
       activityFields['activityCategory'] = activityCategory;
     }
     final circleActivityFields = <String, dynamic>{
-      'name': activityName,
+      // Friends see what was trained ("Push"), not just "Workout".
+      'name':
+          selectedActivity?.name ??
+          strengthWorkoutName(exercises) ??
+          activityName,
       ...activityFields,
     };
     if (selectedActivity?.distanceKm != null) {

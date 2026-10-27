@@ -28,10 +28,18 @@ Color _improvedColor(BuildContext context) =>
 Color _declinedColor(BuildContext context) =>
     _statusColor(context, const Color(0xFFF08A5D), const Color(0xFFC2410C));
 
-class WorkoutSummaryScreen extends StatelessWidget {
+class WorkoutSummaryScreen extends StatefulWidget {
   const WorkoutSummaryScreen({super.key, required this.workout});
 
   final SavedWorkout workout;
+
+  @override
+  State<WorkoutSummaryScreen> createState() => _WorkoutSummaryScreenState();
+}
+
+class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
+  // Renaming updates the title here without reopening the screen.
+  late SavedWorkout workout = widget.workout;
 
   @override
   Widget build(BuildContext context) {
@@ -60,12 +68,16 @@ class WorkoutSummaryScreen extends StatelessWidget {
           actions: [
             IosPullDownMenu<_WorkoutSummaryAction>(
               tooltip: 'Workout actions',
-              onSelected: (action) {
-                if (action == _WorkoutSummaryAction.delete) {
-                  _deleteWorkout(context);
-                }
+              onSelected: (action) => switch (action) {
+                _WorkoutSummaryAction.rename => _renameWorkout(),
+                _WorkoutSummaryAction.delete => _deleteWorkout(context),
               },
               actions: const [
+                IosMenuAction(
+                  value: _WorkoutSummaryAction.rename,
+                  label: 'Rename workout',
+                  icon: CupertinoIcons.pencil,
+                ),
                 IosMenuAction(
                   value: _WorkoutSummaryAction.delete,
                   label: 'Delete workout',
@@ -161,6 +173,62 @@ class WorkoutSummaryScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _renameWorkout() async {
+    final generated = workout.withCustomName(null).displayName;
+    // Not disposed: the alert's field is still animating out.
+    final controller = TextEditingController(text: workout.customName ?? '');
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AppleAlert(
+        title: 'Rename workout',
+        message: 'Leave it empty to call it $generated.',
+        content: AppleAlertField(
+          controller: controller,
+          placeholder: generated,
+        ),
+        buttons: [
+          AppleAlertButton(
+            'Cancel',
+            onPressed: () => Navigator.pop(dialogContext),
+          ),
+          AppleAlertButton(
+            'Save',
+            bold: true,
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+          ),
+        ],
+      ),
+    );
+    if (name == null || !mounted) return;
+    // Template names are capped at 40 characters too.
+    final clean = name.trim().length > 40
+        ? name.trim().substring(0, 40)
+        : name.trim();
+    final previous = workout;
+    setState(
+      () => workout = workout.withCustomName(clean.isEmpty ? null : clean),
+    );
+    try {
+      final synced = await WorkoutService.rename(workout.id, clean);
+      if (!synced && mounted) {
+        showToast(
+          context,
+          "Workout renamed. It'll sync when you're online.",
+          kind: ToastKind.offline,
+        );
+      }
+    } catch (error) {
+      debugPrint('Could not rename workout: $error');
+      if (!mounted) return;
+      setState(() => workout = previous);
+      showToast(
+        context,
+        "Couldn't rename the workout. Try again.",
+        kind: ToastKind.error,
+      );
+    }
+  }
+
   Future<void> _deleteWorkout(BuildContext context) async {
     final confirmed = await confirmAction(
       context,
@@ -195,7 +263,7 @@ class WorkoutSummaryScreen extends StatelessWidget {
   }
 }
 
-enum _WorkoutSummaryAction { delete }
+enum _WorkoutSummaryAction { rename, delete }
 
 class _WorkoutHeader extends StatelessWidget {
   const _WorkoutHeader({
